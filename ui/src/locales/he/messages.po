@@ -138,7 +138,7 @@ msgstr ""
 #. placeholder {0}: deleting?.name ?? ''
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "\"{0}\" will be removed. Chains that source it will lose that source; its stored key and usage history go with it. This cannot be undone."
-msgstr ""
+msgstr "\"{0}\" יוסר. שרשראות שמושכות ממנו יאבדו את המקור הזה; המפתח השמור שלו והיסטוריית השימוש יימחקו איתו. אי אפשר לבטל את הפעולה."
 
 #. placeholder {0}: pendingDelete?.title ?? ''
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -199,7 +199,7 @@ msgstr "(אין)"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "(not visible)"
-msgstr ""
+msgstr "(לא גלוי)"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "(overridden)"
@@ -367,7 +367,7 @@ msgstr ""
 #. placeholder {1}: endpoint.name
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "{0} can now spend {1}."
-msgstr ""
+msgstr "{0} יכולים עכשיו להשתמש ב-{1}."
 
 #. placeholder {0}: a.fires
 #. placeholder {1}: a.passed_over ?? 0
@@ -432,7 +432,7 @@ msgstr ""
 #. placeholder {1}: totals.unpriced_requests
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "{0} estimated · {1} unpriced"
-msgstr ""
+msgstr "{0} משוערות · {1} ללא תמחור"
 
 #. placeholder {0}: builtinFailing[0].name
 #. placeholder {0}: button.label
@@ -449,7 +449,7 @@ msgstr ""
 #. placeholder {0}: chain.data.paths.length
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "{0} fallback paths"
-msgstr ""
+msgstr "{0} מסלולי גיבוי"
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
@@ -583,7 +583,7 @@ msgstr "מפתח {0}"
 #. placeholder {1}: spec.keyPrefix
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "{0} keys start with {1} — this one does not."
-msgstr ""
+msgstr "מפתחות {0} מתחילים ב-{1} — המפתח הזה לא."
 
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -641,7 +641,7 @@ msgstr ""
 #. placeholder {1}: data.length
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "{0} of {1}"
-msgstr ""
+msgstr "{0} מתוך {1}"
 
 #. placeholder {0}: keys.count
 #. placeholder {0}: s.count
@@ -650,7 +650,7 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "{0} of {1} set"
-msgstr ""
+msgstr "{0} מתוך {1} מוגדרים"
 
 #. placeholder {0}: drawn.done
 #. placeholder {1}: drawn.total
@@ -925,11 +925,11 @@ msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשר�
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{guestName} can start live sessions on your machine without asking, in every project."
-msgstr "{guestName} יכול/ה להתחיל live sessions במחשב שלך בלי לבקש אישור, בכל הפרויקטים."
+msgstr "{guestName} יכול/ה להתחיל סשני זמן אמת במחשב שלך בלי לבקש אישור, בכל הפרויקטים."
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{guestName} can start live sessions on your machine without asking, in this project only."
-msgstr "{guestName} יכול/ה להתחיל live sessions במחשב שלך בלי לבקש אישור, רק בפרויקט הזה."
+msgstr "{guestName} יכול/ה להתחיל סשני זמן אמת במחשב שלך בלי לבקש אישור, רק בפרויקט הזה."
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{guestName} is waiting for your approval before any prompt runs on your machine."
@@ -951,15 +951,15 @@ msgstr "לפני {h} שע׳"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{hostName} approved this session by hand. A later session may need their approval again."
-msgstr "{hostName} אישר/ה את ה-session הזה ידנית. ייתכן ש-session הבא ידרוש שוב אישור."
+msgstr "{hostName} אישר/ה את הסשן הזה ידנית. ייתכן שסשן הבא ידרוש שוב אישור."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
-msgstr "{hostName} דחה את הסשן החי."
+msgstr "{hostName} דחה/תה את סשן זמן האמת."
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "{hostName} lets you start live sessions on their machine without asking — this one started right away."
-msgstr "{hostName} מאפשר/ת לך להתחיל live sessions במחשב שלו/ה בלי לבקש אישור — ה-session הזה התחיל מיד."
+msgstr "{hostName} מאפשר/ת לך להתחיל סשני זמן אמת במחשב שלו/ה בלי לבקש אישור — הסשן הזה התחיל מיד."
 
 #~ msgid "{hostName} paused the live session."
 #~ msgstr "{hostName} השהה את הסשן החי."
@@ -977,7 +977,7 @@ msgstr "ה-Claude Code של {hostName}"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "{hubCount} available"
-msgstr ""
+msgstr "{hubCount} זמינות"
 
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{idle} — open Records Scanner"
@@ -1550,19 +1550,19 @@ msgstr "סף התראה 80%"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a {label} key stored on this machine"
-msgstr ""
+msgstr "מפתח {label} שמור במחשב הזה"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a {label} OAuth login on this machine"
-msgstr ""
+msgstr "התחברות OAuth של {label} במחשב הזה"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "A call here spends"
-msgstr ""
+msgstr "קריאה כאן משתמשת ב"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A chain draws on another endpoint and can only narrow what passes."
-msgstr ""
+msgstr "שרשרת נשענת על נקודת קצה אחרת ויכולה רק לצמצם את מה שעובר."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "A cron expression has five parts."
@@ -1586,7 +1586,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "A FlowPad login is stored but the hub has not confirmed it"
-msgstr ""
+msgstr "התחברות ל-FlowPad שמורה, אבל ה-Hub עדיין לא אישר אותה"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A folder of related projects. New projects and clones are created inside it."
@@ -1610,7 +1610,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
-msgstr ""
+msgstr "מפתח שה-Hub מחזיק (לא ניתן לקרוא את השרשרת מכאן)"
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A machine"
@@ -1656,7 +1656,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
-msgstr ""
+msgstr "שורש מדבר עם ספק באמצעות מפתח משלו."
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "A schedule needs a prompt"
@@ -1676,7 +1676,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "A sign-in is in progress"
-msgstr ""
+msgstr "התחברות מתבצעת כעת"
 
 #~ msgid "A source is one remote account or feed set. The poller syncs it on the heartbeat."
 #~ msgstr "מקור הוא חשבון מרחוק אחד או קבוצת הזנות אחת. הסנכרון מתבצע בכל דופק."
@@ -2144,7 +2144,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
-msgstr ""
+msgstr "הוספת שורה"
 
 #: src/components/agent-resources/AgentSchedulesSection.tsx
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -2163,7 +2163,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
-msgstr ""
+msgstr "הוסף מישהו לשיתוף."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add someone with an email address to share this project with."
@@ -2244,12 +2244,12 @@ msgstr "{0} נוסף בהצלחה"
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0} and stored its key"
-msgstr ""
+msgstr "{0} נוסף והמפתח שלו נשמר"
 
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Added {0}, but the key was not saved"
-msgstr ""
+msgstr "{0} נוסף, אבל המפתח לא נשמר"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Added directly"
@@ -2460,7 +2460,7 @@ msgstr "התראות בלבד ({totalAlerts})"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Aliases (client name → real model)"
-msgstr ""
+msgstr "כינויים (שם אצל הלקוח ← מודל אמיתי)"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Align center"
@@ -2519,7 +2519,7 @@ msgstr "כל הנתונים נוקו. מנתב..."
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "All endpoints"
-msgstr ""
+msgstr "כל נקודות הקצה"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "All entries"
@@ -2619,7 +2619,7 @@ msgstr "כל הסוגים"
 #. placeholder {0}: draft.name.trim()
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Allocated {0}"
-msgstr ""
+msgstr "{0} הוקצה"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow"
@@ -2647,7 +2647,7 @@ msgstr "אפשור הרצת פקודות מחוץ לארגז החול"
 
 #: src/components/conversation/ContactPermissionsDialog.tsx
 msgid "Allow live sessions without asking"
-msgstr ""
+msgstr "לאפשר סשני זמן אמת בלי לבקש אישור"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
@@ -2763,7 +2763,7 @@ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Always allow sessions from {guestName}"
-msgstr "לאשר תמיד sessions מ-{guestName}"
+msgstr "לאשר תמיד סשנים מ-{guestName}"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Always auto-approve"
@@ -2936,7 +2936,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
-msgstr ""
+msgstr "תקציב Hub אחר — {label}"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "another machine"
@@ -3023,7 +3023,7 @@ msgstr "כל מי שתשתפו איתו יכול לפתוח, להשתמש ולמ
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Anyone you share with can spend this budget and see what it has cost. They draw on the same limits you do — not a separate allowance — and they cannot change the limits, the provider key, or share it on."
-msgstr ""
+msgstr "מי ששיתפת איתו יכול להשתמש בתקציב הזה ולראות כמה הוא עלה. הוא נשען על אותן מגבלות כמוך — לא על מכסה נפרדת — ואינו יכול לשנות את המגבלות או את מפתח הספק, ולא לשתף הלאה."
 
 #: src/components/automations/automation-words.ts
 #: src/components/schema-tree/SchemaTreeView.tsx
@@ -3045,7 +3045,7 @@ msgstr "מפתח API"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "API key"
-msgstr ""
+msgstr "מפתח API"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "API Key"
@@ -3082,7 +3082,7 @@ msgstr "עוזר מפתח API"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "API keys"
-msgstr ""
+msgstr "מפתחות API"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "API Keys"
@@ -3090,7 +3090,7 @@ msgstr "מפתחות API"
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "API keys on this machine"
-msgstr ""
+msgstr "מפתחות API במחשב הזה"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "API keys stored on this machine"
@@ -3172,7 +3172,7 @@ msgstr "לאשר פעם אחת"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Approve, and let {guestName} start sessions without asking"
-msgstr "לאשר, ולאפשר ל-{guestName} להתחיל sessions בלי לבקש"
+msgstr "לאשר, ולאפשר ל-{guestName} להתחיל סשנים בלי לבקש"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved by {hostName}"
@@ -3180,7 +3180,7 @@ msgstr "אושר על ידי {hostName}"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Approved for this session"
-msgstr "מאושר ל-session הזה"
+msgstr "מאושר לסשן הזה"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -3750,7 +3750,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "available"
-msgstr ""
+msgstr "זמין"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -3854,7 +3854,7 @@ msgstr "חזור למשימות"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Back to the conversation message that started this session"
-msgstr "חזרה להודעה בשיחה שפתחה את ה-session הזה"
+msgstr "חזרה להודעה בשיחה שפתחה את הסשן הזה"
 
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "Back to the simple view"
@@ -3900,7 +3900,7 @@ msgstr "כתובת URL בסיסית"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Base URL must be an http(s) URL."
-msgstr ""
+msgstr "כתובת הבסיס חייבת להיות כתובת http(s)."
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
@@ -3936,7 +3936,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Betas allowed"
-msgstr ""
+msgstr "גרסאות בטא מותרות"
 
 #: src/components/browseable-tree/adapters/tagRoot.tsx
 msgid "Bless \"{name}\" — create its Tag entity"
@@ -4016,7 +4016,7 @@ msgstr "ירור נתיבים"
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "breaker open"
-msgstr ""
+msgstr "המפסק פתוח"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Bring back"
@@ -4100,7 +4100,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Budget shared"
-msgstr ""
+msgstr "התקציב שותף"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Budget source"
@@ -4200,7 +4200,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By child"
-msgstr ""
+msgstr "לפי צאצא"
 
 #: src/components/login-required-dialog.tsx
 msgid "By continuing, you agree to our <0>Terms</0> and <1>Privacy Policy</1>."
@@ -4208,7 +4208,7 @@ msgstr "בהמשך, אתה מסכים ל<0>תנאים</0> וגם ל<1>מדיני
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "By model"
-msgstr ""
+msgstr "לפי מודל"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By name"
@@ -4535,12 +4535,12 @@ msgstr ""
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "chain"
-msgstr ""
+msgstr "שרשרת"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Chain"
-msgstr ""
+msgstr "שרשרת"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4818,7 +4818,7 @@ msgstr "בחרו artifact לפתיחה"
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Choose an endpoint…"
-msgstr ""
+msgstr "בחר נקודת קצה…"
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
@@ -4843,7 +4843,7 @@ msgstr "בחר תיקייה…"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Choose the endpoint this one draws from."
-msgstr ""
+msgstr "בחר את נקודת הקצה שממנה זו נשענת."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Choose the project it loads, and any asset packages to bring with it."
@@ -6284,19 +6284,19 @@ msgstr "עלות"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD) / day"
-msgstr ""
+msgstr "עלות (USD) ליום"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD) / month"
-msgstr ""
+msgstr "עלות (USD) לחודש"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD) / week"
-msgstr ""
+msgstr "עלות (USD) לשבוע"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Cost (USD), total"
-msgstr ""
+msgstr "עלות (USD), סך הכול"
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "Could not activate the organization"
@@ -6585,7 +6585,7 @@ msgstr "לא ניתן היה לטעון את חדר השיתוף {0}. יש לנ�
 
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "Could not load models."
-msgstr ""
+msgstr "לא ניתן היה לטעון מודלים."
 
 #: src/components/automations/RunsView.tsx
 msgid "Could not load runs"
@@ -6625,7 +6625,7 @@ msgstr "לא ניתן לטעון משימה זו. יש לנסות שוב בעו�
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "Could not load usage."
-msgstr ""
+msgstr "לא ניתן היה לטעון את נתוני השימוש."
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "Could not load your token plan."
@@ -6775,7 +6775,7 @@ msgstr "לא היה ניתן להסיר את קבצי העזרה"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not remove the key"
-msgstr ""
+msgstr "לא ניתן היה להסיר את המפתח"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
@@ -6829,7 +6829,7 @@ msgstr "לא ניתן לפתור את ספריית הבית מתוך מידע bo
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Could not resolve the chain."
-msgstr ""
+msgstr "לא ניתן היה לפענח את השרשרת."
 
 #: src/components/assets/ShareContextFolderButton.tsx
 #: src/components/assets/ShareContextFolderButton.tsx
@@ -6916,7 +6916,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Could not save the endpoint"
-msgstr ""
+msgstr "לא ניתן היה לשמור את נקודת הקצה"
 
 #: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Could not save the env files"
@@ -6924,7 +6924,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not save the key"
-msgstr ""
+msgstr "לא ניתן היה לשמור את המפתח"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Could not save the override"
@@ -7032,7 +7032,7 @@ msgstr "לא ניתן להתחיל כניסה"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
-msgstr ""
+msgstr "לא ניתן היה להתחיל את סשן זמן האמת"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Could not start the setup"
@@ -7801,7 +7801,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Decision API"
-msgstr ""
+msgstr "API החלטות"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -8199,7 +8199,7 @@ msgstr "למחוק את קבצי העזרה המקומיים?"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Delete the stored key?"
-msgstr ""
+msgstr "למחוק את המפתח השמור?"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Delete this automation?"
@@ -8231,7 +8231,7 @@ msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Delete this endpoint?"
-msgstr ""
+msgstr "למחוק את נקודת הקצה הזו?"
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "Delete this key?"
@@ -8616,7 +8616,7 @@ msgstr "תיקייה"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "direct"
-msgstr ""
+msgstr "ישיר"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Directories"
@@ -9029,7 +9029,7 @@ msgstr "צייר עם העט או החץ, הוסף תיבות טקסט וכית�
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
-msgstr ""
+msgstr "נשען על"
 
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
 msgid "Drill by"
@@ -9198,7 +9198,7 @@ msgstr "עריכת מקור נתונים"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Edit endpoint"
-msgstr ""
+msgstr "עריכת נקודת קצה"
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Edit favorite"
@@ -9278,7 +9278,7 @@ msgstr "עורך"
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Effective filters at this endpoint"
-msgstr ""
+msgstr "הסינונים הפעילים בנקודת הקצה הזו"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "Effort"
@@ -10499,12 +10499,12 @@ msgstr ""
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "Fallback order under its parent"
-msgstr ""
+msgstr "סדר הגיבוי תחת ההורה שלה"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "Fallbacks"
-msgstr ""
+msgstr "גיבויים"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Family"
@@ -10706,7 +10706,7 @@ msgstr ""
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Filter ceilings must be non-negative numbers."
-msgstr ""
+msgstr "תקרות הסינון חייבות להיות מספרים לא שליליים."
 
 #: src/components/terminal/interactive-terminal/side-windows/SimpleDirTree.tsx
 msgid "Filter files"
@@ -10719,7 +10719,7 @@ msgstr "סנן יומנים..."
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "Filter models…"
-msgstr ""
+msgstr "סינון מודלים…"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Filter network..."
@@ -10772,7 +10772,7 @@ msgstr "סינונים"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Filters & limits"
-msgstr ""
+msgstr "סינונים ומגבלות"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Find agent rules"
@@ -10929,7 +10929,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
-msgstr ""
+msgstr "קבוע לאחר היצירה, ועליך להיות מורשה לנהל אותה — נקודת הקצה הזו משתמשת בתקציב שלה."
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -11216,14 +11216,14 @@ msgstr "JSON חופשי עבור מתגי תכונות ניסיוניות. JSON 
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "from"
-msgstr ""
+msgstr "מאת"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "From"
-msgstr ""
+msgstr "מאת"
 
 #. placeholder {0}: item.sourceProjectName
 #: src/pages/discover-page/DiscoverDetailPage.tsx
@@ -11327,7 +11327,7 @@ msgstr ""
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Future sessions from {guestName}:"
-msgstr "sessions עתידיים מ-{guestName}:"
+msgstr "סשנים עתידיים מ-{guestName}:"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
@@ -11893,7 +11893,7 @@ msgstr "הסתר הזנה"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Hide filters & limits"
-msgstr ""
+msgstr "הסתרת סינונים ומגבלות"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives"
@@ -12207,7 +12207,7 @@ msgstr "נקודות קצה ב-Hub"
 
 #: src/components/llm-sources/LlmEndpointsSection.tsx
 msgid "Hub endpoints from your FlowPad account"
-msgstr ""
+msgstr "נקודות קצה ב-Hub מחשבון ה-FlowPad שלך"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Hub endpoints your FlowPad account can spend"
@@ -12627,7 +12627,7 @@ msgstr "קבצי הקלט המצורפים לסשן זה"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "Input tokens"
-msgstr ""
+msgstr "טוקני קלט"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Input Tokens"
@@ -12748,7 +12748,7 @@ msgstr "תוספים מותקנים"
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Installed, and no sign-in check has run yet"
-msgstr ""
+msgstr "מותקן, ועדיין לא בוצעה בדיקת התחברות"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing and restarting Flowpad… this can take up to a minute."
@@ -12802,7 +12802,7 @@ msgstr "לא תקין"
 #. placeholder {0}: verdict.status
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Invalid ({0})"
-msgstr ""
+msgstr "לא תקין ({0})"
 
 #: src/components/app-host/AppHost.tsx
 msgid "Invalid App Path"
@@ -13152,11 +13152,11 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Key removed"
-msgstr ""
+msgstr "המפתח הוסר"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Key saved"
-msgstr ""
+msgstr "המפתח נשמר"
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "Key saved & valid"
@@ -13354,11 +13354,11 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "Last test failed"
-msgstr ""
+msgstr "הבדיקה האחרונה נכשלה"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "Last test paid with that key"
-msgstr ""
+msgstr "הבדיקה האחרונה שולמה במפתח הזה"
 
 #~ msgid "last triggered"
 #~ msgstr "הפעלה אחרונה"
@@ -13533,21 +13533,21 @@ msgstr "גבול"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Limits"
-msgstr ""
+msgstr "מגבלות"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Limits are optimistic: usage already in flight can overshoot slightly. Windows are UTC."
-msgstr ""
+msgstr "המגבלות אופטימיות: שימוש שכבר בדרך עלול לחרוג מעט. החלונות הם ב-UTC."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Limits must be non-negative numbers."
-msgstr ""
+msgstr "המגבלות חייבות להיות מספרים לא שליליים."
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Limits remaining"
-msgstr ""
+msgstr "מגבלות שנותרו"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "line"
@@ -13719,26 +13719,26 @@ msgstr "שורה חיה"
 
 #: src/types/ViewType.ts
 msgid "Live Session"
-msgstr "סשן חי"
+msgstr "סשן זמן אמת"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Live session · {other}"
-msgstr "Live session · {other}"
+msgstr "סשן זמן אמת · {other}"
 
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "Live session not found"
-msgstr "הסשן החי לא נמצא"
+msgstr "סשן זמן האמת לא נמצא"
 
 #~ msgid "Live session on {hostName}'s machine"
 #~ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
-msgstr "סשן חי עם {guestName} במחשב שלך · {status}"
+msgstr "סשן זמן אמת עם {guestName} במחשב שלך · {status}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {otherName}"
-msgstr "Live session עם {otherName}"
+msgstr "סשן זמן אמת עם {otherName}"
 
 #~ msgid "Live session: run a prompt on {hostName}'s machine"
 #~ msgstr ""
@@ -13757,7 +13757,7 @@ msgstr "תקציב LLM"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "LLM Endpoint"
-msgstr ""
+msgstr "נקודת קצה של LLM"
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/i18n/type-labels.ts
@@ -13958,7 +13958,7 @@ msgstr "המסע נטען…"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Loading live session…"
-msgstr "טוען את הסשן החי…"
+msgstr "טוען את סשן זמן האמת…"
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Loading logs..."
@@ -14453,7 +14453,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Max input chars"
-msgstr ""
+msgstr "מקסימום תווי קלט"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Max Memory"
@@ -14469,7 +14469,7 @@ msgstr "מקסימום אירועי סניפר"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Max tokens"
-msgstr ""
+msgstr "מקסימום טוקנים"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Max tokens per call"
@@ -14832,7 +14832,7 @@ msgstr "מודל וביצועים"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Model map (rewrite before forwarding)"
-msgstr ""
+msgstr "מפת מודלים (שכתוב לפני העברה)"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Model mapping"
@@ -14879,7 +14879,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Models allowed (globs)"
-msgstr ""
+msgstr "מודלים מותרים (תבניות glob)"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Models denied"
@@ -14887,7 +14887,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Models denied (globs)"
-msgstr ""
+msgstr "מודלים חסומים (תבניות glob)"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Models Used"
@@ -15074,7 +15074,7 @@ msgstr "שם הוא חובה"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Name is required."
-msgstr ""
+msgstr "חובה למלא שם."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Name it, or leave it and one is made up"
@@ -15289,7 +15289,7 @@ msgstr ""
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "New endpoint"
-msgstr ""
+msgstr "נקודת קצה חדשה"
 
 #: src/components/browseable-tree/adapters/skillFolder.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -15588,7 +15588,7 @@ msgstr "עדיין אין בקשות עזרה"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "No assistant is installed on this machine."
-msgstr ""
+msgstr "אין עוזר מותקן במחשב הזה."
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."
@@ -15629,7 +15629,7 @@ msgstr "אין יכולות זמינות"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "no ceiling"
-msgstr ""
+msgstr "ללא תקרה"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "No ceiling of its own — what you may spend is whatever the budget above this one allows."
@@ -15744,7 +15744,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmEndpointsSection.tsx
 msgid "no cost cap"
-msgstr ""
+msgstr "ללא תקרת עלות"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No data available"
@@ -15823,15 +15823,15 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No endpoint sources from this one."
-msgstr ""
+msgstr "אף נקודת קצה לא נשענת על זו."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "No endpoints to draw from"
-msgstr ""
+msgstr "אין נקודות קצה להישען עליהן"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "No endpoints yet."
-msgstr ""
+msgstr "אין עדיין נקודות קצה."
 
 #: src/components/search-index/EntitySearchModal.tsx
 msgid "No entities."
@@ -15917,7 +15917,7 @@ msgstr "אין חוקים התואמים לסינונים שלך"
 
 #: src/components/llm-sources/LlmEndpointsSection.tsx
 msgid "No hub endpoint is available to this box. Sign in to FlowPad to receive one."
-msgstr ""
+msgstr "אין נקודת קצה ב-Hub זמינה למחשב הזה. התחבר ל-FlowPad כדי לקבל אחת."
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "No index.md to view"
@@ -15938,7 +15938,7 @@ msgstr "אין פריטים"
 #: src/components/llm-endpoints/ChainTree.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "no key"
-msgstr ""
+msgstr "אין מפתח"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "No key"
@@ -15950,11 +15950,11 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "no key on that root"
-msgstr ""
+msgstr "אין מפתח בשורש הזה"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "No key stored — this root cannot serve requests until one is saved."
-msgstr ""
+msgstr "לא נשמר מפתח — השורש הזה לא יכול לשרת בקשות עד שיישמר אחד."
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "No known event matches. Type the event name under Advanced."
@@ -15974,7 +15974,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsRemaining.tsx
 msgid "No limits configured along this chain."
-msgstr ""
+msgstr "לא הוגדרו מגבלות לאורך השרשרת הזו."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "No line changes vs the stamped baseline."
@@ -15982,7 +15982,7 @@ msgstr "אין שינויים בשורות בהשוואה לקו הבסיס המ
 
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "No live session specified"
-msgstr "לא צוין סשן חי"
+msgstr "לא צוין סשן זמן אמת"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No LLM index for this folder yet."
@@ -16121,11 +16121,11 @@ msgstr "אין נתוני מדדים זמינים"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "No models."
-msgstr ""
+msgstr "אין מודלים."
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
-msgstr ""
+msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -16618,7 +16618,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "No usage in this period."
-msgstr ""
+msgstr "אין שימוש בתקופה הזו."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "No value discovered"
@@ -16882,7 +16882,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "not set"
-msgstr ""
+msgstr "לא הוגדר"
 
 #~ msgid "Not set"
 #~ msgstr "לא מוגדר"
@@ -16905,11 +16905,11 @@ msgstr "אין התחברות פעילה — יש להתחבר מחדש"
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Not signed in to FlowPad"
-msgstr ""
+msgstr "לא מחובר ל-FlowPad"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Not signed in to this assistant"
-msgstr ""
+msgstr "לא מחובר לעוזר הזה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
@@ -16937,7 +16937,7 @@ msgstr "עדיין לא בשימוש"
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "not visible"
-msgstr ""
+msgstr "לא גלוי"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Not yet published"
@@ -17067,7 +17067,7 @@ msgstr ""
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Nothing runs on {hostName}'s machine until they approve this session."
-msgstr "שום דבר לא ירוץ במחשב של {hostName} עד שיאשר/תאשר את ה-session."
+msgstr "שום דבר לא ירוץ במחשב של {hostName} עד שיאשר/תאשר את הסשן."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
@@ -17239,7 +17239,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Offline"
-msgstr ""
+msgstr "לא מקוון"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
@@ -17384,7 +17384,7 @@ msgstr "מספיק אחד מאלה"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "One per line. Empty means everything the sources allow."
-msgstr ""
+msgstr "אחד בכל שורה. ריק פירושו כל מה שהמקורות מאפשרים."
 
 #: src/components/data-sources/DataSourcesView.tsx
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
@@ -17980,7 +17980,7 @@ msgstr ""
 #: src/components/conversation/LiveSessionActivity.tsx
 #: src/components/conversation/LiveSessionActivity.tsx
 msgid "Open the chat this session runs in"
-msgstr "לפתוח את הצ'אט שבו ה-session הזה רץ"
+msgstr "לפתוח את הצ'אט שבו הסשן הזה רץ"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open the data source"
@@ -18008,15 +18008,15 @@ msgstr "פתח את התוכנית האחרונה"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "Open the live session"
-msgstr "פתיחת הסשן החי"
+msgstr "פתיחת סשן זמן האמת"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
-msgstr "פתח את החילוק החי בטרמינל"
+msgstr "פתיחת סשן זמן האמת בטרמינל"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Open the live session on {hostName}'s machine"
-msgstr ""
+msgstr "פתיחת סשן זמן האמת במחשב של {hostName}"
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Open the message this replies to"
@@ -18208,7 +18208,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "OpenRouter hosts to avoid (one per line)"
-msgstr ""
+msgstr "מארחי OpenRouter להימנע מהם (אחד בכל שורה)"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
@@ -18382,7 +18382,7 @@ msgstr "סגנון פלט"
 
 #: src/components/llm-endpoints/UsagePanel.tsx
 msgid "Output tokens"
-msgstr ""
+msgstr "טוקני פלט"
 
 #: src/components/cost-dashboard/constants.ts
 msgid "Output Tokens"
@@ -18537,7 +18537,7 @@ msgstr "הדבק מזהה סשן של Claude CLI (UUID) כדי לשחזר אות
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Paste a key first"
-msgstr ""
+msgstr "הדבק מפתח קודם"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Paste a session id (UUID) to restore it in a new tab."
@@ -18606,7 +18606,7 @@ msgstr "הנתיב הועתק ללוח"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Paths allowed (globs)"
-msgstr ""
+msgstr "נתיבים מותרים (תבניות glob)"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "pattern"
@@ -18777,7 +18777,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Pick a provider."
-msgstr ""
+msgstr "בחר ספק."
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Pick a run to see why it ran and what happened."
@@ -19587,15 +19587,15 @@ msgstr "ספק"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Provider + credential"
-msgstr ""
+msgstr "ספק + אישור גישה"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Provider and base URL are fixed once created."
-msgstr ""
+msgstr "הספק וכתובת הבסיס קבועים לאחר היצירה."
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Provider API key"
-msgstr ""
+msgstr "מפתח API של הספק"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Provider ID:"
@@ -19841,7 +19841,7 @@ msgstr "יצירה מהירה"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "quick requests open without an assistant turn"
-msgstr ""
+msgstr "בקשות מהירות נפתחות בלי תור של עוזר"
 
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
@@ -20290,7 +20290,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Rejected"
-msgstr ""
+msgstr "נדחה"
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -20470,7 +20470,7 @@ msgstr ""
 #: src/components/llm-endpoints/AliasesEditor.tsx
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Remove row"
-msgstr ""
+msgstr "הסרת שורה"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
@@ -20634,7 +20634,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
-msgstr ""
+msgstr "החלפת המפתח השמור"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -20809,7 +20809,7 @@ msgstr "מבקש…"
 #: src/components/llm-endpoints/UsagePanel.tsx
 #: src/components/token-plan/ConsumptionPanel.tsx
 msgid "Requests"
-msgstr ""
+msgstr "בקשות"
 
 #: src/components/token-plan/MembersTable.tsx
 msgid "Requests (month)"
@@ -20817,7 +20817,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Requests / minute"
-msgstr ""
+msgstr "בקשות לדקה"
 
 #. placeholder {0}: redirected.join(' and ')
 #. placeholder {1}: next[0]
@@ -20827,7 +20827,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Requests through this root will fail until a new key is saved."
-msgstr ""
+msgstr "בקשות דרך השורש הזה ייכשלו עד שיישמר מפתח חדש."
 
 #: src/components/assets/DependencyChips.tsx
 msgid "required"
@@ -20888,7 +20888,7 @@ msgstr "איפוס לברירת המחדל"
 
 #: src/components/llm-endpoints/LimitsRemaining.tsx
 msgid "resets {resets}"
-msgstr ""
+msgstr "מתאפס {resets}"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "resets in {days} d"
@@ -21017,7 +21017,7 @@ msgstr "משחזר…"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Restrict beta headers"
-msgstr ""
+msgstr "הגבלת כותרות בטא"
 
 #: src/components/automations/RunsView.tsx
 msgid "Result"
@@ -21269,7 +21269,7 @@ msgstr "שורש"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Root"
-msgstr ""
+msgstr "שורש"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -21282,7 +21282,7 @@ msgstr "שורשים"
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "Roots talk to a provider with a stored key; chains are fed from other endpoints in fallback order and narrow what passes with filters and limits. Usage is accumulated along the chain."
-msgstr ""
+msgstr "שורשים מדברים עם ספק באמצעות מפתח שמור; שרשראות ניזונות מנקודות קצה אחרות לפי סדר גיבוי ומצמצמות את מה שעובר באמצעות סינונים ומגבלות. השימוש נצבר לאורך השרשרת."
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Row range"
@@ -21429,7 +21429,7 @@ msgstr ""
 
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run it without a project, in this machine's live-session temp folder — always the same folder"
-msgstr "להריץ בלי פרויקט, בתיקייה הזמנית של ה-live session במחשב הזה — תמיד אותה תיקייה"
+msgstr "להריץ בלי פרויקט, בתיקייה הזמנית של סשני זמן האמת במחשב הזה — תמיד אותה תיקייה"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/automations/AutomationRow.tsx
@@ -21506,7 +21506,7 @@ msgstr ""
 
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run this live session in which project?"
-msgstr "באיזה פרויקט להריץ את ה-live session הזה?"
+msgstr "באיזה פרויקט להריץ את סשן זמן האמת הזה?"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
@@ -21798,7 +21798,7 @@ msgstr "נשמר {0} v{1}"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Saved after the endpoint is created. Never shown again."
-msgstr ""
+msgstr "נשמר לאחר יצירת נקודת הקצה. לא יוצג שוב."
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Saved as"
@@ -22558,7 +22558,7 @@ msgstr "שלח הודעה"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
-msgstr ""
+msgstr "שליחת קריאה מינימלית אחת דרך נקודת הקצה הזו"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
@@ -23683,7 +23683,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "Signed in to FlowPad"
-msgstr ""
+msgstr "מחובר ל-FlowPad"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Signed in to Flowpad cloud"
@@ -23708,7 +23708,7 @@ msgstr "לא מחובר"
 #: src/components/harness-login/funding-pill.ts
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Signed out"
-msgstr ""
+msgstr "לא מחובר"
 
 #: src/components/account/hub-status-visuals.ts
 msgid "Signing in"
@@ -24058,11 +24058,11 @@ msgstr "מקור:"
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Sources"
-msgstr ""
+msgstr "מקורות"
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Sources + filters + limits"
-msgstr ""
+msgstr "מקורות + סינונים + מגבלות"
 
 #: src/components/data-sources/DataDriversView.tsx
 msgid "Sources using this driver"
@@ -24200,7 +24200,7 @@ msgstr "התחל שיחה"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Start a live session on {hostName}'s machine"
-msgstr ""
+msgstr "התחלת סשן זמן אמת במחשב של {hostName}"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Start a new conversation"
@@ -24418,7 +24418,7 @@ msgstr "שלבים בוצעו"
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "sticky for you"
-msgstr ""
+msgstr "קבוע עבורך"
 
 #~ msgid "Still can't link this project"
 #~ msgstr "עדיין לא ניתן לקשר את הפרויקט הזה"
@@ -24503,7 +24503,7 @@ msgstr ""
 
 #: src/components/llm-sources/LlmKeysSection.tsx
 msgid "stored"
-msgstr ""
+msgstr "שמור"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored →"
@@ -24515,7 +24515,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Stored key"
-msgstr ""
+msgstr "מפתח שמור"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -24540,11 +24540,11 @@ msgstr "תצוגת תיבת הזרם הנכנס"
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Streaming"
-msgstr ""
+msgstr "סטרימינג"
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "Streaming must be allow, require or deny."
-msgstr ""
+msgstr "סטרימינג חייב להיות allow, require או deny."
 
 #~ msgid "Streams"
 #~ msgstr "זרמים"
@@ -24995,7 +24995,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
-msgstr ""
+msgstr "טמפרטורה ≤"
 
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -25120,7 +25120,7 @@ msgstr ""
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "That key does not look right"
-msgstr ""
+msgstr "המפתח הזה לא נראה תקין"
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 msgid "That launch link is incomplete."
@@ -25131,7 +25131,7 @@ msgstr ""
 #. placeholder {2}: spec.keyPrefix
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
-msgstr ""
+msgstr "זה נראה כמו מפתח {0}. נקודת הקצה הזו קוראת ל-{1}, שהמפתחות שלו מתחילים ב-{2}."
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -25222,7 +25222,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "The assistant's CLI is not installed on this machine"
-msgstr ""
+msgstr "ה-CLI של העוזר לא מותקן במחשב הזה"
 
 #~ msgid "The assistant's own CLI sign-in, kept by the vendor on this machine"
 #~ msgstr ""
@@ -25305,7 +25305,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 msgid "The endpoint was not removed."
-msgstr ""
+msgstr "נקודת הקצה לא הוסרה."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "the existing desk"
@@ -25391,7 +25391,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAuth login or an API key stored on this machine is never used for it — with no key-holding root the test fails rather than falling back."
-msgstr ""
+msgstr "ה-Hub מבצע את הקריאה הזו בעצמו, לאורך השרשרת של נקודת הקצה. התחברות OAuth של ספק או מפתח API שנשמר במחשב הזה לא משמשים לכך לעולם — בלי שורש שמחזיק מפתח הבדיקה נכשלת ולא עוברת לחלופה."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "The hub refused the change."
@@ -25399,7 +25399,7 @@ msgstr ""
 
 #: src/components/harness-login/funding-pill.ts
 msgid "The hub refused the stored FlowPad login"
-msgstr ""
+msgstr "ה-Hub דחה את ההתחברות השמורה ל-FlowPad"
 
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
@@ -25419,7 +25419,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "The key box is empty."
-msgstr ""
+msgstr "תיבת המפתח ריקה."
 
 #: src/components/project-home/ProjectLanguageCard.tsx
 msgid "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
@@ -25445,7 +25445,7 @@ msgstr "לא ניתן לנתח את נתיב העדשה."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "The live session has ended."
-msgstr "הסשן החי הסתיים."
+msgstr "סשן זמן האמת הסתיים."
 
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -25712,7 +25712,7 @@ msgstr "הם יורדו שוב בפעם הבאה שהעזרה תיפתח."
 
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "They'll get an email with a link that opens this budget."
-msgstr ""
+msgstr "הם יקבלו אימייל עם קישור שפותח את התקציב הזה."
 
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "They'll get an email with a link that opens this sandbox."
@@ -25804,7 +25804,7 @@ msgstr "לנכס זה אין נתיב קובץ."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this budget"
-msgstr ""
+msgstr "התקציב הזה"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "This budget is not available to you"
@@ -25905,7 +25905,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this endpoint's own key"
-msgstr ""
+msgstr "המפתח של נקודת הקצה הזו"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "This entity has no container in this view, so there is no inherited access to edit."
@@ -25984,11 +25984,11 @@ msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key contains a space or line break. It was probably copied along with the text around it."
-msgstr ""
+msgstr "המפתח הזה מכיל רווח או ירידת שורה. כנראה הועתק יחד עם הטקסט שסביבו."
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "This key looks cut short. Check the whole value was copied."
-msgstr ""
+msgstr "המפתח הזה נראה קטוע. ודא שהערך הועתק במלואו."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "This key will be uploaded to the Flowpad hub and used on the other person's computer — up to the cap and until it expires. They never see the key itself."
@@ -26035,11 +26035,11 @@ msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
-msgstr "הסשן הלייב הסתיים."
+msgstr "סשן זמן האמת הזה הסתיים."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session was declined."
-msgstr "הסשן החי נדחה."
+msgstr "סשן זמן האמת הזה נדחה."
 
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This live-session URL is malformed or unavailable."
@@ -26569,7 +26569,7 @@ msgstr "כותרת"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "to"
-msgstr ""
+msgstr "אל"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
@@ -26684,15 +26684,15 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens / day"
-msgstr ""
+msgstr "טוקנים ליום"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens / month"
-msgstr ""
+msgstr "טוקנים לחודש"
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens / week"
-msgstr ""
+msgstr "טוקנים לשבוע"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -26701,7 +26701,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/LimitsEditor.tsx
 msgid "Tokens, total"
-msgstr ""
+msgstr "טוקנים, סך הכול"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Tomorrow"
@@ -26784,7 +26784,7 @@ msgstr "כלים מובילים"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Top-p ≤"
-msgstr ""
+msgstr "Top-p ≤"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "total"
@@ -27456,7 +27456,7 @@ msgstr "שימוש ב-Bedrock"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Use defaults"
-msgstr ""
+msgstr "שימוש בברירות מחדל"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Use Google Vertex AI as the backend"
@@ -27597,7 +27597,7 @@ msgstr "תקין"
 #. placeholder {0}: verdict.models_count
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Valid ({0} models)"
-msgstr ""
+msgstr "תקין ({0} מודלים)"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "validated"
@@ -27751,7 +27751,7 @@ msgstr "אזור Vertex"
 
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 msgid "Via"
-msgstr ""
+msgstr "דרך"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Via {path}"
@@ -27924,7 +27924,7 @@ msgstr "מבקר"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
-msgstr "בהמתנה לאישור של {hostName} לסשן החי…"
+msgstr "ממתין לאישור של {hostName} לסשן זמן האמת…"
 
 #: src/components/connections-manager.tsx
 msgid "Waiting for approval…"
@@ -28207,7 +28207,7 @@ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "What this machine's assistants are funded by right now"
-msgstr ""
+msgstr "מה מממן כרגע את העוזרים במחשב הזה"
 
 #~ msgid "What this project has published — its skills, agents, servers and documents — for everyone with access to use."
 #~ msgstr ""
@@ -28672,7 +28672,7 @@ msgstr "כבר יש לך פרויקט בשם <0>{projectName}</0>. פתחו או
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "You approved this session only — {guestName} will need your approval again next time."
-msgstr "אישרת רק את ה-session הזה — {guestName} יצטרך/תצטרך את האישור שלך שוב בפעם הבאה."
+msgstr "אישרת רק את הסשן הזה — {guestName} יצטרך/תצטרך את האישור שלך שוב בפעם הבאה."
 
 #~ msgid "you are {role}"
 #~ msgstr ""
