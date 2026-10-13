@@ -99,7 +99,7 @@ async function materializeTab(
   // ever hears about the new target — leaving the chip frozen on whatever was shown
   // first. Compare the stored pointer, which is the field that actually changes, so
   // a re-show falls through to `ensureDock` and the backend's repoint clause runs.
-  // Same shape as `lensProjectStale` below: a per-dock reason the cached row is out
+  // Same shape as `derivedProjectStale` below: a per-dock reason the cached row is out
   // of date, expressed where the reuse decision is made.
   //
   // Decided BEFORE the re-parent shortcut below, which must not take a re-pointed
@@ -150,13 +150,18 @@ async function materializeTab(
   // GET, which also pre-warms the lens loader's own fetch): on agreement reuse
   // as usual; on drift fall through to the full mint, which re-derives and
   // self-heals the row.
-  const lensProjectStale =
-    dock.viewType === ViewType.LENS &&
+  //
+  // A web page is the same case from the other side: it has no target, so its
+  // row belongs to the project it is opened in (`resolveDockTarget`), and a row
+  // stamped elsewhere is likewise missing from the strip on screen. No target
+  // means no fetch.
+  const derivedProjectStale =
+    (dock.viewType === ViewType.LENS || dock.viewType === ViewType.WEB_APP) &&
     !!existingTab &&
-    (await perfTime('materializeTab.resolveDockTarget(lens)', () => tabManager.resolveDockTarget(dock)))
+    (await perfTime('materializeTab.resolveDockTarget(project)', () => tabManager.resolveDockTarget(dock)))
       .projectId !== (existingTab.project_id ?? null);
   // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
-  // project self-heal below), a stale lens tab (above), one that needs
+  // project self-heal below), a tab whose derived project is stale (above), one that needs
   // re-parenting into the active workspace, or one carrying a stale parent
   // edge. All four fall through to `getFromDockPointer`, which re-derives
   // project_id from the asset and adopts (or sheds) the parent, self-healing
@@ -170,7 +175,7 @@ async function materializeTab(
 
   if (
     existingTab &&
-    !lensProjectStale &&
+    !derivedProjectStale &&
     !displayRepoint &&
     (existingTab.project_id || !isContentAssetDock(dock)) &&
     !needsReparent &&
