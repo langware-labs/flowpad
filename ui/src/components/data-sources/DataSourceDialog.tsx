@@ -40,11 +40,10 @@ import {
   type SourceDraft,
 } from './source-form';
 import { ChoiceField } from './ChoiceField';
-import { sourceIconName } from './source-icon';
 import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
+import { groupMembers, offeredSpecs, sourceChoices, useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
@@ -100,6 +99,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  initial,
   variant = 'source',
 }: {
   open: boolean;
@@ -112,6 +112,8 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Open on this provider as if its tile had been pressed: a group's ways to connect, else its form. */
+  initial?: DataDriver;
   /** Copy follows the resource being added, not whether providers are filtered. */
   variant?: 'source' | 'channel';
 }) {
@@ -123,9 +125,7 @@ export function DataSourceDialog({
   // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
   const { project } = useDataContext();
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
-  // An unlisted provider is never offered (a vendor the cloud stands in front of), and one
-  // the cloud provisions is an agent's own account — offered only when adding for an agent.
-  const offered = installed.filter((s) => s.listed && (!s.provisioned || ownerAgentId));
+  const offered = offeredSpecs(installed, !!ownerAgentId);
   const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -147,18 +147,29 @@ export function DataSourceDialog({
   // subscribing the effect to it.
   const seedRef = useRef(specFor);
   seedRef.current = specFor;
+  // A group's tile opens its ways to connect; any other tile, its form.
+  const pickTile = (p: DataDriver) => {
+    setGroup(p.group || '');
+    setDraft(p.group ? emptyDraft() : emptyDraft(p));
+    setStep(p.group ? 'choice' : 'form');
+  };
+  const initialRef = useRef(initial);
+  initialRef.current = initial;
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
-    setGroup('');
-    setStep(editing ? 'form' : 'provider');
+    if (!editing && initialRef.current) pickTile(initialRef.current);
+    else {
+      setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
+      setGroup('');
+      setStep(editing ? 'form' : 'provider');
+    }
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
   // One tile per driver group (its first member stands for it), one per ungrouped driver.
-  const tiles = specs.filter((p) => !p.group || groupMembers(specs, p.group)[0]?.name === p.name);
+  const tiles = sourceChoices(specs);
   // The agent the cloud creates this account for — no form, nothing to validate. The
   // picker only offers a provisioned provider with an agent owner, so this is that agent.
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
@@ -418,16 +429,12 @@ export function DataSourceDialog({
                 <Trans>No installed provider can carry a channel.</Trans>
               </p>
             )}
-            {tiles.map((p) => {
+            {tiles.map(({ spec: p, label, iconName }) => {
               // Through the one source→glyph rule, so the tile a person picks and the
               // card it becomes cannot disagree. No channel here: a provider is being
               // chosen, not one of a multi-channel transport's channels.
               // A group's tile is the choice ("WhatsApp"), so it shows the group's own glyph, not its first member's.
-              const groupIcon = p.group
-                ? groupMembers(specs, p.group).find((m) => m.group_icon_name)?.group_icon_name
-                : '';
-              const Glyph = lucideByName(groupIcon || sourceIconName(p, null));
-              const label = p.group || p.title || p.name || '';
+              const Glyph = lucideByName(iconName);
               const chosen = p.group ? group === p.group : draft.provider === p.name;
               return (
                 <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
@@ -436,12 +443,7 @@ export function DataSourceDialog({
                       data-testid={p.group ? `provider-group-${p.group}` : `provider-${p.name}`}
                       Icon={Glyph}
                       label={label}
-                      onClick={() => {
-                        // A group's tile opens its ways to connect; any other tile, its form.
-                        setGroup(p.group || '');
-                        setDraft(p.group ? emptyDraft() : emptyDraft(p));
-                        setStep(p.group ? 'choice' : 'form');
-                      }}
+                      onClick={() => pickTile(p)}
                       className={cn(chosen && 'border-primary bg-accent text-foreground ring-1 ring-primary')}
                     />
                   </TooltipTrigger>
@@ -636,13 +638,6 @@ export function DataSourceDialog({
       </SteppedDialogContent>
     </Dialog>
   );
-}
-
-/** A group's members, in their declared order (``group_order``, then title). */
-function groupMembers(specs: DataDriver[], group: string): DataDriver[] {
-  return specs
-    .filter((s) => s.group === group)
-    .sort((a, b) => (a.group_order ?? 0) - (b.group_order ?? 0) || (a.title || '').localeCompare(b.title || ''));
 }
 
 /** One labelled switch with its hint, as the source form's advanced settings show them. */
