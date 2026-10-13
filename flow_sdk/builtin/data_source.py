@@ -17,11 +17,9 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 from __future__ import annotations
 
 import logging
-import shutil
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from math import ceil
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import computed_field, field_validator, model_validator
@@ -2339,19 +2337,10 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:
-    """Delete a removed source's folder; left behind, the next index brings the source back. Only a
-    writable folder holding this type's main document — never a shipped one, never anything else."""
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    """Delete a removed source's folder; left behind, the next index brings the source back."""
+    from flow_sdk.assets.folder import remove_asset_folder  # noqa: PLC0415
 
-    folder = Path(asset_ref) if asset_ref else None
-    main = SchemaRegistry.get(EntityType.DATA_SOURCE.value).shape.main
-    if folder is None or not (folder / main).is_file() or is_protected_path(folder):
-        return
-    if Entity._scope_from_path(str(folder)) == "system":
-        return
-    shutil.rmtree(folder, ignore_errors=True)
+    remove_asset_folder(EntityType.DATA_SOURCE.value, asset_ref)
 
 
 async def migrate_list_configs() -> int:

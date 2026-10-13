@@ -11,6 +11,7 @@ from pydantic import field_validator
 from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
 from flow_sdk.assets.identity_carrier import Absent
 from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.materialize import remove_path
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
 from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
@@ -24,6 +25,23 @@ class AssetScanError(ValueError):
     def __init__(self, issues: list[AssetScanIssue]):
         self.issues = issues
         super().__init__("; ".join(f"{i.path}: {i.message}" for i in issues))
+
+
+def remove_asset_folder(type_name: str, asset_ref: str | None) -> None:
+    """Delete a removed asset's folder; left behind, the Assets menu keeps counting it and the next
+    index brings the asset back. Only for a type that owns its folder, and only a writable folder
+    holding that type's main document — never a shipped one, never anything else."""
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    main = getattr(info.shape, "main", None) if info is not None and info.owns_main_ref else None
+    folder = Path(asset_ref) if asset_ref else None
+    if folder is None or not main or not (folder / main).is_file() or is_protected_path(folder):
+        return
+    if Entity._scope_from_path(str(folder)) == "system":
+        return
+    remove_path(folder)
 
 
 def _broken_link(path: Path) -> Path | None:
