@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "3039734354d3649fbc6b8d8f666d1dacd156a36cc4cc0d3d405d8b47441b6b31",
+  "inputs_hash": "f79adfaf7d9c682153fc9c73f4a811d90392a6f73e9d827f461263fc18d09a88",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
@@ -79,8 +79,8 @@
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
       "summary": "Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows with eight row verbs, queries, counts, source curation, mirroring, editors and the schema tree.",
-      "content_hash": "ac9dc8e08576d10d6355f3fbedc333b99d9f8dfcc22a0ffc6624702319f1b54d",
-      "size_bytes": 36966
+      "content_hash": "45539fde8db9135cec2632cf5a9d5f264b85da47f9362d9765302a43e8c0e2f0",
+      "size_bytes": 36697
     },
     {
       "name": "entity-index-sync.md",
@@ -174,9 +174,9 @@
       "name": "mirroring-a-system-of-record.md",
       "rel_path": "mirroring-a-system-of-record.md",
       "title": "Mirroring a system of record",
-      "summary": "How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.",
-      "content_hash": "b735c957d279b36d0a2d0ddc1f303bb0f3282b097410317b8621e07a6b014e34",
-      "size_bytes": 13092
+      "summary": "How-to for mirroring an outside system of record into typed dataset rows: the source's mirror map, write-back through the driver, record-driver rules and failure modes.",
+      "content_hash": "7887eafc427f09dbb2e6d54124bed026adda9a23912a24555fe552e66f364d0f",
+      "size_bytes": 11249
     },
     {
       "name": "record-model.md",
@@ -244,6 +244,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T11:16:14Z",
+  "generated_at": "2026-10-13T12:09:58Z",
   "latest_process_ref": ""
 }
