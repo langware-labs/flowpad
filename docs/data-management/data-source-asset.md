@@ -34,9 +34,10 @@ PRIVATE: who may drive the source is this machine's business) are row-only (`Per
 engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
 them as they are. The config is value-free —
 a secret is a credential the driver declares. A folder that arrives by copy, clone or share
-indexes in `setup` ("Received — connect your own account, then press Verify."); one authored here
-starts `new` and the poller's next tick settles it — `setup` when its driver has a check of its own,
-else `active`. Only a source that owes a setup (`setup_owed`) holds its project's setup up
+indexes in `setup` ("Received — connect your own account, then press Verify."). One authored here
+is settled by its driver: `setup` when the driver has a check of its own (`verify()`), else `active`
+— at index when the driver is already loaded, otherwise it waits `new` until the poller's next tick
+loads the driver. Only a source that owes a setup (`setup_owed`) holds its project's setup up
 (`docs/dependency-lifecycle.md`). One owner
 watches one account once: `save()` of a new source for an account its owner already watches adopts
 that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
