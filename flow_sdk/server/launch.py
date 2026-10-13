@@ -192,14 +192,9 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     silently destroying agent turns, terminals and pending device logins on
     every cycle.
 
-    The HEADER transport, not the query param: `cookie_gate_middleware` lists it
-    as the one for machine callers, and a secret in a URL lands in access logs.
-
-    Free when ungated -- `get_cookie_gate` answers from a `stat()` of the marker
-    file and never opens the encrypted store, which is what keeps desktop
-    installs (never gated) away from a keychain prompt. Any failure to read it
-    resolves to None, so the check degrades to exactly its old behaviour rather
-    than erroring.
+    The token rides as the gate cookie, added by the opener
+    `cookie_gate.install_gate_opener` installs when this module runs as the
+    monitor; a token that cannot be read means a probe without it.
     """
     import urllib.error
     import urllib.request
@@ -207,8 +202,6 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        # The opener the CLI installs presents the cookie-gate token, and probes
-        # without it when the token cannot be read -- never a reason to stop supervising.
         with urllib.request.urlopen(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:
