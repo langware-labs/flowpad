@@ -469,7 +469,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   data-side={mine(fm) ? 'local' : 'remote'}
                 >
                   <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">
-                    {mine(fm) ? t`you` : otherName} ❯
+                    {mine(fm) ? t`You` : otherName} ❯
                   </span>
                   <pre className="whitespace-pre-wrap">{prompt}</pre>
                 </div>
