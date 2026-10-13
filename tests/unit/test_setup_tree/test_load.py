@@ -227,3 +227,46 @@ async def test_an_app_whose_folder_is_gone_is_not_ready(machine):
     result = await load_project(machine.project, tree=machine.tree, asset=gone)
     assert result.state is LoadState.FAILED and "folder is gone: /nowhere/site" in result.detail
     assert not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_setup_required_carries_the_checked_tree_so_the_question_shows_what_setup_means(machine):
+    result = await load_project(machine.project, tree=machine.tree)
+    assert result.state is LoadState.SETUP_REQUIRED and result.tree is not None
+    assert [child.id for child in result.tree.root.children] == ["app", "asset_setup:service"]
+    assert not machine.ran
+    approved = await load_project(machine.project, tree=machine.tree, approved=True)
+    assert approved.tree is None  # a running load is read from its run, not a snapshot
+
+
+@pytest.mark.asyncio
+async def test_a_forgotten_verdict_is_checked_again_and_a_running_one_is_kept(machine):
+    """What a verdict was checked against changes (a setup run ended, a source turned active): kept, it
+    goes on saying "requires setup" to every screen that only reads it."""
+    from flow_sdk.core.setup.load import forget
+
+    pid = machine.project.id
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.SETUP_REQUIRED
+    forget(pid)
+    assert load_state(pid) is None, "no verdict: the next Load checks again"
+
+    machine.gate.clear()  # the approved run is held mid-way
+    assert (await load_project(machine.project, tree=machine.tree, approved=True)).state is LoadState.RUNNING
+    forget(pid)
+    assert load_state(pid).state is LoadState.RUNNING, "a run in flight is settled from its run, not dropped"
+    machine.gate.set()
+    assert (await settle(machine)).state is LoadState.READY
+
+
+@pytest.mark.asyncio
+async def test_a_setup_run_started_outside_a_load_drops_the_verdict_it_outdates(machine):
+    """Project Setup (or one source's own Set up) fixes what the load found missing; the load's
+    "requires setup" must not outlive it."""
+    pid = machine.project.id
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.SETUP_REQUIRED
+
+    await project_setup.start_setup(machine.project, tree=machine.tree, root="asset_setup:service", load_after=False)
+    await project_setup._RUNS[(pid, "asset_setup:service")]
+    await asyncio.sleep(0)  # the run's done-callbacks
+
+    assert load_state(pid) is None

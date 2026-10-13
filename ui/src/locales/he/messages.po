@@ -377,7 +377,7 @@ msgstr ""
 #. placeholder {0}: status.files.length
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} changed"
-msgstr ""
+msgstr "{0} שונו"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -646,8 +646,8 @@ msgstr ""
 msgid "{0} of {1} set"
 msgstr ""
 
-#. placeholder {0}: tree.done
-#. placeholder {1}: tree.total
+#. placeholder {0}: drawn.done
+#. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
 msgstr ""
@@ -743,12 +743,12 @@ msgstr ""
 #. placeholder {0}: status.behind
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} to pull"
-msgstr ""
+msgstr "{0} למשיכה"
 
 #. placeholder {0}: status.ahead
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} to push"
-msgstr ""
+msgstr "{0} לדחיפה"
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -2846,7 +2846,7 @@ msgstr "הוספת הערות לתצוגה"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Annotated"
-msgstr ""
+msgstr "מתויגות"
 
 #: src/i18n/type-labels.ts
 msgid "Annotation"
@@ -3392,7 +3392,7 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Assignee"
-msgstr ""
+msgstr "אחראי"
 
 #: src/components/conversation/task-it.tsx
 msgid "Assigning someone else shares it through the cloud"
@@ -4049,7 +4049,7 @@ msgstr "אגירת עדכוני סנכרון בטרמינל"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Build"
-msgstr ""
+msgstr "בנייה"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Build a landing page"
@@ -4511,7 +4511,7 @@ msgstr ""
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Channel"
-msgstr ""
+msgstr "ערוץ"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
@@ -4868,7 +4868,7 @@ msgstr "הרצה נקייה - אין מה להחזיר."
 msgid "Clean up ({0})"
 msgstr "ניקוי ({0})"
 
-#: src/components/recovery/cleanup-modal.tsx
+#: src/routes/loaders/load-shell.ts
 msgid "Cleaned invalid sessions"
 msgstr "ניקיון הפעולות הלא תקינות"
 
@@ -8922,7 +8922,7 @@ msgstr "התמקד לפי"
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Driver"
-msgstr ""
+msgstr "מנהל התקן"
 
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -8958,7 +8958,7 @@ msgstr "הפעולה מוחקת את רשומות המקור ומאפסת את �
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Due"
-msgstr ""
+msgstr "תאריך יעד"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -10822,7 +10822,7 @@ msgstr "תקנו את התצורה — פרטי גישה או הגדרות — �
 
 #: src/components/data-sources/source-attention.ts
 msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr ""
+msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -11615,7 +11615,7 @@ msgstr "משימת קבוצה נוצרה עם בעיות"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
-msgstr ""
+msgstr "אורח"
 
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -12018,7 +12018,7 @@ msgstr "קישורים:"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
-msgstr ""
+msgstr "מארח"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "hours"
@@ -13232,7 +13232,7 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Last run"
-msgstr ""
+msgstr "הרצה אחרונה"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -14656,7 +14656,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Mirror needs attention"
-msgstr ""
+msgstr "המראה דורשת טיפול"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -14705,7 +14705,7 @@ msgstr "חסר: {missing}"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Mode"
-msgstr ""
+msgstr "מצב"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
@@ -15677,7 +15677,7 @@ msgstr "אין תיאור."
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "No description yet."
-msgstr ""
+msgstr "עדיין אין תיאור."
 
 #~ msgid "No description."
 #~ msgstr "אין תיאור."
@@ -17125,7 +17125,7 @@ msgstr "OAuth"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Occurred"
-msgstr ""
+msgstr "התרחש"
 
 #: src/components/automations/BusView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
@@ -17137,7 +17137,7 @@ msgstr "כבוי"
 #: src/components/automations/AutomationRow.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
-msgstr ""
+msgstr "כבוי"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Off on this place"
@@ -17149,7 +17149,6 @@ msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-#: src/components/recovery/cleanup-modal.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "אישור"
@@ -17168,7 +17167,7 @@ msgstr "פעיל"
 #: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "On"
-msgstr ""
+msgstr "פעיל"
 
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
@@ -17402,7 +17401,7 @@ msgstr "פתיחת {name}"
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
-msgstr ""
+msgstr "פתיחת {title}"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Open {title} install page"
@@ -17463,7 +17462,7 @@ msgstr ""
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open agent"
-msgstr ""
+msgstr "פתיחת הסוכן"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
@@ -18078,7 +18077,7 @@ msgstr ""
 
 #: src/tabs/provider-meta.tsx
 msgid "OpenCode tab"
-msgstr ""
+msgstr "לשונית OpenCode"
 
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
@@ -19121,7 +19120,7 @@ msgstr "ראשי"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Priority"
-msgstr ""
+msgstr "עדיפות"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
@@ -19495,7 +19494,7 @@ msgstr "מוגן"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Protocol"
-msgstr ""
+msgstr "פרוטוקול"
 
 #~ msgid "Proved by"
 #~ msgstr ""
@@ -19602,7 +19601,6 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
-#: src/components/entity-card/entity-card-rows.ts
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
 #: src/pages/discover-page/discover-page.tsx
@@ -20676,7 +20674,7 @@ msgstr "דווח"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Reported by"
-msgstr ""
+msgstr "דווח על ידי"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
 msgid "Reporting is disabled in Local data privacy mode"
@@ -21111,7 +21109,7 @@ msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקי�
 
 #: src/tabs/doc-tab-card.tsx
 msgid "Review in"
-msgstr ""
+msgstr "סקירה ב־"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -21223,7 +21221,7 @@ msgstr "טווח זמן שורה"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Rows"
-msgstr ""
+msgstr "שורות"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Rule code saved"
@@ -24720,7 +24718,7 @@ msgstr ""
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Synced"
-msgstr ""
+msgstr "סונכרן"
 
 #. placeholder {0}: timeSince(source.last_synced_at)
 #: src/components/data-sources/DataSourcePage.tsx
@@ -25213,7 +25211,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "The dataset this source mirrors into could not be made current."
-msgstr ""
+msgstr "לא ניתן היה לעדכן את מערך הנתונים שמקור זה משתקף אליו."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -27243,7 +27241,7 @@ msgstr ""
 #: src/components/entity-card/entity-card-rows.ts
 #: src/lib/publish-state.ts
 msgid "Updated"
-msgstr ""
+msgstr "עודכן"
 
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: editing.name
@@ -27691,7 +27689,7 @@ msgstr "יש לאמת את ההגדרה תחילה."
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
-msgstr ""
+msgstr "גרסה"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
@@ -27760,7 +27758,7 @@ msgstr "צפייה ב-{name} ב-FlowPad, בלי להתקין כלום."
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "View {title} avatar"
-msgstr ""
+msgstr "הצגת התמונה של {title}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "View callback source"
@@ -27976,10 +27974,13 @@ msgstr "לא מצאנו את מה שחיפשת בענן."
 msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
 msgstr "לא הצלחנו להתחבר לשירות הענן. יש לבדוק את החיבור או לנסות שוב בעוד רגע."
 
-#. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
-msgid "We skipped {count} session{0} that couldn't be restored."
-msgstr "דילגנו על {count} סשן{0} שלא ניתן היה לשחזר."
+#~ msgid "We skipped {count} session{0} that couldn't be restored."
+#~ msgstr "דילגנו על {count} סשן{0} שלא ניתן היה לשחזר."
+
+#: src/routes/loaders/load-shell.ts
+msgid "We skipped {count} sessions that couldn't be restored."
+msgstr ""
 
 #: src/types/ViewType.ts
 msgid "Web App"
@@ -28377,7 +28378,7 @@ msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן 
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "With"
-msgstr ""
+msgstr "עם"
 
 #: src/pages/hub-home/AutoLoginField.tsx
 msgid "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."

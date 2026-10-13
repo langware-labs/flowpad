@@ -1,6 +1,7 @@
-import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import type { HttpMethod } from '../models/ApiUrl';
 import { normalizeKind } from '../models/Kind';
 import type { DeploymentStatus } from './deployment';
 
@@ -51,15 +52,41 @@ export interface ChannelBackend {
   data_source_id: string;
 }
 
-export type ServiceBackend = StaticBackend | ProxyBackend | ChannelBackend;
+/** One app behind an audience proxy: how its bytes are produced, and which app it is. Twin of `RouteSpec`. */
+export interface RouteSpec {
+  backend: StaticBackend | ProxyBackend;
+  /** The webapp definition (`micro_app`) this route serves, when it serves one. */
+  webapp_id?: string | null;
+  /** The Artifact this route serves, when it serves one. */
+  artifact_id?: string | null;
+}
 
-/** What an endpoint is FOR (its kind, `service_endpoint.<subkind>`, is derived). Twin of `EndpointSubkind`. */
-export type EndpointSubkind = 'admin' | 'app' | 'agent' | 'service';
+/**
+ * One proxy, many apps — the backend of a placement's `admin` and `app` endpoints. The first path
+ * segment picks the app (a key of `routes`, its MOUNT); `''` is the audience's root app.
+ */
+export interface RoutedBackend {
+  type: 'routed';
+  routes: Record<string, RouteSpec>;
+}
+
+export type ServiceBackend = StaticBackend | ProxyBackend | ChannelBackend | RoutedBackend;
+
+/**
+ * What an endpoint is FOR (its kind, `service_endpoint.<subkind>`, is derived). Twin of `EndpointSubkind`.
+ * `system` — the machine itself (its FlowPad app, the hub's MCP servers); `admin` / `app` — the project's
+ * operator and end-user web proxies, at most ONE of each per placement.
+ */
+export type EndpointSubkind = 'system' | 'admin' | 'app' | 'agent' | 'service';
+
+/** The two audiences a project's web apps are served to. */
+export type WebAudience = 'admin' | 'app';
+export const WEB_AUDIENCES: readonly WebAudience[] = ['admin', 'app'];
 
 /** What an endpoint speaking `protocolKind` is for, when a row does not say. Twin of `default_subkind`. */
 export function defaultSubkind(protocolKind: string): EndpointSubkind {
   const kind = normalizeKind(protocolKind);
-  if (kind === PROTOCOL_WORKSPACE) return 'admin';
+  if (kind === PROTOCOL_WORKSPACE) return 'system';
   if (kind === PROTOCOL_API_CHAT_OPENAI) return 'agent';
   return surfaceOf(kind) === 'web' ? 'app' : 'service';
 }
@@ -97,7 +124,7 @@ export function worstHealth(states: Iterable<HealthState>): HealthState {
 
 export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   name: string;
-  /** What it is for: admin, app, agent or service. */
+  /** What it is for: system, admin, app, agent or service. */
   subkind?: EndpointSubkind;
   protocol: ServiceProtocol;
   backend: ServiceBackend;
@@ -126,10 +153,78 @@ export interface ServiceEndpoint extends EntityMerge<IServiceEndpoint> {}
  * tiers proxy, and `directUrl()` asks for the service's own address at call time —
  * it is never stored.
  */
-/** `…/service_endpoint/<id>/service/<path>` for an endpoint known only by id (a viewer's module). */
-export function serviceUrlOf(endpointId: string, path: string = ''): string {
+/**
+ * `…/service_endpoint/<id>/service/<path>` for an endpoint known only by id (a viewer's module).
+ * `route` is the app's mount on an audience proxy: its files live one segment down.
+ */
+export function serviceUrlOf(endpointId: string, path: string = '', route?: string | null): string {
   const base = new ActionInfo('service', 'service_endpoint', endpointId).fullActionUrl.replace(/\/+$/, '');
-  return `${base}/${path.replace(/^\/+/, '')}`;
+  const mount = route ? `${encodeURIComponent(route)}/` : '';
+  return `${base}/${mount}${path.replace(/^\/+/, '')}`;
+}
+
+/**
+ * One app as it is served on a placement — what a display loads, probes and repairs.
+ *
+ * An app is a ROUTE of its placement's audience proxy (`mount` on `endpoint`), so its address is
+ * the pair; a service that is an endpoint of its own has no mount (`null`). Either way `backend`
+ * is how ITS bytes are produced: a folder, or a process on a port.
+ */
+export class ServedApp {
+  constructor(
+    readonly endpoint: ServiceEndpoint,
+    readonly mount: string | null,
+  ) {}
+
+  /** The proxy's id — with `mount`, the app's address. */
+  get id(): string {
+    return this.endpoint.id;
+  }
+
+  get route(): RouteSpec | null {
+    const backend = this.endpoint.backend;
+    return backend.type === 'routed' && this.mount !== null ? (backend.routes[this.mount] ?? null) : null;
+  }
+
+  get backend(): StaticBackend | ProxyBackend | ChannelBackend | null {
+    const backend = this.endpoint.backend;
+    return backend.type === 'routed' ? (this.route?.backend ?? null) : backend;
+  }
+
+  get webapp_id(): string | null {
+    return (this.mount === null ? this.endpoint.webapp_id : this.route?.webapp_id) ?? null;
+  }
+
+  get artifact_id(): string | null {
+    return (this.mount === null ? this.endpoint.artifact_id : this.route?.artifact_id) ?? null;
+  }
+
+  get project_id(): string | null {
+    return this.endpoint.project_id;
+  }
+
+  get remote(): boolean {
+    return !!this.endpoint.remote;
+  }
+
+  get name(): string {
+    return this.mount || this.endpoint.name;
+  }
+
+  /** The proxied address of the app's own root — `…/service/<mount>/<path>`. */
+  serviceUrl(path: string = ''): string {
+    return serviceUrlOf(this.endpoint.id, path, this.mount);
+  }
+
+  /** The app's own address (a dev server's), resolved now. */
+  directUrl(): Promise<string> {
+    return this.endpoint.directUrl(this.mount);
+  }
+
+  /** What is wrong with the app's process, asked of the machine it runs on. */
+  probe<T = Record<string, unknown>>(): Promise<T> {
+    return this.endpoint.probe<T>(this.mount);
+  }
 }
 
 @registerEntity
@@ -186,9 +281,27 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     return serviceUrlOf(this.id, path);
   }
 
-  /** What is wrong with the service, asked of the machine it runs on. */
-  async probe<T = Record<string, unknown>>(): Promise<T> {
-    return (await this.post('probe')) as T;
+  /**
+   * The apps this endpoint serves: every route of an audience proxy, or — for an endpoint that is a
+   * service of its own — itself.
+   */
+  served(): ServedApp[] {
+    if (this.backend.type !== 'routed') return [new ServedApp(this, null)];
+    return Object.keys(this.backend.routes).map((mount) => new ServedApp(this, mount));
+  }
+
+  /** The app at `mount` of an audience proxy, or null when it routes none there. */
+  servedAt(mount: string | null | undefined): ServedApp | null {
+    if (this.backend.type !== 'routed') return new ServedApp(this, null);
+    const key = mount ?? '';
+    return key in this.backend.routes ? new ServedApp(this, key) : null;
+  }
+
+  /** What is wrong with the service, asked of the machine it runs on. `route`: an audience proxy's mount. */
+  async probe<T = Record<string, unknown>>(route?: string | null): Promise<T> {
+    const info = new ActionInfo('probe', this.getType(), this.id, 'POST' as HttpMethod);
+    if (route !== null && route !== undefined) info.queryParameters = { route };
+    return (await dataManager.callAction<undefined, T>(info)) as T;
   }
 
   /** Check the service now, where it runs; the result is also recorded on the row. */
@@ -196,9 +309,11 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     return (await this.get<EndpointHealth>('health')) as EndpointHealth;
   }
 
-  /** The service's own address, resolved now (and waking its machine). Never stored. */
-  async directUrl(): Promise<string> {
-    const data = await this.get<{ url?: string } | null>('direct-url');
+  /** The service's own address, resolved now (and waking its machine). Never stored. `route`: an
+   *  audience proxy's mount — the app whose process is asked for. */
+  async directUrl(route?: string | null): Promise<string> {
+    const query = route !== null && route !== undefined ? { route } : undefined;
+    const data = await this.get<{ url?: string } | null>('direct-url', query);
     if (!data?.url) throw new Error(`service endpoint ${this.name} returned no direct url`);
     return data.url;
   }
@@ -222,6 +337,17 @@ function normalizeBackend(backend: ServiceBackend | undefined): ServiceBackend {
       throw new Error(`Invalid ServiceEndpoint structure: backend.port out of range: ${backend.port}`);
     }
     return { type: 'proxy', port, start_cmd: backend.start_cmd ?? null, health: backend.health ?? '/' };
+  }
+  if (backend.type === 'routed') {
+    const routes: Record<string, RouteSpec> = {};
+    for (const [mount, route] of Object.entries(backend.routes ?? {})) {
+      const inner = normalizeBackend(route?.backend);
+      if (inner.type !== 'static' && inner.type !== 'proxy') {
+        throw new Error(`Invalid ServiceEndpoint structure: route ${mount} must serve files or a process`);
+      }
+      routes[mount] = { backend: inner, webapp_id: route.webapp_id ?? null, artifact_id: route.artifact_id ?? null };
+    }
+    return { type: 'routed', routes };
   }
   throw new Error(`Invalid ServiceEndpoint structure: unknown backend type ${(backend as { type?: string }).type}`);
 }

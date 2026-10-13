@@ -1,12 +1,13 @@
 """WebApp — the DEFINITION of a web app: a ``webapp.json`` folder asset.
 
 What an app IS lives here — its name, what it is for, the folder it is built
-into and the services it exposes when placed (``endpoints``). How it is SERVED
-is not a fact about the app: every place it runs is a ``Deployment``, and what
-that placement answers on is a ``ServiceEndpoint`` (``webapp_id`` names this
-row). Indexing a webapp gives it a ``static`` endpoint on its project's local
-placement (``webapp_placement.place_webapp_locally``); that endpoint is how the
-app is displayed and reached.
+into, which web audience it is for and where it mounts (``mounts``), and the APIs it
+brings along (``services``). How it is SERVED is not a fact about the app: every place
+it runs is a ``Deployment``, whose ``admin`` and ``app`` endpoints are the two proxies
+its web apps are routes of (a route's ``webapp_id`` names this row). Indexing a webapp
+gives it a ``static`` route on its project's local placement
+(``webapp_placement.place_webapp_locally``); that route is how the app is displayed
+and reached.
 """
 
 from pathlib import Path
@@ -17,7 +18,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core.setup.skip_mark import SetupSkippable
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
-from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec, WebappViewSpec
+from flow_sdk.schema.data_spec.webapp_spec import WebappMountSpec, WebappServiceSpec, WebappViewSpec
 from flow_sdk.worldview.ontology import KindStr
 
 
@@ -37,11 +38,11 @@ class WebApp(SetupSkippable, Entity):
     views: List[WebappViewSpec] = APIField(default_factory=list, description="Kinds this viewer shows")
     module: str = APIField(default="viewer.js", description="A viewer's ES module, inside the served folder")
     build: str = APIField(default=".", description="Served subdir inside the app folder")
-    #: What the app exposes when placed — the templates a placement turns into
-    #: ``ServiceEndpoint`` rows (``webapp_placement.expose_project_endpoints``).
-    endpoints: List[WebappEndpointSpec] = APIField(
-        default_factory=list, description="Services the app exposes when placed"
-    )
+    #: How the app is served to a web audience when placed — the templates a placement turns into
+    #: ROUTES of its ``admin`` / ``app`` proxy (``webapp_placement``).
+    mounts: List[WebappMountSpec] = APIField(default_factory=list, description="How the app is served when placed")
+    #: The machine-called services the app brings along, each a ``service`` endpoint of its own.
+    services: List[WebappServiceSpec] = APIField(default_factory=list, description="APIs the app brings along")
 
     name: str = EntityField(sharing=Sharing.SHARED)
     # NOT unique: identity is ``id``, name is a label — the second app anyone

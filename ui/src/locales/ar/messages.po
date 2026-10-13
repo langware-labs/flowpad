@@ -377,7 +377,7 @@ msgstr ""
 #. placeholder {0}: status.files.length
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} changed"
-msgstr ""
+msgstr "{0} تغيّرت"
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -646,8 +646,8 @@ msgstr ""
 msgid "{0} of {1} set"
 msgstr ""
 
-#. placeholder {0}: tree.done
-#. placeholder {1}: tree.total
+#. placeholder {0}: drawn.done
+#. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
 msgstr ""
@@ -743,12 +743,12 @@ msgstr ""
 #. placeholder {0}: status.behind
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} to pull"
-msgstr ""
+msgstr "{0} للسحب"
 
 #. placeholder {0}: status.ahead
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} to push"
-msgstr ""
+msgstr "{0} للدفع"
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -2846,7 +2846,7 @@ msgstr "تعليق العرض"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Annotated"
-msgstr ""
+msgstr "موسومة"
 
 #: src/i18n/type-labels.ts
 msgid "Annotation"
@@ -3392,7 +3392,7 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Assignee"
-msgstr ""
+msgstr "المكلَّف"
 
 #: src/components/conversation/task-it.tsx
 msgid "Assigning someone else shares it through the cloud"
@@ -4049,7 +4049,7 @@ msgstr "تخزين تحديثات مزامنة الطرفية مؤقتًا"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Build"
-msgstr ""
+msgstr "البناء"
 
 #: src/pages/flow-page/vibe-starter-prompts.ts
 msgid "Build a landing page"
@@ -4511,7 +4511,7 @@ msgstr ""
 #: src/components/data-sources/MessageChannelsList.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Channel"
-msgstr ""
+msgstr "القناة"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
@@ -4868,7 +4868,7 @@ msgstr "تشغيل نظيف — لا توجد موارد قابلة للاستر
 msgid "Clean up ({0})"
 msgstr "تنظيف ({0})"
 
-#: src/components/recovery/cleanup-modal.tsx
+#: src/routes/loaders/load-shell.ts
 msgid "Cleaned invalid sessions"
 msgstr "تم تنظيف الجلسات غير الصالحة"
 
@@ -8922,7 +8922,7 @@ msgstr "التفصيل حسب"
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Driver"
-msgstr ""
+msgstr "المشغّل"
 
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -8958,7 +8958,7 @@ msgstr "يحذف سجلات هذا المصدر ويعيد ضبط موضع ال�
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Due"
-msgstr ""
+msgstr "الاستحقاق"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Duplicate assets"
@@ -10822,7 +10822,7 @@ msgstr "أصلح الإعداد — بيانات الاعتماد أو الإع�
 
 #: src/components/data-sources/source-attention.ts
 msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
-msgstr ""
+msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -11615,7 +11615,7 @@ msgstr "تم إنشاء مهمة المجموعة مع وجود بعض المش�
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
-msgstr ""
+msgstr "الضيف"
 
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -12018,7 +12018,7 @@ msgstr "الخطاطيف:"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
-msgstr ""
+msgstr "المضيف"
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "hours"
@@ -13232,7 +13232,7 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Last run"
-msgstr ""
+msgstr "آخر تشغيل"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last success"
@@ -14656,7 +14656,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "Mirror needs attention"
-msgstr ""
+msgstr "النسخة المطابقة تحتاج إلى انتباه"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -14705,7 +14705,7 @@ msgstr "مفقود: {missing}"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Mode"
-msgstr ""
+msgstr "الوضع"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "model"
@@ -15677,7 +15677,7 @@ msgstr "لم يتم تقديم وصف."
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "No description yet."
-msgstr ""
+msgstr "لا يوجد وصف بعد."
 
 #~ msgid "No description."
 #~ msgstr "لا يوجد وصف."
@@ -17125,7 +17125,7 @@ msgstr "OAuth"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Occurred"
-msgstr ""
+msgstr "وقع"
 
 #: src/components/automations/BusView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
@@ -17137,7 +17137,7 @@ msgstr "إيقاف"
 #: src/components/automations/AutomationRow.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Off"
-msgstr ""
+msgstr "متوقف"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Off on this place"
@@ -17149,7 +17149,6 @@ msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-#: src/components/recovery/cleanup-modal.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "موافق"
@@ -17168,7 +17167,7 @@ msgstr "تشغيل"
 #: src/components/automations/blocks/WhenBlock.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "On"
-msgstr ""
+msgstr "مفعّل"
 
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
@@ -17402,7 +17401,7 @@ msgstr "افتح {name}"
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
-msgstr ""
+msgstr "فتح {title}"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Open {title} install page"
@@ -17463,7 +17462,7 @@ msgstr ""
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open agent"
-msgstr ""
+msgstr "فتح الوكيل"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Open all"
@@ -18078,7 +18077,7 @@ msgstr ""
 
 #: src/tabs/provider-meta.tsx
 msgid "OpenCode tab"
-msgstr ""
+msgstr "تبويب OpenCode"
 
 #: src/routes/loaders/load-shell.ts
 msgid "Opened a different terminal"
@@ -19121,7 +19120,7 @@ msgstr "أساسي"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Priority"
-msgstr ""
+msgstr "الأولوية"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 msgid "Private"
@@ -19495,7 +19494,7 @@ msgstr "محمي"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Protocol"
-msgstr ""
+msgstr "البروتوكول"
 
 #~ msgid "Proved by"
 #~ msgstr ""
@@ -19602,7 +19601,6 @@ msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهاز
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
-#: src/components/entity-card/entity-card-rows.ts
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
 #: src/pages/discover-page/discover-page.tsx
@@ -20676,7 +20674,7 @@ msgstr "مُبلَّغ عنه"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Reported by"
-msgstr ""
+msgstr "أبلغ عنه"
 
 #: src/components/diagnose/use-diagnosis-report-availability.ts
 msgid "Reporting is disabled in Local data privacy mode"
@@ -21111,7 +21109,7 @@ msgstr "يُرجى مراجعة كل عنصر مرفق واختيار كيفية
 
 #: src/tabs/doc-tab-card.tsx
 msgid "Review in"
-msgstr ""
+msgstr "مراجعة في"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
@@ -21223,7 +21221,7 @@ msgstr "نطاق زمن الصف"
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Rows"
-msgstr ""
+msgstr "الصفوف"
 
 #: src/components/automations/AutomationPage.tsx
 msgid "Rule code saved"
@@ -24720,7 +24718,7 @@ msgstr ""
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Synced"
-msgstr ""
+msgstr "تمت المزامنة"
 
 #. placeholder {0}: timeSince(source.last_synced_at)
 #: src/components/data-sources/DataSourcePage.tsx
@@ -25213,7 +25211,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "The dataset this source mirrors into could not be made current."
-msgstr ""
+msgstr "تعذّر تحديث مجموعة البيانات التي يُنسخ إليها هذا المصدر."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -27243,7 +27241,7 @@ msgstr ""
 #: src/components/entity-card/entity-card-rows.ts
 #: src/lib/publish-state.ts
 msgid "Updated"
-msgstr ""
+msgstr "آخر تحديث"
 
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: editing.name
@@ -27691,7 +27689,7 @@ msgstr "يجب التحقق من الإعداد أولاً."
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
-msgstr ""
+msgstr "الإصدار"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Version-bump + commit the asset"
@@ -27760,7 +27758,7 @@ msgstr "اعرض {name} على FlowPad. لا حاجة لتثبيت أي شيء."
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "View {title} avatar"
-msgstr ""
+msgstr "عرض صورة {title}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #~ msgid "View callback source"
@@ -27976,10 +27974,13 @@ msgstr "تعذر العثور على المحتوى المطلوب في السح
 msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
 msgstr "تعذر الوصول إلى الخدمة السحابية. يرجى التحقق من الاتصال أو المحاولة مرة أخرى بعد قليل"
 
-#. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
-msgid "We skipped {count} session{0} that couldn't be restored."
-msgstr "تخطينا {count} جلسة{0} تعذّرت استعادتها."
+#~ msgid "We skipped {count} session{0} that couldn't be restored."
+#~ msgstr "تخطينا {count} جلسة{0} تعذّرت استعادتها."
+
+#: src/routes/loaders/load-shell.ts
+msgid "We skipped {count} sessions that couldn't be restored."
+msgstr ""
 
 #: src/types/ViewType.ts
 msgid "Web App"
@@ -28377,7 +28378,7 @@ msgstr "يمسح صفوف قاعدة البيانات وإدخالات الفه�
 
 #: src/components/entity-card/entity-card-rows.ts
 msgid "With"
-msgstr ""
+msgstr "مع"
 
 #: src/pages/hub-home/AutoLoginField.tsx
 msgid "Without signing in, this sandbox can't draw on your token plan — its coding assistants will each need their own login inside the box."

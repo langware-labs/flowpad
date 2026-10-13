@@ -10,21 +10,34 @@ what that placement ANSWERS on — one row per exposed service, each with a `sub
 it is FOR) and a protocol (what it SPEAKS):
 
     Deployment (parent: a project, provider local | e2b | …)
-      ├── ServiceEndpoint  "shop"       app    web.app          static  → <app>/dist
-      ├── ServiceEndpoint  "shop-dev"   app    web.app          proxy   → 127.0.0.1:5173
-      └── ServiceEndpoint  "port-8080"  app    web.app          proxy   → 127.0.0.1:8080  (`flow show webapp --port`)
+      ├── ServiceEndpoint  "app"        app     web.app           routed  → one mount per app:
+      │                                                                     shop        static → <app>/dist
+      │                                                                     shop-<id8>  proxy  → 127.0.0.1:5173
+      │                                                                     port-8080   proxy  → 127.0.0.1:8080  (`flow show webapp --port`)
+      ├── ServiceEndpoint  "admin"      admin   web.app           routed  → backoffice  static → <app>/dist
+      └── ServiceEndpoint  "shop-api"   service api.rest          proxy   → 127.0.0.1:8123
 
     Deployment (parent: an agent)
-      └── ServiceEndpoint  "chat"       agent  api.chat.openai  channel → a message on the deployment's
-                                                                         chat channel; its loop answers
+      └── ServiceEndpoint  "chat"       agent   api.chat.openai   channel → a message on the deployment's
+                                                                           chat channel; its loop answers
 
     Deployment (parent: the ComputeNode — the machine's own placement)
-      └── ServiceEndpoint  "workspace"  admin  flowpad.workspace proxy  → the box's own app (with
-                                                                         "shell-mcp" / "fs-mcp", admin)
+      └── ServiceEndpoint  "workspace"  system  flowpad.workspace proxy   → the box's own app (with
+                                                                           "shell-mcp" / "fs-mcp", system)
 
-`subkind` is a closed set — `admin` (administers the machine or a workload), `app` (a UI people
-use), `agent` (talks to an agent: chat, MCP-UI), `service` (anything else: a REST API, a database
-port). The endpoint's kind, `service_endpoint.<subkind>`, is derived; the protocol's kind is open.
+`subkind` is a closed set — `system` (the machine itself: its FlowPad app and the hub's MCP
+servers), `admin` (the project's operator-facing web app), `app` (its end-user web app), `agent`
+(talks to an agent: chat, MCP-UI), `service` (anything else: a REST API, a database port). The
+endpoint's kind, `service_endpoint.<subkind>`, is derived; the protocol's kind is open — MCP is a
+protocol (`api.mcp`), never a subkind.
+
+**A placement answers a browser on at most three endpoints**: the machine's `workspace`, and the
+project's `admin` and `app` — each ONE row. `admin` and `app` are **audience proxies**: their
+backend is `routed`, a mount per app (`routes: {"<mount>": {backend, webapp_id, artifact_id}}`;
+`""` is the audience's root app). Every web app served on the placement is a ROUTE of one of
+them — never a row of its own — and is addressed as the pair *(endpoint, mount)*. An audience
+nothing is served to has no endpoint. `agent` and `service` endpoints stay rows of their own, as
+many as the deployment has.
 
 A deployment DECLARES what it exposes (`Deployment.exposes`: name, subkind, protocol, check, and
 the backend when it is known); its endpoint rows serve the declaration (`sync_endpoints()`, rows
@@ -40,7 +53,7 @@ per-process port lookup, no `micro_app` view route, no hub services table.
 
 Pinned by `tests/unit/test_service_endpoint_model.py` (the model and its wire form),
 `tests/api/test_service_endpoint_proxy.py` (one round trip per protocol) and
-`tests/api/test_webapp_endpoints.py` (webapps as endpoints).
+`tests/api/test_webapp_endpoints.py` (web apps as routes of the audience proxies).
 
 ## 1. What an endpoint is
 
@@ -71,9 +84,14 @@ both tiers.
 ## 2. Reaching it
 
 ```
-GET|POST|… /api/v1/graph/service_endpoint/<id>/service/<path>   # a pure proxy, WebSockets too
-GET        /api/v1/graph/service_endpoint/<id>/direct-url        # {url}, resolved now (?redirect=1)
+GET|POST|… /api/v1/graph/service_endpoint/<id>/service/<path>           # a pure proxy, WebSockets too
+GET|POST|… /api/v1/graph/service_endpoint/<id>/service/<mount>/<path>   # an audience proxy: the app at <mount>
+GET        /api/v1/graph/service_endpoint/<id>/direct-url[?route=<mount>]   # {url}, resolved now (?redirect=1)
 ```
+
+On an audience proxy the first path segment picks the app: a mount it routes is served with the
+mount stripped, and any other path is the ROOT app's (`""`) own deep link. `direct-url` and
+`probe` take `route=<mount>` — the proxy itself has no process, a route may.
 
 `service` never parses the body — SSE, MCP sessions, ranges, gRPC-Web frames and
 WebSocket subprotocols pass through as they are. The service never sees FlowPad's
@@ -85,52 +103,88 @@ it and tells the service as `X-Flowpad-User`.
 const endpoint = await ServiceEndpoint.getById(id);
 fetch(endpoint.serviceUrl('v1/chat/completions'), { method: 'POST', body });
 const url = await endpoint.directUrl();       // only when supports_direct_access
+for (const app of endpoint.served()) {        // an audience proxy: one ServedApp per mount
+  app.serviceUrl();                           // …/service/<mount>/
+  await app.directUrl();                      // its dev server's own address
+}
 ```
 
-## 3. A web app's endpoints
+## 3. A web app's routes
 
-`flow app open` / `flow app serve` register an app; its project's local placement gets a
-`proxy` endpoint for the dev server and a `static` one for built output. `flow show webapp
---port N` registers the bare server as a `proxy` endpoint (`port-N`) and shows it. A
-project-less run's endpoints go to this MACHINE's placement (parented to the local
-compute node). A webapp asset gets its `static` endpoint when it is indexed.
+`flow app open` / `flow app serve` register an app; its project's local placement's `app` proxy
+gets a `proxy` route for the dev server and a `static` one for built output. `flow show webapp
+--port N` registers the bare server as a route (`port-N`) and shows it; `--admin` puts it on the
+`admin` proxy instead. A project-less run's routes go to this MACHINE's placement (parented to
+the local compute node). A webapp asset gets its `static` route when it is indexed.
 
-A display addresses the endpoint, never a port:
+A route keeps its mount: re-registering an app lands on the mount it already holds, and a mount
+another app holds is never taken (a second app of the same name mounts at `<name>-<id8>`).
+Routes are written one writer at a time per placement (`webapp_placement.set_route` /
+`drop_routes`); a proxy left with no route is deleted with its last one.
+
+A display addresses the proxy and the mount, never a port:
 
 ```
-flow show webapp --port 5173   →  {kind: app, typeid: service_endpoint-<id>, endpoint_id, runtime: dev}
-POST /api/v1/graph/service_endpoint/<id>/probe   # what is wrong with it, asked where it runs
+flow show webapp --port 5173   →  {kind: app, typeid: service_endpoint-<id>, endpoint_id, route: "port-5173", runtime: dev}
+POST /api/v1/graph/service_endpoint/<id>/probe?route=port-5173   # what is wrong with it, asked where it runs
 ```
 
 A dev server (`proxy`) loads at its `direct-url` (its own origin — HMR, absolute
 `/src/...`); built output (`static`) loads through `service`.
 
-What a webapp asset exposes when it is placed elsewhere is declared in its `webapp.json`:
+How a webapp asset is served wherever it is placed is declared in its `webapp.json`:
 
 ```json
 {
   "name": "shop",
   "build": "dist",
-  "endpoints": [
-    { "name": "site" },
+  "mounts": [
+    { "audience": "app", "path": "" },
+    { "audience": "admin", "path": "console",
+      "serving": { "type": "proxy", "start_cmd": "npm run admin -- --port {port}" } }
+  ],
+  "services": [
     { "name": "api", "protocol": { "spec_kind": "api.rest" },
       "serving": { "type": "proxy", "start_cmd": "uv run api.py --port {port}" } }
   ]
 }
 ```
 
-No `endpoints` means one: the `build` folder as a `web.app`.
+`audience` is `app` (end users, the default) or `admin` (operators); `path` is the mount (`""`:
+that audience's root; unsaid: the app's own name). No `mounts` means one: the `build` folder, to
+the `app` audience. A `services` entry is not a page of the app: it is a `service` endpoint of
+its own, named `<app>-<name>`.
 
 ## 4. On a cloud box
 
 `POST /project/<id>/deploy` on the hub places the project in a box, then asks the box to
 `expose-endpoints`: the box re-keys its project placement to the HUB's id, every webapp
-comes up there, and the box reports every endpoint of that placement; the hub adopts
-each row at the box's id. The deploy answers with the app's URL — a `web.*` endpoint on
-an origin of its own, `https://<endpoint-id>.<app_domain>/` — and every endpoint with its
-URL. The box's own FlowPad app is its `workspace` endpoint.
+comes up there as a route of the placement's `app` or `admin` proxy, and the box reports every
+endpoint of that placement; the hub adopts each row at the box's id. The deploy answers with the
+app's URL and every endpoint with its URL. Each audience proxy has an origin of its own, named
+for the PLACEMENT and the audience — never a row id:
 
-Afterwards the box registers endpoints like any machine (a dev server shown by port, an
+```
+https://app--<deployment-id>.<app_domain>/<mount>/…     # end users — the visitor gate (the role stamped on the endpoint)
+https://admin--<deployment-id>.<app_domain>/<mount>/…   # operators — hub identity (below)
+```
+
+The hub's session does not reach those origins, so each has its own gate. `app` is authorized by
+the role stamped on the endpoint for a caller with no hub session. `admin` is authorized by WHO
+the caller is: a browser with no session there is sent to the hub
+(`service_endpoint/<id>/admin-login`, where the policy must grant `admin-login` on the
+endpoint), which redirects back to `/__flowpad/session` on the admin host with a short-lived
+ticket, traded for a host-only `fp_admin` cookie. The cookie only says who; whether that caller
+may still use the endpoint is asked of the policy on every request, and the box is told who as
+`X-Flowpad-Caller`. `/__flowpad/*` is reserved on both hosts and never reaches the app. A bare
+`<id>.<app_domain>` host names no service endpoint. The box's own FlowPad app is its `workspace`
+endpoint (`system`), opened through the node's `open-service`.
+
+Whether a service may also be reached without the hub (`supports_direct_access`) is the
+PROVIDER's to say, never a row's: a box's process has an address of its own on an e2b box or
+this machine, and none behind a GCP VM's firewall or on an enrolled laptop.
+
+Afterwards the box registers routes like any machine (a dev server shown by port, an
 app it built) — on the hub's placement, because its local one now IS that placement —
 and asks the hub to `POST deployment/<id>/refresh-endpoints`. The hub PULLS (asks the box
 to expose again) and adopts; a row the box no longer serves goes. A desktop watching the
@@ -141,9 +195,10 @@ the hub, and the hub to the box.
 
 A machine nothing deployed (a sandbox opened by hand) is its own placement — one
 parented to the ComputeNode itself — serving `workspace`, `shell-mcp`, `fs-mcp` (all
-`admin`). `compute_node/<id>/open-service/<name>`
+`system`). `compute_node/<id>/open-service/<name>`
 resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
-are endpoints of `hub`-provider placements, read off the hub's disk; a custom domain
+are placed like anything else: each `hub`-provider placement has ONE `app` proxy whose routes
+are bundles read off the hub's disk (`""` the app, `graph`, `dev`); a custom domain
 (`WebDomain`) names an endpoint (`service_endpoint_id`).
 
 ## 6. An agent's `chat`
@@ -188,6 +243,7 @@ services'. The check is declared (`check`) or defaulted from the backend:
 | `proxy` | `http` on its `health` path | anything answers below 500 on the loopback port (a gated 403 is up) |
 | `static` | `builtin` | its root folder exists |
 | `channel` | `builtin` | the deployment's answering loop holds its lock |
+| `routed` | each route's own | every route is alive — a static root exists, a process answers; the detail names the mount that fails |
 | any | `command` (declared) | the command exits 0 on the machine — e.g. `pg_isready` |
 
 ```python

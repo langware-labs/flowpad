@@ -530,13 +530,19 @@ async def _start_agent_server() -> None:
 
 
 async def _prune_web_delivery_rows() -> None:
-    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go."""
+    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go — and so do the
+    per-app endpoint rows from before a placement's ``admin`` / ``app`` proxies."""
     try:
         from flow_sdk.builtin.webapp_placement import prune_delivery_rows
 
         pruned = await prune_delivery_rows()
         if pruned:
             print(f"  Web apps: dropped {pruned} delivery row(s) — builds are served by their endpoints")
+        from flow_sdk.builtin.webapp_placement import prune_per_app_endpoints
+
+        folded = await prune_per_app_endpoints()
+        if folded:
+            print(f"  Web apps: dropped {folded} per-app endpoint row(s) — apps are routes of their audience proxy")
     except Exception:
         logging.getLogger(__name__).exception("Web apps: pruning delivery rows failed")
 

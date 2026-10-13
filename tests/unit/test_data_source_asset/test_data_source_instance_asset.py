@@ -191,6 +191,66 @@ async def test_a_file_for_a_provider_nothing_answers_is_settled_active_so_the_po
     assert (await DataSource.get_by_id(row.id)).status == SourceStatus.ACTIVE.value
 
 
+async def test_a_source_holds_its_project_up_only_while_it_owes_a_setup(scope):
+    """The setup tree's Verify check and the footer ask the source: what it owes, in its own words. A
+    source just indexed (``new``) or paused by a person owes nothing; the poller makes the first active."""
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Checked(_Mailbox):
+        provider = "asset-mailbox-checked-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=False, detail="Invite the bot.")
+
+    DataDriver.register(DataDriver.for_class(_Checked, kind="datasource.test.checked"))
+    plain = DataSource(name="plain", provider=_Mailbox.provider)
+    checked = DataSource(name="checked", provider=_Checked.provider)
+    unloaded = DataSource(name="unloaded", provider="asset-no-such-driver-test")
+
+    owed = {}
+    for status in SourceStatus:
+        plain.status = checked.status = unloaded.status = status.value
+        plain.setup_detail = "Received — connect your own account." if status is SourceStatus.SETUP else ""
+        owed[status.value] = (plain.setup_owed(), checked.setup_owed(), unloaded.setup_owed())
+
+    assert owed == {
+        "new": ("", "not verified", ""),
+        "setup": ("Received — connect your own account.", "not verified", "not verified"),
+        "active": ("", "", ""),
+        "disabled": ("", "", ""),
+    }
+    plain.status = SourceStatus.NEW.value
+    assert (await plain._verify_step(check=True)).ok, "the tree's check passes: nothing is owed"
+    plain.status, plain.setup_detail = SourceStatus.SETUP.value, "Invite the bot."
+    held = await plain._verify_step(check=True)
+    assert not held.ok and held.detail == "Invite the bot."
+
+
+async def test_a_source_changing_status_drops_its_projects_load_verdict(scope, monkeypatch):
+    """A project's load verdict is checked against its sources' status once and kept; a source that
+    turns active later must not leave "requires setup" standing."""
+    from types import SimpleNamespace
+
+    from flow_sdk.core.setup import load
+
+    source = await _saved("watched")
+    forgotten: list[str] = []
+
+    async def project_of(self):
+        return SimpleNamespace(id="p-1")
+
+    monkeypatch.setattr(DataSource, "setup_project", project_of)
+    monkeypatch.setattr(load, "forget", forgotten.append)
+
+    source.cursor = "c-1"
+    await source.save_runtime()
+    assert forgotten == [], "a poll's bookkeeping changes nothing a load checked"
+
+    source.status = SourceStatus.SETUP.value
+    await source.save_runtime()
+    assert forgotten == ["p-1"]
+
+
 async def test_one_owner_watches_an_account_once(scope):
     """A second source for an account the owner already watches is saved ONTO the first — what it
     authored is written there, the row (id, cursor, health) stays: no twin, no error."""

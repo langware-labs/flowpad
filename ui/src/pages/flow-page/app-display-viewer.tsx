@@ -43,6 +43,8 @@ export interface AppDisplayViewerProps {
   microAppId?: string | null;
   /** Bare service_endpoint uuid, for an app addressed by what serves it. */
   endpointId?: string | null;
+  /** With `endpointId`: the app's mount on it — the endpoint is its placement's audience proxy. */
+  route?: string | null;
   /** The user's runtime preference from the URL, if it pins one. */
   runtime?: AppRuntime | null;
   /** Dock options handed to the app as its query string (e.g. `source`). */
@@ -126,6 +128,7 @@ export function AppDisplayViewer({
   artifactId,
   microAppId = null,
   endpointId = null,
+  route = null,
   runtime,
   options,
   reloadKey,
@@ -138,7 +141,7 @@ export function AppDisplayViewer({
   // No memo: `useAppDisplay` reduces this to strings before anything depends on
   // it, so a fresh object per render produces an identical `src` and the frame
   // (keyed on `src`) does not remount.
-  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, options: options ?? {} }, runtime ?? null);
+  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, route, options: options ?? {} }, runtime ?? null);
 
   useEffect(() => {
     reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());

@@ -20,7 +20,7 @@ import pytest
 from flow_sdk.builtin import webapp_setup
 from flow_sdk.core import dev_server
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
-from flow_sdk.schema.data_spec.webapp_spec import WebappEndpointSpec
+from flow_sdk.schema.data_spec.webapp_spec import WebappMountSpec
 
 pytestmark = pytest.mark.timeout(20)
 
@@ -42,7 +42,7 @@ def app(tmp_path, monkeypatch):
             serving["port"] = port
         row = SimpleNamespace(
             id="a1", name="site", asset_ref=str(folder), build=".", project_id=None,
-            endpoints=[WebappEndpointSpec(name="web", serving=serving)],
+            mounts=[WebappMountSpec(serving=serving)], services=[],
         )
 
         async def by_id(_id):
@@ -51,11 +51,11 @@ def app(tmp_path, monkeypatch):
         monkeypatch.setattr(webapp_setup, "_app", by_id)
         return row
 
-    async def endpoint(_app, _name):
+    async def placed(_app):
         return state.endpoint
 
-    async def keep(_app, name, port, command, health, existing):
-        state.endpoint = SimpleNamespace(name=name, backend=SimpleNamespace(type="proxy", port=port))
+    async def keep(_app, mount, port, command):
+        state.endpoint = SimpleNamespace(mount="site", backend=SimpleNamespace(type="proxy", port=port))
 
     real_start = dev_server.start_process
 
@@ -64,8 +64,8 @@ def app(tmp_path, monkeypatch):
         state.started.append(proc.pid)
         return proc, log
 
-    monkeypatch.setattr(webapp_setup, "_endpoint", endpoint)
-    monkeypatch.setattr(webapp_setup, "_keep_endpoint", keep)
+    monkeypatch.setattr(webapp_setup, "_placed", placed)
+    monkeypatch.setattr(webapp_setup, "_keep_route", keep)
     monkeypatch.setattr(dev_server, "start_process", start)
     monkeypatch.setattr(dev_server, "log_dir", lambda: tmp_path / "logs")
     monkeypatch.setattr(dev_server, "owner_dir", lambda: tmp_path / "started")
@@ -211,7 +211,7 @@ async def test_a_server_the_person_runs_themselves_is_still_found_by_its_health(
     threading.Thread(target=own.serve_forever, daemon=True).start()
     try:
         app.make()
-        app.endpoint = SimpleNamespace(name="web", backend=SimpleNamespace(type="proxy", port=own.server_address[1]))
+        app.endpoint = SimpleNamespace(mount="site", backend=SimpleNamespace(type="proxy", port=own.server_address[1]))
         answer = await webapp_setup.step("a1", "start", check=True)
         assert answer.ok and app.started == []
     finally:
@@ -246,7 +246,7 @@ async def test_a_start_with_nowhere_to_record_its_endpoint_fails_and_leaves_noth
         return False
 
     app.make()
-    monkeypatch.setattr(webapp_setup, "_keep_endpoint", nowhere)
+    monkeypatch.setattr(webapp_setup, "_keep_route", nowhere)
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET and "no local placement" in answer.detail
     assert not _alive(app.started[0])
@@ -254,7 +254,7 @@ async def test_a_start_with_nowhere_to_record_its_endpoint_fails_and_leaves_noth
 
 @pytest.mark.asyncio
 async def test_an_app_that_is_only_files_has_nothing_to_set_up(app, monkeypatch):
-    row = SimpleNamespace(id="a1", name="site", asset_ref=str(app.folder), build=".", project_id=None, endpoints=[])
+    row = SimpleNamespace(id="a1", name="site", asset_ref=str(app.folder), build=".", project_id=None, mounts=[], services=[])
 
     async def by_id(_id):
         return row

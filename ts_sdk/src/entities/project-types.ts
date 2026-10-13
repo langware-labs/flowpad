@@ -31,6 +31,55 @@ export interface ProjectContextDirInfo {
 }
 
 /** Backend-owned project lifecycle; resolving files does not imply runtime readiness. */
+/** Where one node of the setup tree stands (`setup.node`). */
+export type SetupNodeState =
+  | 'pending'
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'blocked'
+  | 'refused'
+  | 'held'
+  | 'skipped'
+  | 'stopped';
+
+/** One step of a node's wizard, as its run answered it. */
+export interface SetupStepAnswer {
+  exit_code?: number;
+  detail?: string;
+  ran?: boolean;
+}
+
+/** A node's `prepare` / `run` wizard result: its own verdict and each step's answer. */
+export interface SetupWizardAnswer extends SetupStepAnswer {
+  steps?: Record<string, SetupStepAnswer>;
+}
+
+/** One asset of the setup tree (`SetupNodeResult`): set up after its children. */
+export interface SetupNodeResult {
+  id: string;
+  label: string;
+  /** Depth under the root (root = 0). */
+  level: number;
+  state: SetupNodeState;
+  detail: string;
+  prepare: SetupWizardAnswer | null;
+  run: SetupWizardAnswer | null;
+  children: SetupNodeResult[];
+  /** Set up already under another parent this run; its subtree shows there. */
+  shared: boolean;
+}
+
+/** The whole setup (`SetupTreeResult`): the root node, and the run's own verdict. */
+export interface SetupTreeResult {
+  state: SetupNodeState;
+  detail: string;
+  root: SetupNodeResult | null;
+  total: number;
+  done: number;
+  ran: boolean;
+}
+
 export interface ProjectLoadResult {
   state: 'ready' | 'setup_required' | 'running' | 'failed';
   detail: string;
@@ -41,6 +90,8 @@ export interface ProjectLoadResult {
   display?: string | null;
   /** A failed load setup has not been tried for yet: an approved Load runs setup, then loads again. */
   setup_available?: boolean;
+  /** What the check found, for a `setup_required` load: the tree as it stands before anything runs. */
+  tree?: SetupTreeResult | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */
