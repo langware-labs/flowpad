@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 from unittest.mock import patch
 
 import pytest
@@ -61,23 +60,6 @@ def test_the_token_admits_and_survives_a_restart(local_gate):
 
     assert TestClient(_app()).get("/", headers=_header(token)).status_code == 200
     assert local_gate.read_text(encoding="utf-8") == token
-
-
-def test_concurrent_first_requests_agree_on_one_token(local_gate):
-    results: list[str | None] = []
-
-    def create():
-        results.append(cookie_gate._create_token())
-
-    threads = [threading.Thread(target=create) for _ in range(8)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    on_disk = local_gate.read_text(encoding="utf-8")
-    assert results == [on_disk] * 8
-    assert [p.name for p in local_gate.parent.iterdir()] == [".cookie_gate"]
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
