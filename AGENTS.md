@@ -184,6 +184,7 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ### Staging OAuth validation
 
 - Use the existing Chrome extension connection (`debugMcp` browser tools) for browser validation. Do not ask the user to enable Chrome remote debugging or switch to the real-browser CLI when the extension is available.
+- The installed ChatGPT extension is reachable through the bundled browser client in `mcp__node_repl__js`: import `browser-client.mjs`, assign the result of `setupBrowserRuntime()` to `agent`, and select the extension browser with profile `langware.ai`. `debugMcp` may instead be configured for CDP; inspect its configuration before calling it an extension connection. If browser actions report a missing Codex executable, check `CODEX_CLI_PATH` against the installed app's `codex-cli/bin/codex` path.
 
 - The real hub repository is `/Users/alice/Documents/dev/test_flowpad/FlowPad`; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
 - Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in as `alice@example.com`.
