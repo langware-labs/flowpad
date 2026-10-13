@@ -17,13 +17,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from flow_sdk.server import grants
 from tests.utils.gate import ENDPOINT, SECRET
 from tests.utils.gate import armed as _stored
 from tests.utils.gate import cookie_value as _cookie_value
 from tests.utils.gate import grant_cookie as _grant
 from tests.utils.gate import ticket as _ticket
 
-COOKIE = "__Host-grant"
+COOKIE = grants.COOKIE_NAME
 TEST_API_KEY = "fp_production_testkey123456789abc"
 USER_INFO = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
 
@@ -32,10 +33,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 def _armed(secret: str | None = SECRET):
     """Force the middleware's view of gate state."""
-    return patch(
-        "flow_sdk.server.middleware.cookie_gate_middleware.get_cookie_gate",
-        return_value=secret,
-    )
+    return _stored(secret)
 
 
 def _login_mocks():

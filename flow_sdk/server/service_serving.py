@@ -26,6 +26,7 @@ from starlette.websockets import WebSocket
 from websockets.exceptions import ConnectionClosed
 
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+from flow_sdk.core.dev_server import LOOPBACK_HOST
 from flow_sdk.server.service_proxy import (
     CALLER_HEADER,
     inbound_headers,
@@ -120,7 +121,7 @@ async def serve_socket(websocket: WebSocket, endpoint: ServiceEndpoint, sub_path
         await close(websocket, WS_POLICY, "a static endpoint has no socket")
         return
     try:
-        url = f"ws://127.0.0.1:{found[0].port}{upstream_path(found[2], websocket.url.query)}"
+        url = f"ws://{LOOPBACK_HOST}:{found[0].port}{upstream_path(found[2], websocket.url.query)}"
     except ValueError:
         await close(websocket, WS_POLICY, "Invalid path")
         return
@@ -174,7 +175,7 @@ async def serve_static(
 
 
 async def proxy_http(request: Request, port: int, path: str, *, user: Optional[str]) -> Response:
-    url = f"http://127.0.0.1:{port}{path}"
+    url = f"http://{LOOPBACK_HOST}:{port}{path}"
     headers = outbound_headers(request.headers.items(), user=user)
     has_body = request.headers.get("content-length", "0") != "0" or "chunked" in request.headers.get(
         "transfer-encoding", ""

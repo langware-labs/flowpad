@@ -26,6 +26,7 @@ a plain 404 and the app display loads a dev server at its own loopback address a
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Optional
@@ -104,9 +105,7 @@ class AudienceDoor:
 
     async def _admitted(self, cookies, path: str) -> Optional[tuple[Grant, ServiceEndpoint]]:
         """The grant a browser holds for THIS door and the row it names, or None: no grant, another
-        door's, a reserved path, or a row this door does not serve."""
-        if path.startswith(grants.RESERVED_PREFIX):
-            return None
+        door's, or a row this door does not serve."""
         grant = grants.read_grant(cookies.get(grants.COOKIE_NAME))
         if grant is None or grant.audience != self.audience:
             return None
@@ -119,6 +118,8 @@ class AudienceDoor:
         from flow_sdk.builtin.faas.serve_static import _browser_scheme  # noqa: PLC0415
 
         path = request.url.path
+        if path.startswith(grants.RESERVED_PREFIX):
+            return fail(404, "not found")
         if path == grants.GATE_PATH:
             landing = grants.safe_next(request.query_params.get("next"))
             traded = grants.exchange(
@@ -127,7 +128,7 @@ class AudienceDoor:
             return traded if traded is not None else fail(403, "this link is not valid for this door")
         admitted = await self._admitted(request.cookies, path)
         if admitted is None:
-            return fail(404, "not found") if path.startswith(grants.RESERVED_PREFIX) else await self._no_grant(request)
+            return await self._no_grant(request)
         grant, endpoint = admitted
         origin = f"{_browser_scheme(request, None)}://{request.headers.get('host') or request.url.netloc}"
         return await serve_http(request, endpoint, path.lstrip("/"), user=_user(grant), base_root=origin)
@@ -146,7 +147,7 @@ class AudienceDoor:
 
     async def socket(self, websocket: WebSocket) -> None:
         admitted = await self._admitted(websocket.cookies, websocket.url.path)
-        if admitted is None:
+        if admitted is None or websocket.url.path.startswith(grants.RESERVED_PREFIX):
             await close(websocket, WS_POLICY, "Forbidden")
             return
         grant, endpoint = admitted
@@ -177,8 +178,8 @@ async def start() -> None:
 
 
 async def stop() -> None:
-    for audience in list(_doors):
-        await stop_listener(_doors.pop(audience))
+    doors = [_doors.pop(audience) for audience in list(_doors)]
+    await asyncio.gather(*(stop_listener(door) for door in doors))
 
 
 __all__ = ["AudienceDoor", "start", "stop"]

@@ -12,7 +12,6 @@ import asyncio
 import os
 from urllib.parse import urlsplit
 
-import uvicorn
 from fastapi import FastAPI
 
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -23,8 +22,7 @@ class ListenerState(DataSpec):
     port: int
 
 
-_server: uvicorn.Server | None = None
-_task: asyncio.Task | None = None
+_listener: Listener | None = None
 _url: str | None = None
 _lock = asyncio.Lock()
 
@@ -47,9 +45,9 @@ def listener_app() -> FastAPI:
 
 async def callback_base_url(*, start: bool = False) -> str | None:
     """Return this runtime's direct callback origin; start it only when requested."""
-    global _server, _task, _url
+    global _listener, _url
     async with _lock:
-        if _server is not None and _server.started and _task is not None and not _task.done():
+        if _listener is not None and _listener.server.started and not _listener.task.done():
             return _url
         if not start:
             return None
@@ -78,7 +76,7 @@ async def callback_base_url(*, start: bool = False) -> str | None:
         pending = path.with_suffix(".tmp")
         pending.write_text(ListenerState(port=port).model_dump_json())
         pending.replace(path)
-        _server, _task = listener.server, listener.task
+        _listener = listener
         _url = external or f"http://{'[' + host + ']' if ':' in host else host}:{port}"
         return _url
 
@@ -89,7 +87,7 @@ async def restore() -> None:
 
 
 async def stop() -> None:
-    global _server, _task, _url
-    if _server is not None and _task is not None:
-        await stop_listener(Listener(_server, _task, 0))
-    _server, _task, _url = None, None, None
+    global _listener, _url
+    if _listener is not None:
+        await stop_listener(_listener)
+    _listener, _url = None, None

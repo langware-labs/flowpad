@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from flow_sdk.cli.auth.secrets import is_secrets_enabled
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.server.grants import safe_next
 
 from .. import state
 from .cloud import _render_result_page
@@ -29,13 +30,6 @@ from .cloud import _render_result_page
 router = APIRouter(prefix="/auth")
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_next(candidate: str | None) -> str:
-    """A same-origin redirect target, or the app's root — the one rule every door applies (``grants.safe_next``)."""
-    from flow_sdk.server.grants import safe_next
-
-    return safe_next(candidate)
 
 
 @router.get("/oauth/complete", response_class=HTMLResponse)
@@ -117,7 +111,7 @@ async def gate(
     from flow_sdk.server import grants
     from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
 
-    landing = _safe_next(next)
+    landing = safe_next(next)
     traded = grants.exchange(ticket, audience=SYSTEM_AUDIENCE, landing=landing)
     # No ticket for this door: the middleware already admitted the caller some other way, so land them.
     return traded or RedirectResponse(url=landing, status_code=302, headers={"Cache-Control": "no-store"})
@@ -135,24 +129,22 @@ async def revoke(request: Request):
     enough to revoke anybody.
     """
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+    from flow_sdk.responses.response import ApiSuccessResponse
     from flow_sdk.server import grants
     from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+    from flow_sdk.server.service_serving import fail
 
     secret = get_cookie_gate()
     presented = request.headers.get(HEADER_NAME) or ""
     if not secret or not compare_digest(presented, secret):
-        return JSONResponse(status_code=403, content={"status": "fail", "message": "the hub's hop only", "data": None})
+        return fail(403, "the hub's hop only")
     body = await request.json()
     caller = body.get("caller") if isinstance(body, dict) else None
     endpoints = body.get("endpoints") if isinstance(body, dict) else None
     if not isinstance(endpoints, list) or not all(isinstance(e, str) and e for e in endpoints):
-        return JSONResponse(
-            status_code=400, content={"status": "fail", "message": "endpoints: a list of ids", "data": None}
-        )
+        return fail(400, "endpoints: a list of ids")
     count = grants.revoke(str(caller) if caller else None, endpoints)
-    return JSONResponse(
-        status_code=200, content={"status": "success", "message": "revoked", "data": {"revoked": count}}
-    )
+    return JSONResponse(status_code=200, content=ApiSuccessResponse(data={"revoked": count}).model_dump(mode="json"))
 
 
 @router.get("/login_callback", response_class=HTMLResponse)
@@ -272,7 +264,7 @@ async def login_callback(
         # A link that asked to land somewhere lands in the app: on its path, or on home when
         # that path is refused. The page below is for a sign-in that named nowhere to go.
         if next:
-            return RedirectResponse(url=_safe_next(next), status_code=302)
+            return RedirectResponse(url=safe_next(next), status_code=302)
 
         user_id = user_info.get("id", "Unknown")
         s = get_instance_settings()

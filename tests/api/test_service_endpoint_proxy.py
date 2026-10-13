@@ -133,13 +133,14 @@ async def test_only_a_caller_signed_with_this_machines_gate_reaches_the_service(
     endpoint = await _endpoint(upstream)
     caller = f"user-{uuid.uuid4()}"
 
+    hop = {GATE_HEADER: GATE}  # the hub's hop: through the armed door with the secret
     signed = await client.get(
-        _url(endpoint, "echo"), headers={CALLER_HEADER: sign_caller(caller, GATE, now=int(time.time()))}
+        _url(endpoint, "echo"), headers={**hop, CALLER_HEADER: sign_caller(caller, GATE, now=int(time.time()))}
     )
     assert _headers(signed.json())[USER_HEADER] == caller
 
     forged = await client.get(
-        _url(endpoint, "echo"), headers={CALLER_HEADER: sign_caller(caller, "wrong", now=int(time.time()))}
+        _url(endpoint, "echo"), headers={**hop, CALLER_HEADER: sign_caller(caller, "wrong", now=int(time.time()))}
     )
     assert USER_HEADER not in _headers(forged.json())
 
@@ -455,9 +456,13 @@ async def test_behind_the_hub_the_page_is_based_where_the_hub_serves_it(client, 
 
 async def test_a_client_cannot_move_the_pages_assets(client, tmp_path, monkeypatch):
     import flow_sdk.instance_settings.cookie_gate as gate
+    from flow_sdk.server import grants
+    from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE, SYSTEM_ENDPOINT, Grant
 
     monkeypatch.setattr(gate, "get_cookie_gate", lambda: GATE)
     endpoint = await _static_site(tmp_path)
+    # A browser at the armed door (a grant), claiming to be the hub's hop (a wrong gate header).
     forged = {GATE_HEADER: "not-the-gate", "x-forwarded-host": "evil.example", "x-forwarded-prefix": "/"}
-    page = await client.get(_url(endpoint), headers=forged)
+    cookies = {grants.COOKIE_NAME: grants.mint_grant(Grant("user-x", SYSTEM_AUDIENCE, SYSTEM_ENDPOINT), secret=GATE)}
+    page = await client.get(_url(endpoint), headers=forged, cookies=cookies)
     assert "evil.example" not in _base_of(page.text)
