@@ -646,8 +646,8 @@ msgstr "{0} of {1}"
 msgid "{0} of {1} set"
 msgstr "{0} of {1} set"
 
-#. placeholder {0}: tree.done
-#. placeholder {1}: tree.total
+#. placeholder {0}: drawn.done
+#. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
 msgstr "{0} of {1} set up"
@@ -4868,7 +4868,7 @@ msgstr "Clean run — nothing to reclaim."
 msgid "Clean up ({0})"
 msgstr "Clean up ({0})"
 
-#: src/components/recovery/cleanup-modal.tsx
+#: src/routes/loaders/load-shell.ts
 msgid "Cleaned invalid sessions"
 msgstr "Cleaned invalid sessions"
 
@@ -17149,7 +17149,6 @@ msgstr "Offline"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-#: src/components/recovery/cleanup-modal.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "OK"
@@ -27975,10 +27974,13 @@ msgstr "We couldn't find what you were looking for on the cloud."
 msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
 msgstr "We couldn't reach the cloud service. Check your connection or try again in a moment."
 
-#. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
-msgid "We skipped {count} session{0} that couldn't be restored."
-msgstr "We skipped {count} session{0} that couldn't be restored."
+#~ msgid "We skipped {count} session{0} that couldn't be restored."
+#~ msgstr "We skipped {count} session{0} that couldn't be restored."
+
+#: src/routes/loaders/load-shell.ts
+msgid "We skipped {count} sessions that couldn't be restored."
+msgstr "We skipped {count} sessions that couldn't be restored."
 
 #: src/types/ViewType.ts
 msgid "Web App"

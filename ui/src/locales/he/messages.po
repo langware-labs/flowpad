@@ -646,8 +646,8 @@ msgstr ""
 msgid "{0} of {1} set"
 msgstr ""
 
-#. placeholder {0}: tree.done
-#. placeholder {1}: tree.total
+#. placeholder {0}: drawn.done
+#. placeholder {1}: drawn.total
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "{0} of {1} set up"
 msgstr ""
@@ -4868,7 +4868,7 @@ msgstr "הרצה נקייה - אין מה להחזיר."
 msgid "Clean up ({0})"
 msgstr "ניקוי ({0})"
 
-#: src/components/recovery/cleanup-modal.tsx
+#: src/routes/loaders/load-shell.ts
 msgid "Cleaned invalid sessions"
 msgstr "ניקיון הפעולות הלא תקינות"
 
@@ -17149,7 +17149,6 @@ msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
-#: src/components/recovery/cleanup-modal.tsx
 #: src/notifications/NotificationOutlet.tsx
 msgid "OK"
 msgstr "אישור"
@@ -27975,10 +27974,13 @@ msgstr "לא מצאנו את מה שחיפשת בענן."
 msgid "We couldn't reach the cloud service. Check your connection or try again in a moment."
 msgstr "לא הצלחנו להתחבר לשירות הענן. יש לבדוק את החיבור או לנסות שוב בעוד רגע."
 
-#. placeholder {0}: count === 1 ? '' : 's'
 #: src/components/recovery/cleanup-modal.tsx
-msgid "We skipped {count} session{0} that couldn't be restored."
-msgstr "דילגנו על {count} סשן{0} שלא ניתן היה לשחזר."
+#~ msgid "We skipped {count} session{0} that couldn't be restored."
+#~ msgstr "דילגנו על {count} סשן{0} שלא ניתן היה לשחזר."
+
+#: src/routes/loaders/load-shell.ts
+msgid "We skipped {count} sessions that couldn't be restored."
+msgstr ""
 
 #: src/types/ViewType.ts
 msgid "Web App"
