@@ -107,7 +107,7 @@ export function IncomingProjectDialog({
     handleClose();
   }, [projectId, dontAskAgain, step, handleClose]);
 
-  const dontAskAgainBox = projectId && (
+  const dontAskAgainField = projectId && (
     <label className="flex items-center gap-2 text-sm text-muted-foreground">
       <Checkbox
         checked={dontAskAgain}
@@ -276,7 +276,7 @@ export function IncomingProjectDialog({
                 </div>
               )}
             </div>
-            {dontAskAgainBox}
+            {dontAskAgainField}
             <DialogFooter>
               <Button variant="ghost" onClick={handleDecline}>
                 <Trans>Cancel</Trans>
@@ -326,7 +326,7 @@ export function IncomingProjectDialog({
                 </Trans>
               </p>
             )}
-            {dontAskAgainBox}
+            {dontAskAgainField}
             <DialogFooter>
               <Button variant="ghost" onClick={handleDecline}>
                 <Trans>Cancel</Trans>
