@@ -58,6 +58,36 @@ describe('resolveAppHost', () => {
     expect(host.subject).toBe(subject);
   });
 
+  it('resolves a page on an audience proxy by the mount its path lands on', async () => {
+    const other = 'd0d0d0d0-1111-4222-8333-444455556666';
+    const definition = { id: WEBAPP, type: 'micro_app', parent_type_id: SUBJECT };
+    const root = { id: other, type: 'micro_app', parent_type_id: null };
+    const proxy = {
+      id: ENDPOINT,
+      type: 'service_endpoint',
+      webapp_id: null,
+      backend: {
+        type: 'routed',
+        routes: {
+          '': { backend: { type: 'static', root: '/srv/home' }, webapp_id: other },
+          editor: { backend: { type: 'static', root: '/srv/editor' }, webapp_id: WEBAPP },
+        },
+      },
+    };
+    rows({
+      [`service_endpoint-${ENDPOINT}`]: proxy,
+      [`micro_app-${WEBAPP}`]: definition,
+      [`micro_app-${other}`]: root,
+      [SUBJECT]: { id: 'x', type: 'data_source' },
+    });
+
+    servedAt(`/api/v1/graph/service_endpoint/${ENDPOINT}/service/editor/index.html`);
+    expect((await resolveAppHost()).app).toBe(definition);
+    // A path that names no mount is the ROOT app's own deep link.
+    servedAt(`/api/v1/graph/service_endpoint/${ENDPOINT}/service/cart/42`);
+    expect((await resolveAppHost()).app).toBe(root);
+  });
+
   it('treats an endpoint that serves no definition as the app itself', async () => {
     servedAt(`/api/v1/graph/service_endpoint/${ENDPOINT}/service/`);
     const endpoint = { id: ENDPOINT, type: 'service_endpoint', webapp_id: null };

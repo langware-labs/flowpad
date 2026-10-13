@@ -96,12 +96,12 @@ async def editors_for(subject: Any) -> list[dict]:
 
 async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = None) -> list[dict]:
     """The viewers that show a value (``single``) or a list (``collection``) of ``kind``, best first:
-    ``[{typeid, name, title, why, kind, endpoint, module}]``. ``within`` is the typeid of the asset
+    ``[{typeid, name, title, why, kind, endpoint, route, module}]``. ``within`` is the typeid of the asset
     being shown -- a viewer nested in it wins. ``kind`` is the declared kind that matched (the key of
-    the module's ``viewers``); ``module`` is the file inside the ``endpoint`` that serves the app (the
-    SDK makes the address). A viewer not placed on this machine is skipped."""
+    the module's ``viewers``); ``module`` is the file inside the ``route`` of the ``endpoint`` (the audience
+    proxy) that serves the app (the SDK makes the address). A viewer not placed on this machine is skipped."""
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import webapp_endpoints  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import served_routes  # noqa: PLC0415
     ranked = sorted(
         (
             (r, app)
@@ -111,8 +111,9 @@ async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = 
         key=lambda pair: (pair[0][0], str(pair[1].name)),
     )
     out = []
+    routes = await served_routes() if ranked else []  # read once: every viewer is a route of some proxy
     for (order, declared), app in ranked:
-        served = [e for e in await webapp_endpoints(str(app.id)) if getattr(e.backend, "type", "") == "static"]
+        served = [p for p in routes if p.webapp_id == str(app.id) and p.backend.type == "static"]
         if not served:
             continue
         out.append({
@@ -122,6 +123,7 @@ async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = 
             "why": _VIEW_WHY[order[0]],
             "kind": declared,
             "endpoint": str(served[0].id),
+            "route": served[0].mount,
             "module": str(getattr(app, "module", "") or "viewer.js").lstrip("/"),
         })
     return out
