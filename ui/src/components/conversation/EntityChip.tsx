@@ -58,6 +58,9 @@ interface EntityChipProps {
    * navigation. Distinct from `muted`, which is inert.
    */
   staged?: boolean;
+  /** The loaded entity row. Transcripts open by file location, so their
+   *  pointer needs fields (`asset_ref`, `received`) a bare TypeId lacks. */
+  row?: object | null;
 }
 
 /**
@@ -160,6 +163,7 @@ export function EntityChip({
   size = 'chip',
   muted = false,
   staged = false,
+  row,
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
@@ -187,10 +191,10 @@ export function EntityChip({
       // A staged chip never dock-navigates: its entity has no local row yet.
       if (staged) return;
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
+      const pointer = buildDockPointer({ ...row, ...resolved }, inside);
       if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId]);
+  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
 
   const baseLayout =
     size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
@@ -327,6 +331,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      row={data}
       inside={inside}
       onClick={onClick}
       projectId={projectId}

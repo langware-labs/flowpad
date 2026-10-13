@@ -18,7 +18,6 @@ shows a ``single`` value, a ``collection``, or both. An app whose folder is gone
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.builtin.faas.webapp_spec import EDITOR_KIND, VIEWER_KIND
@@ -55,11 +54,6 @@ def _best_kind(declared: list[str], kind: Optional[str]) -> Optional[str]:
     return max((d for d in declared if kind and d != ANY_KIND and kind_matches(d, kind)), key=len, default=None)
 
 
-def _on_disk(app: Any) -> bool:
-    """A file-backed app whose folder is gone is a stale row -- never offered (it would 404)."""
-    return not app.is_file_backed() or Path(app.asset_ref).is_dir()
-
-
 def view_rank(app: Any, kind: str, shape: str, within: Optional[str] = None) -> Optional[tuple[tuple[int, int], str]]:
     """``((tier, -specificity), the declared kind that matched)`` when ``app`` shows ``kind`` as
     ``shape``, else None. Tier 0: nested in ``within``; 1: a declared kind covers it; 2: ``*``."""
@@ -90,7 +84,7 @@ async def editors_for(subject: Any) -> list[dict]:
         (
             (r, app)
             for app in await WebApp.get_all({"kind": EDITOR_KIND})
-            if (r := rank(app, subject)) is not None and _on_disk(app)
+            if (r := rank(app, subject)) is not None and app.on_disk()
         ),
         key=lambda pair: (pair[0], str(pair[1].name)),
     )
@@ -102,23 +96,24 @@ async def editors_for(subject: Any) -> list[dict]:
 
 async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = None) -> list[dict]:
     """The viewers that show a value (``single``) or a list (``collection``) of ``kind``, best first:
-    ``[{typeid, name, title, why, kind, endpoint, module}]``. ``within`` is the typeid of the asset
+    ``[{typeid, name, title, why, kind, endpoint, route, module}]``. ``within`` is the typeid of the asset
     being shown -- a viewer nested in it wins. ``kind`` is the declared kind that matched (the key of
-    the module's ``viewers``); ``module`` is the file inside the ``endpoint`` that serves the app (the
-    SDK makes the address). A viewer not placed on this machine is skipped."""
+    the module's ``viewers``); ``module`` is the file inside the ``route`` of the ``endpoint`` (the audience
+    proxy) that serves the app (the SDK makes the address). A viewer not placed on this machine is skipped."""
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import webapp_endpoints  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import served_routes  # noqa: PLC0415
     ranked = sorted(
         (
             (r, app)
             for app in await WebApp.get_all({"kind": VIEWER_KIND})
-            if (r := view_rank(app, kind, shape, within)) is not None and _on_disk(app)
+            if (r := view_rank(app, kind, shape, within)) is not None and app.on_disk()
         ),
         key=lambda pair: (pair[0][0], str(pair[1].name)),
     )
     out = []
+    routes = await served_routes() if ranked else []  # read once: every viewer is a route of some proxy
     for (order, declared), app in ranked:
-        served = [e for e in await webapp_endpoints(str(app.id)) if getattr(e.backend, "type", "") == "static"]
+        served = [p for p in routes if p.webapp_id == str(app.id) and p.backend.type == "static"]
         if not served:
             continue
         out.append({
@@ -128,6 +123,7 @@ async def viewers_for(kind: str, shape: str = "single", within: Optional[str] = 
             "why": _VIEW_WHY[order[0]],
             "kind": declared,
             "endpoint": str(served[0].id),
+            "route": served[0].mount,
             "module": str(getattr(app, "module", "") or "viewer.js").lstrip("/"),
         })
     return out

@@ -48,7 +48,7 @@ def test_path_alias_routes_through_exact_dns_minter_key():
     assert Project.derive_id_for_path(path) == "fc980f08-65ca-5b26-9f96-e12812c819cf"
 
     sentinel_v5 = "22222222-2222-5222-8222-222222222222"
-    with patch("flow_sdk.builtin.project.mint_uuid", return_value=sentinel_v5) as mock_mint:
+    with patch("flow_sdk.api.api_types.identifier.mint_uuid", return_value=sentinel_v5) as mock_mint:
         assert Project.derive_id_for_path(path) == sentinel_v5
 
     mock_mint.assert_called_once_with(key, namespace=uuid.NAMESPACE_DNS)

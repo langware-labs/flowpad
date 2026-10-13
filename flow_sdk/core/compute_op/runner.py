@@ -65,7 +65,7 @@ from flow_sdk.core.compute.declared_value import (
     value_from_reply,
     value_from_stdout,
 )
-from flow_sdk.core.compute.exec import run_shell
+from flow_sdk.core.compute.exec import last_line, run_shell
 from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.core.compute.shared_shell import shell_for
@@ -362,7 +362,10 @@ async def run_op(
         if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
             return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
         if check_only:
-            return exe.ANSWER.not_yet(f"{spec.display_label}: not installed yet.", check=before, ran=False)
+            # A check answered in this backend says what is missing in its own words ("Received — connect
+            # your own account"); "not installed" is only true of something a command installs.
+            own = before.detail if before is not None and _check_in_process(spec) else ""
+            return exe.ANSWER.not_yet(f"{spec.display_label}: {own or 'not installed yet.'}", check=before, ran=False)
 
         seams = _Seams(
             workdir=workdir,
@@ -837,7 +840,7 @@ async def _cli(
                 workdir=workdir,
                 extra_env={**temp_env, **(env or {})},
                 platform=platform,
-                on_output=lambda: report(running),
+                on_output=lambda line: report(f"{spec.display_label}: {line}" if line else running),
                 on_spawn=lambda pid: command_pid.update(pid=pid),
                 fresh=True,
             )
@@ -1112,7 +1115,7 @@ async def _ask(
         said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
         if said is not None and said.exit_code is ExitCode.OK:
             return answered
-        reason = _last_line(said.stderr if said is not None else "") or "Not done yet."
+        reason = last_line(said.stderr if said is not None else "") or "Not done yet."
         detail = f"{fill(spec.exe_data.detail, env)}\n\n**{reason}**".strip()
 
 
@@ -1144,11 +1147,6 @@ async def _ask_until_held(asking: Awaitable[AskResult], spec: ComputeOpSpec, *, 
         if not task.done():
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
-
-
-def _last_line(text: str) -> str:
-    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
-    return lines[-1] if lines else ""
 
 
 async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, detail: str, wizard_id: str,

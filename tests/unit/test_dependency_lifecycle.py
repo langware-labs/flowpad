@@ -27,6 +27,22 @@ async def test_add_exposes_provider_home_and_calls_the_shared_lifecycle(tmp_path
     assert listed["project_id"] == row["project_id"] and listed["lifecycle"] == row["lifecycle"]
 
 
+async def test_add_indexes_the_provider_before_its_home_page_is_opened(tmp_path, monkeypatch):
+    """The row's Open goes straight to the provider's home asset, so adding must index it."""
+    import flow_sdk.fs_store.indexer.auto_index as auto_index
+
+    indexed: list[str] = []
+
+    async def record(project_id):
+        indexed.append(project_id)
+
+    monkeypatch.setattr(auto_index, "index_dependency_provider", record)
+    consumer = await seed_project(tmp_path / "consumer")
+    provider = await seed_project(tmp_path / "provider")
+    await consumer.add_dependency_action(source=provider.fs_storage_mount_path, name="service")
+    assert indexed == [str(provider.id)]
+
+
 async def test_load_refuses_an_asset_owned_by_a_different_project(tmp_path):
     provider = await seed_project(tmp_path / "provider")
     other = tmp_path / "other"

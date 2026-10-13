@@ -25,6 +25,7 @@ describe('the Data Sources screen and the attention strip say the same thing', (
   it.each<[AttentionKind, Parameters<typeof fakeSource>[2], string]>([
     ['parked', { health: 'config_error', error_code: 'access_denied', error_detail: 'refused' }, 'access denied: refused'],
     ['held', { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' }, 'notes.md'],
+    ['mirror', { health: 'ok', error_code: 'mirror_misfit', error_detail: '1 record(s) did not fit the row kind: t-2' }, '1 record(s) did not fit the row kind: t-2'],
     ['unresolved', { status: 'new' }, i18n._(ATTENTION.unresolved.fallback)],
   ])('a %s source shows its reason and the table’s next step', (kind, fields, wrong) => {
     const source = fake(fields);
@@ -48,6 +49,7 @@ describe('the Data Sources screen and the attention strip say the same thing', (
     ['parked', { health: 'config_error' }, true],
     ['unresolved', { status: 'new' }, true],
     ['held', { health: 'ok', error_code: 'write_back_held' }, false],
+    ['mirror', { health: 'ok', error_code: 'mirror_failed' }, false],
     ['paused', { status: 'disabled' }, false],
     ['listening', {}, false],
   ])('Verify is offered for a %s source exactly when Verify is its verb', (_kind, fields, offered) => {

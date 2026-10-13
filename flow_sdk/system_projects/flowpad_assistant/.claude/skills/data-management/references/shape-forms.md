@@ -1,3 +1,6 @@
+---
+id: 38359999-e3b6-4625-a53e-4a54c28215e7
+---
 # Shape forms — the one grammar
 
 A schema's fields, an agent's `input`/`output` and a dataset's slots are all written
@@ -18,6 +21,9 @@ in this grammar. It is the ONLY copy in the assistant's skills; the others link 
 - `["int", "int"]` is an ERROR (a list carries one element shape).
 - `?`, `enum:` and `{"*": …}` are input-side: a schema read back from code renders
   without them, a `data_schema` folder keeps what its author wrote.
+- `enum:` is for the fields that are YOURS. A field an outside system owns (`owned_by`) is an open
+  `"?string"` whose description names the values you know: a closed set there turns the system's
+  next value into a problem row on every sync (the mirror keeps the record, but hides it from `rows()`).
 
 ## Kind names and namespaces
 
@@ -118,10 +124,11 @@ A second rule is over the rows of ONE dataset — no two share a value:
 ## Fields an outside system owns — `owned_by`
 
 ```json
-"stage": {"shape": "enum:open|won|lost", "description": "The deal's stage, as the CRM has it.", "owned_by": "crm"}
+"stage": {"shape": "?string", "description": "The deal's stage, as the CRM has it: open, won or lost today.", "owned_by": "crm"}
 ```
 
-The value is a COPY of an outside system's. Only a writer that says it writes as that owner sets or
+The value is a COPY of an outside system's — so its shape is open (`?string`, not `enum:`): the
+system, not this schema, decides what the next value is. Only a writer that says it writes as that owner sets or
 changes it — `put / put_many / sync / append(..., by="crm")`, TypeScript `{by: "crm"}`, `DM … --by crm`
 — anyone else is refused (`code: "owned"`, with `owned_by` in the detail), and a new row may leave
 an owned field empty but not fill it. `kindForm(kind).fields[name].owned_by` tells an app to show the

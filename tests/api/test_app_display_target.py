@@ -15,7 +15,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
-from flow_sdk.builtin.webapp_placement import register_dev_endpoint
+from flow_sdk.builtin.webapp_placement import Placed, mount_name, register_dev_endpoint, set_route
 from flow_sdk.core.display_target import (
     DisplayTargetKind,
     DisplayTargetNotFound,
@@ -40,24 +40,20 @@ async def _deployment(artifact: Artifact) -> Deployment:
     return deployment
 
 
-async def _endpoint(artifact: Artifact, deployment: Deployment, backend: dict, **over) -> ServiceEndpoint:
-    endpoint = ServiceEndpoint(
-        parent_type_id=str(deployment.typeid),
-        name=artifact.name,
-        protocol={"spec_kind": "web.app"},
-        backend=backend,
-        artifact_id=artifact.id,
-        **over,
-    )
-    await endpoint.save()
-    return endpoint
+async def _endpoint(artifact: Artifact, deployment: Deployment, backend: dict, *, remote: bool = False) -> Placed:
+    """The artifact served on *deployment*: a route of its ``app`` proxy."""
+    placed, _ = await set_route(deployment, mounts=[mount_name(artifact.name)], backend=backend, artifact_id=artifact.id)
+    if remote:
+        placed.endpoint.remote = True
+        await placed.endpoint.save()
+    return placed
 
 
-async def _dev(artifact: Artifact, port: int) -> ServiceEndpoint:
+async def _dev(artifact: Artifact, port: int) -> Placed:
     return await _endpoint(artifact, await _deployment(artifact), {"type": "proxy", "port": port})
 
 
-async def _served(artifact: Artifact, tmp_path) -> ServiceEndpoint:
+async def _served(artifact: Artifact, tmp_path) -> Placed:
     return await _endpoint(artifact, await _deployment(artifact), {"type": "static", "root": str(tmp_path / "dist")})
 
 
@@ -139,13 +135,39 @@ async def test_an_endpoint_is_shown_by_its_own_typeid(bootstrapped_client, user,
     artifact = await _artifact("Direct")
     dev = await _dev(artifact, 3301)
 
-    target = await resolve_display_target(typeid=str(dev.typeid))
+    target = await resolve_display_target(artifact_id=artifact.id)
 
     assert target == {
         "kind": DisplayTargetKind.APP,
-        "typeid": f"service_endpoint-{dev.id}",
+        "typeid": f"artifact-{artifact.id}",
+        "artifact_id": artifact.id,
         "endpoint_id": dev.id,
+        "route": "Direct",
         "name": "Direct",
+        "runtime": "dev",
+    }
+    assert dev.subkind == "app", "its placement's end-user proxy"
+
+
+@pytest.mark.asyncio
+async def test_an_endpoint_of_its_own_is_shown_by_its_typeid(bootstrapped_client, user):
+    """A service that is a row of its own (not a route) is addressed by that row alone."""
+    artifact = await _artifact("Api")
+    row = ServiceEndpoint(
+        parent_type_id=str((await _deployment(artifact)).typeid),
+        name="docs",
+        protocol={"spec_kind": "web.app"},
+        backend={"type": "proxy", "port": 3302},
+    )
+    await row.save()
+
+    target = await resolve_display_target(typeid=str(row.typeid))
+
+    assert target == {
+        "kind": DisplayTargetKind.APP,
+        "typeid": f"service_endpoint-{row.id}",
+        "endpoint_id": row.id,
+        "name": "docs",
         "runtime": "dev",
     }
 
@@ -158,10 +180,12 @@ async def test_a_bare_port_is_registered_once_as_this_machines_dev_endpoint(boot
 
     assert again.id == first.id
     assert first.backend.type == "proxy" and first.backend.port == 4321
-    assert first.name == "port-4321"
-    assert first.supports_direct_access, "a dev server is its own origin — HMR, absolute /src paths"
+    assert (first.subkind, first.mount) == ("app", "port-4321")
+    assert first.endpoint.supports_direct_access, "a dev server is its own origin — HMR, absolute /src paths"
     placement = await Deployment.get_by_id(first.parent_type_id.split("-", 1)[1])
     assert placement.parent_type_id.startswith("compute_node-"), "no project → the machine's placement"
 
     renamed = await register_dev_endpoint(None, port=4321, name="storefront")
-    assert renamed.id == first.id and renamed.name == "storefront"
+    assert renamed.id == first.id and renamed.mount == "storefront"
+    routes = renamed.endpoint.backend.routes
+    assert "storefront" in routes and "port-4321" not in routes, "the same server, served once"

@@ -8,6 +8,7 @@ import { ConnectionManager, DATASET_ROWS_CHANGED, DataSource, Dataset, EventBus,
 import type { CheckDetail } from '@sdk/entities/dataset';
 import { ExpressionNode } from '@sdk/FlowSync/query';
 import type { KindForm, KindRule } from '@sdk/viewers/contract';
+import { settle } from './watch_test_utils';
 
 describe('a dataset built from a wire row keeps its actions', () => {
   it('a wire `examples` field does not hide listing the examples', () => {
@@ -181,6 +182,82 @@ describe('hearing that rows changed', () => {
 
   it('names the tag the server emits', () => {
     expect(DATASET_ROWS_CHANGED).toBe('dataset.rows.changed');
+  });
+
+  /** The event is enough: a write made while the socket was down is told on reconnect, as one
+   *  `sync` with no keys — when the rows' version moved past the last one this listener heard or
+   *  this instance read. No focus re-read. */
+  describe('catching up after the socket was down', () => {
+    let offs: Array<() => void> = [];
+    afterEach(() => {
+      offs.forEach((off) => off());
+      offs = [];
+    });
+    const answer = (version: string) => vi.spyOn(dataManager, 'callAction').mockResolvedValue({ version } as never);
+    const listen = async (ds = new Dataset({ id: ID, name: 'n' } as never), version = 'v1') => {
+      const call = answer(version);
+      const heard: unknown[] = [];
+      offs.push(ds.onRowsChanged((c) => heard.push(c)));
+      await settle();
+      return { call, heard, ds };
+    };
+    const reconnect = async () => {
+      ConnectionManager.getInstance().emit('on_reconnected');
+      await settle();
+    };
+
+    it('asks the rows version once as a baseline, and says nothing when it has not moved', async () => {
+      const { call, heard } = await listen();
+      expect(call.mock.calls[0][0].name).toBe('rows-version');
+      await reconnect();
+      expect(heard).toEqual([]);
+    });
+
+    it('tells one sync, with the new version, when the rows moved while away', async () => {
+      const { call, heard } = await listen();
+      call.mockResolvedValue({ version: 'v2' } as never);
+      await reconnect();
+      expect(heard).toEqual([{ op: 'sync', keys: [], count: 0, version: 'v2' }]);
+      await reconnect();
+      expect(heard).toHaveLength(1); // seen now: nothing more to say
+    });
+
+    it('a version heard on an event counts as heard, and each listener catches up on its own', async () => {
+      const { heard } = await listen();
+      frame(`dataset:${ID}`, { op: 'put', keys: ['a'], count: 1, version: 'v2' });
+      const { call, heard: other } = await listen(undefined, 'v2'); // joins at v2 (and re-spies the action)
+      await reconnect();
+      expect(heard).toHaveLength(1); // the event itself; no sync for a version already heard
+      expect(other).toEqual([]);
+      call.mockResolvedValue({ version: 'v3' } as never);
+      await reconnect();
+      expect(heard).toHaveLength(2); // both hear the move, each against its own last version
+      expect(other).toHaveLength(1);
+    });
+
+    it('a version read with rows() counts as seen, whichever came first', async () => {
+      const ds = new Dataset({ id: ID, name: 'n' } as never);
+      const read = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ rows: [], total: 0, problems: [], version: 'v2' } as never);
+      await ds.rows(); // read first, then a write lands, then the listener's baseline sees v3
+      read.mockRestore();
+      const { call, heard } = await listen(ds, 'v3');
+      expect(heard).toEqual([{ op: 'sync', keys: [], count: 0, version: 'v3' }]); // the write between
+      call.mockResolvedValue({ rows: [], total: 0, problems: [], version: 'v4' } as never);
+      await ds.rows(); // the page re-read: v4 is seen
+      call.mockResolvedValue({ version: 'v4' } as never);
+      await reconnect();
+      expect(heard).toHaveLength(1); // nothing moved since the read
+    });
+
+    it('stops checking when unsubscribed, and a server that is away is not an error', async () => {
+      const { call, heard } = await listen();
+      call.mockRejectedValue(new Error('away'));
+      await reconnect();
+      offs.pop()!();
+      call.mockResolvedValue({ version: 'v9' } as never);
+      await reconnect();
+      expect(heard).toEqual([]);
+    });
   });
 });
 

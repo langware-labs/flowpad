@@ -54,6 +54,9 @@ DISPLAY_TARGET_KEYS = (
     "url",
     # An app shown by its Artifact carries no typeid/path — the artifact IS its address.
     "artifact_id",
+    # An app shown by what serves it: the audience proxy (``typeid``) AND its mount — two apps of one
+    # placement share the proxy.
+    "route",
 )
 
 
