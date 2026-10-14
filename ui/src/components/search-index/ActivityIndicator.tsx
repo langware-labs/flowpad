@@ -1,3 +1,4 @@
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { showActivityModal } from '@src/store/use-activity-modal-store';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
@@ -31,6 +32,7 @@ const LIST_ROW_STYLE = {
 
 export function ActivityIndicator(props: ActivityIndicatorProps) {
   const { currentActivity, progressTable } = useSystemTools();
+  const { t } = useLingui();
   const show = showActivityModal;
 
   if (props.variant === 'list') {
@@ -66,7 +68,11 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
                   {/* Actually-(re)indexed this run = done − skipped. Shown on any
                       delta (Fast) run — where some entries were skipped-fresh — so
                       the real work is visible (incl. 0) instead of hidden in done. */}
-                  {row.skipped > 0 && <span className="text-foreground">{row.done - row.skipped} indexed</span>}
+                  {row.skipped > 0 && (
+                    <span className="text-foreground">
+                      <Trans>{row.done - row.skipped} indexed</Trans>
+                    </span>
+                  )}
                   <span className="text-muted-foreground">{row.total > 0 ? `${row.done}/${row.total}` : row.done}</span>
                   {pct !== null && (
                     <>
@@ -116,7 +122,7 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
           props.className ??
           'flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
         }
-        title={`${label} — click to open Indexing info`}
+        title={t`${label} — click to open Indexing info`}
         aria-label={label}
         data-testid={props['data-testid'] ?? 'footer-indexing-indicator'}
       >

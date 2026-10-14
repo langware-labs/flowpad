@@ -14,10 +14,11 @@ import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
-import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { TabTooltipName, useInTabTip } from '@src/components/tabs/TabTooltipName';
 import { AgentCardBody } from '@src/components/agents/AgentIntroCard';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 
 import React, { useMemo } from 'react';
 
@@ -156,12 +157,30 @@ export const ProcessTabCard: React.FC<{
   statusReason?: string;
 }> = ({ processId, fallbackName, statusReason }) => {
   const isAdvanced = useIsAdvanced();
+  const inTabTip = useInTabTip();
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
   const agent = useLaunchingAgent(process?.deployment_id);
   const details = process && isAdvanced ? <ProcessInfoTooltip process={process} statusReason={statusReason} /> : null;
 
   if (!agent) {
     if (details) return <div className="p-2.5">{details}</div>;
+    // A plain session, outside advanced mode: what it is doing and where.
+    if (process) {
+      return (
+        <div className="min-w-[220px] max-w-[320px] space-y-1 p-2.5" data-testid="tab-session-card">
+          <TabTooltipName name={resolveProcessDisplayName(process) || fallbackName} />
+          {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+          <p className="text-[11px] text-muted-foreground">
+            {process.worker_type && <span>{workerLabel(process.worker_type)} · </span>}
+            <span className="capitalize">{getDisplayStatus(process) ?? ProcessStatus.NEW}</span>
+            <span> · {formatTimeAgoShort(process.updated_date)}</span>
+          </p>
+          {process.workdir && <WorkdirLine workdir={process.workdir} />}
+        </div>
+      );
+    }
+    // Nothing but the name yet, and a tab tip's header already shows it.
+    if (inTabTip && !statusReason) return null;
     return (
       <div className="space-y-1 px-3 py-1.5">
         <TabTooltipName name={fallbackName} className="font-normal" />

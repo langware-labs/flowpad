@@ -50,6 +50,13 @@ Two builds running on the same machine then land on different ports, and
   someone **listening** here", not "is this port free" — see both blind spots
   below.
 
+* Since 2026-10-13 the picker is `app_ports.free_port` (`flow_sdk/core/app_ports.py`), the one
+  picker every start path uses: same band, a port counts as taken when anything listens on it at
+  EITHER loopback (IPv4 or IPv6), and a port that an app of the project declares in its
+  `webapp.json` (`serving.ports`) is never handed out. This command is for a server that is NOT an
+  app with a `webapp.json`; such an app's servers are started by Flowpad on the port it declares,
+  and its port is read with `flow app ports`. Still no lease.
+
 * Why the persona files matter as much as the command: `standard.md` and
   `vibe.md` are the only place an agent learns which port to use. They used to
   say "pick a port in 8000-8099 (check with `lsof`)" and `flow show webapp

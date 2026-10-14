@@ -288,6 +288,12 @@ class CollectionSource(Source, ABC):
 
     supported_queries: ClassVar[tuple[type[DataQuery], ...]] = ()
     page_type: ClassVar[type[DataPage]] = DataPage
+    #: The listing the current traversal pages: ``(session, query token, entries)``; None between sessions.
+    _listing: Optional[tuple[object, str, Sequence[tuple[str, Any]]]] = None
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        self._listing = None        # a listing is a session's: never pinned past it
+        await super().__aexit__(exc_type, exc, traceback)
 
     async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
         self._require_open()
@@ -302,13 +308,21 @@ class CollectionSource(Source, ABC):
         page_size: Optional[int] = None,
         narrow: Optional[Mapping[str, Any]] = None,
     ) -> DataPage:
-        self._require_open()
+        """One page. A fetch with no cursor SCANS the collection; a fetch that continues a cursor pages
+        the scan that cursor came from (kept for the session, per query) -- one listing per traversal,
+        whatever the page size, and every page of it from one consistent snapshot. A new traversal
+        (no cursor), a new session or another query scans again."""
+        session = self._require_open()
         query = self.effective_query(narrow)
         self._check_query(query)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         token = _paging.query_token(query)
         after = None if cursor is None else _paging.decode(cursor, token)
-        entries, last = _paging.slice_after(await self._scan(query), after, limit)
+        listing = self._listing
+        if after is None or listing is None or listing[0] is not session or listing[1] != token:
+            listing = (session, token, await self._scan(query))
+            self._listing = listing
+        entries, last = _paging.slice_after(listing[2], after, limit)
         return self.page_type(
             items=tuple(self._item(key, raw) for key, raw in entries),
             next_cursor=None if last is None else _paging.encode(last, token),

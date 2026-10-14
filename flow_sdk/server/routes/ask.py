@@ -26,6 +26,7 @@ from flow_sdk.core.compute_op.ask import (
     held_items,
     open_questions,
     pending,
+    seen,
     serve_here,
 )
 from flow_sdk.core.compute_op.ask import answer as deliver_answer
@@ -172,6 +173,14 @@ async def cancel_question(question_id: str):
     if not decline(question_id):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/seen")
+async def question_seen(question_id: str):
+    """A screen is showing the question: it waits as long as someone has it open (``ask.seen``)."""
+    if not seen(question_id):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"seen": question_id})
 
 
 @router.post("/{question_id}/assist")

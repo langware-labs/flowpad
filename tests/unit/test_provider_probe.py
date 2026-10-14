@@ -77,9 +77,9 @@ def test_result_serializes_the_three_states_intact():
         "code": None,
     }
     assert ProbeResult(ok=False).as_data()["ok"] is False
-    assert ProbeResult(ok=True, identity="serans1").as_data() == {
+    assert ProbeResult(ok=True, identity="octocat").as_data() == {
         "ok": True,
-        "identity": "serans1",
+        "identity": "octocat",
         "account_key": None,
         "detail": None,
         "code": None,
@@ -122,7 +122,7 @@ def test_the_bearer_is_extracted_from_every_stored_credential_shape():
 
 def test_identity_falls_back_to_what_the_credential_carries():
     """Anthropic's probe cannot name the holder, but its stored response can."""
-    assert identity_from_credential({"email": "alice@example.com"}) == "alice@example.com"
+    assert identity_from_credential({"email": "dan@example.com"}) == "dan@example.com"
     assert identity_from_credential("a bare token") is None
 
 

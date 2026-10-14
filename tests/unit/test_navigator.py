@@ -225,7 +225,7 @@ def test_a_clear_lead_acts_below_the_confidence_bar():
 def test_a_type_name_opens_its_list_and_a_screen_name_still_wins():
     assert navigator.rule_hit("show specs").value == "assets/list/spec"
     assert navigator.rule_hit("open the project manifest").value == "assets/list/project_manifest"
-    assert navigator.rule_hit("show my tasks").value == "tasks", "the Tasks screen owns the word"
+    assert navigator.rule_hit("show my tasks").value == "assets/list/task", "the task list owns the word"
     assert navigator.rule_hit("open the help desk") is None, "a screen that needs a pointer owns its name too"
 
 

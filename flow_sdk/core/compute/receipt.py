@@ -68,6 +68,9 @@ class StepResult(DataSpec):
     value: Any = None
     #: Why it failed — the agent's own message, or ours about its receipt.
     error: str = ""
+    #: Did the agent give its OWN account (a well-formed receipt, success or failure)? False when
+    #: the receipt is missing or unreadable: then ``error`` is ours, and the run itself broke.
+    reported: bool = False
     #: Where the receipt was looked for, kept even on failure so a person can
     #: go and read what (if anything) is there.
     path: str = ""
@@ -100,8 +103,7 @@ def result_contract(path: Path, output: str, shape: Any = None) -> str:
 ---
 ## Your result
 
-This step is part of a wizard, and the wizard reads your result from a file —
-not from your final message. When you are done, succeed or fail, write JSON to
+Your caller reads your result from a file — not from your final message. When you are done, succeed or fail, write JSON to
 exactly this path:
 
   {path}
@@ -117,7 +119,7 @@ On failure:
 
 Rules:
 - Write the file even when you fail. No file means the step FAILED and the
-  wizard says so.
+  caller says so.
 - `data.{output}` is required on success, and under {RESULT_VALUE_CAP} bytes of
   JSON. If what you produced is bigger than that, write it somewhere and return
   its path here instead.
@@ -162,7 +164,7 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
         return StepResult(
             ok=False, summary=summary,
             error=f"{prefix}: {reported}" if reported else prefix,
-            path=where,
+            path=where, reported=True,
         )
 
     values = data.get("data")
@@ -184,7 +186,7 @@ def read_step_result(path: Path, *, output: str) -> StepResult:
                    "return a path, not the payload"),
             path=where,
         )
-    return StepResult(ok=True, summary=summary, value=value, path=where)
+    return StepResult(ok=True, summary=summary, value=value, path=where, reported=True)
 
 
 def clear_receipt(path: Path) -> None:

@@ -6,7 +6,7 @@ may be), and two standing declarations every clone of the project must also see:
 
     {
       "dependencies": {
-        "langware-os": "git+https://github.com/langware-labs/langware-os#main",
+        "handbook":   "git+https://github.com/acme/handbook#main",
         "legal-docs":  {"source": "git+https://github.com/acme/handbook#main", "path": "legal"}
       },
       "optionalDependencies": {"policies": "hub:8c1f0b2e-…", "notes": "file:~/notes"},

@@ -21,6 +21,7 @@ const DISPLAY_TARGET_KEYS = [
   'options',
   'url',
   'artifact_id',
+  'route',
 ] as const;
 
 /** What a display target addresses — equal for two shows of the same thing,

@@ -18,12 +18,26 @@ export interface AgentRow {
 const ALL_AGENTS = new QueryRequest({ type: Agent.type, scope: [], name: 'assetCounters:agents' });
 // Every deployment; `deploymentsByAgent` keeps the ones whose parent is an agent (what a placement
 // places is its parent — there is no stored kind to query by).
-const AGENT_DEPLOYMENTS = new QueryRequest({
+// One request for every counter group, so they share one watch.
+export const ALL_DEPLOYMENTS = new QueryRequest({
   type: Deployment.type,
   scope: [],
   query: null,
-  name: 'assetCounters:agentDeployments',
+  name: 'assetCounters:deployments',
 });
+
+/** Deployments grouped by the element they place, for those placing `type`. */
+export function deploymentsByParent(deployments: Deployment[], type: string): Map<string, Deployment[]> {
+  const byParent = new Map<string, Deployment[]>();
+  for (const deployment of deployments) {
+    if (deployment.elementType !== type) continue;
+    const key = deployment.parent_type_id as string;
+    const list = byParent.get(key) ?? [];
+    list.push(deployment);
+    byParent.set(key, list);
+  }
+  return byParent;
+}
 
 /** Deployments grouped by the agent they place (`Deployment.agentTypeId`). */
 export function deploymentsByAgent(deployments: Deployment[]): Map<string, Deployment[]> {
@@ -54,7 +68,7 @@ export function toAgentRows(agents: Agent[], byAgent: Map<string, Deployment[]>)
 }
 
 /** Running = one of the project's agents that has a deployment. */
-export function runningRows(projectRows: AgentRow[]): AgentRow[] {
+export function runningRows<R extends { deployments: Deployment[] }>(projectRows: R[]): R[] {
   return projectRows.filter((row) => row.deployments.length > 0);
 }
 
@@ -64,7 +78,7 @@ function useAgentCounters(): AssetCounter<AgentRow>[] {
   // and it is the strip that slices for display.
   const { agents: projectAgents, isLoading: projectLoading } = useProjectAgents(project);
   const { data: allAgents = [], isLoading: allLoading } = useEntitiesQuery<Agent>(ALL_AGENTS);
-  const { data: deployments = [], isLoading: deploymentsLoading } = useEntitiesQuery<Deployment>(AGENT_DEPLOYMENTS);
+  const { data: deployments = [], isLoading: deploymentsLoading } = useEntitiesQuery<Deployment>(ALL_DEPLOYMENTS);
 
   // Separate memos: each watch pushes a fresh array, and a deployment change
   // must not re-sort every agent on the machine twice over.
@@ -110,7 +124,7 @@ export function agentSource(agent: Agent): string {
   return parts.at(-2) ?? '';
 }
 
-function DeploymentBadges({ deployments }: { deployments: Deployment[] }) {
+export function DeploymentBadges({ deployments }: { deployments: Deployment[] }) {
   if (deployments.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
     <div className="flex flex-wrap gap-1">

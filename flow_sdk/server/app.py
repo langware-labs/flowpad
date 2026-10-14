@@ -119,6 +119,14 @@ async def _on_server_startup():
     except Exception:
         logging.getLogger(__name__).exception("Direct webhook listener could not start")
 
+    # The two audience doors — one listener per audience a browser can enter this box by.
+    from flow_sdk.server import audience_listener
+
+    try:
+        await audience_listener.start()
+    except Exception:
+        logging.getLogger(__name__).exception("Audience listeners could not start")
+
     # Start putting activity progress on the socket. Installed HERE rather than at import
     # time because the emitter captures the running loop to defer its coalesced flushes
     # onto — at import there is no loop, and every tick would silently go nowhere.
@@ -530,13 +538,19 @@ async def _start_agent_server() -> None:
 
 
 async def _prune_web_delivery_rows() -> None:
-    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go."""
+    """A ``micro_app`` row is a webapp definition now; the old DB-only delivery rows go — and so do the
+    per-app endpoint rows from before a placement's ``admin`` / ``app`` proxies."""
     try:
         from flow_sdk.builtin.webapp_placement import prune_delivery_rows
 
         pruned = await prune_delivery_rows()
         if pruned:
             print(f"  Web apps: dropped {pruned} delivery row(s) — builds are served by their endpoints")
+        from flow_sdk.builtin.webapp_placement import prune_per_app_endpoints
+
+        folded = await prune_per_app_endpoints()
+        if folded:
+            print(f"  Web apps: dropped {folded} per-app endpoint row(s) — apps are routes of their audience proxy")
     except Exception:
         logging.getLogger(__name__).exception("Web apps: pruning delivery rows failed")
 
@@ -667,7 +681,8 @@ async def _start_transcript_streamer() -> None:
         # a cancelled walk kills the child with it (``stream_ndjson``).
         global _TRANSCRIPT_CATCH_UP_TASK
         _TRANSCRIPT_CATCH_UP_TASK = _asyncio.create_task(
-            _transcript_catch_up_walk(), name="transcript-catch-up",
+            _transcript_catch_up_walk(),
+            name="transcript-catch-up",
         )
         print("  Transcript streamer: started (catch-up scheduled in background)")
     except Exception:
@@ -814,10 +829,12 @@ async def _start_cloud_ws_listener() -> None:
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
-    from flow_sdk.config import clear_server_info
-    from flow_sdk.server import webhook_listener
+    import asyncio as _asyncio
 
-    await webhook_listener.stop()
+    from flow_sdk.config import clear_server_info
+    from flow_sdk.server import audience_listener, webhook_listener
+
+    await _asyncio.gather(webhook_listener.stop(), audience_listener.stop())
 
     if _AGENT_SERVER is not None:
         try:

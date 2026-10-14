@@ -36,7 +36,7 @@ from tests.api.test_run_session_turn import fake_worker  # noqa: F401 — the sh
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-HOST = {"user_id": "host-remote", "name": "Nir Levy"}
+HOST = {"user_id": "host-remote", "name": "Bob Example"}
 
 
 async def _two_person_conversation(client) -> str:
@@ -66,10 +66,10 @@ async def test_the_button_opens_a_pending_session_and_asks_the_host(bootstrapped
 
     session = await RemoteWorkerSession.get_one({"id": data["id"]})
     assert session.status == S.PENDING.value
-    assert session.host_user_id == "host-remote" and session.host_name == "Nir Levy"
+    assert session.host_user_id == "host-remote" and session.host_name == "Bob Example"
     [line] = [m for m in await FlowMessage.get_all({"conversation_id": conv_id}) if m.kind == "session_event"]
     assert line.kind == FlowMessageKind.SESSION_EVENT.value
-    assert line.text.endswith("asks Nir Levy for a live session")  # reads right on both sides
+    assert line.text.endswith("asks Bob Example for a live session")  # reads right on both sides
     assert line.remote_worker_session_id == session.id
     marker = _marker(line)
     assert marker[LIVE_SESSION_EVENT_MARKER_KEY] == "requested"
@@ -94,9 +94,9 @@ async def test_a_conversation_with_no_one_else_cannot_host_a_session(bootstrappe
 
 def _inbound_request(conv_id: str, session_id: str) -> FlowMessage:
     fm = FlowMessage(
-        text="Eran asks to start a live session on your machine",
+        text="Dan asks to start a live session on your machine",
         sender_id="guest-remote",
-        sender_name="Eran",
+        sender_name="Dan",
         conversation_id=conv_id,
         remote_worker_session_id=session_id,
         kind=FlowMessageKind.SESSION_EVENT.value,

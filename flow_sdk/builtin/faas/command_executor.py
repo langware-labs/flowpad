@@ -3,9 +3,9 @@
 Lives here rather than in ``utils`` because ``utils`` is the leaf layer that
 ``builtin`` imports; a ComputeNode dependency there would invert the direction.
 
-``ComputeNode.run_command`` takes a shell *string*, so this is where argv becomes
-one — with the quoting rule chosen by the node's own path separator, exactly as
-``faas/git_repo.py`` already does it. Callers upstream keep passing raw values.
+Remote ``ComputeNode.run_command`` takes a shell *string*, so this is where argv
+becomes one. The local node uses the native executor directly; arguments never
+pass through a shell. Callers upstream keep passing raw values.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Mapping, NamedTuple, Sequence
 
 from flow_sdk.config import ComputeProviderType
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
-from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable, is_git_argv
+from flow_sdk.utils.command_executor import _LocalCommandExecutor
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -62,18 +62,24 @@ class ComputeNodeCommandExecutor:
         env: Mapping[str, str] | None = None,
         timeout: int | None = None,
     ) -> CliResult:
-        """``timeout`` bounds the WAIT, when a caller gives one: past it the
-        answer is ``timed_out`` — the node API cannot kill a command, so it may
+        """For remote nodes ``timeout`` bounds the WAIT, when a caller gives one: past it the
+        answer is ``timed_out`` — the remote node API cannot kill a command, so it may
         still be running. No caller's budget is widened here; none is invented.
 
         An exit status the provider did not report stays ``None`` ("did not
         finish"), never 0 — reading a missing status as success was the bug.
         """
+        if self._is_this_machine:
+            # The local provider is already in this process. Keep argv native:
+            # list2cmdline quotes for CreateProcess, not cmd.exe (which would
+            # interpret pipes, carets and percent expansions in arguments).
+            return await _LocalCommandExecutor().run(
+                argv,
+                cwd=cwd if cwd is not None else self._node.compute_provider.get_home_path(),
+                env=env,
+                timeout=timeout,
+            )
         command = " ".join(self._quote(arg) for arg in argv)
-        if is_git_argv(argv) and self._is_this_machine and not git_usable():
-            # This Mac has no Command Line Tools: /usr/bin/git would open Apple's installer dialog (the status bar
-            # polls git, so it would open it on every project). Answer as a missing binary; the Git wizard asks.
-            return CliResult.of_process(command, EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
         if cwd:
             cd = f"cd /d {self._quote(cwd)}" if self._windows_shell else f"cd {self._quote(cwd)}"
             command = f"{cd} && {command}"

@@ -300,6 +300,15 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     return this.channel_spec?.transport === ChannelTransport.Source;
   }
 
+  /** Run one of the channel's conversation verbs (`channel_spec.actions`). A refusal throws with
+   *  the channel's own words. */
+  async act(action: string, text = ''): Promise<{ ok: boolean; item_id?: string | null } | undefined> {
+    if (!this.id) throw new Error('act requires this.id');
+    const info = new ActionInfo('act', Conversation.type, this.id, 'POST');
+    info.bodyParameters = { action, text };
+    return dataManager.callAction<unknown, { ok: boolean; item_id?: string | null }>(info);
+  }
+
   get conversationMessageIds(): ConversationMessagePointer[] {
     if (!this.message_ids) return [];
     let raw: RawConversationPointer[];

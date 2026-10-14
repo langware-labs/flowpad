@@ -14,14 +14,11 @@ import sys
 import time
 from pathlib import Path
 
-# Ensure the repo root and SDK path are on sys.path so "server" and "flow_sdk"
-# are importable even when this script is run directly (e.g. `python run.py`).
-_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Direct script execution needs the directory containing the flow_sdk package.
+# Never add flow_sdk itself: its secrets package would shadow stdlib secrets.
+_repo_root = str(Path(__file__).resolve().parents[2])
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
-_sdk_path = os.path.join(_repo_root, "sdk", "python")
-if _sdk_path not in sys.path:
-    sys.path.insert(0, _sdk_path)
 
 # On Windows the console/stdio defaults to a legacy code page (e.g. cp1252),
 # so a log line carrying non-ASCII text — a Hebrew project path, an exception
@@ -140,7 +137,7 @@ except (FileNotFoundError, OSError):
 # Only AFTER the .env file is loaded: env_probe imports ``flow_sdk.config``, whose
 # ``default_service_config`` reads the environment ONCE, at import. Imported above the
 # load_dotenv, it froze FLOWPAD_HUB_URL before .env.<instance>.local could set it, so a
-# dev backend pointed at staging silently talked to app.flowpad.ai.
+# backend pointed at another hub silently talked to the default one.
 from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture  # noqa: E402
 
 # Build the per-instance settings singleton now that .env.local is loaded.

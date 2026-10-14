@@ -63,7 +63,7 @@ describe('ContactPicker — teams', () => {
     sdk.getMembers.mockResolvedValue(ROSTER);
     render(<Harness initial={[{ email: 'carol@example.com', name: 'Carol' }]} />);
 
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     fireEvent.click(await screen.findByTestId(`contact-team-option-${TEAM_ID}`));
 
     await waitFor(() =>
@@ -76,7 +76,7 @@ describe('ContactPicker — teams', () => {
     sdk.getMembers.mockResolvedValue(ROSTER);
     render(<Harness initial={[{ user_id: 'hub-alice', email: 'alice@example.com', name: 'Alice' }]} />);
 
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     fireEvent.click(await screen.findByTestId(`contact-team-option-${TEAM_ID}`));
 
     await waitFor(() => expect(screen.getByTestId('picked').textContent).toBe('alice@example.com,bob@example.com'));
@@ -85,7 +85,7 @@ describe('ContactPicker — teams', () => {
   it('does not offer a team whose roster the hub refused (empty)', async () => {
     sdk.getMembers.mockResolvedValue([]);
     render(<Harness initial={[]} />);
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     await waitFor(() => expect(sdk.getMembers).toHaveBeenCalled());
     expect(screen.queryByTestId(`contact-team-option-${TEAM_ID}`)).toBeNull();
   });
@@ -93,7 +93,7 @@ describe('ContactPicker — teams', () => {
   it('does not offer a team whose roster is only the user', async () => {
     sdk.getMembers.mockResolvedValue([ROSTER[0]]);
     render(<Harness initial={[]} />);
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     await waitFor(() => expect(sdk.getMembers).toHaveBeenCalled());
     expect(screen.queryByTestId(`contact-team-option-${TEAM_ID}`)).toBeNull();
   });
@@ -101,14 +101,14 @@ describe('ContactPicker — teams', () => {
   it('does not offer a team whose roster read failed', async () => {
     sdk.getMembers.mockRejectedValue(new Error('403'));
     render(<Harness initial={[]} />);
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     await waitFor(() => expect(sdk.getMembers).toHaveBeenCalled());
     expect(screen.queryByTestId(`contact-team-option-${TEAM_ID}`)).toBeNull();
   });
 
   it('offers no teams unless the surface asks for them', () => {
     render(<Harness initial={[]} includeTeams={false} />);
-    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'zs' } });
+    fireEvent.change(screen.getByTestId('contact-input'), { target: { value: 'ini' } });
     expect(screen.queryByTestId(`contact-team-option-${TEAM_ID}`)).toBeNull();
   });
 });

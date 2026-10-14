@@ -6,6 +6,7 @@ import { nameConflictOf } from '@src/components/conversation/asset-review/Projec
 import { useCloneGitProjectAndOpen, useInstallSharedProjectAndOpen } from '@src/components/project-selector';
 import { useSelectExistingProject } from '@src/components/project-selector/use-ensure-project';
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -19,6 +20,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { withHomePage } from '@src/project-home-page/home-page-state';
+import { declineSetup } from '@src/store/use-incoming-project-store';
 import { AlertTriangle, CheckCircle2, GitBranch, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -77,6 +79,7 @@ export function IncomingProjectDialog({
   const [suggestedName, setSuggestedName] = useState('');
   const [attemptedName, setAttemptedName] = useState('');
   const [nameOverride, setNameOverride] = useState('');
+  const [dontAskAgain, setDontAskAgain] = useState(true);
   const startedRef = useRef(false);
   /** The location a set-up started on: once it succeeds, the dialog stays up until the app has left it. */
   const [setupFrom, setSetupFrom] = useState<string | null>(null);
@@ -94,8 +97,27 @@ export function IncomingProjectDialog({
     setAttemptedName('');
     setNameOverride('');
     setSetupFrom(null);
+    setDontAskAgain(true);
     onClose();
   }, [onClose]);
+
+  /** Closed without setting up it (cancelled, or opened the project that holds its name): with
+   *  "Don't ask me again" ticked, this project is not offered again. */
+  const handleDecline = useCallback(() => {
+    if (projectId && dontAskAgain && (step === 'confirm' || step === 'name-taken')) declineSetup(projectId);
+    handleClose();
+  }, [projectId, dontAskAgain, step, handleClose]);
+
+  const dontAskAgainField = projectId && (
+    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+      <Checkbox
+        checked={dontAskAgain}
+        onCheckedChange={(checked) => setDontAskAgain(checked === true)}
+        data-testid="incoming-project-dont-ask-again"
+      />
+      <Trans>Don't ask me again</Trans>
+    </label>
+  );
 
   /**
    * A shared project is materialized IN PLACE: the row already exists locally
@@ -162,8 +184,8 @@ export function IncomingProjectDialog({
   const openExisting = useCallback(() => {
     if (!nameTaken) return;
     navigation.openDock(withHomePage(DockPointer.forProject(nameTaken.existingProjectId)));
-    handleClose();
-  }, [nameTaken, navigation, handleClose]);
+    handleDecline();
+  }, [nameTaken, navigation, handleDecline]);
 
   /** The name is taken here: install the shared project under the receiver's name. */
   const runInstallAsName = useCallback(
@@ -213,7 +235,7 @@ export function IncomingProjectDialog({
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        if (!o) handleClose();
+        if (!o) handleDecline();
       }}
     >
       {/* Only its own buttons close it: another dialog opening over it (the first-run setup
@@ -255,8 +277,9 @@ export function IncomingProjectDialog({
                 </div>
               )}
             </div>
+            {dontAskAgainField}
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>
+              <Button variant="ghost" onClick={handleDecline}>
                 <Trans>Cancel</Trans>
               </Button>
               <Button onClick={handleConfirm} data-testid="incoming-project-install">
@@ -304,8 +327,9 @@ export function IncomingProjectDialog({
                 </Trans>
               </p>
             )}
+            {dontAskAgainField}
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}>
+              <Button variant="ghost" onClick={handleDecline}>
                 <Trans>Cancel</Trans>
               </Button>
               <Button variant="secondary" onClick={openExisting} data-testid="incoming-project-open-existing">

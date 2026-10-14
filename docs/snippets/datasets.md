@@ -49,7 +49,7 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.core.navigation import DATASET
 
 nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
-summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 252, {'eval': 250, 'test': 2})
+summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
 where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
@@ -222,13 +222,14 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 `$AND` / `$OR`) or a plain `{path: value}` map; a field is a path into the row as it travels —
 `key`, `input.stage`, `input.stage_dates.won` — and a date compares as its ISO string.
 
-Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems}`,
-`GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
+Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
+`GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
 `POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
 `dataset.rows(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
-re-reads when told instead of on a timer. A script outside the server is heard too (the write tells
-the running instance; best effort). An app opens an outside page — the record in the CRM — with
+re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
+on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
+heard too (the write tells the running instance). An app opens an outside page — the record in the CRM — with
 `openExternal(url)` (http/https only; the host opens it in the person's browser).
 
 ## 10. Ask across links, count by week, find by text
@@ -261,3 +262,37 @@ when your week begins there), a metric `distinct:` / `min:` / `max:` / `sum:` an
 `GET used-by`. A join on a value is a sub-query — `$IN [field, {$PROP: [path, match, kind?]}]`: "among the
 values `path` takes in the rows that match". TypeScript: `rows({match, q, expand})` → `linked`, `count({group_by, metrics, order_by,
 week_start})`, `usedBy(keys)`, and `bucketOf(day, 'week', 'sunday')` for the key of a period.
+
+## 11. Change a field the outside system owns
+
+In a dataset a data source mirrors (§9, the declared `mirror`), every field the map names is the
+outside system's: the schema marks it `"owned_by": "crm"`. You still edit it like any field — the
+change is sent to that system first, through the source's driver, and the row is then written as
+the system answered. The app's own fields (`notes`) are written as given. There is no merge to write
+and no client of your own to keep.
+
+```python
+from flow_sdk.datasets import LinkError
+
+row = tasks.rows({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
+await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "notes": "called twice"}}, expected=row["version"])
+now = tasks.rows({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
+try:
+    await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mirrored from a path nothing can write
+except LinkError as refused:
+    code = refused.details[0]["code"]                        # 'not_writable' -- nothing was sent
+```
+
+The refusals, by `details[].code`: `not_writable` (the map reads the field from a path it cannot
+write), `source_refused` (the system said no — its words follow), `unlinked` (a list of links holds
+ids no row here resolves yet), `owned` (the source is read-only, or this process holds no driver). A
+record the system made but could not finish is written, with `warnings: [{error_code:
+"source_partial", message, key}]` in the answer — show them.
+
+Only the server holds a driver. Over HTTP — what an app and a script use — it is the same write:
+`POST dataset/<id>/put-row {key, row, expected?}`, `put-rows`, `append`, and `delete-row` /
+`delete-rows` to delete the record outside too. TypeScript: `dataset.put(key, {input}, {expected})`.
+A script calls the action (`flow_sdk.local_client.graph_post(f"dataset/{ds.id}/put-row", {...})`);
+`Dataset.put` in a script is refused `owned`. A mirror whose map names a field the schema does not
+mark `owned_by` its `by` is refused as a whole (`mirror_failed`, `not_owned`): such a field would
+take an edit and lose it at the next sweep.

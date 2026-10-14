@@ -291,6 +291,20 @@ async def _exec_script(
                 pass
 
 
+async def _script_at(given: str, trigger: Any) -> Optional[Path]:
+    """The script ``given`` names, when it is on disk: an absolute path as it is, a relative one under
+    the trigger's project folder (``trigger.project_id``). None when there is no such file."""
+    path = Path(given)
+    if path.is_absolute():
+        return path if path.exists() else None
+    from flow_sdk.diagnose.runner import project_path_of  # noqa: PLC0415
+
+    root = await project_path_of(getattr(trigger, "project_id", None))
+    if root and (Path(root) / path).exists():
+        return Path(root) / path
+    return None
+
+
 class RunScriptActionHandler(TriggerActionHandler):
     """Subprocess-execute a script. Source order: external `action.script_path` →
     embedded `trigger.data_dir / action.script_filename` → warn + no-op.
@@ -322,10 +336,11 @@ class RunScriptActionHandler(TriggerActionHandler):
             _log.warning("RUN_SCRIPT on %s: no action supplied", name)
             return CliResult.not_applicable("No action was supplied, so there is no script to run.")
 
-        # Resolution mode 1: external script path (preferred if it exists on disk).
+        # Resolution mode 1: external script path (preferred if it exists on disk). A relative one is
+        # the trigger's project's: a trigger checked into a project runs the same on every clone.
         if action.script_path:
-            ext = Path(action.script_path)
-            if ext.exists():
+            ext = await _script_at(action.script_path, trigger)
+            if ext is not None:
                 return await _exec_script(
                     ext, trigger, changes, timeout_seconds=timeout_seconds
                 )

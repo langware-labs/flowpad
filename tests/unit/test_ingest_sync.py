@@ -303,15 +303,16 @@ async def test_a_record_the_outside_system_no_longer_lists_is_removed():
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_an_empty_listing_removes_nothing():
-    """An outage that answers "no rows" must not cost every record -- and every row mirrored from it."""
+async def test_a_proven_empty_listing_removes_everything():
+    """A pass that read the whole collection and found it empty is proof like any other: the last
+    record deleted outside goes here too (an outage raises, it never lists nothing)."""
     src = await _synced(_Table, {"a": "deal a", "b": "deal b"})
 
     _Table.rows = {}
     report = await sync_source(await _reread(src), now=NOW)
 
-    assert report.removed == 0
-    assert await _stored(src) == {"deal a", "deal b"}
+    assert report.removed == 2
+    assert await _stored(src) == set()
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

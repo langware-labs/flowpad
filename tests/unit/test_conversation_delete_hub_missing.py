@@ -53,7 +53,7 @@ def _conv(**over) -> Conversation:
 def _inv(conv_id: str = CONV_ID, **over) -> Invitation:
     base = {
         "id": "bf224f58-8c51-42d8-8009-4fee43ee3b48",
-        "recipient_email": "gadi@langware.ai",
+        "recipient_email": "alice@example.com",
         "target_url_path": conversation_target_path(conv_id),
         "accepted": False,
         "remote": True,

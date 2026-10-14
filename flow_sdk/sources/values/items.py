@@ -94,10 +94,15 @@ class UserProfile(Payload):
 
 
 class SourceItemSpec(DataSpec):
-    """One resource as observed: its identity and its payload."""
+    """One resource as observed: its identity and its payload.
+
+    ``warnings`` is for the record a WRITE answers (``Mutable.create`` / ``update``) when the write
+    took several calls and a later one failed: the record exists, in the shape given, and a person
+    should know what was not set ("2 of 3 links were not made: …"). Never on a record read."""
 
     origin: CloudOrigin
     data: Tagged[DataSpec]
+    warnings: tuple[str, ...] = ()
 
 
 class FileItem(SourceItemSpec):
@@ -122,6 +127,9 @@ class MessageData(Payload):
     #: Entities this message is about, as TypeId strings (``"task-<id>"``) — the projection puts them
     #: on the message as its shared context, so the conversation can show (and act on) them.
     refs: tuple[str, ...] = ()
+    #: This message ends its conversation (a pull request merged or closed, a ticket resolved): the
+    #: projection stamps ``Conversation.ended_at``; a later message that does not end it reopens it.
+    ends_conversation: bool = False
 
 
 class EmailMessageData(MessageData):

@@ -13,8 +13,10 @@ import {
   type ProjectReadiness,
   type ProjectSetupRequirement,
   type ProjectSetupSkipScope,
+  type SetupNodeResult,
+  type SetupTreeResult,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Undo2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -28,7 +30,7 @@ import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
-import { SetupTreeView } from './SetupTreeView';
+import { countDrawn, SetupTreeView } from './SetupTreeView';
 import { useSetupRun } from './use-setup-run';
 
 /**
@@ -165,6 +167,14 @@ export function ProjectSetupDialog({
     }
   };
 
+  const stop = async () => {
+    try {
+      await setup.stop?.();
+    } catch (e) {
+      notify.error({ title: errorMessage(e, t`Could not stop the setup`) });
+    }
+  };
+
   /** The skip answers with the readiness that follows: the dialog and the footer take it as is. */
   const settle = (next: ProjectReadiness | null) => {
     setReadiness(next);
@@ -235,10 +245,10 @@ export function ProjectSetupDialog({
   const running = setup.running;
   const questionId = setup.questionId;
 
-  // What can be selected is what can be skipped: a row still to do, while no run is going.
-  const selectedReqs = running
-    ? []
-    : [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) => selected.has(rowKey(req)));
+  // What can be selected is what can be skipped: a row still to do — a run going too (the run skips it live).
+  const selectedReqs = [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) =>
+    selected.has(rowKey(req)),
+  );
   const selecting = selectedReqs.length > 0;
 
   const row = (req: ProjectSetupRequirement, skipped = false) => (
@@ -250,7 +260,7 @@ export function ProjectSetupDialog({
       busy={busy.has(rowKey(req))}
       choosing={choosing === rowKey(req)}
       selected={selected.has(rowKey(req))}
-      onSelect={skipped || running ? undefined : (on) => select(req, on)}
+      onSelect={skipped ? undefined : (on) => select(req, on)}
       onChoose={selecting ? undefined : (on) => setChoosing(on ? rowKey(req) : null)}
       onSkip={(scope) => void skip([req], scope)}
       onUndo={() => void unskip(req)}
@@ -335,13 +345,13 @@ export function ProjectSetupDialog({
           </ul>
         )}
 
-        {!readiness?.ready && !running && (
-          <div>
-            <Button data-testid="project-setup-start" disabled={!readiness} onClick={() => void start()}>
-              {setup.tree ? t`Continue` : t`Start`}
-            </Button>
-          </div>
-        )}
+        <SetupStatusLine
+          tree={setup.tree}
+          running={running}
+          canStart={!!readiness && !readiness.ready}
+          onStart={() => void start()}
+          onStop={setup.stop && (() => void stop())}
+        />
 
         {running && (
           <div className="border-t pt-3" data-testid="project-setup-running">
@@ -356,13 +366,88 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {setup.tree && (
+        {/* The steps are for watching a run; while a question is open the question is the screen. */}
+        {setup.tree && !questionId && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The node the run is on: the deepest one running. */
+function currentNode(node: SetupNodeResult | null | undefined): SetupNodeResult | null {
+  if (!node || node.state !== 'running') return null;
+  for (const child of node.children) {
+    const deeper = currentNode(child);
+    if (deeper) return deeper;
+  }
+  return node;
+}
+
+/** How many nodes under ``node`` did not finish (a shared node counts where it was set up). */
+function unfinishedUnder(node: SetupNodeResult): number {
+  return node.children.reduce(
+    (n, c) => n + (c.shared ? 0 : (c.state === 'failed' || c.state === 'blocked' ? 1 : 0) + unfinishedUnder(c)),
+    0,
+  );
+}
+
+/**
+ * The run in one line, with its one control: running — what it is on, n of m, Stop; not running — how the last
+ * run ended (stopped / failed), and Start, Continue or Retry.
+ */
+function SetupStatusLine({
+  tree,
+  running,
+  canStart,
+  onStart,
+  onStop,
+}: {
+  tree: SetupTreeResult | null;
+  running: boolean;
+  canStart: boolean;
+  onStart: () => void;
+  onStop?: () => void;
+}) {
+  const { t } = useLingui();
+  if (running) {
+    const now = currentNode(tree?.root);
+    // The same count as the list below it, which draws the tree without its root.
+    const drawn = countDrawn(tree?.root?.children ?? []);
+    return (
+      <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">
+          {now && now.id !== tree?.root?.id ? t`Setting up ${now.label}` : t`Setting up…`}
+          {drawn.total ? <span className="text-muted-foreground">{` · ${drawn.done} / ${drawn.total}`}</span> : null}
+        </span>
+        {onStop && (
+          <Button variant="outline" size="sm" className="h-7 gap-1" data-testid="project-setup-stop" onClick={onStop}>
+            <Square className="size-3" />
+            <Trans>Stop</Trans>
+          </Button>
+        )}
+      </div>
+    );
+  }
+  if (!canStart) return null;
+  // How the last run ended decides both the words and the button.
+  const failed = tree?.state === 'failed' || tree?.state === 'blocked';
+  const unfinished = failed && tree?.root ? unfinishedUnder(tree.root) : 0;
+  return (
+    <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
+      {tree && (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {tree.state === 'stopped' ? t`Stopped` : failed ? t`${unfinished} did not finish` : null}
+        </span>
+      )}
+      <Button data-testid="project-setup-start" onClick={onStart}>
+        {!tree ? t`Start` : failed ? t`Retry` : t`Continue`}
+      </Button>
+    </div>
   );
 }
 
@@ -546,7 +631,7 @@ function RequirementRow({
             <Trans>Undo</Trans>
           </Button>
         )}
-        {!running && !busy && !skipped && !choosing && onChoose && (
+        {!busy && !skipped && !choosing && onChoose && (
           <Button
             variant="ghost"
             size="sm"

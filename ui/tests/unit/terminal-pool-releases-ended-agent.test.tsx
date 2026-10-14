@@ -22,7 +22,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgenticProcess, connectionManager, dataManager, ProcessStatus, Shell, Tab, tabManager } from '@sdk';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { ViewType } from '@src/types/ViewType';
 
 const PROJECT_ID = 'c3f1a2b4-5d6e-4f70-8a91-b2c3d4e5f607';
@@ -37,8 +38,12 @@ const TAB_B = '1a2b3c4d-5e6f-5071-9b8c-1d2e3f4a5b6c';
 const TAB_SHELL = '3c4d5e6f-7a8b-5c9d-8e0f-1a2b3c4d5e6f';
 const TAB_CHAT = '4d5e6f7a-8b9c-5d0e-9f1a-2b3c4d5e6f7a';
 
-const dockA = new DockPointer(ViewType.SHELL, `agentic_process-${PROC_A}`);
-const dockB = new DockPointer(ViewType.SHELL, `agentic_process-${PROC_B}`);
+// A terminal tab states the terminal mode. An unstated one shows vibe, and the panel would switch
+// the PTY agent to chat on mount — staging `pty_mode: false` (headless, never given back) until the
+// switch request settles, which on a slow runner is after the assertion.
+const terminalMode = { [VIEW_MODE_PARAM]: ViewMode.Advanced };
+const dockA = new DockPointer(ViewType.SHELL, `agentic_process-${PROC_A}`, terminalMode);
+const dockB = new DockPointer(ViewType.SHELL, `agentic_process-${PROC_B}`, terminalMode);
 const dockChat = new DockPointer(ViewType.SHELL, `agentic_process-${PROC_CHAT}`);
 const dockShell = new DockPointer(ViewType.SHELL, `shell-${PLAIN_SHELL}`);
 const assetDock = DockPointer.fromUrl(

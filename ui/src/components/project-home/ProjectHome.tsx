@@ -8,7 +8,6 @@ import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectClou
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
-import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import { launchWizard } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
@@ -55,7 +54,16 @@ const SessionTiles: React.FC<{ project: Project | null; panelProps: PanelHandler
   const tileFor = (id: string, label: string, wikiword: string) => {
     const opener = openers.find((o) => o.id === id);
     if (!opener) return [];
-    return [{ key: id, Icon: opener.Icon, label, wikiword, disabled: isTabCreationPending, onClick: () => opener.onActivate() }];
+    return [
+      {
+        key: id,
+        Icon: opener.Icon,
+        label,
+        wikiword,
+        disabled: isTabCreationPending,
+        onClick: () => opener.onActivate(),
+      },
+    ];
   };
   return (
     <div data-testid="project-home-start-session" {...tagAttrs(NEW_SESSION_TAG, 'button')}>
@@ -236,10 +244,10 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           separate "Members" caption was one label too many. */}
       {projectTypeId && (
         <div
-          className="flex items-center justify-between border-b border-border/50 px-4 py-2"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 [&>*]:shrink-0">
             {cloudMode ? (
               <>
                 <span className="truncate text-sm font-medium">
@@ -254,7 +262,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 {project && <ProjectCloudLinkButton project={project} />}
                 {project && <ProjectGitShareToggle project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
-                <ProjectUploadMessageButton projectId={projectTypeId.id} />
               </>
             )}
           </div>

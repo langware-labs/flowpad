@@ -21,7 +21,7 @@ on:
 jobs:
   scan:
     name: Windows wheels import only supplied DLLs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

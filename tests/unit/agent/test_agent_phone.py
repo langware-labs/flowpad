@@ -32,14 +32,14 @@ def test_a_local_number_is_stored_canonical(tmp_path):
     folder.mkdir(parents=True)
     (folder / "agent.json").write_text(json.dumps({
         "type": "agent", "id": "0b7b4a7e-3c1d-4d2e-9f6a-1b2c3d4e5f60", "name": "caller",
-        "phone": {"country_code": "+972", "number": "0500000000"},
+        "phone": {"country_code": "+972", "number": "050-000-0000"},
     }))
     (folder / "system_prompt.md").write_text("hi\n")
     info = SchemaRegistry.get("agent")
     record = read_asset_data(folder, info)
     agent = Agent.model_validate({"id": record.id, "name": "caller", "phone": record.phone})
     rendered = json.loads(render_entity_json(agent, info))
-    assert rendered["phone"] == {"country_code": "972", "number": "0500000000"}
+    assert rendered["phone"] == {"country_code": "972", "number": "500000000"}
 
 
 def test_a_malformed_number_is_refused():

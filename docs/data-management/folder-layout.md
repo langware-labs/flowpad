@@ -331,7 +331,7 @@ The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `C
 - `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
 - `identity_carrier` — WHERE the id lives (`Frontmatter` / `Sidecar` / `JsonRoot` / `Derived`, `flow_sdk/assets/identity_carrier.py`)
 - `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
-- `asset_hash_fn(FSRef) -> float` — cheap freshness stat
+- `asset_hash_fn(FSRef) -> int` — cheap freshness fingerprint, integer nanoseconds
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `shape`
 
 These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<type>.py` (e.g. `claude_sessions.py`, `claude_md.py`, `claude_command.py`, `claude_plan.py`, `claude_memory.py`, `claude_rules.py`, `claude_hook.py`, `todo.py`, `skill.py`, `subagent.py`, `agent.py`, `mcp_server.py`, `plugin.py`, `task.py`, `markdown.py`) and the corresponding `flow_sdk/schema/type_info/<type>_type_info.py`; `flow_sdk/fs_store/indexer/builtin.py` wires them onto roots; `indexable_types()` there derives the walked set from those registrations (`FSIndexer.terminal_output_types()`), so there is no hand-maintained list to drift. The table below maps types to the on-disk location their indexer reads; rows marked *not walked* are enum members with no registered indexer function.

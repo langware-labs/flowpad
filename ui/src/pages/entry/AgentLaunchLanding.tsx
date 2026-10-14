@@ -158,7 +158,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
       tracker.setupComplete();
       tracker.enterMachine();
       // A top-level assign in THIS tab: a `window.open` minutes after the click is eaten by
-      // popup blockers. The hub's `open-service` owns readiness, then lands on the plan.
+      // popup blockers. The hub's `open/system` owns readiness, then lands on the plan.
       window.location.assign(workspaceServiceUrl(node.id, path));
     } catch (e) {
       tracker.setupError();

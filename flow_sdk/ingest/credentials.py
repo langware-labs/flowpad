@@ -78,12 +78,16 @@ async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
 
 
 async def owner_project(row: Any) -> Any:
-    """The owning agent's project; None (the user scope alone) for a user-owned row."""
+    """The owning agent's project; None (the user scope alone) for a user-owned row, or for an agent
+    shipped in a system project: that project is the SDK's own read-only content (its credential
+    folders ARE the shipped templates), so a setup step declaring there collided with the template
+    ("a credential named 'whatsapp' already exists") and nothing it learned could be kept."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
 
     project_id = str(getattr(await owning_agent(row), "project_id", "") or "")
-    return await Project.get_by_id(project_id) if project_id else None
+    project = await Project.get_by_id(project_id) if project_id else None
+    return None if project is not None and getattr(project, "system", False) else project
 
 
 async def _stored_values(row: Any, names: list[str]) -> dict[str, str]:

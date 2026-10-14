@@ -82,7 +82,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
     """The first claim stays where it is (this computer); a second one, for the same proven sender, delivers the
     same messages to the agent's box — each place answers on its own."""
     source = DataSource(provider="flow_telegram", name="tg", owner=f"agent-{cloud_agent}")
-    proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "665945020"}}
+    proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "111222333"}}
     hub["claims"] = [proven]
 
     added = await source.add_route_action()
@@ -92,7 +92,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
     assert (entity, claim_id, action) == ("webhook", None, "chain")
     assert body == {
         "parent": "@telegram",
-        "claim": {"kind": "user", "key": "665945020"},
+        "claim": {"kind": "user", "key": "111222333"},
         "target": {"kind": "node", "node_typeid": "compute_node-n-9", "data_source_id": str(source.id)},
     }
 

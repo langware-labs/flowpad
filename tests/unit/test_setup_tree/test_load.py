@@ -39,7 +39,7 @@ def machine(tmp_path, monkeypatch):
             "exe_data": {"commands": {p: f"make {name}" for p in ("linux", "darwin", "win32")}},
             "completion_check": {"commands": {p: f"have {name}" for p in ("linux", "darwin", "win32")}}})
            for name in ("prepare", "install", "service", "home", "app")}
-    installed, ran = set(), []
+    installed, ran, broken = set(), [], set()
     gate = asyncio.Event()
     gate.set()
 
@@ -48,6 +48,8 @@ def machine(tmp_path, monkeypatch):
         if verb == "make":
             await gate.wait()
             ran.append(name)
+            if name in broken:
+                return CliResult.of_process(command, 1, stderr=f"{name} cannot start")
             installed.add(name)
         return CliResult.of_process(command, 0 if name in installed else 1)
 
@@ -70,7 +72,8 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(wizard_state, "run_dir", lambda key: tmp_path / "runs" / key)
     monkeypatch.setattr(setup_execute, "run_dir", lambda key: tmp_path / "runs" / key)
     tree = SimpleNamespace(root=root, gaps=[], resolve_node=resolve_node, resolve_op=resolve_op)
-    return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes)
+    return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes,
+                           broken=broken)
 
 
 async def settle(machine):
@@ -127,3 +130,186 @@ async def test_operational_projection_keeps_children_and_omits_setup(machine):
     node = await tree.resolve_node("asset_setup:service")
     assert node.prepare is None and node.run.name == "service"
     assert (await tree.resolve_node("app")).children == ("asset_setup:home",)
+
+
+async def finish(machine):
+    """The run's end, whatever it was."""
+    await project_setup._RUNS[(machine.project.id, "")]
+    return load_state(machine.project.id)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_load_names_the_step_that_failed_and_offers_setup_once(machine):
+    machine.installed.update(("prepare", "install", "home", "app"))
+    machine.broken.add("service")
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.RUNNING
+    failed = await finish(machine)
+    assert failed.state is LoadState.FAILED and failed.setup_available
+    assert "service" in failed.detail and "waiting on" not in failed.detail
+
+    # The person says go. What setup made is gone too: setup runs, then the load.
+    machine.installed.discard("install")
+    machine.broken.clear()
+    machine.ran.clear()
+    assert (await load_project(machine.project, tree=machine.tree, approved=True)).state is LoadState.RUNNING
+    assert (await finish(machine)).state is LoadState.READY
+    assert machine.ran == ["install", "service"]
+
+
+@pytest.mark.asyncio
+async def test_a_load_that_still_fails_after_setup_stops_there(machine):
+    machine.installed.update(("prepare", "install", "home", "app"))
+    machine.broken.add("service")
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).setup_available
+
+    await load_project(machine.project, tree=machine.tree, approved=True)
+    again = await finish(machine)
+    assert again.state is LoadState.FAILED and not again.setup_available
+
+    # Once it loads, the next failure is a new one and gets its own setup run.
+    machine.broken.clear()
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).state is LoadState.READY
+    machine.installed.discard("service")
+    machine.broken.add("service")
+    await load_project(machine.project, tree=machine.tree)
+    assert (await finish(machine)).setup_available
+
+
+def apps(machine):
+    """Two web apps beside each other; ``broken`` can never be installed."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("good", "broken"))
+    machine.nodes["good"] = SetupNode(id="good", label="Good", run=wizard("install"), independent=True)
+    machine.nodes["broken"] = SetupNode(id="broken", label="Broken", run=wizard("prepare"), independent=True)
+    machine.installed.add("install")
+    return SimpleNamespace(typeid="good"), SimpleNamespace(typeid="broken")
+
+
+@pytest.mark.asyncio
+async def test_an_app_that_is_not_set_up_does_not_block_the_app_beside_it(machine):
+    good, _broken = apps(machine)
+    shown = await load_project(machine.project, tree=machine.tree, asset=good)
+    assert shown.state is LoadState.READY and not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_the_app_being_shown_still_has_to_be_set_up_itself(machine):
+    _good, broken = apps(machine)
+    result = await load_project(machine.project, tree=machine.tree, asset=broken)
+    assert result.state is LoadState.SETUP_REQUIRED and "Broken" in result.detail
+    assert not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_a_run_for_one_app_is_judged_on_that_app_whoever_asks_how_it_went(machine):
+    """The screen polls the load without naming the app. The app that was asked for could not start:
+    that poll must not settle the run as ready just because the project stands without it."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("good", "down"))
+    machine.nodes["good"] = SetupNode(id="good", label="Good", on_load=wizard("home"), independent=True)
+    machine.nodes["down"] = SetupNode(id="down", label="Down", on_load=wizard("service"), independent=True)
+    machine.installed.add("home")
+    machine.broken.add("service")
+
+    started = await load_project(machine.project, tree=machine.tree, asset=SimpleNamespace(typeid="down"))
+    assert started.state is LoadState.RUNNING
+    await project_setup._RUNS[(machine.project.id, "down")]
+    polled = load_state(machine.project.id)
+    assert polled.state is LoadState.FAILED and "Down" in polled.detail
+    assert load_state(machine.project.id, asset="down").state is LoadState.FAILED
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_is_not_ready(machine):
+    gone = SimpleNamespace(typeid="gone", name="Site", asset_ref="/nowhere/site", on_disk=lambda: False)
+    result = await load_project(machine.project, tree=machine.tree, asset=gone)
+    assert result.state is LoadState.FAILED and "folder is gone: /nowhere/site" in result.detail
+    assert not machine.ran
+
+
+@pytest.mark.asyncio
+async def test_setup_required_carries_the_checked_tree_so_the_question_shows_what_setup_means(machine):
+    result = await load_project(machine.project, tree=machine.tree)
+    assert result.state is LoadState.SETUP_REQUIRED and result.tree is not None
+    assert [child.id for child in result.tree.root.children] == ["app", "asset_setup:service"]
+    assert not machine.ran
+    approved = await load_project(machine.project, tree=machine.tree, approved=True)
+    assert approved.tree is None  # a running load is read from its run, not a snapshot
+
+
+@pytest.mark.asyncio
+async def test_a_forgotten_verdict_is_checked_again_and_a_running_one_is_kept(machine):
+    """What a verdict was checked against changes (a setup run ended, a source turned active): kept, it
+    goes on saying "requires setup" to every screen that only reads it."""
+    from flow_sdk.core.setup.load import forget
+
+    pid = machine.project.id
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.SETUP_REQUIRED
+    forget(pid)
+    assert load_state(pid) is None, "no verdict: the next Load checks again"
+
+    machine.gate.clear()  # the approved run is held mid-way
+    assert (await load_project(machine.project, tree=machine.tree, approved=True)).state is LoadState.RUNNING
+    forget(pid)
+    assert load_state(pid).state is LoadState.RUNNING, "a run in flight is settled from its run, not dropped"
+    machine.gate.set()
+    assert (await settle(machine)).state is LoadState.READY
+
+
+@pytest.mark.asyncio
+async def test_a_setup_run_started_outside_a_load_drops_the_verdict_it_outdates(machine):
+    """Project Setup (or one source's own Set up) fixes what the load found missing; the load's
+    "requires setup" must not outlive it."""
+    pid = machine.project.id
+    assert (await load_project(machine.project, tree=machine.tree)).state is LoadState.SETUP_REQUIRED
+
+    await project_setup.start_setup(machine.project, tree=machine.tree, root="asset_setup:service", load_after=False)
+    await project_setup._RUNS[(pid, "asset_setup:service")]
+    await asyncio.sleep(0)  # the run's done-callbacks
+
+    assert load_state(pid) is None
+
+
+def app_beside_a_credential(machine):
+    """An app and a credential the person has not given, under one project — the fresh Acme clone."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("cred", "web"))
+    machine.nodes["cred"] = SetupNode(id="cred", label="Google Cloud", run=wizard("prepare"))
+    machine.nodes["web"] = SetupNode(id="web", label="Admin", run=wizard("install"), on_load=wizard("service"),
+                                     independent=True)
+    machine.broken.add("prepare")
+    return SimpleNamespace(typeid="web")
+
+
+@pytest.mark.asyncio
+async def test_a_credential_nobody_gave_never_keeps_the_app_beside_it_from_opening(machine):
+    """Nothing blocks: setting the project up installs and starts the app even though the credential
+    beside it fails, and the app's own load is READY. The run itself still says what is not set up."""
+    web = app_beside_a_credential(machine)
+    assert (await load_project(machine.project, tree=machine.tree, asset=web)).state is LoadState.SETUP_REQUIRED
+    assert (await load_project(machine.project, tree=machine.tree, asset=web, approved=True)).state is LoadState.RUNNING
+    run = await project_setup._RUNS[(machine.project.id, "web")]
+    assert run.ok, run.detail
+    assert machine.ran == ["install", "service"], "the app alone was installed and started; nobody was asked"
+    shown = await load_project(machine.project, tree=machine.tree, asset=web)
+    assert shown.state is LoadState.READY, shown.detail
+
+
+def test_one_apps_running_load_is_never_another_apps_answer():
+    """Acme Admin's setup run (asking for Google Cloud) was answered for the Back Office beside it, so
+    opening the Back Office showed Admin's question. Two apps of one project are two loads."""
+    from flow_sdk.core.setup import load as load_module
+
+    pid = "p-two-apps"
+    load_module._keep(pid, "micro_app-admin", load_module.LoadResult(
+        state=LoadState.RUNNING, project_id=pid, run="setup-micro_app-admin"))
+    try:
+        assert load_module.load_state(pid, asset="micro_app-backoffice") is None
+        assert load_module.load_state(pid, asset="micro_app-admin").run == "setup-micro_app-admin"
+        # A poll that names no app is about the one last loaded.
+        assert load_module.load_state(pid).run == "setup-micro_app-admin"
+    finally:
+        load_module._RESULTS.pop((pid, "micro_app-admin"), None)
+        load_module._LATEST.pop(pid, None)

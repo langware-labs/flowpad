@@ -3,7 +3,7 @@ from typing import Annotated, ClassVar, Literal, Optional, Union
 
 from pydantic import ConfigDict, Field
 
-from flow_sdk.schema.data_spec.service_endpoint_spec import TaggedProtocol, WebAppProtocol
+from flow_sdk.schema.data_spec.service_endpoint_spec import MOUNT_PATTERN, TaggedProtocol, WebAudience
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 WEBAPP_KIND = "application.web"
@@ -20,41 +20,91 @@ class WebappStaticServing(DataSpec):
     root: str = ""
 
 
+class WebappPortSpec(DataSpec):
+    """The port a process is served on in one environment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    port: int = Field(ge=1, le=65535)
+    #: The process can only run on this port: when another program holds it, starting is an error.
+    #: False: the port is a preference, and a free one is picked when it is taken.
+    required: bool = True
+
+
+class WebappPortsSpec(DataSpec):
+    """A process's port per environment. ``local`` — the machine the process runs on — is the only
+    environment there is; any other key is refused rather than silently ignored."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    local: Optional[WebappPortSpec] = None
+
+
 class WebappProxyServing(DataSpec):
-    """Run a process and relay to it. ``{port}`` in ``start_cmd`` is the port the placement assigns."""
+    """Run a process and relay to it. ``{port}`` in ``start_cmd`` is the port it is started on: the one
+    ``ports`` declares, else a free one."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["proxy"]
     start_cmd: str
     health: str = "/"
-    #: A fixed port when the process cannot be told one; otherwise the placement picks.
+    #: The port the process is served on (``flow_sdk/core/app_ports.py`` is the one rule that reads it).
+    ports: Optional[WebappPortsSpec] = None
+    #: The older spelling of ``ports: {local: {port: N, required: true}}``; still read.
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     #: Installs what the app needs before it can start (``npm ci``). Empty: derived from its package manager
     #: when it has a ``package.json`` (``webapp_setup.install_command``), else nothing to install.
     install_cmd: str = ""
+    #: A path inside the app folder that exists once ``install_cmd`` has run (``frontend/node_modules``).
+    #: Empty: a declared install is judged by its result, the app running.
+    install_check: str = ""
     #: Builds the app before it starts, when it must be. Empty: no build step.
     build_cmd: str = ""
+
+    def declared_port(self) -> Optional[WebappPortSpec]:
+        """The port this process declares here, whichever way it is spelled; None when it declares none."""
+        if self.ports is not None and self.ports.local is not None:
+            return self.ports.local
+        return WebappPortSpec(port=self.port) if self.port else None
 
 
 WebappServing = Annotated[Union[WebappStaticServing, WebappProxyServing], Field(discriminator="type")]
 
 
-class WebappEndpointSpec(DataSpec):
-    """One service a webapp exposes wherever it is placed — the TEMPLATE of a ``ServiceEndpoint``.
+class WebappMountSpec(DataSpec):
+    """One way a webapp is served to a web audience, wherever it is placed — the TEMPLATE of a route.
 
-    The definition says what the app serves and how to start it; a placement
-    (this desktop, a cloud box) turns each entry into a ``ServiceEndpoint`` with
-    a real port and a real folder. Nothing here is a fact about one machine.
+    A placement has ONE proxy per audience (``admin``: the project's operators, ``app``: its end
+    users); every app of the project is a route of one of them. The definition says which audience,
+    where under it, and how to produce the bytes; a placement (this desktop, a cloud box) turns it
+    into a route with a real port or a real folder. Nothing here is a fact about one machine.
     """
 
-    spec_kind: ClassVar[str] = "webapp.endpoint"
+    spec_kind: ClassVar[str] = "webapp.mount"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    #: Which proxy serves it: the project's end users', or its operators'.
+    audience: WebAudience = "app"
+    #: Where under the audience proxy: ``""`` is that audience's root app, ``"docs"`` is ``/docs/``.
+    #: Unsaid: the app's own name.
+    path: Optional[str] = Field(default=None, pattern=MOUNT_PATTERN)
+    serving: WebappServing = Field(default_factory=lambda: WebappStaticServing(type="static"))
+
+
+class WebappServiceSpec(DataSpec):
+    """A machine-called service a webapp brings along (its REST API) — the TEMPLATE of a ``service`` endpoint.
+
+    Not a route: it is not a page of the app, and no audience opens it. A placement runs it and
+    records it as an endpoint of its own, named ``<app>-<name>``.
+    """
+
+    spec_kind: ClassVar[str] = "webapp.service"
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str
-    protocol: TaggedProtocol = Field(default_factory=WebAppProtocol)
-    serving: WebappServing = Field(default_factory=lambda: WebappStaticServing(type="static"))
-    supports_direct_access: bool = False
+    protocol: TaggedProtocol
+    serving: WebappProxyServing
 
 
 #: A viewer shows a VALUE of a kind (not a whole entity) — once alone, or many as a collection.
@@ -102,11 +152,15 @@ class WebappManifestSpec(DataSpec):
     #: The subdir actually served, relative to the app folder. ``.`` for a
     #: static app that has no build step; ``dist`` for a toolchain that emits one.
     build: str = "."
-    #: What the app exposes when placed. Empty means the one obvious service: the
-    #: ``build`` folder, served as a ``web.app`` — see :func:`effective_endpoints`.
-    endpoints: list[WebappEndpointSpec] = []
+    #: How the app is served to a web audience when placed. Empty means the one obvious mount: the
+    #: ``build`` folder, to the ``app`` audience, at the app's own name — see :func:`effective_mounts`.
+    mounts: list[WebappMountSpec] = []
+    #: The machine-called services the app brings along (its API), each an endpoint of its own.
+    services: list[WebappServiceSpec] = []
 
 
-def effective_endpoints(name: str, endpoints: list) -> list:
-    """The endpoints a placement exposes for an app: its declared ones, or the implicit static one."""
-    return list(endpoints) or [WebappEndpointSpec(name=name or "app")]
+def effective_mounts(mounts: list, services: list = ()) -> list:
+    """The mounts a placement serves for an app: its declared ones, or the implicit static one.
+
+    An app that declares only ``services`` is an API: it has no page, so no mount is implied."""
+    return list(mounts) or ([] if services else [WebappMountSpec()])

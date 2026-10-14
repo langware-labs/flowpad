@@ -34,6 +34,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { i18n } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 
 const LS_KEY = 'flowpad-search-filters';
@@ -346,11 +347,11 @@ export function SearchView() {
             {indexState === 'never_indexed' ? (
               <>
                 <div>
-                  <p className="font-medium">{INDEX_PROMPT_TITLE}</p>
-                  <p className="mx-auto max-w-md text-sm">{INDEX_PROMPT_DESCRIPTION}</p>
+                  <p className="font-medium">{i18n._(INDEX_PROMPT_TITLE)}</p>
+                  <p className="mx-auto max-w-md text-sm">{i18n._(INDEX_PROMPT_DESCRIPTION)}</p>
                 </div>
                 <Button onClick={() => setModalOpen(true)} data-testid="search-index-cta">
-                  {INDEX_BUILD_LABEL}
+                  {i18n._(INDEX_BUILD_LABEL)}
                 </Button>
               </>
             ) : (

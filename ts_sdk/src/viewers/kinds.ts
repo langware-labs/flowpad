@@ -43,8 +43,8 @@ export async function checkKind(
   });
 }
 
-/** The full name of the kind a schema of the project defines as `name` (`gtm.icp` →
- *  `--sales_desk--.gtm.icp`) — 404 (thrown) when it defines none. */
+/** The full name of the kind a schema of the project defines as `name` (`crm.lead` →
+ *  `--sales_desk--.crm.lead`) — 404 (thrown) when it defines none. */
 export async function resolveKind(name: string, projectId: string): Promise<string> {
   const { kind } = await apiClient.get<{ kind: string }>(`/api/v1/kinds/${encodeURIComponent(name)}/resolve`, {
     params: { project: projectId },

@@ -80,7 +80,7 @@ function fetchValue(ref: string, within?: string): Promise<StoredValue> {
 
 /** The module's address is the SDK's to make (`serviceUrlOf`), never the app's. */
 function importChoice(choice: ViewerChoice): Promise<ViewerModule> {
-  const url = serviceUrlOf(choice.endpoint, choice.module);
+  const url = serviceUrlOf(choice.endpoint, choice.module, choice.route);
   return cached(moduleCache, url, () => import(/* @vite-ignore */ url) as Promise<ViewerModule>);
 }
 

@@ -1,4 +1,4 @@
-import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { OwnerLoadGate } from '@src/components/project-setup/OwnerLoadGate';
 import { AgentHomeAfterLoad } from '@src/project-home-page/AgentHomeAfterLoad';
 import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM, CONSUMER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { PrimaryContentRegion, PrimaryContentFallback } from '@sdk/react/primary-content';
@@ -606,9 +606,13 @@ function ContentPanelBody({
     ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
     : renderBody(bodyViewType);
   const body = loadProject ? (
-    <ProjectLoadGate key={loadProject} projectId={loadProject} display={display}>
+    <OwnerLoadGate
+      urlProject={loadProject}
+      appId={bodyViewType === ViewType.APP && !homeAgent ? (appDockAddress(currentDock)?.microAppId ?? null) : null}
+      display={display}
+    >
       {renderedBody}
-    </ProjectLoadGate>
+    </OwnerLoadGate>
   ) : (
     renderedBody
   );

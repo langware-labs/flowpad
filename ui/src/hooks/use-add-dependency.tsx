@@ -1,11 +1,10 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { launchWizard, type Project, type ProjectListItem } from '@sdk';
+import { launchWizard, type Project } from '@sdk';
 import { AddDependencyDialog } from '@src/components/assets/AddDependencyDialog';
-import { HubProjectDependencyDialog } from '@src/components/assets/HubProjectDependencyDialog';
+import { ProjectDependencyDialog } from '@src/components/assets/ProjectDependencyDialog';
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
-import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import type { DependencySource } from '@src/components/assets/dependency-sources';
 import { useProjectDependencies, type DependencyKind } from '@src/hooks/use-project-dependencies';
 import { notify } from '@src/notifications';
@@ -33,8 +32,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false);
   const [projectPickerKind, setProjectPickerKind] = useState<DependencyKind | null>(null);
   const [gitKind, setGitKind] = useState<DependencyKind | null>(null);
-  const [hubKind, setHubKind] = useState<DependencyKind | null>(null);
-  const { add, addPaths, pickAndAdd } = useProjectDependencies(project, { fetchStates: false });
+  const { add, pickAndAdd } = useProjectDependencies(project, { fetchStates: false });
   const projectId = project?.id ?? null;
   const projectTypeId = project?.typeId ?? null;
 
@@ -107,29 +105,17 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
       if (source === 'project') setProjectPickerKind(kind);
       if (source === 'browse') void guarded(() => pickAndAdd(kind));
       if (source === 'git') setGitKind(kind);
-      if (source === 'hub') setHubKind(kind);
     },
     [projectId, pickAndAdd, guarded],
   );
 
-  const handleProjectsConfirm = useCallback(
-    (_ids: string[], items: ProjectListItem[]) => {
-      if (projectPickerKind === null) return;
-      const paths = items.map((p) => p.cwd).filter((c): c is string => !!c);
-      const kind = projectPickerKind;
-      setProjectPickerKind(null);
-      if (paths.length) void guarded(() => addPaths(paths, kind));
-    },
-    [addPaths, projectPickerKind, guarded],
-  );
-
-  const handleHubSubmit = useCallback(
-    async (source: string) => {
+  const handleProjectsSubmit = useCallback(
+    async (sources: string[]) => {
       // Throws to the dialog, which shows the backend's reason in place.
-      await add(source, hubKind ?? 'required');
+      for (const source of sources) await add(source, projectPickerKind ?? 'required');
       await onAdded?.();
     },
-    [add, hubKind, onAdded],
+    [add, projectPickerKind, onAdded],
   );
 
   // Stable — the Assets tree memoizes its roots on this.
@@ -138,12 +124,11 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
   const dialogs: ReactNode = (
     <>
       <AddDependencyDialog open={sourceDialogOpen} onOpenChange={setSourceDialogOpen} onPick={pick} />
-      <ProjectPickerModal
+      <ProjectDependencyDialog
         open={projectPickerKind !== null}
         onOpenChange={(next) => !next && setProjectPickerKind(null)}
-        selectedIds={[]}
-        onConfirm={handleProjectsConfirm}
-        description={<Trans>Each selected project's folder is added as a dependency.</Trans>}
+        excludeProjectId={projectId}
+        onSubmit={handleProjectsSubmit}
       />
       <GitTargetDialog
         open={gitKind !== null}
@@ -153,12 +138,6 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
         submitLabel={<Trans>Add</Trans>}
         testIdPrefix="add-git-dependency"
         onSubmit={handleGitSubmit}
-      />
-      <HubProjectDependencyDialog
-        open={hubKind !== null}
-        onOpenChange={(next) => !next && setHubKind(null)}
-        excludeProjectId={projectId}
-        onSubmit={handleHubSubmit}
       />
     </>
   );

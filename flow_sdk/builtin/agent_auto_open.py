@@ -273,6 +273,8 @@ async def run_auto_open(process: "AgenticProcess", plan: AutoOpenPlan) -> list[d
                 answer = await run.wizard.run(approved=True, unattended=True, target=subject, inputs={"display": subject})
             else:
                 answer = await navigate(run.place, process=process, show=False)
+                if answer.verdict == "not_running" and await _started_its_app(run.place, process.project_id):
+                    answer = await navigate(run.place, process=process, show=False)
         except Exception as exc:  # noqa: BLE001 -- one entry cannot stop the others
             logger.warning("auto_open %s failed", run.entry, exc_info=True)
             answer = ReturnedValue.not_yet(f"{run.entry}: {exc}")
@@ -281,6 +283,18 @@ async def run_auto_open(process: "AgenticProcess", plan: AutoOpenPlan) -> list[d
     await _keep_results(process, results)
     await broadcast_tabs_changed()
     return results
+
+
+async def _started_its_app(place, project_id) -> bool:
+    """A place that is a dead address on this machine, whose port an app of the session's project
+    declares: that app, started.
+    This run is in the background, so it can wait for a server to come up."""
+    from flow_sdk.core.navigate import start_app_at, web_url_from_pointer  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+
+    url = web_url_from_pointer(place.pointer) if place.viewType == "web-app" else None
+    started = await start_app_at(url, project_id) if url else None
+    return started is not None and started[0] is ExitCode.OK
 
 
 async def _keep_results(process: "AgenticProcess", results: list[dict]) -> None:

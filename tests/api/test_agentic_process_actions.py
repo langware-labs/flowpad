@@ -270,7 +270,11 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     assert "shown_at" not in row["context_data"]["last_shown"]
     # The backend decided where it is presented (``tab.show_placement``): this
     # process has no open tab, so there is nothing to pin into or sit beside.
-    assert row["context_data"]["show_placement"] == {"tab_id": None, "host": False}
+    assert row["context_data"]["show_placement"] == {
+        "tab_id": None,
+        "host": False,
+        "project_id": row.get("project_id"),
+    }
 
     # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
     prev = stack[1]["shown_at"]
@@ -359,6 +363,10 @@ async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
 async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
     project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
+    from flow_sdk.core import app_ports
+
+    # Free ports, not literals: a registration is checked against what really listens on its port.
+    first_port, second_port = app_ports.free_port(), app_ports.free_port()
     app_dir = tmp_path / "frontend"
     app_dir.mkdir()
     pid = await create_agentic_process(
@@ -375,7 +383,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3300",
+            "port": str(first_port),
             "start_cmd": "npm run dev",
             "health": "/",
             "show": True,
@@ -396,7 +404,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     # The port is a fact about what the placement EXPOSES, not a label on it.
     assert deployment["provider_labels"] == {}
     [dev] = data["endpoints"]
-    assert dev["backend"] == {"type": "proxy", "port": 3300, "start_cmd": "npm run dev", "health": "/"}
+    assert dev["backend"] == {"type": "proxy", "port": first_port, "start_cmd": "npm run dev", "health": "/"}
     assert dev["artifact_id"] == artifact["id"]
     assert dev["parent_type_id"] == f"deployment-{deployment['id']}"
     assert dev["protocol"]["spec_kind"] == "web.app"
@@ -418,8 +426,9 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "name": "Frontend",
         "runtime": "dev",
         "endpoint_id": dev["id"],
+        "route": dev["route"],
     }
-    assert dev["supports_direct_access"] is True, "a dev server is loaded at its own origin"
+    assert dev["backend"]["type"] == "proxy", "a dev server is loaded at its own origin"
     # No dist/ in this app yet, so nothing to serve statically.
 
     row = await get_agentic_process(bootstrapped_client, pid)
@@ -445,8 +454,8 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3301",
-            "start_cmd": "npm run dev -- --port 3301",
+            "port": str(second_port),
+            "start_cmd": f"npm run dev -- --port {second_port}",
             "show": False,
         },
     )
@@ -457,7 +466,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     # The same endpoint row moves to the new port — updated, never forked.
     [moved] = updated_data["endpoints"]
     assert moved["id"] == dev["id"]
-    assert moved["backend"]["port"] == 3301
+    assert moved["backend"]["port"] == second_port
     # Backfill, never reassign — converging on an existing row leaves the run
     # that actually built the app as its producer.
     assert updated["generated_by"] == artifact["generated_by"]
@@ -504,7 +513,9 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
     assert data["shown"]["runtime"] == "dev"
 
     # The static endpoint actually serves the build.
-    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{by_type['static']['id']}/service/")
+    static = by_type["static"]
+    assert static["id"] == by_type["proxy"]["id"], "the build and the dev server are two routes of ONE proxy"
+    page = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{static['id']}/service/{static['route']}/")
     assert page.status_code == 200 and "todo" in page.text
 
     # Re-registering updates the same rows rather than forking them.
@@ -512,9 +523,12 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
         f"{base}/register-webapp-artifact",
         json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
     )
-    again_ids = {e["backend"]["type"]: e["id"] for e in ApiResponse(**again.json()).data["endpoints"]}
-    assert again_ids == {t: e["id"] for t, e in by_type.items()}
-    assert len(await ServiceEndpoint.get_all({"match": {"artifact_id": artifact["id"]}})) == 2
+    address = lambda e: (e["id"], e["route"])  # noqa: E731
+    again_at = {e["backend"]["type"]: address(e) for e in ApiResponse(**again.json()).data["endpoints"]}
+    assert again_at == {t: address(e) for t, e in by_type.items()}
+    assert again_at["static"][1] == "Todo" and again_at["proxy"][1] != "Todo", "each runtime its own mount"
+    proxy = await ServiceEndpoint.get_by_id(static["id"])
+    assert len(proxy.backend.routes) == 2 and proxy.backend.routes[again_at["proxy"][1]].backend.port == 3401
 
     # An app named the same as another must still save: name is a label, not an identity.
     other_dir = tmp_path / "todo-two"
@@ -525,8 +539,8 @@ async def test_register_webapp_artifact_serves_built_output_as_a_static_endpoint
         json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
     )
     assert twin.status_code == 200, twin.text
-    twin_ids = {e["id"] for e in ApiResponse(**twin.json()).data["endpoints"]}
-    assert twin_ids and not (twin_ids & set(again_ids.values()))
+    twin_at = {address(e) for e in ApiResponse(**twin.json()).data["endpoints"]}
+    assert len(twin_at) == 2 and not (twin_at & set(again_at.values())), "the twin mounts beside it, never on it"
 
 
 @pytest.mark.asyncio
@@ -999,7 +1013,10 @@ async def test_showing_a_port_registers_its_dev_endpoint_once(bootstrapped_clien
     assert first["kind"] == "app" and first["runtime"] == "dev"
     assert first["typeid"] == f"service_endpoint-{first['endpoint_id']}"
     assert again["endpoint_id"] == first["endpoint_id"], "the same server is the same endpoint"
-    direct = await bootstrapped_client.get(f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url")
+    assert (first["route"], again["route"]) == ("port-5173", "port-5173")
+    direct = await bootstrapped_client.get(
+        f"/api/v1/graph/service_endpoint/{first['endpoint_id']}/direct-url", params={"route": first["route"]}
+    )
     assert ApiResponse(**direct.json()).data["url"] == "http://localhost:5173"
 
 
@@ -1014,7 +1031,9 @@ async def test_a_dev_endpoint_is_probed_where_it_runs(bootstrapped_client, user)
     assert answer["exit_code"] == 1 and answer["verdict"] == "not_running", answer
     shown = answer["value"]
 
-    resp = await bootstrapped_client.post(f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe")
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/service_endpoint/{shown['endpoint_id']}/probe", params={"route": shown["route"]}
+    )
 
     assert resp.status_code == 200, resp.text
     probe = ApiResponse(**resp.json()).data
@@ -1170,3 +1189,31 @@ async def test_show_view_refuses_an_agent_address_the_ui_cannot_open(bootstrappe
     )
     assert resp.status_code == 400, resp.text
     assert "flow show entity agent-" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_registering_an_app_on_a_port_another_program_holds_is_refused(bootstrapped_client, user, tmp_path):
+    """The port in the body is the caller's claim. Another program listening on it is not the app at
+    that path, and a route written for it would show that program as the app."""
+    import socket
+
+    project = Project(name="held-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "frontend"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id,
+    )
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    port = held.getsockname()[1]
+    try:
+        resp = await bootstrapped_client.post(
+            f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+            json={"name": "Frontend", "path": str(app_dir), "port": str(port), "start_cmd": "npm run dev"},
+        )
+    finally:
+        held.close()
+    assert resp.status_code == 400
+    assert f"port {port} is held by another program" in resp.json()["message"]

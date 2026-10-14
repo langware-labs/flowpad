@@ -6,9 +6,11 @@
 .DESCRIPTION
   Standalone analogue of the Electron Windows signing path. It signs the bare
   flow-rs.exe with the same Azure Code Signing identity used by
-  flowpad-desktop's build-desktop.yml (account "langware-signing", profile
-  "langware-public", endpoint https://eus.codesigning.azure.net/), via the
-  Microsoft "TrustedSigning" PowerShell module.
+  flowpad-desktop's build-desktop.yml (endpoint
+  https://eus.codesigning.azure.net/), via the Microsoft "TrustedSigning"
+  PowerShell module. The account and certificate profile have no default:
+  pass -Account / -Profile, or set AZURE_CODE_SIGNING_ACCOUNT /
+  AZURE_CODE_SIGNING_PROFILE.
 
   This is only used when scripts/deploy_to_github.sh runs ON Windows. When
   deploy runs on macOS, the Windows binary is produced by the
@@ -23,11 +25,14 @@
 [CmdletBinding()]
 param(
     [string]$Endpoint = "https://eus.codesigning.azure.net/",
-    [string]$Account  = "langware-signing",
-    [string]$Profile  = "langware-public"
+    [string]$Account  = $env:AZURE_CODE_SIGNING_ACCOUNT,
+    [string]$Profile  = $env:AZURE_CODE_SIGNING_PROFILE
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $Account) { throw "Azure Code Signing account not set — pass -Account or set AZURE_CODE_SIGNING_ACCOUNT." }
+if (-not $Profile) { throw "Certificate profile not set — pass -Profile or set AZURE_CODE_SIGNING_PROFILE." }
 
 $ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectDir = Split-Path -Parent $ScriptDir

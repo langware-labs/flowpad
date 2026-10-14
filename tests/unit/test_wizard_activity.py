@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.activity import Activity, ActivityState
+from tests.unit._activity_trees import recorded_trees
 from flow_sdk.core.wizard import run_wizard
 from flow_sdk.schema.data_spec.activity_spec import MAX_DEPTH
 from flow_sdk.core.wizard.runner import Resolved
@@ -53,10 +54,11 @@ async def _resolve_op(name):
 
 
 async def _run(shell, launch, *, path, subject_entity, tmp_path):
-    await run_wizard(SPEC, subject_entity=subject_entity, activity_path=path, trusted=True,
-                     workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux",
-                     resolve_op=_resolve_op)
-    return Activity.get(path, subject_entity=subject_entity).spec()
+    with recorded_trees() as trees:
+        await run_wizard(SPEC, subject_entity=subject_entity, activity_path=path, trusted=True,
+                         workdir=Path(tmp_path), shell=shell, launch=launch, platform="linux",
+                         resolve_op=_resolve_op)
+    return trees.at(path, subject_entity)
 
 
 def _child(root_spec, name):
@@ -122,10 +124,11 @@ async def test_a_never_reached_step_has_no_child_rather_than_a_failed_one(tmp_pa
     async def launch(**_kw):
         return PromptResult.not_yet("boom", ran=False)
 
-    await run_wizard(WizardSpec.model_validate(body), subject_entity="wizard-d",
-                     activity_path="wzact/abort", trusted=True, workdir=Path(tmp_path),
-                     shell=shell, launch=launch, platform="linux")
-    root = Activity.get("wzact/abort", subject_entity="wizard-d").spec()
+    with recorded_trees() as trees:
+        await run_wizard(WizardSpec.model_validate(body), subject_entity="wizard-d",
+                         activity_path="wzact/abort", trusted=True, workdir=Path(tmp_path),
+                         shell=shell, launch=launch, platform="linux")
+    root = trees.at("wzact/abort", "wizard-d")
     assert _child(root, "python3") is not None
     assert _child(root, "git") is None
 

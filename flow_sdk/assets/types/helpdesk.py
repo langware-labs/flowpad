@@ -82,7 +82,7 @@ def helpdesk_stable_key(ref: FSRef | Path) -> str:
     return f"helpdesk:path:{canonical_posix_path(path)}"
 
 
-def helpdesk_asset_hash(ref: FSRef) -> float:
+def helpdesk_asset_hash(ref: FSRef) -> int:
     """Freshness tracks the manifest only.
 
     The guides are ordinary markdown with their own records and their own

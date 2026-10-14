@@ -39,7 +39,7 @@ def folder(tmp_path):
 @needs_dataset
 async def test_read_a_dataset():
     ns = await run_fence(fence_under(DOC, "2."))
-    assert ns["summary"] == ("navigator.dataset", 252, {"eval": 250, "test": 2})
+    assert ns["summary"] == ("navigator.dataset", 253, {"eval": 251, "test": 2})
     assert ns["first"] == "open data sources" and ns["problems"] == []
 
 
@@ -143,3 +143,18 @@ async def test_ask_across_links_count_and_find_by_text(project):
     assert [r["key"] for r in ns["found"]["rows"]] == ["dana", "fay"] and ns["names"] == ["Acme", "Bolt"]
     assert ns["unused"] == ["dana", "eli", "fay"]
     assert [r["key"] for r in ns["colleagues"]["rows"]] == ["dana", "eli", "fay"]      # everyone at a company a Levi is at
+
+
+from tests.unit.test_data_spec.test_declared_mirror import served  # noqa: E402,F401 -- a tasks dataset a CRM source mirrors into
+
+
+async def test_change_a_field_the_outside_system_owns(served, monkeypatch):  # noqa: F811
+    from flow_sdk.tags import ws_forward
+    from tests.unit.test_data_spec.test_declared_mirror import _seed
+
+    await _seed(served)
+    monkeypatch.setattr(ws_forward, "_started", True)   # the server: the one process that holds a driver
+    ns = await run_fence(fence_under(DOC, "11."), {"tasks": served.tasks})
+    assert served.store.calls == [("update", "T-1", {"status": "DONE"})]      # only what changed, and only the CRM's field
+    assert (ns["now"]["status"], ns["now"]["notes"]) == ("DONE", "called twice")
+    assert ns["code"] == "not_writable"

@@ -83,13 +83,13 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         },
         {
             "name": "Engine",
-            "full_name": "GadiTunes1/Engine",
-            "owner": {"login": "GadiTunes1"},
+            "full_name": "octo-dev/Engine",
+            "owner": {"login": "octo-dev"},
             "private": True,
             "default_branch": "master",
             "pushed_at": "2023-12-28T00:00:00Z",
             "permissions": {"admin": False, "push": True, "pull": True},
-            "html_url": "https://github.com/GadiTunes1/Engine",
+            "html_url": "https://github.com/octo-dev/Engine",
             "description": None,
             "fork": False,
         },
@@ -433,7 +433,7 @@ def _by_url(routes: dict):
 async def test_orgs_names_the_viewer_and_the_orgs_github_reports(bootstrapped_client, github_user_with_token):
     user = github_user_with_token
     routes = {
-        "https://api.github.com/user": _mock_response(200, json_body={"login": "serans1"}),
+        "https://api.github.com/user": _mock_response(200, json_body={"login": "octocat"}),
         "https://api.github.com/user/orgs": _mock_response(
             200, json_body=[{"login": "langware-labs", "avatar_url": "https://a/1"}]
         ),
@@ -442,7 +442,7 @@ async def test_orgs_names_the_viewer_and_the_orgs_github_reports(bootstrapped_cl
         r = await bootstrapped_client.post(f"/api/v1/graph/user/{user.id}/repo/orgs", json={"provider": "github"})
 
     assert r.status_code == 200, r.text
-    assert r.json()["data"] == {"login": "serans1", "orgs": [{"login": "langware-labs", "avatar_url": "https://a/1"}]}
+    assert r.json()["data"] == {"login": "octocat", "orgs": [{"login": "langware-labs", "avatar_url": "https://a/1"}]}
 
 
 # do not increase timeout without approval

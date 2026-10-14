@@ -523,7 +523,7 @@ def _source_gone_orphans(
     gone either — absence there is not deletion. Stat-per-candidate — callers
     run this off-loop via ``asyncio.to_thread``.
     """
-    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -534,10 +534,8 @@ def _source_gone_orphans(
     return {
         eid
         for eid in candidates
-        if (aref := _declared_source(eid))
-        and not Path(aref).exists()
-        # An unreachable root is not a deletion — see ``source_unreachable``.
-        and not source_unreachable(aref)
+        # An unreachable root is not a deletion — see ``source_gone``.
+        if source_gone(_declared_source(eid))
     }
 
 

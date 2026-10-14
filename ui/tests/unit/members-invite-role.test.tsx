@@ -39,12 +39,12 @@ vi.mock('@src/components/conversation/useLocalUser', () => ({
 }));
 vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 
-// The address book (contact store). Gadi Tunes is known only by hub id — the
+// The address book (contact store). Bob Stone is known only by hub id — the
 // hub doesn't disclose other people's emails to a non-admin.
 const CONTACTS = [
   { id: 'u-noa', email: 'noa@example.com', name: 'Noa' },
-  { id: 'u-gadi', email: 'gadi@example.com', name: 'Gadi' },
-  { id: 'u-tunes', user_id: 'hub-id-only', email: null, name: 'Gadi Tunes' },
+  { id: 'u-bob', email: 'bob@example.com', name: 'Bob' },
+  { id: 'u-stone', user_id: 'hub-id-only', email: null, name: 'Bob Stone' },
 ];
 vi.mock('@src/components/contact-picker/use-contacts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/contact-picker/use-contacts')>()),
@@ -66,8 +66,8 @@ vi.mock('@src/components/contact-picker/AddressBookButton', () => ({
   }) => (
     <button
       type="button"
-      data-testid="address-book-tick-tunes"
-      onClick={() => onChange([...value, { user_id: 'hub-id-only', name: 'Gadi Tunes' }])}
+      data-testid="address-book-tick-stone"
+      onClick={() => onChange([...value, { user_id: 'hub-id-only', name: 'Bob Stone' }])}
     />
   ),
 }));
@@ -169,11 +169,11 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
     it('resolves a typed name to the contact it names', () => {
       openInvite(PROJECT_ROLES);
 
-      // "Gadi" also matches "Gadi Tunes" — the exact name wins.
-      type('Gadi');
+      // "Bob" also matches "Bob Stone" — the exact name wins.
+      type('Bob');
       add();
 
-      expect(rowRole('gadi@example.com').value).toBe('member');
+      expect(rowRole('bob@example.com').value).toBe('member');
     });
 
     it('adds the contact picked from the suggestions', () => {
@@ -190,11 +190,11 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
     it('shows a suggestion its email beneath the name, and none for a hub-only contact', () => {
       openInvite(PROJECT_ROLES);
 
-      type('gadi');
-      const gadi = screen.getByTestId('members-invite-suggestion-u-gadi');
-      expect(within(gadi).getByTestId('member-subtitle').textContent).toBe('gadi@example.com');
-      const tunes = screen.getByTestId('members-invite-suggestion-u-tunes');
-      expect(within(tunes).queryByTestId('member-subtitle')).toBeNull();
+      type('bob');
+      const bob = screen.getByTestId('members-invite-suggestion-u-bob');
+      expect(within(bob).getByTestId('member-subtitle').textContent).toBe('bob@example.com');
+      const stone = screen.getByTestId('members-invite-suggestion-u-stone');
+      expect(within(stone).queryByTestId('member-subtitle')).toBeNull();
     });
 
     it('adds on Enter, like the button', () => {
@@ -212,12 +212,12 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       type('Noa');
       chooseRole('admin');
       add();
-      type('Gadi');
+      type('Bob');
       chooseRole('member');
       add();
 
       expect(rowRole('noa@example.com').value).toBe('admin');
-      expect(rowRole('gadi@example.com').value).toBe('member');
+      expect(rowRole('bob@example.com').value).toBe('member');
       expect(screen.getByTestId('members-invite-count').textContent).toBe('2 to invite');
     });
 
@@ -266,7 +266,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       openInvite(PROJECT_ROLES);
 
       chooseRole('admin');
-      fireEvent.click(screen.getByTestId('address-book-tick-tunes'));
+      fireEvent.click(screen.getByTestId('address-book-tick-stone'));
 
       expect(rowRole('hub-id-only').value).toBe('admin');
     });
@@ -295,7 +295,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
 
       type('Noa');
       add();
-      type('Gadi');
+      type('Bob');
       add();
       // A row's role can still change after Add.
       fireEvent.change(rowRole('noa@example.com'), { target: { value: 'admin' } });
@@ -304,19 +304,19 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
       await waitFor(() =>
         expect(addMembers).toHaveBeenCalledWith([
           { idOrEmail: 'noa@example.com', role: 'admin' },
-          { idOrEmail: 'gadi@example.com', role: 'member' },
+          { idOrEmail: 'bob@example.com', role: 'member' },
         ]),
       );
       await waitFor(() => expect(screen.queryByTestId('members-invite-list')).toBeNull());
     });
 
-    it('invites a user-id-only contact by hub id instead of dropping them, regression for Gadi Tunes', async () => {
+    it('invites a user-id-only contact by hub id instead of dropping them, regression for Bob Stone', async () => {
       // Regression: a contact with no email on file (the hub doesn't disclose
       // other people's emails) used to be silently dropped because the invite
       // path only ever collected emails.
       openInvite(PROJECT_ROLES);
 
-      type('tunes');
+      type('stone');
       add();
       fireEvent.change(rowRole('hub-id-only'), { target: { value: 'admin' } });
       fireEvent.click(applyButton());
@@ -330,7 +330,7 @@ describe('invite form — type, pick a role, Add to the list, Apply', () => {
 
       type('noa@example.com');
       add();
-      fireEvent.click(screen.getByTestId('address-book-tick-tunes'));
+      fireEvent.click(screen.getByTestId('address-book-tick-stone'));
       fireEvent.click(applyButton());
 
       await waitFor(() =>

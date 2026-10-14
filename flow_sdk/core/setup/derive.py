@@ -9,7 +9,7 @@ places that answered these questions one at a time cannot disagree:
 | ``dependency:<name>`` | — | ``flow dep sync`` ✓ ``flow dep check`` (``project_setup.compile_setup``) |
 | ``connection:<provider>`` | — | ``flow connections connect`` ✓ ``connections test`` (same) |
 | ``credential:<name>`` | — | ask each missing value → ``credentials set`` ✓ ``credentials check`` (same) |
-| ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | — |
+| ``data_source-<id>`` | the connections and credentials it needs, then its last setup stage | with no stages: its Verify, which holds unless a setup is owed |
 | ``stage:<source>:<wizard>`` | the stage before it (a stage is never set up before the one it follows) | the driver's stage wizard, FOR the source — recorded where the stage list reads it |
 | ``micro_app-<id>`` | attached declarations | install → build (``webapp_setup``); ``on_load`` starts its server and verifies its display |
 | ``asset_setup:<name>`` | its declared children | its declared ``prepare`` / ``run`` wizards (and ``on_load``, run on display — ``core/setup/load``) |
@@ -48,9 +48,10 @@ def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> Compu
 
 def _holder(asset_ref: str) -> str:
     """The node a declared ``asset_setup`` folder is for when it does not say: the asset folder that holds
-    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source), else the project."""
+    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source, ``webapp:<name>``
+    inside a web app), else the project."""
     parts = Path(asset_ref).parts
-    for family in ("data_source", "data_driver"):
+    for family in ("data_source", "data_driver", "webapp"):
         for i in range(len(parts) - 2, -1, -1):
             if parts[i] == family and i + 1 < len(parts) and parts[i + 1] != "asset_setup":
                 return f"{family}:{parts[i + 1]}"
@@ -61,19 +62,23 @@ class ProjectTree:
     """One project's derived setup tree. ``load()`` once, then hand ``resolve_node`` / ``resolve_op`` to
     ``execute_setup``. Built in memory per run, like the setup wizard it replaces — nothing is written."""
 
-    def __init__(self, project: Any, *, ai: bool = True, display: str = ""):
+    def __init__(self, project: Any, *, ai: bool = True, display: str = "", connect_here: bool = True):
         self.project = project
+        #: Whether a connection step signs the person in itself (the CLI), or only checks (a screen does it).
+        self.connect_here = connect_here
         self.pid = str(project.id)
         self.root = f"project-{self.pid}"
         self.ai = ai
         self.display = display
         self.nodes: dict[str, SetupNode] = {}
+        #: Each web app's node, by the app's name — where a declaration inside its folder attaches.
+        self.webapp_nodes: dict[str, str] = {}
         self.ops: dict[str, ComputeOpSpec] = {}
         self.gaps: list = []
         #: A source's FIRST setup stage: what the source needs is set up before it, never beside it.
         self.first_stage: dict[str, str] = {}
         self._drivers: dict[str, Any] = {}
-        self._wizards: dict[str, Any] = {}
+        self._wizards: dict[tuple[str, str], Any] = {}
 
     async def _driver(self, provider: str) -> Any:
         """A driver once per tree, however many sources run it."""
@@ -83,13 +88,14 @@ class ProjectTree:
             self._drivers[provider] = await driver_of(provider)
         return self._drivers[provider]
 
-    async def _wizard(self, name: str) -> Any:
-        """A Wizard row once per tree, however many sources' stages name it."""
+    async def _wizard(self, name: str, near: str = "") -> Any:
+        """A Wizard row once per tree, however many sources' stages name it; the copy closest to
+        ``near`` (the naming asset's folder) when two projects ship one by that name."""
         from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
 
-        if name not in self._wizards:
-            self._wizards[name] = await Wizard.by_name(name)
-        return self._wizards[name]
+        if (name, near) not in self._wizards:
+            self._wizards[(name, near)] = await Wizard.by_name(name, near=near)
+        return self._wizards[(name, near)]
 
     # ── what the walk asks ─────────────────────────────────────────────────
 
@@ -143,9 +149,7 @@ class ProjectTree:
         """A node skipped here (``mark`` set) settles SKIPPED: nothing of it compiles or runs."""
         if mark is None:
             return False
-        note = str(getattr(mark, "note", "") or "").strip()
-        detail = f"skipped on this machine — {note}" if note else "skipped on this machine"
-        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=detail)
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, skipped=skip_detail(mark))
         return True
 
     def _requirement_node(self, req) -> str:
@@ -153,16 +157,40 @@ class ProjectTree:
 
         node_id = requirement_node_id(req)
         if node_id not in self.nodes:
-            label = req.title or req.name
+            label = f"{req.title or req.name} sign-in" if req.is_oauth else (req.title or req.name)
             if self._skipped(node_id, label, req.skipped):
                 return node_id
-            wizard, ops = compile_setup(self.pid, [req], ai=self.ai)
+            wizard, ops = compile_setup(self.pid, [req], ai=self.ai, connect_here=self.connect_here)
             self.ops.update(ops)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
+                children=self._connection_needs(req) if req.is_oauth else (),
             )
         return node_id
+
+    def _connection_needs(self, req) -> tuple[str, ...]:
+        """What a connection itself needs, as nodes below it: the project's credential for the provider
+        (installed from the catalog when missing), which needs the provider's sign-in to exist here or on
+        the hub. Each is set up before the one above it — a sign-in never starts for a provider nobody has."""
+        provider = req.provider or req.name
+        title = req.title or provider
+        scopes = ",".join(req.scopes)
+
+        def step(node_id: str, label: str, which: str, children: tuple[str, ...] = ()) -> str:
+            if node_id not in self.nodes:
+                op = _op(f"{node_id}:check", label, which, kind="requirement_step")
+                self.ops[op.name] = op
+                run = WizardSpec.model_validate({
+                    "name": op.name, "label": label,
+                    "steps": [{"id": "check", "label": label, "kind": "compute", "ref": op.name}],
+                })
+                self.nodes[node_id] = SetupNode(id=node_id, label=label, run=run, children=children)
+            return node_id
+
+        available = step(f"provider:{provider}", f"{title} sign-in service", f"provider:{provider}")
+        return (step(f"oauth-credential:{provider}", f"{title} credential",
+                     f"credential:{provider}:{self.pid}:{scopes}", (available,)),)
 
     async def _source_node(self, source, needs: list[str]) -> str:
         node_id = str(source.typeid)
@@ -173,7 +201,7 @@ class ProjectTree:
         needs = list(dict.fromkeys(needs))
         before = ""
         for stage in getattr(driver, "setup_wizards", None) or []:
-            wizard = await self._wizard(stage.wizard)
+            wizard = await self._wizard(stage.wizard, str(getattr(driver, "folder", "") or getattr(driver, "asset_ref", "") or ""))
             spec = wizard.spec() if wizard is not None else None
             if spec is None:
                 logger.warning("setup: %s names the wizard %r, which is not indexed", source.provider, stage.wizard)
@@ -190,6 +218,8 @@ class ProjectTree:
             before = stage_id
         # A source whose driver declares no stages still has to verify: the same check as its Verify
         # button (the source turns active when it passes) — else the tree calls "done" a source in setup.
+        # Its check holds unless the source owes a setup (``DataSource.setup_owed``), so one just indexed
+        # and still ``new`` does not hold the project up.
         verify = None
         if not before:
             op = _op(f"{node_id}:verify", "Verify", "verify", kind="source_step")
@@ -208,10 +238,13 @@ class ProjectTree:
         from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
         apps = await WebApp.get_all({"match": {"project_id": self.pid}})
-        return [app for app in apps if app.asset_ref]
+        # A row whose folder is gone (an app removed, an old install's path) has nothing to set up here:
+        # left in, each one failed forever and nothing could clear it.
+        return [app for app in apps if app.is_file_backed() and app.on_disk()]
 
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)
+        self.webapp_nodes[str(app.name)] = node_id
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
@@ -224,7 +257,8 @@ class ProjectTree:
         load = WizardSpec.model_validate({"name": node_id, "label": f"Load {label}", "steps": steps[2:]})
         # A stopped server is a LOAD, never a missing setup prerequisite.
         inputs = (("webapp", str(app.id)), ("display", self.display))
-        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load)
+        self.nodes[node_id] = SetupNode(id=node_id, label=label, inputs=inputs, run=setup, on_load=load,
+                                        independent=True)
         return node_id
 
     async def load_one(self, asset: Any) -> "ProjectTree":
@@ -263,8 +297,8 @@ class ProjectTree:
         rows = [row for row in await AssetSetup.get_all(QueryFilter(match=match)) if row.asset_ref]
         by_name = {str(row.name): row for row in rows}
 
-        async def wizard(name: str) -> Optional[WizardSpec]:
-            row = await self._wizard(name) if name else None
+        async def wizard(name: str, near: str) -> Optional[WizardSpec]:
+            row = await self._wizard(name, near) if name else None
             return row.spec() if row is not None else None
 
         for row in rows:
@@ -274,7 +308,8 @@ class ProjectTree:
                 self.nodes[node_id] = SetupNode(id=node_id, label=str(row.name), problem=(
                     f"{row.asset_ref}/asset_setup.json cannot be read"))
                 continue
-            prepare, run, load = await asyncio.gather(wizard(spec.prepare), wizard(spec.run), wizard(spec.on_load))
+            prepare, run, load = await asyncio.gather(
+                wizard(spec.prepare, row.asset_ref), wizard(spec.run, row.asset_ref), wizard(spec.on_load, row.asset_ref))
             missing = [n for n, w in ((spec.prepare, prepare), (spec.run, run), (spec.on_load, load)) if n and w is None]
             children = tuple(f"asset_setup:{c}" if c in by_name else c for c in spec.children)
             self.nodes[node_id] = SetupNode(
@@ -297,16 +332,32 @@ class ProjectTree:
         if subject.startswith("data_driver:"):
             driver = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if s.provider == driver]
+        if subject.startswith("webapp:"):
+            node = self.webapp_nodes.get(subject.split(":", 1)[1])
+            return [node] if node else [self.root]
         if subject.startswith("data_source:"):
             name = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if str(s.name) == name or Path(str(s.asset_ref or "")).name == name]
         return [subject]
 
 
-def requirement_node_id(req) -> str:
-    """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``)."""
-    from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_DEPENDENCY  # noqa: PLC0415
+def skip_detail(mark) -> str:
+    """What a node skipped here says (``mark``: its ``SetupSkipSpec``)."""
+    note = str(getattr(mark, "note", "") or "").strip()
+    return f"skipped on this machine — {note}" if note else "skipped on this machine"
 
+
+def requirement_node_id(req) -> str:
+    """The tree node a collected requirement is (``dependency:`` / ``connection:`` / ``credential:<name>``; a
+    source or a web app is its own typeid)."""
+    from flow_sdk.schema.data_spec.project_setup_spec import (  # noqa: PLC0415
+        REQUIREMENT_DEPENDENCY,
+        REQUIREMENT_SOURCE,
+        REQUIREMENT_WEBAPP,
+    )
+
+    if req.kind in (REQUIREMENT_SOURCE, REQUIREMENT_WEBAPP):
+        return str(req.typeid)
     if req.is_oauth:
         return f"connection:{req.provider or req.name}"
     prefix = {REQUIREMENT_DEPENDENCY: "dependency"}.get(req.kind, "credential")

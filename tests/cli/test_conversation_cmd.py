@@ -72,7 +72,7 @@ def conv_cli(conv_server, monkeypatch):
     project_id = next(p for p in projects if p.get("uname") == "local")["id"]
     created = requests.post(
         f"{base}/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": [{"email": "tzahi@example.com", "name": "Tzahi"}]},
+        json={"project_id": project_id, "participants": [{"email": "frank@example.com", "name": "Frank"}]},
         timeout=10,
     )
     conv_id = created.json()["data"]["conversation_id"]
@@ -107,7 +107,7 @@ def test_list_reports_the_conversation(conv_cli):
     ids = [c["id"] for c in payload["conversations"]]
     assert conv_cli.conv_id in ids
     row = next(c for c in payload["conversations"] if c["id"] == conv_cli.conv_id)
-    assert any((p.get("name") == "Tzahi") for p in row["participants"])
+    assert any((p.get("name") == "Frank") for p in row["participants"])
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

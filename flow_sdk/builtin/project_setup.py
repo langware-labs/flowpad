@@ -297,11 +297,14 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
 
 
 def compile_setup(
-    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = ""
+    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = "",
+    connect_here: bool = True,
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
     one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
-    each value where that deployment keeps it (default: this computer)."""
+    each value where that deployment keeps it (default: this computer). ``connect_here=False``: a
+    connection step only CHECKS — the screen that started the run signs the person in itself (its own
+    Connect button, in their browser), so the run never opens a second one on the backend's machine."""
     target = ("--deployment", deployment_id) if deployment_id else ()
     where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
@@ -323,11 +326,15 @@ def compile_setup(
         elif req.is_oauth:
             provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
+            checked_here = {"requirement_step": f"connection:{provider}"}
             add({
                 "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
                 "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
-                "subkind": "cli", "exe_data": _cli("connections", "connect", provider),
-                "completion_check": _cli("connections", "test", provider, *scopes),
+                "subkind": "cli",
+                # Checked here, in this backend, when a screen signs the person in: no CLI start, and its answer
+                # is a sentence ("Needs GitHub sign-in"), not the CLI's log.
+                "exe_data": _cli("connections", "connect", provider) if connect_here else checked_here,
+                "completion_check": _cli("connections", "test", provider, *scopes) if connect_here else checked_here,
             })
         elif req.kind == REQUIREMENT_PACK:
             # AI Assist on each question: the provisioner follows the credential's own setup.md and
@@ -383,6 +390,8 @@ def compile_setup(
 
 #: The runs this backend started, by project — one at a time per project (the slot says so too).
 _RUNS: dict[tuple[str, str], "asyncio.Task"] = {}
+#: Each run's live handle (``core/setup/walk.SetupControl``): a skip reaches the node the run is on.
+_CONTROLS: dict[tuple[str, str], Any] = {}
 
 
 def unsatisfied(req: SetupRequirementSpec) -> bool:
@@ -458,7 +467,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
 
 async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
                       load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
-                      ancestors: tuple[str, ...] = ()) -> str:
+                      ancestors: tuple[str, ...] = (), connect_here: bool = True) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -471,12 +480,14 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     """
     from flow_sdk.core.setup import execute_setup  # noqa: PLC0415
     from flow_sdk.core.setup.derive import ProjectTree  # noqa: PLC0415
+    from flow_sdk.core.setup.walk import SetupControl  # noqa: PLC0415
 
     pid = str(project.id)
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
-        tree = tree or await ProjectTree(project, ai=ai).load()
+        tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
+        control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
 
         async def run_setup():
@@ -487,10 +498,11 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
             from flow_sdk.schema.data_spec.asset_setup_spec import (  # noqa: PLC0415
                 LoadState,
                 SetupState,
-                SetupTreeResult,
             )
 
             dependencies = providers if providers is not None else (await required_projects(project) if not root else [])
+            # Best effort: a provider that is not ready is said, never a reason to stop setting this one up.
+            held: list[str] = []
             for provider in dependencies:
                 if str(provider.id) in ancestors:
                     continue
@@ -502,7 +514,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                         continue
                 elif child.state is LoadState.READY:
                     continue
-                return SetupTreeResult(state=SetupState.BLOCKED, detail=f"Dependency {provider.name}: {child.detail}")
+                held.append(f"Dependency {provider.name}: {child.detail}")
 
             async with SharedShell() as base:
                 result = await execute_setup(
@@ -510,25 +522,86 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                     shell=functools.partial(_setup_shell, inner=base),
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
-                    approved=True,
+                    approved=True, control=control,
                 )
-                if result.ok and load_after:
+                if load_after:
+                    # Best effort: what IS set up loads (an app starts) even when something beside it is not.
+                    # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
                     operational = LoadTree(tree)
-                    result = await execute_setup(
+                    loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
-                        shell=functools.partial(_setup_shell, inner=base), approved=True,
+                        shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
+                        # Its "done" (a source has nothing to load) must never stand in for a setup that fell
+                        # short: the run's record stays the setup's own verdict.
+                        record=result.ok,
                     )
+                    result = loaded if result.ok else result
+                if held and result.ok:
+                    return result.model_copy(update={"state": SetupState.BLOCKED, "detail": "; ".join(held)})
                 return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task
         # (and a plain done-callback) would hold the Set-up request for all of it.
         task = create_detached_task(run_setup(), name=f"project-setup:{pid}:{root}")
         add_detached_done_callback(task, _log_failure)
+        add_detached_done_callback(task, functools.partial(_release_control, key, control))
+        add_detached_done_callback(task, functools.partial(_forget_load, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
+
+
+async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple[bool, str]:
+    """What a setup requirement itself needs, for ``project_id`` — the nodes below a connection in the tree.
+
+    * ``credential:<provider>:<project id>:<scope>,...``: the project holds an oauth credential for the provider. Run (not a
+      check), a missing one is installed from the catalog's template (``declare_oauth``) — the same declaration a
+      source makes when it is created.
+    * ``provider:<provider>``: a sign-in for the provider exists — shipped with this build, or on the hub.
+    """
+    from flow_sdk.builtin import credential_service  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    # Scopes go last: one may hold a colon itself (GitHub's ``read:org``).
+    kind, provider, named, scopes = (which.split(":", 3) + ["", "", ""])[:4]
+    provider = provider.strip().lower()
+    project_id = named or project_id  # the step names its project: a run rooted at one source carries none
+    if kind == "provider":
+        from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+        if get_local_provider(provider) is not None:
+            return True, "Ships with Flowpad"
+        try:
+            from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
+
+            if await resolve_connection_spec(provider) is not None:
+                return True, "Available on the hub"
+        except Exception as exc:  # noqa: BLE001 — not knowing is said, never raised
+            return False, f"Could not ask the hub about {provider}: {exc}"
+        return False, f"No {provider} sign-in on this machine or on the hub"
+    if kind == "connection":
+        from flow_sdk.builtin.data_source import connection_need  # noqa: PLC0415
+
+        need = await connection_need(provider)
+        return (True, "Connected") if need is None else (False, need.detail)
+    if kind != "credential":
+        return False, f"unknown requirement step {which!r}"
+    try:
+        project = await credential_service.get_project(project_id)
+    except ValueError:  # not an id at all — said as a verdict, like any other answer of a step
+        project = None
+    if project is None:
+        return False, f"no project {project_id}"
+    pairs = await credentials_in_scope(project)
+    held = any(spec.is_oauth and str(spec.provider or "").lower() == provider for spec, _ in pairs)
+    if held:
+        return True, "In this project"
+    if check:
+        return False, "Not in this project yet"
+    await credential_service.declare_oauth(project, provider, [s for s in scopes.split(",") if s])
+    return True, "Added from the catalog"
 
 
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
@@ -591,10 +664,39 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
                                 duration_s=time.monotonic() - started)
 
 
+def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") -> None:
+    """A finished run's handle goes — unless a newer run of the same root already took its place."""
+    if _CONTROLS.get(key) is control:
+        del _CONTROLS[key]
+
+
+def _forget_load(project_id: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended, whichever node it was for: its load verdict is out of date."""
+    from flow_sdk.core.setup.load import forget  # noqa: PLC0415
+
+    forget(project_id)
+
+
 def _log_failure(task: "asyncio.Task") -> None:
     """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
     if not task.cancelled() and task.exception() is not None:
         logger.error("project setup run failed", exc_info=task.exception())
+
+
+async def stop_setup(project_id: str, root: str = "") -> bool:
+    """Stop the run going for ``root`` (``SetupControl.stop``): the step it is on is cancelled the way a
+    replaced wizard start is — its shells' process groups killed, its open question withdrawn — and the run
+    is awaited until it has let go of its slot. Its record says STOPPED; starting again resumes, every step
+    already done answering "already set up". ``False`` when nothing was running."""
+    key = (project_id, root)
+    task = _RUNS.get(key)
+    if task is None or task.done():
+        return False
+    control = _CONTROLS.get(key)
+    if control is None or not control.stop():
+        task.cancel("stopped by a person")  # not in a step yet (still loading what it depends on)
+    await asyncio.wait({task})
+    return True
 
 
 def setup_run(project_id: str, root: str = "") -> dict[str, Any]:
@@ -655,6 +757,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
       (``can_skip_always``)."""
     import time  # noqa: PLC0415
 
+    from flow_sdk.core.setup.derive import skip_detail  # noqa: PLC0415
     from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
     from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec  # noqa: PLC0415
 
@@ -663,6 +766,7 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
         if not req.can_skip_always:
             raise SkipRefused(req.why_not_always or f"{req.name} cannot be removed from this project")
         await _remove_from_project(project, req)
+        _skip_live(project, req, "removed from the project")
         return
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
@@ -671,6 +775,17 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
         await write_setup_skip(project, {**(project.setup_skipped or {}), req.name: mark})
     else:
         await write_setup_skip(await _record_of(req), mark)
+    _skip_live(project, req, skip_detail(mark))
+
+
+def _skip_live(project: "Project", req: SetupRequirementSpec, detail: str) -> None:
+    """A run going for this project reads the skip now: its node settles SKIPPED, even the one it is on."""
+    from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415
+
+    node_id, project_id = requirement_node_id(req), str(project.id)
+    for (pid, _root), control in _CONTROLS.items():  # the runs going: a finished one is dropped
+        if pid == project_id:
+            control.skip(node_id, detail)
 
 
 async def unskip_requirement(project: "Project", typeid: str, *, name: str = "") -> None:

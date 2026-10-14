@@ -76,6 +76,7 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "")
     agent takes as input, when the fire has one). Never raises for an outcome."""
     from flow_sdk.core.wizard.execute import _resolve_op, _resolve_wizard  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved, run_wizard  # noqa: PLC0415
+    from flow_sdk.core.wizard.state import target_segment  # noqa: PLC0415
 
     then = then_of(trigger)
     if then is None:
@@ -103,7 +104,7 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "")
         inputs=inputs,
         resolve_op=resolve_op,
         resolve_wizard=_resolve_wizard,
-        activity_path=f"automation/{getattr(trigger, 'id', '') or spec.name}",
+        activity_path=f"automation/{target_segment(str(getattr(trigger, 'id', '') or spec.name))}",
         subject_entity=str(getattr(trigger, "typeid", "") or "") or None,
     )
 

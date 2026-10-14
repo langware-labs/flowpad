@@ -1,5 +1,5 @@
 ---
-id: 95d45213-71e2-464b-9177-ed4012977dc3
+id: b7f660d7-fb8a-4098-a150-557b9101cc49
 ---
 # Dependency setup and Load
 
@@ -12,6 +12,20 @@ executing installation or asking setup questions. The app presents **X requires 
 with **Set up** and **Not now**. Not now leaves the requirement intact; it is not a skip.
 Explicit approval runs setup and then Load. Later Open calls repeat the checks and restore
 a stopped runtime without repeating satisfied installation steps.
+
+The question lists the provider's first-level steps as the check found them, so a person
+sees what **Set up** would do before anything runs. Its count is of the rows shown. If the
+result behind an open question is forgotten (below), the screen asks again with an
+unapproved Load and closes when the answer is now `ready`.
+
+A prerequisite is something a person or a setup run has to finish: a credential, a
+connection, a dependency, a web app's install and build, a declared `asset_setup`, and a
+data source that **owes** a setup (`DataSource.setup_owed`). A source owes one when its
+driver declares setup stages, when it is parked in `setup` (one that arrived by clone or
+share waits for this machine's own connection), or when it is `new` and its driver has a
+check of its own (`verify()`). Any other `new` source turns active on the poller's next
+tick, and a `disabled` one was paused by a person: neither is a prerequisite, because a
+project must not ask for setup over a state that settles by itself or that someone chose.
 
 ## Author a provider
 
@@ -69,8 +83,19 @@ confused with the caller project used to configure a dependency. It returns a `p
 ```
 
 States are `setup_required`, `running`, `ready`, and `failed`.
-`GET load-state` observes the latest result without starting work; null means no Load has
-been requested in this backend process. Running work uses the existing provider project
+`GET load-state` observes the latest result without starting work; null means there is no
+result: no Load has been requested in this backend process, or the last one was forgotten.
+A result is a snapshot of one check, so it is forgotten when a setup run of the provider
+ends (whichever node it was for) or one of the provider's data sources changes status; the
+next Load checks again. A `running` result is never forgotten; it is settled from its run.
+Other changes (a credential stored from the CLI, a web app built outside a setup run) do
+not forget it: the next Load is what notices them.
+
+A step answered inside the backend (a data source's, a web app's) reports what is missing
+in its own words, for example `Verify: Received — connect your own account, then press
+Verify.` A step checked by a command can only report `not installed yet.`
+
+Running work uses the existing provider project
 setup run: `GET setup-run` with empty `root` reads progress, and the returned `run` claims
 its questions. A failed declaration or execution is reported as failed, never ready.
 

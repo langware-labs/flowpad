@@ -2,7 +2,7 @@
   "name": "@flowpad/sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for Flowpad",
-  "author": "Langware Labs <alice@example.com>",
+  "author": "Langware Labs <diagnosis@langware.ai>",
   "homepage": "https://flowpad.ai",
   "type": "module",
   "dependencies": {

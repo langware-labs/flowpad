@@ -12,6 +12,7 @@ Real isolated DB, real Project row (v4 id) under the user home, the real scan en
 from __future__ import annotations
 
 import json
+import shutil
 import time
 from pathlib import Path
 
@@ -39,8 +40,17 @@ def _fresh_indexer(monkeypatch):
     reset_shared_indexer()
 
 
-async def test_a_cloned_projects_credentials_are_the_projects_and_count_toward_its_readiness(folder_db):
+@pytest.fixture
+def workspace_project_root():
+    """A project folder under the user home's workspace, removed afterwards: the home is shared by the
+    whole run, and a folder left there is a project every later workspace listing finds."""
     root = Path(get_instance_settings().user_home) / "Flowpad workspace" / f"acme-{time.time_ns()}"
+    yield root
+    shutil.rmtree(root, ignore_errors=True)
+
+
+async def test_a_cloned_projects_credentials_are_the_projects_and_count_toward_its_readiness(folder_db, workspace_project_root):
+    root = workspace_project_root
     folder = root / "agentic-assets" / "credential" / "google-cloud"
     folder.mkdir(parents=True)
     (folder / "credential.json").write_text(json.dumps({

@@ -10,16 +10,23 @@ this backend is, and a project can never shadow it.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 from flow_sdk.config import is_running_install_path
 
 
-async def by_name_preferring_this_install(cls: Any, name: str) -> Optional[Any]:
-    """The ``cls`` row called *name*; this install's copy when several share the name.
+def _shared_depth(a: str, b: str) -> int:
+    return len(os.path.commonpath([os.path.abspath(a), os.path.abspath(b)]).split(os.sep))
 
-    Raises ``ValueError`` — as ``get_one`` does — only when several match and none of them is
-    this install's, because then no copy is more right than another.
+
+async def by_name_preferring_this_install(cls: Any, name: str, *, near: str = "") -> Optional[Any]:
+    """The ``cls`` row called *name*; this install's copy when several share the name, else the
+    copy closest to *near* (the folder of the asset that names it — a project's setup runs its
+    own ``waha-setup``, not a same-named wizard another project ships).
+
+    Raises ``ValueError`` — as ``get_one`` does — only when several match and no copy is more
+    right than another.
     """
     rows = await cls.get_all({"name": name})
     if len(rows) <= 1:
@@ -27,6 +34,12 @@ async def by_name_preferring_this_install(cls: Any, name: str) -> Optional[Any]:
     ours = [row for row in rows if getattr(row, "asset_ref", "") and is_running_install_path(row.asset_ref)]
     if len(ours) == 1:
         return ours[0]
+    if near:
+        depth = {id(row): _shared_depth(near, str(getattr(row, "asset_ref", "") or "/")) for row in rows}
+        best = max(depth.values())
+        closest = [row for row in rows if depth[id(row)] == best]
+        if len(closest) == 1:
+            return closest[0]
     where = ", ".join(sorted(str(getattr(row, "asset_ref", "") or row.id) for row in rows))
     raise ValueError(f"{len(rows)} {cls.__name__} rows are named {name!r} and none is this install's: {where}")
 

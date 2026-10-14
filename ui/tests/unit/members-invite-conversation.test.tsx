@@ -23,7 +23,7 @@ vi.mock('@src/hooks/use-members', () => ({
     entity: { kind: conversationKind },
     members: [
       { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: myRole },
-      { user_id: 'eran-id', email: 'eran@example.com', name: 'Eran', role: 'owner' },
+      { user_id: 'alice-id', email: 'alice@example.com', name: 'Alice', role: 'owner' },
     ],
     addMembers: vi.fn(),
     removeMember: vi.fn(),
@@ -77,7 +77,7 @@ describe('MembersAvatarStack on a conversation', () => {
     conversationKind = 'helpdesk';
     openFromHeaderButton();
     expect(screen.queryByTestId('members-invite-form')).toBeNull();
-    expect(screen.getByTestId('members-invite-not-allowed').textContent).toContain('Eran');
+    expect(screen.getByTestId('members-invite-not-allowed').textContent).toContain('Alice');
   });
 
   it('an editor of a HELPDESK ticket gets no form either (the hub would 403)', () => {

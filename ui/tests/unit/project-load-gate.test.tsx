@@ -43,3 +43,71 @@ it('runs Load again when the same completed dependency home is opened, without r
   expect(load.mock.calls).toEqual([[projectId, { approved: false }], [projectId, { approved: false }]]);
   expect(useProjectLoadStore.getState().open).toBe(false);
 });
+
+function gate(asset = '') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/dock/app/service']}>
+        <ProjectLoadGate projectId={projectId} asset={asset}><p>Service home</p></ProjectLoadGate>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+it('a failed load runs setup once, unasked, and then shows the app', async () => {
+  const failed: ProjectLoadResult = { ...ready, state: 'failed', detail: 'Service: it cannot start', setup_available: true };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(failed);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? ready : failed));
+  gate();
+  expect(await screen.findByText('Service home')).toBeInTheDocument();
+  expect(load.mock.calls).toEqual([[projectId, { approved: false }], [projectId, { approved: true }]]);
+});
+
+it('a load that still fails after its setup says why and does not loop', async () => {
+  const offered: ProjectLoadResult = { ...ready, state: 'failed', detail: 'Service: it cannot start', setup_available: true };
+  const final: ProjectLoadResult = { ...offered, setup_available: false };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(offered);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? final : offered));
+  gate();
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText('Service: it cannot start')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+it('a project that is gone is said to be gone, with no retry that could never work', async () => {
+  vi.spyOn(Project, 'loadState').mockResolvedValue(null);
+  vi.spyOn(Project, 'load').mockRejectedValue(Object.assign(new Error('Request failed with status code 404'), { response: { status: 404 } }));
+  gate();
+  expect(await screen.findByTestId('project-load-missing')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  expect(screen.queryByText(/status code 404/)).not.toBeInTheDocument();
+});
+
+it('an app that needs setup sets up in place: no dialog over it, then the app', async () => {
+  const required: ProjectLoadResult = { ...ready, state: 'setup_required', detail: 'Service: waiting on Google Cloud' };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(required);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? ready : required));
+  const asset = 'micro_app-77777777-7777-4777-8777-777777777778';
+  gate(asset);
+  expect(await screen.findByText('Service home')).toBeInTheDocument();
+  expect(load.mock.calls).toEqual([[projectId, { approved: false, asset }], [projectId, { approved: true, asset }]]);
+  expect(useProjectLoadStore.getState().open).toBe(false);
+});
+
+it('a gate for the project alone offers Set up instead of starting the whole setup by itself', async () => {
+  const required: ProjectLoadResult = { ...ready, state: 'setup_required', detail: 'Service: waiting on Google Cloud' };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(required);
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? ready : required));
+  gate();
+  const setUp = await screen.findByRole('button', { name: 'Set up' });
+  expect(load.mock.calls).toEqual([[projectId, { approved: false }]]);
+  await userEvent.click(setUp);
+  await waitFor(() => expect(load.mock.calls.at(-1)).toEqual([projectId, { approved: true }]));
+  expect(useProjectLoadStore.getState().open).toBe(false);
+});

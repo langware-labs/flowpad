@@ -189,8 +189,7 @@ class ScheduleTriggerSpec(DataSpec):
     #: local zone. Carried in the document because a schedule travels with its
     #: agent: "daily at 09:00" must mean the author's 09:00 on a UTC sandbox too.
     timezone: str = ""
-    #: The place (Deployment id) this schedule runs on. Only the machine that
-    #: place runs on arms it. Empty = legacy: armed on every machine that indexes it.
+    #: LEGACY home of ``TriggerSpec.runs_on`` (files written when only a schedule had one). Read as that.
     runs_on: str = ""
     #: LEGACY: prompt for a bare agentic process. Use a ``run_agent`` action instead.
     instruction: str = ""
@@ -248,6 +247,10 @@ class TriggerSpec(DataSpec):
     #: Confirm-against-store gate: ``{type, filter}`` must match a real row or
     #: the fire is skipped, because an event is not proof.
     confirm: dict[str, Any] = {}
+    #: The place (Deployment id) this rule runs on: only the machine that place runs on arms it, so a
+    #: rule checked into a shared project fires once, not once per clone. Empty = every machine that
+    #: indexes it. Any kind but ``hook`` (nothing arms a hook rule).
+    runs_on: str = ""
 
     #: EXACTLY ONE of these four. Which one is present IS the kind.
     tag: Optional[TagTriggerSpec] = None
@@ -282,6 +285,20 @@ class TriggerSpec(DataSpec):
                 + (", ".join(chosen) if chosen else "neither")
             )
         return self
+
+    @model_validator(mode="after")
+    def _one_place(self) -> "TriggerSpec":
+        legacy = self.schedule.runs_on if self.schedule is not None else ""
+        if self.runs_on and legacy and legacy != self.runs_on:
+            raise ValueError(f"trigger {self.name or '<unnamed>'}: `runs_on` is said twice, and differently")
+        if self.runs_on and self.hook is not None:
+            raise ValueError(f"trigger {self.name or '<unnamed>'}: a hook rule has no `runs_on`")
+        return self
+
+    @property
+    def place(self) -> str:
+        """The ``runs_on`` in force: the rule's own, else the one a schedule file still carries."""
+        return self.runs_on or (self.schedule.runs_on if self.schedule is not None else "")
 
     @model_validator(mode="after")
     def _one_way_to_act(self) -> "TriggerSpec":

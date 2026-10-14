@@ -27,6 +27,8 @@ export * from './graph_context';
 export * from './capability';
 export * from './data-source';
 export * from './data-driver';
+export * from './asset-setup';
+export * from './compute-op';
 export * from './credential';
 export * from './agent-mailbox';
 export * from './source-item';

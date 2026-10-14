@@ -58,14 +58,14 @@ function record() {
       login: h.install !== 'installed' ? 'n_a' : !device ? 'n_a' : w === 'claude' ? h.claudeLogin : 'not_checked',
       login_checked_at: '',
       login_message: '',
-      account: w === 'claude' && h.claudeLogin === 'signed_in' ? { identity: 'eran@x.io', plan: 'max' } : { identity: '', plan: '' },
+      account: w === 'claude' && h.claudeLogin === 'signed_in' ? { identity: 'alice@x.io', plan: 'max' } : { identity: '', plan: '' },
       has_device_login: device,
       key_providers: ['openrouter'],
       install_command: '',
       homepage_url: '',
     })),
     keys: h.keys.map((k) => ({ ...k, created_at: '' })),
-    hub: { login: h.hubLogin, email: h.hubLogin === 'signed_in' ? 'eran@x.io' : '', user_typeid: '', error: '' },
+    hub: { login: h.hubLogin, email: h.hubLogin === 'signed_in' ? 'alice@x.io' : '', user_typeid: '', error: '' },
     default_harness: 'harness.claude.cli',
   };
 }
@@ -82,9 +82,9 @@ function funding() {
     endpoints: {
       [DEVICE]: { id: 'd', kind: 'device', name: 'claude device login' },
       [KEY]: { id: 'a', kind: 'api_key', name: 'openrouter key' },
-      [HUB]: { id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'eran default' },
+      [HUB]: { id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'alice default' },
     },
-    available: [{ id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'eran default' }],
+    available: [{ id: '00000000-0000-4000-8000-00000000000b', kind: 'hub', name: 'alice default' }],
     blocked: {},
   };
 }
@@ -227,7 +227,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     expect(pill('harness-row-claude-status').textContent).toContain('Plan');
     expect(row.textContent).not.toContain('Signed in');
     // Identity and plan ride the small text, from the status record.
-    expect(row.textContent).toContain('eran@x.io');
+    expect(row.textContent).toContain('alice@x.io');
     expect(row.textContent).toContain('max');
   });
 
@@ -372,7 +372,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
     const row = await screen.findByTestId('harness-row-flowpad');
     expect(screen.getByTestId('harness-row-flowpad-status').textContent).toContain('Signed in');
-    expect(row.textContent).toContain('eran@x.io');
+    expect(row.textContent).toContain('alice@x.io');
     expect(row.textContent).toContain('funds opencode');
     expect(screen.getByTestId('harness-row-flowpad-action').textContent).not.toContain('Sign in');
 

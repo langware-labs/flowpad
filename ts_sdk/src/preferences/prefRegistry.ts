@@ -36,7 +36,7 @@ export enum PrefKey {
   SMART_NAVIGATION_SIGNIN = 'preferences.notifications.smart_navigation_signin',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
-  INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
+  DISKIO_BACKEND = 'preferences.advanced.diskio_backend',
   /** SmartNavigationLog: collect every smart-navigation decision into a dataset in Flowpad's temp folder. */
   SMART_NAVIGATION_LOG = 'preferences.advanced.smart_navigation_log',
 
@@ -53,6 +53,8 @@ export enum PrefKey {
   // --- Migrated from localStorage (see prefRegistry plan) ---
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
+  /** Per-device language override per project: `{ [projectId]: localeCode }`. */
+  PROJECT_LOCALES = 'preferences.i18n.project_locales',
   VIEW_MODE = 'preferences.ui.view_mode',
   DEV_MODE = 'preferences.ui.dev_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
@@ -336,18 +338,18 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.JSON,
     defaultValue: {},
   },
-  [PrefKey.INDEXER_BACKEND]: {
-    key: PrefKey.INDEXER_BACKEND,
+  [PrefKey.DISKIO_BACKEND]: {
+    key: PrefKey.DISKIO_BACKEND,
     surfaced: true,
     category: 'advanced',
-    label: 'Indexer backend',
+    label: 'Disk I/O backend',
     description:
-      'Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run.',
+      'Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan.',
     dataType: PrefDataType.STRING,
     defaultValue: 'python',
     options: [
-      { value: 'python', label: 'Python (FSIndexer)' },
-      { value: 'rust', label: 'Rust (RSIndexer)' },
+      { value: 'python', label: 'Python' },
+      { value: 'rust', label: 'Rust' },
     ],
   },
 
@@ -398,7 +400,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     visibleWhen: { key: PrefKey.AUTO_INDEX_ENABLED, equals: true },
     label: 'Run the walk in',
     description:
-      'Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected.',
+      'Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects.',
     dataType: PrefDataType.STRING,
     defaultValue: 'subprocess',
     options: AUTO_INDEX_FUNCTION_OPTIONS,
@@ -422,6 +424,17 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     // when the user has 2+ languages in common with the app, so this is where
     // the rest are reached.
     optionsSource: 'locales',
+  },
+  [PrefKey.PROJECT_LOCALES]: {
+    key: PrefKey.PROJECT_LOCALES,
+    category: 'i18n',
+    label: 'Project languages',
+    // A language picked from the footer inside a project is this device's own
+    // reading of it — it never rewrites the project's shared `locale` (that is
+    // the project home's Language card).
+    description: 'Your own language for each project, chosen from the footer.',
+    dataType: PrefDataType.JSON,
+    defaultValue: {},
   },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,

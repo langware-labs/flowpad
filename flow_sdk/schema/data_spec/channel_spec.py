@@ -8,11 +8,12 @@ so no surface branches on a channel's name or on a missing field.
 """
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from pydantic import ConfigDict
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -23,6 +24,29 @@ class ChannelTransport(StrEnum):
     FLOWPAD = "flowpad"
     #: The DataSource the conversation was projected from, through its driver's ``send``.
     SOURCE = "source"
+
+
+class ActionSpec(DataSpec):
+    """One thing a person can do to a whole conversation on its channel (approve a pull request,
+    close a ticket) — declared by the driver (``Acting.actions``), drawn by the surface, run through
+    ``POST /graph/conversation/<id>/act``."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "channel.action"
+
+    #: What ``act`` is called with; unique within the channel.
+    id: NonBlank
+    label: str
+    #: A lucide icon name; empty when the action declares none.
+    icon_name: str = ""
+    #: A question the surface asks before running it; empty runs at once.
+    confirm: str = ""
+    #: The action carries the person's text (a review comment) as ``act``'s ``text``.
+    needs_text: bool = False
+    #: Drawn as a destructive action (closes, rejects).
+    destructive: bool = False
+    #: Which conversations offer it: an open one (approve), an ended one (reopen), or ``any``.
+    when: Literal["open", "ended", "any"] = "open"
 
 
 class ChannelSpec(DataSpec):
@@ -50,6 +74,8 @@ class ChannelSpec(DataSpec):
     reacts: bool = False
     needs_cloud_login: bool = False
     hosts_sessions: bool = False
+    #: What a person can do to the whole conversation here (``Acting.actions``); empty when nothing.
+    actions: list[ActionSpec] = []
 
 
-__all__ = ["ChannelSpec", "ChannelTransport"]
+__all__ = ["ActionSpec", "ChannelSpec", "ChannelTransport"]
