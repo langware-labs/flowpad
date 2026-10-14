@@ -419,7 +419,6 @@ function load(opts = {}) {
       env.t.primeLaunchCheck();
       const ok1 = await env.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }), autoRepair: true });
       eq([ok1, env.uv.repairs, env.panels().length], [true, 1, 0], 'first install blocked: the repair ran by itself and no panel was shown');
-      eq(env.uv.lastRepair.skipStaging, true, 'and it skips the scratch install of the engine (there is none to protect)');
       // The automatic repair fails: the panel appears (with the reason), and the repair is not retried on its own.
       const env2 = load({ noEngine: true, binReady: false });
       env2.t.primeLaunchCheck();

@@ -1723,6 +1723,16 @@ class UvManager {
       const found = await this._uv(['python', 'find', pin, '--managed-python'], { timeout: 30000 });
       python = String(found.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop();
     } catch (err) {
+      // `uv python find` QUERIES the interpreter itself, so under a policy that refuses the whole interpreter
+      // it is the step that fails (seen on the VM, 2026-10-14): that is the verdict too.
+      if (isPolicyBlockError({ stderr: err.stderr, stdout: err.stdout, message: err.message, code: err.code }) && POLICY_BLOCK_TEXT.test(`${err.stderr || ''}\n${err.message || ''}`)) {
+        this.log.warn('[uv] interpreter preflight: Windows application control blocks the uv-managed Python (uv could not query it)');
+        const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${String(err.stderr || err.message)}`);
+        blocked.stderr = String(err.stderr || err.message);
+        blocked.code = 2;
+        blocked.preflight = true;
+        throw blocked;
+      }
       this.log.info(`[uv] interpreter preflight skipped: ${String(err.message || err).split('\n')[0]}`);
       return { ok: true, skipped: true };
     }
@@ -2694,7 +2704,7 @@ class UvManager {
    * are the caller's (main.js owns the health gate). Resolves the repair result; rejects with
    * `.step`, `.rolledBack`, `.policyBlocked` set, after recording the attempt.
    */
-  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck, skipStaging = false } = {}) {
+  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck } = {}) {
     if (!IS_WIN) throw new Error('the runtime repair is Windows-only');
     this._assertOpen('repair the runtime');
     const paths = this._runtimePaths();
@@ -2719,7 +2729,6 @@ class UvManager {
       versions,
       state: this._runtimeState(),
       saveState: (s) => this._saveRuntimeState(s),
-      skipStaging,
       onProgress,
       log: this.log,
     });

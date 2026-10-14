@@ -1354,7 +1354,6 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
   let record = firstRecord;
   let extraDetail = '';
   let autoRepairPending = !!autoRepair;
-  const noEngineYet = !!autoRepair; // `autoRepair` is only ever asked for on a blocked first install
   const stopBackend = () => {
     if (retry && !(uvManager && uvManager.hasLaunchedBackend())) return;
     if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[fatal-failure] backend stop failed: ${e.message}`));
@@ -1447,7 +1446,6 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
       try {
         const result = await uvManager.repairRuntime({
           versions,
-          skipStaging: noEngineYet, // a blocked FIRST install: nothing to protect, so no scratch install of the whole engine
           onProgress: (m) => sendStatus(`Repairing the FlowPad runtime — ${m}`),
           startBackend: async () => { sendStatus('Starting flowpad'); markPhase('backend-start', { repair: true }); await uvManager.start(); },
           healthCheck: async () => {

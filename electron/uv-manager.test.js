@@ -1841,6 +1841,13 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       }
     }
     {
+      // `uv python find` is the step that queries the interpreter: under a policy that refuses the whole interpreter it is the one that fails.
+      const m = mk({ _uv: async (args) => { if (args[1] === 'find') throw Object.assign(new Error('Command failed: uv python find 3.11 --managed-python\nerror: Failed to query Python interpreter\n  cause: An Application Control policy has blocked this file. (os error 4551)'), { stderr: 'error: Failed to query Python interpreter at `C:\\u\\python.exe`\n  cause: An Application Control policy has blocked this file. (os error 4551)' }); return { stdout: '', stderr: '' }; } });
+      let err = null;
+      try { await m.probeManagedInterpreter(); } catch (e) { err = e; }
+      ok(err && err.preflight && policyBlockFromInstallError(err), 'preflight: a policy block reported by `uv python find` is the verdict, not a skip');
+    }
+    {
       // Not a verdict: the real install decides.
       const timeout = mk({ _execFile: async () => { throw Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' }); } });
       eq(await timeout.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: a timeout is inconclusive, not a block');
