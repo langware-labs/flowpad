@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -33,7 +34,7 @@ _START_LOCKS = new_registry()
 
 #: How long a started server gets to answer. The start command's own warm-up (a dev bundler) — not a
 #: budget a slow app should be given more of to look healthy: an app that needs longer is a finding.
-START_SECONDS = 60.0
+START_SECONDS = 60.0  # to open its port AND answer its health path
 #: A single health probe. Local and loopback: anything slower is not answering.
 PROBE_SECONDS = 2.0
 #: An install's own budget (``npm ci`` on a cold cache), the same the CLI's install used.
@@ -341,6 +342,7 @@ async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAns
     declared = _declared(serving)
     port = found.port
     command = serving.start_cmd.replace("{port}", str(port))
+    began = time.monotonic()
     _STARTING.add(port)
     try:
         proc, log_file = await asyncio.to_thread(
@@ -374,12 +376,25 @@ async def _launch(app, folder: Path, process: _Process, found: app_ports.PortAns
                 f"{who} was started on port {port} but listens on port {own[0]} — its start command must use {{port}}"
             )
         port = own[0]  # it chose its own port: where it listens is where it is
-    if not await asyncio.to_thread(health_answers, port, serving.health):
+    # The port open is not the app answering: a container's published port opens at once, the server
+    # behind it a moment later. Asked again until the SAME start budget runs out — and a crash ends it.
+    if not await asyncio.to_thread(_answers_by, port, serving.health, began + START_SECONDS, proc):
         return await failed(f"{who} opened port {port} but {serving.health} does not answer — log: {log_file}")
     if await _keep(app, process, port, command) is False:
         return await failed(f"{who} has no local placement to be served from")
     detail = f"running at http://127.0.0.1:{port}"
     return _answer(ExitCode.OK, f"{detail} ({found.note})" if found.note else detail, value=str(port))
+
+
+def _answers_by(port: int, health: str, deadline: float, proc) -> bool:
+    """The health path answers before ``deadline``. A start command that exits with an error ends the
+    wait at once: a server that died will never answer."""
+    while True:
+        if health_answers(port, health):
+            return True
+        if proc.poll() not in (None, 0) or time.monotonic() >= deadline:
+            return False
+        time.sleep(0.25)
 
 
 async def _keep(app, process: _Process, port: int, command: str):
