@@ -62,6 +62,18 @@ async function showFailureDialog({ dialog, parent, type = 'error', title, messag
 
   // What the user saw is what the team needs to read: the headline plus the detail.
   const text = [message, detail].filter(Boolean).join('\n\n');
+  // Immediate feedback, NOT awaited: a native message box cannot be closed from code,
+  // so a "please wait" box that the upload dismisses is impossible — instead this one
+  // is dismissable by the user while the upload runs beside it. On a slow network the
+  // screen is never silent between the click and the result dialog.
+  show(dialog, parent, {
+    type: 'info',
+    title: 'Sending report',
+    message: 'Uploading your logs to the Flowpad team…',
+    detail: 'This can take a moment. You will get a confirmation with a reference ID when it is done.',
+    buttons: ['OK'],
+    defaultId: OK,
+  }).catch(() => { /* feedback only; the upload below is what matters */ });
   let result;
   try {
     result = await share(text);

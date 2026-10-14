@@ -37,25 +37,27 @@ function fakeDialog(responses) {
     await showFailureDialog({ dialog: d, title: 'T', message: 'M', log: silentLog });
     eq(d.shown[0].opts.buttons, ['OK']);
   }
-  // 3. "Send Report" calls the sharer with the headline + detail, once, reports 'shared',
-  // and confirms the silent upload out loud with the reference id.
+  // 3. "Send Report" calls the sharer with the headline + detail, once, reports 'shared';
+  // a "Sending report" box appears immediately (the screen is never silent during the
+  // upload) and the confirmation carries the reference id.
   {
-    const d = fakeDialog([1, 0]);
+    const d = fakeDialog([1, 0, 0]);
     const got = [];
     const r = await showFailureDialog({ dialog: d, title: 'T', message: 'Headline', detail: 'Cause: boom', share: async (t) => { got.push(t); return { ok: true, submissionId: 'sub-1' }; }, log: silentLog });
     eq(r, 'shared');
     eq(got, ['Headline\n\nCause: boom']);
-    eq(d.shown.length, 2, 'a confirmation dialog follows a successful upload');
-    eq(d.shown[1].opts.type, 'info');
-    assert.ok(d.shown[1].opts.detail.includes('sub-1'), 'the confirmation carries the reference id'); passed++;
+    eq(d.shown.length, 3, 'feedback during the upload, then a confirmation');
+    eq(d.shown[1].opts.title, 'Sending report');
+    eq(d.shown[2].opts.type, 'info');
+    assert.ok(d.shown[2].opts.detail.includes('sub-1'), 'the confirmation carries the reference id'); passed++;
   }
   // 4. A failed share (returned or thrown) tells the user and where the logs are.
   for (const sharer of [async () => ({ ok: false, error: 'disk full' }), async () => { throw new Error('disk full'); }]) {
-    const d = fakeDialog([1, 0]);
+    const d = fakeDialog([1, 0, 0]);
     const r = await showFailureDialog({ dialog: d, title: 'T', message: 'M', share: sharer, log: silentLog });
     eq(r, 'share-failed');
-    eq(d.shown.length, 2);
-    assert.ok(d.shown[1].opts.detail.includes('disk full') && d.shown[1].opts.detail.includes('diagnosis@langware.ai')); passed++;
+    eq(d.shown.length, 3);
+    assert.ok(d.shown[2].opts.detail.includes('disk full') && d.shown[2].opts.detail.includes('diagnosis@langware.ai')); passed++;
   }
   // 5. A parent window is passed through; none → the single-argument form.
   {
