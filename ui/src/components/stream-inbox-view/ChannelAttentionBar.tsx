@@ -34,6 +34,7 @@ import {
   type AttentionKind,
   type AttentionReason,
   attentionHeadline,
+  attentionNext,
   attentionText,
   attentionVerbs,
 } from '@src/components/data-sources/source-attention';
@@ -127,8 +128,9 @@ function AttentionRow({
   const answer = verifyAnswer(last);
   const step = i18n._(nextStep);
   const wrong = answer?.wrong ?? attentionHeadline(reason);
-  const next = answer?.next ?? (headline ? '' : step);
-  const behind = !answer && headline ? `${attentionText(reason)} ${step}` : undefined;
+  // A sign-in it waits on is said outright: what it is (the headline) and what that means (next).
+  const next = answer?.next ?? (reason.need ? attentionNext(reason) : headline ? '' : step);
+  const behind = !answer && headline && !reason.need ? `${attentionText(reason)} ${step}` : undefined;
 
   const actions = {
     setup: { Icon: Wrench, label: t`Setup`, run: () => openSourceSetup(source), busy: false },

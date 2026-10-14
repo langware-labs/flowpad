@@ -61,8 +61,10 @@ class ProjectTree:
     """One project's derived setup tree. ``load()`` once, then hand ``resolve_node`` / ``resolve_op`` to
     ``execute_setup``. Built in memory per run, like the setup wizard it replaces — nothing is written."""
 
-    def __init__(self, project: Any, *, ai: bool = True, display: str = ""):
+    def __init__(self, project: Any, *, ai: bool = True, display: str = "", connect_here: bool = True):
         self.project = project
+        #: Whether a connection step signs the person in itself (the CLI), or only checks (a screen does it).
+        self.connect_here = connect_here
         self.pid = str(project.id)
         self.root = f"project-{self.pid}"
         self.ai = ai
@@ -152,16 +154,40 @@ class ProjectTree:
 
         node_id = requirement_node_id(req)
         if node_id not in self.nodes:
-            label = req.title or req.name
+            label = f"{req.title or req.name} sign-in" if req.is_oauth else (req.title or req.name)
             if self._skipped(node_id, label, req.skipped):
                 return node_id
-            wizard, ops = compile_setup(self.pid, [req], ai=self.ai)
+            wizard, ops = compile_setup(self.pid, [req], ai=self.ai, connect_here=self.connect_here)
             self.ops.update(ops)
             self.nodes[node_id] = SetupNode(
                 id=node_id, label=label,
                 run=wizard.model_copy(update={"name": node_id, "label": label}) if wizard.steps else None,
+                children=self._connection_needs(req) if req.is_oauth else (),
             )
         return node_id
+
+    def _connection_needs(self, req) -> tuple[str, ...]:
+        """What a connection itself needs, as nodes below it: the project's credential for the provider
+        (installed from the catalog when missing), which needs the provider's sign-in to exist here or on
+        the hub. Each is set up before the one above it — a sign-in never starts for a provider nobody has."""
+        provider = req.provider or req.name
+        title = req.title or provider
+        scopes = ",".join(req.scopes)
+
+        def step(node_id: str, label: str, which: str, children: tuple[str, ...] = ()) -> str:
+            if node_id not in self.nodes:
+                op = _op(f"{node_id}:check", label, which, kind="requirement_step")
+                self.ops[op.name] = op
+                run = WizardSpec.model_validate({
+                    "name": op.name, "label": label,
+                    "steps": [{"id": "check", "label": label, "kind": "compute", "ref": op.name}],
+                })
+                self.nodes[node_id] = SetupNode(id=node_id, label=label, run=run, children=children)
+            return node_id
+
+        available = step(f"provider:{provider}", f"{title} sign-in service", f"provider:{provider}")
+        return (step(f"oauth-credential:{provider}", f"{title} credential",
+                     f"credential:{provider}:{self.pid}:{scopes}", (available,)),)
 
     async def _source_node(self, source, needs: list[str]) -> str:
         node_id = str(source.typeid)

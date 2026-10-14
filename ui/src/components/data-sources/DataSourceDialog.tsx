@@ -25,6 +25,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
+import { SourceSetupPanel } from '@src/components/setup-wizard/SourceSetupDialog';
 import { GroupChoice } from './GroupChoice';
 import {
   accountKeyFor,
@@ -152,7 +153,10 @@ export function DataSourceDialog({
     setGroup(p.group || '');
     setDraft(p.group ? emptyDraft() : emptyDraft(p));
     setStep(p.group ? 'choice' : 'form');
+    // A channel that only needs a sign-in asks nothing on a form: picking it adds it, and its setup follows.
+    setAutoAdd(variant === 'channel' && !p.group && !!p.sign_in_title);
   };
+  const [autoAdd, setAutoAdd] = useState(false);
   const initialRef = useRef(initial);
   initialRef.current = initial;
   useEffect(() => {
@@ -176,6 +180,11 @@ export function DataSourceDialog({
   // The wizard asks for this driver's config — the form asks only for a name, then hands over.
   const byWizard = setUpByWizard(spec, !!editing);
   const [settingUp, setSettingUp] = useState<DataSource | null>(null);
+  // A source added that reads through a sign-in (its driver's `auth.connector`): the dialog goes on to its
+  // setup — the sign-in asked in place, then its tree — instead of closing on "Added".
+  const [settingUpSource, setSettingUpSource] = useState<DataSource | null>(null);
+  const [listening, setListening] = useState(false);
+  const needsSignIn = !!spec?.sign_in_title;
   const problems = useMemo(
     () => (provisioned ? [] : validateDraft(draft, spec, { config: !byWizard })),
     [provisioned, draft, spec, byWizard],
@@ -189,6 +198,15 @@ export function DataSourceDialog({
 
   const setPicked = (key: string, choices: DataSourceChoice[]) =>
     setDraft((d) => ({ ...d, picked: { ...d.picked, [key]: choices } }));
+
+  // The form a sign-in channel skipped: added as soon as its draft is valid; one with a question shows its form.
+  useEffect(() => {
+    if (!autoAdd || step !== 'form' || busy) return;
+    setAutoAdd(false);
+    if (problems.length === 0) void submit();
+    // `submit` is rebuilt every render; this runs once per pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAdd, step, problems, busy]);
 
   const submit = async () => {
     if (problems.length) return;
@@ -269,6 +287,10 @@ export function DataSourceDialog({
           setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
           return;
         }
+        if (needsSignIn && source.status !== 'active') {
+          setSettingUpSource(source); // the form gives way to its setup: "X is added. It needs one thing…"
+          return;
+        }
       }
       onOpenChange(false);
     } catch (e) {
@@ -331,6 +353,8 @@ export function DataSourceDialog({
 
   const close = () => {
     setSettingUp(null);
+    setSettingUpSource(null);
+    setListening(false);
     onOpenChange(false);
   };
   const toProviders = () => {
@@ -346,7 +370,7 @@ export function DataSourceDialog({
   };
   // The trail: where the person is, and how they got there. Once the source exists (its setup is running) the
   // way back is closed — going back would add it a second time.
-  const beforeSetup = !settingUp;
+  const beforeSetup = !settingUp && !settingUpSource;
   const crumbs: StepCrumb[] = [
     {
       label: editing ? t`Edit data source` : variant === 'channel' ? t`Add a channel` : t`Data sources`,
@@ -357,8 +381,9 @@ export function DataSourceDialog({
     crumbs.push({ label: group, onClick: beforeSetup && step === 'form' ? toChoice : undefined });
   // Never an empty crumb: the driver may not be known (yet) — the source's own name stands in.
   const formCrumb = editing ? editing.name : spec?.title || draft.provider || settingUp?.name || '';
-  if ((step === 'form' || settingUp) && formCrumb) crumbs.push({ label: formCrumb });
+  if ((step === 'form' || settingUp || settingUpSource) && formCrumb) crumbs.push({ label: formCrumb });
   if (settingUp) crumbs.push({ label: t`Connect` });
+  if (settingUpSource) crumbs.push({ label: t`Setup` });
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
@@ -386,7 +411,17 @@ export function DataSourceDialog({
           contentRef.current?.focus();
         }}
         footer={
-          settingUp ? (
+          settingUpSource ? (
+            listening ? (
+              <Button onClick={close} data-testid="ds-setup-done">
+                <Trans>Done</Trans>
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={close} data-testid="ds-setup-later">
+                <Trans>Finish later</Trans>
+              </Button>
+            )
+          ) : settingUp ? (
             <Button variant="ghost" onClick={close} data-testid="ds-setup-close">
               <Trans>Close</Trans>
             </Button>
@@ -420,7 +455,9 @@ export function DataSourceDialog({
           )
         }
       >
-        {settingUp ? (
+        {settingUpSource ? (
+          <SourceSetupPanel source={settingUpSource} onDone={close} lead onListening={setListening} />
+        ) : settingUp ? (
           <SetupWizardPanel source={settingUp} autoStart />
         ) : step === 'provider' ? (
           <TileSection title={<Trans>Provider</Trans>}>
@@ -455,6 +492,11 @@ export function DataSourceDialog({
                   <TooltipContent side="bottom" className="max-w-[16rem]">
                     <span className="font-medium">{label}</span>
                     {p.description && <span className="mt-0.5 block opacity-90">{p.description}</span>}
+                    {p.sign_in_title && (
+                      <span className="mt-1 block opacity-90" data-testid="provider-needs">
+                        <Trans>Needs {p.sign_in_title} sign-in</Trans>
+                      </span>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               );

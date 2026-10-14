@@ -297,11 +297,14 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
 
 
 def compile_setup(
-    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = ""
+    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = "",
+    connect_here: bool = True,
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
     one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
-    each value where that deployment keeps it (default: this computer)."""
+    each value where that deployment keeps it (default: this computer). ``connect_here=False``: a
+    connection step only CHECKS — the screen that started the run signs the person in itself (its own
+    Connect button, in their browser), so the run never opens a second one on the backend's machine."""
     target = ("--deployment", deployment_id) if deployment_id else ()
     where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
@@ -323,11 +326,15 @@ def compile_setup(
         elif req.is_oauth:
             provider = req.provider or req.name
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
+            checked_here = {"requirement_step": f"connection:{provider}"}
             add({
                 "name": f"connect-{provider}", "label": f"Connect {req.title or provider}",
                 "description": f"{provider} is connected and its grant covers what {', '.join(req.used_by)} need.",
-                "subkind": "cli", "exe_data": _cli("connections", "connect", provider),
-                "completion_check": _cli("connections", "test", provider, *scopes),
+                "subkind": "cli",
+                # Checked here, in this backend, when a screen signs the person in: no CLI start, and its answer
+                # is a sentence ("Needs GitHub sign-in"), not the CLI's log.
+                "exe_data": _cli("connections", "connect", provider) if connect_here else checked_here,
+                "completion_check": _cli("connections", "test", provider, *scopes) if connect_here else checked_here,
             })
         elif req.kind == REQUIREMENT_PACK:
             # AI Assist on each question: the provisioner follows the credential's own setup.md and
@@ -460,7 +467,7 @@ def setup_run_address(project_id: str, root: str = "") -> str:
 
 async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tree: Any = None,
                       load_after: bool = True, providers: Any = None, dependency_approval: bool = True,
-                      ancestors: tuple[str, ...] = ()) -> str:
+                      ancestors: tuple[str, ...] = (), connect_here: bool = True) -> str:
     """Start the project's setup in the background and return its address at once.
 
     The setup is the project's TREE (``core/setup/derive.ProjectTree``): every dependency, connection,
@@ -479,7 +486,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
     key = (pid, root)
     running = _RUNS.get(key)
     if running is None or running.done():
-        tree = tree or await ProjectTree(project, ai=ai).load()
+        tree = tree or await ProjectTree(project, ai=ai, connect_here=connect_here).load()
         control = _CONTROLS[key] = SetupControl()
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
 
@@ -527,6 +534,9 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                         shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
+                        # Its "done" (a source has nothing to load) must never stand in for a setup that fell
+                        # short: the run's record stays the setup's own verdict.
+                        record=result.ok,
                     )
                     result = loaded if result.ok else result
                 if held and result.ok:
@@ -541,6 +551,57 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         add_detached_done_callback(task, functools.partial(_forget_load, pid))
         _RUNS[key] = task
     return setup_run_address(pid, root)
+
+
+async def requirement_step(project_id: str, which: str, *, check: bool) -> tuple[bool, str]:
+    """What a setup requirement itself needs, for ``project_id`` — the nodes below a connection in the tree.
+
+    * ``credential:<provider>:<project id>:<scope>,...``: the project holds an oauth credential for the provider. Run (not a
+      check), a missing one is installed from the catalog's template (``declare_oauth``) — the same declaration a
+      source makes when it is created.
+    * ``provider:<provider>``: a sign-in for the provider exists — shipped with this build, or on the hub.
+    """
+    from flow_sdk.builtin import credential_service  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    # Scopes go last: one may hold a colon itself (GitHub's ``read:org``).
+    kind, provider, named, scopes = (which.split(":", 3) + ["", "", ""])[:4]
+    provider = provider.strip().lower()
+    project_id = named or project_id  # the step names its project: a run rooted at one source carries none
+    if kind == "provider":
+        from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+        if get_local_provider(provider) is not None:
+            return True, "Ships with Flowpad"
+        try:
+            from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
+
+            if await resolve_connection_spec(provider) is not None:
+                return True, "Available on the hub"
+        except Exception as exc:  # noqa: BLE001 — not knowing is said, never raised
+            return False, f"Could not ask the hub about {provider}: {exc}"
+        return False, f"No {provider} sign-in on this machine or on the hub"
+    if kind == "connection":
+        from flow_sdk.builtin.data_source import connection_need  # noqa: PLC0415
+
+        need = await connection_need(provider)
+        return (True, "Connected") if need is None else (False, need.detail)
+    if kind != "credential":
+        return False, f"unknown requirement step {which!r}"
+    try:
+        project = await credential_service.get_project(project_id)
+    except ValueError:  # not an id at all — said as a verdict, like any other answer of a step
+        project = None
+    if project is None:
+        return False, f"no project {project_id}"
+    pairs = await credentials_in_scope(project)
+    held = any(spec.is_oauth and str(spec.provider or "").lower() == provider for spec, _ in pairs)
+    if held:
+        return True, "In this project"
+    if check:
+        return False, "Not in this project yet"
+    await credential_service.declare_oauth(project, provider, [s for s in scopes.split(",") if s])
+    return True, "Added from the catalog"
 
 
 def _own_check(command: str) -> Optional[tuple[str, str, str]]:
