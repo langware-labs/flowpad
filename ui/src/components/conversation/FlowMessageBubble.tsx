@@ -1,4 +1,5 @@
-import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
 import type { TaskPeople } from './task-it';
@@ -816,8 +817,9 @@ export function FlowMessageBubble({
           automationSession
             ? {
                 name: automationSession.name || automationLineage(automationSession)?.name || t`Automation`,
-                status: String(automationSession.status ?? ''),
+                state: automationState(automationSession),
                 onOpen: () => navigation.openDock(DockPointer.forProcessRuns({ run: automationSession.id })),
+                value: openableValue(automationSession, navigation),
               }
             : undefined
         }
