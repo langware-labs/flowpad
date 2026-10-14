@@ -9,7 +9,7 @@ Contract (the stream inbox "Xm ago" clock):
     row, bumping its ``updated_date``/``fetched_at`` with no real field change —
     must NOT advance it.
 
-This pins the prod incident (conversation 64affa19): its only message was born
+This pins the prod incident: its only message was born
 12:41 yet the stream inbox showed it as "57m ago" because a 16:27 body re-download
 touched the message — the hub bumped the message AND parent ``updated_date`` and
 the local row adopted the touch clock verbatim. The last *message* never
@@ -186,7 +186,7 @@ async def test_touched_parent_clock_does_not_advance_recency():  # CAPTURES BUG
     Current ``_upsert_hub_conversation_metadata`` adopts the hub parent clock
     verbatim (is_stale → updated_date = hub updated_date), so recency jumps to
     16:27 and the days-old conversation floats to the top of the stream inbox."""
-    conv_id = "64affa19-02d9-4fe2-97e2-8978af187460"
+    conv_id = "aaaaaaaa-0000-4000-8000-000000000004"
     msg_id = "d3b466e3-786a-4e2a-808f-c3c4ab99232c"
     await _conv_with_message(conv_id, msg_id, created=_BORN, updated=_BORN)
 

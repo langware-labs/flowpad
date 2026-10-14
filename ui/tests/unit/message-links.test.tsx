@@ -22,7 +22,7 @@ vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promis
 const { MessageBubble } = await import('@src/components/conversation/MessageBubble');
 
 const URL = 'https://github.com/langware-labs/flowpad/pull/544';
-const BODY = `היי ערן, אין צורך לעשות כלום\nPR: ${URL}\nsee src/a.ts:3.`;
+const BODY = `היי דנה, אין צורך לעשות כלום\nPR: ${URL}\nsee src/a.ts:3.`;
 
 /** The FlowMessage links resolve against; without one the body stays plain text. */
 const FM = { id: 'm1', resolveDisplayTarget: vi.fn() } as never;
@@ -38,7 +38,7 @@ afterEach(() => {
 
 describe('message links behave like terminal links', () => {
   it('renders the URL and the file reference as links, keeping the text and its newlines', () => {
-    const { container } = render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} senderName="Gadi" /></MemoryRouter>);
+    const { container } = render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} senderName="Bob" /></MemoryRouter>);
     const links = screen.getAllByRole('link');
     expect(links.map((link) => link.textContent)).toEqual([URL, 'src/a.ts:3']);
     expect(links[0].getAttribute('dir')).toBe('ltr');
@@ -49,7 +49,7 @@ describe('message links behave like terminal links', () => {
   it('a click opens the link against the message, like a terminal against its shell', async () => {
     const fm = { id: 'm1', resolveDisplayTarget: vi.fn() };
     const onSelect = vi.fn();
-    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={fm as never} senderName="Gadi" onSelect={onSelect} /></MemoryRouter>);
+    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={fm as never} senderName="Bob" onSelect={onSelect} /></MemoryRouter>);
     fireEvent.click(screen.getByText(URL));
     await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith(URL, fm));
     expect(onSelect).not.toHaveBeenCalled();
@@ -57,7 +57,7 @@ describe('message links behave like terminal links', () => {
 
   it('a right-click opens the shared link menu, with Vibe only when the conversation has a process', async () => {
     const run = { project_id: 'p1' };
-    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} run={run as never} senderName="Gadi" /></MemoryRouter>);
+    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} run={run as never} senderName="Bob" /></MemoryRouter>);
     fireEvent.contextMenu(screen.getByText(URL), { clientX: 5, clientY: 5 });
     const menu = await screen.findByTestId('link-menu');
     expect(menu.textContent).toContain('Open in Flowpad');
@@ -67,7 +67,7 @@ describe('message links behave like terminal links', () => {
   });
 
   it('a non-primary click does not open the link', async () => {
-    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} senderName="Gadi" /></MemoryRouter>);
+    render(<MemoryRouter><MessageBubble message={message(BODY)} flowMessage={FM} senderName="Bob" /></MemoryRouter>);
     fireEvent.click(screen.getByText(URL), { button: 1 });
     fireEvent.click(screen.getByText('src/a.ts:3'));
     await waitFor(() => expect(mocks.openLink).toHaveBeenCalledTimes(1));
@@ -75,7 +75,7 @@ describe('message links behave like terminal links', () => {
   });
 
   it('without a message to resolve against, the body stays plain text', () => {
-    render(<MemoryRouter><MessageBubble message={message(BODY)} senderName="Gadi" /></MemoryRouter>);
+    render(<MemoryRouter><MessageBubble message={message(BODY)} senderName="Bob" /></MemoryRouter>);
     expect(document.querySelectorAll('[data-link]')).toHaveLength(0);
     expect(screen.getByText(/PR: https/)).toBeTruthy();
   });

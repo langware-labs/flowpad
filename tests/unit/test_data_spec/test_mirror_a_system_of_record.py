@@ -16,7 +16,7 @@ from tests.unit.test_data_spec.test_row_links import _dataset, _schema
 pytestmark = pytest.mark.timeout(5)
 
 ITEMS = [
-    {"id": "i1", "external_id": "OPP-1", "name": "Acme renewal", "provider": "crm", "data": {"stage": "open", "amount": 12, "owner": {"name": "Ami"}}},
+    {"id": "i1", "external_id": "OPP-1", "name": "Acme renewal", "provider": "crm", "data": {"stage": "open", "amount": 12, "owner": {"name": "Heidi"}}},
     {"id": "i2", "external_id": "OPP-2", "name": "Bolt pilot", "provider": "crm", "data": {"stage": "won", "amount": 30}},
     {"id": "i3", "external_id": "", "name": "no id yet", "provider": "crm", "data": {"stage": "open"}},
 ]
@@ -40,14 +40,14 @@ async def test_a_sources_items_become_typed_rows(deals):
     done = await deals.mirror(ITEMS, MAP, by="crm")
     assert done == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": []}     # the item with no key is skipped
     rows = {r.key: r.input.model_dump(mode="json", exclude_none=True) for r in deals.read_rows()}
-    assert rows["opp-1"] == {"name": "Acme renewal", "stage": "open", "crm_id": "OPP-1", "owner": "Ami", "source": "crm"}
+    assert rows["opp-1"] == {"name": "Acme renewal", "stage": "open", "crm_id": "OPP-1", "owner": "Heidi", "source": "crm"}
     assert rows["opp-2"] == {"name": "Bolt pilot", "stage": "won", "crm_id": "OPP-2", "source": "crm"}   # an absent path is left out
 
 
 async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
     await deals.mirror(ITEMS, MAP, by="crm")
     await deals.put("opp-1", {"input": {**deals.example("opp-1")["input"], "notes": "call back Tuesday"}})   # the app's own field
-    moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Ami"}})]                # the CRM moved one, dropped the other
+    moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Heidi"}})]                # the CRM moved one, dropped the other
     done = await deals.mirror(moved, MAP, by="crm")
     assert done == {"created": [], "updated": ["opp-1"], "unchanged": [], "deleted": ["opp-2"]}
     row = deals.example("opp-1")["input"]

@@ -121,7 +121,7 @@ class HubError(Exception):
 def _extract_reason(resp: httpx.Response) -> str:
     """Pull a short failure reason out of an httpx response body.
 
-    Tries JSON `message` / `detail` / `error` first (the shapes flowpad-hub
+    Tries JSON `message` / `detail` / `error` first (the shapes the hub
     and FastAPI use), then falls back to the raw text trimmed to 300 chars.
     """
     try:

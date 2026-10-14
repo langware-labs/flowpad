@@ -89,7 +89,7 @@ vi.spyOn(ComputeNode.prototype as unknown as { ops: unknown } as never, 'ops' as
   return answer ? await answer() : { status: 'ok' };
 }) as never);
 
-const ORIGIN = { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' };
+const ORIGIN = { provider: 'github', owner: 'acme', name: 'hub', branch: 'main', rel_path: '.' };
 const PROJECT_ID = 'a4acdbfb-3ad0-45ac-a8d1-812485a376ce';
 
 function ops(): string[] {
@@ -109,7 +109,7 @@ function answers(map: Record<string, unknown>): void {
 function provisioned(ids: string[], details: Record<string, string> = {}) {
   return {
     project: { id: PROJECT_ID },
-    path: '/root/workspace/flowpad-hub',
+    path: '/root/workspace/hub',
     steps: ids.map((id) => ({ id, ok: true, detail: details[id] ?? '' })),
   };
 }
@@ -162,7 +162,7 @@ async function launchWith(sandboxProject: Record<string, unknown>) {
 }
 
 const launchWithGit = (overrides: Record<string, unknown> = {}) =>
-  launchWith({ name: 'flowpad-hub', gitOrigin: ORIGIN, ...overrides });
+  launchWith({ name: 'hub', gitOrigin: ORIGIN, ...overrides });
 
 /** A sandbox project with no repository behind it — nothing to clone. */
 const launchWithoutRepo = (overrides: Record<string, unknown> = {}) => launchWith({ name: 'scratch', ...overrides });
@@ -191,7 +191,7 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
   it('sends the recorded setup in the hub spelling', async () => {
     await launchWithGit({ projectId: PROJECT_ID });
 
-    expect(bodyOf('provision-project')).toEqual({ name: 'flowpad-hub', project_id: PROJECT_ID, git_origin: ORIGIN });
+    expect(bodyOf('provision-project')).toEqual({ name: 'hub', project_id: PROJECT_ID, git_origin: ORIGIN });
   });
 
   it('forwards chosen context projects and an install spec', async () => {

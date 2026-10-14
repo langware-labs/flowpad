@@ -26,7 +26,7 @@ vi.mock('@src/hooks/use-send-to-conversation', () => ({
 vi.mock('@src/components/conversation/SendProgressNotice', () => ({ SendProgressNotice: () => null }));
 vi.mock('@src/components/contact-picker/ContactPicker', () => ({
   ContactPicker: ({ onChange }: { onChange: (ps: ConversationParticipant[]) => void }) => (
-    <button type="button" onClick={() => onChange([{ email: 'gadi@langware.ai', name: 'Gadi' }])}>
+    <button type="button" onClick={() => onChange([{ email: 'bob@example.com', name: 'Bob' }])}>
       add-participant
     </button>
   ),
@@ -49,7 +49,7 @@ describe('NewConversationDialog — the selected project', () => {
     await waitFor(() => expect(stable.sender.send).toHaveBeenCalledTimes(1));
     const [target] = stable.sender.send.mock.calls[0];
     expect(target.params.project_id).toBe('p-oss');
-    expect(target.params.title).toMatch(/^\[flowpad-oss\] Me, Gadi - /);
+    expect(target.params.title).toMatch(/^\[flowpad-oss\] Me, Bob - /);
   });
 });
 

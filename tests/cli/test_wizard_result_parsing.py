@@ -15,7 +15,7 @@ import pytest
 
 from flow_sdk.cli.commands.wizard_cmd import _loads_result
 
-WIN_PATH = r"C:\Users\gaditunes\Flowpad workspace\refs\analysis.html"
+WIN_PATH = r"C:\Users\user\Flowpad workspace\refs\analysis.html"
 # Every separator here begins a VALID escape (\t, \r, \n) — this is the payload
 # that used to parse "successfully" into garbage.
 SILENT_TRAP = r"C:\temp\refs\new.html"

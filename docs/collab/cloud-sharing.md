@@ -131,7 +131,7 @@ true if a real clone really happens.
 # once: a throwaway private repo seeded with one commit on `main`,
 # and a PAT with contents:read+write on it (verify with a manual push).
 
-cd ../test_flowpad/FlowPad && uv run python flowpad/run.py     # hub :8093
+(cd "$HUB_CHECKOUT" && uv run python flowpad/run.py)       # hub :8093, from your hub checkout
 scripts/instance_ctl.sh launch tagit-1                          # FE 500X / BE 600X
 cd ui && npx vite --mode hubtest --port 4096 --strictPort       # hub UI
 

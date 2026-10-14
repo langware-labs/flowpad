@@ -53,7 +53,7 @@ export function AgentSelectField({
 /**
  * The agent's phone number as its two stored parts. Commits on blur once both
  * parts are filled (or both are cleared, which drops the field); the backend
- * normalises `+972` / `0500000000` and refuses what is not a number.
+ * normalises `+972` / `050-000-0000` and refuses what is not a number.
  */
 export function AgentPhoneField({
   label,
@@ -96,7 +96,7 @@ export function AgentPhoneField({
         />
         <Input
           value={draft.number}
-          placeholder="0500000000"
+          placeholder="050-000-0000"
           inputMode="tel"
           aria-label={t`Phone number`}
           onChange={(e) => setDraft((d) => ({ ...d, number: e.target.value }))}

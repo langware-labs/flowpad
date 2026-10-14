@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-dd704676-0ed2-54f5-b428-c5a87a43ce40",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "historical",
   "folder_name": "historical",
   "inputs_hash": "1ac8099865a56ed141d21850141709b9b03ecc552d257e15355a3bebbab968f9",

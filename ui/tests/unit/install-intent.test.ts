@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 describe('Globex install link', () => {
   it('parses the public contract and builds the fixed shared install spec', () => {
     const parsed = parseInstallIntent(
-      '?content_repo=https%3A%2F%2Fgithub.com%2Fcloudnsite%2Fcustomer-support.git&content_branch=main&name=Globex+agents',
+      '?content_repo=https%3A%2F%2Fgithub.com%2Fglobex%2Fcustomer-support.git&content_branch=main&name=Globex+agents',
     );
 
     expect(parsed.ok).toBe(true);

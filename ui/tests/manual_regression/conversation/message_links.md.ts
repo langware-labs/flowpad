@@ -70,7 +70,7 @@ test('message links: same matches, click, menu, lightbox and dock tab as the ter
   const web = `${origin}/page?next=%2Fdocs#section`;
   const file = join(root, 'probe.py');
   const conversationUrl = await sendMessage(page, [
-    'היי ערן, לידיעתך בלבד, אין צורך לעשות כלום',
+    'היי דנה, לידיעתך בלבד, אין צורך לעשות כלום',
     `PR: ${web}`,
     `הקובץ: ${file}:2`,
     `תמונה: ${origin}/shot.png`,

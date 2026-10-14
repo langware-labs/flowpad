@@ -5,7 +5,7 @@ inputs_hash: 5e5890ee98d330bb56de2d02aa323db34079406bf4d03f2ae6023730c614ac5c
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-vault_root: /Users/alice/Documents/dev/flowpad-oss/docs
+vault_root: docs
 generated_at: '2026-10-13T10:49:35Z'
 latest_process_ref: ''
 file_count: 10

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "navigation",
   "folder_name": "navigation",
   "inputs_hash": "1723a9d033623b559b0456fbc24db7541c5ba64869dd2b3c5f1e01c1b070df25",

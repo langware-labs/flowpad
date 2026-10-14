@@ -2,7 +2,7 @@
  * Opening a NEW (never indexed) file of a project from the file explorer must
  * land on a tab that belongs to that project — otherwise the project-filtered
  * strip hides the very tab on screen ("html opens, yet no tab", 2026-10-02,
- * acme-streams/Acme_Admin_Flowpad_Feedback_2026-10-01.html).
+ * a project HTML report).
  *
  * Real path, no mocks: a real Project over a fresh directory, a real file the
  * indexer has never seen, the explorer's own pointer builder
