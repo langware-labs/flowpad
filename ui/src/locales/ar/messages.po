@@ -434,10 +434,12 @@ msgstr ""
 msgid "{0} estimated · {1} unpriced"
 msgstr "{0} تقديرية · {1} بلا تسعير"
 
+#. placeholder {0}: action.label
 #. placeholder {0}: builtinFailing[0].name
 #. placeholder {0}: button.label
 #: src/components/account/user-info.tsx
 #: src/components/automations/AutomationsList.tsx
+#: src/components/conversation/ConversationActions.tsx
 msgid "{0} failed"
 msgstr "فشل {0}"
 
@@ -4397,6 +4399,8 @@ msgstr ""
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -5768,6 +5772,7 @@ msgstr "إعداد حسابك وتفضيلات التطبيق والإشعارا
 #~ msgstr "مُهيأ في مصادر البيانات — لا يوجد ملف على القرص"
 
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Confirm"
@@ -9564,6 +9569,10 @@ msgstr "انتهت"
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 msgid "Ended"
 msgstr ""
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Ended · {when}"
+msgstr "انتهت · {when}"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Endpoint id"
@@ -22684,6 +22693,7 @@ msgstr "الملخص الذاتي"
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
@@ -28660,6 +28670,10 @@ msgstr "لماذا هو مطلوب"
 msgid "Why it ran"
 msgstr ""
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "Why?"
+msgstr "لماذا؟"
+
 #: src/i18n/type-labels.ts
 msgid "Wiki Entries"
 msgstr "مدخلات ويكي"
@@ -28782,6 +28796,7 @@ msgstr "يعمل…"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -29241,11 +29256,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/conversation/ConversationActions.tsx
-msgid "Ended · {when}"
-msgstr "انتهت · {when}"
-
-#: src/components/conversation/ConversationActions.tsx
-msgid "Why?"
-msgstr "لماذا؟"

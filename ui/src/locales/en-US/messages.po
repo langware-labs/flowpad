@@ -437,10 +437,12 @@ msgstr "{0} documents, {1} chunks"
 msgid "{0} estimated · {1} unpriced"
 msgstr "{0} estimated · {1} unpriced"
 
+#. placeholder {0}: action.label
 #. placeholder {0}: builtinFailing[0].name
 #. placeholder {0}: button.label
 #: src/components/account/user-info.tsx
 #: src/components/automations/AutomationsList.tsx
+#: src/components/conversation/ConversationActions.tsx
 msgid "{0} failed"
 msgstr "{0} failed"
 
@@ -4437,6 +4439,8 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -5817,6 +5821,7 @@ msgstr "Configure your account, app preferences, and notifications"
 #~ msgstr "Configured in Data sources — no file on disk"
 
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Confirm"
@@ -9642,6 +9647,10 @@ msgstr "ended"
 #: src/components/assets/editor/agent-profile/deployment/ThreadStatus.tsx
 msgid "Ended"
 msgstr "Ended"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Ended · {when}"
+msgstr "Ended · {when}"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Endpoint id"
@@ -22900,6 +22909,7 @@ msgstr "Self-Summary"
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
@@ -28930,6 +28940,10 @@ msgstr "Why it is needed"
 msgid "Why it ran"
 msgstr "Why it ran"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "Why?"
+msgstr "Why?"
+
 #: src/i18n/type-labels.ts
 msgid "Wiki Entries"
 msgstr "Wiki Entries"
@@ -29052,6 +29066,7 @@ msgstr "working…"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -29515,11 +29530,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/conversation/ConversationActions.tsx
-msgid "Ended · {when}"
-msgstr "Ended · {when}"
-
-#: src/components/conversation/ConversationActions.tsx
-msgid "Why?"
-msgstr "Why?"
