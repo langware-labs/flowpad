@@ -36,9 +36,12 @@ export function ActivityDetailsModalRoot() {
 
   const terminate = async (node: NonNullable<typeof live>) => {
     setTerminating(true);
-    const ended = await Activity.get(node.path, node.subject_entity ?? null).cancel(t`Terminated by user`);
-    setTerminating(false);
-    if (!ended) notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
+    try {
+      const ended = await Activity.get(node.path, node.subject_entity ?? null).cancel(t`Terminated by user`);
+      if (!ended) notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
+    } finally {
+      setTerminating(false);
+    }
   };
 
   return (

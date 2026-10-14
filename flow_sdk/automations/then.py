@@ -104,7 +104,7 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "")
         inputs=inputs,
         resolve_op=resolve_op,
         resolve_wizard=_resolve_wizard,
-        activity_path=f"automation-{target_segment(str(getattr(trigger, 'id', '') or spec.name))}",
+        activity_path=f"automation/{target_segment(str(getattr(trigger, 'id', '') or spec.name))}",
         subject_entity=str(getattr(trigger, "typeid", "") or "") or None,
     )
 

@@ -13,15 +13,17 @@ from flow_sdk.schema.data_spec.activity_spec import ActivityProgressSpec
 
 class Trees:
     def __init__(self) -> None:
-        self._last: "dict[tuple, ActivityProgressSpec]" = {}
+        self._roots: dict = {}
 
     def record(self, root, _transition) -> None:
-        self._last[(root.subject_entity, root.path)] = root.spec()
+        # The node, not a snapshot: an evicted root still holds its finished tree, so the
+        # spec is built once, when a test asks, rather than on every tick.
+        self._roots[(root.subject_entity, root.path)] = root
 
     def at(self, path: str, subject_entity: Optional[str] = None) -> Optional[ActivityProgressSpec]:
         """The last snapshot of the node at ``path`` (searched in its root's tree)."""
-        root = self._last.get((subject_entity, path.split("/")[0]))
-        return root.find(path) if root is not None else None
+        root = self._roots.get((subject_entity, path.split("/")[0]))
+        return root.spec().find(path) if root is not None else None
 
 
 @contextmanager
