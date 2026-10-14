@@ -101,7 +101,8 @@ export function IncomingProjectDialog({
     onClose();
   }, [onClose]);
 
-  /** Closed without setting up: with "Don't ask me again" ticked, this project is not offered again. */
+  /** Closed without setting up it (cancelled, or opened the project that holds its name): with
+   *  "Don't ask me again" ticked, this project is not offered again. */
   const handleDecline = useCallback(() => {
     if (projectId && dontAskAgain && (step === 'confirm' || step === 'name-taken')) declineSetup(projectId);
     handleClose();
@@ -183,8 +184,8 @@ export function IncomingProjectDialog({
   const openExisting = useCallback(() => {
     if (!nameTaken) return;
     navigation.openDock(withHomePage(DockPointer.forProject(nameTaken.existingProjectId)));
-    handleClose();
-  }, [nameTaken, navigation, handleClose]);
+    handleDecline();
+  }, [nameTaken, navigation, handleDecline]);
 
   /** The name is taken here: install the shared project under the receiver's name. */
   const runInstallAsName = useCallback(

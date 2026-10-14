@@ -1,7 +1,6 @@
 import {
   FlowMessage,
   FlowMessageKind,
-  PermissionAction,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
@@ -22,17 +21,19 @@ import { MessageComposer } from '@src/components/conversation/MessageComposer';
 import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
 import { LiveSessionActivity, OpenSessionChatButton } from '@src/components/conversation/LiveSessionActivity';
 import {
-  grantContactPermission,
-  revokeContactPermission,
   sessionGrantScope,
+  setSessionGrantScope,
   useContactPermissions,
   type ContactKey,
 } from '@src/hooks/use-contact-permissions';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useApproveLiveSession } from './useApproveLiveSession';
+import { SessionRoleBadge } from './SessionRoleBadge';
 import {
   failedPromptOf,
   pendingPromptOf,
@@ -100,14 +101,7 @@ function StandingGrantCheckbox({
   const effectiveScope: 'project' | 'everywhere' = scope === 'global' ? 'everywhere' : (scope ?? pendingScope);
   const apply = useCallback(
     async (on: boolean, which: 'project' | 'everywhere') => {
-      const target = which === 'project' ? projectId : null;
-      // one row at a time: moving scope revokes the other first
-      if (scope === 'project' && which !== 'project')
-        await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
-      if (scope === 'global' && which !== 'everywhere')
-        await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
-      if (on) await grantContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
-      else await revokeContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
+      await setSessionGrantScope(contact, projectId, scope, on ? (which === 'project' ? 'project' : 'global') : null);
       await refetch?.();
     },
     [contact, projectId, scope, refetch],
@@ -154,6 +148,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // bootstrap user — otherwise the host is misread as a guest.
   const { t } = useLingui();
   const { cloudUser } = useAuth();
+  const { localUser } = useLocalUser();
   const { navigation: dockNavigation } = useDockNavigation();
   const { data: session, refetch } = useLiveSession(sessionId);
   const [busy, setBusy] = useState<string | null>(null);
@@ -214,7 +209,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   }
 
   const isHost = sessionRole(session, cloudUser?.id) === 'host';
-  const status = session.status;
+  const status = session.status as RemoteWorkerSessionStatus | undefined;
   const terminal = isSessionTerminal(status);
   const running =
     status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);
@@ -240,7 +235,8 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // Local vs remote, from where this machine sits: the guest's prompts are local
   // to the guest and run remotely, on the host's Claude Code; the host sees both flipped.
   const otherName = isHost ? guestName : hostName;
-  const promptAuthor = isHost ? guestName : t`you`;
+  // Either side may type a prompt: label each by who actually wrote it.
+  const mine = (fm: FlowMessage) => authoredBy(senderOf(fm), [cloudUser?.id, localUser?.id]);
   const replyAuthor = isHost ? t`your Claude Code` : t`${hostName}'s Claude Code`;
   const title = firstPrompt ? sessionTitle(promptTextOf(firstPrompt)) : t`Live session with ${otherName}`;
 
@@ -292,6 +288,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         <span className="min-w-0 flex-1 truncate text-sm font-medium" data-testid="live-session-title" title={title}>
           {title}
         </span>
+        <SessionRoleBadge role={isHost ? 'host' : 'guest'} />
         {isHost && session.host_process_id && <OpenSessionChatButton processId={session.host_process_id} />}
         {replyPolicyControl}
       </div>
@@ -469,9 +466,11 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   key={fm.id}
                   className="flex gap-2"
                   data-testid="live-session-prompt"
-                  data-side={isHost ? 'remote' : 'local'}
+                  data-side={mine(fm) ? 'local' : 'remote'}
                 >
-                  <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">{promptAuthor} ❯</span>
+                  <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">
+                    {mine(fm) ? t`You` : otherName} ❯
+                  </span>
                   <pre className="whitespace-pre-wrap">{prompt}</pre>
                 </div>
               );

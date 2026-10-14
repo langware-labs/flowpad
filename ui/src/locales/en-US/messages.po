@@ -927,6 +927,18 @@ msgstr "{folderName} has changes that haven't been pushed yet. The receiver can 
 #~ msgid "{guest} wants to run prompts here"
 #~ msgstr "{guest} wants to run prompts here"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} can start live sessions on your machine without asking, in every project."
+msgstr "{guestName} can start live sessions on your machine without asking, in every project."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} can start live sessions on your machine without asking, in this project only."
+msgstr "{guestName} can start live sessions on your machine without asking, in this project only."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{guestName} is waiting for your approval before any prompt runs on your machine."
+msgstr "{guestName} is waiting for your approval before any prompt runs on your machine."
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} wants to run prompts on your machine."
@@ -943,9 +955,17 @@ msgstr "{h}h ago"
 #~ msgid "{host} paused the session"
 #~ msgstr "{host} paused the session"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{hostName} approved this session by hand. A later session may need their approval again."
+msgstr "{hostName} approved this session by hand. A later session may need their approval again."
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
 msgstr "{hostName} declined the live session."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "{hostName} lets you start live sessions on their machine without asking — this one started right away."
+msgstr "{hostName} lets you start live sessions on their machine without asking — this one started right away."
 
 #: src/components/collaboration/LiveSessionView.tsx
 #~ msgid "{hostName} paused the live session."
@@ -2778,6 +2798,14 @@ msgstr "Always"
 msgid "Always allow sessions from {guestName}"
 msgstr "Always allow sessions from {guestName}"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Always auto-approve"
+msgstr "Always auto-approve"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Always auto-approved"
+msgstr "Always auto-approved"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Always on"
 msgstr "Always on"
@@ -3168,6 +3196,10 @@ msgstr "Approve"
 msgid "Approve and continue"
 msgstr "Approve and continue"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approve now"
+msgstr "Approve now"
+
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
@@ -3176,6 +3208,14 @@ msgstr "Approve once"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Approve, and let {guestName} start sessions without asking"
 msgstr "Approve, and let {guestName} start sessions without asking"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved by {hostName}"
+msgstr "Approved by {hostName}"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Approved for this session"
+msgstr "Approved for this session"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -3323,6 +3363,10 @@ msgstr "Ask for help"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Ask its owner to share the project with {0}."
 msgstr "Ask its owner to share the project with {0}."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Ask me every time"
+msgstr "Ask me every time"
 
 #: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
@@ -3646,9 +3690,21 @@ msgstr "Auto-allow Bash if Sandboxed"
 msgid "Auto-approve bash when sandbox is active"
 msgstr "Auto-approve bash when sandbox is active"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approve in this project"
+msgstr "Auto-approve in this project"
+
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Auto-approve permissions that are not explicitly denied (--auto)"
 msgstr "Auto-approve permissions that are not explicitly denied (--auto)"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approved"
+msgstr "Auto-approved"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Auto-approved in this project"
+msgstr "Auto-approved in this project"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Auto-detect direction from first strong character"
@@ -3760,6 +3816,10 @@ msgstr "available to pull"
 #: src/components/conversation/SessionCard.tsx
 #~ msgid "Awaiting {host}"
 #~ msgstr "Awaiting {host}"
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Awaiting {hostName}'s approval"
+msgstr "Awaiting {hostName}'s approval"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "awaiting approval"
@@ -11370,6 +11430,10 @@ msgstr "funds {0}"
 msgid "funds nothing yet"
 msgstr "funds nothing yet"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Future sessions from {guestName}:"
+msgstr "Future sessions from {guestName}:"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "garbage"
 msgstr "garbage"
@@ -11741,6 +11805,7 @@ msgstr "Group task created"
 msgid "Group task created with issues"
 msgstr "Group task created with issues"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Guest"
 msgstr "Guest"
@@ -12144,6 +12209,7 @@ msgstr "Hooks Manager"
 msgid "Hooks:"
 msgstr "Hooks:"
 
+#: src/components/collaboration/SessionRoleBadge.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Host"
 msgstr "Host"
@@ -15210,6 +15276,10 @@ msgstr "Needs attention"
 msgid "Needs values"
 msgstr "Needs values"
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Needs your approval"
+msgstr "Needs your approval"
+
 #: src/components/graph-view/GraphView.tsx
 msgid "Neighbors"
 msgstr "Neighbors"
@@ -17165,6 +17235,10 @@ msgstr "Nothing published yet — publish an asset below, or from its editor."
 #: src/pages/discover-page/discover-page.tsx
 msgid "Nothing published yet by the projects you can see."
 msgstr "Nothing published yet by the projects you can see."
+
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "Nothing runs on {hostName}'s machine until they approve this session."
+msgstr "Nothing runs on {hostName}'s machine until they approve this session."
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
@@ -25592,8 +25666,12 @@ msgid "The key box is empty."
 msgstr "The key box is empty."
 
 #: src/components/project-home/ProjectLanguageCard.tsx
-msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
-msgstr "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
+msgid "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
+msgstr "The language this project is worked in, for everyone in it. To change only your own language, use the language picker in the footer."
+
+#: src/components/project-home/ProjectLanguageCard.tsx
+#~ msgid "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
+#~ msgstr "The language this project is worked in. Choosing one switches the app now, and switches back to it every time you open this project."
 
 #: src/components/data-sources/source-attention.ts
 msgid "The last poll failed on a configuration error."
@@ -28834,12 +28912,12 @@ msgstr "Yesterday"
 msgid "yesterday {hhmm}"
 msgstr "yesterday {hhmm}"
 
-#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 msgid "you"
 msgstr "you"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
@@ -28865,6 +28943,10 @@ msgstr "You already have a project named <0>{0}</0>. Open it, or install this on
 msgid "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 msgstr "You already have a project named <0>{projectName}</0>. Open it, or set this one up under another name."
 
+#: src/components/collaboration/GuestPermissionChip.tsx
+msgid "You approved this session only — {guestName} will need your approval again next time."
+msgstr "You approved this session only — {guestName} will need your approval again next time."
+
 #~ msgid "you are {role}"
 #~ msgstr "you are {role}"
 
@@ -28882,6 +28964,14 @@ msgstr "You are not part of an organization. Once you join or create one, its te
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You are signed in as {account}."
 msgstr "You are signed in as {account}."
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the guest — prompts run on the host's machine"
+msgstr "You are the guest — prompts run on the host's machine"
+
+#: src/components/collaboration/SessionRoleBadge.tsx
+msgid "You are the host — prompts run on your machine"
+msgstr "You are the host — prompts run on your machine"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "You become the host — you decide what gets shared into the room."

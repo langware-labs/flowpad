@@ -58,7 +58,7 @@ async def _arrived_prompt() -> tuple[SimpleNamespace, dict]:
     fm = FlowMessage.model_validate({**row, "remote": True})
     await fm.save(None, notify=False)
     session = SimpleNamespace(id=session_id, conversation_id=conv_id)
-    assert [m.id for m in await _queued_turns(session, HOST)] == [row["id"]], "precondition: the prompt is queued"
+    assert [m.id for m in await _queued_turns(session)] == [row["id"]], "precondition: the prompt is queued"
     return session, row
 
 
@@ -84,7 +84,7 @@ async def test_catch_up_refresh_does_not_unconsume_a_running_prompt():
     assert stored.prompt_auto_handled is True, (
         "the catch-up saved its pre-consume copy and rolled prompt_auto_handled back"
     )
-    assert await _queued_turns(session, HOST) == [], "the drain re-selected a prompt whose turn already ran"
+    assert await _queued_turns(session) == [], "the drain re-selected a prompt whose turn already ran"
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -93,9 +93,9 @@ async def test_release_prompt_still_hands_a_dead_turn_back():
     session, row = await _arrived_prompt()
     fm = await FlowMessage.get_one({"id": row["id"]})
     await consume_prompt(fm, HOST_TYPEID)
-    assert await _queued_turns(session, HOST) == []
+    assert await _queued_turns(session) == []
 
     await release_prompt(await FlowMessage.get_one({"id": row["id"]}), HOST_TYPEID)
 
     assert (await FlowMessage.get_one({"id": row["id"]})).prompt_auto_handled is False
-    assert [m.id for m in await _queued_turns(session, HOST)] == [row["id"]]
+    assert [m.id for m in await _queued_turns(session)] == [row["id"]]
