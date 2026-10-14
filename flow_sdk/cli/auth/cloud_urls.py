@@ -38,13 +38,13 @@ def desktop_oauth_complete_url(provider: str) -> str:
 
 def get_login_url(redirect_url: str) -> str:
     """Build the cloud login URL with ``redirect_url`` URL-encoded into the template,
-    entered through ``gated`` so the browser holds the cookie-gate cookie when the
+    entered through ``wrap_url_auth_gate`` so the browser holds the cookie-gate cookie when the
     hub sends it back here."""
     template = ApiConfig.from_env().get_full_login_url()
-    return gated(template.replace("{redirect_url}", quote(redirect_url, safe="")))
+    return wrap_url_auth_gate(template.replace("{redirect_url}", quote(redirect_url, safe="")))
 
 
-def gated(url: str, base_url: str | None = None) -> str:
+def wrap_url_auth_gate(url: str, base_url: str | None = None) -> str:
     """``url`` entered through ``/auth/gate`` on ``base_url`` (this instance by
     default): the browser presents the token once, gets the gate cookie on that host,
     and is redirected on to ``url``. The login / OAuth return to this host then
