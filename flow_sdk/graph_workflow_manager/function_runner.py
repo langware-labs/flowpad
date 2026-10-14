@@ -239,10 +239,14 @@ def _resolve_handler(target: str):
 
 
 def _main() -> int:
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
     if len(sys.argv) != 2:
         print("usage: python -m flow_sdk.graph_workflow_manager.function_runner <script.py | registry-name>",
               file=sys.stderr)
         return 64
+
+    install_gate_opener()
     payload = json.loads(sys.stdin.read() or "{}")
     ctx_raw = payload.get("ctx") or {}
     ctx = GraphWorkflowCtx(

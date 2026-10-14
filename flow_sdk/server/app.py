@@ -105,6 +105,12 @@ async def _on_server_startup():
     settings = get_instance_settings()
     clear_backend_restart_request()
 
+    # Code running in the backend that calls a local backend with urllib (the in-app diagnose's health
+    # check) presents the gate token, like the CLI and the monitor do.
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
+
     # Establish local identities before background services use them. Assemble
     # the type payload after those services have registered their entity types.
     from flow_sdk.server.routes.bootstrap import _ensure_local_entities, initialize_bootstrap

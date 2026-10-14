@@ -40,9 +40,9 @@ def main(argv: list[str] | None = None) -> int:
         url, _, body = rest.partition(" ")
         hooks[op] = (url, json.loads(body or "{}"))
 
-    from flow_sdk.instance_settings.cookie_gate import gate_headers  # a gated box (a sandbox) answers 403 without it
+    from flow_sdk.instance_settings.cookie_gate import get_header  # a gated box (a sandbox) answers 403 without it
 
-    gate = gate_headers(args.backend)
+    gate = dict([get_header()]) if get_header() else {}
     api = httpx.Client(base_url=f"{args.backend.rstrip('/')}/api/v1", timeout=60, headers=gate)
     source = api.get(f"graph/data_source/{args.source}").json()["data"]
     stages = api.get(f"graph/data_source/{args.source}/setup_stages").json()["data"]
