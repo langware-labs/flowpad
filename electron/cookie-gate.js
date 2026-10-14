@@ -7,7 +7,8 @@
  * <flow_home>/instances/<instance>/.cookie_gate (flow_sdk/server/middleware/
  * cookie_gate_middleware.py). This module reads that file so the main process
  * can send it as a header on its own requests (the startup health check) and
- * put it in the window's cookie jar before every loadURL.
+ * put it in the app session's cookie jar once the backend is up — every window
+ * shares that session, so every page load then carries it.
  *
  * A missing file is normal: an engine that predates the gate never writes one,
  * and a gated engine writes it on the first request it serves. Every reader
@@ -60,21 +61,15 @@ function cookieDetails(url, token, now = Date.now()) {
   };
 }
 
-/** Put the token cookie in `session` for `url`. Resolves false when there is no token to set. */
+/**
+ * Put the token cookie in `session` for `url` and write it to disk (Electron otherwise
+ * flushes every 30 s, so a quick quit would lose it). Resolves false when there is no token to set.
+ */
 async function injectCookie(session, url, token = readToken()) {
   if (!token) return false;
   await session.cookies.set(cookieDetails(url, token));
+  await session.cookies.flushStore();
   return true;
-}
-
-/** Inject the cookie, then load `url` in `win`. A failed injection still loads (the backend answers 403). */
-function loadWithCookie(win, url, log) {
-  return Promise.resolve()
-    .then(() => injectCookie(win.webContents.session, new URL(url).origin))
-    .catch((err) => {
-      if (log) log.warn(`[cookie-gate] could not set the cookie: ${err && err.message}`);
-    })
-    .then(() => win.loadURL(url));
 }
 
 module.exports = {
@@ -86,5 +81,4 @@ module.exports = {
   gateHeaders,
   cookieDetails,
   injectCookie,
-  loadWithCookie,
 };
