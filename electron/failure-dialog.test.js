@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Tests for ./failure-dialog.js — every failure dialog offers "Share with us".
+ * Tests for ./failure-dialog.js — every failure dialog offers "Send Report".
  * Run: `node electron/failure-dialog.test.js` (exits non-zero on failure).
  */
 
@@ -28,7 +28,7 @@ function fakeDialog(responses) {
     const d = fakeDialog([0]);
     const r = await showFailureDialog({ dialog: d, title: 'T', message: 'M', detail: 'D', share: async () => ({ ok: true }), log: silentLog });
     eq(r, 'ok');
-    eq(d.shown[0].opts.buttons, ['OK', 'Share with us']);
+    eq(d.shown[0].opts.buttons, ['OK', 'Send Report']);
     eq([d.shown[0].opts.defaultId, d.shown[0].opts.cancelId], [0, 0]);
   }
   // 2. Without a sharer: OK only.
@@ -37,7 +37,7 @@ function fakeDialog(responses) {
     await showFailureDialog({ dialog: d, title: 'T', message: 'M', log: silentLog });
     eq(d.shown[0].opts.buttons, ['OK']);
   }
-  // 3. "Share with us" calls the sharer with the headline + detail, once, reports 'shared',
+  // 3. "Send Report" calls the sharer with the headline + detail, once, reports 'shared',
   // and confirms the silent upload out loud with the reference id.
   {
     const d = fakeDialog([1, 0]);
@@ -88,7 +88,7 @@ function fakeDialog(responses) {
     let shared = null;
     await showFailureDialog({ dialog: d, title: 'T', message: 'M', detail: long, share: async (t) => { shared = t; return { ok: true }; }, log: silentLog });
     assert.ok(d.shown[0].opts.detail.length < 1400, 'the dialog got the excerpt'); passed++;
-    assert.ok(shared.includes('note line 30') && shared.includes(long), 'Share with us got the whole text'); passed++;
+    assert.ok(shared.includes('note line 30') && shared.includes(long), 'Send Report got the whole text'); passed++;
   }
   console.log(`failure-dialog: ${passed} assertions passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

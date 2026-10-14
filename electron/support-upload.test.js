@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Tests for ./support-upload.js — the "Share with us" upload to the hub's intake.
+ * Tests for ./support-upload.js — the "Send Report" upload to the hub's intake.
  * Run: `node electron/support-upload.test.js` (exits non-zero on failure).
  */
 

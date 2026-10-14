@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * The "Share with us" bundle: the newest desktop log and the newest backend-server log, a small
+ * The "Send Report" bundle: the newest desktop log and the newest backend-server log, a small
  * info.txt, zipped, with obvious secrets masked. The caller uploads it to the hub's support-bundle
  * intake (support-upload.js), or saves it where the user chooses ("Export logs").
  */
