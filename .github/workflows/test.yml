@@ -93,7 +93,7 @@ jobs:
     # what reported both times that the tier had outgrown its runner.
     name: backend (pytest unit) ${{ matrix.shard }}/4
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -119,7 +119,7 @@ jobs:
   backend-api:
     name: backend (pytest api)
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -131,7 +131,7 @@ jobs:
   frontend-tests:
     name: frontend (tsc + vitest unit + i18n)
     if: ${{ github.event_name != 'workflow_dispatch' || (inputs.frontend-tests && inputs.e2e-only == '') }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -154,7 +154,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-24.04, windows-latest]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -217,7 +217,7 @@ jobs:
           && (needs.electron-tests.result == 'success' || needs.electron-tests.result == 'skipped')
           && (needs.backend-unit-windows.result == 'success' || needs.backend-unit-windows.result == 'skipped')
           && (github.event_name != 'workflow_dispatch' || inputs.e2e-tests) }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Burn-in ended 2026-08-19 (first full-green run, 32267242614): e2e
     # failures now count in the PyPI deploy gate like every other job.
