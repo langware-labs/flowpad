@@ -109,6 +109,8 @@ vi.mock('@src/tabs/project-entry', async (importOriginal) => ({
   dockForGlobalEntry,
 }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal }));
+/** The app button has its own file; here it would only start a webapp query with no backend. */
+vi.mock('@src/components/top-nav-bar/AppButton', () => ({ AppButton: () => null }));
 /** The Flowpad Assistant, when the bar is mounted under its provider. */
 const assistant = vi.hoisted(() => ({ current: null as { ask: ReturnType<typeof vi.fn> } | null }));
 vi.mock('@src/components/floating-chat/floating-chat-context', () => ({

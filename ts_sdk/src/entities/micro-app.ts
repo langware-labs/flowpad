@@ -1,5 +1,13 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import type { IEntity, EntityMerge } from '../IEntity';
+import type { WebAudience } from './service-endpoint';
+
+/** One way the app is served when placed. Twin of `WebappMountSpec`, the fields the UI reads. */
+export interface WebAppMount {
+  audience?: WebAudience | null;
+  /** Where under the audience proxy; `''` is that audience's root app. */
+  path?: string | null;
+}
 
 export interface IWebApp extends IEntity {
   name: string;
@@ -10,6 +18,8 @@ export interface IWebApp extends IEntity {
   kind?: string | null;
   /** Served subdir inside the app folder. */
   build?: string | null;
+  /** How the app is served when placed; empty means the `app` audience. */
+  mounts?: WebAppMount[] | null;
 }
 
 // `implements IWebApp` only checks the class; it contributes no members, so every
@@ -34,6 +44,7 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
   project_id: string | null;
   kind: string | null;
   build: string | null;
+  mounts: WebAppMount[];
 
   constructor(entity: Partial<IWebApp> | IEntity = {}) {
     super(entity);
@@ -43,5 +54,16 @@ export class WebApp extends APIEntity<WebApp> implements IWebApp {
     this.project_id = app.project_id ?? null;
     this.kind = app.kind ?? null;
     this.build = app.build ?? null;
+    this.mounts = app.mounts ?? [];
+  }
+
+  /** Who the app is for. Known from the definition alone, so it holds before the app ever ran. */
+  get audience(): WebAudience {
+    return this.mounts[0]?.audience ?? 'app';
+  }
+
+  /** Whether the app is its audience's root app. */
+  get isRoot(): boolean {
+    return this.mounts.some((mount) => mount.path === '');
   }
 }
