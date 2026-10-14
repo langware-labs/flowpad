@@ -9,26 +9,37 @@ The fix is the same shape for every vendor, so it lives here once: a terminal
 assistant frame is only a CANDIDATE, held until the stream proves the turn is
 continuing (a following continuation event means the held frames were mid-turn
 narration and the whole held run is released live, in order). Passive trailers
-join the hold — they may legitimately follow the real answer. Once the vendor's
-``result`` event arrives the hold is LOCKED: the remaining suffix is retained
-through EOF so late status/result frames cannot move ahead of the answer, and
-is released by :meth:`drain` only after the worker's existing
-subprocess-settlement path completes. No clock, sleep, timeout, or polling
-budget is involved anywhere in this file.
+join the hold — they may legitimately follow the real answer. What the vendor's
+``result`` event then means is :attr:`~TranscriptDurabilityGate.result_proves_durability`:
+by default the hold is LOCKED there and the remaining suffix is retained through
+EOF, released by :meth:`drain` only after the worker's existing
+subprocess-settlement path completes. A vendor that keeps working past its own
+``result`` cannot afford that — process exit may be minutes away — so one whose
+ordering has been MEASURED releases at ``result`` instead. No clock, sleep,
+timeout, or polling budget is involved anywhere in this file.
 
-Drivers supply the only two vendor-specific facts by overriding
-:meth:`is_terminal_candidate` and :meth:`is_continuation`.
+Drivers supply the vendor-specific facts by overriding
+:meth:`is_terminal_candidate`, :meth:`is_continuation` and, when measured,
+:attr:`result_proves_durability`.
 """
 
 from __future__ import annotations
 
 import json
+from typing import ClassVar
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
 
 class TranscriptDurabilityGate:
-    """Hold terminal frames until the subprocess has settled."""
+    """Hold terminal frames until the vendor has proven the turn's rows landed."""
+
+    #: Does this vendor's ``result`` event prove the turn's transcript rows are
+    #: already written? False is the conservative default: the hold locks at
+    #: ``result`` and only process settlement releases it. Set it True ONLY from
+    #: a measurement on the real CLI — it is the whole guarantee this file
+    #: exists for.
+    result_proves_durability: ClassVar[bool] = False
 
     def __init__(self) -> None:
         self._pending_terminal: list[FlowData] = []
@@ -48,9 +59,18 @@ class TranscriptDurabilityGate:
             self._pending_terminal.extend(frames)
             return []
         if event_type == "result":
-            self._result_seen = True
-            self._pending_terminal.extend(frames)
-            return []
+            if not self.result_proves_durability:
+                self._result_seen = True
+                self._pending_terminal.extend(frames)
+                return []
+            # The turn is over AND its rows are on disk, so the hold ends here
+            # rather than at process exit. For a vendor that keeps the process
+            # alive past the turn (claude -p waiting on background work), exit
+            # can be minutes away — holding to it strands the answer the whole
+            # time, which is the one thing a live chat cannot do.
+            released = [*self._pending_terminal, *frames]
+            self._pending_terminal = []
+            return released
 
         terminal = event is not None and self.is_terminal_candidate(event, frames)
 

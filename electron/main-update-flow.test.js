@@ -89,6 +89,7 @@ function load(opts = {}) {
     async startWithBin() { if (opts.startThrows) throw new Error(opts.startThrows); }
     isBrokenInstallError(err) { return /flow_sdk/.test(String(err && err.message)); }
     async ensureUv() { uv.ensured = (uv.ensured || 0) + 1; }
+    async probeManagedInterpreter() {}
     async installLatest() { uv.installs = (uv.installs || 0) + 1; }
     async reinstall() { uv.reinstalls = (uv.reinstalls || 0) + 1; }
     async start() { uv.started = (uv.started || 0) + 1; }

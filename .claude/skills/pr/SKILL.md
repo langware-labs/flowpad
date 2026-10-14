@@ -5,7 +5,7 @@ description: 'Pre-PR quality gate for the flowpad repo — one report that answe
   this branch ready for a PR?". Orchestrates the existing lenses (slick check for
   architecture, code-review for bugs, security-review, flowpad-api-urls, docit) over
   the branch diff, runs the policy tests and linters, and adds the checks no other
-  skill does: a reuse sweep (does code like this already exist?) and the CLAUDE.md
+  skill does: a reuse sweep (does code like this already exist?), a test-integrity check (did an edited test stop guarding its behavior?) and the CLAUDE.md
   rules that have no test. `pr` / `pr review [target]` reports only; `pr open` reviews,
   then prepares the PR and waits for approval before every git step. Triggers on "review
   my branch before a PR", "is this ready to merge", "pr check", "open a PR", or "/pr".'
@@ -15,7 +15,7 @@ description: 'Pre-PR quality gate for the flowpad repo — one report that answe
 
 This skill **orchestrates; it does not re-implement.** Each dimension already
 has an owner — run it and fold its findings into one report. Only the reuse
-sweep and the untested CLAUDE.md rules are this skill's own work.
+sweep, the test-integrity check and the untested CLAUDE.md rules are this skill's own work.
 
 **Which repo.** This folder lives in `flowpad` and is symlinked into
 `flowpad-hub/.claude/skills/pr`. Run against the repo you're in: its own
@@ -80,6 +80,7 @@ add a retry to get a gate green (CLAUDE.md).
 | Docs agree with code | `docit` | on the scope — report-only here, don't let it edit docs in `review` mode |
 | **Reuse — does this already exist?** | **this skill** | `references/reuse.md` |
 | **CLAUDE.md rules with no test** | **this skill** | `references/rules.md` |
+| **Test integrity — did an edited test stop guarding its behavior?** | **this skill** | `references/test-integrity.md` — only when the diff modifies or deletes an existing test |
 
 Delegate each lens to a subagent when the diff is large; give it the scope from
 step 1 and the lens's own output contract. Skip a lens the diff can't touch
