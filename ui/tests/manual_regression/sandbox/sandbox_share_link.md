@@ -148,7 +148,7 @@ Fixed by having the probe present the secret as `X-Cookie-Gate`, the transport
 the gate documents for machine callers; the probe never leaves loopback, so it
 reveals the secret to nobody, and it reads through `_stored_cookie_gate()` so a
 health check can never MINT a gate. Hub-side: `ComputeNode._service_health_code` /
-`_curl_status`, covered by `flowpad/hub/tests/unit/test_workspace_health_probe_gate.py`.
+`_curl_status`, covered by `hub test_workspace_health_probe_gate.py`.
 
 Unrelated wart seen twice: `ops/shutdown` answers `Failed to shutdown compute
 node` for a box that is already gone. The teardown below still leaves nothing
@@ -186,7 +186,7 @@ ngrok http 8093            # note the https://<id>.ngrok-free.app forwarding URL
 Start the hub with that URL exported:
 
 ```bash
-cd /Users/alice/Documents/dev/test_flowpad/FlowPad
+cd <the hub checkout>
 SERVICE_URLS_CONFIG__EXTERNAL_HOST=https://<id>.ngrok-free.app python flowpad/run.py
 ```
 
@@ -400,7 +400,7 @@ Kill the ngrok tunnel.
 gone, and a sandbox left running bills until it auto-pauses. Ask E2B directly:
 
 ```bash
-cd ../test_flowpad/FlowPad && .venv/bin/python -c "
+cd <the hub checkout> && .venv/bin/python -c "
 from dotenv import load_dotenv, find_dotenv; load_dotenv(find_dotenv('.env.local'))
 from flowpad.config import default_service_config as c
 import urllib.request, json

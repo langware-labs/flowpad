@@ -19,8 +19,8 @@ def test_machine_absolute_path_parsing_is_pure_and_untyped():
     path = CanonicalVFSPath("/Users/alice/Documents/interface.md")
 
     assert path.typeid is None
-    assert path.entity_sub_path == "Users/shlom/Documents/interface.md"
-    assert path.abs_path == "Users/shlom/Documents/interface.md"
+    assert path.entity_sub_path == "Users/alice/Documents/interface.md"
+    assert path.abs_path == "Users/alice/Documents/interface.md"
 
 
 def test_named_local_locator_has_canonical_uri_and_abs_path():

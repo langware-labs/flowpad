@@ -116,7 +116,7 @@ terminal's re-attach) — see [Findings](#findings).
   returns the existing) AP bound to that session; a second call with the same `sessionId`
   returns the **same** AP id. Once a session has started, a later upsert with a different
   `workdir`/`projectId` is a **no-op** — the `(workdir, project_id)` binding is frozen to keep
-  the record aligned with where the transcript lives (incident 4c5bd6e4).
+  the record aligned with where the transcript lives.
 - `GET /api/v1/graph/compute_node/{cn}/terminals/get_by_worker_id/{sessionId}` →
   auto-discovers the on-disk Claude/Codex transcript, **atomically upserts** an AP *and*
   spawns its linked Shell (`shell_id` populated), returning the descriptor;

@@ -11,19 +11,19 @@ const screen = { kind: 'dock', view_type: 'credentials' };
 
 describe('showTabSlot', () => {
   it('a host (Vibe) tab pins deliverables in its own Display pane — not this listener\'s', () => {
-    expect(showTabSlot(file, { tab_id: TAB, host: true })).toBeNull();
+    expect(showTabSlot(file, { tab_id: TAB, host: true, project_id: null })).toBeNull();
   });
 
   it('a host tab nests a SCREEN as its child', () => {
-    expect(showTabSlot(screen, { tab_id: TAB, host: true })).toEqual({ afterTabId: TAB, parentTabId: TAB });
+    expect(showTabSlot(screen, { tab_id: TAB, host: true, project_id: null })).toEqual({ afterTabId: TAB, parentTabId: TAB });
   });
 
   it('a terminal tab gets every kind as a top-level tab beside it', () => {
-    expect(showTabSlot(file, { tab_id: TAB, host: false })).toEqual({ afterTabId: TAB, parentTabId: null });
-    expect(showTabSlot(screen, { tab_id: TAB, host: false })).toEqual({ afterTabId: TAB, parentTabId: null });
+    expect(showTabSlot(file, { tab_id: TAB, host: false, project_id: null })).toEqual({ afterTabId: TAB, parentTabId: null });
+    expect(showTabSlot(screen, { tab_id: TAB, host: false, project_id: null })).toEqual({ afterTabId: TAB, parentTabId: null });
   });
 
   it('no open tab (a background agent): a plain tab at the end', () => {
-    expect(showTabSlot(file, { tab_id: null, host: false })).toEqual({ afterTabId: null, parentTabId: null });
+    expect(showTabSlot(file, { tab_id: null, host: false, project_id: null })).toEqual({ afterTabId: null, parentTabId: null });
   });
 });

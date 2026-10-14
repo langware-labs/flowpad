@@ -72,7 +72,14 @@ async function open(readiness: ProjectReadiness, onOpenChange = vi.fn()) {
   vi.spyOn(Project, 'setupRequirements').mockResolvedValue(readiness);
   vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
   render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={onOpenChange} />);
-  await screen.findByTestId('project-setup-requirements');
+  // Until ``readiness`` has been drawn, not until the dialog is up: the Required list is there (empty)
+  // before the requirements arrive, so waiting for it alone returns ahead of the data on a slow render.
+  await waitFor(() => {
+    if (readiness.ready) expect(screen.getByTestId('project-setup-ready')).toBeInTheDocument();
+    else expect(screen.getByTestId('project-setup-requirements').children).toHaveLength(readiness.to_do.length);
+    if (readiness.optional?.length) expect(screen.getByTestId('project-setup-optional')).toBeInTheDocument();
+    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped')).toBeInTheDocument();
+  });
   return onOpenChange;
 }
 

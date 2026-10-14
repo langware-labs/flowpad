@@ -53,7 +53,7 @@ function scope(over: Partial<TokenPlanScope>): TokenPlanScope {
   return {
     kind: 'me',
     id: 'u',
-    name: 'Eran',
+    name: 'Alice',
     endpoint_id: ME_EP,
     can_configure: false,
     path: [],
@@ -67,7 +67,7 @@ function scope(over: Partial<TokenPlanScope>): TokenPlanScope {
 
 const meScope = scope({
   path: [
-    { endpoint_id: ME_EP, name: 'default-eran', kind: 'me' },
+    { endpoint_id: ME_EP, name: 'default-alice', kind: 'me' },
     { endpoint_id: TEAM_EP, name: 'Team A', kind: 'team' },
     { endpoint_id: ORG_EP, name: 'Langware', kind: 'org' },
   ],
@@ -129,7 +129,7 @@ describe('TokenPlanView', () => {
     expect(within(hero).getByTestId('budget-bar-cost_usd_per_day')).toBeTruthy();
     expect(within(hero).queryByTestId('set-budget')).toBeNull();
     const path = screen.getByTestId('scope-path');
-    expect(path.textContent).toContain('default-eran');
+    expect(path.textContent).toContain('default-alice');
     expect(path.textContent).toContain('Team A');
     expect(path.textContent).toContain('Langware');
     expect(screen.queryByTestId('members-table')).toBeNull();
@@ -169,7 +169,7 @@ describe('TokenPlanView', () => {
           [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: q.granularity === 'hour' ? 1 : 9 }),
           '': c({ cost_usd: 100 }),
         },
-        names: { [`llm_endpoint-${ME_EP}`]: 'Eran', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
+        names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
       }),
     );
     renderView(`team/${TEAM_ID}`);
@@ -182,7 +182,7 @@ describe('TokenPlanView', () => {
     await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(2));
     const rows = within(table).getAllByTestId(/member-row-/);
     expect(rows[0].textContent).toContain('Dana');
-    expect(rows[1].textContent).toContain('Eran');
+    expect(rows[1].textContent).toContain('Alice');
     expect(rows[1].textContent).toContain('(you)');
     expect(h.getUsage).toHaveBeenCalledWith(TEAM_EP, expect.objectContaining({ by: 'child' }));
     await userEvent.click(rows[0]);
@@ -195,14 +195,14 @@ describe('TokenPlanView', () => {
       series: [],
       totals: c({}),
       breakdown: { [`llm_endpoint-${ME_EP}`]: c({ cost_usd: 2 }), [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: 9 }) },
-      names: { [`llm_endpoint-${ME_EP}`]: 'Eran', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
+      names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
     });
     renderView(`team/${TEAM_ID}`);
     const hero = await screen.findByTestId('budget-hero');
     expect(within(hero).queryByTestId('set-budget')).toBeNull();
     const table = await screen.findByTestId('members-table');
     await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(1));
-    expect(within(table).getByTestId(`member-row-${ME_EP}`).textContent).toContain('Eran');
+    expect(within(table).getByTestId(`member-row-${ME_EP}`).textContent).toContain('Alice');
   });
 
   it('org without an endpoint: setup for admins, "ask an admin" otherwise', async () => {
@@ -249,7 +249,7 @@ describe('TokenPlanView', () => {
       plan([
         scope({
           path: [
-            { endpoint_id: ME_EP, name: 'default-eran', kind: 'me' },
+            { endpoint_id: ME_EP, name: 'default-alice', kind: 'me' },
             { endpoint_id: TEAM_EP, name: 'Team A', kind: 'team' },
           ],
           headline: { key: 'cost_usd_per_day', used: 10, limit: 200, remaining: 190, resets_at: null, window: 'day' },
@@ -273,13 +273,13 @@ describe('TokenPlanView', () => {
       series: [],
       totals: c({}),
       breakdown: { [`llm_endpoint-${ME_EP}`]: c({ cost_usd: 2 }), [`llm_endpoint-${OTHER_EP}`]: c({ cost_usd: 9 }) },
-      names: { [`llm_endpoint-${ME_EP}`]: 'Eran', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
+      names: { [`llm_endpoint-${ME_EP}`]: 'Alice', [`llm_endpoint-${OTHER_EP}`]: 'Dana' },
     });
     renderView(`team/${TEAM_ID}`);
     const table = await screen.findByTestId('members-table');
     await waitFor(() => expect(within(table).getAllByTestId(/member-row-/)).toHaveLength(1));
     const row = within(table).getByTestId(`member-row-${ME_EP}`);
-    expect(row.textContent).toContain('Eran');
+    expect(row.textContent).toContain('Alice');
     expect(row.textContent).toContain('(you)');
   });
 

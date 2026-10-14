@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
-from flow_sdk.core import Entity
+from flow_sdk.core import Entity, action
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -25,6 +26,9 @@ logger = logging.getLogger(__name__)
 
 #: The main document. ``asset_ref`` is the FOLDER, so every read joins this.
 MAIN = "asset_setup.json"
+
+#: When a node's wizards fire, in order: before its children, once they are set up, when it is shown.
+HOOKS = ("prepare", "run", "on_load")
 
 
 class AssetSetup(Entity):
@@ -65,6 +69,20 @@ class AssetSetup(Entity):
         except Exception as error:  # a bad document is "no node here", never a wedged setup
             logger.warning("asset_setup %s is unreadable: %s", self.name or self.asset_ref, error)
             return None
+
+    @action.get(action_name="hooks")
+    async def hooks_action(self) -> ApiResponse:
+        """`GET /asset_setup/<id>/hooks` — the wizard each hook names, as the setup run resolves it:
+        the copy closest to this node's folder (``core/setup/derive``). ``None`` for an empty hook or
+        a name no wizard carries."""
+        from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+
+        hooks: dict[str, Optional[str]] = {}
+        for hook in HOOKS:
+            name = getattr(self, hook)
+            wizard = await Wizard.by_name(name, near=self.asset_ref) if name else None
+            hooks[hook] = str(wizard.typeid) if wizard is not None else None
+        return ApiSuccessResponse(data=hooks)
 
     def is_system(self) -> bool:
         """Shipped inside an SDK system project — the trust boundary every runnable asset keeps."""

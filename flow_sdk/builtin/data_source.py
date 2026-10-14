@@ -17,11 +17,9 @@ aspirational, and is exactly the phase-1 (credential-free) path.
 from __future__ import annotations
 
 import logging
-import shutil
 from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from math import ceil
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import computed_field, field_validator, model_validator
@@ -43,6 +41,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.data_driver_spec import ReflectMode
+from flow_sdk.schema.data_spec.setup_stage_spec import NEED_CONNECTION, NEED_SETUP, SetupNeedSpec
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
 from flow_sdk.schema.data_spec.webhook_spec import WebhookDelivery
 from flow_sdk.schema.types import EntityType
@@ -257,6 +256,8 @@ class DataSource(SetupSkippable, Entity):
     #: What SETUP is waiting for, in the user's words. Empty in every other
     #: state. The card renders this verbatim, so it is a sentence, not a code.
     setup_detail: str = APIField(default="", persist=Persist.FALSE)
+    #: The same as data: what SETUP waits on (``SetupNeedSpec``), set by ``verify``. Empty in every other state.
+    setup_needs: list[SetupNeedSpec] = APIField(default_factory=list, persist=Persist.FALSE)
     #: When the last verify ran, whatever its verdict.
     verified_at: Optional[datetime] = APIField(default=None, persist=Persist.FALSE)
 
@@ -1176,6 +1177,12 @@ class DataSource(SetupSkippable, Entity):
         stype = self._driver()
         if stype is not None and stype.has_setup:
             self.status = SourceStatus.SETUP.value
+            need = _declared_sign_in(stype)
+            if need is not None and not self.setup_needs:
+                # What it reads through is known before anything is verified: say it now, so the strip names
+                # the sign-in from the first moment, not "Setup required" until someone presses Verify.
+                self.setup_needs = [need]
+                self.setup_detail = self.setup_detail or need.detail
             if not self.setup_detail:
                 self.setup_detail = "Finish setup, then press Verify."
         else:
@@ -1641,7 +1648,9 @@ class DataSource(SetupSkippable, Entity):
         project = await self.setup_project()
         if project is None:
             return ApiFailResponse(message=NO_SETUP_PROJECT, status_code=409)
-        return ApiSuccessResponse(data={"run": await start_setup(project, root=str(self.typeid))})
+        # The app's Connect button signs the person in; the run only checks a connection (``connect_here``).
+        run = await start_setup(project, root=str(self.typeid), connect_here=False)
+        return ApiSuccessResponse(data={"run": run})
 
     @core_action.get(action_name="setup-run")
     async def setup_run_action(self) -> ApiResponse:
@@ -2173,15 +2182,16 @@ class DataSource(SetupSkippable, Entity):
         if driver is None:
             return None
 
-        connection = await self._verify_connection(driver)
-        if connection is not None:
+        need = await self._verify_connection(driver)
+        if need is not None:
             self.status = SourceStatus.SETUP.value
-            self.setup_detail = connection
+            self.setup_detail = need.detail
+            self.setup_needs = [need]
             self.verified_at = datetime.now(timezone.utc)
             await self.save_runtime()
             return {
-                "ready": False, "layer": "connection", "detail": connection,
-                "status": self.status,
+                "ready": False, "layer": "connection", "detail": need.detail,
+                "status": self.status, "needs": [need.model_dump()],
             }
 
         verdict = await self._verify_setup(driver)
@@ -2193,12 +2203,14 @@ class DataSource(SetupSkippable, Entity):
         if verdict.ready:
             self.status = SourceStatus.ACTIVE.value
             self.setup_detail = ""
+            self.setup_needs = []
             # Due on the next tick rather than after a full interval (the user just finished setting it up
             # and is watching), and no longer parked on what this verdict just disproved.
             await self._make_due()
         else:
             self.status = SourceStatus.SETUP.value
             self.setup_detail = verdict.detail
+            self.setup_needs = [SetupNeedSpec(kind=NEED_SETUP, detail=verdict.detail)]
         await self.save_runtime()
         return {
             "ready": verdict.ready,
@@ -2224,31 +2236,26 @@ class DataSource(SetupSkippable, Entity):
 
         return DataDriver.loaded(self.provider)
 
-    async def _verify_connection(self, driver) -> Optional[str]:
-        """None when the token works; otherwise why it does not.
+    async def _verify_connection(self, driver) -> Optional[SetupNeedSpec]:
+        """None when the connection this source reads through works; otherwise what it needs.
 
         Uses the same probe the Connections "Test" button runs, so the two can
-        never disagree about whether a provider is reachable. Only a driver that
-        reads through an OAuth connection (``auth.connector``) has a token to
-        probe: a Flow channel on ``slack`` reaches the person through the hub's
-        own app, and their personal Slack connection says nothing about it.
+        never disagree about whether a provider is reachable. The provider probed is
+        the account this source acts as (``connection``), else its driver's
+        ``auth.connector`` — never ``channel``, which names where messages go, not
+        whose token reads them. A Flow channel on ``slack`` reaches the person through
+        the hub's own app and declares no connector, so it has nothing to probe.
         """
         manifest = getattr(driver, "manifest", None)
-        if not (manifest is not None and manifest.auth is not None and manifest.auth.connector):
+        connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+        provider = str(self.connection or connector or "")
+        if not connector or not provider:
             return None
-        if not self.channel:
-            return None  # nothing to probe against yet
         from flow_sdk.core.oauth.provider_probe import get_probe  # noqa: PLC0415
 
-        if get_probe(self.channel) is None:
+        if get_probe(provider) is None:
             return None  # no probe defined — not a failure, just unverifiable
-        from flow_sdk.app.actions.oauth_action import _handle_test  # noqa: PLC0415
-
-        result = await _handle_test(self.channel)
-        data = getattr(result, "data", None) or {}
-        if data.get("ok") is False:
-            return str(data.get("detail") or "the stored credential was refused")
-        return None
+        return await connection_need(provider)
 
     async def _verify_setup(self, stype):
         """The type's setup verdict; a source that raises becomes a verdict, never a 500 — or the exception itself
@@ -2338,20 +2345,44 @@ _NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
 
 
 
-def remove_source_folder(asset_ref: Optional[str]) -> None:
-    """Delete a removed source's folder; left behind, the next index brings the source back. Only a
-    writable folder holding this type's main document — never a shipped one, never anything else."""
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+def _sign_in_need(provider: str, title: str, state: str, detail: str = "") -> SetupNeedSpec:
+    """The one shape of "this source needs <title> sign-in" — at create, from Verify and from a setup step alike."""
+    return SetupNeedSpec(kind=NEED_CONNECTION, name=provider, title=title, state=state,
+                         detail=detail or f"Needs {title} sign-in")
 
-    folder = Path(asset_ref) if asset_ref else None
-    main = SchemaRegistry.get(EntityType.DATA_SOURCE.value).shape.main
-    if folder is None or not (folder / main).is_file() or is_protected_path(folder):
-        return
-    if Entity._scope_from_path(str(folder)) == "system":
-        return
-    shutil.rmtree(folder, ignore_errors=True)
+
+def _declared_sign_in(driver) -> Optional[SetupNeedSpec]:
+    """The sign-in a driver reads through (its ``auth.connector``), as the need a new source starts with."""
+    manifest = getattr(driver, "manifest", None)
+    connector = manifest.auth.connector if manifest is not None and manifest.auth is not None else ""
+    if not connector:
+        return None
+    from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+    return _sign_in_need(connector, shipped_provider_title(connector) or connector.title(), "unverified")
+
+
+async def connection_need(provider: str) -> Optional[SetupNeedSpec]:
+    """None when ``provider``'s sign-in works for what runs here (``provider_probe.connection_answer``);
+    otherwise the need it is — the answer a source's Verify and its setup step's sign-in node both give."""
+    from flow_sdk.builtin.credential_service import _provider_title  # noqa: PLC0415
+    from flow_sdk.core.oauth.provider_probe import connection_answer  # noqa: PLC0415
+
+    data = await connection_answer(provider)
+    if data.get("ok") is not False:
+        return None
+    code = str(data.get("code") or "")
+    state = "missing" if code == "missing_token" else (code or "refused")
+    title = await _provider_title(provider)
+    detail = "" if state == "missing" else str(data.get("detail") or f"{title} did not accept the sign-in")
+    return _sign_in_need(provider, title, state, detail)
+
+
+def remove_source_folder(asset_ref: Optional[str]) -> None:
+    """Delete a removed source's folder; left behind, the next index brings the source back."""
+    from flow_sdk.assets.folder import remove_asset_files  # noqa: PLC0415
+
+    remove_asset_files(EntityType.DATA_SOURCE.value, asset_ref)
 
 
 async def migrate_list_configs() -> int:

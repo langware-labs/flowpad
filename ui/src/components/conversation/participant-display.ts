@@ -110,7 +110,7 @@ export function participantRoleLabel(participant: ConversationParticipant | null
 }
 
 /** Standard role ladder, highest first — mirrors the hub's ``ROLE_RANK``
- *  (``flowpad/hub/core/auth/role_hierarchy.py``), the single source of truth
+ *  (``hub role_hierarchy.py``), the single source of truth
  *  the hub's ``can_assign`` gate enforces. Index = rank (lower index = more
  *  privileged). Custom/unknown roles rank as ``null`` (not on the ladder). */
 const ROLE_LADDER = ['owner', 'full-access', 'admin', 'editor', 'member', 'reader', 'guest'] as const;

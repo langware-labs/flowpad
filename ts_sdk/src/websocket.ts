@@ -289,7 +289,7 @@ export type DataOpType =
  *  ``from_entity`` is the changed child, and ``data`` is the child. They exist
  *  so a watcher of a parent learns its subtree changed without subscribing to
  *  every child — which is how a new message reaches an open conversation.
- *  Values match the hub's ``flowpad/hub/api/messages.py`` exactly. */
+ *  Values match the hub's ``messages.py`` exactly. */
 export enum DataOp {
   CREATE = 'create',
   UPDATE = 'update',

@@ -224,8 +224,8 @@ class TestReplySpecAsksTheChannel:
             lambda _p: SimpleNamespace(outbound_spec=lambda _s: SlackMessageSpec),
         )
         item = SimpleNamespace(
-            author_external_id="U06L8JSQJ1X",
-            origin_namespace="T0123/C08L1P4C95J",
+            author_external_id="U0123456789",
+            origin_namespace="T0123/C0123456789",
             thread_key="100.000100",
             external_id="100.000100",
             name="hello",
@@ -233,7 +233,7 @@ class TestReplySpecAsksTheChannel:
 
         spec = source.reply_spec(item, body="on it")
 
-        assert spec.to == ["C08L1P4C95J"], "the SDK path addressed the author — Slack DMs that"
+        assert spec.to == ["C0123456789"], "the SDK path addressed the author — Slack DMs that"
 
     def test_an_email_source_still_addresses_the_author(self, monkeypatch):
         from types import SimpleNamespace

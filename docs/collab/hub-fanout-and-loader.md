@@ -51,8 +51,7 @@ visibility. Hold that distinction; the rest is bookkeeping.
 
 ## 1. Hub fan-out (HUB repo)
 
-> The hub is a **separate checkout** at
-> `/Users/alice/Documents/dev/test_flowpad/FlowPad/`. Paths in this section are
+> The hub is a **separate checkout**. Paths in this section are
 > in the **hub repo**, not flowpad-oss.
 
 `Conversation.add_message` (`flowpad/hub/builtin/conversation.py:281-308`) runs

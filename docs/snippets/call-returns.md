@@ -58,6 +58,7 @@ class CliOp(ExeData):                         # compute_op.cli — also every co
     commands: dict[str, str]                  # sys.platform → shell one-liner
     source_step: str | None                   # a setup step of the run's source, run IN the backend (no shell)
     webapp_step: str | None                   # a setup step of the run's web app (install/build/start), IN the backend
+    requirement_step: str | None              # what a setup requirement needs, IN the backend
 
 class PromptOp(ExeData):                      # compute_op.prompt — a model, no tools
     prompt: str
@@ -135,6 +136,7 @@ class ReturnedValue(DataSpec):                # compute.returned
     value: Any                                # an instance of output_spec_kind
     detail: str                               # ONE sentence for a person
     ran: bool                                 # False ⇒ nothing executed
+    reported: bool                            # the callee gave its own account (else detail is ours)
     timed_out: bool                           # the wait ended before the work did
     busy: bool                                # a held slot turned it away — retry later
     duration_s: float

@@ -7,8 +7,9 @@ command, question and agent still lives in a ComputeOp, and every node's wizard 
 * **Order.** ``prepare`` before the children (it may ask early, or prove the node can run at all), the
   children depth first and one at a time, ``run`` after them. Its ``prepare`` outputs are in scope for
   every node below it.
-* **A failure blocks upward, never sideways.** A child that failed leaves its parent ``blocked`` (its
-  ``run`` is not attempted); the parent's other children still run, so every leaf reports its own truth.
+* **Nothing blocks; every node does its best.** A child that failed never stops anything: its siblings
+  run, and its parent's ``run`` is still attempted. The parent then settles ``blocked`` naming what is
+  not set up under it — the run is not done, but everything that could be done was.
 * **One visit per node.** A credential two sources share is set up once; its second parent reads the
   verdict (``shared``). A cycle is refused before anything runs, and so is a tree past
   ``MAX_SETUP_DEPTH``.
@@ -318,17 +319,22 @@ class _Walk:
         settled = (SetupState.DONE, SetupState.SKIPPED)  # a skipped child holds nothing up
         left = [child for child in node.children if await self.visit(child, scope) not in settled]
         stuck = [child for child in left if not child.independent]
-        if stuck:
-            names = ", ".join(child.label for child in stuck)
-            return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
         if self.control.skipped(self.path):  # skipped while its children ran
             raise _Skipped()
 
+        # Best effort: the node's own run is attempted whatever its children came to. A node with a child
+        # that is not set up still says so first — that is what it is waiting on.
+        failed = ""
         if spec.run is not None:
             node.run = await self.wizard(spec, spec.run, act, node, "run", scope)
             await self._record(spec, node.run)
             if not node.run.ok:
-                return self.settle(node, act, self._unmet(), node.run.detail or "did not finish")
+                failed = node.run.detail or "did not finish"
+        if stuck:
+            names = ", ".join(child.label for child in stuck)
+            return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
+        if failed:
+            return self.settle(node, act, self._unmet(), failed)
         # What stands on its own never held this node up; say which of them it settled without.
         apart = f"; not set up: {', '.join(child.label for child in left)}" if left else ""
         return self.settle(node, act, SetupState.DONE, _done_detail(node) + apart)

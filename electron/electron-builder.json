@@ -21,6 +21,7 @@
     "startup-watchdog.js",
     "zip-writer.js",
     "support-bundle.js",
+    "support-upload.js",
     "log-redact.js",
     "app-location.js",
     "update-plan.js",
@@ -147,7 +148,7 @@
     "icon": "resources/icons",
     "category": "Development",
     "artifactName": "${productName}-${arch}.${ext}",
-    "maintainer": "Langware Labs <alice@example.com>",
+    "maintainer": "Langware Labs <diagnosis@langware.ai>",
     "executableArgs": ["--no-sandbox"],
     "extraResources": [
       {

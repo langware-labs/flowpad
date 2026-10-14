@@ -343,6 +343,7 @@ async def test_the_double_delivers_after_the_source_exists_and_records_the_reply
 
     async def _ingest(item, **_kw):
         recorded.append(item)
+        return SimpleNamespace(entity_id=f"si-{len(recorded)}")  # what the real chokepoint answers
 
     monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     with Double() as double:
@@ -398,6 +399,7 @@ def recorded(monkeypatch):
 
     async def _ingest(item, **_kw):
         seen.append(item)
+        return SimpleNamespace(entity_id=f"si-{len(seen)}")  # what the real chokepoint answers
 
     monkeypatch.setattr("flow_sdk.ingest.ingestor.ingest_item", _ingest)
     return seen

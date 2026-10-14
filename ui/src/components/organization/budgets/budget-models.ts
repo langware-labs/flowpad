@@ -25,7 +25,7 @@
  *  new wallet allows, because it is also what mints a person's default on their first bootstrap --
  *  a path no UI is on, and the reason a person could previously be restricted only if an admin had
  *  happened to open this page. Keep these in step with `MEMBER_DEFAULT_MODELS` / `ORG_DEFAULT_MODELS`
- *  in `flowpad/hub/builtin/llm_endpoint.py`; they are a hint, so drift shows as a stale placeholder
+ *  in `hub llm_endpoint.py`; they are a hint, so drift shows as a stale placeholder
  *  rather than as a wrong value on a row. */
 export const DEFAULT_MODELS = ['anthropic/claude-haiku-4.5', 'openai/gpt-5-mini', 'openai/text-embedding-3-small'];
 export const ORG_DEFAULT_MODELS = ['anthropic/claude-*', 'openai/*'];
@@ -110,7 +110,7 @@ export function aliasesForPinnedModel(models_allow: string[]): Record<string, st
     // `claude-haiku-4-5`. Both name the model this wallet is pinned to, and a list holding only the
     // routed spelling refuses the native one — a refusal the caller cannot act on, because their SDK
     // chose the name. `*` crosses `/` in the hub's matcher, so a bare key can only ever match a bare
-    // request. The Python twin is `aliases_for_pinned` (`flowpad/hub/core/llm/filters.py`); the two
+    // request. The Python twin is `aliases_for_pinned` (`hub filters.py`); the two
     // must agree or this screen's repair effect would rewrite what the hub seeded.
     const bare = family.includes('/') ? family.slice(family.indexOf('/') + 1) : null;
     if (bare && !(bare in out) && !models_allow.includes(bare)) out[bare] = slugs[0];

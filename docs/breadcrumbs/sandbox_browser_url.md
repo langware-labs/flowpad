@@ -22,15 +22,19 @@ sites:
 
 ## Expected behavior
 
-`flow show webapp --port <p>` registers the dev server as a `proxy`
-`ServiceEndpoint` and puts it in the Vibe display. The display's iframe `src`
-and its liveness poll are both the endpoint's **`direct-url`**, so whatever that
-action returns is the address the **viewer's browser** resolves.
+`flow show webapp --port <p>` registers the dev server as a route of the
+placement's `app` proxy and puts it in the Vibe display. The display's iframe
+`src` and its liveness poll are both the endpoint's **`direct-url`**, so whatever
+that action returns is the address the **viewer's browser** resolves.
 
 On a desktop the viewer sits at the machine running the dev server, so
 `http://localhost:<p>` is right. In a cloud box the viewer is on a different
 machine entirely: `localhost` there is the viewer's own laptop, nothing is
 listening on it, and the pane renders Chrome's "localhost refused to connect".
+And the dev server's own public port host is not the answer either: the browser
+is sent to the box's **audience door** (`https://<AUDIENCE_PORT>-<id>.e2b.dev/<route>/`,
+`server/audience_listener.py`), which admits it by the grant it carries and
+reaches the dev server over loopback.
 
 `flow show file` is unaffected — it renders same-origin and never asks for a
 direct url. A `static` endpoint (built output) is loaded through the `service`
@@ -42,8 +46,8 @@ The chain, browser inward:
 
 - `ui/src/components/display-toolbar/use-webapp-health.ts` — the liveness poll.
 - `ui/src/hooks/flow-hooks/useAppDisplay.ts` `useDirectUrl` → `ts_sdk/src/entities/service-endpoint.ts` `directUrl()` — asks the endpoint.
-- `flow_sdk/builtin/service_endpoint.py` `direct-url` action → `local_direct_url(port)` for an endpoint of this machine (a hub row is asked of the hub).
-- `local_direct_url` answers `http://localhost:{port}` — or, when `own_sandbox_id()` says this backend runs in a box, `sandbox_public_url(port, id)`.
+- `flow_sdk/builtin/service_endpoint.py` `direct-url` action → `local_direct_url(audience, backend, route)` for an endpoint of this machine (a hub row is asked of the hub).
+- `local_direct_url` answers `http://localhost:{port}` — or, when `own_sandbox_id()` says this backend runs in a box, `sandbox_public_url(AUDIENCE_PORTS[audience], id)` plus the route's mount: the door, never the process's port.
 
 Two askers, deliberately:
 
@@ -60,6 +64,7 @@ Firecracker's metadata service (`169.254.169.254`, token handshake then
 ## Invariants
 
 - **A loopback url must never leave the backend as a browser's address in a cloud box.** Only loopback is rewritten; a routable host is left alone.
+- **A process's port must never leave the backend as a browser's address in a cloud box either.** Every port of an e2b box is public; the browser gets the audience door, which holds the lock.
 - **`E2B_SANDBOX_ID` is not a source of truth — ask the metadata service, unconditionally.** Not because the variable is permanently broken, but because *no process can tell which of three states it is in*:
   - **Empty.** E2B fills it in after the template's `start_cmd` (`su user -c "flow start service"`) has already run, so the whole server tree boots without it. Measured: `flow_sdk.server.run` reported `E2B_SANDBOX_ID=` while a terminal in the same sandbox reported `ivshr0pshcpupip2m0pqk`.
   - **Populated by E2B.** True in the interactive shells it spawns.
@@ -83,5 +88,5 @@ same rule, `local_direct_url`):
 | lever | the browser was sent to | remote browser fetches it |
 |---|---|---|
 | unfixed | `307 → http://localhost:8000/` | connection refused |
-| fixed | `307 → https://8000-ivshr0pshcpupip2m0pqk.e2b.dev/` | `200`, the page itself |
+| fixed | `307 → https://8000-<id>.e2b.dev/` | `200`, the page itself |
 | reverted | `307 → http://localhost:8000/` | connection refused |

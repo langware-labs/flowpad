@@ -45,6 +45,7 @@ from flow_sdk.sources.protocols import (
     StableHandle,
     Verdict,
     Verifiable,
+    actions_of,
 )
 from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -819,7 +820,7 @@ class DriverRuntime:
         drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:
-            recorded = await self._record(row, source, await self._keep_sent(row, sent))
+            recorded = await self._record_ours(row, source, sent) is not None
         return SendOutcome(
             external_id=sent.origin.key,
             status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
@@ -827,18 +828,24 @@ class DriverRuntime:
             artifact_id=str(getattr(sent.data, "artifact_id", "") or ""),
         )
 
-    async def _record(self, row: Any, source: Source, sent: Any) -> bool:
-        """Ingest what we just sent, marked ours — at once, not whenever the provider's echo is next
-        read. The echo carries the same natural key, so it lands on this row and keeps the mark;
-        without the mark a copy with no self author would read as a stranger's message."""
+    async def _record_ours(self, row: Any, source: Source, sent: Any) -> Optional[str]:
+        """Ingest a message we just wrote (a send, an action's message), marked ours — at once, not
+        whenever the provider's echo is next read. The echo carries the same natural key, so it lands
+        on this row and keeps the mark; without the mark a copy with no self author would read as a
+        stranger's message. Answers the ``SourceItem`` id, or ``None`` when the transport records its
+        own copy (``data.recorded``) or the bookkeeping failed."""
         from flow_sdk.ingest.ingestor import ingest_item  # noqa: PLC0415
 
+        if getattr(sent.data, "recorded", False):
+            return None
         try:
-            await ingest_item(envelope_of(sent, data_source_id=str(row.id), provider=self.provider), sent_by_us=True)
+            outcome = await ingest_item(
+                envelope_of(await self._keep_sent(row, sent), data_source_id=str(row.id), provider=self.provider), sent_by_us=True
+            )
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
-            return False
-        return True
+            return None
+        return str(outcome.entity_id) if outcome.entity_id else None
 
     async def ingest_pushed(
         self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"", verified_by_hub: bool = False
@@ -905,6 +912,21 @@ class DriverRuntime:
                 await source.unreact(target, emoji)  # type: ignore[attr-defined]
             else:
                 await source.react(target, emoji)  # type: ignore[attr-defined]
+
+    async def act(self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False) -> Optional[str]:
+        """Run the channel's ``action`` on ``conversation`` (``ended``: whether it has ended). A message
+        the action wrote is recorded as ours, like a sent one (its echo lands on the same row); answers
+        that record's ``SourceItem`` id, or ``None`` when the action wrote nothing. A channel without
+        the action, or an action not offered in the conversation's state, raises ``Unsupported``."""
+        spec = next((a for a in actions_of(self.cls) if a.id == action), None)
+        if spec is None:
+            raise Unsupported(f"no action {action} on this channel")
+        if spec.when != "any" and (spec.when == "ended") != ended:
+            raise Unsupported(f"this action is not available on {'an ended' if ended else 'an open'} conversation")
+        source = await self.open(row, persona=True)
+        async with source:
+            written = await source.act(conversation, action, text)  # type: ignore[attr-defined]
+        return await self._record_ours(row, source, written) if written is not None else None
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""

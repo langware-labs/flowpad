@@ -25,7 +25,7 @@ describe('a notification in Hebrew', () => {
 
   it('says "פתח" on its button, not "Open"', () => {
     renderDesktopNotification({
-      title: 'Gadi Tunes',
+      title: 'Bob Stone',
       body: INVITE,
       click_target: { view_type: 'project', pointer: 'x' },
     });
@@ -53,7 +53,7 @@ describe('a notification in Arabic', () => {
 
   it('translates the button and the invite sentence', () => {
     renderDesktopNotification({
-      title: 'Gadi Tunes',
+      title: 'Bob Stone',
       body: INVITE,
       click_target: { view_type: 'project', pointer: 'x' },
     });

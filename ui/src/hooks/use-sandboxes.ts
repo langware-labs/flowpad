@@ -32,13 +32,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  * Creating, launching and opening are THREE separate operations:
  *   createSandbox: save (workspace-scoped). Nothing is provisioned.
  *   launchSandbox: ops/setup → ops/workspace-ready → project setup
- *   openSandbox:   navigate to open-service/workspace
+ *   openSandbox:   navigate to open/system
  *
  * The create/launch split is the reason a box can exist without costing
  * anything: `ops/setup` is what boots a billable VM, so a create that runs it
  * charges for a machine the user may not open today. A created-but-unlaunched
  * node has no `node_provider_id`, which is the SAME thing the hub tests for —
- * `open-service` answers "this machine has not been set up yet" for exactly this
+ * `open` answers "this machine has not been set up yet" for exactly this
  * node — so the two ends agree on what an unlaunched box is without a second
  * marker to keep in sync.
  *
@@ -59,11 +59,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  * op live in the hub, not the local desktop backend.
  */
 
-/** The hub's name for the workspace app. The client names a SERVICE and never a
- *  port — the hub resolves it through the box's endpoints. This is the only way
- *  anything here opens a box.
+/** The hub's name for the box's own UI: its `system` DOOR. The client names a door and
+ *  never a port — the hub resolves the placement's row for it, asks the policy whether
+ *  THIS caller may enter, and hands the browser a ticket. This is the only way anything
+ *  here opens a box.
  *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
-export const WORKSPACE_SERVICE = 'workspace';
+export const WORKSPACE_SERVICE = 'system';
 // `WORKSPACE_FLAVOR` is imported from the SDK: this hook WRITES the marker at
 // create time and `ComputeNode.isSandbox` READS it, so a local copy would let the
 // writer and the reader drift apart silently.
@@ -198,17 +199,17 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
 }
 
 /**
- * The absolute URL that opens a sandbox's workspace app.
+ * The absolute URL that opens a sandbox's workspace app: `compute_node/<id>/open/system`.
  *
- * The hub owns readiness and authorization: it resumes a paused box, waits for
- * the workspace to answer, and only then redirects. The client names the
- * SERVICE and never a port.
+ * The hub owns readiness and authorization: it admits the caller, resumes a paused box,
+ * waits for the workspace to answer, and only then redirects with a ticket. The client
+ * names the DOOR and never a port.
  *
  * Exported so the wire-contract test asserts against the URL production
  * actually navigates to, rather than re-deriving one from copied literals.
  */
 export function workspaceServiceUrl(nodeId: string, next?: string): string {
-  const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
+  const info = new ActionInfo('open', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
   // `next`: the app path the box opens on once it is up — a launch's `action=launch` link.
   // The hub accepts only a same-origin path and carries it through its sign-in gate.

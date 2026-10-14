@@ -790,17 +790,25 @@ def _report(row: Row, *, json_output: bool) -> None:
 
 
 def _chooser_url(port: int) -> str:
-    """The chooser's address, carrying the cookie-gate secret when the instance is armed.
+    """The chooser's address, carrying a system-door ticket when the instance is armed.
 
     The browser's FIRST contact is necessarily cookie-less, and the gate exempts no path --
     so on a gated instance a bare URL would open onto a 403 page instead of the chooser. The
-    query transport exists for precisely this case; `gate_headers` tells us whether there is
-    anything to carry.
+    ticket is what a browser carries once (the hub mints them; this CLI holds the same secret
+    and may too); the secret itself never rides a URL.
     """
+    import time
+    from urllib.parse import urlencode
+
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate, is_gated
+    from flow_sdk.server.grants import GATE_PATH, TICKET_PARAM
+    from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE, SYSTEM_ENDPOINT, Grant, sign_grant
 
     url = f"http://127.0.0.1:{port}{_CHOOSER_PATH}"
-    return f"{url}?cookie-gate={get_cookie_gate()}" if is_gated() else url
+    if not is_gated():
+        return url
+    ticket = sign_grant(Grant("local-cli", SYSTEM_AUDIENCE, SYSTEM_ENDPOINT), get_cookie_gate(), now=int(time.time()))
+    return f"http://127.0.0.1:{port}{GATE_PATH}?{urlencode({TICKET_PARAM: ticket, 'next': _CHOOSER_PATH})}"
 
 
 def _serve_chooser_here() -> int:

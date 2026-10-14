@@ -65,10 +65,10 @@ export interface FindSessionResult {
 
 /**
  * Convert a VFS-relative path to an OS absolute path.
- * VFS paths are relative (no leading slash, no drive letter) like "Users/gadi/Flowpad workspace".
+ * VFS paths are relative (no leading slash, no drive letter) like "Users/bob/Flowpad workspace".
  * This function combines them with the OS root and normalizes slashes for the target OS.
  *
- * @param vfsPath - VFS-relative path (e.g., "Users/gadi/Flowpad workspace/.flow/system_skills")
+ * @param vfsPath - VFS-relative path (e.g., "Users/bob/Flowpad workspace/.flow/system_skills")
  * @param root - OS filesystem root (e.g., "C:\\" on Windows, "/" on Unix)
  * @returns OS absolute path with normalized slashes
  */

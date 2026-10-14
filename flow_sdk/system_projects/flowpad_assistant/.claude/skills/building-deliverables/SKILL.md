@@ -42,6 +42,11 @@ which proves every change in a throwaway probe project before it touches theirs.
 server is up: `flow show webapp --port <port>` — the port the dev server actually
 reported, never an assumed one.
 
+**Mock of a user journey / UX flow** ("mock this flow", "show me the UX", "prototype the
+journey", "clickable mock" — screens to react to before anything is built) → the **mockify**
+skill. It owns the journey bar, the fast and real (captured from the running app) modes, and
+the browser check before showing it.
+
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**
 skill. Do NOT hand-write slide HTML and do NOT route a deck through the static-HTML rule

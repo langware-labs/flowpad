@@ -36,7 +36,8 @@ def shipped() -> Dataset:
 def test_the_shipped_dataset_declares_its_rows_and_every_row_fits(shipped):
     assert shipped.spec == "navigator.dataset"
     suites = Counter((r.data or {}).get("suite") for r in shipped.read_rows())
-    assert suites == {"benchmark": 52, "ux-surface": 200} and shipped.num_annotated == 252
+    # ``regression``: a sentence that once went to the wrong place, kept so it cannot again ("open tasks").
+    assert suites == {"benchmark": 52, "ux-surface": 200, "regression": 1} and shipped.num_annotated == 253
     assert shipped.validate_rows() == []
     rows = shipped.read_rows()
     assert rows[0].input.utterance == "open data sources"

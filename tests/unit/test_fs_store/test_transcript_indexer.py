@@ -20,6 +20,7 @@ from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_
 from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
 from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.transcript_indexer import (
     TranscriptContext,
     TranscriptIndexer,
@@ -132,6 +133,8 @@ async def clean_db():
     driver = get_db_driver()
     types = (
         RecordType.CLAUDE_SESSION,
+        "codex_session",
+        "copilot_session",
         RecordType.PROJECT,
         RecordType.PLAN,
         "agentic_process",
@@ -583,6 +586,77 @@ async def test_index_single_markdown_creates_row(tmp_path: Path, clean_db) -> No
     )
     assert post.asset_ref == str(md)
 
+
+_CODEX_ROLLOUT = Path(__file__).parents[1] / "resources" / "transcripts" / "codex_rollout.jsonl"
+
+
+def _write_codex_rollout(home: Path, session_id: str) -> Path:
+    day = home / ".codex" / "sessions" / "2026" / "03" / "11"
+    day.mkdir(parents=True, exist_ok=True)
+    path = day / f"rollout-2026-03-11T15-02-01-{session_id}.jsonl"
+    path.write_text(
+        _CODEX_ROLLOUT.read_text(encoding="utf-8").replace("019cdd6b-49a7-7480-9da1-aaaaaaaaaaaa", session_id),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("session_type", "write"),
+    [
+        ("claude_session", lambda home, sid: _write_transcript(home, session_id=sid, plan_file_path=None)),
+        ("codex_session", _write_codex_rollout),
+    ],
+)
+async def test_index_session_file_indexes_only_that_session(tmp_path: Path, clean_db, session_type, write) -> None:
+    """Sharing one session indexes that session, not its siblings, for any
+    worker: the forced project walk re-summarized every transcript in the
+    folder to index the one being shared."""
+    from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import index_session_file
+
+    paths = [write(tmp_path, str(uuid.uuid4())) for _ in range(3)]
+
+    entity_id = await index_session_file(session_type, paths[1])
+
+    rows = await SchemaRegistry.get_entity_cls(session_type).get_all({})
+    assert [r.id for r in rows] == [entity_id]
+    assert Path(str(rows[0].asset_ref)).name == paths[1].name
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("worker", "session_type", "write"),
+    [
+        ("claude_code", "claude_session", lambda home, sid: _write_transcript(home, session_id=sid, plan_file_path=None)),
+        ("codex", "codex_session", _write_codex_rollout),
+    ],
+)
+async def test_session_transcript_action_names_the_workers_transcript(
+    tmp_path: Path, clean_db, monkeypatch, worker, session_type, write
+) -> None:
+    """A share asks the process which transcript to attach: the type comes from
+    its worker and the id from the indexed row, never ``claude_session-<sid>``."""
+    path = write(tmp_path, str(uuid.uuid4()))
+    monkeypatch.setattr(AgenticProcess, "transcript_path", property(lambda self: path))
+
+    resp = await AgenticProcess(worker_type=worker)._http_session_transcript()
+
+    type_id = resp.data["type_id"]
+    assert type_id.startswith(f"{session_type}-")
+    row = await SchemaRegistry.get_entity_cls(session_type).get_one({"id": type_id.split("-", 1)[1]})
+    assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_session_transcript_action_says_why_a_worker_has_none(clean_db) -> None:
+    """A worker whose sessions live in a store (opencode) has no transcript entity
+    to attach: the share gets a reason, not a mis-typed ref."""
+    resp = await AgenticProcess(worker_type="opencode")._http_session_transcript()
+
+    assert resp.data["type_id"] is None
+    assert "opencode" in resp.data["reason"]
 
 @pytest.mark.asyncio
 async def test_index_single_skill_creates_row(tmp_path: Path, clean_db) -> None:

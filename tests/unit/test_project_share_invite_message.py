@@ -25,7 +25,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
-ISHAY = "1b1b1b1b-0000-4000-8000-000000000002"
+IVAN = "1b1b1b1b-0000-4000-8000-000000000002"
 DANA = "2c2c2c2c-0000-4000-8000-000000000003"
 MIA = "4e4e4e4e-0000-4000-8000-000000000005"
 PENDING = "5f5f5f5f-0000-4000-8000-000000000006"
@@ -175,17 +175,17 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     grant plus a conversation granted to it; nobody reads the team's member list."""
     proj = _project(hub, "share-person-and-team")
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], teams=[f"team-{INITECH}"], note="Welcome aboard")
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)], teams=[f"team-{INITECH}"], note="Welcome aboard")
 
     (person,) = _person_invites(hub, proj)
-    assert person["recipient_user_id"] == ISHAY
+    assert person["recipient_user_id"] == IVAN
     assert "notify_by_message" not in person
     assert person["message"] == "Welcome aboard"
     assert person["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}]
     assert "notify_by_email" not in person
 
     grants = dict(_conversation_grants(hub))
-    ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == ISHAY]
+    ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == IVAN]
     (conversation_target,) = person_conv["invitation_targets"]
     assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
     assert person_conv["notify_by_email"] is False
@@ -212,7 +212,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     assert len(_message_headers(hub)) == 2
 
     result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert [r.user_id for r in result.invited] == [IVAN]
     assert result.invited[0].conversation_id == conversation_target["typeid"][len("conversation-") :]
     assert [(t.team, t.conversation_id is not None) for t in result.granted_teams] == [(f"team-{INITECH}", True)]
     assert result.skipped_teams == [] and result.failed_teams == [] and result.failed == []
@@ -224,7 +224,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
 async def test_the_invite_message_carries_the_project_reference_and_the_note(hub):
     proj = _project(hub, "Course Project")
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], note="See you there")
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)], note="See you there")
     await _body_uploads_settled()
 
     (header,) = _message_headers(hub)
@@ -290,12 +290,12 @@ async def test_a_granted_team_whose_conversation_fails_is_granted_without_a_conv
 async def test_a_refused_person_invite_is_failed_and_opens_no_conversation(hub):
     """The project grant comes first; a refused one leaves nothing to discard."""
     proj = _project(hub, "share-person-refused")
-    hub.answers[ISHAY] = 403
+    hub.answers[IVAN] = 403
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
 
     result = proj.last_share_result
-    assert [(r.user_id, r.status) for r in result.failed] == [(ISHAY, 403)]
+    assert [(r.user_id, r.status) for r in result.failed] == [(IVAN, 403)]
     assert result.invited == []
     assert _conversation_creates(hub) == []
     assert [p for m, p, _ in hub if m == "DELETE"] == []
@@ -309,12 +309,12 @@ async def test_a_refused_conversation_invite_keeps_the_person_invited_without_a_
     """The project invite landed, so the person is invited; the conversation the
     message would go into is discarded and no message is sent."""
     proj = _project(hub, "share-person-conversation-refused")
-    hub.conversation_answers[ISHAY] = 403
+    hub.conversation_answers[IVAN] = 403
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
 
     result = proj.last_share_result
-    assert [(r.user_id, r.conversation_id) for r in result.invited] == [(ISHAY, None)]
+    assert [(r.user_id, r.conversation_id) for r in result.invited] == [(IVAN, None)]
     assert result.failed == []
     deletes = [p for m, p, _ in hub if m == "DELETE"]
     assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
@@ -328,10 +328,10 @@ async def test_a_person_whose_message_fails_is_still_invited_with_the_conversati
     proj = _project(hub, "share-person-message-fails")
     hub.refuse["/add_message"] = 500
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
 
     result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert [r.user_id for r in result.invited] == [IVAN]
     assert result.invited[0].conversation_id
     assert result.failed == []
 
@@ -361,11 +361,11 @@ async def test_sharer_member_pending_and_team_covered_people_are_skipped(hub):
             ShareInvitee(user_id=DANA),
             ShareInvitee(user_id=PENDING),
             ShareInvitee(user_id=MIA),
-            ShareInvitee(user_id=ISHAY),
+            ShareInvitee(user_id=IVAN),
         ]
     )
 
-    assert _invited_keys(hub, proj) == [ISHAY]
+    assert _invited_keys(hub, proj) == [IVAN]
     reasons = {r.user_id: r.reason for r in proj.last_share_result.skipped}
     assert reasons == {SHARER: "self", DANA: "already_member", PENDING: "already_invited", MIA: "already_member"}
 
@@ -377,9 +377,9 @@ async def test_sharer_is_dropped_even_when_the_project_roster_is_unreadable(hub)
     proj = _project(hub, "share-roster-down")
     hub.rosters[f"/graph/project/{proj.id}/members"] = 503
 
-    await proj.share(invitees=[ShareInvitee(user_id=SHARER), ShareInvitee(user_id=ISHAY)])
+    await proj.share(invitees=[ShareInvitee(user_id=SHARER), ShareInvitee(user_id=IVAN)])
 
-    assert _invited_keys(hub, proj) == [ISHAY]
+    assert _invited_keys(hub, proj) == [IVAN]
     assert [(r.user_id, r.reason) for r in proj.last_share_result.skipped] == [(SHARER, "self")]
 
 
@@ -390,10 +390,10 @@ async def test_one_failure_does_not_stop_the_rest(hub):
     proj = _project(hub, "share-mixed-outcomes")
     hub.answers[DANA] = 500
 
-    await proj.share(invitees=[ShareInvitee(user_id=DANA), ShareInvitee(user_id=ISHAY)], teams=[f"team-{INITECH}"])
+    await proj.share(invitees=[ShareInvitee(user_id=DANA), ShareInvitee(user_id=IVAN)], teams=[f"team-{INITECH}"])
 
     result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert [r.user_id for r in result.invited] == [IVAN]
     assert [(r.user_id, r.status) for r in result.failed] == [(DANA, 500)]
     assert [t.team for t in result.granted_teams] == [f"team-{INITECH}"]
 
@@ -404,7 +404,7 @@ async def test_one_failure_does_not_stop_the_rest(hub):
 async def test_share_without_note_sends_no_message_field(hub):
     proj = _project(hub, "share-no-note")
 
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+    await proj.share(invitees=[ShareInvitee(user_id=IVAN)])
 
     (body,) = _person_invites(hub, proj)
     assert "message" not in body and "notify_by_message" not in body
@@ -448,7 +448,7 @@ async def test_share_action_carries_teams_and_note_and_returns_the_result(hub, m
         someone_typeid = "user-local"
 
         async def get_post_data(self):
-            return {"recipients": [ISHAY], "teams": [f"team-{INITECH}"], "note": "Hi"}
+            return {"recipients": [IVAN], "teams": [f"team-{INITECH}"], "note": "Hi"}
 
     monkeypatch.setattr(share_action, "_local_mode_share_blocked", lambda: False)
     monkeypatch.setattr(share_action, "get_current_request_info", lambda: _Req())
@@ -461,11 +461,11 @@ async def test_share_action_carries_teams_and_note_and_returns_the_result(hub, m
 
     dumped = resp.model_dump()
     assert dumped["status"] == "SUCCESS", dumped
-    assert _invited_keys(hub, proj) == [ISHAY]
+    assert _invited_keys(hub, proj) == [IVAN]
     assert [b["principal"] for b in _group_grants(hub, proj)] == [f"team-{INITECH}"]
     data = dumped["data"]
     assert data["id"] == proj.id
-    assert [r["user_id"] for r in data["share_result"]["invited"]] == [ISHAY]
+    assert [r["user_id"] for r in data["share_result"]["invited"]] == [IVAN]
     assert [t["team"] for t in data["share_result"]["granted_teams"]] == [f"team-{INITECH}"]
 
 
@@ -497,7 +497,7 @@ async def test_share_action_on_a_published_project_invites_without_publishing(hu
         someone_typeid = "user-local"
 
         async def get_post_data(self):
-            return {"recipients": [ISHAY], "note": "Hi"}
+            return {"recipients": [IVAN], "note": "Hi"}
 
     monkeypatch.setattr(share_action, "_local_mode_share_blocked", lambda: False)
     monkeypatch.setattr(share_action, "get_current_request_info", lambda: _Req())
@@ -511,9 +511,9 @@ async def test_share_action_on_a_published_project_invites_without_publishing(hu
     dumped = resp.model_dump()
     assert dumped["status"] == "SUCCESS", dumped
     assert ("POST", "/graph/project") not in [(m, p) for m, p, _ in hub]
-    assert _invited_keys(hub, proj) == [ISHAY]
+    assert _invited_keys(hub, proj) == [IVAN]
     assert saved == []
-    assert [r["user_id"] for r in dumped["data"]["share_result"]["invited"]] == [ISHAY]
+    assert [r["user_id"] for r in dumped["data"]["share_result"]["invited"]] == [IVAN]
 
 
 async def _noop():

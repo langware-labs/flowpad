@@ -1248,11 +1248,16 @@ async def show_placement(process_id: str) -> dict[str, Any]:
     target becomes a tab beside ``tab_id`` (or at the end, with no open tab — a
     background agent). The decision used to be the frontend's, read from the one
     app-wide view mode, which two sessions shown two ways cannot share.
+
+    ``project_id`` is the showing process's own project: the tab minted for a
+    file no project owns belongs to it. Resolved here, server-side, like the
+    chip's project on every other tab — never from a client's tab snapshot.
     """
     tab = await process_tab(process_id)
+    project_id = await _project_of_target("agentic_process", process_id)
     if tab is None:
-        return {"tab_id": None, "host": False}
-    return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer)}
+        return {"tab_id": None, "host": False, "project_id": project_id}
+    return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer), "project_id": project_id}
 
 
 async def hide_tabs_for_target(target_type: str, target_id: str) -> None:

@@ -190,6 +190,20 @@ export interface DatasetSyncResult {
   unlinked?: { key: string; field: string; value: string }[];
 }
 
+/** Every row listener's catch-up, run when the socket is back. ONE listener on the connection however
+ *  many datasets a page listens to — a page over a dozen datasets is ordinary, and a listener each
+ *  trips the connection's listener-count warning. */
+const catchUps = new Set<() => void>();
+let reconnectHooked = false;
+function onReconnected(connection: ConnectionManager, catchUp: () => void): () => void {
+  if (!reconnectHooked) {
+    reconnectHooked = true;
+    connection.on('on_reconnected', () => catchUps.forEach((run) => run()));
+  }
+  catchUps.add(catchUp);
+  return () => void catchUps.delete(catchUp);
+}
+
 /** The tag a row write emits (`flow_sdk/builtin/dataset.py` `Dataset.ROWS_CHANGED`). */
 export const DATASET_ROWS_CHANGED = 'dataset.rows.changed';
 
@@ -327,7 +341,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. With a
-   *  project, `kind` may be the bare name one of its schemas defines (`gtm.icp`). */
+   *  project, `kind` may be the bare name one of its schemas defines (`crm.lead`). */
   static async forKind(kind: string, projectId?: string): Promise<Dataset[]> {
     const { datasets } = await apiClient.get<{ datasets: Partial<IDataset>[] }>(
       `/api/v1/kinds/${encodeURIComponent(kind)}/datasets`,
@@ -441,10 +455,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
       if (moved) handler({ op: 'sync', keys: [], count: 0, version });
     };
     void catchUp();
-    connection.on('on_reconnected', catchUp);
+    const offReconnect = onReconnected(connection, catchUp);
     return () => {
       offTag();
-      connection.off('on_reconnected', catchUp);
+      offReconnect();
     };
   }
 

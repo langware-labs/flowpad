@@ -43,7 +43,7 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         # A ``ShapeForm`` field holds the authoring FORM, not a class.
         return {f"{name}_k": "string", f"{name}_n": ["int"]}
     if ann is PhoneNumberSpec:  # validated digits: a "<name>-v" placeholder is not a number
-        return PhoneNumberSpec(country_code="972", number="0500000000")
+        return PhoneNumberSpec(country_code="972", number="500000000")
     if ann is DockPointerSpec:  # a real tab: the view must be one, and the file named by its project
         return DockPointerSpec(viewType="project", pointer="p/editor/html/vfs/project-p/a.html")
     if ann is RequirementSpec:  # a closed `kind`: the sampler names one
@@ -116,7 +116,10 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         # How a webapp endpoint is served — the non-default arm of the union.
         from flow_sdk.schema.data_spec.webapp_spec import WebappProxyServing  # noqa: PLC0415
 
-        return WebappProxyServing(type="proxy", start_cmd=f"{name}-v --port {{port}}", health=f"/{name}-h", port=4321)
+        return WebappProxyServing(
+            type="proxy", start_cmd=f"{name}-v --port {{port}}", health=f"/{name}-h",
+            ports={"local": {"port": 4321, "required": False}}, install_check=f"{name}-deps",
+        )
     if getattr(ann, "__name__", "") == "TypeId":
         return ann(f"skill-{mint_uuid()}")
     if ann is datetime:

@@ -46,10 +46,11 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | rename / delete | `ds.rename(key, newKey, {expected: row.version})` (id and links stay) / `ds.deleteRow(key, {expected: row.version})` (409 while referenced or changed) | `ds.rename_row(key, new, expected=v)` / `ds.delete_row(key, expected=v)` |
 | save MANY, as one step | `ds.putMany([{key, input}], {expected: {key: version}})` — one row that does not fit (400, `details` under `<key>.<path>`) or changed since (409) writes nothing | `await ds.put_many([...], expected={...})` |
 | delete MANY, as one step | `ds.deleteRows(keys, {expected})` — all or none; rows deleted together do not hold each other back | `ds.delete_rows(keys, expected={...})` |
-| mirror an outside system — THE way | no code: a data source with `"mirror": {dataset, by, map}` in its `data_source.json` (`docs/data-management/mirroring-a-system-of-record.md`); after every sync the dataset is the mirror, the app's writes to `owned_by` fields go to the system first, and a failure shows on the source card (`mirror_failed` / `mirror_misfit`). A record that does not fit the kind is a `problems` row, not a stopped sync | the same file; a driver for the system when none is installed: `connect-data-source author <system>` |
+| mirror an outside system — THE way | no code: a data source with `"mirror": {dataset, by, map}` in its `data_source.json` (`references/mirroring.md` — read it before writing anything that touches a mirrored row); after every sync the dataset is the mirror, the app's writes to `owned_by` fields go to the system first, and a failure shows on the source card (`mirror_failed` / `mirror_misfit`) — show it in the app too (`DataSource.isMirrorBroken`). A record that does not fit the kind is a `problems` row, not a stopped sync | the same file; a driver for the system when none is installed: `connect-data-source author <system>` |
 | load rows you computed yourself (joined from two streams, a one-off import) | `ds.sync(rows, {prune, match})` → `{created, updated, unchanged, deleted}` — all or nothing | `await ds.sync(rows, prune=True, match=None)` in a script wrapped in `single_run(...)`: unchanged rows are not rewritten, rows not listed are removed (only those `match` selects, when given). A script that only reshapes a source's items is the declared `mirror`, not this |
 | mirror a source's items by hand (a test, a one-off) | `ds.mirror(sourceId, {key: "external_id", input: {name: "name", stage: "data.stage"}})` → `{created, updated, unchanged, deleted, misfit?, unlinked?}` | `await ds.mirror(source, map, by="crm")` — what the declared mirror calls for you |
-| write an app-owned field BACK to the outside system | `source.updateItem(itemId, changes)` / `source.deleteItem(itemId)` — through the source's driver and credential; never a client or a key of your own | `await source.update_item(item_id, changes)` |
+| a field your users edit that the outside system must ALSO have | make it the system's: add it to the mirror `map` and mark it `owned_by`; then `ds.put(key, {input}, {expected})` as for any row — Flowpad sends the change to the system first and answers `warnings` when a part was not set (show them). Never `updateItem` from your own code, a client, a state file or a merge | a script is not served: `local_client.graph_post(f"dataset/{ds.id}/put-row", {"key": k, "row": {"input": {...}}, "expected": v})`; `Dataset.put` there is refused `owned` |
+| a rule that runs a script when rows change | `trigger.json`: `"tag": {"on": "dataset.rows.changed", "scope": ["kind:<full kind>"]}`, `"then": {"run_script": "agentic-assets/trigger/<name>/run.sh"}`, and `"runs_on"` when only one machine should run it. "Run now": `const started = await Trigger.runOnce(id)`, then `Trigger.run(started.run_id)` until it is not `running` | the script: `single_run` around the run, `$FLOWPAD_PYTHON`, exit non-zero on failure (a failed step is a failed run) |
 | one run of a script at a time (a trigger's run and a "Sync now") | — (a script's concern) | `with single_run(project_root, "crm-sync"):` around the WHOLE run (`flow_sdk.datasets.run`) — a second run waits, or `wait=False` raises `RunBusy`; never a lock file of your own |
 | hear that rows changed | `const off = ds.onRowsChanged(({op, keys, count}) => reload())` — one call per write, by this app, another, or a script; keys, never values | a script's writes tell the running Flowpad by themselves (`ds.announce(op, keys)` to say it by hand) |
 | open an outside page (the record in the CRM) | `openExternal(url)` — http/https only; the host opens it in the person's browser | — |
@@ -63,7 +64,7 @@ standard-library-only helper may use it).
 
 ## What broke a real app — and the call that replaces it
 
-Sales Desk built a CRM-like app on datasets before these calls existed. Each line is a
+One project built a CRM-like app on datasets before these calls existed. Each line is a
 workaround it shipped; the SDK now does the right side — never reproduce the left:
 
 | It did | Do instead |
@@ -116,7 +117,9 @@ never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rul
 - **`owned_by` is a guard, not a permission.** A field the schema marks as an outside system's is
   refused to every writer that does not say `by: "<owner>"`, so the app and Claude cannot change
   it by mistake — but a writer that claims `by` is believed. Show such a field read-only
-  (`kindForm(kind).fields[name].owned_by`) and send `by` only from the sync.
+  (`kindForm(kind).fields[name].owned_by`) unless the source can write it — then edit it as any
+  field (it goes to the system first). Send `by` only from the writer that IS the owner: the
+  mirror, or the one script that computes a field it owns (`"owned_by": "board"`, `by="board"`).
 - **The delete protection is per checkout.** A row kept out of git that links to a row in git
   can lose its target to a `git pull` (a teammate deleted it): that row then shows in
   `problems` (`no <kind> row <uuid>`) — every reader must keep going and report it.

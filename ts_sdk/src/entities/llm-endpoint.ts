@@ -1,5 +1,5 @@
 /**
- * LLMEndpoint — a hub entity (`flowpad/hub/builtin/llm_endpoint.py`) that is
+ * LLMEndpoint — a hub entity (`hub llm_endpoint.py`) that is
  * either a ROOT (talks to a provider with its own credential) or a CHAIN (fed
  * from other endpoints, in fallback order, narrowing what passes through).
  *

@@ -76,10 +76,10 @@ function funding({ deviceEligible = true }: { deviceEligible?: boolean } = {}) {
           reason_code: deviceEligible ? '' : 'signed_out',
         },
         { endpoint_typeid: KEY_ID, name: 'openrouter key', rank: 10, eligible: true, auto: false },
-        { endpoint_typeid: HUB_ID, name: 'Gadi +20', rank: 20, eligible: true, auto: false },
+        { endpoint_typeid: HUB_ID, name: 'Bob +20', rank: 20, eligible: true, auto: false },
       ],
     },
-    resolved: { [CLAUDE]: { endpoint_typeid: HUB_ID, name: 'Gadi +20' } },
+    resolved: { [CLAUDE]: { endpoint_typeid: HUB_ID, name: 'Bob +20' } },
     blocked: {},
     notes: {},
     endpoints: {

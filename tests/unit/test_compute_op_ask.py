@@ -490,6 +490,34 @@ async def test_an_auto_continue_question_closes_by_itself_when_its_goal_holds(tm
     assert open_questions() == []
 
 
+async def test_a_pick_one_way_question_closed_by_a_sign_in_elsewhere_is_done(tmp_path, monkeypatch):
+    """A credential's "choose one way" question answers a string (the way picked, ``<VAR>=<value>``). The
+    gcloud way is a sign-in done in a terminal: the credential's check holds and the question closes by
+    itself. That close is the answer -- not a ``{}`` that fails the string shape ("returned a value that is
+    not a string"), which failed the step after a sign-in that worked."""
+    import flow_sdk.core.compute_op.runner as runner
+
+    monkeypatch.setattr(runner, "AUTO_CONTINUE_EVERY_SECONDS", 0.05)
+    marker = tmp_path / "signed-in"
+    check = f"test -f {marker} || (echo 'not signed in' >&2; exit 1)"
+    spec = _spec(tmp_path, exe_data={"prompt": "Google Cloud: choose one way", "auto_continue": True,
+                                     "choices": [{"value": "GCLOUD_ADC", "label": "Sign in with gcloud",
+                                                  "command": "gcloud auth application-default login"}]},
+                 completion_check={"commands": {sys.platform: check}}, output_spec_kind="string")
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+    for _ in range(300):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    assert open_questions()
+
+    marker.write_text("1")                       # signed in, in a terminal
+    said = await run
+
+    assert said.ok, said.detail
+    assert open_questions() == []
+
+
 async def test_a_rechecked_question_stays_open_until_its_goal_holds(tmp_path):
     """The gate: pressing Send is not the proof. Until the check holds, the question comes back with the
     check's own reason under it; once it holds, the op is done."""
@@ -516,3 +544,24 @@ async def test_a_rechecked_question_stays_open_until_its_goal_holds(tmp_path):
     answer(second.id, "ok")
     said = await run
     assert said.ok and open_questions() == []
+
+
+async def test_a_question_someone_has_on_screen_keeps_waiting_past_its_deadline(monkeypatch):
+    """A person finding a service-account key takes minutes: while a screen shows the question it keeps
+    saying so, and the question keeps waiting. Once nobody shows it, it times out as before."""
+    from flow_sdk.core.compute_op import ask
+
+    monkeypatch.setattr(ask, "SEEN_SECONDS", 0.4)
+    question = ask.open_question("get-api-key", "token", "test.ask.api_token")
+    waiting = asyncio.create_task(ask.wait_for(question, timeout=0.2))
+    for _ in range(4):  # 0.6 s of a screen saying "I show it", past the 0.2 s deadline
+        await asyncio.sleep(0.15)
+        assert ask.seen(question.id)
+    assert not waiting.done()
+    answer(question.id, {"token": "sk-1"})
+    assert await waiting == {"token": "sk-1"}
+
+    nobody = ask.open_question("get-api-key", "token", "test.ask.api_token")
+    with pytest.raises(TimeoutError):
+        await ask.wait_for(nobody, timeout=0.2)
+    assert not ask.seen(nobody.id), "a question that timed out is no longer waiting"

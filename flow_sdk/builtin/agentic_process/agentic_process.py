@@ -55,6 +55,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
+    DISPLAY_KEYS,
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
@@ -1042,9 +1043,9 @@ class AgenticProcess(Entity):
     # Once an AgenticProcess has a ``session_id``, its ``project_id`` and
     # ``workdir`` are frozen: the Claude/Codex transcript on disk is keyed to
     # those values, and any later rewrite silently drifts the record away from
-    # where the jsonl actually lives (see 4c5bd6e4 incident — heal/recover
-    # paths re-stamped these fields against the active dock's project, while
-    # the session had been started elsewhere).
+    # where the jsonl actually lives (heal/recover paths would otherwise
+    # re-stamp these fields against the active dock's project, while the
+    # session had been started elsewhere).
     #
     # ``_binding_lock_armed`` is flipped True by ``_arm_binding_lock`` after
     # construction. Until armed, all writes pass through — Pydantic
@@ -2910,6 +2911,34 @@ class AgenticProcess(Entity):
         rows = await Artifact.get_all({"generated_by": str(self.typeid)})
         return ApiSuccessResponse(data={"artifacts": [row.model_dump(mode="json") for row in rows]})
 
+    @action.post(action_name="session-transcript")
+    async def _http_session_transcript(self) -> ApiSuccessResponse | ApiFailResponse:
+        """The session transcript a share attaches for this process — any worker.
+
+        Answers with the transcript's TypeId (indexing that one file if it has no
+        row yet), so no caller builds ``<type>-<session id>``: the type comes from
+        the vendor and the id from the row, which for codex is derived, not the
+        session id. ``type_id`` is null with a ``reason`` when there is nothing to
+        attach. POST: it may write the row.
+        """
+        from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
+            index_session_file,
+        )
+
+        vendor = self._vendor()
+        session_type = vendor.session_entity_type
+        if session_type is None:
+            return ApiSuccessResponse(
+                data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."}
+            )
+        path = self.transcript_path
+        if path is None or not path.exists():
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
+        entity_id = await index_session_file(session_type, path)
+        if entity_id is None:
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This session's transcript could not be read."})
+        return ApiSuccessResponse(data={"type_id": f"{session_type}-{entity_id}", "reason": None})
+
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
         """Return project-scoped web artifacts with their local placement."""
@@ -2983,6 +3012,18 @@ class AgenticProcess(Entity):
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
+
+        if port is not None:
+            # A port is the caller's claim, not a fact: another program listening on it is not this
+            # app, and registering it would show that program as the app.
+            from flow_sdk.core import app_ports  # noqa: PLC0415
+
+            stranger = await asyncio.to_thread(app_ports.stranger_on, port, Path(artifact_path))
+            if stranger is not None:
+                return ApiFailResponse(
+                    message=f"port {port} is held by another program: {stranger.said()} — it is not the app at {artifact_path}",
+                    status_code=400,
+                )
 
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
@@ -6213,9 +6254,8 @@ class AgenticProcess(Entity):
         # Drop any stale in-memory display, then re-attach the DB's authoritative
         # copy — so this save can neither clobber a newer show nor resurrect an
         # entry ``on_show`` already deduped away.
-        display_keys = ("display_stack", "last_shown", DISPLAY_CONTEXT_KEY)
-        rebuilt = {k: v for k, v in current_context.items() if k not in display_keys}
-        for k in display_keys:
+        rebuilt = {k: v for k, v in current_context.items() if k not in DISPLAY_KEYS}
+        for k in DISPLAY_KEYS:
             if k in latest_context:
                 rebuilt[k] = latest_context[k]
         self.context_data = rebuilt
@@ -7908,7 +7948,8 @@ class AgenticProcess(Entity):
         try:
             from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
-            result = await reindex_paths(paths)
+            # A session writes anywhere — scratch folders included — so only a placed file is minted.
+            result = await reindex_paths(paths, placed_only=True)
             counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",

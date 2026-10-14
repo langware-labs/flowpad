@@ -25,6 +25,7 @@ import { Switch } from '@src/components/ui/switch';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardPanel } from '@src/components/setup-wizard/SetupWizardDialog';
+import { SourceSetupPanel } from '@src/components/setup-wizard/SourceSetupDialog';
 import { GroupChoice } from './GroupChoice';
 import {
   accountKeyFor,
@@ -40,11 +41,10 @@ import {
   type SourceDraft,
 } from './source-form';
 import { ChoiceField } from './ChoiceField';
-import { sourceIconName } from './source-icon';
 import { DesktopTile, TILE_TIP_DELAY, TileSection } from '@src/components/quick-create/QuickCreatePanel';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
+import { groupMembers, offeredSpecs, sourceChoices, useSourceSpecs, isObjectDriverSpec } from './use-source-specs';
 import { FieldType, type DataSourceChoice, type DataDriver, type SpecConfigField } from '@sdk';
 
 /**
@@ -100,6 +100,7 @@ export function DataSourceDialog({
   editing,
   owner,
   only,
+  initial,
   variant = 'source',
 }: {
   open: boolean;
@@ -112,6 +113,8 @@ export function DataSourceDialog({
   /** Narrow the provider tiles — the channels line offers only specs that
    *  `sends`. An empty result renders as a sentence, not a blank picker. */
   only?: (spec: DataDriver) => boolean;
+  /** Open on this provider as if its tile had been pressed: a group's ways to connect, else its form. */
+  initial?: DataDriver;
   /** Copy follows the resource being added, not whether providers are filtered. */
   variant?: 'source' | 'channel';
 }) {
@@ -123,9 +126,7 @@ export function DataSourceDialog({
   // A source is an asset: it is saved into the project open here (an agent's into the agent's project).
   const { project } = useDataContext();
   const ownerAgentId = owner?.type === Agent.type ? owner.id : null;
-  // An unlisted provider is never offered (a vendor the cloud stands in front of), and one
-  // the cloud provisions is an agent's own account — offered only when adding for an agent.
-  const offered = installed.filter((s) => s.listed && (!s.provisioned || ownerAgentId));
+  const offered = offeredSpecs(installed, !!ownerAgentId);
   const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -147,24 +148,43 @@ export function DataSourceDialog({
   // subscribing the effect to it.
   const seedRef = useRef(specFor);
   seedRef.current = specFor;
+  // A group's tile opens its ways to connect; any other tile, its form.
+  const pickTile = (p: DataDriver) => {
+    setGroup(p.group || '');
+    setDraft(p.group ? emptyDraft() : emptyDraft(p));
+    setStep(p.group ? 'choice' : 'form');
+    // A channel that only needs a sign-in asks nothing on a form: picking it adds it, and its setup follows.
+    setAutoAdd(variant === 'channel' && !p.group && !!p.sign_in_title);
+  };
+  const [autoAdd, setAutoAdd] = useState(false);
+  const initialRef = useRef(initial);
+  initialRef.current = initial;
   useEffect(() => {
     if (!open) return;
-    setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
-    setGroup('');
-    setStep(editing ? 'form' : 'provider');
+    if (!editing && initialRef.current) pickTile(initialRef.current);
+    else {
+      setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
+      setGroup('');
+      setStep(editing ? 'form' : 'provider');
+    }
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
   // One tile per driver group (its first member stands for it), one per ungrouped driver.
-  const tiles = specs.filter((p) => !p.group || groupMembers(specs, p.group)[0]?.name === p.name);
+  const tiles = sourceChoices(specs);
   // The agent the cloud creates this account for — no form, nothing to validate. The
   // picker only offers a provisioned provider with an agent owner, so this is that agent.
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
   // The wizard asks for this driver's config — the form asks only for a name, then hands over.
   const byWizard = setUpByWizard(spec, !!editing);
   const [settingUp, setSettingUp] = useState<DataSource | null>(null);
+  // A source added that reads through a sign-in (its driver's `auth.connector`): the dialog goes on to its
+  // setup — the sign-in asked in place, then its tree — instead of closing on "Added".
+  const [settingUpSource, setSettingUpSource] = useState<DataSource | null>(null);
+  const [listening, setListening] = useState(false);
+  const needsSignIn = !!spec?.sign_in_title;
   const problems = useMemo(
     () => (provisioned ? [] : validateDraft(draft, spec, { config: !byWizard })),
     [provisioned, draft, spec, byWizard],
@@ -178,6 +198,15 @@ export function DataSourceDialog({
 
   const setPicked = (key: string, choices: DataSourceChoice[]) =>
     setDraft((d) => ({ ...d, picked: { ...d.picked, [key]: choices } }));
+
+  // The form a sign-in channel skipped: added as soon as its draft is valid; one with a question shows its form.
+  useEffect(() => {
+    if (!autoAdd || step !== 'form' || busy) return;
+    setAutoAdd(false);
+    if (problems.length === 0) void submit();
+    // `submit` is rebuilt every render; this runs once per pick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAdd, step, problems, busy]);
 
   const submit = async () => {
     if (problems.length) return;
@@ -258,6 +287,10 @@ export function DataSourceDialog({
           setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
           return;
         }
+        if (needsSignIn && source.status !== 'active') {
+          setSettingUpSource(source); // the form gives way to its setup: "X is added. It needs one thing…"
+          return;
+        }
       }
       onOpenChange(false);
     } catch (e) {
@@ -320,6 +353,8 @@ export function DataSourceDialog({
 
   const close = () => {
     setSettingUp(null);
+    setSettingUpSource(null);
+    setListening(false);
     onOpenChange(false);
   };
   const toProviders = () => {
@@ -335,7 +370,7 @@ export function DataSourceDialog({
   };
   // The trail: where the person is, and how they got there. Once the source exists (its setup is running) the
   // way back is closed — going back would add it a second time.
-  const beforeSetup = !settingUp;
+  const beforeSetup = !settingUp && !settingUpSource;
   const crumbs: StepCrumb[] = [
     {
       label: editing ? t`Edit data source` : variant === 'channel' ? t`Add a channel` : t`Data sources`,
@@ -346,8 +381,9 @@ export function DataSourceDialog({
     crumbs.push({ label: group, onClick: beforeSetup && step === 'form' ? toChoice : undefined });
   // Never an empty crumb: the driver may not be known (yet) — the source's own name stands in.
   const formCrumb = editing ? editing.name : spec?.title || draft.provider || settingUp?.name || '';
-  if ((step === 'form' || settingUp) && formCrumb) crumbs.push({ label: formCrumb });
+  if ((step === 'form' || settingUp || settingUpSource) && formCrumb) crumbs.push({ label: formCrumb });
   if (settingUp) crumbs.push({ label: t`Connect` });
+  if (settingUpSource) crumbs.push({ label: t`Setup` });
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? onOpenChange(true) : close())}>
@@ -375,7 +411,17 @@ export function DataSourceDialog({
           contentRef.current?.focus();
         }}
         footer={
-          settingUp ? (
+          settingUpSource ? (
+            listening ? (
+              <Button onClick={close} data-testid="ds-setup-done">
+                <Trans>Done</Trans>
+              </Button>
+            ) : (
+              <Button variant="ghost" onClick={close} data-testid="ds-setup-later">
+                <Trans>Finish later</Trans>
+              </Button>
+            )
+          ) : settingUp ? (
             <Button variant="ghost" onClick={close} data-testid="ds-setup-close">
               <Trans>Close</Trans>
             </Button>
@@ -409,7 +455,9 @@ export function DataSourceDialog({
           )
         }
       >
-        {settingUp ? (
+        {settingUpSource ? (
+          <SourceSetupPanel source={settingUpSource} onDone={close} lead onListening={setListening} />
+        ) : settingUp ? (
           <SetupWizardPanel source={settingUp} autoStart />
         ) : step === 'provider' ? (
           <TileSection title={<Trans>Provider</Trans>}>
@@ -418,16 +466,12 @@ export function DataSourceDialog({
                 <Trans>No installed provider can carry a channel.</Trans>
               </p>
             )}
-            {tiles.map((p) => {
+            {tiles.map(({ spec: p, label, iconName }) => {
               // Through the one source→glyph rule, so the tile a person picks and the
               // card it becomes cannot disagree. No channel here: a provider is being
               // chosen, not one of a multi-channel transport's channels.
               // A group's tile is the choice ("WhatsApp"), so it shows the group's own glyph, not its first member's.
-              const groupIcon = p.group
-                ? groupMembers(specs, p.group).find((m) => m.group_icon_name)?.group_icon_name
-                : '';
-              const Glyph = lucideByName(groupIcon || sourceIconName(p, null));
-              const label = p.group || p.title || p.name || '';
+              const Glyph = lucideByName(iconName);
               const chosen = p.group ? group === p.group : draft.provider === p.name;
               return (
                 <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
@@ -436,12 +480,7 @@ export function DataSourceDialog({
                       data-testid={p.group ? `provider-group-${p.group}` : `provider-${p.name}`}
                       Icon={Glyph}
                       label={label}
-                      onClick={() => {
-                        // A group's tile opens its ways to connect; any other tile, its form.
-                        setGroup(p.group || '');
-                        setDraft(p.group ? emptyDraft() : emptyDraft(p));
-                        setStep(p.group ? 'choice' : 'form');
-                      }}
+                      onClick={() => pickTile(p)}
                       className={cn(chosen && 'border-primary bg-accent text-foreground ring-1 ring-primary')}
                     />
                   </TooltipTrigger>
@@ -453,6 +492,11 @@ export function DataSourceDialog({
                   <TooltipContent side="bottom" className="max-w-[16rem]">
                     <span className="font-medium">{label}</span>
                     {p.description && <span className="mt-0.5 block opacity-90">{p.description}</span>}
+                    {p.sign_in_title && (
+                      <span className="mt-1 block opacity-90" data-testid="provider-needs">
+                        <Trans>Needs {p.sign_in_title} sign-in</Trans>
+                      </span>
+                    )}
                   </TooltipContent>
                 </Tooltip>
               );
@@ -636,13 +680,6 @@ export function DataSourceDialog({
       </SteppedDialogContent>
     </Dialog>
   );
-}
-
-/** A group's members, in their declared order (``group_order``, then title). */
-function groupMembers(specs: DataDriver[], group: string): DataDriver[] {
-  return specs
-    .filter((s) => s.group === group)
-    .sort((a, b) => (a.group_order ?? 0) - (b.group_order ?? 0) || (a.title || '').localeCompare(b.title || ''));
 }
 
 /** One labelled switch with its hint, as the source form's advanced settings show them. */

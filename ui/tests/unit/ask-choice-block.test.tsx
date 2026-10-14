@@ -2,20 +2,25 @@
  * A question with more than one way to answer it — "a key file, OR sign in with gcloud".
  *
  * A value way is the ordinary input, sent as `<choice>=<value>` so the op knows which way was
- * taken. A sign-in way has nothing to type and nothing to send: the person runs its command and
- * the backend closes the question by itself — so there is no Send for it, and nothing here polls.
+ * taken. A sign-in way has nothing to type and nothing to send: Run starts its command in a terminal
+ * drawn right under it, and the backend closes the question by itself — so there is no Send for it,
+ * and nothing here polls.
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), runInTerminal: vi.fn() }));
+const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), sendInput: vi.fn(), ensureStarted: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {}, currentDock: null }),
 }));
-// Where the command runs (an open shell tab, else a new one) is the hook's own business.
-vi.mock('@src/terminal/use-run-in-terminal', () => ({ useRunInTerminal: () => h.runInTerminal }));
+// xterm needs a canvas jsdom lacks; what the terminal draws is its own business.
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', () => ({
+  ShellTerminal: ({ shellId }: { shellId: string }) => <div data-testid="shell-terminal">{shellId}</div>,
+}));
+
+import { Shell } from '@sdk';
 
 import { AskChoiceBlock } from '@src/components/ask/AskChoiceBlock';
 import { AskForm } from '@src/components/ask/AskForm';
@@ -32,7 +37,9 @@ afterEach(() => {
   cleanup();
   h.get.mockReset();
   h.post.mockReset();
-  h.runInTerminal.mockReset();
+  h.sendInput.mockReset();
+  h.ensureStarted.mockReset();
+  vi.restoreAllMocks();
 });
 
 describe('AskChoiceBlock', () => {
@@ -58,28 +65,36 @@ describe('AskChoiceBlock', () => {
     expect(onAnswer).toHaveBeenCalledWith('GOOGLE_APPLICATION_CREDENTIALS={"type": "service_account"}');
   });
 
-  it('a sign-in way shows its command and waits: no input, no Send', () => {
+  it('a sign-in way shows its command and a Run: no input, no Send', () => {
     const onAnswer = vi.fn();
     render(<AskChoiceBlock choices={[KEY_FILE, GCLOUD]} onAnswer={onAnswer} />);
     fireEvent.click(screen.getByTestId(`ask-choice-${GCLOUD.value}`));
 
     expect(screen.getByTestId('ask-choice-command')).toHaveTextContent(LOGIN);
-    expect(screen.getByTestId('ask-choice-waiting')).toHaveTextContent('Waiting for the sign-in…');
+    expect(screen.getByTestId('ask-choice-run')).toHaveTextContent('Run');
     expect(screen.queryByTestId('ask-choice-input')).toBeNull();
     expect(screen.queryByTestId('ask-choice-submit')).toBeNull();
     expect(onAnswer).not.toHaveBeenCalled();
   });
 
-  it('Run in terminal runs the command in a terminal', () => {
+  it('Run starts the command in a terminal of its own, drawn under the choice, and waits for the check', async () => {
+    const belongingTo = vi
+      .spyOn(Shell, 'belongingTo')
+      .mockResolvedValue({ id: 'sh-1', ensureStarted: h.ensureStarted, sendInput: h.sendInput } as unknown as Shell);
     render(<AskChoiceBlock choices={[GCLOUD]} onAnswer={vi.fn()} />);
     fireEvent.click(screen.getByTestId('ask-choice-run'));
 
-    expect(h.runInTerminal).toHaveBeenCalledWith(LOGIN);
+    expect(await screen.findByTestId('shell-terminal')).toHaveTextContent('sh-1');
+    expect(belongingTo).toHaveBeenCalledWith(`ask-choice:${GCLOUD.value}`, { name: GCLOUD.label });
+    expect(h.ensureStarted).toHaveBeenCalled();
+    await waitFor(() => expect(h.sendInput).toHaveBeenCalledWith(`${LOGIN}\r`));
+    expect(screen.getByTestId('ask-choice-waiting')).toBeInTheDocument();
+    expect(screen.queryByTestId('ask-choice-run')).toBeNull();
   });
 });
 
 describe('a question with choices, drawn by AskForm', () => {
-  it('keeps the guide above the cards and posts the picked way as one string', async () => {
+  it('keeps the guide below the cards and posts the picked way as one string', async () => {
     h.get.mockResolvedValue(QUESTION);
     h.post.mockResolvedValue({});
     render(<AskForm questionId="q1" />);

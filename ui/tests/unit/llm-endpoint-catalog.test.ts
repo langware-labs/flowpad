@@ -172,13 +172,13 @@ describe('buildAllocateBody', () => {
   it('carries the child budget and NOT the parent — the parent is the URL', () => {
     const d: EndpointDraft = {
       ...emptyDraft('chain'),
-      name: '  gadi+20 budget  ',
+      name: '  bob+20 budget  ',
       source: endpointTypeId(A),
       filters: { ...emptyDraft().filters, models_allow: 'anthropic/claude-*' },
       limits: { ...emptyDraft().limits, cost_usd_total: '1' },
     };
     const body = buildAllocateBody(d);
-    expect(body.name).toBe('gadi+20 budget');
+    expect(body.name).toBe('bob+20 budget');
     expect(body.filters.models_allow).toEqual(['anthropic/claude-*']);
     expect(body.limits.cost_usd_total).toBe(1);
     expect(body).not.toHaveProperty('source');
