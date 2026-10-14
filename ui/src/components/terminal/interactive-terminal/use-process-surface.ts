@@ -184,6 +184,9 @@ export function useProcessSurface({
   // inside one render, so a switch held back for background work also retries
   // on every new entry — the task-notification that ends the work is one.
   const transcriptEntry = live?.worker_status_detail_id ?? null;
+  // A chat worker parked on background work is not `busy`, so ending that work flips no edge the
+  // effect watches: the switch held back for it (→terminal) retries when the work is gone.
+  const backgroundWork = !!live?.background_work;
   // Guards re-entry with the CURRENT value rather than a closed-over one, and
   // keeps a transport switch from re-rendering every mounted session twice.
   const switching = useRef(false);
@@ -291,7 +294,7 @@ export function useProcessSurface({
         if (reconciled) setReconcileRevision((revision) => revision + 1);
       }
     })();
-  }, [viewMode, live, ptyMode, turnInFlight, transcriptEntry, canSwitch, reconcileRevision]);
+  }, [viewMode, live, ptyMode, turnInFlight, transcriptEntry, backgroundWork, canSwitch, reconcileRevision]);
 
   return live;
 }
