@@ -201,7 +201,7 @@ export function useAnnotatedImagePaste(
  */
 export function useFileStateAttach(
   setFiles: React.Dispatch<React.SetStateAction<File[]>>,
-  paste: { enabled: boolean; setText?: (update: (prev: string) => string) => void },
+  paste: Parameters<typeof useAnnotatedImagePaste>[1],
 ) {
   const addFiles = useCallback(
     (picked: FileList | File[] | null) => setFiles((prev) => mergePickedFiles(prev, picked).files),
