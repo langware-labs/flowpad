@@ -9,7 +9,7 @@ import { AskAssist, type AssistState } from './AskAssist';
 import { AskChoiceBlock } from './AskChoiceBlock';
 import { AskItems, type AskItem } from './AskItems';
 import { AskValueInput } from './AskValueInput';
-import { hasChoicesOf, type AskChoice } from './use-ask-question';
+import { hasChoicesOf, useKeepQuestionOpen, type AskChoice } from './use-ask-question';
 import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import { MarkdownView } from '@src/components/markdown-view';
 
@@ -81,6 +81,7 @@ export function AskForm({
   const [error, setError] = useState('');
   const [settled, setSettled] = useState('');
   const [busy, setBusy] = useState(false);
+  useKeepQuestionOpen(settled ? null : questionId);
 
   useEffect(() => {
     let alive = true;

@@ -516,3 +516,24 @@ async def test_a_rechecked_question_stays_open_until_its_goal_holds(tmp_path):
     answer(second.id, "ok")
     said = await run
     assert said.ok and open_questions() == []
+
+
+async def test_a_question_someone_has_on_screen_keeps_waiting_past_its_deadline(monkeypatch):
+    """A person finding a service-account key takes minutes: while a screen shows the question it keeps
+    saying so, and the question keeps waiting. Once nobody shows it, it times out as before."""
+    from flow_sdk.core.compute_op import ask
+
+    monkeypatch.setattr(ask, "SEEN_SECONDS", 0.4)
+    question = ask.open_question("get-api-key", "token", "test.ask.api_token")
+    waiting = asyncio.create_task(ask.wait_for(question, timeout=0.2))
+    for _ in range(4):  # 0.6 s of a screen saying "I show it", past the 0.2 s deadline
+        await asyncio.sleep(0.15)
+        assert ask.seen(question.id)
+    assert not waiting.done()
+    answer(question.id, {"token": "sk-1"})
+    assert await waiting == {"token": "sk-1"}
+
+    nobody = ask.open_question("get-api-key", "token", "test.ask.api_token")
+    with pytest.raises(TimeoutError):
+        await ask.wait_for(nobody, timeout=0.2)
+    assert not ask.seen(nobody.id), "a question that timed out is no longer waiting"
