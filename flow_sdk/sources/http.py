@@ -27,10 +27,16 @@ def client(timeout: float = REQUEST_TIMEOUT_SECONDS) -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=timeout, follow_redirects=True)
 
 
-def error_for_status(status: int, hint: str = "", *, origin: Optional[CloudOrigin] = None) -> SourceError:
+def error_for_status(status: int, hint: str = "", *, reason: str = "", origin: Optional[CloudOrigin] = None) -> SourceError:
     """One copy of the table, because a second one diverges: a 429 read as a refusal would stop
-    a source over a rate limit."""
-    detail = f"HTTP {status}{f' — {hint}' if hint else ''}"
+    a source over a rate limit. ``reason`` is the service's own words, always said; ``hint`` (where to
+    look: the address, the key) only for a status the caller can fix -- a rate limit or a failing
+    service is not its doing."""
+    if status == 429:
+        hint = "the service is limiting how fast we call it; the next pass tries again"
+    elif status >= 500:
+        hint = "the service failed; the next pass tries again"
+    detail = " — ".join(part for part in (f"HTTP {status}", reason, hint) if part)
     if status in (401, 403):
         return AccessDenied(detail, origin=origin)
     if status == 404:
