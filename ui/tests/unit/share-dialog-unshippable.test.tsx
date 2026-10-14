@@ -59,6 +59,7 @@ const GAP = { type_id: SESSION, reason: 'its file is not on this machine' };
 const source: ShareSource = {
   label: 'Session aaaaaaaa',
   typeLabel: 'SESSION',
+  isProcess: true,
   prepare: () => Promise.resolve({ assetReferences: [SESSION], sharedContextEntities: [SESSION, PROCESS] }),
 };
 

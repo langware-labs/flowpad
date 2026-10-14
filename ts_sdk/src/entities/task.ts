@@ -19,9 +19,9 @@ export enum TaskKind {
 export interface TaskAssignOptions {
   /** Rides the invitation email, and the notification message when sent. */
   message?: string;
-  /** Session transcript to send with the notification: the file plus the
-   *  session it came from, so the chip and the bytes can't drift apart. */
-  transcript?: { files: File[]; sessionId?: string };
+  /** Session transcript to send with the notification: the file plus its
+   *  TypeId, so the chip and the bytes can't drift apart. */
+  transcript?: { files: File[]; ref?: string };
   /** Skip the notification conversation. The assignment itself still lands —
    *  the task and its invitation email do not depend on it. Default: send. */
   notify?: boolean;
@@ -362,7 +362,7 @@ export class Task extends APIEntity<Task> implements ITask {
     // One ask, one task chip (plus the transcript when the caller attached one).
     const chips = [
       this.typeId.toString(),
-      opts.transcript?.sessionId && `claude_session-${opts.transcript.sessionId}`,
+      opts.transcript?.ref,
     ].filter(Boolean) as string[];
     const sent = await createAndSendConversation(
       {

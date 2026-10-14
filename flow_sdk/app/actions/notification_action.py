@@ -421,33 +421,35 @@ async def _merge_shared_context_into_conversation(
         logger.warning("[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True)
 
 
-async def _ensure_claude_session_rows(typeids: list[TypeId]) -> None:
-    """Sender-side ensure for shared ClaudeTranscript refs.
-
-    A ``claude_session`` row only exists after an indexer walk (walks are
-    explicit-click only), so the session being shared often has no row yet —
-    which would leave the chip unresolvable and the context links dangling.
-    The share IS an explicit user action on exactly this session, so locate
-    its JSONL and run the scoped single-file index. Best-effort."""
-    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session  # noqa: PLC0415
+async def _ensure_session_rows(typeids: list[TypeId]) -> None:
+    """Sender-side ensure for shared worker-session refs: a session row only exists
+    after an indexer walk, so index the shared transcript's one file. Covers refs
+    whose id is the session id (claude, copilot); the ``session-transcript``
+    action already indexed the rest. Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
-        _index_single_claude_session,
+        index_session_file,
+    )
+    from flow_sdk.transcript_analyzer.resolver import (  # noqa: PLC0415
+        SESSION_TYPE_BY_WORKER,
+        TranscriptNotFoundError,
+        resolve_session_jsonl,
     )
 
+    worker_by_session_type = {t: w for w, t in SESSION_TYPE_BY_WORKER.items()}
     for tid in typeids:
-        if tid.type != BuiltinEntityType.CLAUDE_SESSION.value:
+        worker = worker_by_session_type.get(tid.type)
+        if worker is None:
             continue
         try:
-            if await ClaudeSession.get_one({"id": tid.id}) is not None:
+            if await SchemaRegistry.get_entity_cls(tid.type).get_one({"id": tid.id}) is not None:
                 continue
-            rec = get_claude_session(tid.id)
-            if rec is None or rec.asset_ref is None:
-                continue
-            await _index_single_claude_session(Path(rec.asset_ref.path))
+            await index_session_file(tid.type, resolve_session_jsonl(worker, tid.id))
+        except (TranscriptNotFoundError, ValueError):
+            continue  # no local transcript: the packer's own check reports it
         except Exception as e:  # noqa: BLE001
             logger.warning(
-                "[append_conversation] ensure claude_session %s failed (non-fatal): %s",
+                "[append_conversation] ensure session %s failed (non-fatal): %s",
                 tid,
                 e,
                 exc_info=True,
@@ -811,7 +813,7 @@ async def find_unshippable_references(asset_references: list) -> list[tuple[Type
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
 
     typeids = _typeids_of(asset_references)
-    await _ensure_claude_session_rows(typeids)
+    await _ensure_session_rows(typeids)
     return await attachments_that_would_ship_nothing(typeids)
 
 
@@ -976,7 +978,7 @@ async def handle_add_message(
         ]
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
     # Refuse BEFORE anything is written: an attachment the packer would ship nothing for
     # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
     from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
@@ -1387,7 +1389,7 @@ async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse
     if parent_typeids:
         context_typeids = [*context_typeids, *parent_typeids]
         clone_fm.add_shared_context_entities(*parent_typeids)
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     is_remote_send = is_logged_in() and bool(getattr(conv, "remote", False))
