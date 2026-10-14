@@ -10570,6 +10570,7 @@ msgstr "Failed to start GitHub connection"
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Failed to start session"
 msgstr "Failed to start session"
 
