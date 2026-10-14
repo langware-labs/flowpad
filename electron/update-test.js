@@ -1,0 +1,93 @@
+'use strict';
+
+/*
+ * Test-only instrumentation for the install/update cycle, driven by the
+ * update-cycle-test workflow in langware-labs/flowpad-desktop.
+ *
+ * Inert by default: unless the process is launched with FLOWPAD_UPDATE_TEST=1,
+ * answerFor() returns null (callers then show the real native dialog) and
+ * event() does nothing, so production behaviour is unchanged.
+ *
+ * In test mode:
+ *
+ *   FLOWPAD_UPDATE_TEST_ANSWERS scripts the update dialogs, e.g.
+ *     FLOWPAD_UPDATE_TEST_ANSWERS="dual=later,backend=accept,restart=later"
+ *   Prompt ids and their buttons (button 0 always accepts, 1 defers):
+ *     dual    — desktop + backend both have updates   ("Update" / "Later")
+ *     backend — backend-only update                   ("Upgrade" / "Later")
+ *     restart — desktop update downloaded             ("Restart now" / "Later")
+ *   Accepted values: accept|update|upgrade|restart|yes|0 → button 0;
+ *   anything else → button 1. An UNSCRIPTED prompt answers button 1 (defer),
+ *   so a harness run can never hang on an unexpected native dialog.
+ *
+ *   Every prompt and lifecycle event is logged as one parseable line:
+ *     [update-test] {"event":"prompt","prompt":"dual","answer":1,...}
+ *   The harness tails the app's stdout / main_desktop log for these lines.
+ *
+ * Related test-mode env vars honoured elsewhere (same FLOWPAD_UPDATE_TEST=1
+ * guard): FLOWPAD_UPDATE_CONFIG (main.js — alternate app-update.yml so
+ * electron-updater reads a local feed) and FLOWPAD_PYPI_JSON_URL /
+ * FLOWPAD_UPDATE_TEST_BACKEND_SPEC (uv-manager.js — alternate PyPI "latest"
+ * lookup and pinned install spec).
+ */
+
+const ACCEPT_WORDS = new Set(['accept', 'update', 'upgrade', 'restart', 'yes', '0']);
+
+function isEnabled() {
+  return process.env.FLOWPAD_UPDATE_TEST === '1';
+}
+
+/** "dual=later,backend=accept" → { dual: 'later', backend: 'accept' } */
+function parseAnswers(raw) {
+  const out = {};
+  for (const part of String(raw || '').split(',')) {
+    const idx = part.indexOf('=');
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim().toLowerCase();
+    const value = part.slice(idx + 1).trim().toLowerCase();
+    if (key && value) out[key] = value;
+  }
+  return out;
+}
+
+// Resolved lazily so this module stays loadable from plain node (no Electron
+// runtime); update-test.test.js injects its own sink via _setLogLine.
+let logLine = null;
+
+function emit(payload) {
+  if (!logLine) {
+    try {
+      const electronLog = require('electron-log');
+      logLine = (line) => electronLog.info(line);
+    } catch {
+      logLine = (line) => console.log(line);
+    }
+  }
+  logLine(`[update-test] ${JSON.stringify(payload)}`);
+}
+
+function _setLogLine(fn) {
+  logLine = fn;
+}
+
+/**
+ * Log a lifecycle event ({"event": name, ...data}). No-op outside test mode.
+ */
+function event(name, data = {}) {
+  if (!isEnabled()) return;
+  emit({ event: name, ...data });
+}
+
+/**
+ * Scripted answer (button index) for an update dialog, or null when test mode
+ * is off — the caller must then show the real dialog.
+ */
+function answerFor(prompt, data = {}) {
+  if (!isEnabled()) return null;
+  const scripted = parseAnswers(process.env.FLOWPAD_UPDATE_TEST_ANSWERS)[prompt];
+  const answer = scripted !== undefined && ACCEPT_WORDS.has(scripted) ? 0 : 1;
+  emit({ event: 'prompt', prompt, answer, scripted: scripted !== undefined, ...data });
+  return answer;
+}
+
+module.exports = { isEnabled, answerFor, event, parseAnswers, _setLogLine };

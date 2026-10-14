@@ -13,6 +13,7 @@ const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+const updateTest = require('./update-test');
 
 const isMac = process.platform === 'darwin';
 
@@ -93,6 +94,16 @@ function setupElectronAutoUpdater() {
   }
 
   autoUpdater.logger = log;
+
+  // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): read the update feed from an
+  // alternate app-update.yml (e.g. a `generic` provider on localhost) instead
+  // of the one baked into resources/, so scenarios control what "newer desktop
+  // version" means without publishing a release.
+  if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_CONFIG) {
+    autoUpdater.updateConfigPath = process.env.FLOWPAD_UPDATE_CONFIG;
+    updateTest.event('feed-config', { path: process.env.FLOWPAD_UPDATE_CONFIG });
+  }
+
   // Manual control: we CHECK (no download) at pre-start so a desktop update can
   // be offered together with a backend update in ONE dialog, and only download
   // once the user opts in. Download is triggered explicitly via downloadUpdate().
@@ -133,16 +144,19 @@ function setupElectronAutoUpdater() {
       log.warn('[electron-updater] mainWindow missing; will install on quit');
       return;
     }
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'info',
-      buttons: ['Restart now', 'Later'],
-      defaultId: 0,
-      cancelId: 1,
-      title: 'FlowPad update ready',
-      message: `FlowPad ${info.version} is ready to install.`,
-      detail: 'Restart FlowPad now to apply the update.',
-    });
-    if (result.response === 0) {
+    let response = updateTest.answerFor('restart', { version: info.version });
+    if (response === null) {
+      ({ response } = await dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'FlowPad update ready',
+        message: `FlowPad ${info.version} is ready to install.`,
+        detail: 'Restart FlowPad now to apply the update.',
+      }));
+    }
+    if (response === 0) {
       log.info('[electron-updater] user accepted, quitting to install');
       isQuitting = true;
       autoUpdater.quitAndInstall();
@@ -575,6 +589,8 @@ function showStartupTimeoutError(detail) {
 }
 
 async function startApp() {
+  updateTest.event('boot', { desktop: app.getVersion(), packaged: app.isPackaged });
+
   // Kick off the desktop wrapper update check immediately at launch — runs in
   // parallel with backend startup and is a no-op when the app isn't packaged.
   setupElectronAutoUpdater();
@@ -635,17 +651,25 @@ async function startApp() {
           // the desktop channel's own background-download + restart-prompt flow.
           const backendStatus = await uvManager._pypiUpdateStatus();
           if (backendStatus) {
-            const { response } = await dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: 'Updates available',
-              message: 'New versions of FlowPad are available.',
-              detail:
-                `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
-                `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
-              buttons: ['Update', 'Later'],
-              defaultId: 0,
-              cancelId: 1,
+            let response = updateTest.answerFor('dual', {
+              desktop: app.getVersion(),
+              desktopLatest,
+              backend: backendStatus.currentVersion,
+              backendLatest: backendStatus.latestVersion,
             });
+            if (response === null) {
+              ({ response } = await dialog.showMessageBox(mainWindow, {
+                type: 'info',
+                title: 'Updates available',
+                message: 'New versions of FlowPad are available.',
+                detail:
+                  `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
+                  `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
+                buttons: ['Update', 'Later'],
+                defaultId: 0,
+                cancelId: 1,
+              }));
+            }
             if (response === 0) {
               // Backend first (quick) so the about-to-restart desktop boots
               // paired with the new engine; the desktop downloads in the
@@ -758,6 +782,13 @@ async function startApp() {
   sendStatus('Waiting for server');
   const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
   const backendReady = await waitForBackend(waitOpts);
+
+  if (backendReady) {
+    updateTest.event('backend-ready', {
+      desktop: app.getVersion(),
+      backend: (uvManager && uvManager.getInstalledVersionSync()) || null,
+    });
+  }
 
   if (!backendReady) {
     // Try to gather diagnostics for the error dialog
