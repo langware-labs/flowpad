@@ -8,7 +8,7 @@ stop and report that you could not do it, and why.
 
 Then report honestly. The sender sees only your one-sentence outcome:
 
-- Done: say what is now true ("On branch feature/inbox-v2, 6 new commits pulled.").
+- Done: say what is now true ("On branch feature/search-v2, 6 new commits pulled.").
 - Not done: say why, in words the sender can act on ("Local changes to
   src/app.ts would be overwritten by the checkout.").
 
