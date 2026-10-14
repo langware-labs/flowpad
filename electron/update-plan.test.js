@@ -8,7 +8,7 @@
 const assert = require('assert');
 const { isNewer } = require('./semver');
 const {
-  READY_REMINDER_MS, decideOffer, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder,
+  READY_REMINDER_MS, decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder,
 } = require('./update-plan');
 
 let passed = 0;
@@ -21,6 +21,19 @@ eq(decideOffer({ desktopLatest: '0.2.48', engineStatus: { latestVersion: '0.2.18
 eq(decideOffer({ desktopLatest: '0.2.48', engineStatus: null }), 'desktop', 'desktop only');
 eq(decideOffer({ desktopLatest: null, engineStatus: { latestVersion: '0.2.180' } }), 'engine', "engine only → today's dialog");
 eq(decideOffer({ desktopLatest: null, engineStatus: null }), 'none', 'nothing');
+
+// ── may the running desktop change the engine? ──────────────────────────────
+const policy = (state, mustInstall) => engineChangePolicy({ desktop: state === undefined ? undefined : { state }, mustInstall });
+eq(policy('current'), 'allow', 'running the latest desktop → the engine may change');
+eq(policy('unsupported'), 'allow', 'nothing to update (dev / Store build) → the engine may change');
+eq(policy('available'), 'hold', 'a newer desktop is waiting → the engine is held');
+eq(policy('unknown'), 'hold', "could not check the desktop → held (unknown is not 'up to date')");
+eq(policy(undefined), 'hold', 'no status at all → held');
+eq(policy('bogus'), 'hold', 'unrecognised status → held');
+eq(policy('available', true), 'desktop-first', 'must install + newer desktop → desktop first, engine after the relaunch');
+eq(policy('unknown', true), 'allow', 'must install + unknown → install anyway (a missing engine is worse)');
+eq(policy('current', true), 'allow', 'must install + latest desktop → install');
+eq(policy('unsupported', true), 'allow', 'must install + nothing to update → install');
 
 // ── the saved engine version ────────────────────────────────────────────────
 const memStore = (initial = null) => { let v = initial; return { read: () => v, write: (x) => { v = x; }, get value() { return v; } }; };
