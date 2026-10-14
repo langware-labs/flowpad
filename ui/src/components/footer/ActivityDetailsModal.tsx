@@ -7,7 +7,10 @@
  */
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
 import { Activity, isTerminal } from '@sdk/activity';
+import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { useActivityReceipt, useActivitySpec } from '@src/store/activity-store';
 import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
@@ -28,6 +31,15 @@ export function ActivityDetailsModalRoot() {
       ? receipt
       : null);
   const elapsedMs = useElapsedMs(spec);
+  const { t } = useLingui();
+  const [terminating, setTerminating] = useState(false);
+
+  const terminate = async (node: NonNullable<typeof live>) => {
+    setTerminating(true);
+    const ended = await Activity.get(node.path, node.subject_entity ?? null).cancel(t`Terminated by user`);
+    setTerminating(false);
+    if (!ended) notify.error({ title: t`Couldn't terminate ${node.label || node.name}`, transient: true });
+  };
 
   return (
     <Dialog open={open && !!payload} onOpenChange={setOpen}>
@@ -56,9 +68,10 @@ export function ActivityDetailsModalRoot() {
               variant="destructive"
               size="sm"
               data-testid="activity-details-terminate"
-              onClick={() => void Activity.get(live.path, live.subject_entity ?? null).cancel('Terminated by user')}
+              disabled={terminating}
+              onClick={() => void terminate(live)}
             >
-              Terminate
+              {t`Terminate`}
             </Button>
           </div>
         )}

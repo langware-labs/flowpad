@@ -130,6 +130,7 @@ class Activity:
         "seq",
         "_released",
         "claim_deadline",
+        "_own",
     )
 
     def __init__(
@@ -180,6 +181,10 @@ class Activity:
         #: the liveness bound that keeps a producer which died without ending its activity
         #: from owning the address forever. ``None`` on a node nobody claimed.
         self.claim_deadline: Optional[float] = None
+        #: Somebody addressed THIS node — a verb, a plan, a claim. ``False`` on a grouping
+        #: node that only exists because a deeper path was claimed; that one ends with its
+        #: last child (see :meth:`_finish`), since nobody else ever will.
+        self._own = False
 
     # ------------------------------------------------------------------ address
 
@@ -637,6 +642,10 @@ class Activity:
                 node.updated_at = now
         self._monitor._finished(self)
         self.release_waiters()
+        parent = self._parent
+        if parent is not None and parent._is_spent_grouping():
+            failed = any(c.state == ActivityState.FAILED for c in parent._children.values())
+            parent._finish(ActivityState.FAILED if failed else ActivityState.COMPLETED, None)
         return self
 
     def release_waiters(self) -> None:
@@ -698,6 +707,21 @@ class Activity:
         return self
 
     # ------------------------------------------------------------------ read
+
+    def _is_spent_grouping(self) -> bool:
+        """Nobody addressed this node, every child is a claimed run, and all have ended.
+
+        ``automation/<id>`` makes an ``automation`` parent only because ``/`` nests; no
+        producer will ever end it. A parent with an UNclaimed child (``Activity.get("qa")
+        .child("phase-1")``) is somebody's orchestrating root and is left to them.
+        """
+        children = self._children.values()
+        return (
+            not self._own
+            and not self.is_terminal
+            and bool(children)
+            and all(c.claim_deadline is not None and c.is_terminal for c in children)
+        )
 
     def descendants(self) -> "list[Activity]":
         out: "list[Activity]" = []

@@ -7328,6 +7328,11 @@ msgstr "לא ניתן להתחיל את החיבור ל-GitHub."
 msgid "Couldn't start the GitHub connection."
 msgstr "לא ניתן היה להתחיל את החיבור ל-GitHub."
 
+#. placeholder {0}: node.label || node.name
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Couldn't terminate {0}"
+msgstr "לא ניתן היה לעצור את {0}"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr ""
@@ -25139,6 +25144,14 @@ msgstr "שורות גלילה לאחור בטרמינל"
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
 msgstr "סשני טרמינל"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminate"
+msgstr "עצירה"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminated by user"
+msgstr "נעצר על ידי המשתמש"
 
 #: src/components/automations/RunsList.tsx
 msgid "test"

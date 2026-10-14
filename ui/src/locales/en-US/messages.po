@@ -7391,6 +7391,11 @@ msgstr "Couldn't start GitHub connection."
 msgid "Couldn't start the GitHub connection."
 msgstr "Couldn't start the GitHub connection."
 
+#. placeholder {0}: node.label || node.name
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Couldn't terminate {0}"
+msgstr "Couldn't terminate {0}"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr "Couldn't update"
@@ -25379,6 +25384,14 @@ msgstr "Terminal scrollback lines"
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
 msgstr "Terminal Sessions"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminate"
+msgstr "Terminate"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminated by user"
+msgstr "Terminated by user"
 
 #: src/components/automations/RunsList.tsx
 msgid "test"
