@@ -9,8 +9,7 @@
  */
 
 const fs = require('fs');
-
-const API_PREFIX = '/api/v1';
+const { API_PREFIX } = require('./uv-manager');
 
 // Header values must be one printable-ASCII line (undici refuses anything else, and the
 // hub flattens whitespace anyway); same cap as the hub's _MAX_META_CHARS.

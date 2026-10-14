@@ -3111,3 +3111,6 @@ module.exports.isUnknownFlagError = isUnknownFlagError;
 module.exports.parseNetstatPids = parseNetstatPids;
 module.exports.isInstallProgressLine = isInstallProgressLine;
 module.exports.splitLines = splitLines;
+// The hub API prefix, shared with support-upload.js so the two callers of
+// FLOWPAD_CLOUD_URL cannot drift apart.
+module.exports.API_PREFIX = API_PREFIX;

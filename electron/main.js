@@ -2402,7 +2402,8 @@ ipcMain.on('update-desktop-recovery', () => {});
 
 /**
  * "Export logs" on the failure panel: the same zip "Send Report" builds (support-bundle.js) saved where
- * the user chooses, for a user without a mail client — or whose policy blocks the mailto handler.
+ * the user chooses — the manual way to get the logs to the team when the upload cannot reach the
+ * service (offline, blocked egress, or the intake itself failing).
  */
 async function exportDiagnostics(detail) {
   try {
