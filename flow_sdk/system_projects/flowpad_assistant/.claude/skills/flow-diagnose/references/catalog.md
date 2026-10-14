@@ -19,7 +19,7 @@ platform, repair class, and repair action or workaround.
 
 ### A2 Backend unhealthy / failed to respond within 30 s
 - **Cause**: Stale lock from dead PID, DB corruption, or disk full.
-- **Detection**: `curl -fsS http://localhost:$PORT/health/status` → not `{"data":true}`.
+- **Detection**: `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status` → not `{"data":true}` (a 403 is the cookie gate: up, but the token was not sent).
 - **Repair**:
   - Stale lock: verify `server.pid` PID is dead → delete `server.lock` + `server.pid` → relaunch.
   - DB corruption: backend auto-recovers from `~/.flow/instances/<name>/backups/` on next launch.

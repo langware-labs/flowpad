@@ -17,6 +17,8 @@ export default mergeConfig(
   resolvedViteConfig,
   defineConfig({
     test: {
+      // Every backend a test spawns inherits this: the tests' requests carry no cookie-gate token.
+      env: { FLOWPAD_COOKIE_GATE: 'off' },
       testTimeout: 15000, // Increased timeout for compute node tests
       hookTimeout: 15000, // Increased hook timeout for API setup with websockets
       setupFiles: [path.resolve(__dirname, '../_lingui-mock.ts'), path.resolve(__dirname, './apiSetup.ts')],

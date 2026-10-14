@@ -68,6 +68,8 @@ runs:
           echo "SQLITE_DATABASE_PATH=$RUNNER_TEMP/flowpad_ci_e2e.db"
           echo "FLOWPAD_CLAUDE_HOME=$RUNNER_TEMP/claude-home"
           echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/claude-home"
+          # Every backend this job starts runs with the cookie gate off: the tests' requests carry no token.
+          echo "FLOWPAD_COOKIE_GATE=off"
           echo "SOD_ENC_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
         } >> "$GITHUB_ENV"
       shell: bash

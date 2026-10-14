@@ -44,3 +44,16 @@ uv run python -c "import flow_sdk.mcp_server; print(flow_sdk.mcp_server.__file__
 Mark the repo root (the directory that contains `flow_sdk/`) as a **Sources Root** in PyCharm, so `flow_sdk.*` imports resolve from the filesystem.
 
 The remaining red underlines on `flow_sdk.*` imports are cosmetic — they do not affect runtime behavior, tests, or builds.
+
+## Cookie gate off switch
+
+Every backend refuses requests that don't carry its local cookie-gate token
+(`<flow_home>/instances/<instance>/.cookie_gate`, see [cookie-gate](cookie-gate.md)). A Vite dev
+frontend on another port, or a bare `curl`, has no token, so dev backends run with the gate off:
+
+```bash
+FLOWPAD_COOKIE_GATE=off uv run -m flow_sdk.server.run
+```
+
+`scripts/instance_ctl.sh`, `docker/docker-compose.yml`, CI e2e and the test suite already set it.
+The switch is read when the backend starts: restart the backend after changing it.

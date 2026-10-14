@@ -13,6 +13,8 @@ Patching notes:
 
 from __future__ import annotations
 
+import contextlib
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -32,8 +34,12 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _armed(secret: str | None = SECRET):
-    """Force the middleware's view of gate state."""
-    return _stored(secret)
+    """Force the gate's view of the stored secret; with one, also lift the suite's off switch."""
+    stack = contextlib.ExitStack()
+    stack.enter_context(_stored(secret))
+    if secret is not None:
+        stack.enter_context(patch.dict(os.environ, {"FLOWPAD_COOKIE_GATE": "on"}))
+    return stack
 
 
 def _login_mocks():
@@ -76,6 +82,44 @@ async def test_unarmed_gate_route_redirects_without_a_cookie(client):
     assert "set-cookie" not in response.headers
 
 
+@pytest.mark.asyncio
+async def test_gate_on_this_machine_sets_the_local_cookie_and_goes_on_to_the_login(client):
+    """The backend opens the hub login through /auth/gate, so the browser holds the
+    local cookie when the hub sends it back to this host."""
+    login = "https://app.flowpad.ai/api/v1/login?target_path=x"
+    with _armed(), _stored():
+        response = await client.get(
+            "/auth/gate", params={"cookie-gate": SECRET, "next": login}, headers={"host": "127.0.0.1:9007"}
+        )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == login
+    assert response.headers["set-cookie"].startswith(f"cookie-gate-9007={SECRET};")
+
+
+DIRECT_OPEN = {"sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"}
+
+
+@pytest.mark.parametrize(
+    "arrival",
+    [
+        pytest.param({"cookie": f"cookie-gate-9007={SECRET}"}, id="web-page-click-with-the-lax-cookie"),
+        pytest.param(DIRECT_OPEN, id="desktop-app-click-direct-open"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gate_without_the_token_in_the_url_stays_on_this_instance(client, arrival):
+    """A crafted link reaches /auth/gate without its sender holding the token. Its absolute
+    `next` must not be followed, or every Flowpad would redirect anywhere on request."""
+    with _armed(), _stored():
+        response = await client.get(
+            "/auth/gate", params={"next": "https://evil.example/"}, headers={"host": "127.0.0.1:9007", **arrival}
+        )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+
+
 # ---------------------------------------------------------------------------
 # Arming, via the hub's loopback callback
 # ---------------------------------------------------------------------------
@@ -85,7 +129,7 @@ async def test_unarmed_gate_route_redirects_without_a_cookie(client):
 async def test_callback_with_secret_arms_the_instance(client):
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(None):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}&cookie-gate={SECRET}")
 
     assert response.status_code == 200
@@ -96,7 +140,7 @@ async def test_callback_with_secret_arms_the_instance(client):
 async def test_callback_without_secret_does_not_arm(client):
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(None):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}")
 
     assert response.status_code == 200
@@ -114,7 +158,7 @@ async def test_invalid_key_does_not_arm(client):
         ),
         patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
         _armed(None),
-        patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm,
+        patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm,
     ):
         response = await client.get(f"/auth/login_callback?flowpad-api-key=bogus&cookie-gate={SECRET}")
 
@@ -135,7 +179,7 @@ async def test_callback_still_runs_once_armed(client):
     """
     v, save, set_user, secrets_on = _login_mocks()
     with v, save, set_user, secrets_on, _armed(SECRET):
-        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie_gate") as arm:
+        with patch("flow_sdk.instance_settings.cookie_gate.set_cookie") as arm:
             response = await client.get(
                 f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}&cookie-gate={SECRET}",
                 headers={"X-Cookie-Gate": SECRET},

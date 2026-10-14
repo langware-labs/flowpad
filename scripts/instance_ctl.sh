@@ -300,6 +300,8 @@ FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
 FLOWPAD_SKIP_FIRST_RUN_SETUP=true
+# The UI is a Vite dev server on another port: no local cookie-gate token (docs/cookie-gate.md).
+FLOWPAD_COOKIE_GATE=off
 EOF
   # The isolated backend intentionally skips the repo dotenv so its injected
   # ports/identity cannot be clobbered. Carry the explicitly exported E2B

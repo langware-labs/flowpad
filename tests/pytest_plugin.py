@@ -21,6 +21,9 @@ import pytest
 os.environ["TESTING"] = "true"
 # A running agent deployment is a loop process the app starts; a test that needs one starts it itself.
 os.environ["AGENT_RUN_DEPLOYMENTS"] = "false"
+# The local cookie-gate token is created on the first request a backend serves; left on, the first
+# in-process request would arm every later API test. Gate tests opt back in (`local_gate` fixture).
+os.environ["FLOWPAD_COOKIE_GATE"] = "off"
 
 
 # -----------------------------------------------------------------------------
@@ -564,6 +567,19 @@ def isolated_records_root(tmp_path, monkeypatch):
 # for the per-instance Fernet key, and calls enable_secrets() so the consent
 # gate is open. Yields the active InstanceSettings.
 #
+@pytest.fixture
+def local_gate(tmp_path, monkeypatch):
+    """The local cookie-gate token turned on: off switch cleared, token file under
+    tmp_path. Yields the token file's path (not yet created)."""
+    import flow_sdk.server.middleware.cookie_gate_middleware as gate
+    from flow_sdk.instance_settings import cookie_gate
+
+    path = tmp_path / "instance" / ".cookie_gate"
+    monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
+    monkeypatch.setattr(cookie_gate, "_token_path", lambda: path)
+    yield path
+
+
 # Replaces the per-file ``memory_keyring`` fixtures that patched
 # ``credentials_mod.keyring`` — that import is gone in Phase C.
 # ----------------------------------------------------------------------

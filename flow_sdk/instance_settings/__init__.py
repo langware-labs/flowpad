@@ -89,11 +89,9 @@ def reset_instance_settings() -> None:
     _INSTANCES.clear()
     _WARNED_ALIASES.clear()
     _reset_sod_key_cache()
-    # Local imports: both modules import THIS one at module scope.
-    from .cookie_gate import reset_cache as _reset_cookie_gate_cache  # noqa: PLC0415
+    # Local import: that module imports THIS one at module scope.
     from .runtime import reset_cache as _reset_runtime_cache  # noqa: PLC0415
 
-    _reset_cookie_gate_cache()
     _reset_runtime_cache()
 
 

@@ -8,6 +8,8 @@ set -euo pipefail
 export FLOWPAD_HUB_URL="${FLOWPAD_HUB_URL:-http://host.docker.internal:8093}"
 
 step() { echo; echo "──── $*"; }
+# The backend refuses requests without its cookie-gate token; `flow` hands it out.
+gate() { echo "X-Cookie-Gate: $(flow auth get-cookie-gate 2>/dev/null)"; }
 
 step "uv tool install flowpad   (from $WHEEL — this tree's build of the same wheel)"
 uv tool install "$WHEEL" 2>&1 | tail -3
@@ -18,7 +20,7 @@ flow start 2>&1 | tail -5 || true
 PORT=""
 for i in $(seq 1 60); do
   [ -f "$HOME/.flow/instances/prod/server.json" ] && PORT=$(python3 -c "import json;print(json.load(open('$HOME/.flow/instances/prod/server.json'))['port'])")
-  [ -n "$PORT" ] && curl -sf "http://127.0.0.1:$PORT/api/v1/graph/bootstrap" >/dev/null && break
+  [ -n "$PORT" ] && curl -sf -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/bootstrap" >/dev/null && break
   sleep 1
 done
 echo "server up on :$PORT"
@@ -40,27 +42,27 @@ step "flow record search rca-demo"
 flow record search rca-demo all 10 | tee /tmp/search.json
 
 step "funding: what an agentic process on this box would run on"
-curl -s "http://127.0.0.1:$PORT/api/v1/graph/compute_node/@local/llm-endpoint" \
+curl -s -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/compute_node/@local/llm-endpoint" \
   | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print('hub_logged_in', d['hub_logged_in']); print('resolved', json.dumps(d.get('resolved'))[:400])"
 
 step "an agentic process in the project SEES the installed skill"
 PROJECT_ID=$(python3 -c "import json;print(json.load(open('/tmp/install.json'))['project_id'])")
-AP=$(curl -s -X POST "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
+AP=$(curl -s -X POST -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
   -d "{\"worker_type\":\"claude_code\",\"pty_mode\":false,\"workdir\":\"$HOME/Flowpad workspace/demo\",\"project_id\":\"$PROJECT_ID\",\"name\":\"sees-the-skill\",\"cli_config\":{\"model\":\"anthropic/claude-haiku-4.5\"}}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['id'])")
 echo "process $AP"
-curl -s -X POST "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP/execute" -H 'Content-Type: application/json' \
+curl -s -X POST -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP/execute" -H 'Content-Type: application/json' \
   -d '{"instruction":"Use the rca-demo skill on this log, then reply with only the RCA line it prescribes:\n\nFAILED tests/test_math.py::test_divide - ZeroDivisionError: division by zero\n  File \"src/math.py\", line 12, in divide\n    return a / b\n"}' | head -c 300; echo
 # A headless turn is over when its transcript carries claude's `result` line
 # (the process row itself stays `running` between turns).
 TRANSCRIPT=""
 for i in $(seq 1 240); do
-  SESSION=$(curl -s "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'].get('session_id') or '')")
+  SESSION=$(curl -s -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'].get('session_id') or '')")
   TRANSCRIPT=$(ls "$HOME"/.claude/projects/*/"$SESSION".jsonl 2>/dev/null | head -1 || true)
   [ -n "$TRANSCRIPT" ] && grep -q '"type":"result"' "$TRANSCRIPT" && break
   sleep 2
 done
-echo "process ended as: $(curl -s "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'].get('status'))")"
+echo "process ended as: $(curl -s -H "$(gate)" "http://127.0.0.1:$PORT/api/v1/graph/agentic_process/$AP" | python3 -c "import sys,json; print(json.load(sys.stdin)['data'].get('status'))")"
 echo "transcript: $TRANSCRIPT"
 if [ -n "$TRANSCRIPT" ]; then
   echo "--- Skill invocations:"; grep -o '"name":"Skill","input":{[^}]*}' "$TRANSCRIPT" | head -3 || true

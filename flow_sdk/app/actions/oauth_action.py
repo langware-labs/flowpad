@@ -470,7 +470,12 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
                 # sitting on the hub with the connection reading MISSING. A
                 # ``code`` flow tells the client to drive ``wait-callback``,
                 # which polls the hub and adopts the token into local SOD.
-                return ApiSuccessResponse(data={**hub_payload, "kind": OAuthFlowKind.CODE.value})
+                from flow_sdk.cli.auth.cloud_urls import wrap_url_auth_gate  # noqa: PLC0415
+
+                # Through /auth/gate: the provider returns the browser to this host,
+                # which refuses it without the gate cookie.
+                auth_url = wrap_url_auth_gate(str(hub_payload.get("auth_url") or ""))
+                return ApiSuccessResponse(data={**hub_payload, "auth_url": auth_url, "kind": OAuthFlowKind.CODE.value})
 
         # The hub cannot carry this flow — unreachable, or its callback host is
         # not serving. Either way it is "hub unavailable": a provider with a

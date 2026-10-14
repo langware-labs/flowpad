@@ -92,6 +92,7 @@ The backend is instance-scoped. Read the port from the instance's `server.json`:
 ```bash
 PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); print(json.load(open(pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'))['port'])")
 BASE="http://localhost:$PORT/api/v1"
+GATE="X-Cookie-Gate: $(flow auth get-cookie-gate 2>/dev/null)"   # the backend refuses requests without its token
 ```
 
 If `server.json` is missing, that instance's backend is not running — stop and tell the user.
@@ -102,7 +103,7 @@ If the user gave an explicit conversation id (or a `conversation-<uuid>` TypeId)
 Otherwise resolve by participant or title from the local conversation list:
 
 ```bash
-curl -s --max-time 15 "$BASE/graph/conversation" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/conversation" | python3 -c "
 import json,sys
 needle = 'NEEDLE'.lower()   # participant email/name fragment or title fragment
 for c in json.load(sys.stdin)['data']:
@@ -120,7 +121,7 @@ for c in json.load(sys.stdin)['data']:
 ## Step 2 — check cloud login (sends require it)
 
 ```bash
-curl -s --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
+curl -s -H "$GATE" --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
 ```
 
 If `logged_in` is not `True`, stop and ask the user to sign in (Flowpad UI cloud sign-in, or
@@ -148,7 +149,7 @@ On a source channel (email, Slack, WhatsApp …) answer through the channel inst
 Multipart when the send uploads files:
 
 ```bash
-curl -s --max-time 15 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
+curl -s -H "$GATE" --max-time 15 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
   -F 'message=<short intro text for the recipient>' \
   -F "files=@/abs/path/to/doc.md" \
   # repeat -F "files=@..." per extra file
@@ -159,7 +160,7 @@ A JSON body is accepted for everything that is not a file upload, and is the rig
 long multi-line text — quoting a prompt through repeated `-F` flags is where these sends break:
 
 ```bash
-curl -s --max-time 180 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
+curl -s -H "$GATE" --max-time 180 -X POST "$BASE/graph/conversation/<CONV_ID>/add_message" \
   -H 'Content-Type: application/json' --data @payload.json
 # payload.json: {"text": "<what the human reads>", "prompt_text": "<what they run>"}
 ```
@@ -185,7 +186,7 @@ Fall back to walking the conversation when the response is missing the id, then 
 attachment and upload state on the row itself:
 
 ```bash
-curl -s --max-time 15 "$BASE/graph/conversation/<CONV_ID>" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/conversation/<CONV_ID>" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)['data']
 ids=d.get('message_ids') or []
@@ -193,7 +194,7 @@ ids=json.loads(ids) if isinstance(ids,str) else ids
 print(ids[-1]['typeid'])
 "
 # then, with FM_ID = uuid part of that typeid:
-curl -s --max-time 15 "$BASE/graph/flow_message/<FM_ID>" | python3 -c "
+curl -s -H "$GATE" --max-time 15 "$BASE/graph/flow_message/<FM_ID>" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)['data']
 print('delivery_status:', d.get('delivery_status'), '| body_status:', d.get('body_status'))

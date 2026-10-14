@@ -687,10 +687,10 @@ def auth_set_cookie_gate(
 
     Example: flow auth set-cookie-gate <secret>
     """
-    from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+    from flow_sdk.instance_settings.cookie_gate import set_cookie
 
     try:
-        set_cookie_gate(value)
+        set_cookie(value)
     except ValueError as e:
         # Empty value: arming on "" would store a secret that reads as unset,
         # leaving the instance open while looking locked. Or DesktopGateRefused:
@@ -715,6 +715,22 @@ def auth_clear_cookie_gate():
         # Distinguished from success on purpose: "already open" and "I just
         # opened it" are different facts about the machine.
         typer.echo("⚠ Cookie gate was not armed")
+
+
+@auth_app.command("get-cookie-gate")
+def auth_get_cookie_gate():
+    """
+    Print this instance's gate token, for a script that calls the backend itself.
+
+    Example: curl -H "X-Cookie-Gate: $(flow auth get-cookie-gate)" http://localhost:9007/health/status
+    """
+    from flow_sdk.instance_settings.cookie_gate import get_header
+
+    header = get_header()
+    if header is None:
+        typer.echo("✗ No cookie-gate token (cannot read or create it)", err=True)
+        raise typer.Exit(1)
+    typer.echo(header.value)
 
 
 @auth_app.command("hub-login")

@@ -30,6 +30,7 @@
     "semver.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
+    "cookie-gate.js",
     "loading.html",
     "loading-renderer.js",
     "loading-logo.png",
