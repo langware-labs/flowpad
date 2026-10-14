@@ -3135,6 +3135,7 @@ msgstr ""
 msgid "API Timeout"
 msgstr "פסק זמן ל-API"
 
+#: src/components/asset-counters/app-counters.tsx
 #: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
@@ -3227,6 +3228,10 @@ msgstr ""
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "אפליקציות"
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Apps in {projectName} with a deployment"
+msgstr ""
 
 #: src/components/account/system-log.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -8453,6 +8458,7 @@ msgid "Deployment WorldView"
 msgstr "מבט־על של הפריסה"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -9858,6 +9864,14 @@ msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
+msgstr ""
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Every app in {projectName}"
+msgstr ""
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Every app on this machine"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
@@ -13324,6 +13338,7 @@ msgid "kind"
 msgstr "סוג"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -19454,6 +19469,7 @@ msgid "project"
 msgstr "פרויקט"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -21722,6 +21738,7 @@ msgid "running"
 msgstr "פועל"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -27051,6 +27068,7 @@ msgid "total"
 msgstr "סה״כ"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
