@@ -14058,6 +14058,7 @@ msgstr "טוען השוואה…"
 
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Loading conversation…"
 msgstr "טוען שיחה…"
 
