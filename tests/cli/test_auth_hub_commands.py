@@ -1,4 +1,4 @@
-"""`flow auth` — the four commands the HUB drives, never a human.
+"""`flow auth` — the four commands the HUB drives, never a human, and ``get-cookie-gate`` for scripts.
 
 These exist so the hub has a channel into a running box that does not require
 the box's HTTP server to be up and answering. The loopback
@@ -118,6 +118,16 @@ def test_clear_cookie_gate_succeeds_on_an_instance_that_was_never_armed():
 
     assert result.exit_code == 0
     assert "not armed" in result.output
+
+
+# ── get-cookie-gate ───────────────────────────────────────────────────────────
+
+
+def test_get_cookie_gate_prints_the_token_the_backend_checks(local_gate):
+    result = runner.invoke(app, ["auth", "get-cookie-gate"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == local_gate.read_text(encoding="utf-8")
 
 
 # ── hub-login ─────────────────────────────────────────────────────────────────
