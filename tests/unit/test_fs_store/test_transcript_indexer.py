@@ -585,6 +585,26 @@ async def test_index_single_markdown_creates_row(tmp_path: Path, clean_db) -> No
 
 
 @pytest.mark.asyncio
+async def test_index_single_claude_session_indexes_only_that_session(tmp_path: Path, clean_db) -> None:
+    """Sharing one session indexes that session, not its siblings: the forced
+    project walk re-summarized every transcript in the folder to index the one
+    being shared."""
+    from flow_sdk.builtin.claude_session import ClaudeSession
+    from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (
+        _index_single_claude_session,
+    )
+
+    ids = [str(uuid.uuid4()) for _ in range(3)]
+    paths = [_write_transcript(tmp_path, session_id=sid, plan_file_path=None) for sid in ids]
+
+    await _index_single_claude_session(paths[1])
+
+    assert await ClaudeSession.get_one({"id": ids[1]}) is not None
+    assert await ClaudeSession.get_one({"id": ids[0]}) is None
+    assert await ClaudeSession.get_one({"id": ids[2]}) is None
+
+
+@pytest.mark.asyncio
 async def test_index_single_skill_creates_row(tmp_path: Path, clean_db) -> None:
     """A fresh skill folder under .claude/skills/<name>/ should become a Skill
     entity row when _index_single_skill is invoked on either the dir or the
