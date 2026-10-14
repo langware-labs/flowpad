@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
 const { SEMVER_RE, isNewer } = require('./semver');
+const updateTest = require('./update-test');
 
 const execFileAsync = promisify(execFile);
 
@@ -76,6 +77,16 @@ const PYPI_PACKAGE = 'flowpad';
 const PYTHON_VERSION = '3.10';
 
 const API_PREFIX = '/api/v1';
+
+// Update-cycle harness (FLOWPAD_UPDATE_TEST=1): pin the exact spec that
+// install/upgrade/repair resolve (e.g. "flowpad==0.2.52") so a scenario
+// controls which backend version lands. Normal runs keep the given default.
+function installSpec(defaultSpec) {
+  if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_BACKEND_SPEC) {
+    return process.env.FLOWPAD_UPDATE_TEST_BACKEND_SPEC;
+  }
+  return defaultSpec;
+}
 
 
 // Working directory for the `flow start` backend. The FS indexer treats its
@@ -676,7 +687,7 @@ class UvManager {
    */
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--force']);
+    await this._uvToolInstallForce(['tool', 'install', installSpec(PYPI_PACKAGE), '--python', PYTHON_VERSION, '--force']);
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
@@ -1088,7 +1099,12 @@ class UvManager {
    */
   async getLatestPypiVersion() {
     try {
-      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
+      // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): read "latest" from a
+      // local stub instead of pypi.org, so scenarios control the verdict.
+      const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
+        ? process.env.FLOWPAD_PYPI_JSON_URL
+        : `https://pypi.org/pypi/${PYPI_PACKAGE}/json`;
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) {
@@ -1203,16 +1219,22 @@ class UvManager {
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      const { response } = await require('electron').dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Available',
-        message: `A new version of FlowPad is available (${latest}).`,
-        detail: status.currentVersion
-          ? `You are running version ${status.currentVersion}.`
-          : 'Your current installation could not be verified and may be incomplete.',
-        buttons: ['Upgrade', 'Later'],
-        defaultId: 0,
+      let response = updateTest.answerFor('backend', {
+        backend: status.currentVersion || null,
+        backendLatest: latest,
       });
+      if (response === null) {
+        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Update Available',
+          message: `A new version of FlowPad is available (${latest}).`,
+          detail: status.currentVersion
+            ? `You are running version ${status.currentVersion}.`
+            : 'Your current installation could not be verified and may be incomplete.',
+          buttons: ['Upgrade', 'Later'],
+          defaultId: 0,
+        }));
+      }
       if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
 
       // User chose Upgrade — show loading screen and wait for its IPC listener.
@@ -1328,10 +1350,11 @@ class UvManager {
    */
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
-    await this._uvToolInstallForce(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', PYTHON_VERSION, '--force']);
+    await this._uvToolInstallForce(['tool', 'install', installSpec(`${PYPI_PACKAGE}@latest`), '--python', PYTHON_VERSION, '--force']);
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+    updateTest.event('backend-upgraded', { backend: this.getInstalledVersionSync() || null });
   }
 
   /**
@@ -1343,7 +1366,7 @@ class UvManager {
    */
   async reinstall() {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
-    await this._uvToolInstallForce(['tool', 'install', PYPI_PACKAGE, '--python', PYTHON_VERSION, '--reinstall', '--force']);
+    await this._uvToolInstallForce(['tool', 'install', installSpec(PYPI_PACKAGE), '--python', PYTHON_VERSION, '--reinstall', '--force']);
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
