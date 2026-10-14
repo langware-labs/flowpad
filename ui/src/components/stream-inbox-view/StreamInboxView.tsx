@@ -81,6 +81,7 @@ import {
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
+import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
 
@@ -1306,6 +1307,7 @@ export function StreamInboxView({
                   <UsersRound className="me-1 h-3.5 w-3.5" />
                   <Trans>New group</Trans>
                 </Button>
+                <ProjectUploadMessageButton />
               </div>
             )}
             {/* RIGHT — actions for the current view */}
