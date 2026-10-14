@@ -131,7 +131,7 @@ If everything is blocked, a `policyBlocked` error is raised and the panel hides 
 
 ### 3.6 Secrets in logs
 `installLogRedaction(log)` is called before the first log line; `redactUrl` is applied wherever a URL is logged.
-In Share, `support-bundle.redact` also covers `fp_(live|test)_`.
+In "Send Report", `support-bundle.redact` also covers `fp_(live|test)_`.
 
 ### 3.7 Send Report
 The zip is built locally (`MAX_LOG_BYTES` = 2 MB per file; newest desktop + server + monitor logs, secrets masked)
