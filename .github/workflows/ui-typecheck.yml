@@ -42,7 +42,7 @@ concurrency:
 jobs:
   type-check:
     name: ui type-check (undefined names)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: ui
