@@ -103,7 +103,8 @@ async def run_then(trigger: Any, *, inputs: dict[str, Any], scope_key: str = "")
         inputs=inputs,
         resolve_op=resolve_op,
         resolve_wizard=_resolve_wizard,
-        activity_path=f"automation/{getattr(trigger, 'id', '') or spec.name}",
+        # A flat root, like ``setup-<id>``: a ``/`` would make an unclaimed parent nothing ends.
+        activity_path=f"automation-{getattr(trigger, 'id', '') or spec.name}",
         subject_entity=str(getattr(trigger, "typeid", "") or "") or None,
     )
 

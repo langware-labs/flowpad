@@ -7,6 +7,8 @@
  */
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Activity, isTerminal } from '@sdk/activity';
+import { Button } from '@src/components/ui/button';
 import { useActivityReceipt, useActivitySpec } from '@src/store/activity-store';
 import { useActivityDetailsStore } from '@src/store/use-activity-details-store';
 import { useElapsedMs } from '@src/hooks/useActivity';
@@ -48,6 +50,18 @@ export function ActivityDetailsModalRoot() {
             <p className="px-3 py-2 text-xs italic text-muted-foreground">Nothing is running at this address anymore.</p>
           )}
         </div>
+        {live && !isTerminal(live) && (
+          <div className="flex justify-end">
+            <Button
+              variant="destructive"
+              size="sm"
+              data-testid="activity-details-terminate"
+              onClick={() => void Activity.get(live.path, live.subject_entity ?? null).cancel('Terminated by user')}
+            >
+              Terminate
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
