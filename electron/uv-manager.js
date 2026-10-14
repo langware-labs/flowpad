@@ -1694,6 +1694,59 @@ class UvManager {
   /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
+  /**
+   * FIRST-install preflight (Windows): can the interpreter uv will build the engine on even RUN?
+   *
+   * Application control (Smart App Control, an organization's App Control policy) refuses the unsigned
+   * CPython of uv's python-build-standalone as a whole or module by module. `uv tool install` finds out only
+   * after it has resolved, downloaded and unpacked ~160 packages — and then FAILS, and the signed runtime
+   * (runtime-repair.js) is installed afterwards. Running the interpreter once first (`python -I -c pass`,
+   * a few seconds) tells at once: a blocked interpreter throws the same error the install would have
+   * (`fromInstall`, the policy text in `stderr`), which the caller sends to the repair directly.
+   *
+   * Anything else — offline, uv's python install failing, a timeout — is NOT a verdict: the real install runs
+   * and reports its own error. Never throws for those; returns `{ ok: true, skipped: true }`.
+   */
+  async probeManagedInterpreter() {
+    if (!(this._isWin !== undefined ? this._isWin : IS_WIN)) return { ok: true, skipped: true };
+    const pin = await this._pythonPinForUpgrade();
+    if (path.win32.isAbsolute(String(pin))) return { ok: true, skipped: true, why: 'a repaired runtime is the pin' };
+    let python;
+    try {
+      // `--no-bin`: no python3.x.exe shims in ~/.local/bin (they would collide with the user's own).
+      try {
+        await this._uv(['python', 'install', pin, '--no-bin'], { timeout: 240000 });
+      } catch (err) {
+        if (!/unexpected argument '--no-bin/.test(String(err.stderr || err.message))) throw err;
+        await this._uv(['python', 'install', pin], { timeout: 240000 }); // an old uv without --no-bin
+      }
+      const found = await this._uv(['python', 'find', pin, '--managed-python'], { timeout: 30000 });
+      python = String(found.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop();
+    } catch (err) {
+      this.log.info(`[uv] interpreter preflight skipped: ${String(err.message || err).split('\n')[0]}`);
+      return { ok: true, skipped: true };
+    }
+    if (!python || !fs.existsSync(python)) return { ok: true, skipped: true };
+    try {
+      await (this._execFile || execFileAsync)(python, ['-I', '-c', 'pass'], { timeout: 20000, windowsHide: true });
+      this.log.info(`[uv] interpreter preflight: ${python} runs`);
+      return { ok: true, python };
+    } catch (err) {
+      if (!isPolicyBlockError(err)) {
+        this.log.info(`[uv] interpreter preflight inconclusive (${String(err.message || err).split('\n')[0]}): the install decides`);
+        return { ok: true, skipped: true };
+      }
+      this.log.warn(`[uv] interpreter preflight: Windows application control blocks ${python}`);
+      // The shape of uv's own message for it, so the one detector (policyBlockFromInstallError) reads it like the real thing.
+      const text = `error: Failed to query Python interpreter at \`${python}\`\n  cause: An Application Control policy has blocked this file. (os error 4551)`;
+      const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${text}`);
+      blocked.stderr = text;
+      blocked.code = 2;
+      blocked.preflight = true;
+      throw blocked;
+    }
+  }
+
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     const pin = await this._pythonPinForUpgrade();
@@ -2641,7 +2694,7 @@ class UvManager {
    * are the caller's (main.js owns the health gate). Resolves the repair result; rejects with
    * `.step`, `.rolledBack`, `.policyBlocked` set, after recording the attempt.
    */
-  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck } = {}) {
+  async repairRuntime({ versions, onProgress = () => {}, startBackend, healthCheck, skipStaging = false } = {}) {
     if (!IS_WIN) throw new Error('the runtime repair is Windows-only');
     this._assertOpen('repair the runtime');
     const paths = this._runtimePaths();
@@ -2666,6 +2719,7 @@ class UvManager {
       versions,
       state: this._runtimeState(),
       saveState: (s) => this._saveRuntimeState(s),
+      skipStaging,
       onProgress,
       log: this.log,
     });

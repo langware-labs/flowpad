@@ -279,6 +279,7 @@ async function performRuntimeRepair({
   versions,
   state,
   saveState,
+  skipStaging = false,
   manifest = PYTHON_RUNTIME_MANIFEST,
   requiredImports = REQUIRED_IMPORTS,
   onProgress = () => {},
@@ -365,11 +366,18 @@ async function performRuntimeRepair({
     //    the tool venv. The working installation is untouched until this passes — the failure
     //    that started all this (uvicorn → multiprocessing.connection → _multiprocessing) is
     //    reproduced here, against the real packages, before anything is replaced.
-    step('stage', 'checking the FlowPad engine imports on the repaired runtime (staging, the current install is untouched)');
-    try {
-      await io.stageEngine(python);
-    } catch (e) {
-      throw fail('stage', `the engine does not load on the repaired runtime: ${e.message}`, { policyBlocked: !!e.policyBlocked });
+    //    Skipped when there is NO engine yet (the first install was blocked): nothing to protect, and the scratch
+    //    venv installs ~160 packages only to throw them away before the real install does the same (about 2 of
+    //    the 6 minutes). The real install and its health check are the verdict then.
+    if (skipStaging) {
+      step('stage', 'skipped: there is no engine to protect (first install)');
+    } else {
+      step('stage', 'checking the FlowPad engine imports on the repaired runtime (staging, the current install is untouched)');
+      try {
+        await io.stageEngine(python);
+      } catch (e) {
+        throw fail('stage', `the engine does not load on the repaired runtime: ${e.message}`, { policyBlocked: !!e.policyBlocked });
+      }
     }
     // 6. Reinstall the engine on it (the previous venv is replaced in place by uv).
     step('install-engine', 'reinstalling the FlowPad engine on the repaired runtime');
