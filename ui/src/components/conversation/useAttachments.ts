@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
+import { FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, TypeId, type HubClientErrorInfo } from '@sdk';
 import {
   AttachmentType,
   BodyStatus,
@@ -14,7 +14,7 @@ import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-ac
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
-import { ANSWER_MARKER_TYPE, CALL_MARKER_TYPE, REPLY_MARKER_TYPE } from './attachment-plumbing';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 /** TYPE_ID attachment types the send path injects as structural self-refs —
  *  every message auto-carries ``conversation-<id>`` + ``flow_message-<id>``
@@ -43,8 +43,8 @@ const STRUCTURAL_ATTACHMENT_TYPES = new Set([
   // The session card is the session's one entry in the thread.
   'remote_worker_session',
   // A prompt call and its answer: the call card is their one rendering.
-  CALL_MARKER_TYPE,
-  ANSWER_MARKER_TYPE,
+  PROCESS_CALL_TYPE,
+  RETURNED_VALUE_TYPE,
 ]);
 
 /** One downloadable attachment, resolved into everything a chip needs to render

@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 from flow_sdk.core.compute.process_step import launch_step_process
-from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, result_contract
+from flow_sdk.core.compute.receipt import read_step_result, result_contract
 from flow_sdk.schema.data_spec.compute_op_spec import AgentOp
 from flow_sdk.schema.data_spec.process_call_spec import ProcessCall
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, PromptResult, ReturnedValue
@@ -29,8 +29,7 @@ async def run_process_call(call: ProcessCall, *, workdir: Path) -> ReturnedValue
     if not isinstance(exe, AgentOp):
         return ReturnedValue.not_applicable("This kind of call cannot run here yet.")
     with tempfile.TemporaryDirectory(prefix="process-call-") as tmp:
-        path = Path(tmp) / "result.json"
-        clear_receipt(path)
+        path = Path(tmp) / "result.json"  # a fresh folder: no stale receipt to clear
         said = await launch_step_process(
             agent=exe.agent,
             prompt=exe.prompt + result_contract(path, OUTCOME_KEY, "<one sentence: what you did>"),

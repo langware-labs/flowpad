@@ -731,13 +731,11 @@ export function FlowMessageBubble({
     <>
       {promptCall && (
         <PromptCallCard
-          call={promptCall.call}
-          running={promptCall.running}
+          {...promptCall}
           messageId={messageId}
           conversationId={fm.conversation_id ?? ''}
           role={isCurrentUser ? 'sender' : 'recipient'}
           otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
-          answer={promptCall.answer}
         />
       )}
       {attachmentFooter}
