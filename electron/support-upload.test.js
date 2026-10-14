@@ -44,7 +44,7 @@ const fakeFetch = (status, body) => {
         info: { app: '0.2.213', platform: 'darwin arm64', instance: 'prod' }, fetchImpl: f,
       });
       eq(r, { ok: true, submissionId: 'sub-42' });
-      eq(f.calls[0].url, 'https://hub.test/api/v1/support-bundle');
+      eq(f.calls[0].url, 'https://hub.test/api/v1/diagnosis-report/bundle');
       eq(f.calls[0].opts.method, 'POST');
       eq(f.calls[0].opts.headers['Content-Type'], 'application/zip');
       eq(f.calls[0].opts.headers['x-flowpad-email'], 'u@x.y');
