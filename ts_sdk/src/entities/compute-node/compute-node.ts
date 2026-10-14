@@ -104,6 +104,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   auto_login?: boolean;
+  allow_login?: boolean;
+  login_roles?: string[];
   logged_in_user?: string | null;
   static type: string = 'compute_node';
 
@@ -137,6 +139,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     // dropped it, and every card rendered "signed out". Every other field here
     // is assigned for the same reason; these two were simply missed.
     this.auto_login = entity.auto_login;
+    this.allow_login = entity.allow_login;
+    this.login_roles = entity.login_roles;
     this.logged_in_user = entity.logged_in_user;
   }
 

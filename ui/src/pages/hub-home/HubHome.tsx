@@ -26,6 +26,7 @@ import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
 import { ShareSandboxDialog } from './ShareSandboxDialog';
+import { LoginAccessDialog } from './LoginAccessDialog';
 import { AddMachineDialog } from '@src/components/hub/AddMachineDialog';
 import { TokenPlanCard } from '@src/components/token-plan/TokenPlanCard';
 import { HUB_HOME_CARD } from './card-style';
@@ -41,6 +42,7 @@ import {
   Loader2,
   LogOut,
   Monitor,
+  ShieldCheck,
   Trash2,
   UserPlus,
 } from 'lucide-react';
@@ -304,6 +306,7 @@ export function HubHome() {
   // The sandbox whose share dialog is open, or null. Holds the node itself so
   // the dialog can read `auto_login` without a second fetch.
   const [sharing, setSharing] = useState<ComputeNode | null>(null);
+  const [editingLogin, setEditingLogin] = useState<ComputeNode | null>(null);
   // The never-launched sandbox whose launch dialog is open, or null. Launching
   // asks first because it is the click that starts costing money, and because
   // auto-login can only be chosen before the box signs anyone in. Opening an
@@ -637,6 +640,17 @@ export function HubHome() {
                   >
                     <UserPlus className="h-4 w-4" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingLogin(d)}
+                    disabled={!cardEnabled(d) || !currentUser}
+                    aria-label={t`Login access`}
+                    title={t`Who may log in to this sandbox`}
+                    data-testid="sandbox-login-access"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
+                  >
+                    <ShieldCheck className="h-4 w-4" />
+                  </button>
                   {/* Sign THIS box out — shown only when the box is running the
                       session of the person looking at the page.
 
@@ -767,6 +781,17 @@ export function HubHome() {
         // Only opens the launcher — the share dialog closes itself, as it does on
         // every other exit.
         onLaunchInstead={() => setLaunching(sharing)}
+      />
+
+      {/* Who may sign the box in from a browser. Owner-only on the hub; the
+          dialog shows the hub's refusal to anyone else. */}
+      <LoginAccessDialog
+        open={!!editingLogin}
+        onOpenChange={(o) => {
+          if (!o) setEditingLogin(null);
+        }}
+        sandbox={editingLogin}
+        onSaved={() => void refetch()}
       />
 
       {/* Upgrading stops the app inside the box, reinstalls it from PyPI and
