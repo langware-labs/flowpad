@@ -792,9 +792,9 @@ def _report(row: Row, *, json_output: bool) -> None:
 def _chooser_url(port: int) -> str:
     """The chooser's address, entered through ``/auth/gate``: the browser's first contact is
     necessarily cookie-less, so a bare URL would open onto a 403 page instead of the chooser."""
-    from flow_sdk.cli.auth.cloud_urls import gated
+    from flow_sdk.cli.auth.cloud_urls import wrap_url_auth_gate
 
-    return gated(_CHOOSER_PATH, f"http://127.0.0.1:{port}")
+    return wrap_url_auth_gate(_CHOOSER_PATH, f"http://127.0.0.1:{port}")
 
 
 def _serve_chooser_here() -> int:

@@ -116,7 +116,7 @@ async def gate(request: Request, next: str = Query(None)):
 
     On this machine (a loopback host) it sets the local gate's cookie, and ``next``
     may be an absolute ``http(s)`` URL: the backend opens the hub login and OAuth
-    authorize pages through here (``cloud_urls.gated``), so the return to this host
+    authorize pages through here (``cloud_urls.wrap_url_auth_gate``), so the return to this host
     carries the cookie. Being reachable only with the token is what keeps that
     redirect from being an open one.
     """

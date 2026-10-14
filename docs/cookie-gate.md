@@ -97,7 +97,7 @@ redirects to `next`: a path on this instance, or an absolute `http(s)` URL.
 The absolute form is what makes login and OAuth work in a browser that never opened Flowpad. The
 hub, Auth0 and the OAuth providers return the browser to `127.0.0.1:<port>/auth/login_callback` or
 `/auth/oauth/*`, and those returns would be refused without the cookie. So the CLI's login URL, the
-hub code-flow OAuth URL and the LLM chooser are all built through `cloud_urls.gated(url)`, which
+hub code-flow OAuth URL and the LLM chooser are all built through `cloud_urls.wrap_url_auth_gate(url)`, which
 enters through `/auth/gate` first; the provider's return is a top-level GET, so the `Lax` cookie rides
 it.
 
