@@ -102,18 +102,23 @@ class ActivityProgressMonitor:
             key = (subject_entity, SEP.join(segs))
             existing = self._nodes.get(key)
             if existing is not None:
+                existing._implicit = False  # addressed directly: somebody's, not a grouping
                 return existing
-            root = self._root(segs[0], subject_entity)
-            node = root
-            for seg in segs[1:]:
+            # Ancestors minted on the way down are groupings until somebody addresses them.
+            node = self._root(segs[0], subject_entity, implicit=len(segs) > 1)
+            for depth, seg in enumerate(segs[1:], start=2):
+                fresh = seg not in node._children
                 node = node._child_segment(seg)
+                if fresh and depth < len(segs):
+                    node._implicit = True
             return node
 
-    def _root(self, name: str, subject_entity: Optional[str]) -> Activity:
+    def _root(self, name: str, subject_entity: Optional[str], *, implicit: bool = False) -> Activity:
         key = (subject_entity, name)
         root = self._roots.get(key)
         if root is None:
             root = Activity(monitor=self, path=name, subject_entity=subject_entity)
+            root._implicit = implicit
             self._roots[key] = root
             self._nodes[key] = root
         return root
@@ -161,7 +166,6 @@ class ActivityProgressMonitor:
                 self.drop(key[1], subject_entity=key[0])
             node = self.activity(key[1], subject_entity=key[0])
             node.claim_deadline = time.monotonic() + timeout_seconds
-            node._own = True
             return node
 
     # ------------------------------------------------------------------ emission
@@ -188,7 +192,6 @@ class ActivityProgressMonitor:
         tuple is swapped atomically, so the common case — a walk in a process with no sink
         attached — costs one integer add.
         """
-        node._own = True
         root = node.root
         root.seq += 1
         subscribers = self._subscribers

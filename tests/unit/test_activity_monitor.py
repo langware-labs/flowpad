@@ -373,6 +373,13 @@ def test_a_grouping_root_waits_for_every_child_and_fails_if_one_did():
     assert monitor.node("group") is None
 
 
+def test_a_parent_only_read_before_the_claim_is_still_theirs():
+    Activity.get("read")
+    monitor.try_claim("read/x").done()
+    root = monitor.node("read")
+    assert root is not None and not root.is_terminal
+
+
 def test_a_parent_somebody_addressed_is_never_ended_for_them():
     Activity.get("owned").label("Owned")
     monitor.try_claim("owned/x").done()
