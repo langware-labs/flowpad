@@ -681,7 +681,8 @@ async def _start_transcript_streamer() -> None:
         # a cancelled walk kills the child with it (``stream_ndjson``).
         global _TRANSCRIPT_CATCH_UP_TASK
         _TRANSCRIPT_CATCH_UP_TASK = _asyncio.create_task(
-            _transcript_catch_up_walk(), name="transcript-catch-up",
+            _transcript_catch_up_walk(),
+            name="transcript-catch-up",
         )
         print("  Transcript streamer: started (catch-up scheduled in background)")
     except Exception:
