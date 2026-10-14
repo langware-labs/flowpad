@@ -108,10 +108,18 @@ async def _index_single_claude_md(md_path: Path) -> None:
 
 async def _index_single_claude_session(jsonl_path: Path) -> None:
     """``~/.claude/projects/<encoded>/<sessionId>.jsonl`` → root = the encoded
-    project dir (the PROJECT node ``claude_sessions_fn`` expands)."""
+    project dir (the PROJECT node ``claude_sessions_fn`` expands), narrowed to
+    this one file: the forced walk would otherwise re-summarize every sibling
+    transcript (hundreds, gigabytes) to index the one being shared."""
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
+
+    target = jsonl_path.resolve()  # FSRef resolves its path; a symlinked ~/.claude must still match
+
+    def only_this_session(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
+        return [r for r in claude_sessions_fn(nodes, opts) if Path(r.path) == target]
+
     await _index_single_file(
-        jsonl_path.parent, claude_sessions_fn, RecordType.CLAUDE_SESSION,
+        jsonl_path.parent, only_this_session, RecordType.CLAUDE_SESSION,
         root_record_type=RecordType.PROJECT,
     )
 
