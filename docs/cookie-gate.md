@@ -104,7 +104,7 @@ With the switch unset, a token that can be neither read nor created refuses ever
 | A browser sent to log in or connect an account | `/auth/gate` sets the cookie first (below) |
 | The browser coming back from a loopback OAuth provider | the callback listener forwards it to `/auth/oauth/callback` with `?cookie-gate=` |
 | The hub, over a box's loopback | `X-Cookie-Gate` (`ComputeNode.http`, `_curl_status`) |
-| Scripts | `-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`, or the `flow` CLI |
+| Scripts | `-H "X-Cookie-Gate: $(flow auth get-cookie-gate)"`, or the `flow` CLI |
 
 ## `/auth/gate`
 

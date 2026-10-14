@@ -122,9 +122,8 @@ trap cleanup EXIT
 LOCAL_SERVER_PORT=$PORT "$PYTHON" -m flow_sdk.server.run &
 SERVER_PID=$!
 
-# The server refuses requests without its cookie-gate token, which it writes on the first
-# request it serves; re-read it per call.
-gate() { echo "X-Cookie-Gate: $(cat "${FLOW_HOME:-$HOME/.flow}/instances/${FLOW_INSTANCE:-prod}/.cookie_gate" 2>/dev/null)"; }
+# The server refuses requests without its cookie-gate token; `flow` hands it out.
+gate() { echo "X-Cookie-Gate: $("$FLOW" auth get-cookie-gate 2>/dev/null)"; }
 
 echo -e "  Waiting for server on port $PORT..."
 HEALTHY=false

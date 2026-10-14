@@ -8,8 +8,8 @@ set -euo pipefail
 export FLOWPAD_HUB_URL="${FLOWPAD_HUB_URL:-http://host.docker.internal:8093}"
 
 step() { echo; echo "──── $*"; }
-# The backend refuses requests without its cookie-gate token (written on its first request).
-gate() { echo "X-Cookie-Gate: $(cat "$HOME/.flow/instances/prod/.cookie_gate" 2>/dev/null)"; }
+# The backend refuses requests without its cookie-gate token; `flow` hands it out.
+gate() { echo "X-Cookie-Gate: $(flow auth get-cookie-gate 2>/dev/null)"; }
 
 step "uv tool install flowpad   (from $WHEEL — this tree's build of the same wheel)"
 uv tool install "$WHEEL" 2>&1 | tail -3
