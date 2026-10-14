@@ -145,6 +145,7 @@ async def reindex_paths(
     *,
     mint: bool = True,
     write: bool = True,
+    placed_only: bool = False,
 ) -> ReindexResult:
     """Force-reindex ``paths`` (changed/created) and reconcile ``deleted_paths``.
 
@@ -160,6 +161,11 @@ async def reindex_paths(
 
     ``write=False`` resolves identity without stamping it into the source (a
     source that does not own its bytes — a git working tree under ``reflect``).
+
+    ``placed_only`` mints a file only where the walk would index it — by its name
+    or declared mount, never by extension alone. For a caller handed ARBITRARY
+    written paths (a session's file writes): by extension, every scratch ``.js``
+    became a dynamic workflow owned by no project, and so listed under all of them.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
@@ -178,7 +184,7 @@ async def reindex_paths(
     # folder asset's root would be — so ``resolve_asset`` must not repeat it.
     async def _mint(path: str) -> bool:
         try:
-            resolved = await resolve_asset(path, write=write, known_unowned=True)
+            resolved = await resolve_asset(path, write=write, known_unowned=True, placed_only=placed_only)
         except NotAnAsset:
             return False
         return await index_one(resolved, notify=True) is not None

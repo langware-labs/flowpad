@@ -23,7 +23,11 @@ afterEach(() => {
 /** ``observed``: what the backend answers once the question is open (null: it dropped the verdict). */
 function mount(result: ProjectLoadResult = required, observed: ProjectLoadResult | null = result) {
   vi.spyOn(Project, 'loadState').mockResolvedValue(observed);
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  // The app's own freshness defaults (ts_sdk/src/lazy/queryClient.ts): under them a seeded verdict
+  // counts as fresh for five minutes unless the query itself says otherwise.
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false } },
+  });
   render(
     <QueryClientProvider client={client}>
       <ProjectLoadDialogRoot />

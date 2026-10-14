@@ -38,3 +38,10 @@ def test_sends_reaches_the_wire_but_not_the_manifest(tmp_path):
     ser.store(spec, local_origin_for_path(root))
     doc = json.loads((root / "data_driver.json").read_text())
     assert "sends" not in doc, "a driver fact, not a file fact"
+
+
+def test_featured_is_declared_by_the_manifest_and_reaches_the_wire():
+    """A driver's manifest says it is drawn by default on a stream inbox; the row carries it."""
+    assert DataDriverSpec.model_fields["featured"].default is False
+    assert DataDriver(name="x", featured=True).model_dump(mode="json")["featured"] is True
+    assert DataDriver(name="x").featured is False

@@ -1,6 +1,6 @@
 import { i18n } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
-import { GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
@@ -30,6 +30,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 import type { MessageDescriptor } from '@lingui/core';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import type { WorkerType } from '@src/components/workers/worker-types';
+import { notify } from '@src/notifications';
 
 interface GitPanelProps {
   computeNodeId: string;
@@ -237,12 +240,48 @@ const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string
 );
 
 // ---------------------------------------------------------------------------
+// Review in a worker — the message menu's launch bar, with a git-review prompt.
+// A commit hash reviews that commit; none reviews the uncommitted changes.
+// ---------------------------------------------------------------------------
+
+function reviewPrompt(commit?: string): string {
+  return commit
+    ? `Review the changes in commit ${commit} (git show ${commit}).`
+    : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
+}
+
+const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix: string }> = ({
+  workdir,
+  commit,
+  testIdPrefix,
+}) => {
+  const launch = useCallback(
+    async (workerType: WorkerType) => {
+      try {
+        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+      } catch (err) {
+        console.error('[GitPanel] review launch failed', err);
+        notify.error({ title: t`Failed to start session` });
+      }
+    },
+    [workdir, commit],
+  );
+  return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+};
+
+// ---------------------------------------------------------------------------
 // ↑N badge — click to list the commits it counts (hash + one-liner). Loaded on
 // open, so the 5s status poll never pays for a `git log`.
 // ---------------------------------------------------------------------------
 
-const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number; onSelect: (commit: GitRevision) => void }> = ({
+const UnpushedCommitsBadge: React.FC<{
+  git: GitWorkdir;
+  workdir: string;
+  ahead: number;
+  onSelect: (commit: GitRevision) => void;
+}> = ({
   git,
+  workdir,
   ahead,
   onSelect,
 }) => {
@@ -287,7 +326,11 @@ const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number; onSelect:
         ) : (
           <ul className="py-1">
             {commits.map((c) => (
-              <li key={c.hash} title={`${c.author} · ${new Date(c.date).toLocaleString()}`}>
+              <li
+                key={c.hash}
+                title={`${c.author} · ${new Date(c.date).toLocaleString()}`}
+                className="flex items-center gap-1 pe-2"
+              >
                 <button
                   type="button"
                   onClick={() => onSelect(c)}
@@ -296,6 +339,7 @@ const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number; onSelect:
                   <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.hash.slice(0, 7)}</span>
                   <span className="truncate">{c.message}</span>
                 </button>
+                <ReviewInWorker workdir={workdir} commit={c.hash} testIdPrefix={`git-review-${c.hash.slice(0, 7)}`} />
               </li>
             ))}
           </ul>
@@ -575,6 +619,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
             <span className="text-xs font-medium">
               <Trans>Commit</Trans> <span className="font-mono">{revision.slice(0, 7)}</span>
             </span>
+            <div className="ms-auto">
+              <ReviewInWorker workdir={workdir} commit={revision} testIdPrefix="git-review-commit" />
+            </div>
           </div>
         )}
         {/* Header */}
@@ -643,7 +690,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   </HeaderChip>
                 )}
                 {data && !data.error && data.ahead > 0 && (
-                  <UnpushedCommitsBadge git={git} ahead={data.ahead} onSelect={(commit) => openReview(commit.hash)} />
+                  <UnpushedCommitsBadge git={git} workdir={workdir} ahead={data.ahead} onSelect={(commit) => openReview(commit.hash)} />
                 )}
                 {data && !data.error && data.behind > 0 && (
                   <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
@@ -678,6 +725,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
               )}
             </div>
             <div className="flex items-center gap-1">
+              {!data?.error && (data?.files?.length ?? 0) > 0 && (
+                <ReviewInWorker workdir={workdir} testIdPrefix="git-review-changes" />
+              )}
               {!data?.error && (
                 <Tooltip>
                   <TooltipTrigger asChild>

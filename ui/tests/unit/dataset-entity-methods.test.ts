@@ -249,6 +249,22 @@ describe('hearing that rows changed', () => {
       expect(heard).toHaveLength(1); // nothing moved since the read
     });
 
+    it('a page over many datasets holds ONE reconnect listener, and every dataset still catches up', async () => {
+      const connection = ConnectionManager.getInstance();
+      const before = connection.listenerCount('on_reconnected');
+      const call = answer('v1');
+      const heard: string[] = [];
+      for (let n = 0; n < 12; n += 1) {
+        const ds = new Dataset({ id: `0000000${n.toString(16)}-0000-4000-8000-000000000000`, name: `d${n}` } as never);
+        offs.push(ds.onRowsChanged(() => heard.push(ds.id)));
+      }
+      await settle();
+      expect(connection.listenerCount('on_reconnected') - before).toBeLessThanOrEqual(1);
+      call.mockResolvedValue({ version: 'v2' } as never);
+      await reconnect();
+      expect(new Set(heard).size).toBe(12);
+    });
+
     it('stops checking when unsubscribed, and a server that is away is not an error', async () => {
       const { call, heard } = await listen();
       call.mockRejectedValue(new Error('away'));

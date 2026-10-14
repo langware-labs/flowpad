@@ -20,21 +20,53 @@ class WebappStaticServing(DataSpec):
     root: str = ""
 
 
+class WebappPortSpec(DataSpec):
+    """The port a process is served on in one environment."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    port: int = Field(ge=1, le=65535)
+    #: The process can only run on this port: when another program holds it, starting is an error.
+    #: False: the port is a preference, and a free one is picked when it is taken.
+    required: bool = True
+
+
+class WebappPortsSpec(DataSpec):
+    """A process's port per environment. ``local`` — the machine the process runs on — is the only
+    environment there is; any other key is refused rather than silently ignored."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    local: Optional[WebappPortSpec] = None
+
+
 class WebappProxyServing(DataSpec):
-    """Run a process and relay to it. ``{port}`` in ``start_cmd`` is the port the placement assigns."""
+    """Run a process and relay to it. ``{port}`` in ``start_cmd`` is the port it is started on: the one
+    ``ports`` declares, else a free one."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["proxy"]
     start_cmd: str
     health: str = "/"
-    #: A fixed port when the process cannot be told one; otherwise the placement picks.
+    #: The port the process is served on (``flow_sdk/core/app_ports.py`` is the one rule that reads it).
+    ports: Optional[WebappPortsSpec] = None
+    #: The older spelling of ``ports: {local: {port: N, required: true}}``; still read.
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     #: Installs what the app needs before it can start (``npm ci``). Empty: derived from its package manager
     #: when it has a ``package.json`` (``webapp_setup.install_command``), else nothing to install.
     install_cmd: str = ""
+    #: A path inside the app folder that exists once ``install_cmd`` has run (``frontend/node_modules``).
+    #: Empty: a declared install is judged by its result, the app running.
+    install_check: str = ""
     #: Builds the app before it starts, when it must be. Empty: no build step.
     build_cmd: str = ""
+
+    def declared_port(self) -> Optional[WebappPortSpec]:
+        """The port this process declares here, whichever way it is spelled; None when it declares none."""
+        if self.ports is not None and self.ports.local is not None:
+            return self.ports.local
+        return WebappPortSpec(port=self.port) if self.port else None
 
 
 WebappServing = Annotated[Union[WebappStaticServing, WebappProxyServing], Field(discriminator="type")]

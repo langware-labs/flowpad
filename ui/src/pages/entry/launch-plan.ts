@@ -6,7 +6,7 @@ import { DeepLinkAction } from '@src/navigation/inbound-link';
  * The boundary between a launch's USE stage and its SETUP stage: what the machine opens.
  *
  * USE (the hub's `/launch` page) ends by handing a machine this plan — the desktop through
- * the `flowpad://` deep link, a cloud box through `open-service?next=` — and SETUP (the app's
+ * the `flowpad://` deep link, a cloud box through `open/system?next=` — and SETUP (the app's
  * `action=launch` handler) starts from it. Both legs land on the SAME path, so the setup code
  * is one.
  *

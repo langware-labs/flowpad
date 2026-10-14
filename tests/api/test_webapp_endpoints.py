@@ -462,3 +462,127 @@ async def test_per_app_endpoint_rows_are_dropped_and_every_webapp_is_a_route_aga
     assert {(row.name, row.backend.type) for row in rows} == {("chat", "channel"), ("app", "routed")}
     assert [p.mount for p in await webapp_routes(app.id)] == ["shop"]
     assert await prune_per_app_endpoints() == 0, "a second boot finds nothing to drop"
+
+
+# =============================================================================
+# ports — declared in webapp.json, live in the process table, one rule
+# =============================================================================
+
+
+def _unused_port() -> int:
+    from flow_sdk.core import app_ports
+
+    return app_ports.free_port()
+
+
+async def _stop(app) -> None:
+    from flow_sdk.builtin import webapp_setup
+
+    await webapp_setup.stop(str(app.id))
+
+
+def _served(port: int) -> dict:
+    return {"type": "proxy", "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1",
+            "ports": {"local": {"port": port, "required": True}}}
+
+
+async def test_a_dead_local_address_starts_the_app_that_declares_its_port(client, tmp_path):
+    """An agent's ``auto_open`` names ``http://localhost:<port>``, not an app. The declaration ties the
+    two: the app comes up, and the address answers — instead of "Nothing is answering"."""
+    from flow_sdk.core.navigate import probe_web_url, start_app_at
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "admin"
+    app = await _webapp(project, folder, name="admin", mounts=[{"serving": _served(port)}])
+    (folder / "index.html").write_text("admin")
+    try:
+        # A probe only asks.
+        assert (await probe_web_url(f"http://localhost:{port}/"))[:2] == (ExitCode.NOT_YET, "not_running")
+        # Another project's session does not start this project's app.
+        assert await start_app_at(f"http://localhost:{port}/", str(uuid.uuid4())) is None
+
+        # A caller that can wait (an agent's auto_open) starts the app, and the address answers.
+        assert (await start_app_at(f"http://localhost:{port}/", str(project.id)))[0] is ExitCode.OK
+        code, verdict, detail = await probe_web_url(f"http://localhost:{port}/")
+        assert (code, verdict) == (ExitCode.OK, "ok"), detail
+        [route] = [p for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"]
+        assert route.backend.port == port
+    finally:
+        await _stop(app)
+
+
+async def test_a_dead_local_address_no_app_declares_is_just_dead(client, tmp_path):
+    from flow_sdk.core.navigate import probe_web_url, start_app_at
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    url = f"http://127.0.0.1:{_unused_port()}/"
+    code, verdict, detail = await probe_web_url(url)
+    assert (code, verdict) == (ExitCode.NOT_YET, "not_running") and detail.startswith("Nothing is answering at ")
+    assert await start_app_at(url, str((await _project(tmp_path)).id)) is None
+
+
+async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its_own(client, tmp_path):
+    """An app's API was only ever started on a cloud box: here the page came up alone."""
+    from flow_sdk.builtin import webapp_setup
+
+    page, api = _unused_port(), _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "shop"
+    service = {**_served(api), "start_cmd": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1 --directory ."}
+    app = await _webapp(project, folder, mounts=[{"serving": _served(page)}],
+                        services=[{"name": "api", "protocol": {"spec_kind": "api.rest"}, "serving": service}])
+    (folder / "index.html").write_text("shop")
+    try:
+        started = await webapp_setup.step(str(app.id), "start", check=False)
+        assert started.ok and started.value == str(page), started.detail
+        rows = {row["process"]: row for row in await webapp_setup.ports(str(app.id))}
+        assert (rows["api"]["state"], rows["api"]["port"]) == ("running", api)
+        assert (rows["page"]["state"], rows["page"]["port"]) == ("running", page)
+        endpoints = [e for e in await ServiceEndpoint.get_all() if e.name == "shop-api" and e.webapp_id == str(app.id)]
+        assert len(endpoints) == 1 and endpoints[0].backend.port == api
+
+        listed = (await client.get(f"/api/v1/graph/project/{project.id}/app-ports")).json()["data"]["ports"]
+        assert {(row["app"], row["process"], row["port"]) for row in listed} == {("shop", "api", api), ("shop", "page", page)}
+
+        stopped = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop"})).json()
+        assert stopped["data"]["apps"][0]["ok"], stopped
+        assert not webapp_setup.health_answers(page) and not webapp_setup.health_answers(api)
+
+        again = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop", "restart": True})).json()
+        assert again["data"]["apps"][0]["port"] == str(page), again
+        assert webapp_setup.health_answers(page) and webapp_setup.health_answers(api)
+    finally:
+        await _stop(app)
+
+
+async def test_stopping_an_app_this_project_does_not_have_is_not_found(client, tmp_path):
+    project = await _project(tmp_path)
+    resp = await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "nope"})
+    assert resp.status_code == 404
+
+
+async def test_a_route_whose_port_another_program_took_is_not_shown_as_its_app(client, tmp_path):
+    """The route's port is a copy from when its app last ran. ``flow show webapp --port N`` with a
+    stranger on N now shows the bare server it is — and the app's own route is left as it was."""
+    port = _unused_port()
+    project = await _project(tmp_path)
+    folder = tmp_path / "agentic-assets" / "webapp" / "shop"
+    app = await _webapp(project, folder, mounts=[{"serving": _served(port)}])
+    deployment = await webapp_placement.local_web_deployment(project)
+    backend = {"type": "proxy", "port": port, "start_cmd": "x", "health": "/"}
+    owned, _saved = await webapp_placement.set_app_route(deployment, app, webapp_placement.app_mounts(app)[0], backend)
+
+    # Nothing listens: the port is still the app's as far as anyone can tell.
+    assert (await register_dev_endpoint(project, port=port)).webapp_id == str(app.id)
+
+    held = socket.socket()
+    held.bind(("127.0.0.1", port))
+    held.listen()
+    try:
+        shown = await register_dev_endpoint(project, port=port)
+    finally:
+        held.close()
+    assert not shown.webapp_id and shown.mount == f"port-{port}"
+    assert [p.mount for p in await webapp_routes(str(app.id)) if p.backend.type == "proxy"] == [owned.mount]
