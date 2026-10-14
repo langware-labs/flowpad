@@ -94,10 +94,17 @@ def test_process_cell_is_supported_iff_declared(harness: str):
 V1_VENDORS = ("claude", "codex", "copilot")
 
 
+#: The one deliberate addition on top of the shared set: Claude's process hooks
+#: also carry ``PreToolUse`` (matcher-scoped to the user-input tools), because
+#: Claude may keep a pending ``AskUserQuestion`` out of its transcript and the
+#: hook is how Flowpad learns a question is waiting.
+PROCESS_EXTRAS = {"claude": frozenset({HookEventType.PRE_TOOL_USE})}
+
+
 @pytest.mark.parametrize("harness", V1_VENDORS)
 def test_v1_vendors_support_exactly_the_same_event_set(harness: str):
     """These three shipped together — drift between them is a bug, not a feature."""
-    assert _process_manager(harness).supported_events() == PROCESS_EVENTS
+    assert _process_manager(harness).supported_events() == PROCESS_EVENTS | PROCESS_EXTRAS.get(harness, frozenset())
 
 
 @pytest.mark.parametrize("harness", sorted(EXPECTED_PROCESS))
@@ -107,15 +114,13 @@ def test_no_vendor_declares_an_event_outside_the_catalogue(harness: str):
     opencode declares two of the three: its ``session.idle`` fires at TURN end,
     not session end, so mapping SessionEnd would fire it on every turn.
     """
-    assert _process_manager(harness).supported_events() <= PROCESS_EVENTS
+    assert _process_manager(harness).supported_events() <= PROCESS_EVENTS | PROCESS_EXTRAS.get(harness, frozenset())
 
 
 def test_opencode_declares_the_subset_it_can_actually_serve():
     from flow_sdk.builtin.hooks import HookEventType as E
 
-    assert _process_manager("opencode").supported_events() == frozenset(
-        {E.USER_PROMPT_SUBMIT, E.SESSION_START}
-    )
+    assert _process_manager("opencode").supported_events() == frozenset({E.USER_PROMPT_SUBMIT, E.SESSION_START})
 
 
 # ── cross-cutting invariants ────────────────────────────────────────────────

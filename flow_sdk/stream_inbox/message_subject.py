@@ -1,8 +1,10 @@
 """The stream inbox as a decision subject: a projected message is what a stream inbox rule decides about.
 
 Answers for events whose target is a ``source_item`` — the ``stream_inbox.<provider>.message.projected``
-family — with a ``MessageState`` built from the message's hydrated row. Our own and our agents'
-messages are never caught: that is the subject's rule, not a setting.
+family — with a ``MessageState`` built from the message's hydrated row; ``ConversationMessageSubject``
+answers the same family for a Flowpad conversation message (target ``flow_message``). Our own and our
+agents' messages are never caught: that is the subject's rule, not a setting. A teammate writing in a
+Flowpad conversation is a person too — only OUR user ids are "own".
 """
 
 from __future__ import annotations
@@ -36,14 +38,14 @@ class MessageSubject:
         fm = await FlowMessage.get_one({"source_item_id": item_id}) if item_id else None
         if fm is None:
             raise NotCaught("the message is not in the stream inbox")
-        return state_of(fm)
+        return state_of(fm, await _self_ids())
 
     def from_text(self, text: str) -> MessageState:
         return MessageState.from_text(text)
 
     def question_for(self, sentence: str) -> YesNoQuestion:
         return YesNoQuestion(
-            instructions=f"Is this true of the message (`text`, `subject`, from `sender`): {sentence.strip().rstrip('.?')}?"
+            instructions=f"Is this true of the message (`text`, `subject`, `files`, from `sender`): {sentence.strip().rstrip('.?')}?"
         )
 
     def launch_context(self, state: MessageState) -> LaunchContext:
@@ -64,25 +66,36 @@ class MessageSubject:
         sources = [sid for stype, sid in scoped if stype == "data_source" and sid]
         # Newest first from the database; a few more than asked, since own and outbound messages are
         # refused after the read. Then every message row in ONE query.
-        items = await SourceItem.get_all(QueryFilter(
-            match=ExpressionNode(op=QueryOp.IN, operands=["data_source_id", sources]) if sources else None,
-            order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
-            limit=limit * 3,
-        )) or []
+        items = (
+            await SourceItem.get_all(
+                QueryFilter(
+                    match=ExpressionNode(op=QueryOp.IN, operands=["data_source_id", sources]) if sources else None,
+                    order_by=[{"occurred_at": "desc"}, {"created_date": "desc"}],
+                    limit=limit * 3,
+                )
+            )
+            or []
+        )
         items = [i for i in items if is_message(i)]
         if not items:
             return []
-        messages = await FlowMessage.get_all(QueryFilter(
-            match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]),
-        )) or []
+        messages = (
+            await FlowMessage.get_all(
+                QueryFilter(
+                    match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(i.id) for i in items]]),
+                )
+            )
+            or []
+        )
         by_item = {str(fm.source_item_id): fm for fm in messages}
+        self_ids = await _self_ids()
         out: list[MessageState] = []
         for item in items:
             fm = by_item.get(str(item.id))
             if fm is None:
                 continue
             try:
-                out.append(state_of(fm))
+                out.append(state_of(fm, self_ids))
             except NotCaught:
                 continue
             if len(out) >= limit:
@@ -93,7 +106,7 @@ class MessageSubject:
         return state.message_id
 
     async def by_id(self, subject_id: str) -> MessageState:
-        return state_of(await _message(subject_id))
+        return state_of(await _message(subject_id), await _self_ids())
 
     async def test_event(self, subject_id: str) -> dict[str, Any]:
         """The projected envelope the message arrived on, minus its tag (the caller's own sample)."""
@@ -130,6 +143,56 @@ class _Source:
         self.provider = provider
 
 
+class ConversationMessageSubject(MessageSubject):
+    """A Flowpad conversation message from the hub — same state, same family, its own target."""
+
+    target_type: ClassVar[str] = "flow_message"
+
+    async def of(self, target: str) -> MessageState:
+        _, message_id = parse_target(str(target))
+        try:
+            fm = await _message(message_id)
+        except LookupError:
+            raise NotCaught("no such message") from None
+        return state_of(fm, await _self_ids())
+
+    async def test_event(self, subject_id: str) -> dict[str, Any]:
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import conversation_message_envelope  # noqa: PLC0415
+
+        fm = await _message(subject_id)
+        envelope = conversation_message_envelope(str(fm.id), str(fm.conversation_id or ""))
+        return {key: envelope[key] for key in ("target", "data", "scope")}
+
+
+def _attachment_names(fm: Any) -> list[str]:
+    """What the message carried, by name: a file's name, a URL, ``prompt``, or an entity's type
+    (``claude_session``) — so a message that is only an attachment still says what it is. The
+    message's own conversation and itself (carried as references) are not things it carried."""
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+
+    own = {f"conversation-{getattr(fm, 'conversation_id', '')}", f"flow_message-{getattr(fm, 'id', '')}"}
+    names: list[str] = []
+    for a in getattr(fm, "attachment", None) or []:
+        data = str(a.data or "")
+        if a.attachment_type is AttachmentType.TYPE_ID:
+            name = "" if data in own else data.rsplit("-", 5)[0]
+        elif a.attachment_type is AttachmentType.FILE:
+            name = data.rsplit("/", 1)[-1]
+        elif a.attachment_type is AttachmentType.PROMPT:
+            name = "prompt"
+        else:
+            name = data
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+async def _self_ids() -> set[str]:
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    return await User.self_ids()
+
+
 async def _message(message_id: str) -> Any:
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
@@ -139,12 +202,17 @@ async def _message(message_id: str) -> Any:
     return fm
 
 
-def state_of(fm: Any) -> MessageState:
-    """A ``FlowMessage`` (hydrated) as the state. Our own and our agents' messages are refused."""
+def state_of(fm: Any, self_ids: set[str]) -> MessageState:
+    """A ``FlowMessage`` (hydrated) as the state. Our own and our agents' messages are refused; a
+    person-sender is ours only when its id is one of ``self_ids`` (``User.self_ids()``)."""
     from flow_sdk.schema.data_spec.message_sender_spec import SenderKind  # noqa: PLC0415
 
     sender = getattr(fm, "sender", None)
-    if getattr(fm, "outbound", False) or (sender is not None and sender.kind in (SenderKind.USER, SenderKind.AGENT)):
+    if (
+        getattr(fm, "outbound", False)
+        or (sender is not None and sender.kind is SenderKind.AGENT)
+        or (sender is not None and sender.kind is SenderKind.USER and str(sender.id or "") in self_ids)
+    ):
         raise NotCaught("own message")
     envelope = getattr(fm, "envelope", None)
     who = ""
@@ -171,5 +239,5 @@ def state_of(fm: Any) -> MessageState:
         conversation_id=str(getattr(fm, "conversation_id", "") or ""),
         message_id=str(getattr(fm, "id", "") or ""),
         origin_key=str(getattr(origin, "key", "") or ""),
-        files=[str(getattr(a, "name", "") or getattr(a, "filename", "") or "") for a in (getattr(fm, "attachment", None) or [])],
+        files=_attachment_names(fm),
     )

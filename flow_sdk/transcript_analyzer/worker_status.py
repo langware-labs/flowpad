@@ -22,6 +22,7 @@ would arise if the enum lived in either of those modules.
 from __future__ import annotations
 
 import json
+import re
 import time as _time
 from datetime import datetime as _datetime
 from pathlib import Path as _Path
@@ -225,7 +226,7 @@ _IGNORED_SYSTEM_SUBTYPES: frozenset[str] = frozenset({"turn_duration", "stop_hoo
 # has handed control back to the user and is idle awaiting them, NOT executing a
 # tool. Surfacing that as PENDING_USER ("Idle", no spinner) instead of
 # TOOL_CALL/TOOL_RUNNING is the whole point of ``_pending_user_input_tool``.
-_USER_INPUT_TOOLS: frozenset[str] = frozenset(
+USER_INPUT_TOOLS: frozenset[str] = frozenset(
     {
         "AskUserQuestion",
         "ExitPlanMode",
@@ -281,7 +282,7 @@ def _pending_user_input_tool(chunk: str) -> bool:
                 if (
                     isinstance(b, dict)
                     and b.get("type") == "tool_use"
-                    and b.get("name") in _USER_INPUT_TOOLS
+                    and b.get("name") in USER_INPUT_TOOLS
                     and b.get("id")
                 ):
                     open_ids.add(b["id"])
@@ -292,6 +293,61 @@ def _pending_user_input_tool(chunk: str) -> bool:
                     if tid:
                         resolved.add(tid)
     return bool(open_ids - resolved)
+
+
+_TASK_NOTIFICATION_TOOL_USE_ID = re.compile(r"<tool-use-id>\s*([^<\s]+)\s*</tool-use-id>")
+_TASK_NOTIFICATION_STATUS = re.compile(r"<status>\s*([^<\s]+)\s*</status>")
+
+
+def running_background_tasks(path: "str | _Path") -> set[str]:
+    """Ids of the ``run_in_background`` tool calls whose work is still running.
+
+    Background work outlives its turn: the turn ends (``busy`` reads False) while
+    a background shell or subagent is still going, and the worker wakes again on
+    its ``<task-notification>``. Killing the worker in that window kills the
+    work with it, so a transport switch has to wait for this set to empty.
+
+    A launch is a ``tool_use`` with ``input.run_in_background: true``; its end is
+    a ``user`` entry carrying a ``<task-notification>`` whose ``<tool-use-id>``
+    names it and whose ``<status>`` is anything but ``running``. Scans the WHOLE
+    file, not the status tail: a launch can sit far behind the tail window.
+    """
+    open_ids: set[str] = set()
+    try:
+        lines = _Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return open_ids
+    for line in lines:
+        if "run_in_background" not in line and "<task-notification>" not in line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        content = msg.get("content")
+        if entry.get("type") == "assistant" and isinstance(content, list):
+            for b in content:
+                if (
+                    isinstance(b, dict)
+                    and b.get("type") == "tool_use"
+                    and b.get("id")
+                    and isinstance(b.get("input"), dict)
+                    and b["input"].get("run_in_background") is True
+                ):
+                    open_ids.add(b["id"])
+        elif entry.get("type") == "user":
+            texts = [content] if isinstance(content, str) else []
+            if isinstance(content, list):
+                texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            for text in texts:
+                if "<task-notification>" not in text:
+                    continue
+                tid = _TASK_NOTIFICATION_TOOL_USE_ID.search(text)
+                status = _TASK_NOTIFICATION_STATUS.search(text)
+                if tid and (status is None or status.group(1) != "running"):
+                    open_ids.discard(tid.group(1))
+    return open_ids
 
 
 def _has_pending_tool_use(chunk: str) -> bool:
@@ -612,7 +668,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     # through to the normal classification below. The cheap substring gate skips
     # the extra parse pass on the hot path unless a user-input tool name is
     # literally present in the tail (it must be, verbatim, for a match).
-    if any(name in chunk for name in _USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
+    if any(name in chunk for name in USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
         return WorkerStatus.PENDING_USER
 
     # A user interrupt (Escape / Ctrl-C) is an idle, resumable terminal state —

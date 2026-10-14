@@ -1,10 +1,9 @@
 """The parent↔child NDJSON protocol for out-of-process indexer work.
 
-One wire format, two children: the external Rust binary (``RSIndexerAdapter``)
-and the Python scan child (``SubprocessScanIndexer`` →
-``flow_sdk.fs_store.indexer.scan_child``). Extracted from ``rs_adapter`` so the
-second child reuses the decoders rather than growing a parallel dialect that
-drifts.
+One wire format for the Python scan child (``SubprocessScanIndexer`` →
+``flow_sdk.fs_store.indexer.scan_child``). Kept apart from the
+child so a second producer reuses the decoders rather than growing a parallel
+dialect that drifts.
 
 Wire shape — one JSON object per line on the child's **stdout**, logs on stderr:
 
@@ -12,7 +11,7 @@ Wire shape — one JSON object per line on the child's **stdout**, logs on stder
   "read_only": …, "type_id": …}`` — a discovered candidate.
 * ``{"job_name": …, "rows": [...], "current": …, "done": …, "total": …,
   "text": …, "ts": …}`` — a progress snapshot (decoded by
-  ``rs_adapter._table_from_json``).
+  ``table_from_json``).
 * ``{"result": {...}}`` — the terminal line. **Required.** Its absence means the
   child died mid-stream, which a truncated candidate list cannot be
   distinguished from otherwise — and a truncated candidate list reaching

@@ -153,7 +153,17 @@ def is_ignored(
         return True
     if _is_force_include(path, root):
         return False
+    return stack_ignores(path, is_dir, stack)
 
+
+def stack_ignores(path: Path, is_dir: bool, stack: GitignoreStack) -> bool:
+    """Step 4 of :func:`is_ignored` on its own: the ``.gitignore`` stack,
+    outermost→innermost, last-match-wins.
+
+    Split out so a walk whose denylist / force-include lists arrive as DATA
+    (``flow_sdk.diskio``'s ``WalkPolicy``) shares the one stack rule instead of
+    carrying a copy of it.
+    """
     ignored = False
     for base_dir, spec in stack:
         try:
