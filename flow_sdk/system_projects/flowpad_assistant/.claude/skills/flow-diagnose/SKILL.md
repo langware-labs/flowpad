@@ -179,10 +179,12 @@ Expected: empty (port free). Any PID = potential conflict.
 **2b. Backend health**
 
 ```bash
-curl -fsS http://localhost:$PORT/health/status
+curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status
 ```
 
-Expected: `{"data":true}`. Anything else or curl error = unhealthy.
+Expected: `{"data":true}`. A 403 "Forbidden" page means the backend is up and its cookie gate refused the
+call (missing or wrong `.cookie_gate` token in the instance folder), not that it is down. Anything else or
+curl error = unhealthy.
 
 **2c. Log tails** (newest file in each directory, last 20 lines)
 Consult the **`flowpad_logs`** skill for the full, authoritative list of log locations and scan
@@ -525,7 +527,7 @@ real reports land here. Diagnose it with the same rigor and confidence as a cata
 and report what you found.
 
 1. **Gather evidence** broadly — fit the investigation to the actual symptom, don't stop at a
-   generic sweep. Start with: `curl -fsS http://localhost:$PORT/health/status`; the newest files
+   generic sweep. Start with: `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status`; the newest files
    under `$LOGS/{server,monitor}` and `$DESKTOP` (Step 1); instance state in `~/.flow/instances/$INST/`
    (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space. Then go where the symptom
    points — if the user describes unexpected data, wrong UI state, a feature misbehaving, etc., probe
@@ -552,7 +554,7 @@ this headlessly and autonomously (no questions):
 
 1. **Ensure the backend is up.** If your fix was meant to unblock startup, start it now
    (`flow start`, or `"$FLOWPAD_PYTHON" -m flow_sdk.server.run` in the background) and wait for
-   `curl -fsS http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
+   `curl -fsS -H "X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate)" http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
    Step 1).
 2. **Drive the UI with Playwright (headless, Chromium).** Use the copy already in `ui/`
    (`@playwright/test`). If the browser binary isn't installed, install it once:

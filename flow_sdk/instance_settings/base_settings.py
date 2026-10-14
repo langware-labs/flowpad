@@ -88,7 +88,6 @@ def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
-COOKIE_GATE_MARKER_FILENAME = ".cookie_gate_armed"
 DESKTOP_MARKER_FILENAME = ".desktop_managed"
 SODOT_FILENAME = "sodot"
 
@@ -623,19 +622,6 @@ class BaseInstanceSettings:
         return self.instance_dir / CONSENT_MARKER_FILENAME
 
     @property
-    def cookie_gate_marker_path(self) -> Path:
-        """cookie-gate armed marker. Presence ⇔ this instance is request-gated.
-
-        Same stat()-only trick as ``consent_marker_path``, for the same reason:
-        answering "is this instance gated?" from the sod would decrypt it, and
-        decrypting fetches the Fernet key — a keychain prompt on the first
-        request after every restart, on installs that are never gated. Holds no
-        secret; the value itself lives in the sod. See
-        ``flow_sdk/instance_settings/cookie_gate.py``.
-        """
-        return self.instance_dir / COOKIE_GATE_MARKER_FILENAME
-
-    @property
     def desktop_marker_path(self) -> Path:
         """Desktop-managed marker. Presence ⇔ the Electron app owns this instance.
 
@@ -644,7 +630,7 @@ class BaseInstanceSettings:
         ``electron/uv-manager.js``. It exists because that env var lives in the
         backend process alone: ``flow`` CLI invocations are separate processes
         and cannot see it, so without a persisted fact they cannot tell a
-        desktop install from a sandbox. ``cookie_gate.set_cookie_gate`` reads
+        desktop install from a sandbox. ``cookie_gate.set_cookie`` reads
         this to refuse arming a gate that would lock the desktop app out of its
         own health check.
 

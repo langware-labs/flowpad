@@ -46,6 +46,7 @@ async def test_main_api_gate_still_covers_provider_and_hub_paths(monkeypatch):
     from fastapi import FastAPI
 
     from flow_sdk.api.api_types.identifier import mint_uuid
+    from flow_sdk.instance_settings import cookie_gate
     from flow_sdk.server.middleware import cookie_gate_middleware
     from flow_sdk.server.routes.data_source_webhook import router
 
@@ -53,7 +54,8 @@ async def test_main_api_gate_still_covers_provider_and_hub_paths(monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.add_middleware(cookie_gate_middleware.CookieGateMiddleware)
-    monkeypatch.setattr(cookie_gate_middleware.cookie_gate, "get_cookie_gate", lambda: "node-private-key")
+    monkeypatch.setenv(cookie_gate_middleware.OFF_SWITCH_ENV, "on")
+    monkeypatch.setattr(cookie_gate, "get_cookie_gate", lambda: "node-private-key")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://node.test") as client:
         for path in ("/api/v1/data_source/webhook/test", f"/api/v1/data_source/{source_id}/webhook"):
             assert (await client.post(path, json={})).status_code == 403
