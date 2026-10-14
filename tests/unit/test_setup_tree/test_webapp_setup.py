@@ -194,6 +194,8 @@ async def test_a_server_that_opens_its_port_but_never_answers_is_killed_not_left
     )
     app.make(start_cmd=hang)
     monkeypatch.setattr(webapp_setup, "PROBE_SECONDS", 0.5)
+    # It is asked until the start budget runs out; here a short one, so the test does not wait a minute.
+    monkeypatch.setattr(webapp_setup, "START_SECONDS", 2.0)
     answer = await webapp_setup.step("a1", "start", check=False)
     assert answer.exit_code is ExitCode.NOT_YET and "does not answer" in answer.detail
     assert not _alive(app.started[0]), "the hung server we started must not outlive the failed start"
@@ -694,3 +696,20 @@ async def test_an_app_whose_folder_is_gone_reserves_no_port(app, tmp_path, monke
     monkeypatch.setattr(WebApp, "get_all", rows)
     assert [row.id for row in await webapp_setup._project_apps("p1")] == [live.id]
     assert await webapp_setup._project_apps(None) == []
+
+
+
+@pytest.mark.asyncio
+async def test_a_server_that_answers_a_moment_after_its_port_opens_is_up_on_the_first_start(app):
+    """A container's published port opens at once and the server behind it answers later: the first
+    start must not call that a failure (it did, and the container was left running behind it)."""
+    late = (
+        f"{sys.executable} -c \"import socket,sys,time,http.server,threading; "
+        "p=int(sys.argv[1]); s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); "
+        "s.bind(('127.0.0.1', p)); s.listen(); time.sleep(1.5); s.close(); "
+        "http.server.ThreadingHTTPServer(('127.0.0.1', p), http.server.SimpleHTTPRequestHandler).serve_forever()\" {port}"
+    )
+    app.make(start_cmd=late)
+    started = await webapp_setup.step("a1", "start", check=False)
+    assert started.ok and started.ran, started.detail
+    assert webapp_setup.health_answers(int(started.value))
