@@ -104,11 +104,13 @@ async def gate(request: Request, ticket: str = Query(None), next: str = Query(No
     other, and it is reachable precisely *because* the caller presented the ticket.
 
     On this machine (a loopback host) it is the local gate's door instead: the
-    ``?cookie-gate=`` token sets the local cookie, and ``next`` may be an absolute
-    ``http(s)`` URL: the backend opens the hub login and OAuth authorize pages through
-    here (``cloud_urls.wrap_url_auth_gate``), so the return to this host carries the
-    cookie. Being reachable only with the token is what keeps that redirect from being
-    an open one.
+    ``?cookie-gate=`` token sets the local cookie. ``next`` may be an absolute ``http(s)``
+    URL only when that token is in the URL: the backend opens the hub login and OAuth
+    authorize pages through here (``cloud_urls.wrap_url_auth_gate``), so the return to
+    this host carries the cookie. A link without the token in its URL still reaches this
+    route -- a click from a desktop app passes the gate's direct-open rule, and a click
+    from a web page carries the browser's ``Lax`` cookie -- so its ``next`` is held to
+    this instance (``safe_next``); otherwise any link would be an open redirect.
 
     On an unarmed instance this is inert — it redirects without setting anything,
     so a stale link still lands in the app rather than 404ing.
@@ -119,7 +121,7 @@ async def gate(request: Request, ticket: str = Query(None), next: str = Query(No
     from flow_sdk.utils.networking import is_loopback
 
     if is_loopback(request.url.hostname):
-        response = RedirectResponse(url=_gate_next(next), status_code=302)
+        response = RedirectResponse(url=_gate_next(next, cookie_gate.verify_query_param(request)), status_code=302)
         if cookie_gate.verify_cookie(request):
             header = cookie_gate.set_cookie_header(request)
             if header:
@@ -162,10 +164,11 @@ async def revoke(request: Request):
     return JSONResponse(status_code=200, content=ApiSuccessResponse(data={"revoked": count}).model_dump(mode="json"))
 
 
-def _gate_next(candidate: str | None) -> str:
-    """An absolute ``http(s)`` URL as given, else a same-origin path (``safe_next``)."""
+def _gate_next(candidate: str | None, linked_with_token: bool) -> str:
+    """An absolute ``http(s)`` URL as given when the link carried the token in its URL,
+    else a same-origin path (``safe_next``)."""
     parts = urlsplit(candidate or "")
-    if parts.scheme in ("http", "https") and parts.netloc:
+    if linked_with_token and parts.scheme in ("http", "https") and parts.netloc:
         return candidate
     return safe_next(candidate)
 

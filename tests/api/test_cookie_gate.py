@@ -97,6 +97,29 @@ async def test_gate_on_this_machine_sets_the_local_cookie_and_goes_on_to_the_log
     assert response.headers["set-cookie"].startswith(f"cookie-gate-9007={SECRET};")
 
 
+DIRECT_OPEN = {"sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document"}
+
+
+@pytest.mark.parametrize(
+    "arrival",
+    [
+        pytest.param({"cookie": f"cookie-gate-9007={SECRET}"}, id="web-page-click-with-the-lax-cookie"),
+        pytest.param(DIRECT_OPEN, id="desktop-app-click-direct-open"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_gate_without_the_token_in_the_url_stays_on_this_instance(client, arrival):
+    """A crafted link reaches /auth/gate without its sender holding the token. Its absolute
+    `next` must not be followed, or every Flowpad would redirect anywhere on request."""
+    with _armed(), _stored():
+        response = await client.get(
+            "/auth/gate", params={"next": "https://evil.example/"}, headers={"host": "127.0.0.1:9007", **arrival}
+        )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "/"
+
+
 # ---------------------------------------------------------------------------
 # Arming, via the hub's loopback callback
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ attributes) stay in this module. Callers use:
 * ``verify_cookie``     — does a request (or a presented string) carry the token
 * ``get_header``        — the ``GateHeader(name, value)`` a machine caller sends
 * ``add_query_param``   — a URL that carries the token once (``/auth/gate``)
+* ``verify_query_param`` — does a request's URL itself carry the token
 * ``set_cookie_header`` — the ``Set-Cookie`` value that hands a browser its cookie
 * ``set_cookie`` / ``clear_cookie_gate`` — write / delete the token
 * ``install_gate_opener`` — every urllib request in this process presents it
@@ -135,6 +136,14 @@ def add_query_param(url: URL) -> URL:
     contact, which ``/auth/gate`` trades for the cookie. ``url`` unchanged without a token."""
     token = _token()
     return url.include_query_params(**{_QUERY_NAME: token}) if token else url
+
+
+def verify_query_param(conn: HTTPConnection) -> bool:
+    """Whether ``conn``'s URL itself carries the token as its query param, as only a URL
+    built by ``add_query_param`` does. Unlike ``verify_cookie``, the cookie a browser
+    attaches on its own does not count: the token in the URL is what shows the link was
+    made by someone who holds it."""
+    return verify_cookie(conn.query_params.get(_QUERY_NAME) or "")
 
 
 def set_cookie_header(conn: HTTPConnection) -> str | None:
