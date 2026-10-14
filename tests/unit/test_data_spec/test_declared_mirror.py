@@ -277,6 +277,7 @@ def served(tmp_path, monkeypatch):
                               warnings=(store.partial,) if store.partial else ())
 
         async def update(self, origin, changes):
+            await asyncio.sleep(0.05)                    # the outside system is a round trip away
             if store.refuse:
                 raise RuntimeError(store.refuse)
             store.calls.append(("update", origin.key, changes))
@@ -284,6 +285,7 @@ def served(tmp_path, monkeypatch):
             return RecordItem(origin=origin, data=TaskData(**{**{k: v for k, v in had.items() if k in TaskData.model_fields}, **changes}))
 
         async def delete(self, origin):
+            await asyncio.sleep(0.05)
             store.calls.append(("delete", origin.key))
 
     class Live:
@@ -369,6 +371,28 @@ async def test_an_owned_field_written_here_goes_to_the_outside_system_first(serv
     got = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"]
     assert (got["status"], got["deals"], got["notes"]) == ("DONE", [refs["acme"], refs["bolt"]], "ours")
     assert served.store.records["T-1"]["data"]["status"] == "DONE"            # kept here at once, not at the next sync
+
+
+async def test_two_writes_from_one_version_one_reaches_the_outside_system_and_the_other_is_refused(served):
+    await _seed(served)
+    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    put = lambda status: _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "status": status}},  # noqa: E731
+                                                    "expected": row["version"]})
+    done, waiting = await asyncio.gather(put("DONE"), put("WAITING"))
+    assert sorted([done.status_code, waiting.status_code]) == [200, 409], (done.text, waiting.text)
+    won = "DONE" if done.status_code == 200 else "WAITING"
+    assert served.store.calls == [("update", "T-1", {"status": won})]          # the stale one never went out
+    assert next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"]["status"] == won
+
+
+async def test_a_change_and_a_delete_from_one_version_do_not_both_go_out(served):
+    await _seed(served)
+    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    put = _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "status": "DONE"}}, "expected": row["version"]})
+    delete = _call(served, "delete-row", {"key": "t-1", "expected": row["version"]})
+    done, gone = await asyncio.gather(put, delete)
+    assert sorted([done.status_code, gone.status_code]) == [200, 409], (done.text, gone.text)
+    assert len(served.store.calls) == 1                                        # only the winner went out
 
 
 async def test_a_new_row_is_a_new_record_and_takes_its_key_from_it(served):

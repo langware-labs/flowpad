@@ -290,8 +290,7 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
         try:
             result = await run_then(trigger, inputs=dict(inputs or {}), scope_key=scope_key)
             results.append(result)
-            if not result.ok:
-                error = result.detail or "the wizard did not finish"
+            error = _failure_of(result)                    # a wizard whose slot is held is busy, not failed
         except Exception as exc:  # noqa: BLE001 — the fire's row must still be written
             logger.exception("Trigger %s: the then wizard raised", trigger.name)
             error = f"then: {exc}"
