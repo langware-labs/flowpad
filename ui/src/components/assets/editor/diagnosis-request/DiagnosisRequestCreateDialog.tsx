@@ -6,11 +6,11 @@
  */
 import { DiagnosisRequest, TypeId, type AssetDescriptor } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@src/components/ui/button';
 import { AssetRefChips, AttachMenu } from '@src/components/conversation/AttachMenu';
-import { FileAttachmentPicker, mergePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
+import { FileAttachmentPicker, mergePickedFiles, useAnnotatedImagePaste } from '@src/components/conversation/FileAttachmentPicker';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -294,6 +294,11 @@ export const DiagnosisRequestCreateDialog: React.FC<{
   const [fund, setFund] = useState(false);
   const [budget, setBudget] = useState<Budget>(DEFAULT_BUDGET);
   const [busy, setBusy] = useState(false);
+  const addFiles = useCallback(
+    (picked: FileList | File[] | null) => setFiles((prev) => mergePickedFiles(prev, picked).files),
+    [],
+  );
+  const handlePaste = useAnnotatedImagePaste(addFiles, { enabled: !busy, setText: setInstructions });
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
@@ -359,6 +364,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
               rows={5}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
+              onPaste={handlePaste}
               data-testid="diagnosis-request-instructions"
             />
           </div>
@@ -396,7 +402,7 @@ export const DiagnosisRequestCreateDialog: React.FC<{
               <AttachMenu
                 assetRefs={assetRefs}
                 onAssetRefsChange={setAssetRefs}
-                onFilesPicked={(picked) => setFiles((prev) => mergePickedFiles(prev, picked).files)}
+                onFilesPicked={addFiles}
                 disabled={busy}
                 hideAssetList
                 assetFilter={isAttachable}
