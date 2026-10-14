@@ -29515,3 +29515,11 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Ended · {when}"
+msgstr "Ended · {when}"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Why?"
+msgstr "Why?"

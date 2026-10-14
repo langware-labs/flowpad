@@ -52,6 +52,8 @@ class _FakeGithub:
         self.calls: list[tuple[str, str]] = []
         self.fail: tuple[int, dict] | None = None
         self.scopes: str | None = "repo, read:org"
+        #: Entries per list page GitHub answers with (a ``Link: rel="next"`` beyond it); None = all.
+        self.list_page: int | None = None
 
     def tick(self) -> str:
         """A second later than any stamp so far and never behind the wall clock."""
@@ -66,7 +68,7 @@ class _FakeGithub:
         repo, n = key.split("#")
         entry = self.prs.setdefault(key, {
             "repo": repo, "number": int(n), "title": title, "assignee": assignee, "updated_at": self.tick(),
-            "sha": f"sha{n}", "comments": [], "review_comments": [], "reviews": [], "timeline": [], "checks": [],
+            "sha": f"sha{n}", "state": "open", "merged": False, "author": "dana", "mergeable": True, "comments": [], "review_comments": [], "reviews": [], "timeline": [], "checks": [],
         })
         return entry
 
@@ -112,6 +114,8 @@ class _FakeGithub:
         if pr is None:
             return 404, json.dumps({"message": "Not Found"}).encode(), {"Content-Type": "application/json"}
         tail = parts[5:]
+        if method in ("PUT", "PATCH") or (method == "POST" and tail == ["reviews"]):
+            return self._act(key, pr, method, tail, json.loads(headers["_body"] or "{}"))
         if method == "POST":
             body = json.loads(headers["_body"])["body"]
             if parts[3] == "issues" and tail == ["comments"]:
@@ -125,17 +129,55 @@ class _FakeGithub:
             self.posts.append({"to": key, "text": body, "thread": key, "external_id": ("review-comment-" if "in_reply_to_id" in made else "comment-") + str(made["id"])})
             return self._json(made, status=201)
         if parts[3] == "pulls" and not tail:
-            return self._json({"number": pr["number"], "title": pr["title"], "head": {"sha": pr["sha"]}})
+            return self._json({"number": pr["number"], "title": pr["title"], "head": {"sha": pr["sha"]}, "state": pr["state"],
+                               "merged": pr["merged"], "updated_at": pr["updated_at"], "html_url": f"https://github.com/{key.replace('#', '/pull/')}"})
         lists = {("issues", "comments"): "comments", ("pulls", "comments"): "review_comments", ("pulls", "reviews"): "reviews", ("issues", "timeline"): "timeline"}
         name = lists.get((parts[3], tail[0] if tail else ""))
-        return self._json(pr[name]) if name else (404, b"{}", {})
+        if not name:
+            return 404, b"{}", {}
+        rows, page = pr[name], int(params.get("page") or 1)
+        if self.list_page is None:
+            return self._json(rows)
+        chunk = rows[(page - 1) * self.list_page: page * self.list_page]
+        more = {"Link": f'<http://{headers.get("Host")}{route}?per_page={self.list_page}&page={page + 1}>; rel="next"'} if page * self.list_page < len(rows) else {}
+        return self._json(chunk, **more)
+
+    def _act(self, key: str, pr: dict, method: str, tail: list, body: dict):
+        """A review, a merge (PUT .../merge) or a close (PATCH the PR)."""
+        if method == "POST":
+            if pr["author"] == self.me:
+                verb = "approve" if body["event"] == "APPROVE" else "request changes on"
+                return self._json({"message": "Unprocessable Entity", "errors": [f"Can not {verb} your own pull request"]}, status=422)
+            review = {"id": self.ident(), "user": {"login": self.me}, "state": {"APPROVE": "APPROVED"}.get(body["event"], "CHANGES_REQUESTED"),
+                      "body": body.get("body", ""), "submitted_at": self.tick(), "html_url": f"https://github.com/r/{self.next_id}"}
+            pr["reviews"].append(review)
+            pr["updated_at"] = review["submitted_at"]
+            self.posts.append({"to": key, "event": body["event"]})
+            return self._json(review)
+        if method == "PUT" and tail == ["merge"]:
+            if not pr["mergeable"]:
+                return self._json({"message": "Pull Request is not mergeable"}, status=405)
+            self.end(key, "merged")
+            return self._json({"sha": "m1", "merged": True, "message": "Pull Request successfully merged"})
+        if method == "PATCH" and not tail and body.get("state") == "closed":
+            self.end(key, "closed")
+            return self._json({"number": pr["number"], "state": "closed"})
+        return 404, b"{}", {}
+
+    def end(self, key: str, how: str, *, event: bool = True) -> None:
+        """PR ``key`` merged or closed (with its timeline events unless ``event`` is False)."""
+        pr = self.prs[key]
+        pr["state"], pr["merged"], pr["updated_at"] = "closed", how == "merged", self.tick()
+        if event:
+            for kind in (("merged", "closed") if how == "merged" else ("closed",)):
+                pr["timeline"].append({"id": self.ident(), "event": kind, "actor": {"login": self.me}, "created_at": self.tick()})
 
     def _search(self, params: dict):
         terms = params.get("q", "").split()
         repos = [t[5:] for t in terms if t.startswith("repo:")]
         since = next((t[len("updated:>="):] for t in terms if t.startswith("updated:>=")), None)
         who = "review" if "review-requested:@me" in terms else "assignee"
-        rows = [p for p in self.prs.values() if (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
+        rows = [p for p in self.prs.values() if p["state"] == "open" and (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
                 and (who == "review" or p["assignee"] == self.me)]
         rows.sort(key=lambda p: (p["updated_at"], p["repo"], p["number"]))
         per, page = int(params.get("per_page") or 30), int(params.get("page") or 1)
@@ -220,7 +262,7 @@ async def test_comments_reviews_events_and_checks_are_one_conversation(github):
     assert texts["review-55"] == "dana approved"
     assert texts["event-71"] == "dana assigned you"
     assert texts["commit-abc123"] == f"{ME} pushed 1 commit: Cache the walk"
-    assert texts["event-73"] == "merged"
+    assert "event-73" not in texts, "a merged event is the closed event's twin, never its own message"
     assert texts[f"check-{pr['sha']}"] == "CI passed · 3 checks"
     assert "review-56" not in by_key and "event-72" not in by_key, "a pending review or a label is not a message"
     assert by_key["event-71"].data.sender.name == "dana"
@@ -351,3 +393,224 @@ async def test_verify_is_ready_and_whoami_is_the_login(github):
         assert (await s.verify()).ready
         (me,) = await s.whoami()
     assert me.name == ME
+
+
+# ── lists past one page ──────────────────────────────────────────────────────
+
+
+async def test_a_list_past_one_page_follows_the_link_header(github):
+    gh = github.gh
+    gh.list_page = 2
+    for n in range(5):
+        gh.comment(PR, f"c{n}", user="dana")
+    items, _, _ = await _all(_source(github.base))
+    assert [i.data.text for i in items] == [f"c{n}" for n in range(5)]
+    assert sum(1 for _, p in gh.calls if p.startswith("/repos/octo/app/issues/7/comments")) == 3
+
+
+# ── how a PR ends ────────────────────────────────────────────────────────────
+
+
+async def test_merged_closed_and_unassigned_you_end_the_conversation_and_reopened_does_not(github):
+    gh = github.gh
+    pr = gh.pr(PR)
+    pr["timeline"] += [
+        {"id": 81, "event": "closed", "actor": {"login": "dana"}, "created_at": gh.tick()},
+        {"id": 82, "event": "reopened", "actor": {"login": "dana"}, "created_at": gh.tick()},
+        {"id": 83, "event": "unassigned", "actor": {"login": "dana"}, "assignee": {"login": "lee"}, "created_at": gh.tick()},
+        {"id": 84, "event": "unassigned", "actor": {"login": "dana"}, "assignee": {"login": ME}, "created_at": gh.tick()},
+    ]
+    gh.clock += 60  # a merge well after the earlier close, not its twin
+    pr["timeline"] += [
+        {"id": 85, "event": "merged", "actor": {"login": "dana"}, "created_at": gh.tick()},
+    ]
+    items, _, _ = await _all(_source(github.base))
+    got = {i.origin.key: (i.data.text, i.data.ends_conversation) for i in items}
+    assert got == {
+        "event-81": ("closed by dana", True),
+        "event-82": ("reopened", False),
+        "event-84": ("dana unassigned you", True),
+    }, "someone else's unassignment is bookkeeping"
+
+
+async def test_a_pr_that_leaves_the_search_ends_once(github):
+    gh = github.gh
+    gh.comment(PR, "hi", user="dana")
+    gh.comment("octo/app#8", "other", user="dana")
+    _, resume, _ = await _all(_source(github.base))
+    gh.end(PR, "merged")
+    gh.prs[PR]["updated_at"] = "2000-01-01T00:00:00Z"  # left the narrowed search without a fresh update
+    items, resume, _ = await _all(_source(github.base), cursor=resume)
+    ended = [i for i in items if i.data.ends_conversation]
+    timeline_ids = {f"event-{e['id']}" for e in gh.prs[PR]["timeline"]}
+    assert len(ended) == 1 and ended[0].origin.key in timeline_ids and ended[0].data.conversation.key == PR
+    again, _, _ = await _all(_source(github.base), cursor=resume)
+    assert not any(i.data.ends_conversation for i in again), "a PR's end is handed out once"
+
+
+async def test_a_pr_gone_without_a_timeline_event_ends_on_its_state(github):
+    gh = github.gh
+    gh.comment(PR, "hi", user="dana")
+    _, resume, _ = await _all(_source(github.base))
+    gh.end(PR, "closed", event=False)
+    items, _, _ = await _all(_source(github.base), cursor=resume)
+    (ended,) = [i for i in items if i.data.ends_conversation]
+    assert ended.origin.key == f"ended-{PR}-closed" and ended.data.text == "closed"
+
+
+async def test_seen_is_capped_and_the_cursor_stays_bounded(github, monkeypatch):
+    module = asset_module("github_pr")
+    keys = [f"some-long-owner-name/some-long-repo-name#{n}" for n in range(1000)]
+    cursor = module._fit("2026-01-01T00:00:00+00:00", keys)
+    state = module._decode(cursor)
+    assert len(cursor) <= module.MAX_CURSOR_LENGTH and 0 < len(state["seen"]) <= module.SEEN_CAP
+    assert state["seen"][-1] == keys[-1], "the newest keys are the ones kept"
+    old = module._encode({"mark": "2026-01-01T00:00:00+00:00"})
+    assert module._decode(old)["mark"], "a cursor from before `seen` still decodes"
+
+
+# ── acting ───────────────────────────────────────────────────────────────────
+
+
+def test_the_actions_are_declared():
+    by_id = {a.id: a for a in GithubPrSource.actions}
+    assert list(by_id) == ["approve", "request_changes", "merge", "close"]
+    assert by_id["request_changes"].needs_text and by_id["request_changes"].label == "Request changes"
+    assert by_id["merge"].destructive and by_id["merge"].confirm == "Merge this pull request into its base?"
+    assert by_id["close"].destructive and by_id["close"].icon_name == "Archive"
+
+
+async def test_approve_and_request_changes_come_back_keyed_as_the_review(github):
+    gh = github.gh
+    gh.pr(PR)
+    async with _source(github.base) as s:
+        approved = await s.act(s.conversation_origin(PR), "approve")
+        asked = await s.act(s.conversation_origin(PR), "request_changes", "rename it")
+    assert [p["event"] for p in gh.posts] == ["APPROVE", "REQUEST_CHANGES"]
+    assert gh.prs[PR]["reviews"][-1]["body"] == "rename it"
+    items, _, _ = await _all(_source(github.base))
+    keys = {i.origin.key for i in items}
+    assert approved.origin.key in keys and asked.origin.key in keys and approved.origin.key.startswith("review-")
+    assert approved.data.text == f"{ME} approved" and asked.data.text == "rename it"
+
+
+async def test_merge_and_close_hit_github_and_leave_the_event_to_the_poll(github):
+    gh = github.gh
+    gh.pr(PR)
+    gh.pr("octo/app#8")
+    async with _source(github.base) as s:
+        assert await s.act(s.conversation_origin(PR), "merge") is None
+        assert await s.act(s.conversation_origin("octo/app#8"), "close") is None
+    assert ("PUT", "/repos/octo/app/pulls/7/merge") in gh.calls and ("PATCH", "/repos/octo/app/pulls/8") in gh.calls
+    assert gh.prs[PR]["merged"] and gh.prs["octo/app#8"]["state"] == "closed"
+
+
+async def test_reviewing_your_own_pr_says_github_forbids_it(github):
+    module = asset_module("github_pr")
+    github.gh.pr(PR)["author"] = ME
+    async with _source(github.base) as s:
+        for action, text in (("approve", ""), ("request_changes", "x")):
+            with pytest.raises(module.OwnPullRequest, match="GitHub does not let you review your own pull request"):
+                await s.act(s.conversation_origin(PR), action, text)
+
+
+async def test_an_unmergeable_pr_says_so_and_request_changes_needs_text(github):
+    module = asset_module("github_pr")
+    github.gh.pr(PR)["mergeable"] = False
+    async with _source(github.base) as s:
+        with pytest.raises(module.MergeBlocked, match="not mergeable"):
+            await s.act(s.conversation_origin(PR), "merge")
+        with pytest.raises(ValueError):
+            await s.act(s.conversation_origin(PR), "request_changes", "  ")
+
+
+async def test_act_takes_the_conversation_as_the_surface_sends_it(github):
+    """The surface acts with a message's namespace (``<account>/<PR>``) and the PR as the key."""
+    from flow_sdk.sources.values.origin import CloudOrigin
+
+    gh = github.gh
+    gh.pr(PR)
+    async with _source(github.base) as s:
+        conversation = CloudOrigin(kind="github_pr", namespace=f"{ME}/{PR}", key=PR)
+        approved = await s.act(conversation, "approve")
+    assert approved.origin.key.startswith("review-") and approved.data.conversation.key == PR
+    assert gh.posts[-1] == {"to": PR, "event": "APPROVE"}
+
+
+# ── how messages read ────────────────────────────────────────────────────────
+
+
+async def test_a_line_comment_says_where_it_is_and_its_reply_does_not(github):
+    gh = github.gh
+    root = gh.review_comment(PR, "off by one?", user="dana")
+    root.update(path="calc.py", line=6, diff_hunk="@@ -1,6 +1,6 @@\n def f():\n-    a = 1\n+    a = 2\n     b = 3\n     return a + b")
+    gh.review_comment(PR, "fixed", user=ME, in_reply_to=root["id"])
+    items, _, _ = await _all(_source(github.base))
+    by_key = {i.origin.key: i.data.text for i in items}
+    assert by_key[f"review-comment-{root['id']}"] == "calc.py:6\n│ +    a = 2\n│      b = 3\n│      return a + b\noff by one?"
+    assert by_key[f"review-comment-{root['id'] + 1}"] == "fixed"
+
+
+async def test_an_empty_commented_review_is_noise_and_a_worded_one_is_not(github):
+    gh = github.gh
+    pr = gh.pr(PR)
+    pr["reviews"] += [
+        {"id": 61, "user": {"login": "dana"}, "state": "COMMENTED", "body": "", "submitted_at": gh.tick()},
+        {"id": 62, "user": {"login": "dana"}, "state": "COMMENTED", "body": "a few notes", "submitted_at": gh.tick()},
+        {"id": 63, "user": {"login": "dana"}, "state": "CHANGES_REQUESTED", "body": "", "submitted_at": gh.tick()},
+    ]
+    items, _, _ = await _all(_source(github.base))
+    texts = {i.origin.key: i.data.text for i in items}
+    assert "review-61" not in texts and texts["review-62"] == "a few notes" and texts["review-63"] == "dana requested changes"
+
+
+async def test_ci_is_sent_by_the_check_app_else_ci(github):
+    gh = github.gh
+    gh.pr("octo/app#1")["checks"] += [{"id": 1, "status": "completed", "conclusion": "success", "completed_at": gh.tick(), "app": {"name": "GitHub Actions"}}]
+    gh.pr("octo/app#2")["checks"] += [{"id": 2, "status": "completed", "conclusion": "success", "completed_at": gh.tick()}]
+    items, _, _ = await _all(_source(github.base))
+    senders = {i.data.conversation.key: i.data.sender.name for i in items if i.origin.key.startswith("check-")}
+    assert senders == {"octo/app#1": "GitHub Actions", "octo/app#2": "CI"}
+
+
+def test_every_action_icon_resolves_in_the_icon_registry():
+    from flow_sdk.icons.registry import IconRegistry
+
+    registry = IconRegistry()
+    unresolved = [a.icon_name for a in GithubPrSource.actions if registry.resolve(a.icon_name) is None]
+    assert not unresolved, f"icons the packs do not know: {unresolved}"
+
+
+async def test_a_merge_is_one_message_keyed_on_its_closed_event(github):
+    gh = github.gh
+    gh.pr(PR)
+    gh.end(PR, "merged")  # merged + closed, a second apart
+    gh.prs[PR]["state"] = "open"  # still listed by the search this pass
+    merged_id, closed_id = (e["id"] for e in gh.prs[PR]["timeline"])
+    items, _, _ = await _all(_source(github.base))
+    ends = [(i.origin.key, i.data.text) for i in items if i.data.ends_conversation]
+    assert ends == [(f"event-{closed_id}", f"merged by {ME}")], "one merge, one message"
+    assert f"event-{merged_id}" not in {i.origin.key for i in items}
+
+    gh.prs[PR]["timeline"] = [e for e in gh.prs[PR]["timeline"] if e["event"] == "closed"]  # the merged event lags
+    lagging, _, _ = await _all(_source(github.base))
+    assert [(i.origin.key, i.data.text) for i in lagging if i.data.ends_conversation] == ends, "the same key either way"
+
+
+async def test_a_merged_pr_without_its_closed_event_yet_ends_on_its_state(github):
+    gh = github.gh
+    gh.comment(PR, "hi", user="dana")
+    _, resume, _ = await _all(_source(github.base))
+    gh.end(PR, "merged")
+    gh.prs[PR]["timeline"] = [e for e in gh.prs[PR]["timeline"] if e["event"] == "merged"]
+    items, _, _ = await _all(_source(github.base), cursor=resume)
+    assert [(i.origin.key, i.data.text) for i in items if i.data.ends_conversation] == [(f"ended-{PR}-merged", "merged")]
+
+
+async def test_a_merged_pr_that_left_the_search_ends_as_merged(github):
+    gh = github.gh
+    gh.comment(PR, "hi", user="dana")
+    _, resume, _ = await _all(_source(github.base))
+    gh.end(PR, "merged")
+    items, _, _ = await _all(_source(github.base), cursor=resume)
+    assert [i.data.text for i in items if i.data.ends_conversation] == [f"merged by {ME}"]

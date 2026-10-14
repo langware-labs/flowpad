@@ -22,6 +22,7 @@ interface ConfirmDialogProps {
    * instead of forgetting it.
    */
   entity?: { remote?: boolean } | null;
+  testId?: string;
 }
 
 export function ConfirmDialog({
@@ -35,6 +36,7 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   entity,
+  testId,
 }: ConfirmDialogProps) {
   const handleConfirm = () => {
     onConfirm();
@@ -48,7 +50,7 @@ export function ConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+      <AlertDialogContent data-testid={testId}>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>

@@ -18,6 +18,15 @@ search page AND how many of its items were handed out already.
 **403 is two things on GitHub.** A rate limit (``X-RateLimit-Remaining: 0`` or ``Retry-After``) is
 "wait" — the next pass retries; any other 403 is a refusal.
 
+**A PR leaves the list three ways — merged, closed, or you are no longer on it.** The timeline's
+``merged`` / ``closed`` / ``unassigned``-you events end the conversation (``ends_conversation``);
+``reopened`` is an ordinary message, which reopens it. A PR that leaves between two passes no longer
+matches the search at all, so the cursor keeps the open PR keys it saw (``seen``, capped); at the end
+of a pass a seen key the open search no longer lists is read once and its end message handed out,
+keyed as its timeline event (else ``ended-<owner>/<repo>#<n>-<state>``).
+
+**Acting:** approve, request changes, merge and close a PR from its conversation.
+
 Polling only: webhooks (``pull_request``, ``issue_comment``, ``check_suite``) are a later piece of work.
 """
 from __future__ import annotations
@@ -30,11 +39,20 @@ import re
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, ClassVar, Literal, Mapping, Optional, Union
 
+from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
-from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, SourceError, SourceUnavailable, Unsupported
+from flow_sdk.sources.errors import (
+    AccessDenied,
+    InvalidCursor,
+    NotFound,
+    Rejected,
+    SourceError,
+    SourceUnavailable,
+    Unsupported,
+)
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.memory import check_outgoing
 from flow_sdk.sources.protocols import Verdict
@@ -44,12 +62,21 @@ from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 
 GITHUB_API_BASE = "https://api.github.com"
-#: PRs per search page, and the per-PR list size (one page of each list per PR).
+#: PRs per search page; the per-PR list page size, and how many pages of one list are read at most.
 SEARCH_PAGE = 30
 LIST_PAGE = 100
+MAX_LIST_PAGES = 20
+#: A ``closed`` event this close to a ``merged`` one is the same merge.
+MERGE_CLOSE_SECONDS = 10
+#: Lines of a review comment's diff hunk shown above it.
+HUNK_LINES = 3
 #: The scopes the connection must carry; ``X-OAuth-Scopes`` names what a classic token holds.
 REQUIRED_SCOPES = ("repo", "read:org")
 MAX_CURSOR_LENGTH = 4096
+#: Open PR keys the cursor remembers between passes (fewer if they would overflow the cursor).
+SEEN_CAP = 500
+#: The open-PR membership search reads this many per page, at most ``SEEN_CAP`` in all.
+MEMBERSHIP_PAGE = 100
 FILTERS = {"assigned": "assignee", "review_requested": "review-requested"}
 #: PRs read at once in one search page.
 PR_CONCURRENCY = 6
@@ -58,7 +85,17 @@ SIGN_IN = "GitHub sign-in is missing or expired"
 _PR = re.compile(r"^[^/#\s]+/[^/#\s]+#\d+$")
 _MESSAGE = re.compile(r"^(comment|review-comment|review|event|commit|check)-[\w.-]+$")
 #: Timeline events that are messages; the rest (labels, mentions, renames) are bookkeeping.
-_EVENTS = frozenset({"assigned", "committed", "head_ref_force_pushed", "merged", "closed", "reopened"})
+_EVENTS = frozenset({"assigned", "unassigned", "committed", "head_ref_force_pushed", "merged", "closed", "reopened"})
+#: What a PR's state says when it left the search without a timeline event to show for it.
+OWN_PR = "GitHub does not let you review your own pull request"
+
+
+class OwnPullRequest(Rejected):
+    """Approve or request changes on a PR you opened — GitHub's 422."""
+
+
+class MergeBlocked(Rejected):
+    """GitHub will not merge the PR as it stands (405 not mergeable, 409 head moved)."""
 #: A check that finished without failing.
 _GREEN = frozenset({"success", "neutral", "skipped"})
 
@@ -88,10 +125,19 @@ class GithubPrSource(MessageSource):
     provider = "github_pr"
     connection = "github"
     durable_cursor = True
+    #: The account is the GitHub login (``account_key``), not a config field; each PR is its own
+    #: conversation within it, so a reply is addressed to the PR, never to a person.
+    identity_config_key = ""
     #: A normal pass hands out a whole search page of PRs at once.
     page_size = MAX_PAGE_SIZE
     #: A reply lands in the PR (or the review thread); it never quotes.
     quotes = False
+    actions: ClassVar[tuple[ActionSpec, ...]] = (
+        ActionSpec(id="approve", label="Approve", icon_name="CheckCircle"),
+        ActionSpec(id="request_changes", label="Request changes", icon_name="CircleAlert", needs_text=True),
+        ActionSpec(id="merge", label="Merge", icon_name="GitMerge", confirm="Merge this pull request into its base?", destructive=True),
+        ActionSpec(id="close", label="Close", icon_name="Archive", confirm="Close this pull request?", destructive=True),
+    )
 
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
@@ -160,34 +206,77 @@ class GithubPrSource(MessageSource):
         self._require_open()
         query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
-        page, skip, top = 1, 0, None
+        state: dict = {"page": 1, "skip": 0}
         if cursor is None:
             since = query.since if query is not None else None
         else:
-            state = _decode(cursor)
+            state = {"page": 1, "skip": 0, **_decode(cursor)}
             since = _stamp(state.get("mark"))
-            if "page" in state:
-                page, skip, top = int(state["page"]), int(state.get("skip") or 0), _stamp(state.get("top"))
 
-        found = await self._get("/search/issues", q=self._search(since), sort="updated", order="asc", per_page=SEARCH_PAGE, page=page)
-        prs = [pr for pr in found.get("items") or () if isinstance(pr, dict) and pr.get("number") and pr.get("repository_url")]
+        found = await self._get("/search/issues", q=self._search(since), sort="updated", order="asc", per_page=SEARCH_PAGE, page=state["page"])
+        prs = _prs(found)
         gate = asyncio.Semaphore(PR_CONCURRENCY)
 
-        async def read(pr: dict) -> list[MessageItem]:
+        async def gated(work):
             async with gate:
-                return await self._messages(pr)
+                return await work
 
-        items = [item for messages in await asyncio.gather(*(read(pr) for pr in prs)) for item in messages]
-        top = max((s for s in (top, *(_parse_time(pr.get("updated_at")) for pr in prs)) if s is not None), default=None)
+        items = [item for messages in await asyncio.gather(*(gated(self._messages(pr, since)) for pr in prs)) for item in messages]
+        top = max((s for s in (_stamp(state.get("top")), *(_parse_time(pr.get("updated_at")) for pr in prs)) if s is not None), default=None)
 
-        handed = items[skip:skip + limit]
-        mark = _iso(since)
-        if skip + limit < len(items):
-            return ChangePage(items=tuple(handed), next_cursor=_encode({"mark": mark, "page": page, "skip": skip + limit, "top": _iso(top)}))
-        if len(prs) == SEARCH_PAGE and page * SEARCH_PAGE < int(found.get("total_count") or 0):
-            return ChangePage(items=tuple(handed), next_cursor=_encode({"mark": mark, "page": page + 1, "skip": 0, "top": _iso(top)}))
+        # A pass starting from a resume cursor first ends the PRs that left the search since.
+        open_now: Optional[list[str]] = None
+        ended: list[MessageItem] = []
+        if state.get("seen"):
+            open_now = await self._open_keys(found if since is None else None)
+            gone = [key for key in state["seen"] if key not in open_now]
+            ended = [item for found_ in await asyncio.gather(*(gated(self._ended(key)) for key in gone)) for item in found_]
+
+        skip, limit_end = state["skip"], state["skip"] + limit
+        handed = tuple(items[skip:limit_end]) + tuple(ended)
+        onward = {"mark": _iso(since), "top": _iso(top)}
+        if limit_end < len(items):
+            return ChangePage(items=handed, next_cursor=_encode({**onward, "page": state["page"], "skip": limit_end}))
+        if len(prs) == SEARCH_PAGE and state["page"] * SEARCH_PAGE < int(found.get("total_count") or 0):
+            return ChangePage(items=handed, next_cursor=_encode({**onward, "page": state["page"] + 1, "skip": 0}))
+        if open_now is None:  # a pass past its first page re-reads the open set at its end
+            open_now = await self._open_keys(found if since is None and state["page"] == 1 else None)
         newest = max((s for s in (top, since) if s is not None), default=None)
-        return ChangePage(items=tuple(handed), resume_cursor=_encode({"mark": _iso(newest)}) if newest else None)
+        return ChangePage(items=handed, resume_cursor=_fit(_iso(newest), open_now))
+
+    async def _open_keys(self, found: Optional[dict] = None) -> list[str]:
+        """Every open PR the search lists now, as ``<owner>/<repo>#<n>``, oldest update first.
+        ``found`` — this pass's own unnarrowed first search page — is reused when it held them all."""
+        if found is not None and int(found.get("total_count") or 0) <= SEARCH_PAGE:
+            rows = _prs(found)
+        else:
+            rows = [pr async for pr in http.paginate(
+                self._client, f"{self.base_url}/search/issues", key="items", max_pages=SEEN_CAP // MEMBERSHIP_PAGE, **self._wire(),
+                params={"q": self._search(None), "sort": "updated", "order": "asc", "per_page": MEMBERSHIP_PAGE},
+            ) if isinstance(pr, dict) and pr.get("number") and pr.get("repository_url")]
+        return [f"{_repo_of(pr)}#{int(pr['number'])}" for pr in rows]
+
+    async def _ended(self, key: str) -> list[MessageItem]:
+        """The end message of PR ``key``, which left the search since the last pass: its timeline's
+        last ending event, keyed as a read keys it, else one ``ended-<key>-<state>`` line."""
+        if not _PR.match(key):
+            return []
+        repo, n = _split(key)
+        try:
+            head, timeline = await asyncio.gather(self._get(f"/repos/{repo}/pulls/{n}"), self._list(f"/repos/{repo}/issues/{n}/timeline"))
+        except NotFound:
+            return []
+        title = str(head.get("title") or "") or None
+        found: list[MessageItem] = []
+        add = self._adder(found, key, title)
+        self._events(timeline, add, head, head)
+        ending = [item for item in found if item.data.ends_conversation]
+        if ending:
+            return [max(ending, key=lambda item: item.data.sent_at or datetime.min.replace(tzinfo=timezone.utc))]
+        state = "merged" if head.get("merged") or head.get("merged_at") else str(head.get("state") or "open")
+        line = {"merged": "merged", "closed": "closed", "open": "You are no longer on this pull request"}.get(state, state)
+        when = head.get("merged_at") or head.get("closed_at") or head.get("updated_at")
+        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True)]
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
@@ -206,21 +295,21 @@ class GithubPrSource(MessageSource):
             terms.append(f"updated:>={since.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
         return " ".join(terms)
 
-    async def _messages(self, pr: dict) -> list[MessageItem]:
-        """Every message of one PR, oldest first (ties by key, so a re-read lists them alike)."""
-        repo = "/".join(str(pr["repository_url"]).rstrip("/").split("/")[-2:])
+    async def _messages(self, pr: dict, since: Optional[datetime] = None) -> list[MessageItem]:
+        """Every message of one PR, oldest first (ties by key, so a re-read lists them alike).
+        ``since`` narrows the two comment lists that take it; the rest are read whole."""
+        repo = _repo_of(pr)
         n = int(pr["number"])
         key = f"{repo}#{n}"
         title = str(pr.get("title") or "") or None
         base = f"/repos/{repo}"
         out: list[MessageItem] = []
 
-        def add(kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None) -> None:
-            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to))
+        add = self._adder(out, key, title)
 
         comments, review_comments, reviews, timeline, head = await asyncio.gather(
-            self._list(f"{base}/issues/{n}/comments"),
-            self._list(f"{base}/pulls/{n}/comments"),
+            self._list(f"{base}/issues/{n}/comments", since=since),
+            self._list(f"{base}/pulls/{n}/comments", since=since),
             self._list(f"{base}/pulls/{n}/reviews"),
             self._list(f"{base}/issues/{n}/timeline"),
             self._get(f"{base}/pulls/{n}"),
@@ -229,29 +318,65 @@ class GithubPrSource(MessageSource):
             add(f"comment-{c['id']}", _login(c.get("user")), str(c.get("body") or ""), c.get("created_at"), c.get("html_url"), c)
         for c in review_comments:
             parent = f"review-comment-{c['in_reply_to_id']}" if c.get("in_reply_to_id") else None
-            add(f"review-comment-{c['id']}", _login(c.get("user")), str(c.get("body") or ""), c.get("created_at"), c.get("html_url"), c, parent)
+            text = str(c.get("body") or "") if parent else _line_comment(c)
+            add(f"review-comment-{c['id']}", _login(c.get("user")), text, c.get("created_at"), c.get("html_url"), c, parent)
         for r in reviews:
-            if str(r.get("state") or "").upper() == "PENDING":
+            state = str(r.get("state") or "").upper()
+            # PENDING is a draft; an empty COMMENTED review is only the wrapper of line comments.
+            if state == "PENDING" or (state == "COMMENTED" and not str(r.get("body") or "").strip()):
                 continue
             who = _login(r.get("user"))
             add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r)
-        for e in timeline:
-            self._event(e, add, pr)
+        self._events(timeline, add, pr, head)
 
         sha = str((head.get("head") or {}).get("sha") or "")
         if sha:
-            runs = (await self._get(f"{base}/commits/{sha}/check-runs", per_page=LIST_PAGE)).get("check_runs") or []
+            runs = await self._list(f"{base}/commits/{sha}/check-runs", key="check_runs")
             summary = _checks_line(runs)
             if summary is not None:
                 when = max((str(r.get("completed_at") or "") for r in runs), default="") or None
-                add(f"check-{sha}", "", summary, when, f"{pr.get('html_url') or ''}/checks" if pr.get("html_url") else None, {"check_runs": runs})
+                app = next((str((r.get("app") or {}).get("name") or "") for r in runs if isinstance(r, dict) and (r.get("app") or {}).get("name")), "")
+                add(f"check-{sha}", app or "CI", summary, when, f"{pr.get('html_url') or ''}/checks" if pr.get("html_url") else None, {"check_runs": runs})
         out.sort(key=lambda item: (item.data.sent_at or datetime.min.replace(tzinfo=timezone.utc), item.origin.key))
         return out
 
-    def _event(self, e: dict, add, pr: dict) -> None:
+    def _adder(self, out: list[MessageItem], key: str, title: Optional[str]):
+        """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False)`` appending
+        one message of PR ``key`` to ``out``."""
+
+        def add(kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *, ends: bool = False) -> None:
+            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends))
+
+        return add
+
+    def _ends(self, e: dict) -> bool:
+        """Timeline event ``e`` ends the conversation: merged, closed, or it took you off the PR."""
         kind = str(e.get("event") or "")
-        if kind not in _EVENTS:
-            return
+        return bool(e.get("id")) and (kind in ("merged", "closed") or (kind == "unassigned" and _login(e.get("assignee")) == self.binding.account_key))
+
+    def _events(self, timeline: list[dict], add, pr: dict, head: Optional[dict] = None) -> None:
+        """Each timeline event that is a message, through ``add``; labels, mentions, renames and
+        someone else's unassignment are bookkeeping.
+
+        GitHub records a merge as a ``merged`` AND a ``closed`` event, either of which may reach the
+        timeline first. The merge is the ``closed`` event, said "merged by X": it is beside a
+        ``merged`` event, or it is the last close of a PR (``head``) that says it merged. The
+        ``merged`` event itself is never a message, so a late one cannot add a second."""
+        merges = [t for e in timeline if e.get("event") == "merged" and (t := _parse_time(e.get("created_at"))) is not None]
+        closes = [e for e in timeline if e.get("event") == "closed" and e.get("id")]
+        merged_pr = bool(head and (head.get("merged") or head.get("merged_at")))
+        for e in timeline:
+            kind = str(e.get("event") or "")
+            if kind not in _EVENTS or kind == "merged" or (kind == "unassigned" and not self._ends(e)):
+                continue
+            if kind == "closed":
+                when = _parse_time(e.get("created_at"))
+                beside = when is not None and any(abs((when - m).total_seconds()) <= MERGE_CLOSE_SECONDS for m in merges)
+                if beside or (merged_pr and e is closes[-1]):
+                    kind = "merged"
+            self._event(e, kind, add, pr)
+
+    def _event(self, e: dict, kind: str, add, pr: dict) -> None:
         if kind == "committed":
             sha = str(e.get("sha") or "")
             if not sha:
@@ -268,11 +393,15 @@ class GithubPrSource(MessageSource):
         if kind == "assigned":
             assignee = _login(e.get("assignee"))
             line = f"{who} assigned {'you' if assignee and assignee == self.binding.account_key else assignee}"
+        elif kind == "unassigned":
+            line = f"{who} unassigned you"
         elif kind == "head_ref_force_pushed":
             line = f"{who} force-pushed"
+        elif kind in ("closed", "merged"):
+            line = f"{kind} by {who}" if who else kind
         else:
             line = kind
-        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e)
+        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e, ends=self._ends(e))
 
     def _profile(self, login: str) -> UserProfile:
         return UserProfile(origin=self.origin(login), name=login)
@@ -327,13 +456,54 @@ class GithubPrSource(MessageSource):
         sent = self._sent(f"{prefix}-{body.get('id')}", pr, data.text, body)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
+    # ── acting ──────────────────────────────────────────────────────────────
+    async def act(self, conversation: CloudOrigin, action: str, text: str = "") -> Optional[MessageItem]:
+        """Do ``action`` to the PR ``conversation`` names. A review comes back keyed ``review-<id>`` as
+        a read keys it; a merge or close has no event id in GitHub's answer, so it returns ``None`` and
+        the next pass brings the timeline's ``merged`` / ``closed`` event."""
+        self._require_open()
+        pr = self._pr_of(conversation)
+        repo, n = _split(pr)
+        if action == "request_changes" and not (text or "").strip():
+            raise ValueError("requesting changes needs a comment saying what to change")
+        call = {
+            "approve": ("POST", "/reviews", {"event": "APPROVE"}),
+            "request_changes": ("POST", "/reviews", {"event": "REQUEST_CHANGES", "body": text}),
+            "merge": ("PUT", "/merge", {}),
+            "close": ("PATCH", "", {"state": "closed"}),
+        }.get(action)
+        if call is None:
+            raise Unsupported(f"a GitHub pull request has no action {action!r}")
+        method, suffix, payload = call
+        body = await self._act(method, f"/repos/{repo}/pulls/{n}{suffix}", payload, conversation)
+        if suffix != "/reviews" or not isinstance(body, dict) or not body.get("id"):
+            return None
+        who = _login(body.get("user"))
+        return self._item(f"review-{body['id']}", pr, str(body.get("body") or "") or _review_line(who, body.get("state")), who, body.get("submitted_at"), body.get("html_url"), raw=body)
+
+    async def _act(self, method: str, path: str, payload: dict, origin: CloudOrigin) -> Any:
+        response = await self._request(method, path, json=payload, origin=origin, ok_statuses=(405, 409, 422))
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        if response.status_code < 400:
+            return body
+        said = str(body.get("message") or "") if isinstance(body, dict) else ""
+        errors = " ".join(str(e.get("message") if isinstance(e, dict) else e) for e in (body.get("errors") or ())) if isinstance(body, dict) else ""
+        if response.status_code == 422 and "own pull request" in f"{said} {errors}".lower():
+            raise OwnPullRequest(OWN_PR, origin=origin)
+        if response.status_code in (405, 409):
+            raise MergeBlocked(f"GitHub cannot merge this pull request: {said or 'it is not mergeable'}", origin=origin)
+        raise Rejected(f"GitHub refused: {' — '.join(p for p in (said, errors) if p) or f'HTTP {response.status_code}'}", origin=origin)
+
     def _sent(self, key: str, pr: str, text: Optional[str], body: dict) -> MessageItem:
         """What GitHub confirmed, keyed exactly as ``fetch`` keys that comment — the echo is the same row."""
         return self._item(key, pr, text, _login(body.get("user")), body.get("created_at"), body.get("html_url"))
 
     def _item(
         self, key: str, pr: str, text: Optional[str], sender: str, when: Any, url: Any, *,
-        raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None,
+        raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None, ends: bool = False,
     ) -> MessageItem:
         """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share."""
         data = GithubPrMessageData(
@@ -344,6 +514,7 @@ class GithubPrSource(MessageSource):
             sent_at=_parse_time(when),
             in_reply_to=self.origin(in_reply_to, pr) if in_reply_to else None,
             raw=raw,
+            ends_conversation=ends,
         )
         origin = self.origin(key, pr)
         return MessageItem(origin=origin.model_copy(update={"url": str(url)}) if url else origin, data=data)
@@ -357,10 +528,13 @@ class GithubPrSource(MessageSource):
         return origin
 
     def _pr_of(self, conversation: object) -> str:
+        """The PR (``<owner>/<repo>#<n>``) a conversation origin names: its own ``(account, PR)``, or
+        the shape the surface acts with — a message's namespace (``<account>/<PR>``) with the PR as key."""
         origin = self._check_scope(conversation)
-        if origin.namespace != self.binding.account_key or not _PR.match(origin.key):
-            raise NotFound(f"{origin!r} names no pull request", origin=origin)
-        return origin.key
+        account = self.binding.account_key
+        if _PR.match(origin.key) and (origin.namespace == account or origin.namespace.startswith(f"{account}/")):
+            return origin.key
+        raise NotFound(f"{origin!r} names no pull request", origin=origin)
 
     def _message_of(self, origin: object) -> tuple[str, str]:
         """``(<owner>/<repo>#<n>, message key)`` a message origin names."""
@@ -382,24 +556,16 @@ class GithubPrSource(MessageSource):
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
-    async def _request(self, method: str, path: str, *, origin: Optional[CloudOrigin] = None, **kwargs: Any):
-        """One call; GitHub's two 403s become the contract's errors, every other status the shared table's."""
-        headers = self._headers()
+    async def _request(self, method: str, path: str, *, origin: Optional[CloudOrigin] = None, ok_statuses: tuple[int, ...] = (), **kwargs: Any):
+        """One call; a status is the shared table's error (a rate-limited 403 is a wait, not a refusal)."""
         if self._client is None:
             async with http.client() as client:
-                return await self._send(client, method, path, headers, origin, kwargs)
-        return await self._send(self._client, method, path, headers, origin, kwargs)
+                return await http.request(client, method, f"{self.base_url}{path}", ok_statuses=ok_statuses, **self._wire(origin), **kwargs)
+        return await http.request(self._client, method, f"{self.base_url}{path}", ok_statuses=ok_statuses, **self._wire(origin), **kwargs)
 
-    async def _send(self, client, method: str, path: str, headers: dict, origin, kwargs: dict):
-        response = await http.request(
-            client, method, f"{self.base_url}{path}", headers=headers, ok_statuses=(403,), origin=origin,
-            hint="check the GitHub connection and the repositories", **kwargs,
-        )
-        if response.status_code == 403:
-            if response.headers.get("X-RateLimit-Remaining") == "0" or response.headers.get("Retry-After"):
-                raise SourceUnavailable("GitHub's rate limit is spent; the next pass tries again", origin=origin)
-            raise AccessDenied("GitHub refused the request (HTTP 403) — check the connection's access to the repository", origin=origin)
-        return response
+    def _wire(self, origin: Optional[CloudOrigin] = None) -> dict:
+        """What every GitHub call carries: the token, the hint, the origin an error names."""
+        return {"headers": self._headers(), "hint": "check the GitHub connection and the repositories", "origin": origin}
 
     async def _get(self, path: str, **params: Any) -> Any:
         response = await self._request("GET", path, params=params)
@@ -408,9 +574,15 @@ class GithubPrSource(MessageSource):
         except ValueError as exc:
             raise SourceUnavailable(f"GET {path}: undecodable JSON: {exc}") from exc
 
-    async def _list(self, path: str) -> list[dict]:
-        body = await self._get(path, per_page=LIST_PAGE)
-        return [entry for entry in body if isinstance(entry, dict)] if isinstance(body, list) else []
+    async def _list(self, path: str, *, key: Optional[str] = None, since: Optional[datetime] = None) -> list[dict]:
+        """Every entry of a GitHub list across its ``Link: rel="next"`` pages (``key`` when the list
+        rides in an object, as check runs do); ``since`` on the lists that take it."""
+        params: dict = {"per_page": LIST_PAGE}
+        if since is not None:
+            params["since"] = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return [entry async for entry in http.paginate(
+            self._client, f"{self.base_url}{path}", params=params, key=key, max_pages=MAX_LIST_PAGES, **self._wire(),
+        ) if isinstance(entry, dict)]
 
     async def _post(self, path: str, payload: dict, *, origin: Optional[CloudOrigin] = None) -> dict:
         response = await self._request("POST", path, json=payload, origin=origin)
@@ -431,6 +603,30 @@ def _check_outgoing(data: object, *, reply: bool) -> None:
         raise ValueError("a GitHub comment needs text")
 
 
+def _repo_of(pr: dict) -> str:
+    return "/".join(str(pr["repository_url"]).rstrip("/").split("/")[-2:])
+
+
+def _fit(mark: Optional[str], seen: list[str]) -> Optional[str]:
+    """The resume cursor: ``mark`` and the newest ``seen`` keys that fit (at most ``SEEN_CAP``, the
+    cursor within ``MAX_CURSOR_LENGTH``); ``None`` when there is nothing to carry."""
+    budget = MAX_CURSOR_LENGTH * 3 // 4 - len(json.dumps({"mark": mark, "seen": []}, sort_keys=True))
+    keep: list[str] = []
+    for key in reversed(seen[-SEEN_CAP:]):
+        budget -= len(json.dumps(key)) + 2
+        if budget < 0:
+            break
+        keep.append(key)
+    if mark is None and not keep:
+        return None
+    return _encode({"mark": mark, "seen": keep[::-1]} if keep else {"mark": mark})
+
+
+def _prs(found: dict) -> list[dict]:
+    """The PRs of one search answer."""
+    return [pr for pr in found.get("items") or () if isinstance(pr, dict) and pr.get("number") and pr.get("repository_url")]
+
+
 def _split(pr: str) -> tuple[str, int]:
     repo, _, n = pr.partition("#")
     return repo, int(n)
@@ -438,6 +634,21 @@ def _split(pr: str) -> tuple[str, int]:
 
 def _login(user: Any) -> str:
     return str(user.get("login") or "") if isinstance(user, dict) else ""
+
+
+def _line_comment(c: dict) -> str:
+    """A review comment's text, led by where it is: ``path:line`` and the last lines of its hunk,
+    each behind a ``│ `` gutter.
+    ``MessageData`` has no quote field, so the place rides in the text."""
+    body = str(c.get("body") or "")
+    path = str(c.get("path") or "")
+    if not path:
+        return body
+    line = c.get("line") or c.get("original_line")
+    tail = [h for h in str(c.get("diff_hunk") or "").splitlines() if not h.startswith("@@")][-HUNK_LINES:]
+    # The bubble renders plain text (pre-wrap), not block markdown: a fence would show its backticks.
+    snippet = "".join(f"\n│ {h}" for h in tail)
+    return f"{path}{f':{line}' if line else ''}{snippet}\n{body}"
 
 
 def _review_line(who: str, state: Any) -> str:
@@ -492,6 +703,8 @@ def _decode(cursor: object) -> dict:
     except (ValueError, TypeError, RecursionError, binascii.Error) as exc:
         raise InvalidCursor("malformed GitHub cursor") from exc
     if not isinstance(state, dict) or "mark" not in state:
+        raise InvalidCursor("malformed GitHub cursor")
+    if not isinstance(state.get("seen", []), list) or not all(isinstance(k, str) for k in state.get("seen", [])):
         raise InvalidCursor("malformed GitHub cursor")
     if "page" in state and not (isinstance(state["page"], int) and state["page"] >= 1 and isinstance(state.get("skip", 0), int)):
         raise InvalidCursor("malformed GitHub cursor")
