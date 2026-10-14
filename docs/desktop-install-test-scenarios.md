@@ -5,7 +5,7 @@ id: aa640578-a177-4c25-ad4a-d07f00265128
 
 Manual and scripted scenarios for the three changes that came out of the
 "Startup Error: Command failed: uv tool install flowpad --python 3.10 --force"
-incident (desktop v0.2.44):
+failure:
 
 1. The Python pin is read from `pyproject.toml` (`requires-python` floor), not hand-written.
 2. A failed install/start shows the in-app panel with **Retry** instead of a native error box that quits.

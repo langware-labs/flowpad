@@ -9,7 +9,7 @@ description = "A local-first AI development environment powered by Claude Code"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    {name = "Langware Labs", email = "eran@langware.ai"},
+    {name = "Langware Labs", email = "diagnosis@langware.ai"},
 ]
 dependencies = [
     "platformdirs",

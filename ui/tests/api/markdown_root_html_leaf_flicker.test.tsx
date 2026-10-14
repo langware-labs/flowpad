@@ -1,7 +1,7 @@
 /**
  * The Documents side menu must not blank a project's docs folder back to
  * "Loading…" while a NON-markdown file of that folder is open ("open the html
- * in sapora, the side menu flickers", 2026-10-02).
+ * in acme, the side menu flickers", 2026-10-02).
  *
  * Real path, no mocks: a real Project over a fresh directory whose `docs/` holds
  * one `.md` and one `.html` (only markdown inside docs/ or doc/ is a document), the backend's own asset catalog vaults (`/assets/types`), the

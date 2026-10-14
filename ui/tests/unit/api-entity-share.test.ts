@@ -60,12 +60,12 @@ describe('APIEntity.share', () => {
 
 describe('Project.invite — one share action; the backend orchestrates the invites', () => {
   const THEM = '7c6d5e4f-3a2b-4c1d-9e8f-0a1b2c3d4e5f';
-  const ZSCHOOL = '6a6a6a6a-0000-4000-8000-000000000007';
+  const INITECH = '6a6a6a6a-0000-4000-8000-000000000007';
   const outcome: ShareResult = {
     invited: [{ user_id: THEM, email: null, conversation_id: 'conv-1' }],
     skipped: [{ user_id: null, email: 'owner@example.com', reason: 'self' }],
     failed: [],
-    granted_teams: [{ team: `team-${ZSCHOOL}`, name: 'zschool', conversation_id: 'conv-team' }],
+    granted_teams: [{ team: `team-${INITECH}`, name: 'initech', conversation_id: 'conv-team' }],
     skipped_teams: [],
     failed_teams: [],
   };
@@ -83,7 +83,7 @@ describe('Project.invite — one share action; the backend orchestrates the invi
     });
 
     const result = await p.invite([' New@Example.com ', '', { idOrEmail: `user-${THEM}`, role: 'admin' }], {
-      teams: [new TypeId('team', ZSCHOOL)],
+      teams: [new TypeId('team', INITECH)],
       note: '  Welcome aboard ',
     });
 
@@ -94,7 +94,7 @@ describe('Project.invite — one share action; the backend orchestrates the invi
     // Only ShareRequestSpec's keys — never the entity's own JSON.
     expect(info.bodyParameters).toEqual({
       recipients: ['New@Example.com', { idOrEmail: `user-${THEM}`, role: 'admin' }],
-      teams: [`team-${ZSCHOOL}`],
+      teams: [`team-${INITECH}`],
       note: 'Welcome aboard',
     });
     expect(result).toEqual(outcome);

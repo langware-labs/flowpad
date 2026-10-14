@@ -29,7 +29,7 @@ async def _make_conversation(client) -> str:
     project_id = await _local_project_id(client)
     resp = await client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": [{"email": "tzahi@example.com", "name": "Tzahi"}]},
+        json={"project_id": project_id, "participants": [{"email": "frank@example.com", "name": "Frank"}]},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["conversation_id"]
@@ -183,7 +183,7 @@ async def test_conversation_summary_action_renders_header_and_messages(
     assert "first message" in summary
     assert "second message" in summary
     # Participant roster appears in the header.
-    assert "Tzahi" in summary
+    assert "Frank" in summary
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

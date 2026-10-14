@@ -1,6 +1,6 @@
 """RCA capture: a relaunch must not leave another live worker on its session.
 
-Incident (session c8b083cf, teachpal-zone): a hung claude worker became an
+Incident (session c8b083cf, initech-portal): a hung claude worker became an
 orphan — after a relaunch, ``shell.worker_pid`` no longer pointed at it — and
 every subsequent relaunch spawned ``claude --resume <sid>`` straight into the
 orphan's live JSONL session lock, stalling forever. The relaunch path

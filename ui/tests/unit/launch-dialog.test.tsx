@@ -48,7 +48,7 @@ const { LaunchDialog } = await import('@src/components/task-receive/LaunchDialog
 const { LaunchFailure } = await import('@src/pages/entry/launch-runner');
 
 const status = (id: string) => screen.getByTestId(`launch-step-${id}`).getAttribute('data-status');
-const WITH_CONTROLLER = { target: { projectId: 'spora' }, controllerId: 'q' };
+const WITH_CONTROLLER = { target: { projectId: 'acme' }, controllerId: 'q' };
 
 beforeEach(() => {
   h.runs = [];
@@ -62,7 +62,7 @@ afterEach(cleanup);
 
 describe('LaunchDialog', () => {
   it('with no controller, the first row is the one running', () => {
-    render(<LaunchDialog plan={{ target: { projectId: 'spora' } }} onClose={() => {}} />);
+    render(<LaunchDialog plan={{ target: { projectId: 'acme' } }} onClose={() => {}} />);
 
     expect(screen.queryByTestId('launch-step-controller')).toBeNull();
     expect(status('target')).toBe('loading');
@@ -72,7 +72,7 @@ describe('LaunchDialog', () => {
   it('a controller sent without a target asks which local project, and runs on the one picked', () => {
     h.projects = [
       { id: 'q', name: 'q', fs_storage_mount_path: '/w/q' },
-      { id: 'spora', name: 'spora', fs_storage_mount_path: '/w/spora' },
+      { id: 'acme', name: 'acme', fs_storage_mount_path: '/w/acme' },
       { id: 'cloud-only', name: 'cloud-only' },
     ];
 
@@ -83,9 +83,9 @@ describe('LaunchDialog', () => {
     expect(screen.getByTestId('launch-dialog-title').textContent).toBe('Which project should it work on?');
     expect(screen.getByTestId('launch-local-projects').querySelectorAll('button')).toHaveLength(1);
 
-    fireEvent.click(screen.getByTestId('launch-local-spora'));
+    fireEvent.click(screen.getByTestId('launch-local-acme'));
 
-    expect(h.plans).toEqual([{ target: { local: 'spora' }, controllerId: 'q', agentId: 'a' }]);
+    expect(h.plans).toEqual([{ target: { local: 'acme' }, controllerId: 'q', agentId: 'a' }]);
     expect(status('controller')).toBe('loading');
   });
 

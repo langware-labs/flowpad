@@ -7,9 +7,9 @@ path from `/auth/login_callback`. The switch-detection this repo already has
 whoever is currently signed in, via `clear_user_data(reason=SWITCHED_OUT)`)
 lives ONLY in `login_callback`. `complete_sandbox_login` never runs it.
 
-Proven live on prod compute_node f41f5c42-a8fa-4934-8cda-9080f09d24bd
-(2026-09-24): gadi+20 had the machine open; gadi@ reclaimed it via this exact
-path; gadi+20's tab silently became gadi@'s session — no purge, no
+Proven live on a prod compute node
+(2026-09-24): alice+20 had the machine open; alice@ reclaimed it via this exact
+path; alice+20's tab silently became alice@'s session — no purge, no
 `SessionTakenOverOverlay` warning — the original FLOWPAD-2151 vulnerability,
 reproduced in the reclaim direction. This file pins the gap so a fix has
 something to turn green, and a regression here is caught before it reaches

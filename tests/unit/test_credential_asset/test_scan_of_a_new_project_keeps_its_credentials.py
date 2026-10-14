@@ -44,7 +44,7 @@ def _fresh_indexer(monkeypatch):
 def workspace_project_root():
     """A project folder under the user home's workspace, removed afterwards: the home is shared by the
     whole run, and a folder left there is a project every later workspace listing finds."""
-    root = Path(get_instance_settings().user_home) / "Flowpad workspace" / f"spora-{time.time_ns()}"
+    root = Path(get_instance_settings().user_home) / "Flowpad workspace" / f"acme-{time.time_ns()}"
     yield root
     shutil.rmtree(root, ignore_errors=True)
 

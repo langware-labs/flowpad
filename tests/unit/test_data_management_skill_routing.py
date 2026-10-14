@@ -120,7 +120,7 @@ def _probe(tmp_path, ns="dmprobeabc"):
 
 def test_probe_copy_drops_entity_ids_so_the_probe_never_takes_over_real_rows(tmp_path):
     """A copied asset that kept its id re-pointed the REAL asset's index row at the probe on apply,
-    and probe-drop then deleted it (found by a fresh review on GTM Studio)."""
+    and probe-drop then deleted it (found by a fresh review on Sales Desk)."""
     import json
     from types import SimpleNamespace
 

@@ -1,5 +1,5 @@
 // The shape grammar read by the SDK, so an app never re-splits `enum:a|b` or `a|b` itself (found on
-// GTM Studio: seven views each parsed it by hand).
+// Sales Desk: seven views each parsed it by hand).
 import { describe, expect, it } from 'vitest';
 
 import { enumValues, linkTargets, parseValueRef } from '../../../ts_sdk/src/viewers/kinds';

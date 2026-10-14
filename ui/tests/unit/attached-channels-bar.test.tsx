@@ -135,10 +135,10 @@ describe('AttachedChannelsBar', () => {
   });
 
   it('a channel row names its account — the connected phone, the mailbox — when it has one', () => {
-    const phone = fake('w', 'active', 'flow_whatsapp', { account_key: '972557709288' });
+    const phone = fake('w', 'active', 'flow_whatsapp', { account_key: '972500000000' });
     mount([phone, fake('s')]);
     fireEvent.click(screen.getByTestId('attached-channels-details'));
-    expect(screen.getAllByTestId('attached-channel-account').map((e) => e.textContent)).toEqual(['972557709288']);
+    expect(screen.getAllByTestId('attached-channel-account').map((e) => e.textContent)).toEqual(['972500000000']);
   });
 });
 

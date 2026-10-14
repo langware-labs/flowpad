@@ -1,5 +1,5 @@
 """Rules across rows (``rules`` in a record's data_schema.json): declared once, checked by Flowpad on
-every write and read -- so no writer can skip them (found on GTM Studio: its tag chain lived in two
+every write and read -- so no writer can skip them (found on Sales Desk: its tag chain lived in two
 apps and a third writer broke it)."""
 from __future__ import annotations
 

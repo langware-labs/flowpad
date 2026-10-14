@@ -31,7 +31,7 @@ const { classifyWebpageStatus } = await import('@src/components/web-url-display/
 const { clearWebpageStatusCache } = await import('@src/components/web-url-display/useWebpageStatus');
 const { dataManager, pointerForWebUrl, TypeId } = await import('@sdk');
 
-const URL_ = 'https://github.com/langware-labs/flowpad-hub/pull/1138';
+const URL_ = 'https://github.com/acme/hub/pull/1138';
 
 function status(patch: Partial<WebpageStatus>): WebpageStatus {
   return {

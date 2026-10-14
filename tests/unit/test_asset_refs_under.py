@@ -9,9 +9,9 @@ from flow_sdk.fs_store import path_utils
 
 
 def test_every_spelling_gets_its_own_separator(monkeypatch):
-    monkeypatch.setattr(path_utils, "asset_ref_spellings", lambda _root: ["C:/Users/f/spora", "C:\\Users\\f\\spora"])
+    monkeypatch.setattr(path_utils, "asset_ref_spellings", lambda _root: ["C:/Users/f/acme", "C:\\Users\\f\\acme"])
 
-    assert path_utils.asset_refs_under("C:/Users/f/spora") == ["C:/Users/f/spora/%", "C:\\Users\\f\\spora\\%"]
+    assert path_utils.asset_refs_under("C:/Users/f/acme") == ["C:/Users/f/acme/%", "C:\\Users\\f\\acme\\%"]
 
 
 def test_a_trailing_separator_does_not_double(tmp_path):

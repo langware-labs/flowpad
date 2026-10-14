@@ -10,11 +10,11 @@ import { ActionInfo, Project, dataManager } from '@sdk';
 import { runTsFence, snippetDoc, tsFenceUnder } from '../utils/ts-snippets';
 
 const PROJECT_ID = '3f0c2b1a-0000-4000-8000-0000000000d7';
-const OS_SOURCE = 'git+https://github.com/langware-labs/langware-os#main';
+const OS_SOURCE = 'git+https://github.com/acme/handbook#main';
 
 const state = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
-  source: name === 'langware-os' ? OS_SOURCE : `hub:${name}`,
+  source: name === 'handbook' ? OS_SOURCE : `hub:${name}`,
   required: name !== 'policies',
   path: '.',
   state: 'ready',
@@ -30,16 +30,16 @@ function deskDouble() {
   vi.spyOn(dataManager, 'callAction').mockImplementation((info: ActionInfo) => {
     expect(info.targetEntity?.toString()).toBe(`project-${PROJECT_ID}`);
     calls.push({ name: info.name, method: info.method, body: info.bodyParameters });
-    const context = { include_dirs: ['/work/langware-os'], context_roots: ['/work/site', '/work/langware-os'], context_dir_infos: [] };
+    const context = { include_dirs: ['/work/handbook'], context_roots: ['/work/site', '/work/handbook'], context_dir_infos: [] };
     switch (info.name) {
       case 'dependencies':
         return Promise.resolve({
-          dependencies: [state('langware-os'), state('gone', { state: 'unreachable', reason: 'repository not found' })],
+          dependencies: [state('handbook'), state('gone', { state: 'unreachable', reason: 'repository not found' })],
           warnings: [state('gone', { state: 'unreachable', reason: 'repository not found' })],
           resolving: false,
         });
       case 'add-dependency':
-        return Promise.resolve({ dependency: state('langware-os'), ...context });
+        return Promise.resolve({ dependency: state('handbook'), ...context });
       case 'install-dependency':
         return Promise.resolve({ dependency: state('policies'), ...context });
       case 'dismiss-dependency-warning':
@@ -73,6 +73,6 @@ describe('project dependencies — the TypeScript fence', () => {
     ]);
     expect(calls[1].body).toMatchObject({ source: OS_SOURCE });
     expect(calls[3].body).toEqual({ name: 'gone' });
-    expect(project.context_roots).toEqual(['/work/site', '/work/langware-os']); // adopted from the response
+    expect(project.context_roots).toEqual(['/work/site', '/work/handbook']); // adopted from the response
   });
 });
