@@ -4,8 +4,9 @@
  * One way to tell the user that something failed: a native dialog with "OK" and "Share with us".
  *
  * Every failure the user can SEE should offer the same way to reach the team, so the logs that explain it do not
- * depend on the user knowing where they live. "Share with us" builds the support bundle and opens the mail client
- * (see support-bundle.js); nothing is sent until the user presses Send.
+ * depend on the user knowing where they live. "Share with us" builds the support bundle and uploads it to the
+ * team's intake (support-bundle.js + support-upload.js); a native dialog cannot hold a text input, so this
+ * surface always sends anonymously — the startup error panel is where an email can be attached.
  *
  * Dependencies are injected so this is unit-testable (main.js is not).
  */
@@ -67,14 +68,28 @@ async function showFailureDialog({ dialog, parent, type = 'error', title, messag
   } catch (err) {
     result = { ok: false, error: err && err.message };
   }
-  if (result && result.ok) return 'shared';
+  if (result && result.ok) {
+    // The upload is silent, so say out loud that it worked — and give the reference
+    // the user can quote to the team.
+    try {
+      await show(dialog, parent, {
+        type: 'info',
+        title: 'Logs sent',
+        message: 'Your logs were sent to the Flowpad team.',
+        detail: result.submissionId ? `Reference ID: ${result.submissionId}` : '',
+        buttons: ['OK'],
+        defaultId: OK,
+      });
+    } catch { /* the upload still happened */ }
+    return 'shared';
+  }
 
   if (log) log.warn(`[failure-dialog] share failed: ${result && result.error}`);
   try {
     await show(dialog, parent, {
       type: 'warning',
-      title: 'Could not prepare the logs',
-      message: 'Flowpad could not prepare the logs to share.',
+      title: 'Could not send the logs',
+      message: 'Flowpad could not upload the logs to the team.',
       detail: `${(result && result.error) || 'Unknown error'}\n\nThe logs are in your .flow folder (logs). You can attach the newest files to an email to diagnosis@langware.ai.`,
       buttons: ['OK'],
       defaultId: OK,

@@ -188,33 +188,49 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     openLogsBtn.addEventListener('click', () => { api.openLogsFolder().catch(() => {}); });
   }
 
-  // "Share with us": main builds the zip and opens the user's mail client; we only report back
-  // which file to attach, since a mailto: link cannot carry the attachment itself.
+  // "Share with us": the button reveals the optional-email form; "Send logs" has main build
+  // the zip and upload it to the Flowpad team's intake — nothing to attach or mail. Empty
+  // email sends anonymously. On a failed upload, "Export logs" is offered as the way out.
   const shareBtn = document.getElementById('share-logs');
+  const shareForm = document.getElementById('share-form');
+  const shareEmail = document.getElementById('share-email');
+  const shareSend = document.getElementById('share-send');
   const shareStatus = document.getElementById('share-status');
   const shareIdle = shareStatus ? shareStatus.textContent : '';
   if (shareBtn && api.shareLogs) {
-    shareBtn.addEventListener('click', async () => {
-      shareBtn.disabled = true;
-      shareBtn.textContent = 'Preparing…';
+    shareBtn.addEventListener('click', () => {
+      if (!shareForm) return;
+      shareForm.hidden = !shareForm.hidden;
+      if (!shareForm.hidden && shareEmail) shareEmail.focus();
+    });
+    const sendLogs = async () => {
+      if (shareSend) { shareSend.disabled = true; shareSend.textContent = 'Uploading…'; }
       try {
-        const r = await api.shareLogs(detailEl ? detailEl.textContent : '');
+        const email = shareEmail ? shareEmail.value.trim() : '';
+        const r = await api.shareLogs(detailEl ? detailEl.textContent : '', email);
         if (shareStatus) {
           shareStatus.className = 'error-share-note ' + (r && r.ok ? 'ok' : 'fail');
           shareStatus.textContent = r && r.ok
-            ? `Your email app is opening a message to ${r.to}. Attach this file (it is highlighted in your file manager): ${r.zipPath}`
-            : `Couldn’t prepare the logs${r && r.error ? `: ${r.error}` : ''}. Use “Open logs folder” and attach the newest files by hand.`;
+            ? `Logs sent to the Flowpad team. Reference ID: ${r.submissionId}` + (email ? ` — we can reply to ${email}.` : '')
+            : `Couldn’t upload the logs${r && r.error ? `: ${r.error}` : ''}. Use “Export logs” to save the zip and send it to the team yourself.`;
+        }
+        if (r && r.ok) {
+          if (shareForm) shareForm.hidden = true;
+        } else if (exportBtn) {
+          exportBtn.hidden = false;
         }
       } catch (e) {
         if (shareStatus) {
           shareStatus.className = 'error-share-note fail';
-          shareStatus.textContent = `Couldn’t prepare the logs: ${e && e.message ? e.message : e}`;
+          shareStatus.textContent = `Couldn’t upload the logs: ${e && e.message ? e.message : e}`;
         }
+        if (exportBtn) exportBtn.hidden = false;
       } finally {
-        shareBtn.disabled = false;
-        shareBtn.textContent = 'Share with us';
+        if (shareSend) { shareSend.disabled = false; shareSend.textContent = 'Send logs'; }
       }
-    });
+    };
+    if (shareSend) shareSend.addEventListener('click', sendLogs);
+    if (shareEmail) shareEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter' && shareSend && !shareSend.disabled) sendLogs(); });
   }
   // A new error re-arms the note (a retry that fails again shows the default text).
   const resetShareNote = () => { if (shareStatus) { shareStatus.className = 'error-share-note'; shareStatus.textContent = shareIdle; } };

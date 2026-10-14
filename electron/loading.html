@@ -286,6 +286,28 @@
     .error-share-note.ok { color: hsl(140 40% 60%); }
     .error-share-note.fail { color: hsl(0 70% 65%); }
 
+    /* "Share with us" inline form: an optional email + send (FLOWPAD-2251). */
+    .error-share-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .share-email {
+      flex: 1 1 220px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 85%);
+      background: hsl(0 0% 8%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.5rem;
+      outline: none;
+    }
+
+    .share-email:focus { border-color: hsl(0 0% 30%); }
+    .share-email::placeholder { color: hsl(0 0% 40%); }
+
     .error-step {
       margin-bottom: 24px;
     }
@@ -435,9 +457,14 @@
         <button class="quit-btn" id="share-logs">Share with us</button>
         <button class="quit-btn" id="export-logs" hidden>Export logs</button>
       </div>
+      <!-- Revealed by "Share with us": email is optional, empty sends anonymously. -->
+      <div class="error-share-form" id="share-form" hidden>
+        <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
+        <button class="quit-btn" id="share-send">Send logs</button>
+      </div>
       <p class="error-share-note" id="share-status">
-        “Share with us” opens your email app with a short message to the Flowpad team and shows a zip of
-        your latest logs to attach. Nothing is sent until you press Send in your email app.
+        “Share with us” zips your latest logs (passwords and tokens are masked) and sends them to the
+        Flowpad team. Adding your email lets us reply; leaving it empty sends anonymously.
       </p>
 
       <div class="error-step">

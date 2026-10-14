@@ -37,14 +37,17 @@ function fakeDialog(responses) {
     await showFailureDialog({ dialog: d, title: 'T', message: 'M', log: silentLog });
     eq(d.shown[0].opts.buttons, ['OK']);
   }
-  // 3. "Share with us" calls the sharer with the headline + detail, once, and reports 'shared'.
+  // 3. "Share with us" calls the sharer with the headline + detail, once, reports 'shared',
+  // and confirms the silent upload out loud with the reference id.
   {
-    const d = fakeDialog([1]);
+    const d = fakeDialog([1, 0]);
     const got = [];
-    const r = await showFailureDialog({ dialog: d, title: 'T', message: 'Headline', detail: 'Cause: boom', share: async (t) => { got.push(t); return { ok: true }; }, log: silentLog });
+    const r = await showFailureDialog({ dialog: d, title: 'T', message: 'Headline', detail: 'Cause: boom', share: async (t) => { got.push(t); return { ok: true, submissionId: 'sub-1' }; }, log: silentLog });
     eq(r, 'shared');
     eq(got, ['Headline\n\nCause: boom']);
-    eq(d.shown.length, 1, 'no second dialog when sharing worked');
+    eq(d.shown.length, 2, 'a confirmation dialog follows a successful upload');
+    eq(d.shown[1].opts.type, 'info');
+    assert.ok(d.shown[1].opts.detail.includes('sub-1'), 'the confirmation carries the reference id'); passed++;
   }
   // 4. A failed share (returned or thrown) tells the user and where the logs are.
   for (const sharer of [async () => ({ ok: false, error: 'disk full' }), async () => { throw new Error('disk full'); }]) {
@@ -81,7 +84,7 @@ function fakeDialog(responses) {
     assert.ok(c.startsWith('error: Failed to build `cryptography==50.0.2`'), 'the cause line (first) survives'); passed++;
     assert.ok(c.includes('Last output: the final line'), 'the last line survives'); passed++;
     assert.ok(/full text is in the logs/.test(c), 'says something was left out'); passed++;
-    const d = fakeDialog([1]);
+    const d = fakeDialog([1, 0]);
     let shared = null;
     await showFailureDialog({ dialog: d, title: 'T', message: 'M', detail: long, share: async (t) => { shared = t; return { ok: true }; }, log: silentLog });
     assert.ok(d.shown[0].opts.detail.length < 1400, 'the dialog got the excerpt'); passed++;
