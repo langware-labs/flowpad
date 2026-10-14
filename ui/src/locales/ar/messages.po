@@ -2299,6 +2299,11 @@ msgstr "روابط إضافية لأسواق الملحقات"
 msgid "Address book"
 msgstr "دفتر العناوين"
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Admin"
+msgstr "إدارة"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
 
@@ -3198,6 +3203,8 @@ msgstr "موافَق عليه لهذه الجلسة"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
 
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "تطبيقات"
@@ -8326,8 +8333,9 @@ msgid "Dependencies"
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 msgid "Dependency"
-msgstr ""
+msgstr "تبعية"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Dependency removed"
@@ -17550,6 +17558,7 @@ msgid "open {name}"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "افتح {name}"
@@ -23556,6 +23565,10 @@ msgstr ""
 msgid "Show value"
 msgstr ""
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Showing {name}"
+msgstr "معروض: {name}"
+
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Showing 20 of {0} entries"
@@ -27626,6 +27639,7 @@ msgstr ""
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "المستخدم"

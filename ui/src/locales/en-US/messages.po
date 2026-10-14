@@ -2329,6 +2329,10 @@ msgstr "Additional plugin marketplace URLs"
 msgid "Address book"
 msgstr "Address book"
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Admin"
+msgstr "Admin"
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr "Adopt a support desk published as a git repository"
@@ -3233,6 +3237,8 @@ msgstr "Approved for this session"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "Apps"
@@ -8391,6 +8397,7 @@ msgid "Dependencies"
 msgstr "Dependencies"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 msgid "Dependency"
 msgstr "Dependency"
 
@@ -17726,6 +17733,7 @@ msgid "open {name}"
 msgstr "open {name}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
@@ -23781,6 +23789,10 @@ msgstr "Show unpushed commits"
 msgid "Show value"
 msgstr "Show value"
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Showing {name}"
+msgstr "Showing {name}"
+
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Showing 20 of {0} entries"
@@ -27884,6 +27896,7 @@ msgstr "user"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "User"
