@@ -112,9 +112,12 @@ The route that hands a cold browser its cookie, on either gate's terms.
 
 ### On this machine: `/auth/gate?cookie-gate=<token>&next=<url>`
 
-For a loopback `Host`. It is gated like everything else, and is reachable
-because the URL carries the token. It sets the cookie for the host the browser addressed and
-redirects to `next`: a path on this instance, or an absolute `http(s)` URL.
+For a loopback `Host`. It is gated like everything else. It sets the cookie for the host the
+browser addressed when the request carries the token, and redirects to `next`: a path on this
+instance, or an absolute `http(s)` URL **only when the token is in the URL itself**. A crafted link
+reaches the route without its sender holding the token -- a click from a desktop app passes the
+direct-open rule, a click from a web page carries the browser's `Lax` cookie -- so without the token
+in the URL an absolute `next` falls back to `/`, and the route is no open redirect.
 
 The absolute form is what makes login and OAuth work in a browser that never opened Flowpad. The
 hub, Auth0 and the OAuth providers return the browser to `127.0.0.1:<port>/auth/login_callback` or
