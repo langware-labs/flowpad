@@ -10,8 +10,26 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), sendInput: vi.fn(), ensureStarted: vi.fn() }));
+const h = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  sendInput: vi.fn(),
+  ensureStarted: vi.fn(),
+  connect: vi.fn(),
+  /** The flow-complete listener the block holds right now, per provider (enabled only). */
+  flowDone: {} as Record<string, (payload: { provider: string; status: string }) => void>,
+}));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
+vi.mock('@sdk/react/hooks', () => ({
+  useOAuthFlowComplete: (provider: string, handler: (payload: { provider: string; status: string }) => void, enabled = true) => {
+    if (enabled) h.flowDone[provider] = handler;
+    else delete h.flowDone[provider];
+  },
+}));
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sdk')>();
+  return { ...actual, oauthService: { connect: h.connect } };
+});
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {}, currentDock: null }),
 }));
@@ -28,6 +46,11 @@ import { AskForm } from '@src/components/ask/AskForm';
 const LOGIN = 'gcloud auth application-default login';
 const KEY_FILE = { value: 'GOOGLE_APPLICATION_CREDENTIALS', label: 'Service account key', hint: 'A JSON key file', secret: true, file: false, command: '' };
 const GCLOUD = { value: 'GCLOUD_ADC', label: 'Sign in with gcloud', hint: 'Uses your own Google account', secret: false, file: false, command: LOGIN };
+const GOOGLE = {
+  value: 'GMAIL_GOOGLE', label: 'Sign in with Google', hint: 'Nothing to copy', secret: false, file: false, command: '',
+  provider: 'google', scopes: ['https://mail.google.com/'],
+};
+const APP_PASSWORD = { value: 'GMAIL_APP_PASSWORD', label: 'App password', hint: '', secret: true, file: false, command: '' };
 const QUESTION = {
   id: 'q1', op: 'ask-google-cloud', prompt: 'Google Cloud', fields: 'string', auto: true,
   guide: 'Create a key under **IAM**.', choices: [KEY_FILE, GCLOUD],
@@ -39,10 +62,43 @@ afterEach(() => {
   h.post.mockReset();
   h.sendInput.mockReset();
   h.ensureStarted.mockReset();
+  h.connect.mockReset();
+  h.flowDone = {};
   vi.restoreAllMocks();
 });
 
 describe('AskChoiceBlock', () => {
+  it('a sign-in-through-Flowpad way connects its provider and, once granted, answers with its name alone', async () => {
+    const onAnswer = vi.fn();
+    h.connect.mockResolvedValue(null);
+    render(<AskChoiceBlock choices={[GOOGLE, APP_PASSWORD]} onAnswer={onAnswer} />);
+
+    expect(screen.queryByTestId('ask-choice-input')).toBeNull();
+    fireEvent.click(screen.getByTestId('ask-choice-sign-in-button'));
+    await waitFor(() => expect(h.connect).toHaveBeenCalledWith('google'));
+    expect(await screen.findByTestId('ask-choice-oauth-waiting')).toBeInTheDocument();
+    expect(onAnswer).not.toHaveBeenCalled();
+
+    h.flowDone.google({ provider: 'google', status: 'success' });
+    await waitFor(() => expect(onAnswer).toHaveBeenCalledWith('GMAIL_GOOGLE'));
+  });
+
+  it('a sign-in that does not finish answers nothing and says so; the other way stays open', async () => {
+    const onAnswer = vi.fn();
+    h.connect.mockResolvedValue(null);
+    render(<AskChoiceBlock choices={[GOOGLE, APP_PASSWORD]} onAnswer={onAnswer} />);
+
+    fireEvent.click(screen.getByTestId('ask-choice-sign-in-button'));
+    await waitFor(() => expect(h.flowDone.google).toBeDefined());
+    h.flowDone.google({ provider: 'google', status: 'cancelled' });
+
+    expect(await screen.findByTestId('ask-choice-oauth-refused')).toHaveTextContent('did not finish');
+    fireEvent.click(screen.getByTestId(`ask-choice-${APP_PASSWORD.value}`));
+    fireEvent.change(screen.getByTestId('ask-choice-input'), { target: { value: 'abcd efgh' } });
+    fireEvent.click(screen.getByTestId('ask-choice-submit'));
+    expect(onAnswer).toHaveBeenCalledWith('GMAIL_APP_PASSWORD=abcd efgh');
+  });
+
   it('draws one card per way, the first one picked and open', () => {
     render(<AskChoiceBlock choices={[KEY_FILE, GCLOUD]} onAnswer={vi.fn()} />);
 

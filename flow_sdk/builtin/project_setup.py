@@ -138,9 +138,11 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
-                         present=v.present, required=v.required, kind=v.kind, login=v.login)
+                         present=v.present, required=v.required, kind=v.kind, login=v.login,
+                         provider=v.provider, scopes=list(v.scopes))
             for v in (must or row.vars)
         ],
+        setup_choice=row.setup_choice,
         satisfied=row.state == "connected", used_by=used_by, required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
         skipped=row.setup_skipped, **always,
@@ -160,7 +162,7 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
             SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
                          pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE,
                          required=var.required, kind=var.kind,
-                         login=var.login_command)
+                         login=var.login_command, provider=var.provider, scopes=list(var.scopes))
             for name, var in (template.vars or {}).items() if name in required
         ],
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
@@ -360,7 +362,9 @@ def compile_setup(
             if ways := [v for v in ways if v.login or v.kind is not CredentialVarKind.CLI]:
                 # One question for the whole group: the person picks ONE way. A value way is answered
                 # ``<VAR>=<value>`` and stored by the next step; a sign-in way (cli) is done in a terminal,
-                # and the question closes by itself once the credential's check holds.
+                # and the question closes by itself once the credential's check holds; an oauth way is the
+                # screen's own Sign in (its provider and scopes ride the choice), answered ``<VAR>`` once granted —
+                # the store step records the way picked on the credential's row (``setup_choice``).
                 add({
                     "name": f"ask-{req.name}-one-of", "label": f"{req.title or req.name}: choose one way",
                     "subkind": "ask", "output_spec_kind": "string",
@@ -368,7 +372,8 @@ def compile_setup(
                         "prompt": f"{req.title or req.name}: choose one way",
                         "secret": True, "auto_continue": any(v.login for v in ways),
                         "choices": [{"value": v.env_var, "label": v.label or v.env_var, "hint": v.hint,
-                                     "secret": v.secret, "file": v.file, "command": v.login} for v in ways],
+                                     "secret": v.secret, "file": v.file, "command": v.login,
+                                     "provider": v.provider, "scopes": list(v.scopes)} for v in ways],
                     },
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     "completion_check": check,

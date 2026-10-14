@@ -274,7 +274,9 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         ),
         # Full Drive, asked for only while a Drive source on this machine writes back (not read-only).
         # A restricted scope: a person connecting only to read never consents to it.
-        optional_scopes=("https://www.googleapis.com/auth/drive",),
+        # Full mail access, asked for only while a declared credential offers a sign-in with this provider
+        # covering it as one of its ways (``wanted_scopes``).
+        optional_scopes=("https://www.googleapis.com/auth/drive", "https://mail.google.com/"),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",

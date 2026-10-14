@@ -372,6 +372,10 @@ class AskChoiceSpec(DataSpec):
     file: bool = False
     #: The command the person runs instead of giving a value, on this machine.
     command: str = ""
+    #: A sign-in through Flowpad instead of a value: the screen connects ``provider`` (covering ``scopes``) in the
+    #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
+    provider: str = ""
+    scopes: list[str] = []
 
 
 class AskItemSpec(DataSpec):
