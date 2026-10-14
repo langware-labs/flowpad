@@ -174,6 +174,12 @@ async def test_the_whole_project_comes_up_leaf_first(project, monkeypatch, tmp_p
         return ReturnedValue(exit_code=ExitCode.OK if held else ExitCode.NOT_YET, ran=not check)
 
     monkeypatch.setattr(webapp_setup, "step", app_step)
+
+    async def requirement_holds(project_id, which, *, check):
+        """A connection's own needs (its credential, its provider) are there: this test is about order."""
+        return True, ""
+
+    monkeypatch.setattr(project_setup, "requirement_step", requirement_holds)
     recorded = []
     monkeypatch.setattr(derive, "_stage_recorder", lambda wizard, target: _recorder(recorded, wizard.name, target))
     tree = await ProjectTree(project, ai=False).load()
