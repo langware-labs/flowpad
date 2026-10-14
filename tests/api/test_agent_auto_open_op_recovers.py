@@ -3,7 +3,7 @@ up → the op navigates again → it opens.
 
 Through the real Use route, with no stand-ins: the place is a real port nobody listens
 on, the repair rung is a real command that starts a real HTTP server there, and the
-verdict is the real probe. (In production the rung is an agent — Spora's assistant;
+verdict is the real probe. (In production the rung is an agent — Acme's assistant;
 a cli rung exercises the same ladder without a harness.)
 """
 from __future__ import annotations

@@ -38,7 +38,7 @@ register_all()
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 DESK_MANIFEST = {
-    "display_name": "CloudNSite Support",
+    "display_name": "Globex Support",
     "desk_project_id": "4f9f1fd1-39b6-5465-9c20-cb4c59b08318",
 }
 
@@ -66,7 +66,7 @@ def workspace(tmp_path, monkeypatch):
 def helpdesk_repo(tmp_path: Path) -> str:
     """The vendor's capability layer — stays theirs, keeps updating. A git source."""
     root = tmp_path / "vendor-helpdesk"
-    desk = root / "agentic-assets" / "helpdesk" / "cloudnsite"
+    desk = root / "agentic-assets" / "helpdesk" / "globex"
     desk.mkdir(parents=True)
     (desk / "helpdesk.json").write_text(json.dumps(DESK_MANIFEST), encoding="utf-8")
     _commit(root)
@@ -89,7 +89,7 @@ def bootstrap_repo(tmp_path: Path, helpdesk_repo: str) -> str:
     """The engagement template — becomes the customer's on clone."""
     return _template(
         tmp_path / "vendor-bootstrap",
-        {"dependencies": {"cloudnsite": helpdesk_repo}, "autolaunchJourney": "engagement-setup"},
+        {"dependencies": {"globex": helpdesk_repo}, "autolaunchJourney": "engagement-setup"},
     )
 
 
@@ -163,12 +163,12 @@ async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(bootstrap_repo
     assert response.status == "SUCCESS", response
     data = response.data
 
-    desk = _deps(data)["cloudnsite"]
+    desk = _deps(data)["globex"]
     assert desk["state"] == "ready", desk
     desk_path = Path(desk["local_path"])
 
     assert desk_path.is_dir()
-    assert (desk_path / "agentic-assets" / "helpdesk" / "cloudnsite" / "helpdesk.json").is_file()
+    assert (desk_path / "agentic-assets" / "helpdesk" / "globex" / "helpdesk.json").is_file()
     assert desk["local_path"] in project.include_dirs, "must reach workers as a context dir"
 
     # Outside the project tree, and still a git checkout — that is what lets a
@@ -181,7 +181,7 @@ async def test_declared_helpdesk_is_attached_as_a_link_not_a_copy(bootstrap_repo
 
     # The declaration itself survives the history cut: it is the customer's now.
     assert json.loads((Path(data["path"]) / "flow.json").read_text())["dependencies"] == {
-        "cloudnsite": desk["source"]
+        "globex": desk["source"]
     }
     assert data["autolaunch_journey"] == "engagement-setup"
 
@@ -246,11 +246,11 @@ async def test_resolving_again_links_the_desk_once(bootstrap_repo: str, workspac
     or clones."""
     project = await _project()
     response = await project.setup_from_bootstrap_git(bootstrap_repo)
-    first = _deps(response.data)["cloudnsite"]
+    first = _deps(response.data)["globex"]
 
     again = {s.name: s for s in await project.resolve_dependencies()}
 
-    assert again["cloudnsite"].local_path == first["local_path"]
+    assert again["globex"].local_path == first["local_path"]
     assert project.include_dirs == [first["local_path"]]
     desk_clones = [d for d in workspace.iterdir() if d.name.startswith("vendor-helpdesk")]
     assert desk_clones == [Path(first["local_path"])], "the desk was cloned once"
@@ -316,7 +316,7 @@ async def test_two_engagements_from_one_template_are_independent(bootstrap_repo:
     assert ra.data["path"] != rb.data["path"], "two engagements must not share a working copy"
 
     # ...but the DESK is shared: one vendor repo, one checkout, N engagements.
-    assert _deps(ra.data)["cloudnsite"]["local_path"] == _deps(rb.data)["cloudnsite"]["local_path"]
+    assert _deps(ra.data)["globex"]["local_path"] == _deps(rb.data)["globex"]["local_path"]
 
 
 @pytest.mark.asyncio

@@ -304,8 +304,8 @@ async def _fetch_branches_rest(api_url: str, headers: dict) -> list[dict] | ApiR
     """All pages of GitHub's REST branch list, in GitHub's own (alphabetical) order.
 
     per_page=100 is GitHub's max; the default is 30. Following the ``Link``
-    header matters as much as the page size: flowpad-hub has 228 branches, and
-    page 1 alphabetically stops at "compose" — so every ``release/*`` used to be
+    header matters as much as the page size: a repository with a couple of hundred
+    branches has page 1 stop alphabetically around "c" — so every ``release/*`` used to be
     invisible with no error anywhere.
     """
     collected: list[dict] = []

@@ -15,7 +15,7 @@ the Python-backend change list. **§15 holds the five decisions reserved for the
 its options and consequences; nothing in the document presumes an answer. **§16 is the written
 exclusion of every file-I/O function this proposal does NOT cover**, by theme, with the condition
 under which each would re-enter. Every `file:line` is a pointer into
-`/Users/shlom/Documents/dev/flowpad-oss` at branch `trip-manager-demo-2`, the compatibility
+this repository at its compatibility baseline commit, the compatibility
 baseline (`00_goal.md`). The version log at the end is history; an implementer can skip it.
 
 Working name for the package: `flow_sdk/diskio/` (OPEN DECISION 3; `docs/glossary.md` reserves

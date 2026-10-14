@@ -198,11 +198,11 @@ async def test_base_href_is_https_when_served_through_a_sandbox_host(bootstrappe
     app = await _make_app(tmp_path)
 
     # Exactly how e2b delivers it: plain http, public Host, no forwarded proto.
-    resp = await bootstrapped_client.get(f"http://9007-izaqamfcs55jm22e3evdn.e2b.dev{_view_url(app)}")
+    resp = await bootstrapped_client.get(f"http://9007-sbx123.e2b.dev{_view_url(app)}")
 
     assert resp.status_code == 200, resp.text
     assert _base_href(resp.text) == (
-        f"https://9007-izaqamfcs55jm22e3evdn.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/"
+        f"https://9007-sbx123.e2b.dev/api/v1/graph/service_endpoint/{app.id}/service/"
     )
 
 

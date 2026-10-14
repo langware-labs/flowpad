@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "agent-management",
   "folder_name": "agent-management",
   "inputs_hash": "50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd",

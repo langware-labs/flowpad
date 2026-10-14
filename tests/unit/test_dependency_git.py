@@ -49,7 +49,7 @@ register_all()
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 MANIFEST = {
-    "display_name": "CloudNSite Support",
+    "display_name": "Globex Support",
     "desk_project_id": "4f9f1fd1-39b6-5465-9c20-cb4c59b08318",
     "welcome_message": "Ask us anything about your engagement.",
 }
@@ -57,14 +57,14 @@ MANIFEST = {
 
 AGENT_JSON = {
     "type": "agent",
-    "name": "cloudnsite-support",
-    "title": "CloudNSite Support",
-    "description": "Grounded answers from CloudNSite's engineering method.",
+    "name": "globex-support",
+    "title": "Globex Support",
+    "description": "Grounded answers from Globex's engineering method.",
     "avatar": "./avatar.png",
     "worker_type": "claude",
     "enabled": True,
 }
-SYSTEM_PROMPT_MD = "You are the CloudNSite support agent.\n"
+SYSTEM_PROMPT_MD = "You are the Globex support agent.\n"
 
 
 def _make_vendor_repo(root: Path) -> Path:
@@ -73,11 +73,11 @@ def _make_vendor_repo(root: Path) -> Path:
     The agent is what the customer actually LAUNCHES, so it is the asset most
     at risk from a stray write — see the save-after-add regression below.
     """
-    desk = root / "agentic-assets" / "helpdesk" / "cloudnsite"
+    desk = root / "agentic-assets" / "helpdesk" / "globex"
     desk.mkdir(parents=True)
     (desk / "helpdesk.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
 
-    agent = root / "agentic-assets" / "agent" / "cloudnsite-support"
+    agent = root / "agentic-assets" / "agent" / "globex-support"
     agent.mkdir(parents=True)
     (agent / "agent.json").write_text(json.dumps(AGENT_JSON, indent=2) + "\n", encoding="utf-8")
     (agent / "system_prompt.md").write_text(SYSTEM_PROMPT_MD, encoding="utf-8")
@@ -171,7 +171,7 @@ async def test_adding_a_url_clones_links_and_discovers_the_desk(tmp_path: Path, 
     )
     cloned = Path(state.local_path)
     assert cloned.parent == workspace, "a missing repo is cloned into the workspace"
-    assert (cloned / "agentic-assets" / "helpdesk" / "cloudnsite" / "helpdesk.json").is_file()
+    assert (cloned / "agentic-assets" / "helpdesk" / "globex" / "helpdesk.json").is_file()
     assert state.local_path in project.include_dirs
 
     # Select by PATH, not display name: ``display_name`` is repo-controlled,
@@ -257,7 +257,7 @@ async def test_saving_a_vendor_agent_does_not_dirty_the_checkout(tmp_path: Path,
     state = await project.add_dependency(vendor_repo)
     assert state.state == "ready", state
     checkout = Path(state.local_path)
-    agent_json = checkout / "agentic-assets" / "agent" / "cloudnsite-support" / "agent.json"
+    agent_json = checkout / "agentic-assets" / "agent" / "globex-support" / "agent.json"
 
     agents = [a for a in await Agent.get_all() if a.asset_ref == canonical_posix_path(str(agent_json.parent))]
     assert agents, "indexing the clone should have discovered the vendor's agent"

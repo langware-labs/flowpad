@@ -5,7 +5,7 @@
  * /Applications (Downloads, the mounted .dmg) is run by Gatekeeper from a randomised, READ-ONLY copy under
  * .../AppTranslocation/<uuid>/d/<App>.app. From there the app cannot update itself (Squirrel.Mac cannot
  * replace a translocated bundle), and its path changes on every launch. Found in a real user log
- * (2026-09-30): `file:///private/var/folders/…/AppTranslocation/60DD…/d/Flowpad.app/…/loading.html`.
+ * (2026-09-30): `file:///private/var/folders/…/AppTranslocation/<uuid>/d/Flowpad.app/…/loading.html`.
  *
  * The remedy is one gesture: move the app to /Applications. Electron does it for us
  * (app.moveToApplicationsFolder — copies, relaunches from there). We only ASK, once per app version, and only

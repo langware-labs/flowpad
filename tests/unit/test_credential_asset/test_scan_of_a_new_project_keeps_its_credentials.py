@@ -40,7 +40,7 @@ def _fresh_indexer(monkeypatch):
 
 
 async def test_a_cloned_projects_credentials_are_the_projects_and_count_toward_its_readiness(folder_db):
-    root = Path(get_instance_settings().user_home) / "Flowpad workspace" / f"spora-{time.time_ns()}"
+    root = Path(get_instance_settings().user_home) / "Flowpad workspace" / f"acme-{time.time_ns()}"
     folder = root / "agentic-assets" / "credential" / "google-cloud"
     folder.mkdir(parents=True)
     (folder / "credential.json").write_text(json.dumps({

@@ -163,7 +163,7 @@ describe('VFSPath', () => {
     });
 
     it('round-trips fromMachinePath → machinePath', () => {
-      const machine = '/Users/shlom/Documents/dev/flowpad-app/.claude/skills/e2e-qa';
+      const machine = '/Users/alice/Documents/dev/flowpad-app/.claude/skills/e2e-qa';
       const vpath = VFSPath.fromMachinePath(machine, new TypeId('compute_node', '@local'));
       expect(vpath.absVfsPath).toBe(`compute_node-@local${machine}`);
       expect(vpath.machinePath).toBe(machine);

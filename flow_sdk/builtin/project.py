@@ -227,7 +227,7 @@ class ProjectMoveError(ValueError):
 
 def project_name_key(name: str | None) -> str:
     """The name two projects may not share: case-insensitive, and spaces, ``-`` and
-    ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
+    ``_`` fold together — "Sales Desk", "sales-desk" and "sales_desk" are one name."""
     return re.sub(r"[\s_\-]+", "-", (name or "").casefold()).strip("-")
 
 
@@ -1024,7 +1024,7 @@ class Project(SetupSkippable, Entity):
 
         A rename changes the name, never the folder (the path keys sessions,
         records and discovery), so the two drift apart; the UI flags the drift.
-        Compared as ``project_name_key``, so "gtm studio" in ``gtm-studio/`` matches."""
+        Compared as ``project_name_key``, so "sales desk" in ``sales-desk/`` matches."""
         mount = self.fs_storage_mount_path
         if not mount or self.hidden:
             return None
@@ -2023,7 +2023,7 @@ class Project(SetupSkippable, Entity):
         # A fresh slot every time, named after the ENGAGEMENT rather than the
         # template: two engagements from one template are two independent
         # working copies, and a customer whose folder is called
-        # ``cloudnsite-bootstrap`` has been handed the vendor's name for their
+        # ``globex-bootstrap`` has been handed the vendor's name for their
         # own work. An empty/absent preferred root is the driver's clone target.
         from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 

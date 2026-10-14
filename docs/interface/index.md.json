@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
   "inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3",

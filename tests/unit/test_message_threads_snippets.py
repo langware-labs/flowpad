@@ -28,7 +28,7 @@ CUSTOMER = "dana@chat.test"
 
 
 async def _native_chat() -> str:
-    chat = Conversation(title="Ron, Eran")
+    chat = Conversation(title="Ron, Dan")
     await chat.save()
     await chat._send_native("Take a snapshot from the home list", reply_to_id=None, thread_root_id=None)
     return str(chat.id)

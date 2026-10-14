@@ -763,7 +763,7 @@ class Agent(Entity):
 
     async def home(self) -> str | None:
         """The folder this agent's own files are relative to — the project whose folder
-        holds its definition (``langware-os`` for its legal agent), else the repository
+        holds its definition (``handbook`` for its legal agent), else the repository
         it sits in. ``None`` for an agent with no files (a row-only agent).
 
         Paths in a system prompt (``docs/legal/guide.md``) mean this folder. When the

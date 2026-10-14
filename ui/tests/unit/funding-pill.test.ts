@@ -75,7 +75,7 @@ function source(typeid: string, over: Partial<LLMSource> = {}): LLMSource {
 
 function funding(resolved: string | null, over: Partial<LLMFundingStatus> = {}): LLMFundingStatus {
   return {
-    available: [endpoint(HUB, 'hub', { name: 'eran default' }), endpoint(HUB2, 'hub', { name: 'global' })],
+    available: [endpoint(HUB, 'hub', { name: 'alice default' }), endpoint(HUB2, 'hub', { name: 'global' })],
     sources: { [KIND]: [] },
     resolved: { [KIND]: resolved ? source(resolved) : null },
     blocked: { [KIND]: resolved ? '' : 'nothing eligible' },
@@ -100,7 +100,7 @@ function harness(over: Partial<HarnessStatus> = {}): HarnessStatus {
     login: LoginState.SignedIn,
     login_checked_at: '',
     login_message: '',
-    account: { identity: 'eran@langware.ai', plan: 'max' },
+    account: { identity: 'alice@example.com', plan: 'max' },
     has_device_login: true,
     key_providers: ['openrouter'],
     install_command: '',
@@ -117,7 +117,7 @@ function record(h: HarnessStatus, over: Partial<StatusRecord> = {}): StatusRecor
       { provider: 'anthropic', stored: false, created_at: '', hint: '' },
       { provider: 'openai', stored: false, created_at: '', hint: '' },
     ],
-    hub: { login: HubLogin.SignedIn, email: 'eran@langware.ai', user_typeid: 'user-1', error: '' },
+    hub: { login: HubLogin.SignedIn, email: 'alice@example.com', user_typeid: 'user-1', error: '' },
     default_harness: KIND,
     ...over,
   } as StatusRecord;
@@ -215,7 +215,7 @@ describe('pillForFlowpad', () => {
     const { pill, email, funds } = pillForFlowpad(record(harness()), funding(HUB));
     expect(pill.kind).toBe('plan');
     expect(pill.action).toBe('details');
-    expect(email).toBe('eran@langware.ai');
+    expect(email).toBe('alice@example.com');
     expect(funds).toEqual(['Claude']);
   });
 
@@ -241,6 +241,6 @@ describe('keysSummary / endpointsSummary', () => {
     const s = endpointsSummary(funding(HUB), { [HUB]: cost(3, 2.58), [HUB2]: cost(100, 1) });
     expect(s.count).toBe(2);
     expect(s.usdLeft).toBe(2.58);
-    expect(s.names).toEqual(['eran default', 'global']);
+    expect(s.names).toEqual(['alice default', 'global']);
   });
 });

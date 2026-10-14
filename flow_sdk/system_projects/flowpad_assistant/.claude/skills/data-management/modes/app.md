@@ -63,7 +63,7 @@ standard-library-only helper may use it).
 
 ## What broke a real app — and the call that replaces it
 
-GTM Studio built a CRM-like app on datasets before these calls existed. Each line is a
+One project built a CRM-like app on datasets before these calls existed. Each line is a
 workaround it shipped; the SDK now does the right side — never reproduce the left:
 
 | It did | Do instead |
@@ -74,7 +74,7 @@ workaround it shipped; the SDK now does the right side — never reproduce the l
 | validated the WHOLE dataset after writing, then wrote the old files back | `check` before; `put` validates and writes nothing when it fails |
 | modelled links as `{type, key}` kinds and read the target out of a description with a regex | a field typed by the target kind holding `<kind>.id.<uuid>` |
 | checked that a linked row exists, and refused deletes, on a polled cache | the SDK refuses a dangling reference and a referenced delete |
-| sliced `--gtm_studio--.` off kind names | keep kinds whole; the link's target is the field's own (full) kind |
+| sliced `--sales_desk--.` off kind names | keep kinds whole; the link's target is the field's own (full) kind |
 | scanned every dataset each load to find its own | `Dataset.forKind(kind, projectId)` |
 | re-read a row before saving to detect a concurrent edit | `put(…, {expected: row.version})` |
 | a `python3` CRM-sync script wrote `input/<kind>.json` and `example.json` itself | `load_root` + `Dataset.for_kind(kind, root)`, `check` then `put` / `delete_row`, on `$FLOWPAD_PYTHON` |

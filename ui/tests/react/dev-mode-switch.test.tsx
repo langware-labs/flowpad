@@ -99,21 +99,21 @@ describe('the profile-menu avatar is the door', () => {
 
   it('a double-click asks to toggle; on, it wears the fire ring', () => {
     const toggle = vi.fn();
-    const { rerender } = render(<UserMenuHeader name="Eran" onAvatarDoubleClick={toggle} />);
+    const { rerender } = render(<UserMenuHeader name="Alice" onAvatarDoubleClick={toggle} />);
     const avatar = screen.getByTestId('user-menu-avatar');
     expect(avatar.className).not.toContain('dev-fire-ring');
 
     fireEvent.doubleClick(avatar);
     expect(toggle).toHaveBeenCalledTimes(1);
 
-    rerender(<UserMenuHeader name="Eran" devMode onAvatarDoubleClick={toggle} />);
+    rerender(<UserMenuHeader name="Alice" devMode onAvatarDoubleClick={toggle} />);
     expect(screen.getByTestId('user-menu-avatar').className).toContain('dev-fire-ring');
     expect(screen.getByTestId('user-menu-avatar').dataset.devMode).toBe('true');
   });
 
   it('a single click does nothing (the menu item clicks stay ordinary)', () => {
     const toggle = vi.fn();
-    render(<UserMenuHeader name="Eran" onAvatarDoubleClick={toggle} />);
+    render(<UserMenuHeader name="Alice" onAvatarDoubleClick={toggle} />);
     fireEvent.click(screen.getByTestId('user-menu-avatar'));
     expect(toggle).not.toHaveBeenCalled();
   });

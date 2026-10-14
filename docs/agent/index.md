@@ -5,7 +5,7 @@ inputs_hash: 8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
+vault_root: docs
 generated_at: '2026-10-07T14:33:53Z'
 latest_process_ref: ''
 file_count: 3

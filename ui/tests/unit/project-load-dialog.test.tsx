@@ -52,7 +52,7 @@ describe('project lifecycle approval', () => {
       total: 4,
       done: 2,
       ran: false,
-      root: node('gtm-studio', 'blocked', 'waiting on Deals sync', [
+      root: node('sales-desk', 'blocked', 'waiting on Deals sync', [
         node('Deals sync', 'blocked', 'waiting on HubSpot key', [node('HubSpot key', 'failed', 'not set')]),
         node('Studio app', 'done'),
       ]),
@@ -64,7 +64,7 @@ describe('project lifecycle approval', () => {
     // The count is of the two rows shown, not the run's four nodes.
     expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('1 of 2 set up');
     // The root is the title, and the second level is the run's business.
-    expect(screen.queryByTestId('setup-node-gtm-studio')).toBeNull();
+    expect(screen.queryByTestId('setup-node-sales-desk')).toBeNull();
     expect(screen.queryByTestId('setup-node-HubSpot key')).toBeNull();
     expect(load).not.toHaveBeenCalled();
   });

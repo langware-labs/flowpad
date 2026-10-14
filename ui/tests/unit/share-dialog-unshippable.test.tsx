@@ -62,7 +62,7 @@ const source: ShareSource = {
   prepare: () => Promise.resolve({ assetReferences: [SESSION], sharedContextEntities: [SESSION, PROCESS] }),
 };
 
-const PARTICIPANTS = [{ email: 'gadi+20@langware.ai', name: 'Gadi 20' }];
+const PARTICIPANTS = [{ email: 'bob+20@example.com', name: 'Bob 20' }];
 
 type Commit = (target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>;
 

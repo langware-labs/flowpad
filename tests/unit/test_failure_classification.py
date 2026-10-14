@@ -18,11 +18,11 @@ FIELD_TRACEBACK = """\
 2026-10-10 13:27:03,100 INFO starting
 Traceback (most recent call last):
   File "<frozen runpy>", line 198, in _run_module_as_main
-  File "C:\\Users\\nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\flow_sdk\\server\\run.py", line 12, in <module>
+  File "C:\\Users\\user\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\flow_sdk\\server\\run.py", line 12, in <module>
     import uvicorn
-  File "C:\\Users\\nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\uvicorn\\__init__.py", line 1, in <module>
+  File "C:\\Users\\user\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\uvicorn\\__init__.py", line 1, in <module>
     from uvicorn.config import Config
-  File "C:\\Users\\nava\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py", line 22, in <module>
+  File "C:\\Users\\user\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py", line 22, in <module>
     import _multiprocessing
 ImportError: DLL load failed while importing _multiprocessing: An Application Control policy has blocked this file.
 """

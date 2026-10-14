@@ -66,7 +66,7 @@ async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
 
     art = Artifact(
         id=mint_uuid(),
-        name="spora",
+        name="acme",
         kind="application.web",
         origin=LocalOrigin(base=str(tmp_path), rel_path="."),
     )
@@ -118,11 +118,11 @@ async def test_artifact_origin_is_data_not_setup_workdir(tmp_path):
     from flow_sdk.builtin.artifact import Artifact
     from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
-    served = tmp_path / "webapps" / "spora"
+    served = tmp_path / "webapps" / "acme"
     served.mkdir(parents=True)
     art = Artifact(
         id=mint_uuid(),
-        name="spora",
+        name="acme",
         kind="application.web",
         origin=LocalOrigin(base=str(served.parent), rel_path=served.name),
     )

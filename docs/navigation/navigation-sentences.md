@@ -63,7 +63,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 31 | open project home | /dock/assets/project-home |
 | 32 | open my project | /dock/project/<id> |
 | 33 | switch project | ACTION: project list |
-| 34 | open the gtm-studio project | entity:project |
+| 34 | open the sales-desk project | entity:project |
 | 35 | create a new project | ACTION: new project dialog |
 | 36 | open a folder as a project | ACTION: open folder |
 | 37 | clone a repo | ACTION: new project from git |

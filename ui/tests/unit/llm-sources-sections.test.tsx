@@ -59,13 +59,13 @@ const HUB = `llm_endpoint-${HUB_ID}`;
 
 function funding() {
   return {
-    sources: { [CLAUDE]: [{ endpoint_typeid: HUB, name: 'eran default', rank: 20, eligible: true, auto: true }] },
-    resolved: { [CLAUDE]: { endpoint_typeid: HUB, name: 'eran default' } },
+    sources: { [CLAUDE]: [{ endpoint_typeid: HUB, name: 'alice default', rank: 20, eligible: true, auto: true }] },
+    resolved: { [CLAUDE]: { endpoint_typeid: HUB, name: 'alice default' } },
     blocked: {},
     notes: {},
-    endpoints: { [HUB]: { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'eran default' } },
+    endpoints: { [HUB]: { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'alice default' } },
     available: [
-      { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'eran default' },
+      { id: HUB_ID, kind: 'hub', provider: 'openrouter', name: 'alice default' },
       { id: '00000000-0000-4000-8000-00000000000c', kind: 'hub', provider: 'openrouter', name: 'global' },
     ],
     active_for: [],
@@ -126,7 +126,7 @@ describe('LLM sources — the keys and endpoints sections', () => {
     renderPage('endpoints');
     await screen.findByTestId('llm-sources-endpoints');
     const row = screen.getByTestId(`endpoint-row-${HUB_ID}`);
-    expect(row.textContent).toContain('eran default');
+    expect(row.textContent).toContain('alice default');
     expect(row.textContent).toContain('in use');
     await waitFor(() => expect(screen.getByTestId(`endpoint-left-${HUB_ID}`).textContent).toContain('$3'));
     expect(h.getChain).toHaveBeenCalledWith(HUB_ID);

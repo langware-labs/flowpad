@@ -137,7 +137,7 @@ except (FileNotFoundError, OSError):
 # Only AFTER the .env file is loaded: env_probe imports ``flow_sdk.config``, whose
 # ``default_service_config`` reads the environment ONCE, at import. Imported above the
 # load_dotenv, it froze FLOWPAD_HUB_URL before .env.<instance>.local could set it, so a
-# dev backend pointed at staging silently talked to app.flowpad.ai.
+# backend pointed at another hub silently talked to the default one.
 from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture  # noqa: E402
 
 # Build the per-instance settings singleton now that .env.local is loaded.

@@ -20,8 +20,8 @@ from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
-#: What the TS encoder (``pointerForWebUrl``) wrote into Spora's agent.json.
-SPORA_POINTER = "url/aHR0cCUzQSUyRiUyRmxvY2FsaG9zdCUzQTMzMDAlMkY"
+#: What the TS encoder (``pointerForWebUrl``) wrote into Acme's agent.json.
+ACME_POINTER = "url/aHR0cCUzQSUyRiUyRmxvY2FsaG9zdCUzQTMzMDAlMkY"
 
 
 def _free_port() -> int:
@@ -53,8 +53,8 @@ def _server(*, status: int = 200, headers: dict | None = None):
 
 
 def test_the_url_pointer_is_the_ts_encoders_twin():
-    assert web_url_from_pointer(SPORA_POINTER) == "http://localhost:3300/"
-    assert pointer_for_web_url("http://localhost:3300/") == SPORA_POINTER
+    assert web_url_from_pointer(ACME_POINTER) == "http://localhost:3300/"
+    assert pointer_for_web_url("http://localhost:3300/") == ACME_POINTER
     weird = "https://ü.example/a b?x=1&y=é"
     assert web_url_from_pointer(pointer_for_web_url(weird)) == weird
 
@@ -86,7 +86,7 @@ def test_our_own_server_failing_is_not_yet_server_error():
 
 
 def test_a_404_is_not_a_verdict():
-    """Spora Admin answers 404 on paths it renders fine; a status is never a reason to repair."""
+    """Acme Admin answers 404 on paths it renders fine; a status is never a reason to repair."""
     with _server(status=404) as url:
         assert asyncio.run(probe_web_url(url))[:2] == (ExitCode.OK, "ok")
 

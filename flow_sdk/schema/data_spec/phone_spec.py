@@ -1,11 +1,11 @@
 """``PhoneNumberSpec`` — a phone number as a country code and the national number.
 
-Stored structured (``{"country_code": "972", "number": "557709288"}``) rather than as one string,
+Stored structured (``{"country_code": "972", "number": "500000000"}``) rather than as one string,
 because splitting a free-form number into country code and national part is ambiguous without a
 numbering-plan database. Input is forgiving — a ``+`` on the country code, spaces, dashes, parens
-and one national trunk ``0`` (``055-770-9288``) are stripped — and the value is always canonical.
+and one national trunk ``0`` (``050-000-0000``) are stripped — and the value is always canonical.
 
-``digits`` is the international number without ``+`` (``972557709288``), the form WhatsApp sources
+``digits`` is the international number without ``+`` (``972500000000``), the form WhatsApp sources
 key a person by; ``e164`` adds the ``+``.
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ class PhoneNumberSpec(DataSpec):
 
     #: The ITU country calling code, digits only (``"972"``).
     country_code: str
-    #: The national significant number, digits only, no trunk prefix (``"557709288"``).
+    #: The national significant number, digits only, no trunk prefix (``"500000000"``).
     number: str
 
     @field_validator("country_code", mode="before")

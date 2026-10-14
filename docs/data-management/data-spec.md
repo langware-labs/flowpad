@@ -277,7 +277,7 @@ Agent is the first type on it; task, spec, prompt and whiteboard are next.
 agentic-assets/agent/whatsapp-e2e/
   agent.json        {"type": "agent", "id": "ceae4f10-…", "name": "whatsapp-e2e",
                      "worker_type": "claude", "model": "haiku", …,
-                     "phone": {"country_code": "972", "number": "557709288"}}
+                     "phone": {"country_code": "972", "number": "500000000"}}
   system_prompt.md  You are an end-to-end test agent reached over WhatsApp…
 ```
 
