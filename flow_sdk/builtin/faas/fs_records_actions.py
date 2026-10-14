@@ -8,6 +8,7 @@ Python attribute lookup — no dependency injection needed.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -1559,18 +1560,18 @@ class FsRecordsActionsMixin:
         # that does not claim the file, and refuses a FRAGMENT type outright
         # (``?type=mcp_server`` on a settings.json), which is the case a
         # caller-named type could otherwise mint a bogus row for.
-        # A FOLDER asset (an agent, a skill) named by its own folder takes the same
-        # direct branch: the subtree walk below looks inside the folder and never
+        # A FOLDER asset (an agent, a skill, a webapp) named by its own folder takes the
+        # same direct branch, with or without ``?type=`` — the registry names it from its
+        # folder and main file: the subtree walk below looks inside the folder and never
         # at the folder itself, so it answered `indexed: 0` for every such asset.
-        # A folder that is not an asset of this type still falls through to the walk.
+        # A folder that is not an asset (of this type) still falls through to the walk.
         direct_folder = None
-        if _p is not None and filter_type and _p.is_dir() and not rebuild and not force:
+        if _p is not None and _p.is_dir() and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
 
-            try:
-                direct_folder = await resolve_asset(_p, write=True, type_name=filter_type)
-            except NotAnAsset:
-                direct_folder = None
+            with contextlib.suppress(NotAnAsset):
+                direct_folder = await resolve_asset(_p, write=True, type_name=filter_type or None)
+                filter_type = filter_type or direct_folder.type_name
         if _p is not None and filter_type and (_p.is_file() or direct_folder) and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
@@ -1755,6 +1756,13 @@ class FsRecordsActionsMixin:
             # still lost. The auto path silently skips instead
             # (see _auto_index_project).
             return ApiFailResponse(message=str(e), status_code=409)
+
+        # A path-scoped walk only sees what is still there; an asset deleted under the
+        # path is reconciled here, or its row (and every list showing it) lives on.
+        if _p is not None and _p.is_dir():
+            from flow_sdk.fs_store.reindex import reindex_paths, sources_gone_under  # noqa: PLC0415
+
+            await reindex_paths([], await sources_gone_under(_p))
 
         # For a path-scoped run, resolve the TypeId(s) for the named file so the
         # caller (CLI / agent) can navigate straight to it — the whole point of
