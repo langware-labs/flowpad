@@ -273,8 +273,8 @@ export interface LoginAccess {
 /** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
 export const LOGIN_ROLE_CHOICES = ['owner', 'full-access', 'admin', 'editor', 'reader'] as const;
 
-/** What the hub gives a new box. */
-export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };
+/** What the hub gives a new box: admin and everything above it. */
+export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'full-access', 'admin'] };
 
 /** A box's current login access, the hub default where it has never been set. */
 export function loginAccessOf(node: ComputeNode): LoginAccess {
