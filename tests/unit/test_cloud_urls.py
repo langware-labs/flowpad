@@ -52,3 +52,21 @@ def test_callback_url_honors_docker_public_url():
     assert parsed.hostname == "host.docker.internal"
     assert parsed.port == 9010
     assert parse_qs(parsed.query)["instance"] == [INSTANCE_ID]
+
+
+def test_the_login_url_enters_through_the_gate_on_the_callback_host():
+    """A browser that never opened Flowpad has no gate cookie, and the hub's return
+    to /auth/login_callback is refused without one: the login starts at /auth/gate."""
+    from flow_sdk.cli.auth.cloud_urls import get_login_url
+
+    with (
+        patch("flow_sdk.instance_settings.get_instance_settings", return_value=_Settings(port=9008)),
+        patch("flow_sdk.instance_settings.cookie_gate.get_cookie_gate", return_value="tok"),
+    ):
+        url = get_login_url("http://127.0.0.1:9008/auth/login_callback")
+
+    parsed = urlparse(url)
+    assert (parsed.hostname, parsed.port, parsed.path) == ("127.0.0.1", 9008, "/auth/gate")
+    query = parse_qs(parsed.query)
+    assert query["cookie-gate"] == ["tok"]
+    assert "login_callback" in query["next"][0] and not query["next"][0].startswith("http://127.0.0.1")

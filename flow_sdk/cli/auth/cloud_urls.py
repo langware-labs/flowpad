@@ -37,9 +37,24 @@ def desktop_oauth_complete_url(provider: str) -> str:
 
 
 def get_login_url(redirect_url: str) -> str:
-    """Build the cloud login URL with ``redirect_url`` URL-encoded into the template."""
+    """Build the cloud login URL with ``redirect_url`` URL-encoded into the template,
+    entered through ``wrap_url_auth_gate`` so the browser holds the cookie-gate cookie when the
+    hub sends it back here."""
     template = ApiConfig.from_env().get_full_login_url()
-    return template.replace("{redirect_url}", quote(redirect_url, safe=""))
+    return wrap_url_auth_gate(template.replace("{redirect_url}", quote(redirect_url, safe="")))
+
+
+def wrap_url_auth_gate(url: str, base_url: str | None = None) -> str:
+    """``url`` entered through ``/auth/gate`` on ``base_url`` (this instance by
+    default): the browser presents the token once, gets the gate cookie on that host,
+    and is redirected on to ``url``. The login / OAuth return to this host then
+    carries the cookie, even in a browser that never opened Flowpad."""
+    from starlette.datastructures import URL  # noqa: PLC0415
+
+    from flow_sdk.instance_settings import cookie_gate  # noqa: PLC0415
+
+    gate = URL(f"{base_url or _desktop_base_url()}/auth/gate").include_query_params(next=url)
+    return str(cookie_gate.add_query_param(gate))
 
 
 def desktop_login_callback_url() -> str:
