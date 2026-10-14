@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
@@ -7,6 +7,7 @@ const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
 const { decideOffer, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const { createRestartApplier } = require('./update-restart');
+const cookieGate = require('./cookie-gate');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -1194,7 +1195,8 @@ async function waitForBackend({
   const result = await runBackendGate({
     probeHealth: async () => {
       try {
-        const response = await fetch(`${BACKEND_URL}/health/status`);
+        // Re-read each probe: a gated engine writes its token on the first request it serves.
+        const response = await fetch(`${BACKEND_URL}/health/status`, { headers: cookieGate.gateHeaders() });
         return response.ok;
       } catch {
         return false; // Backend not ready yet
@@ -1241,6 +1243,12 @@ async function waitForBackend({
     result.policyBlock = policyBlock(); // Electron's own reading of the log, to check the two agree
   }
   if (result.ready) {
+    // The one place the gate cookie goes in: the backend has written its token by now, and every
+    // window shares the default session, so every load after this carries it. A failure still
+    // loads the UI (the backend answers 403).
+    await cookieGate.injectCookie(session.defaultSession, BACKEND_URL).catch((err) => {
+      log.warn(`[cookie-gate] could not set the cookie: ${err && err.message}`);
+    });
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
   } else if (result.reason === 'policy-blocked') {
     log.error(`Backend blocked by Windows application control after ${result.elapsedSec}s: ${policyBlockMatch.line} (${policyBlockMatch.path})`);

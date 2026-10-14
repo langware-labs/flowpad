@@ -214,14 +214,9 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     silently destroying agent turns, terminals and pending device logins on
     every cycle.
 
-    The HEADER transport, not the query param: `cookie_gate_middleware` lists it
-    as the one for machine callers, and a secret in a URL lands in access logs.
-
-    Free when ungated -- `get_cookie_gate` answers from a `stat()` of the marker
-    file and never opens the encrypted store, which is what keeps desktop
-    installs (never gated) away from a keychain prompt. Any failure to read it
-    resolves to None, so the check degrades to exactly its old behaviour rather
-    than erroring.
+    The token rides as the gate cookie, added by the opener
+    `cookie_gate.install_gate_opener` installs when this module runs as the
+    monitor; a token that cannot be read means a probe without it.
     """
     import urllib.error
     import urllib.request
@@ -229,16 +224,6 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
     url = f"http://127.0.0.1:{port}/health/status"
     try:
         req = urllib.request.Request(url, method="GET")
-        # Lazy: `gate_headers` pulls in starlette on the armed path, and this
-        # supervisor otherwise never needs it and must not pay for it at
-        # startup. It swallows its own failures and yields {} -- the monitor
-        # must survive anything the settings layer does, since being unable to
-        # read the gate is a reason to probe without it, never a reason to stop
-        # supervising the server.
-        from flow_sdk.instance_settings.cookie_gate import gate_headers
-
-        for name, value in gate_headers(url).items():
-            req.add_header(name, value)
         with urllib.request.urlopen(req, timeout=timeout):
             return True
     except urllib.error.HTTPError as e:
@@ -912,6 +897,9 @@ def get_status() -> dict:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from flow_sdk.instance_settings.cookie_gate import install_gate_opener
+
+    install_gate_opener()
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9007
     try:
         launch_monitor(port)

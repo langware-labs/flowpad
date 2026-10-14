@@ -12,7 +12,8 @@ for _ in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; d
 rm -f "$SQLITE_DATABASE_PATH"
 rm -rf "$FLOW_HOME/instances/ci-e2e"
 mkdir -p "$FLOW_HOME/instances/ci-e2e"
-nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
+# The UI is a Vite dev server on another port: no local cookie-gate token for this backend.
+FLOWPAD_COOKIE_GATE=off nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
 NEW_PID=$!
 echo "BACKEND_PID=$NEW_PID" >> "$GITHUB_ENV"
 cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
