@@ -5,18 +5,18 @@
   "vault_root": "docs",
   "folder_rel_path": "navigation",
   "folder_name": "navigation",
-  "inputs_hash": "c5babb3aec864169d33cb5de1266a4c50a437046ea80cb337c36ac9ca228f470",
+  "inputs_hash": "1723a9d033623b559b0456fbc24db7541c5ba64869dd2b3c5f1e01c1b070df25",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, and the catalog of example sentences each mapped to its navigation target.",
+  "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
   "files": [
     {
       "name": "dock-loading.md",
       "rel_path": "dock-loading.md",
       "title": "Dock loading — one algorithm, seven steps",
-      "summary": "Seven-step dock URL loading algorithm (parse, canonicalize, resolve, commit, layout, render, attach), its invariants and the tests enforcing each.",
-      "content_hash": "7d916ca5b054e4b822e4bbe65aeebad63ebdc45e39d77fed21fa22787cc6155c",
-      "size_bytes": 12848
+      "summary": "Seven-step dock URL loading algorithm (parse, canonicalize, resolve, commit, layout, render, attach), its six invariants, enforcing tests, PTY replay checkpoints, past traps and speed budgets.",
+      "content_hash": "74c8388f1d4c5ded572f34ef0473ae47f22de0ea7026a09b55195a19593eae19",
+      "size_bytes": 14762
     },
     {
       "name": "navigation-sentences.md",
@@ -30,12 +30,28 @@
       "name": "navigation-spec.md",
       "rel_path": "navigation-spec.md",
       "title": "Navigation spec — the map, you are here, where to go",
-      "summary": "Navigation spec covering the screen map, the you-are-here context, and where-to-go routing, with their schemas and builders",
-      "content_hash": "42774e7e743fd1dc9cec96cdac9b6226795823fcf92fc2848cf03351019718a8",
-      "size_bytes": 5008
+      "summary": "Navigation spec: the screen map, the you-are-here context, the NavigationDecision routing to a dock or assistant prompt, and the SmartNavigationLog dataset.",
+      "content_hash": "e7c88b368b80ea667c569acdb2ec7294150ce068106d547bcd8194e51c2ebc8f",
+      "size_bytes": 6914
+    },
+    {
+      "name": "navigation_medium.md",
+      "rel_path": "navigation_medium.md",
+      "title": "Smart navigation — 200 medium sentences",
+      "summary": "Second smart-navigator eval suite: 200 medium-difficulty magic-line sentences in twenty app-area groups, each with its starting dock address and expected target.",
+      "content_hash": "e56750c59b49a9eb7cc72f08ee6212430d212f0b8e5441e38aa60c06e72d2264",
+      "size_bytes": 28573
+    },
+    {
+      "name": "project-home-page.md",
+      "rel_path": "project-home-page.md",
+      "title": "Project home page — what a project opens on",
+      "summary": "Project home page: home_page manifest declaration naming an agent or web app, how it is set, resolved and loaded, and when the redirect opens it.",
+      "content_hash": "944f50fab5064aeeb00c741bd3296aeb1112b5a46a5a553485492a52ac88c3b5",
+      "size_bytes": 3185
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-13T10:49:35Z",
   "latest_process_ref": ""
 }

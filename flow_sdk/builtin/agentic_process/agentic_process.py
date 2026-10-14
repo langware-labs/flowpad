@@ -55,6 +55,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
 )
 from flow_sdk.builtin.agentic_process.display_context import (
     DISPLAY_CONTEXT_KEY,
+    DISPLAY_KEYS,
     DisplayContextTooLarge,
     NothingShown,
     describe_display_context,
@@ -2937,6 +2938,18 @@ class AgenticProcess(Entity):
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
+
+        if port is not None:
+            # A port is the caller's claim, not a fact: another program listening on it is not this
+            # app, and registering it would show that program as the app.
+            from flow_sdk.core import app_ports  # noqa: PLC0415
+
+            stranger = await asyncio.to_thread(app_ports.stranger_on, port, Path(artifact_path))
+            if stranger is not None:
+                return ApiFailResponse(
+                    message=f"port {port} is held by another program: {stranger.said()} — it is not the app at {artifact_path}",
+                    status_code=400,
+                )
 
         project = await self._resolve_webapp_project()
         # Provenance is the URL scope's, never the body's — an artifact records
@@ -6108,9 +6121,8 @@ class AgenticProcess(Entity):
         # Drop any stale in-memory display, then re-attach the DB's authoritative
         # copy — so this save can neither clobber a newer show nor resurrect an
         # entry ``on_show`` already deduped away.
-        display_keys = ("display_stack", "last_shown", DISPLAY_CONTEXT_KEY)
-        rebuilt = {k: v for k, v in current_context.items() if k not in display_keys}
-        for k in display_keys:
+        rebuilt = {k: v for k, v in current_context.items() if k not in DISPLAY_KEYS}
+        for k in DISPLAY_KEYS:
             if k in latest_context:
                 rebuilt[k] = latest_context[k]
         self.context_data = rebuilt
@@ -7800,7 +7812,8 @@ class AgenticProcess(Entity):
         try:
             from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
 
-            result = await reindex_paths(paths)
+            # A session writes anywhere — scratch folders included — so only a placed file is minted.
+            result = await reindex_paths(paths, placed_only=True)
             counts = result.as_dict()["counts"]
             logger.debug(
                 "AP %s write reindex: %s (in=%d)",

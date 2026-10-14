@@ -19,6 +19,8 @@ export interface ShowPlacement {
   tab_id: string | null;
   /** That tab is a HOST (Vibe) tab: its Display pane pins the target, a screen nests under it. */
   host: boolean;
+  /** The calling process's project (null: a global process). */
+  project_id: string | null;
 }
 
 /**

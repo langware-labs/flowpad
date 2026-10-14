@@ -1,4 +1,5 @@
 """The direct ingress is real HTTP, without opening the node's trusted API."""
+
 from __future__ import annotations
 
 import asyncio
@@ -52,9 +53,11 @@ async def test_main_api_gate_still_covers_provider_and_hub_paths(monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.add_middleware(cookie_gate_middleware.CookieGateMiddleware)
-    monkeypatch.setattr(cookie_gate_middleware, "get_cookie_gate", lambda: "node-private-key")
+    monkeypatch.setattr(cookie_gate_middleware.cookie_gate, "get_cookie_gate", lambda: "node-private-key")
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://node.test") as client:
         for path in ("/api/v1/data_source/webhook/test", f"/api/v1/data_source/{source_id}/webhook"):
             assert (await client.post(path, json={})).status_code == 403
-        response = await client.post(f"/api/v1/data_source/{source_id}/webhook", json={}, headers={"x-cookie-gate": "node-private-key"})
+        response = await client.post(
+            f"/api/v1/data_source/{source_id}/webhook", json={}, headers={"x-cookie-gate": "node-private-key"}
+        )
         assert response.status_code == 404

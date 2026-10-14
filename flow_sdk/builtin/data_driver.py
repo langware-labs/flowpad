@@ -95,6 +95,7 @@ class DataDriver(DriverRuntime, Entity):
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
+    featured: bool = APIField(default=False)
     provisioned: bool = APIField(default=False)
     #: How a person starts a call on it: ``webrtc`` | ``clip`` | ``dial``; blank takes no calls.
     calls: CallStart = APIField(default=CallStart.NONE)

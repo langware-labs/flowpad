@@ -43,6 +43,8 @@ from tests.unit.test_data_spec._roundtrip import (
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
 
+REPO = Path(__file__).resolve().parents[3]
+
 
 # ── probes ────────────────────────────────────────────────────────────────────
 
@@ -153,7 +155,7 @@ def test_every_field_survives_the_filesystem(cls: type, tmp_path: Path) -> None:
 def test_a_real_claude_agents_file_round_trips_byte_for_byte_in_meaning(tmp_path: Path) -> None:
     """The shipped ``.claude/agents/*.md`` files are the ground truth for the
     header. Read one, write it, read it again: same fields, same prompt, same id."""
-    src = Path("flow_sdk/system_projects/flowpad_assistant/.claude/agents/asset-cleanup-wizard.md")
+    src = REPO / "flow_sdk/system_projects/flowpad_assistant/.claude/agents/asset-cleanup-wizard.md"
     ser = DiskSerializer()
     a = ser.load(SubAgent, local_origin_for_path(src))
     assert a.name == "asset-cleanup-wizard" and a.tools == "Bash, Read, Glob, Grep"
@@ -248,7 +250,7 @@ def test_render_is_what_store_writes(tmp_path: Path) -> None:
 
 def test_the_shipped_agent_md_round_trips(tmp_path: Path) -> None:
     """``agentic-assets/agent/q/`` is the ground truth for the Agent layout."""
-    src = Path("agentic-assets/agent/q")
+    src = REPO / "agentic-assets/agent/q"
     ser = DiskSerializer()
     a = ser.load(Agent, local_origin_for_path(src))
     assert a.name == "Q"                              # frontmatter `name:` wins; the folder is the fallback

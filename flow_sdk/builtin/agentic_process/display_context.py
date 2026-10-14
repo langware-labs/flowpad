@@ -28,6 +28,12 @@ from typing import Any, Optional
 
 DISPLAY_CONTEXT_KEY = "display_context"
 
+#: Every ``context_data`` key ``on_show`` owns: the show history, the newest
+#: target, where it is presented, and the page's reported context. A
+#: non-authoritative save mirrors exactly these from the DB — one list, so a
+#: key added to the show cannot be dropped by a stale save.
+DISPLAY_KEYS = ("display_stack", "last_shown", "show_placement", DISPLAY_CONTEXT_KEY)
+
 #: Serialized ``data`` ceiling. The context is re-sent to the model on change,
 #: so it is state, not a document.
 MAX_DATA_BYTES = 64_000

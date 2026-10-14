@@ -33,8 +33,10 @@ from flow_sdk.schema.data_spec.service_endpoint_spec import (
     PROTOCOL_API_REST,
     PROTOCOL_WEB_APP,
 )
-from flow_sdk.server.routes.service_endpoint import _hub_socket_target, _http, relay_websocket
+from flow_sdk.server.routes.service_endpoint import _hub_socket_target
 from flow_sdk.server.service_proxy import CALLER_HEADER, GATE_HEADER, USER_HEADER, outbound_headers, sign_caller
+from flow_sdk.server.service_serving import http_client as _http
+from flow_sdk.server.service_serving import relay_websocket
 from tests.utils.service_upstream import ServiceUpstream, grpc_web_frame
 
 GATE = "gate-secret-for-tests"
@@ -131,10 +133,15 @@ async def test_only_a_caller_signed_with_this_machines_gate_reaches_the_service(
     endpoint = await _endpoint(upstream)
     caller = f"user-{uuid.uuid4()}"
 
-    signed = await client.get(_url(endpoint, "echo"), headers={CALLER_HEADER: sign_caller(caller, GATE, now=int(time.time()))})
+    hop = {GATE_HEADER: GATE}  # the hub's hop: through the armed door with the secret
+    signed = await client.get(
+        _url(endpoint, "echo"), headers={**hop, CALLER_HEADER: sign_caller(caller, GATE, now=int(time.time()))}
+    )
     assert _headers(signed.json())[USER_HEADER] == caller
 
-    forged = await client.get(_url(endpoint, "echo"), headers={CALLER_HEADER: sign_caller(caller, "wrong", now=int(time.time()))})
+    forged = await client.get(
+        _url(endpoint, "echo"), headers={**hop, CALLER_HEADER: sign_caller(caller, "wrong", now=int(time.time()))}
+    )
     assert USER_HEADER not in _headers(forged.json())
 
 
@@ -164,7 +171,9 @@ async def test_a_service_that_is_down_is_502(client):
 
 async def test_openai_chat_json(client, upstream):
     endpoint = await _endpoint(upstream, name="chat", protocol={"spec_kind": PROTOCOL_API_CHAT_OPENAI})
-    resp = await client.post(_url(endpoint, "v1/chat/completions"), json={"model": "m", "messages": [{"role": "user", "content": "hi"}]})
+    resp = await client.post(
+        _url(endpoint, "v1/chat/completions"), json={"model": "m", "messages": [{"role": "user", "content": "hi"}]}
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["choices"][0]["message"]["content"] == "Hello from the box"
 
@@ -215,7 +224,9 @@ async def test_mcp_session_round_trip(client, upstream):
 async def test_static_backend_serves_documents_with_conditional_get(client, tmp_path):
     (tmp_path / "index.html").write_text("<!doctype html><title>app</title>")
     (tmp_path / "app.js").write_text("console.log('app')")
-    endpoint = await _endpoint(name="app", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend={"type": "static", "root": str(tmp_path)})
+    endpoint = await _endpoint(
+        name="app", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend={"type": "static", "root": str(tmp_path)}
+    )
 
     script = await client.get(_url(endpoint, "app.js"))
     assert script.status_code == 200 and script.text == "console.log('app')"
@@ -340,8 +351,23 @@ def _direct(endpoint, query: str = "") -> str:
     return f"/api/v1/graph/service_endpoint/{endpoint.id}/direct-url{query}"
 
 
-async def test_direct_url_is_resolved_when_supported(client):
-    endpoint = await _endpoint(supports_direct_access=True, backend={"type": "proxy", "port": 8765})
+def _app_proxy(**over):
+    """A placement's ``app`` proxy: a routed row, one dev server at its root."""
+    routes = {"": {"backend": {"type": "proxy", "port": 8765}}, "shop": {"backend": {"type": "static", "root": "/srv"}}}
+    data = {
+        "name": "app",
+        "subkind": "app",
+        "protocol": {"spec_kind": PROTOCOL_WEB_APP},
+        "backend": {"type": "routed", "routes": routes},
+        "supports_direct_access": True,
+    }
+    data.update(over)
+    return _endpoint(**data)
+
+
+async def test_direct_url_on_a_desktop_is_the_dev_servers_own_loopback_address(client):
+    """The viewer sits at the machine and nothing is published: the process answers at localhost."""
+    endpoint = await _app_proxy()
     resp = await client.get(_direct(endpoint))
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["url"] == "http://localhost:8765"
@@ -349,22 +375,36 @@ async def test_direct_url_is_resolved_when_supported(client):
     assert (redirected.status_code, redirected.headers["location"]) == (302, "http://localhost:8765")
 
 
-async def test_direct_url_is_refused_when_unsupported_or_static(client, tmp_path):
-    assert (await client.get(_direct(await _endpoint()))).status_code == 409
-    static = await _endpoint(supports_direct_access=True, backend={"type": "static", "root": str(tmp_path)})
-    assert (await client.get(_direct(static))).status_code == 409
+async def test_direct_url_is_refused_when_unsupported_static_or_not_a_browser_door(client):
+    assert (await client.get(_direct(await _app_proxy(supports_direct_access=False)))).status_code == 409
+    static = await _app_proxy()
+    assert (await client.get(_direct(static, "?route=shop"))).status_code == 409, (
+        "a folder has no address of its own here"
+    )
+    assert (await client.get(_direct(static, "?route=nope"))).status_code == 404
+    service = await _endpoint(supports_direct_access=True, backend={"type": "proxy", "port": 8765})
+    assert (await client.get(_direct(service))).status_code == 409, "a machine service is reached through the hub"
 
 
-async def test_direct_url_inside_a_sandbox_is_the_boxs_public_host(client, monkeypatch):
+async def test_direct_url_inside_a_sandbox_is_the_boxs_door_never_the_port(client, monkeypatch):
+    """On a box whose ports are public, the process's port would be a door with no lock: the browser is sent to
+    the audience door (``AUDIENCE_PORTS``), which admits it by its grant and reaches the process over loopback."""
     import functools
 
     import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.instance_settings.base_settings import AUDIENCE_PORTS
 
     # Keeps the memo's interface: the suite's teardown calls ``cache_clear`` on it.
     monkeypatch.setattr(runtime, "own_sandbox_id", functools.lru_cache(maxsize=1)(lambda: "sbx123"))
-    endpoint = await _endpoint(supports_direct_access=True, backend={"type": "proxy", "port": 8765})
-    resp = await client.get(_direct(endpoint))
-    assert resp.json()["data"]["url"] == "https://8765-sbx123.e2b.dev"
+    users = await _app_proxy()
+    operators = await _app_proxy(name="admin", subkind="admin")
+    resp = await client.get(_direct(users))
+    assert resp.json()["data"]["url"] == f"https://{AUDIENCE_PORTS['app']}-sbx123.e2b.dev/"
+    assert "8765" not in resp.json()["data"]["url"]
+    shop = await client.get(_direct(users, "?route=shop"))
+    assert shop.json()["data"]["url"] == f"https://{AUDIENCE_PORTS['app']}-sbx123.e2b.dev/shop/"
+    admin = await client.get(_direct(operators))
+    assert admin.json()["data"]["url"] == f"https://{AUDIENCE_PORTS['admin']}-sbx123.e2b.dev/"
 
 
 # =============================================================================
@@ -373,9 +413,13 @@ async def test_direct_url_inside_a_sandbox_is_the_boxs_public_host(client, monke
 
 
 async def _static_site(tmp_path):
-    (tmp_path / "index.html").write_text("<!doctype html><html><head></head><body><script src=app.js></script></body></html>")
+    (tmp_path / "index.html").write_text(
+        "<!doctype html><html><head></head><body><script src=app.js></script></body></html>"
+    )
     (tmp_path / "app.js").write_text("console.log('served')")
-    return await _endpoint(name="site", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend={"type": "static", "root": str(tmp_path)})
+    return await _endpoint(
+        name="site", protocol={"spec_kind": PROTOCOL_WEB_APP}, backend={"type": "static", "root": str(tmp_path)}
+    )
 
 
 def _base_of(html: str) -> str:
@@ -412,9 +456,13 @@ async def test_behind_the_hub_the_page_is_based_where_the_hub_serves_it(client, 
 
 async def test_a_client_cannot_move_the_pages_assets(client, tmp_path, monkeypatch):
     import flow_sdk.instance_settings.cookie_gate as gate
+    from flow_sdk.server import grants
+    from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE, SYSTEM_ENDPOINT, Grant
 
     monkeypatch.setattr(gate, "get_cookie_gate", lambda: GATE)
     endpoint = await _static_site(tmp_path)
+    # A browser at the armed door (a grant), claiming to be the hub's hop (a wrong gate header).
     forged = {GATE_HEADER: "not-the-gate", "x-forwarded-host": "evil.example", "x-forwarded-prefix": "/"}
-    page = await client.get(_url(endpoint), headers=forged)
+    cookies = {grants.COOKIE_NAME: grants.mint_grant(Grant("user-x", SYSTEM_AUDIENCE, SYSTEM_ENDPOINT), secret=GATE)}
+    page = await client.get(_url(endpoint), headers=forged, cookies=cookies)
     assert "evil.example" not in _base_of(page.text)

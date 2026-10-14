@@ -156,7 +156,8 @@ async def test_legacy_dash_at_bundle_still_unpacks_and_installs(env):
 # ── the migration ───────────────────────────────────────────────────────────
 def _load_migration():
     path = (
-        "flow_sdk/system_projects/flowpad_assistant/migrations/0.2.103/scripts/migrate.py"
+        Path(__file__).resolve().parents[2]
+        / "flow_sdk/system_projects/flowpad_assistant/migrations/0.2.103/scripts/migrate.py"
     )
     spec = importlib.util.spec_from_file_location("_stem_migration_0_2_103", path)
     m = importlib.util.module_from_spec(spec)

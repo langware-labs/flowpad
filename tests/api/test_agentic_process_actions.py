@@ -270,7 +270,11 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
     assert "shown_at" not in row["context_data"]["last_shown"]
     # The backend decided where it is presented (``tab.show_placement``): this
     # process has no open tab, so there is nothing to pin into or sit beside.
-    assert row["context_data"]["show_placement"] == {"tab_id": None, "host": False}
+    assert row["context_data"]["show_placement"] == {
+        "tab_id": None,
+        "host": False,
+        "project_id": row.get("project_id"),
+    }
 
     # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
     prev = stack[1]["shown_at"]
@@ -359,6 +363,10 @@ async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
 async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
     project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
+    from flow_sdk.core import app_ports
+
+    # Free ports, not literals: a registration is checked against what really listens on its port.
+    first_port, second_port = app_ports.free_port(), app_ports.free_port()
     app_dir = tmp_path / "frontend"
     app_dir.mkdir()
     pid = await create_agentic_process(
@@ -375,7 +383,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3300",
+            "port": str(first_port),
             "start_cmd": "npm run dev",
             "health": "/",
             "show": True,
@@ -396,7 +404,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     # The port is a fact about what the placement EXPOSES, not a label on it.
     assert deployment["provider_labels"] == {}
     [dev] = data["endpoints"]
-    assert dev["backend"] == {"type": "proxy", "port": 3300, "start_cmd": "npm run dev", "health": "/"}
+    assert dev["backend"] == {"type": "proxy", "port": first_port, "start_cmd": "npm run dev", "health": "/"}
     assert dev["artifact_id"] == artifact["id"]
     assert dev["parent_type_id"] == f"deployment-{deployment['id']}"
     assert dev["protocol"]["spec_kind"] == "web.app"
@@ -446,8 +454,8 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         json={
             "name": "Frontend",
             "path": str(app_dir),
-            "port": "3301",
-            "start_cmd": "npm run dev -- --port 3301",
+            "port": str(second_port),
+            "start_cmd": f"npm run dev -- --port {second_port}",
             "show": False,
         },
     )
@@ -458,7 +466,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     # The same endpoint row moves to the new port — updated, never forked.
     [moved] = updated_data["endpoints"]
     assert moved["id"] == dev["id"]
-    assert moved["backend"]["port"] == 3301
+    assert moved["backend"]["port"] == second_port
     # Backfill, never reassign — converging on an existing row leaves the run
     # that actually built the app as its producer.
     assert updated["generated_by"] == artifact["generated_by"]
@@ -1181,3 +1189,31 @@ async def test_show_view_refuses_an_agent_address_the_ui_cannot_open(bootstrappe
     )
     assert resp.status_code == 400, resp.text
     assert "flow show entity agent-" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_registering_an_app_on_a_port_another_program_holds_is_refused(bootstrapped_client, user, tmp_path):
+    """The port in the body is the caller's claim. Another program listening on it is not the app at
+    that path, and a route written for it would show that program as the app."""
+    import socket
+
+    project = Project(name="held-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "frontend"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id,
+    )
+    held = socket.socket()
+    held.bind(("127.0.0.1", 0))
+    held.listen()
+    port = held.getsockname()[1]
+    try:
+        resp = await bootstrapped_client.post(
+            f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+            json={"name": "Frontend", "path": str(app_dir), "port": str(port), "start_cmd": "npm run dev"},
+        )
+    finally:
+        held.close()
+    assert resp.status_code == 400
+    assert f"port {port} is held by another program" in resp.json()["message"]

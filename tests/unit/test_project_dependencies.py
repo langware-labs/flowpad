@@ -451,6 +451,23 @@ async def test_a_hub_dependency_that_cannot_be_read_says_why(tmp_path, monkeypat
     assert state.state == "unreachable" and says in state.reason
 
 
+async def test_a_hub_dependency_already_on_this_machine_uses_its_folder(tmp_path, monkeypatch):
+    """The one project list saves a published project as ``hub:<id>``. Picked on the machine that
+    holds it — and before its files were ever pushed — it must not read as missing."""
+    from flow_sdk.cloud_client.shared.errors import HubError
+
+    async def refuse(*_a, **_k):
+        raise HubError(0, "no")
+
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", refuse)
+    policies = await _project(tmp_path, "policies")
+    site = await _project(tmp_path, "site")
+    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"policies": f"hub:{policies.id}"}})
+    state = _state(await site.resolve_dependencies(), "policies")
+    assert state.state == "ready", state
+    assert Path(state.local_path).resolve() == Path(policies.fs_storage_mount_path).resolve()
+
+
 async def test_a_hub_project_backed_by_git_resolves(tmp_path, monkeypatch):
     url = _repo(tmp_path / "remote-policies", {"policies/index.md": "# p\n"})
 
