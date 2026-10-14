@@ -17692,6 +17692,7 @@ msgstr "Only the steps below"
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -17755,6 +17756,10 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Open a .flowmsg and install what it carries"
+msgstr "Open a .flowmsg and install what it carries"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open a new isolated git worktree session on a separate branch"
@@ -27716,8 +27721,8 @@ msgid "Upload"
 msgstr "Upload"
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
-msgid "Upload a .flowmsg and install what it carries into this project"
-msgstr "Upload a .flowmsg and install what it carries into this project"
+#~ msgid "Upload a .flowmsg and install what it carries into this project"
+#~ msgstr "Upload a .flowmsg and install what it carries into this project"
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
@@ -27740,7 +27745,6 @@ msgid "Upload image"
 msgstr "Upload image"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "Upload message"
 
