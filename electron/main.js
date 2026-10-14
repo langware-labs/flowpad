@@ -1298,7 +1298,7 @@ async function showStartupErrorPanel(detail, { retryable = false, policyBlocked 
   }
   // No window to render into — degrade to the native dialog.
   // Awaited: the caller quits the app when this returns false, and quitting before the user answers would
-  // close the one dialog that explains the failure (and the "Share with us" button on it).
+  // close the one dialog that explains the failure (and the "Send Report" button on it).
   await showFailureDialog({
     dialog,
     title: 'Flowpad couldn’t start',
@@ -1342,7 +1342,7 @@ function waitForPanelAction() {
 //   Repair FlowPad (Windows, repairable kinds, once per app+engine version — runtime-repair.js),
 //   Update FlowPad to X (the desktop updater, checked without the backend, ONCE per version and failure —
 //   update-recovery.js; never claimed to fix a blocked runtime), Retry anyway (with the warning that an
-//   unchanged runtime will fail the same way), Export logs / Share with us.
+//   unchanged runtime will fail the same way), Export logs / Send Report.
 // Resolves true when the backend is healthy again; false when the app is quitting (or quitting into an update).
 async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
   let match = firstMatch;
@@ -1453,7 +1453,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
           (err.policyBlocked
             ? '\nThe policy also blocked the repair itself. If this computer is managed by an organization, IT approval may be required before FlowPad can run.'
             : '') +
-          '\nUse “Share with us” or “Export logs” to send the logs.';
+          '\nUse “Send Report” or “Export logs” to send the logs.';
         continue;
       }
     }
@@ -1987,7 +1987,7 @@ async function startApp() {
   // running from the pre-start flow).
   checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
-// Anything that escapes to the top level must reach the user with "Share with us" — an unhandled rejection in
+// Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
 let crashReported = false;
 async function reportStartupCrash(err, where) {
@@ -2137,7 +2137,7 @@ ipcMain.handle('open-logs-folder', async () => {
   return !err;
 });
 
-// "Share with us" on the startup error panel. Builds a zip of the newest desktop log and the
+// "Send Report" on the startup error panel. Builds a zip of the newest desktop log and the
 // newest backend-server log (tails, obvious secrets masked) and uploads it to the hub's
 // anonymous support-bundle intake (support-upload.js), which stores it in GCS and notifies
 // the team — nothing for the user to attach or mail (FLOWPAD-2251). `email` is the user's
@@ -2401,7 +2401,7 @@ ipcMain.handle('restart-backend', async () => {
 ipcMain.on('update-desktop-recovery', () => {});
 
 /**
- * "Export logs" on the failure panel: the same zip "Share with us" builds (support-bundle.js) saved where
+ * "Export logs" on the failure panel: the same zip "Send Report" builds (support-bundle.js) saved where
  * the user chooses, for a user without a mail client — or whose policy blocks the mailto handler.
  */
 async function exportDiagnostics(detail) {

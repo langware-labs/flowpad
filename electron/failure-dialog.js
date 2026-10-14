@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * One way to tell the user that something failed: a native dialog with "OK" and "Share with us".
+ * One way to tell the user that something failed: a native dialog with "OK" and "Send Report".
  *
  * Every failure the user can SEE should offer the same way to reach the team, so the logs that explain it do not
- * depend on the user knowing where they live. "Share with us" builds the support bundle and uploads it to the
+ * depend on the user knowing where they live. "Send Report" builds the support bundle and uploads it to the
  * team's intake (support-bundle.js + support-upload.js); a native dialog cannot hold a text input, so this
  * surface always sends anonymously — the startup error panel is where an email can be attached.
  *
@@ -19,7 +19,7 @@ const SHARE = 1;
 
 // A native alert cannot scroll: on macOS a long message grows the alert until its buttons are off the screen,
 // and the person cannot answer — or close — the one dialog that explains the failure. So the dialog shows a
-// bounded excerpt; the whole text still goes to "Share with us" and the logs.
+// bounded excerpt; the whole text still goes to "Send Report" and the logs.
 const MAX_DETAIL_CHARS = 1200;
 const MAX_DETAIL_LINES = 16;
 const HEAD_CHARS = 700; // an error opens with its cause (uv prints `error:` first) and ends with its context
@@ -31,7 +31,7 @@ function clampDetail(detail) {
   if (text.length <= MAX_DETAIL_CHARS && lines.length <= MAX_DETAIL_LINES) return text;
   const head = text.slice(0, HEAD_CHARS).split('\n').slice(0, MAX_DETAIL_LINES - 5).join('\n');
   const tail = text.slice(-(MAX_DETAIL_CHARS - HEAD_CHARS)).split('\n').slice(1).slice(-4).join('\n'); // slice(1): drop a cut-off first line
-  return `${head}\n…\n${tail}\n\n(The full text is in the logs, and “Share with us” sends all of it.)`;
+  return `${head}\n…\n${tail}\n\n(The full text is in the logs, and “Send Report” sends all of it.)`;
 }
 
 /**
@@ -48,7 +48,7 @@ function clampDetail(detail) {
  * @returns {Promise<'ok'|'shared'|'share-failed'>}
  */
 async function showFailureDialog({ dialog, parent, type = 'error', title, message, detail = '', share = null, log = null }) {
-  const buttons = share ? ['OK', 'Share with us'] : ['OK'];
+  const buttons = share ? ['OK', 'Send Report'] : ['OK'];
   let response = OK;
   try {
     ({ response } = await show(dialog, parent, {

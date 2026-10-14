@@ -1399,7 +1399,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         });
         eq(resU, false, 'unrecovered upgrade reports failure');
         const failure = shown.find((o) => o.title === 'Update failed');
-        ok(failure && failure.buttons.includes('Share with us'), 'the Update failed dialog offers Share with us');
+        ok(failure && failure.buttons.includes('Send Report'), 'the Update failed dialog offers Send Report');
         ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
         eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
       }

@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Tests for ./zip-writer.js and ./support-bundle.js — the "Share with us" bundle.
+ * Tests for ./zip-writer.js and ./support-bundle.js — the "Send Report" bundle.
  * Run: `node electron/support-bundle.test.js` (exits non-zero on failure).
  */
 

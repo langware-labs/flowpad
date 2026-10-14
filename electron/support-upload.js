@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Upload the "Share with us" support bundle to the hub's anonymous intake
+ * Upload the "Send Report" support bundle to the hub's anonymous intake
  * (POST {cloud}/api/v1/support-bundle, hub routers/support_bundle.py), which stores it
  * in GCS and notifies the team. The zip is the raw request body; the optional email and
  * the app/platform facts travel as x-flowpad-* headers and end up as object metadata.

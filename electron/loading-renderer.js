@@ -188,7 +188,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     openLogsBtn.addEventListener('click', () => { api.openLogsFolder().catch(() => {}); });
   }
 
-  // "Share with us": the click already commits the upload — the popup only asks whether an
+  // "Send Report": the click already commits the upload — the popup only asks whether an
   // email rides along. Every way out of it (Send, ×, Esc) closes it into the same upload;
   // an empty email uploads anonymously. On a failed upload, "Export logs" is the way out.
   const shareBtn = document.getElementById('share-logs');
@@ -250,7 +250,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   // A new error re-arms the note (a retry that fails again shows the default text).
   const resetShareNote = () => { if (shareStatus) { shareStatus.className = 'error-share-note'; shareStatus.textContent = shareIdle; } };
 
-  // "Export logs": the same zip as "Share with us", saved where the user chooses (no mail client needed).
+  // "Export logs": the same zip as "Send Report", saved where the user chooses (no mail client needed).
   if (exportBtn && api.exportLogs) {
     exportBtn.addEventListener('click', async () => {
       exportBtn.disabled = true;

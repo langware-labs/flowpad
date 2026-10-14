@@ -286,7 +286,7 @@
     .error-share-note.ok { color: hsl(140 40% 60%); }
     .error-share-note.fail { color: hsl(0 70% 65%); }
 
-    /* "Share with us" popup (FLOWPAD-2251): the optional-email ask. Closing it in ANY
+    /* "Send Report" popup (FLOWPAD-2251): the optional-email ask. Closing it in ANY
        way — send, ×, Esc — uploads the logs; the email is the only variable. */
     .share-modal-overlay {
       position: fixed;
@@ -496,7 +496,7 @@
     <pre class="logs-content" id="logs-content"></pre>
   </div>
 
-  <!-- "Share with us" popup. The upload is already decided when it opens: send, the ×
+  <!-- "Send Report" popup. The upload is already decided when it opens: send, the ×
        and Esc all close it INTO the upload — the email field is the only choice in it. -->
   <div class="share-modal-overlay" id="share-modal" hidden>
     <div class="share-modal">
@@ -524,11 +524,11 @@
       <div class="error-tools">
         <button class="quit-btn" id="copy-details">Copy error details</button>
         <button class="quit-btn" id="open-logs">Open logs folder</button>
-        <button class="quit-btn" id="share-logs">Share with us</button>
+        <button class="quit-btn" id="share-logs">Send Report</button>
         <button class="quit-btn" id="export-logs" hidden>Export logs</button>
       </div>
       <p class="error-share-note" id="share-status">
-        “Share with us” zips your latest logs (passwords and tokens are masked) and uploads them to the
+        “Send Report” zips your latest logs (passwords and tokens are masked) and uploads them to the
         Flowpad team.
       </p>
 

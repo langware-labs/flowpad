@@ -475,7 +475,7 @@ class UvManager {
     // Where the "install in progress" marker lives. null → marker disabled
     // (unit tests, tools that must not touch the user's home).
     this._stateDir = stateDir;
-    // Lets native failure dialogs offer "Share with us" (set by main.js; null in tests → "OK" only).
+    // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
     this._failureSharer = null;
     this._installing = false;
     this._installChild = null;

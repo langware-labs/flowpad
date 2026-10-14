@@ -32,7 +32,7 @@ Electron (main.js)
 | `main.js` | Entry point (no exports). Window, menu, deep links, IPC, desktop updates, the startup/install flow (`startApp`, `installAndStartBackend`), the error panel. |
 | `uv-manager.js` | The `UvManager` class. Downloads `uv`, installs/upgrades/reinstalls the engine, picks the Python version, manages the install-in-progress marker, WDAC fallback, `checkForUpdatesInBackground`. |
 | `preload.js` | `contextBridge` bridge to the renderer. |
-| `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Share with us"). |
+| `loading.html`, `loading-renderer.js` | Loading screen, progress, and the error panel (including "Send Report"). |
 
 ### Small modules (each has a `*.test.js`)
 
@@ -46,8 +46,8 @@ Electron (main.js)
 | `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
-| `support-bundle.js` | "Share with us" zip: `collectLogs`, `buildSupportZip`, `redact`. |
-| `support-upload.js` | "Share with us" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/support-bundle` intake (GCS). |
+| `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
+| `support-upload.js` | "Send Report" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/support-bundle` intake (GCS). |
 | `zip-writer.js` | Dependency-free zip writer (`createZip`, `crc32`). |
 | `log-redact.js` | Secret redaction in logs: `redactUrl`, `redactLogMessage`, `installLogRedaction`. |
 | `app-location.js` | AppTranslocation detection and the offer to move to `/Applications` (macOS only). |
@@ -83,7 +83,7 @@ Electron (main.js)
 2. If `uv` is missing, `ensureUv` downloads it (section 3.4).
 3. `installAndStartBackend` installs the engine: `uv tool install flowpad@latest|==X --python <pin> --force --compile-bytecode --no-build-package cryptography` (cryptography is never built from source: Intel Mac has no wheel from 49.0.0).
 4. The desktop waits for the server to be healthy, then loads the window.
-5. A failure is shown in a detailed error panel with Retry / Share with us.
+5. A failure is shown in a detailed error panel with Retry / Send Report.
 
 **Python selection:** the pin comes from the floor in the bundled `pyproject.toml`, raised according to the
 `requires_python` of the PyPI release (`pythonFloor`, `maxPythonVersion`, `_pythonPinForUpgrade`). This prevents the
@@ -133,10 +133,10 @@ If everything is blocked, a `policyBlocked` error is raised and the panel hides 
 `installLogRedaction(log)` is called before the first log line; `redactUrl` is applied wherever a URL is logged.
 In Share, `support-bundle.redact` also covers `fp_(live|test)_`.
 
-### 3.7 Share with us
+### 3.7 Send Report
 The zip is built locally (`MAX_LOG_BYTES` = 2 MB per file; newest desktop + server + monitor logs, secrets masked)
 and uploaded to the hub's anonymous `POST /api/v1/support-bundle` intake (`FLOWPAD_CLOUD_URL`), which stores it in
-GCS and notifies the team; the hub answers a `submission_id` the user can quote. Clicking "Share with us"
+GCS and notifies the team; the hub answers a `submission_id` the user can quote. Clicking "Send Report"
 already commits the upload: a popup asks for an optional email, and every way out of it — Send, ×, Esc —
 uploads (empty email = anonymous; native failure dialogs send anonymously). On upload failure the panel
 offers "Export logs".
