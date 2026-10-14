@@ -63,6 +63,11 @@ class CredentialVarStatusSpec(DataSpec):
     def is_one_of(self) -> bool:
         return self.required is CredentialRequirement.ONE_OF
 
+    @property
+    def holds_value(self) -> bool:
+        """A store keeps a value for it — not a sign-in (``cli``) or a grant (``oauth``), which live elsewhere."""
+        return self.kind not in (CredentialVarKind.CLI, CredentialVarKind.OAUTH)
+
 
 def way_order(vars: Mapping[str, Any], choice: str = "") -> list[str]:
     """Which way of a ONE_OF group is active — the order, said once: the way chosen here (``choice``, while it

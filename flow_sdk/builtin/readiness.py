@@ -16,7 +16,6 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
-from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.credential_status_spec import active_way
 from flow_sdk.schema.data_spec.permission_spec import (
     MECHANISM_API_KEY,
@@ -271,12 +270,11 @@ def _needed_names(row, declared: list[str] = ()) -> list[str]:
     ways = [v.env_var for v in row.vars if v.is_one_of]
     if declared and not ways:
         return list(declared)
-    sign_in = (CredentialVarKind.CLI, CredentialVarKind.OAUTH)
     active = active_way(by_name, row.setup_choice, lambda name: by_name[name].present)
     if not active:
-        group = [n for n in ways if by_name[n].kind not in sign_in]
+        group = [n for n in ways if by_name[n].holds_value]
     else:  # a sign-in there unchosen holds no stored value to name: it settles the group by itself
-        group = [active] if active == row.setup_choice or by_name[active].kind not in sign_in else []
+        group = [active] if active == row.setup_choice or by_name[active].holds_value else []
     needed = [v.env_var for v in row.vars if v.is_must] + group
     if not declared:
         return needed

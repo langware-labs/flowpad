@@ -386,11 +386,11 @@ async def set_credential_by_name(
     project = await get_project(project_id)
     if project_id and project is None:
         raise CredentialError("project not found")
-    if not any(str(v or "") for v in (values or {}).values()) and not choice:
+    has_values = any(str(v or "") for v in (values or {}).values())
+    if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if any(
-        str(v or "") for v in (values or {}).values()) else spec
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
     ways = [var for var, value in (values or {}).items() if str(value or "") and spec.is_way(var)]
     if way := choice or (ways[0] if len(ways) == 1 else ""):
         try:
