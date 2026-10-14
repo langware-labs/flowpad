@@ -2,7 +2,7 @@
 
 /*
  * Upload the "Send Report" support bundle to the hub's anonymous intake
- * (POST {cloud}/api/v1/support-bundle, hub routers/support_bundle.py), which stores it
+ * (POST {cloud}/api/v1/diagnosis-report/bundle, hub routers/support_bundle.py), which stores it
  * in GCS and notifies the team. The zip is the raw request body; the optional email and
  * the app/platform facts travel as x-flowpad-* headers and end up as object metadata.
  * The hub answers {data: {submission_id}} — the reference the user can quote to support.
@@ -53,7 +53,7 @@ async function uploadSupportBundle({ cloudUrl, zipPath, email = '', info = {}, f
 
   let res;
   try {
-    res = await fetchImpl(`${cloudUrl}${API_PREFIX}/support-bundle`, { method: 'POST', headers, body });
+    res = await fetchImpl(`${cloudUrl}${API_PREFIX}/diagnosis-report/bundle`, { method: 'POST', headers, body });
   } catch (err) {
     return { ok: false, error: `could not reach the Flowpad service: ${err.message}` };
   }

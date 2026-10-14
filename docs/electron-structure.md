@@ -47,7 +47,7 @@ Electron (main.js)
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
 | `support-bundle.js` | "Send Report" zip: `collectLogs`, `buildSupportZip`, `redact`. |
-| `support-upload.js` | "Send Report" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/support-bundle` intake (GCS). |
+| `support-upload.js` | "Send Report" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/diagnosis-report/bundle` intake (GCS). |
 | `zip-writer.js` | Dependency-free zip writer (`createZip`, `crc32`). |
 | `log-redact.js` | Secret redaction in logs: `redactUrl`, `redactLogMessage`, `installLogRedaction`. |
 | `app-location.js` | AppTranslocation detection and the offer to move to `/Applications` (macOS only). |
@@ -135,7 +135,7 @@ In "Send Report", `support-bundle.redact` also covers `fp_(live|test)_`.
 
 ### 3.7 Send Report
 The zip is built locally (`MAX_LOG_BYTES` = 2 MB per file; newest desktop + server + monitor logs, secrets masked)
-and uploaded to the hub's anonymous `POST /api/v1/support-bundle` intake (`FLOWPAD_CLOUD_URL`), which stores it in
+and uploaded to the hub's anonymous `POST /api/v1/diagnosis-report/bundle` intake (`FLOWPAD_CLOUD_URL`), which stores it in
 GCS and notifies the team; the hub answers a `submission_id` the user can quote. Clicking "Send Report"
 already commits the upload: a popup asks for an optional email, and every way out of it — Send, ×, Esc —
 uploads (empty email = anonymous; native failure dialogs send anonymously). On upload failure the panel
