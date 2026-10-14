@@ -10,14 +10,15 @@ from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.types import EntityType
 
 
-def _store_session(type_name: EntityType, icon: str, extract, id_from_file, identity_key) -> TypeInfo:
+def _store_session(type_name: EntityType, label: str, extract, id_from_file, identity_key) -> TypeInfo:
     return TypeInfo(
         type_name=type_name,
         # Never walked: a row exists only once a share snapshots the run's transcript
         # (AgenticProcess ``session-transcript``).
         indexed_by_default=False,
         api_visible=True,  # see CLAUDE_SESSION
-        icon=icon,
+        icon=label,
+        display_name=f"{label} Sessions",
         from_disk_fn=extract,
         identity_carrier=derived_identity(id_from_file),
         identity_key_fn=identity_key,
