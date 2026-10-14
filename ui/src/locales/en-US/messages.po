@@ -2321,6 +2321,10 @@ msgstr "Additional plugin marketplace URLs"
 msgid "Address book"
 msgstr "Address book"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Admin"
+msgstr "Admin"
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr "Adopt a support desk published as a git repository"
@@ -2685,6 +2689,10 @@ msgstr "Allow live sessions without asking"
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "Allow Local Binding"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Allow login — who may sign in to this sandbox from a browser."
+msgstr "Allow login — who may sign in to this sandbox from a browser."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -4459,6 +4467,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -9353,6 +9362,10 @@ msgstr "Editing"
 #~ msgid "Editing system trigger"
 #~ msgstr "Editing system trigger"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Editor"
+msgstr "Editor"
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Effective filters at this endpoint"
 msgstr "Effective filters at this endpoint"
@@ -11385,6 +11398,10 @@ msgstr "Full"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Full — complete rescan"
 msgstr "Full — complete rescan"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Full access"
+msgstr "Full access"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
@@ -14334,6 +14351,10 @@ msgstr "Logged in"
 msgid "Logged out"
 msgstr "Logged out"
 
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
+msgstr "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Logical line"
 msgstr "Logical line"
@@ -14343,6 +14364,15 @@ msgstr "Logical line"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "Login"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Login access"
+msgstr "Login access"
+
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Login access for {0}"
+msgstr "Login access for {0}"
 
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
@@ -16801,6 +16831,10 @@ msgstr "No web page in this view"
 msgid "No wizard named {0} is installed."
 msgstr "No wizard named {0} is installed."
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Nobody can log in to this sandbox, including its owner."
+msgstr "Nobody can log in to this sandbox, including its owner."
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
@@ -18610,6 +18644,7 @@ msgstr "Overwrite"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Owner"
 msgstr "Owner"
 
@@ -20116,6 +20151,10 @@ msgstr "Read only"
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "Read the result in FlowPad"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Reader"
+msgstr "Reader"
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
@@ -21857,6 +21896,7 @@ msgid "Sample prompts"
 msgstr "Sample prompts"
 
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "sandbox"
 msgstr "sandbox"
 
@@ -21929,6 +21969,7 @@ msgstr "Sandboxes"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Save"
 msgstr "Save"
 
@@ -28642,6 +28683,10 @@ msgstr "Whiteboard created"
 #: src/i18n/type-labels.ts
 msgid "Whiteboards"
 msgstr "Whiteboards"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Who may log in to this sandbox"
+msgstr "Who may log in to this sandbox"
 
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "Who this agent is — its system prompt."

@@ -264,6 +264,48 @@ export async function setAutoLogin(node: ComputeNode, value: boolean): Promise<b
   return res?.auto_login ?? value;
 }
 
+/** Who may sign a box in from a browser. Per box; the hub's `login-access` action. */
+export interface LoginAccess {
+  allowLogin: boolean;
+  roles: string[];
+}
+
+/** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
+export const LOGIN_ROLE_CHOICES = ['owner', 'full-access', 'admin', 'editor', 'reader'] as const;
+
+/** What the hub gives a new box. */
+export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'admin'] };
+
+/** A box's current login access, the hub default where it has never been set. */
+export function loginAccessOf(node: ComputeNode): LoginAccess {
+  return {
+    allowLogin: node.allow_login ?? DEFAULT_LOGIN_ACCESS.allowLogin,
+    roles: node.login_roles ?? DEFAULT_LOGIN_ACCESS.roles,
+  };
+}
+
+/**
+ * Set who may sign a box in from a browser.
+ *
+ * Its own owner-only action, like `setAutoLogin` and for the same reason: on the
+ * PUT path a shared admin could widen who gets into the box's admin channel.
+ */
+export async function setLoginAccess(node: ComputeNode, access: LoginAccess): Promise<LoginAccess> {
+  const info = new ActionInfo('login-access', ComputeNode.type, node.id, 'POST');
+  info.hubReflect = true; // the node is hub-owned
+  info.bodyParameters = { allow_login: access.allowLogin, login_roles: access.roles };
+  const res = await dataManager.callAction<
+    Record<string, unknown>,
+    { allow_login: boolean; login_roles: string[] } | undefined
+  >(info);
+  return res ? { allowLogin: res.allow_login, roles: res.login_roles } : access;
+}
+
+function isDefaultLoginAccess(access: LoginAccess): boolean {
+  const { allowLogin, roles } = DEFAULT_LOGIN_ACCESS;
+  return access.allowLogin === allowLogin && [...access.roles].sort().join() === [...roles].sort().join();
+}
+
 /**
  * Next auto-name: one past the highest existing box number, so it reads as latest.
  *
@@ -553,7 +595,10 @@ export function useSandboxes() {
    * Rejects on failure; the step rows carry the detail.
    */
   const launchSandbox = useCallback(
-    async (node: ComputeNode, opts?: { sandboxProject?: SandboxSetup; autoLogin?: boolean }) => {
+    async (
+      node: ComputeNode,
+      opts?: { sandboxProject?: SandboxSetup; autoLogin?: boolean; loginAccess?: LoginAccess },
+    ) => {
       // Same guard as create, and for a stronger reason: a second `ops/setup` on
       // one node overwrites `node_provider_id` and orphans the first VM.
       if (launchingRef.current) return null;
@@ -581,6 +626,10 @@ export function useSandboxes() {
           // Only when turning it OFF: `true` is the hub's default for a fresh
           // node, so asking for it again is a round trip that changes nothing.
           if (opts?.autoLogin === false) await setAutoLogin(node, false);
+          // Same rule: the hub default needs no round trip.
+          if (opts?.loginAccess && !isDefaultLoginAccess(opts.loginAccess)) {
+            await setLoginAccess(node, opts.loginAccess);
+          }
           return providerId;
         });
 

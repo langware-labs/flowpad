@@ -2291,6 +2291,10 @@ msgstr "روابط إضافية لأسواق الملحقات"
 msgid "Address book"
 msgstr "دفتر العناوين"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Admin"
+msgstr ""
+
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
 
@@ -2652,6 +2656,10 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "السماح بالربط المحلي"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Allow login — who may sign in to this sandbox from a browser."
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -4418,6 +4426,7 @@ msgstr ""
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -9276,6 +9285,10 @@ msgstr "يحرّر"
 #~ msgid "Editing system trigger"
 #~ msgstr "جاري تحرير مشغّل النظام"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Editor"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Effective filters at this endpoint"
 msgstr "المرشحات الفعّالة عند نقطة النهاية هذه"
@@ -11281,6 +11294,10 @@ msgstr "كامل"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Full — complete rescan"
 msgstr "كامل — إعادة مسح شاملة"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Full access"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
@@ -14194,6 +14211,10 @@ msgstr "تم تسجيل الدخول"
 msgid "Logged out"
 msgstr "تم تسجيل الخروج"
 
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Logical line"
 msgstr "سطر منطقي"
@@ -14203,6 +14224,15 @@ msgstr "سطر منطقي"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "تسجيل الدخول"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Login access"
+msgstr ""
+
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Login access for {0}"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
@@ -16637,6 +16667,10 @@ msgstr ""
 msgid "No wizard named {0} is installed."
 msgstr ""
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Nobody can log in to this sandbox, including its owner."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -18430,6 +18464,7 @@ msgstr "استبدال"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Owner"
 msgstr "المالك"
 
@@ -19918,6 +19953,10 @@ msgstr ""
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "اقرأ النتيجة في FlowPad"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Reader"
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
@@ -21644,6 +21683,7 @@ msgid "Sample prompts"
 msgstr "أمثلة المطالبات"
 
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "sandbox"
 msgstr "الصندوق الرملي"
 
@@ -21716,6 +21756,7 @@ msgstr "الصناديق"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Save"
 msgstr "حفظ"
 
@@ -28369,6 +28410,10 @@ msgstr "تم إنشاء لوحة بيضاء"
 #: src/i18n/type-labels.ts
 msgid "Whiteboards"
 msgstr "لوحات بيضاء"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Who may log in to this sandbox"
+msgstr ""
 
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr ""
