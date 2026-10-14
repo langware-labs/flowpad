@@ -74,7 +74,7 @@ describe('link matches', () => {
   });
 
   it('cuts Hebrew text around a URL into runs that join back to the text', () => {
-    const text = 'היי ערן, התיקון כאן\nPR: https://github.com/langware-labs/flowpad/pull/544 תודה';
+    const text = 'היי דנה, התיקון כאן\nPR: https://github.com/langware-labs/flowpad/pull/544 תודה';
     const segments = linkSegments(text);
     expect(segments.map((segment) => segment.text).join('')).toBe(text);
     expect(segments.filter((segment) => segment.link).map((segment) => segment.text)).toEqual([

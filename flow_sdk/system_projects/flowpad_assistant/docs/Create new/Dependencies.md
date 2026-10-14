@@ -19,7 +19,7 @@ A [[Flowpad project]] lists its dependencies in one file at its root,
 ```json
 {
   "dependencies": {
-    "langware-os": "git+https://github.com/langware-labs/langware-os#main"
+    "handbook": "git+https://github.com/acme/handbook#main"
   },
   "optionalDependencies": {
     "policies": "hub:8c1f0b2e-…",

@@ -88,5 +88,5 @@ same rule, `local_direct_url`):
 | lever | the browser was sent to | remote browser fetches it |
 |---|---|---|
 | unfixed | `307 → http://localhost:8000/` | connection refused |
-| fixed | `307 → https://8000-ivshr0pshcpupip2m0pqk.e2b.dev/` | `200`, the page itself |
+| fixed | `307 → https://8000-<id>.e2b.dev/` | `200`, the page itself |
 | reverted | `307 → http://localhost:8000/` | connection refused |

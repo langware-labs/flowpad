@@ -31,8 +31,9 @@ PASSWORD = os.environ.get("HUB_OWNER_PASSWORD", "owner-pw-1234")
 COST_USD_TOTAL = float(os.environ.get("PUBLIC_COST_USD_TOTAL", "10.0"))
 MAX_OUTPUT = int(os.environ.get("PUBLIC_MAX_TOKENS_CEILING", "16384"))
 VERTEX_SA = Path(os.environ.get("VERTEX_SA_JSON", Path.home() / ".flow/rigs/vertex-llm/vertex-sa.json"))
+GCP_PROJECT = os.environ.get("GCP_PROJECT", "my-gcp-project")
 VERTEX_BASE = os.environ.get(
-    "VERTEX_BASE_URL", "https://aiplatform.googleapis.com/v1/projects/langware/locations/global"
+    "VERTEX_BASE_URL", f"https://aiplatform.googleapis.com/v1/projects/{GCP_PROJECT}/locations/global"
 )
 #: What the Vertex root serves of the matrix (probed 2026-10-03; kimi-k2.5 is not on Vertex). Override
 #: with a comma list when a probe shows Vertex refusing one -- it then falls to OpenRouter.

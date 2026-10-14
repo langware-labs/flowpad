@@ -87,7 +87,7 @@ vi.mock('@src/hooks/entity-hooks', () => ({
   useEntitiesQuery: () => ({
     data: [
       { id: PROJ.current, displayName: 'flowpad-oss' },
-      { id: PROJ.other, displayName: 'test_flowpad' },
+      { id: PROJ.other, displayName: 'test-project' },
     ],
   }),
 }));
@@ -140,7 +140,7 @@ describe('bookmarks tree — global, grouped by project', () => {
     await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
 
     // The other project and the unscoped desk are rows, not a filter mode.
-    expect(screen.getByText('test_flowpad')).toBeTruthy();
+    expect(screen.getByText('test-project')).toBeTruthy();
     expect(screen.getByText('Personal')).toBeTruthy();
     // ...and the current project leads.
     const buckets = Array.from(document.querySelectorAll('[data-browseable-id^="favproject:"]')).map((e) =>
@@ -184,7 +184,7 @@ describe('bookmarks tree — global, grouped by project', () => {
       'ADD',
       'agent-deployment',
       'README',
-      'test_flowpad',
+      'test-project',
       'Personal',
     ]);
   });
@@ -192,7 +192,7 @@ describe('bookmarks tree — global, grouped by project', () => {
   it('offers no add row on the project list, nor directly under a foreign project', async () => {
     const user = userEvent.setup();
     render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('test_flowpad')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('test-project')).toBeTruthy());
 
     // The tree root is the project LIST — it owns no bookmarks, so nothing can
     // be filed into it.
@@ -203,7 +203,7 @@ describe('bookmarks tree — global, grouped by project', () => {
     // someone else's desk would file into this one and disappear from view.
     await user.click(screen.getByTestId(`browseable-chevron-${bucket(PROJ.other)}`));
     await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherWork}`)).toBeTruthy());
-    expect(panelOrder()).toEqual(['flowpad-oss', 'ADD', 'Work', 'test_flowpad', 'Work', 'Personal']);
+    expect(panelOrder()).toEqual(['flowpad-oss', 'ADD', 'Work', 'test-project', 'Work', 'Personal']);
 
     // A FOLDER inside it does offer one: it files into that folder by id, and
     // bucketing follows the top-level ancestor, so the new row lands exactly
@@ -214,7 +214,7 @@ describe('bookmarks tree — global, grouped by project', () => {
       'flowpad-oss',
       'ADD',
       'Work',
-      'test_flowpad',
+      'test-project',
       'Work',
       'ADD',
       'sources-and-sinks',
@@ -232,7 +232,7 @@ describe('bookmarks tree — global, grouped by project', () => {
     await waitFor(() => expect(addRows()).toHaveLength(1));
     expect(panelOrder().slice(0, 2)).toEqual(['ADD', 'flowpad-oss']);
     expect(screen.queryByText('Other project')).toBeNull();
-    expect(screen.getByText('test_flowpad')).toBeTruthy();
+    expect(screen.getByText('test-project')).toBeTruthy();
   });
 
   it('with nothing bookmarked anywhere, the empty tree still offers the add row', async () => {

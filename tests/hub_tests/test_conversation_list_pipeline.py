@@ -624,7 +624,7 @@ async def test_empty_conversation_does_not_fake_recency(hub_base_url, hub_login_
     # Older, and empty — the "pong-…" style rows that hijacked the top.
     empty_id = await _hub_create_conversation(hub_base_url, api_key, title=f"empty-{uuid.uuid4()}")
     await asyncio.sleep(0.05)
-    # Newer, and carrying a real message — the "Tzahi" row that got buried.
+    # Newer, and carrying a real message — the "Frank" row that got buried.
     real_id = await _hub_create_conversation(hub_base_url, api_key, title=f"real-{uuid.uuid4()}")
     await _hub_add_message(hub_base_url, api_key, real_id, "a real message")
 

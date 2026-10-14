@@ -19,8 +19,8 @@ def _project(tmp_path, name: str, folder: str | None = None) -> Project:
 
 def test_name_key_folds_case_and_separators():
     assert project_name_key("Sales Desk") == project_name_key("sales-desk") == project_name_key("sales_desk")
-    assert project_name_key(" gtm  --studio ") == "sales-desk"
-    assert project_name_key("sales-desk") != project_name_key("gtm-studios")
+    assert project_name_key(" sales  --desk ") == "sales-desk"
+    assert project_name_key("sales-desk") != project_name_key("sales-desks")
 
 
 @pytest.mark.asyncio
@@ -68,7 +68,7 @@ async def test_rows_that_collided_before_the_rule_keep_saving(project_db, tmp_pa
     await newer.save()
 
     third = await _project(tmp_path, "other").save()
-    third.name = "Sales_desk"  # a rename onto the taken name is still refused
+    third.name = "Sales_Desk"  # a rename onto the taken name is still refused
     with pytest.raises(DuplicateProjectNameError):
         await third.save()
 
@@ -112,7 +112,7 @@ async def test_indexer_does_not_make_a_project_of_a_folder_with_a_taken_name(
     [
         ("sales-desk", "marketing", "marketing"),  # renamed: the folder kept its name
         ("sales desk", "sales-desk", None),  # same name as the key sees it
-        ("Sales_desk", "sales-desk", None),
+        ("Sales_Desk", "sales-desk", None),
     ],
 )
 def test_folder_name_mismatch_names_a_folder_the_rename_left_behind(tmp_path, name, folder, expected):

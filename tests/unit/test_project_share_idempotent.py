@@ -147,8 +147,8 @@ async def test_share_still_raises_on_a_real_failure(hub, status):
 
 _ROSTER = (
     '{"status":"success","data":['
-    '{"user_email":"alice@example.com","role":"owner","status":"approved"},'
-    '{"user_email":"gadi@langware.ai","role":"member","status":"approved"}]}'
+    '{"user_email":"dan@example.com","role":"owner","status":"approved"},'
+    '{"user_email":"alice@example.com","role":"member","status":"approved"}]}'
 )
 
 
@@ -170,7 +170,7 @@ async def test_resharing_to_an_existing_member_does_not_reinvite(hub):
     hub["get"] = _FakeResponse(200, _ROSTER)
     proj = _project()
 
-    assert await proj.share(invitees=[ShareInvitee(email="Gadi@Langware.ai")]) is proj
+    assert await proj.share(invitees=[ShareInvitee(email="Alice@Example.com")]) is proj
     assert _member_posts(hub) == [], "an existing member must not be re-invited (case-insensitively)"
 
 
@@ -183,7 +183,7 @@ async def test_resharing_still_invites_the_people_who_are_new(hub):
     proj = _project()
 
     await proj.share(
-        invitees=[ShareInvitee(email="gadi@langware.ai"), ShareInvitee(email="noa@langware.ai")]
+        invitees=[ShareInvitee(email="alice@example.com"), ShareInvitee(email="grace@example.com")]
     )
     posts = _member_posts(hub)
     # The new person gets one project invite plus the invite conversation's own

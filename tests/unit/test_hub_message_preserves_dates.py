@@ -57,10 +57,10 @@ def _ids(n: int) -> tuple[str, str]:
 def _sent_message(fm_id: str, conv_id: str) -> FlowMessage:
     """A text-only message as it exists on the SENDER, with a real past send-time."""
     fm = FlowMessage(
-        text="a message Nir sent weeks ago",
+        text="a message Bob sent weeks ago",
         shared_context_entities=[{"type": "conversation", "id": conv_id}],
         attachment=[],
-        sender_name="Nir Levy",
+        sender_name="Bob Example",
         conversation_id=conv_id,
     )
     fm.id = fm_id

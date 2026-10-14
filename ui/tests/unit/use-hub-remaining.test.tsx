@@ -23,7 +23,7 @@ const HUB = `llm_endpoint-${HUB_ID}`;
 const DEVICE = 'llm_endpoint-00000000-0000-4000-8000-000000000001';
 
 const funding = {
-  available: [{ id: HUB_ID, name: 'eran default', kind: 'hub' }],
+  available: [{ id: HUB_ID, name: 'alice default', kind: 'hub' }],
   resolved: { 'harness.claude.cli': { endpoint_typeid: HUB }, 'harness.codex.cli': { endpoint_typeid: DEVICE } },
   endpoints: { [HUB]: { id: HUB_ID, kind: 'hub' }, [DEVICE]: { id: 'd', kind: 'device' } },
 } as unknown as LLMFundingStatus;

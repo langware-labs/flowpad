@@ -7,7 +7,7 @@ import { matchesColumnFilter, type ColumnFilter } from '@src/components/stream-i
 
 const none: ColumnFilter = { from: '', subject: '', date: 'any' };
 const row = {
-  senders: 'Tzahi Mazuz, Eran Sh',
+  senders: 'Dave Miller, Alice Sh',
   subjectLine: 'shared interview sandbox Extract the Flowpad logs',
   updated: new Date().toISOString(),
 };
@@ -18,7 +18,7 @@ describe('matchesColumnFilter', () => {
   });
 
   it('narrows From on any sender, case-insensitively', () => {
-    expect(matchesColumnFilter({ ...none, from: 'eran' }, row)).toBe(true);
+    expect(matchesColumnFilter({ ...none, from: 'alice' }, row)).toBe(true);
     expect(matchesColumnFilter({ ...none, from: 'dana' }, row)).toBe(false);
   });
 
@@ -37,6 +37,6 @@ describe('matchesColumnFilter', () => {
   });
 
   it('requires every engaged column to match', () => {
-    expect(matchesColumnFilter({ from: 'tzahi', subject: 'invoice', date: 'any' }, row)).toBe(false);
+    expect(matchesColumnFilter({ from: 'dave', subject: 'invoice', date: 'any' }, row)).toBe(false);
   });
 });

@@ -11,7 +11,7 @@ const { isTransientLocation, shouldOfferMove, offerMoveToApplications } = requir
 let passed = 0;
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
 
-const TRANSLOCATED = '/private/var/folders/ks/z4w5srgs599939nc7hrwyldh0000gn/T/AppTranslocation/60DD7813-39EC-4F85-893E-F714B4E11BC7/d/Flowpad.app/Contents/MacOS/Flowpad'; // shape from a real user log
+const TRANSLOCATED = '/private/var/folders/ab/abcdefghijklmnopqrstuvwxyz0000gn/T/AppTranslocation/00000000-0000-4000-8000-000000000000/d/Flowpad.app/Contents/MacOS/Flowpad'; // shape from a real user log
 const DMG = '/Volumes/Flowpad 0.2.47/Flowpad.app/Contents/MacOS/Flowpad';
 const APPS = '/Applications/Flowpad.app/Contents/MacOS/Flowpad';
 

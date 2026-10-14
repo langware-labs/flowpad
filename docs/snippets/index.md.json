@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
   "inputs_hash": "80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2",

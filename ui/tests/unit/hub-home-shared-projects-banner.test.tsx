@@ -16,14 +16,14 @@ vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hub }));
 
 import { SharedProjectsBanner, sharedProjectsToOpen } from '@src/pages/hub-home/SharedProjectsBanner';
 
-const ME = 'user-eran';
-const GADI = 'user-gadi';
+const ME = 'user-alice';
+const BOB = 'user-bob';
 const project = (id: string, over: Record<string, unknown> = {}) =>
   ({
     id,
     name: `Course ${id}`,
     hidden: false,
-    created_by: GADI,
+    created_by: BOB,
     updated_date: '2026-10-05T12:00:00Z',
     ...over,
   }) as never;

@@ -22,13 +22,13 @@ const kind = (name: string, uses: [string, 'inside' | 'link'][] = []): SchemaNod
 
 const MODEL: SchemaRoot[] = [{
   id: 'p1',
-  name: 'Marketing',
-  folder: '/work/marketing',
-  schemas: [kind('gtm.icp', [['gtm.item', 'inside']]), kind('gtm.item'), kind('gtm.persona', [['gtm.icp', 'link']])],
+  name: 'Sales Desk',
+  folder: '/work/sales-desk',
+  schemas: [kind('crm.lead', [['crm.item', 'inside']]), kind('crm.item'), kind('crm.persona', [['crm.lead', 'link']])],
   sources: [{ id: 's1', name: 'Gmail', provider: 'gmail' }],
 }];
-const PERSONA = `${NS}gtm.persona`;
-const ICP = `${NS}gtm.icp`;
+const PERSONA = `${NS}crm.persona`;
+const ICP = `${NS}crm.lead`;
 const PROJECT = '550e8400-e29b-41d4-a716-446655440000';
 
 describe('the project is the scope, the selection the pointer', () => {
@@ -51,7 +51,7 @@ describe('the project is the scope, the selection the pointer', () => {
   it('the project itself has no pointer', () => {
     expect(schemaTreePointer([])).toBeUndefined();
     expect(parseSchemaTreePointer(undefined)).toEqual([]);
-    expect(bareKind(ICP)).toBe('gtm.icp');
+    expect(bareKind(ICP)).toBe('crm.lead');
     expect(bareKind('navigator.decision')).toBe('navigator.decision');
   });
 });
@@ -62,7 +62,7 @@ describe('following a link', () => {
   });
 
   it('lands on the kind itself when the selection does not name it', () => {
-    expect(pathAfterLink(MODEL, [`${NS}gtm.item`], PERSONA)).toEqual([PERSONA]);
+    expect(pathAfterLink(MODEL, [`${NS}crm.item`], PERSONA)).toEqual([PERSONA]);
     expect(pathAfterLink(MODEL, [], ICP)).toEqual([ICP]);
   });
 
@@ -72,7 +72,7 @@ describe('following a link', () => {
   });
 
   it('knows who uses a kind', () => {
-    expect(usedBy(MODEL, ICP).map((n) => n.name)).toEqual(['gtm.persona']);
+    expect(usedBy(MODEL, ICP).map((n) => n.name)).toEqual(['crm.persona']);
   });
 });
 

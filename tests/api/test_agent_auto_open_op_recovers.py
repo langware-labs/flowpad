@@ -140,7 +140,7 @@ def _no_leftover_tasks():
 
 
 async def test_a_plain_address_whose_port_an_app_declares_starts_that_app(bootstrapped_client, tmp_path):
-    """Acme's shape: the agent's ``auto_open`` is ``http://localhost:<port>`` — a port, not an app —
+    """A deployed app's shape: the agent's ``auto_open`` is ``http://localhost:<port>`` — a port, not an app —
     and nothing repairs it. The app's ``webapp.json`` declares that port, so the app is started and
     the address opens, instead of the tab recording "Nothing is answering"."""
     from flow_sdk.builtin import webapp_setup

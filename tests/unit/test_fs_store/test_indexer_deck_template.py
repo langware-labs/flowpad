@@ -158,10 +158,10 @@ def test_extract_defaults_name_to_slug(tmp_path: Path) -> None:
 
 def test_extract_free_data_section_passthrough(tmp_path: Path) -> None:
     tpl = _seed_template(
-        tmp_path, "d", manifest_data={"owner": "eran", "brand": "acme"}
+        tmp_path, "d", manifest_data={"owner": "dan", "brand": "acme"}
     )
     meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
-    assert meta["data"] == {"owner": "eran", "brand": "acme"}
+    assert meta["data"] == {"owner": "dan", "brand": "acme"}
 
 
 def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:

@@ -413,7 +413,7 @@ export const timeAgo = (isoDate: Date): string => {
 /**
  * Canonical form for any email we adopt, store, compare, or send: trim +
  * lowercase, empty → null. Mirrors the backend `normalize_email`
- * (flow_sdk/builtin/user.py) so a mixed-case recipient (e.g. `Tzahi@…`)
+ * (flow_sdk/builtin/user.py) so a mixed-case recipient (e.g. `Dave@…`)
  * never breaks exact-match invitation/contact lookups.
  */
 export const normalizeEmail = (email: string | null | undefined): string | null => {

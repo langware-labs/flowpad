@@ -25,7 +25,7 @@ afterEach(() => {
 describe('DataManager.resolvePendingRequests — 404 waiter handling', () => {
   it('resolves a parked waiter with null (not reject) when the ref is a 404', async () => {
     const dm = new DataManager();
-    const typeId = new TypeId('user', '090ffc4d-af90-4d74-9514-aa8650abca7a');
+    const typeId = new TypeId('user', '22222222-3333-4444-8555-666666666666');
 
     // Simulate the in-flight fetch having just 404'd: the direct path marks the
     // ref ERROR + notFound but never assigns ref.error.
