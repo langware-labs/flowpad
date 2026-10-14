@@ -43,7 +43,7 @@ window.__info = () => fetch('http://127.0.0.1:PORT/info.json', { method: 'POST',
   stylesheets: [...document.querySelectorAll('link[rel=stylesheet]')].map((l) => l.href),
   fonts: [...document.fonts].filter((f) => f.status === 'loaded').map((f) => `${f.family} ${f.weight}`),
 }) });
-await __info(); await __cap('inbox.html');
+await __info(); await __cap('home.html');
 ```
 
 `info.json` tells you what the `<html>` carries and where the font comes from — both change the look and
@@ -83,7 +83,7 @@ The states script draws one step per load from `location.hash` (`mockGo` sets th
 Assemble. The command is long and you will rerun it — keep it in `<mock-dir>/build.sh`:
 
 ```bash
-python3 -I <skill>/scripts/build_mock.py <mock-dir> --base capture/inbox.html \
+python3 -I <skill>/scripts/build_mock.py <mock-dir> --base capture/home.html \
   --template t-dialog=capture/dialog.html --states states.js --key <mock slug> \
   --origin http://localhost:<app port> --html-attrs '<htmlAttrs from info.json>' \
   --head '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=…">'

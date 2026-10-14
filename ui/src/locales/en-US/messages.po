@@ -1095,6 +1095,18 @@ msgstr "{name} has no account to sign into — it runs on an LLM key or endpoint
 #~ msgid "{name} has no account to sign into — it runs on an LLM key. Add one under “LLM API keys” above and pick it here."
 #~ msgstr "{name} has no account to sign into — it runs on an LLM key. Add one under “LLM API keys” above and pick it here."
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is added. It needs <0>one thing from you</0> before it can bring messages in."
+msgstr "{name} is added. It needs <0>one thing from you</0> before it can bring messages in."
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is added. Setting it up…"
+msgstr "{name} is added. Setting it up…"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is listening."
+msgstr "{name} is listening."
+
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "{name} is not set up on this machine"
 msgstr "{name} is not set up on this machine"
@@ -1251,6 +1263,10 @@ msgstr "{teamName} now has access, but the invite message wasn't sent."
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} items"
+
+#: src/components/data-sources/source-attention.ts
+msgid "{title} sign-in needs renewing"
+msgstr "{title} sign-in needs renewing"
 
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{tooltip} — click to open Records Scanner"
@@ -3217,6 +3233,7 @@ msgid "Approve now"
 msgstr "Approve now"
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "Approve once"
@@ -3572,6 +3589,10 @@ msgstr "Attach"
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Attach a plan or skill"
 msgstr "Attach a plan or skill"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Attach a prompt — runs once on {hostName}'s machine after they approve it"
+msgstr "Attach a prompt — runs once on {hostName}'s machine after they approve it"
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Attach all"
@@ -3942,6 +3963,10 @@ msgstr "Backlinks"
 #: src/components/account/database-section.tsx
 msgid "Backup DB"
 msgstr "Backup DB"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "bad"
+msgstr "bad"
 
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
@@ -4788,6 +4813,10 @@ msgstr "Checking Git…"
 msgid "Checking if you have a local clone of the repository."
 msgstr "Checking if you have a local clone of the repository."
 
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Checking once it finishes…"
+msgstr "Checking once it finishes…"
+
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Checking out the projects and opening the session."
 msgstr "Checking out the projects and opening the session."
@@ -4807,6 +4836,10 @@ msgstr "Checking the tag index…"
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Checking what funds {harnessLabel}…"
 msgstr "Checking what funds {harnessLabel}…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Checking what this needs…"
+msgstr "Checking what this needs…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -5811,6 +5844,11 @@ msgstr "Confirm: {0}"
 msgid "Connect"
 msgstr "Connect"
 
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connect {0}"
+msgstr "Connect {0}"
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Connect {group}"
 msgstr "Connect {group}"
@@ -6400,6 +6438,10 @@ msgstr "Could not allocate a mailbox"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
 msgstr "Could not annotate view"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Could not answer the prompt"
+msgstr "Could not answer the prompt"
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not ask for help"
@@ -7117,6 +7159,11 @@ msgstr "Could not start room"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not start sign-in"
 msgstr "Could not start sign-in"
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Could not start the {0} sign-in."
+msgstr "Could not start the {0} sign-in."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
@@ -7915,6 +7962,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "Declared on the agent's card. Not yet applied to the worker."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline"
@@ -7932,6 +7980,7 @@ msgstr "Decline (notifies the inviter)"
 msgid "Decline failed"
 msgstr "Decline failed"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "declined"
 msgstr "declined"
@@ -8377,6 +8426,10 @@ msgstr "Deleting…"
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delivered"
 msgstr "Delivered"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "delivered · waiting for {otherName} to approve"
+msgstr "delivered · waiting for {otherName} to approve"
 
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Delivered to"
@@ -9010,6 +9063,7 @@ msgstr "done"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -9714,6 +9768,7 @@ msgstr "Environment variables"
 msgid "Environment Variables"
 msgstr "Environment Variables"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "error"
@@ -10918,6 +10973,10 @@ msgstr "Find or type an organization…"
 msgid "Finish installing the FlowPad GitHub App on {repo}, then"
 msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Finish later"
+msgstr "Finish later"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
@@ -11768,6 +11827,10 @@ msgstr "Go to the quoted message"
 msgid "Go up"
 msgstr "Go up"
 
+#: src/components/conversation/PromptCallCard.tsx
+msgid "good"
+msgstr "good"
+
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
@@ -12262,6 +12325,10 @@ msgstr "Host"
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "hours"
 msgstr "hours"
+
+#: src/components/ask/AskForm.tsx
+msgid "How do I get it?"
+msgstr "How do I get it?"
 
 #: src/components/data-sources/GroupChoice.tsx
 msgid "How do you want to connect {group}?"
@@ -14437,6 +14504,7 @@ msgid "Logout"
 msgstr "Logout"
 
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Logs"
 msgstr "Logs"
 
@@ -15307,6 +15375,15 @@ msgstr "Needed for"
 msgid "Needed for:"
 msgstr "Needed for:"
 
+#. placeholder {0}: p.sign_in_title
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Needs {0} sign-in"
+msgstr "Needs {0} sign-in"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Needs {title} sign-in"
+msgstr "Needs {title} sign-in"
+
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "Needs a look"
@@ -15328,6 +15405,10 @@ msgstr "Needs attention"
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
 msgstr "Needs values"
+
+#: src/components/project-setup/SetupTreeView.tsx
+msgid "Needs you — above"
+msgstr "Needs you — above"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Needs your approval"
@@ -17206,6 +17287,10 @@ msgstr "Nothing — this wizard is run by hand. Add a trigger asset under its ag
 
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr "Nothing — this wizard runs with no parameters."
+
+#: src/components/data-sources/source-attention.ts
+msgid "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
+msgstr "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Nothing attached."
@@ -19735,12 +19820,17 @@ msgid "prompt"
 msgstr "prompt"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr "Prompt"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Prompt · runs once on {otherName}'s machine"
+msgstr "Prompt · runs once on {otherName}'s machine"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Prompt Annotation"
@@ -19769,6 +19859,10 @@ msgstr "Prompt for Claude Code on {hostName}'s machine…"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Prompt for your Claude Code…"
 msgstr "Prompt for your Claude Code…"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Prompt from {otherName}"
+msgstr "Prompt from {otherName}"
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
@@ -19809,8 +19903,8 @@ msgid "Prompt to run"
 msgstr "Prompt to run"
 
 #: src/components/conversation/MessageComposer.tsx
-#~ msgid "Prompt to run on {hostName}'s machine…"
-#~ msgstr "Prompt to run on {hostName}'s machine…"
+msgid "Prompt to run on {hostName}'s machine…"
+msgstr "Prompt to run on {hostName}'s machine…"
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -21250,6 +21344,7 @@ msgstr "responses"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -21610,6 +21705,7 @@ msgstr "Rule created"
 msgid "Rules"
 msgstr "Rules"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
@@ -21717,7 +21813,6 @@ msgstr "Run from your terminal, then restart Flowpad:"
 #~ msgid "Run from your terminal:"
 #~ msgstr "Run from your terminal:"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
 msgid "Run in terminal"
@@ -21823,6 +21918,7 @@ msgstr "Run this live session in which project?"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "running"
 msgstr "running"
 
@@ -23172,6 +23268,7 @@ msgstr "Set public"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23287,6 +23384,7 @@ msgstr "Setting up the controller"
 msgid "Setting up your project…"
 msgstr "Setting up your project…"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up…"
 msgstr "Setting up…"
@@ -23304,6 +23402,7 @@ msgstr "Settings"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
@@ -23369,7 +23468,6 @@ msgstr "Setup notes"
 #: src/components/data-sources/source-attention.ts
 #: src/components/data-sources/status-style.ts
 #: src/components/project-home/ProjectDependenciesCard.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -23865,6 +23963,11 @@ msgstr "Sign in and requests like \"open data sources\" open the screen directly
 msgid "Sign in first, then this source can fund a run."
 msgstr "Sign in first, then this source can fund a run."
 
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Sign in to {0}"
+msgstr "Sign in to {0}"
+
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
 msgstr "Sign in to {name}"
@@ -24277,6 +24380,11 @@ msgstr "Snooze bookmark"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Snoozed"
 msgstr "Snoozed"
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "So {name} can read your {0} messages and send your replies as you. You stay signed in."
+msgstr "So {name} can read your {0} messages and send your replies as you. You stay signed in."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
@@ -24797,10 +24905,12 @@ msgstr "Still working — waiting on the cloud. This can take a minute."
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -25852,6 +25962,7 @@ msgstr "The new budget takes over at once; the current one is closed. What was s
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 msgstr "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
 msgstr "the other participant"
@@ -26434,6 +26545,10 @@ msgstr "This machine has no model to run the agent on. Set one up, then try agai
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
 msgstr "This message carries no assets."
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+msgstr "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "This message will also become a task"
@@ -28347,12 +28462,17 @@ msgid "waiting for the code"
 msgstr "waiting for the code"
 
 #: src/components/ask/AskChoiceBlock.tsx
-msgid "Waiting for the sign-in…"
-msgstr "Waiting for the sign-in…"
+#~ msgid "Waiting for the sign-in…"
+#~ msgstr "Waiting for the sign-in…"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you"
 msgstr "waiting for you"
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Waiting for you to approve on {0}…"
+msgstr "Waiting for you to approve on {0}…"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Waiting for you to approve…"
@@ -28382,6 +28502,10 @@ msgstr "Walks the filesystem and re-indexes only entries whose source changed si
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
 msgstr "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "wants to run on your machine"
+msgstr "wants to run on your machine"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "wants to run prompts on your machine"
@@ -28921,6 +29045,7 @@ msgstr "Working tree"
 msgid "Working Tree"
 msgstr "Working Tree"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
 msgstr "working…"

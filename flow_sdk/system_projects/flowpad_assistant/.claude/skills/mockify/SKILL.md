@@ -46,7 +46,7 @@ List the steps and send them to the user in one short message, then write the ro
 
 ```
 id        app      title                  note (the detail the user should react to)
-inbox     Flowpad  Inbox                  where the user starts
+home      Flowpad  Home                   where the user starts
 pick      Flowpad  "+" Add a channel      the tile says what it needs
 grant     GitHub   Authorize Flowpad      long-term OAuth, revocable on GitHub
 denied    GitHub   ↳ if denied            blocks the channel, Retry          (branch_of: grant)
@@ -55,8 +55,8 @@ done      Flowpad  Listening              PRs arrive as conversations
 
 ```bash
 DM ds-put <project>/agentic-assets/dataset/mocks <slug> '{"input": {"title": "…", "mode": "fast",
-  "status": "draft", "session": "<this process id>", "journey": [{"id": "inbox", "app": "Flowpad",
-  "title": "Inbox", "note": "…", "decisions": [{"id": "D1", "question": "…", "shown": "…"}]}, …]}}'
+  "status": "draft", "session": "<this process id>", "journey": [{"id": "home", "app": "Flowpad",
+  "title": "Home", "note": "…", "decisions": [{"id": "D1", "question": "…", "shown": "…"}]}, …]}}'
 ```
 
 - **Start where the user really starts** (often the screen they already live in). If unsure, ask once.
