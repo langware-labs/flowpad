@@ -134,6 +134,8 @@ const person = (over: Record<string, unknown> = {}) => ({
   spent_usd: 0,
   spent_tokens: 0,
   can_configure: true,
+  // Per ROW, not per team: the hub answers "may I remove THIS person" (role ladder + last-owner).
+  can_remove: true,
   ...over,
 });
 
@@ -409,14 +411,17 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     await waitFor(() => expect(h.del).toHaveBeenCalledWith(expect.objectContaining({ id: UUID(4), type: 'team' })));
   });
 
-  it('offers "Remove from team" on a person row only to someone who may run the team', () => {
+  it('offers "Remove from team" only on a row the hub says this caller may remove', () => {
+    // can_manage stays TRUE and the button is still hidden: the team-wide permission is not the
+    // question. An admin may rename the team and still be refused against a peer admin, which is
+    // exactly the 403-on-press this gate exists to stop.
     h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope({ can_manage: false })] },
+      data: { org: orgScope(), teams: [teamScope()] },
       isLoading: false,
       error: null,
     });
     h.team.mockReturnValue({
-      data: { team: teamScope({ can_manage: false }), members: [person()] },
+      data: { team: teamScope(), members: [person({ can_remove: false })] },
       isLoading: false,
       error: null,
     });
@@ -449,6 +454,33 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     // The holderless row: Delete the allowance itself.
     expect(screen.queryByTestId(`member-remove-${EP(5)}`)).toBeNull();
     expect(screen.getByTestId(`member-delete-${EP(5)}`)).toBeTruthy();
+  });
+
+  /**
+   * The bug this gate exists for, stated as a scenario rather than as a flag.
+   *
+   * An admin of a team may rename it, so `can_manage` is true and the old gate showed Remove on
+   * EVERY row. Pressing it beside a peer admin earned a 403, because the hub judges that request by
+   * the role ladder: a member at or above your own rank is untouchable. This file's rule is that a
+   * control it offers always works, so the answer has to come per row from the hub.
+   */
+  it('hides Remove beside a peer the caller cannot outrank, while the team stays manageable', () => {
+    const plain = person({ endpoint_id: EP(2), user_id: UUID(3), can_remove: true });
+    const peerAdmin = person({ endpoint_id: EP(6), user_id: UUID(7), name: 'Grace', can_remove: false });
+    h.org.mockReturnValue({ data: { org: orgScope(), teams: [teamScope()] }, isLoading: false, error: null });
+    h.team.mockReturnValue({
+      data: { team: teamScope(), members: [plain, peerAdmin] },
+      isLoading: false,
+      error: null,
+    });
+    draw(<OrgUnit orgId={UUID(1)} onDeleted={vi.fn()} />);
+    fireEvent.click(screen.getByTestId(`team-people-toggle-${UUID(4)}`));
+
+    // Same team, same caller, same `can_manage` — the rows differ, and so do the buttons.
+    expect(screen.getByTestId(`member-remove-${EP(2)}`)).toBeTruthy();
+    expect(screen.queryByTestId(`member-remove-${EP(6)}`)).toBeNull();
+    // The peer's row keeps everything else: the caller may still set their cap.
+    expect(screen.getByTestId(`member-edit-${EP(6)}`)).toBeTruthy();
   });
 
   /**
@@ -485,14 +517,14 @@ describe('TeamUnit (rendered inside OrgUnit)', () => {
     expect(h.save.mock.calls[0][2]).toEqual({ name: 'Ada — research' });
   });
 
-  it('still offers Advanced and Edit on a person row when the caller may not run the team', () => {
+  it('still offers Advanced and Edit on a person row this caller may not remove', () => {
     h.org.mockReturnValue({
-      data: { org: orgScope(), teams: [teamScope({ can_manage: false })] },
+      data: { org: orgScope(), teams: [teamScope()] },
       isLoading: false,
       error: null,
     });
     h.team.mockReturnValue({
-      data: { team: teamScope({ can_manage: false }), members: [person()] },
+      data: { team: teamScope(), members: [person({ can_remove: false })] },
       isLoading: false,
       error: null,
     });
