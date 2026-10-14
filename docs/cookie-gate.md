@@ -51,8 +51,8 @@ it whether a host is this machine.
   The machine's own browser, the CLI, workers, Electron.
 - **Sandbox** (`sandbox_cookiegate_middleware.py`): anything else, i.e. a hub box's public URL.
 
-Both check the same token, by any of three transports, each checked on its own so a stale cookie
-cannot veto a valid header or query:
+**The local gate** checks the token, by any of three transports, each checked on its own so a stale
+cookie cannot veto a valid header or query:
 
 | Transport | Who uses it |
 |---|---|
@@ -60,7 +60,8 @@ cannot veto a valid header or query:
 | `X-Cookie-Gate` header | machine callers |
 | `?cookie-gate=` query | a browser's first, cookie-less contact |
 
-**No path is exempt**, `/health/status` included. Every legitimate caller can present the token.
+**No path is exempt**, in either gate, `/health/status` included. Every legitimate caller can present
+a credential.
 
 **The local gate also passes, without the token:**
 
@@ -70,6 +71,23 @@ cannot veto a valid header or query:
   the cookie. The Host check stops a DNS-rebound name from being handed it.
 - A **CORS preflight** (`OPTIONS` with `Origin` and `Access-Control-Request-Method`): browsers never
   attach cookies to one and no route runs; the request it clears is gated.
+
+**The sandbox gate** takes two credentials, by three transports:
+
+| Transport | Who uses it |
+|---|---|
+| `X-Cookie-Gate` header | machine callers — the hub's relay, the workers inside this box. The gate **secret** itself; never a browser's. |
+| `__Host-grant` cookie | the browser, on every request after its first: a **grant** the hub issued for the `system` door, minted by `/auth/gate` from a ticket |
+| `?ticket=` query param | the browser's first contact, which is necessarily cookie-less: the hub's signed **ticket**, good for a minute |
+
+A grant (`flow_sdk/server/service_proxy.py`, `Grant`) names WHO may enter WHICH door of WHICH
+endpoint: `caller|audience|endpoint`. The hub decides (`service_endpoint/<id>/open`) and signs
+that subject with this box's gate secret — the ticket. The box verifies it with the secret it already
+holds and keeps the same subject as a cookie signed with a key of its own (`server/grants.py`:
+the secret × a boot nonce). **The secret never rides a URL or a cookie** through the public URL. A
+grant for one door opens no other: the `system` door (the box's own UI on 9007) refuses an `app`
+grant, and an audience door (`server/audience_listener.py`, ports `AUDIENCE_PORTS`) refuses a
+`system` one. With no secret to check against, the sandbox gate refuses.
 
 **The off switch.** `FLOWPAD_COOKIE_GATE=off`, read on every request, turns both gates off. The test
 suite, instance_ctl dev instances, docker-compose and CI e2e set it. Hub-launched boxes must not.
@@ -88,9 +106,13 @@ With the switch unset, a token that can be neither read nor created refuses ever
 | The hub, over a box's loopback | `X-Cookie-Gate` (`ComputeNode.http`, `_curl_status`) |
 | Scripts | `-H "X-Cookie-Gate: $(cat <instance_dir>/.cookie_gate)"`, or the `flow` CLI |
 
-## `/auth/gate?cookie-gate=<token>&next=<url>`
+## `/auth/gate`
 
-The route that hands a cold browser its cookie. It is gated like everything else, and is reachable
+The route that hands a cold browser its cookie, on either gate's terms.
+
+### On this machine: `/auth/gate?cookie-gate=<token>&next=<url>`
+
+For a loopback `Host`. It is gated like everything else, and is reachable
 because the URL carries the token. It sets the cookie for the host the browser addressed and
 redirects to `next`: a path on this instance, or an absolute `http(s)` URL.
 
@@ -101,21 +123,35 @@ hub code-flow OAuth URL and the LLM chooser are all built through `cloud_urls.wr
 enters through `/auth/gate` first; the provider's return is a top-level GET, so the `Lax` cookie rides
 it.
 
-On a hub box the hub links the browser the same way (`open-service` → `gated_host_url`), and only for
-a caller entitled to be inside the box (`_may_receive_the_gate`).
+### Through a box's public URL: `/auth/gate?ticket=T&next=/`
+
+The callback that armed the box was made by **curl, inside the sandbox**, so the browser's first
+request is cold: it carries the hub's ticket in the URL, once, and trades it for the grant cookie. The
+hub knows which caller is which — it builds the browser's link *and* curl's — so each states its
+intent by choosing a URL: curl asks for `login_callback`, the browser asks for `gate`. The same
+exchange exists on each audience door (`/auth/gate` on 9017 and 9027) for that door's tickets; a door
+handed a ticket for another door answers 403.
+
+### Revocation: `POST /auth/revoke`
+
+`{"caller": "<typeid>" | null, "endpoints": ["<id>", …]}`, presented with the gate secret as the
+machine header — a grant holder cannot revoke anybody. The hub posts it the moment someone's standing
+narrows (a member removed, a role lowered, a public stamp withdrawn, a placement deleted); the named
+caller's grants on those endpoints (everyone's, when `null`) are refused from then on. The denylist
+lives in the process: it only has to outlive the grants it refuses, and those die with the boot nonce.
 
 ## Cookie attributes
 
-| | This machine (`cookie-gate-<port>`) | A hub box's public URL (`__Host-cookie-gate`) |
+| | This machine (`cookie-gate-<port>`) | A hub box's public URL (`__Host-grant`) |
 |---|---|---|
 | Scope | per port: cookies ignore the port, so one name would let two local instances overwrite each other | host-only: `e2b.app` is shared across tenants |
 | HttpOnly | yes | yes |
 | Secure | no: it protects nothing on loopback, and Safari drops `Secure` cookies on `http://localhost` | yes (required by the prefix; the browser reaches the box through E2B's TLS edge) |
-| SameSite | `Lax` | `Lax` |
+| SameSite | `Lax` | `None` + `Partitioned`: the app display embeds an audience door in an iframe on another origin, and a partitioned (CHIPS) cookie is the one a browser still keeps there |
 | Path | `/` | `/` |
-| Lifetime | one year | session |
+| Lifetime | one year | session; the signature carries its own 12h expiry, and a restart of the box ends every grant |
 
-`Lax`, not `Strict`: another site's fetch, form POST, iframe or subresource does not carry it, but a
+Locally `Lax`, not `Strict`: another site's fetch, form POST, iframe or subresource does not carry it, but a
 top-level GET navigation does, and the hub/provider redirects back into the app are exactly that.
 `Strict` refused them.
 
@@ -124,17 +160,28 @@ top-level GET navigation does, and the hub/provider redirects back into the app 
 1. `arm_gate` writes the hub's secret into the box at every launch; `_configure_box` does again on
    login. A local-machine node is not armed at launch.
 2. Every hub call into a box goes over the box's loopback with `X-Cookie-Gate`.
-3. A 403 from the box counts as alive: only the app's own gate answers it. The e2b template's
+3. `service_endpoint/<id>/open` (reached directly, or through `compute_node/<id>/open/<door>`)
+   asks the policy whether THIS caller may enter THIS row, then redirects the browser to the door
+   with a ticket. The secret is in neither URL.
+4. The hub's relay names the caller it vouches for as `X-Flowpad-Caller`, signed with the secret.
+5. On an `access_changed` signal the hub posts `/auth/revoke` to every running box that publishes
+   its ports; one it cannot reach is re-armed with a fresh secret instead, which ends every grant.
+6. A 403 from the box counts as alive: only the app's own gate answers it. The e2b template's
    `ready_cmd` accepts 200 or 403 for the same reason, since the box locks itself with its own token
    on its first request, before the hub arms it.
 
 ## Known limitations
 
-- **The link is the password.** The token in a `/auth/gate` link is the gate token, and it lands in
-  browser history. A leaked link grants access until the token changes.
-- **No revocation, no audit.** A browser holding the cookie keeps access until the token changes.
-  Hub logout does not reach it.
+- **Locally, the link is the password.** The token in a local `/auth/gate` link is the gate token,
+  and it lands in browser history. A leaked link grants access until the token changes.
+- **No local revocation, no audit.** A browser holding the local cookie keeps access until the token
+  changes. Hub logout does not reach it.
+- **Per-user revocation reaches a box only while it is running and reachable.** A paused box has no
+  sessions; a running one the hub cannot reach is rotated wholesale.
 - **Same site, other port.** Pages on another `localhost` port are the same site to the browser and
   ride the `Lax` cookie.
 - **CORS still allows the `null` origin.**
 - **Traffic still reaches the app.** It serves Forbidden rather than rejecting at the edge.
+- **A dev server that binds every interface on an e2b box is public.** Flowpad launches servers with
+  `HOST=127.0.0.1` and the templates bind loopback, so the audience door is the only way in; an app
+  author who binds `0.0.0.0` themselves opens their own port.

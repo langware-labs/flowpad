@@ -53,6 +53,8 @@ export enum PrefKey {
   // --- Migrated from localStorage (see prefRegistry plan) ---
   // i18n / ui (boot keys read at module load, gate first paint)
   LOCALE = 'preferences.i18n.locale',
+  /** Per-device language override per project: `{ [projectId]: localeCode }`. */
+  PROJECT_LOCALES = 'preferences.i18n.project_locales',
   VIEW_MODE = 'preferences.ui.view_mode',
   DEV_MODE = 'preferences.ui.dev_mode',
   VIBE_MODEL_TIER = 'preferences.ui.vibe_model_tier',
@@ -422,6 +424,17 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     // when the user has 2+ languages in common with the app, so this is where
     // the rest are reached.
     optionsSource: 'locales',
+  },
+  [PrefKey.PROJECT_LOCALES]: {
+    key: PrefKey.PROJECT_LOCALES,
+    category: 'i18n',
+    label: 'Project languages',
+    // A language picked from the footer inside a project is this device's own
+    // reading of it — it never rewrites the project's shared `locale` (that is
+    // the project home's Language card).
+    description: 'Your own language for each project, chosen from the footer.',
+    dataType: PrefDataType.JSON,
+    defaultValue: {},
   },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,

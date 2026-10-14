@@ -34,6 +34,7 @@ COMPUTE_OP = TypeInfo(
     asset_spec=ComputeOpSpec,
     # The entity is the authoring surface: an edit re-renders the document.
     owns_main_ref=True,
+    editor="compute_op",
     # No identity_carrier: an entity document carries its id in its own root,
     # the way data_source.json does. A shipped op therefore ships with one.
 )

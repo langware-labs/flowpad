@@ -24,6 +24,8 @@ from flow_sdk.instance_settings import cookie_gate
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 HUB_SECRET = "hub-armed-secret"
+#: The local gate answers this machine's hosts.
+LOCAL = "http://localhost:9007"
 
 
 def _app() -> Starlette:
@@ -40,7 +42,7 @@ def _header(token: str) -> dict[str, str]:
 
 
 def test_first_request_creates_a_token_and_is_refused(local_gate):
-    client = TestClient(_app())
+    client = TestClient(_app(), base_url=LOCAL)
 
     response = client.get("/")
 
@@ -52,20 +54,20 @@ def test_first_request_creates_a_token_and_is_refused(local_gate):
 
 
 def test_the_token_admits_and_survives_a_restart(local_gate):
-    client = TestClient(_app())
+    client = TestClient(_app(), base_url=LOCAL)
     client.get("/")
     token = local_gate.read_text(encoding="utf-8")
 
     assert client.get("/", headers=_header(token)).status_code == 200
 
-    assert TestClient(_app()).get("/", headers=_header(token)).status_code == 200
+    assert TestClient(_app(), base_url=LOCAL).get("/", headers=_header(token)).status_code == 200
     assert local_gate.read_text(encoding="utf-8") == token
 
 
 def test_off_switch_without_a_file_passes_and_creates_nothing(local_gate, monkeypatch):
     monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
 
-    assert TestClient(_app()).get("/").status_code == 200
+    assert TestClient(_app(), base_url=LOCAL).get("/").status_code == 200
     assert not local_gate.exists()
 
 
@@ -74,7 +76,7 @@ def test_off_switch_turns_the_gate_off_even_with_a_token_file(local_gate, monkey
     local_gate.write_text("existing-token", encoding="utf-8")
     monkeypatch.setenv(gate.OFF_SWITCH_ENV, "off")
 
-    assert TestClient(_app()).get("/").status_code == 200
+    assert TestClient(_app(), base_url=LOCAL).get("/").status_code == 200
 
 
 def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
@@ -83,13 +85,13 @@ def test_a_token_that_cannot_be_created_fails_closed(tmp_path, monkeypatch):
     monkeypatch.delenv(gate.OFF_SWITCH_ENV, raising=False)
     monkeypatch.setattr(cookie_gate, "_token_path", lambda: blocker / ".cookie_gate")
 
-    response = TestClient(_app()).post("/api/v1/graph/shell")
+    response = TestClient(_app(), base_url=LOCAL).post("/api/v1/graph/shell")
 
     assert response.status_code == 403
 
 
 def test_a_deleted_token_is_replaced_and_the_old_one_stops_working(local_gate):
-    client = TestClient(_app())
+    client = TestClient(_app(), base_url=LOCAL)
     client.get("/")
     old = local_gate.read_text(encoding="utf-8")
 
@@ -102,8 +104,8 @@ def test_a_deleted_token_is_replaced_and_the_old_one_stops_working(local_gate):
 
 
 def test_a_hub_armed_secret_takes_precedence(local_gate):
-    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
-        client = TestClient(_app())
+    with patch.object(cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
+        client = TestClient(_app(), base_url=LOCAL)
 
         assert client.get("/").status_code == 403
         assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200
@@ -114,10 +116,10 @@ def test_a_hub_armed_secret_takes_precedence(local_gate):
 def test_hub_arming_after_startup_is_enforced_on_the_next_request(local_gate):
     """The gate is chosen per request: a sandbox armed after the app was built
     gets the sandbox gate at once, not the local one it started with."""
-    client = TestClient(_app())
+    client = TestClient(_app(), base_url=LOCAL)
     client.get("/")  # local gate, token created
     token = local_gate.read_text(encoding="utf-8")
 
-    with patch.object(gate.cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
+    with patch.object(cookie_gate, "get_cookie_gate", return_value=HUB_SECRET):
         assert client.get("/", headers=_header(token)).status_code == 403
         assert client.get("/", headers=_header(HUB_SECRET)).status_code == 200

@@ -45,7 +45,7 @@ export function AgentStreamInboxView() {
   const activeState = state?.agent_id === parsed.agentId ? state : null;
   // The agent's channels — the stream inbox header's own rows, so "has a
   // channel at all" and what that header shows can never disagree.
-  const { rows: channels, specFor } = useAttachedChannels(agentTypeId);
+  const { rows: channels, specFor, offers } = useAttachedChannels(agentTypeId);
 
   const loadState = useCallback(async () => {
     const currentAgent = agentRef.current;
@@ -199,7 +199,7 @@ export function AgentStreamInboxView() {
           {/* The header line's + is how an agent gets a non-email channel, so the
               empty state keeps it rather than leaving email as the only way in. */}
           {agentTypeId && (
-            <AttachedChannelsBar owner={agentTypeId} rows={channels} specFor={specFor} selected={NO_FILTER} onSelectedChange={() => undefined} />
+            <AttachedChannelsBar owner={agentTypeId} rows={channels} specFor={specFor} offers={offers} selected={NO_FILTER} onSelectedChange={() => undefined} />
           )}
           <p>
             <Trans>No channel reaches this Agent yet. Give it an email address to start.</Trans>

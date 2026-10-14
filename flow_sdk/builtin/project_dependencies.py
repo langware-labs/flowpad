@@ -196,6 +196,32 @@ async def _file(target: str, base: Path) -> _Found:
 
 
 async def _hub(dep: FlowDependency, project_id: str, *, fetch: bool, update: bool, cloned: bool) -> _Found:
+    """A hub project, fetched from the hub — or, when the hub cannot supply it, the project's own
+    folder when it already lives on this machine (picked here before its files were ever pushed)."""
+    try:
+        return await _hub_fetch(dep, project_id, fetch=fetch, update=update, cloned=cloned)
+    except _NotReady:
+        local = await _local_project_root(project_id, dep.path)
+        if local is None:
+            raise
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        return _Found(await Folder.mint_for_path(local), local, "local", True)
+
+
+async def _local_project_root(project_id: str, rel: str) -> Optional[str]:
+    """Where project ``project_id`` (and ``rel`` inside it) is on this machine, or None."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project = await Project.get_by_id(project_id)
+    mount = getattr(project, "fs_storage_mount_path", None) if project is not None else None
+    if not mount:
+        return None
+    root = Path(mount) if rel == "." else safe_join(Path(mount), rel)
+    return canonical_posix_path(str(root)) if root is not None and root.is_dir() else None
+
+
+async def _hub_fetch(dep: FlowDependency, project_id: str, *, fetch: bool, update: bool, cloned: bool) -> _Found:
     """A hub project: its row names where its files live (``git_origin``) — the
     project's hosted repository, or its own git remote."""
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415

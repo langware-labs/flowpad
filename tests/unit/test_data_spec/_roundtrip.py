@@ -116,7 +116,10 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         # How a webapp endpoint is served — the non-default arm of the union.
         from flow_sdk.schema.data_spec.webapp_spec import WebappProxyServing  # noqa: PLC0415
 
-        return WebappProxyServing(type="proxy", start_cmd=f"{name}-v --port {{port}}", health=f"/{name}-h", port=4321)
+        return WebappProxyServing(
+            type="proxy", start_cmd=f"{name}-v --port {{port}}", health=f"/{name}-h",
+            ports={"local": {"port": 4321, "required": False}}, install_check=f"{name}-deps",
+        )
     if getattr(ann, "__name__", "") == "TypeId":
         return ann(f"skill-{mint_uuid()}")
     if ann is datetime:

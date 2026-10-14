@@ -62,8 +62,25 @@ An automation may carry an **`if`** and a **`then`** (`docs/snippets/stream-inbo
   `then` runs that instead of `actions`. A `run_script` (in `then` or in the legacy `actions`) may
   be PROJECT-RELATIVE (`agentic-assets/trigger/<name>/run.sh`): it resolves under the rule's
   project folder, so a rule checked into a project runs the same on every clone; an absolute path
-  still works but belongs to one checkout. A rule on `dataset.rows.changed` names its dataset with
-  `tag_target` (`dataset:<id>`), or it fires for every dataset write on the machine.
+  still works but belongs to one checkout. A rule on `dataset.rows.changed` names its rows by KIND,
+  or it fires for every dataset write on the machine: `"tag": {"on": "dataset.rows.changed", "scope":
+  ["kind:--acme--.crm.task"]}` — the event's scope carries the row kind, which is the same on every
+  clone. (`"target": "dataset:<id>"` — the row's `tag_target` — also works, but a dataset's id is one
+  machine's, so it cannot be checked in.)
+- **A script that fails is a failed run.** In `then` a failing step is the run's `error`; in the legacy
+  `actions` an answer that did not reach its goal (a non-zero exit, a script stopped at its budget, a
+  script that is not on disk) is too — `errors` on the row and `trigger.failed` on the bus. A place
+  switched off or a slot that is busy stays quiet: refusing is not failing. `then.run_script` is the
+  form to write (a shell one-liner run from the project folder, as a wizard step); `actions` stay for
+  files written before it and for a file rule that needs the changed paths. A job longer than a step's
+  budget starts its work and returns — no budget is configurable, on purpose.
+- **`runs_on` belongs to the rule, whatever its kind**: `"runs_on": "<deployment id>"` at the top of
+  `trigger.json` (a schedule file may still carry it inside `schedule`). Only the machine that place
+  runs on arms the rule — an event rule or a file rule checked into a shared project then fires once,
+  not once per clone. Empty: every machine that indexes it.
+- **The run a test started is one call away.** `run_once` answers `run_id` (`RunOnceStarted`);
+  `Trigger.run(run_id)` — `GET trigger/run?id=`, TypeScript `Trigger.run(started.run_id)` — answers
+  `status: "running"` while it works and its history row after. No status file, no polling of `runs`.
 - Log rows gain `decision`, `subject_id` and `wizard` (an outline — each step's exit code, short
   detail and session, never its output); `AutomationRun` mirrors them;
   `AutomationSummary` gains `last_runs` and `passed_over`; the top bar's last-hour count is its own

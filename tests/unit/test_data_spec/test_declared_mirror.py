@@ -63,6 +63,7 @@ def _rows(tasks) -> dict:
     ({"dataset": "tasks", "map": {"key": "external_id"}}, "mirror.map"),
     ({"dataset": "tasks", "map": {"key": "external_id", "input": {"title": "name"}}}, "map the key path 'external_id' to a field"),
     ({"dataset": "tasks", "map": MAP, "into": "x"}, "mirror:"),
+    ({"dataset": "tasks", "map": MAP, "by": "The CRM"}, "mirror.by"),
 ])
 def test_a_mirror_is_checked_where_it_is_declared(mirror, says):
     from pydantic import ValidationError
@@ -252,7 +253,8 @@ def served(tmp_path, monkeypatch):
     rules.write_text(json.dumps({**json.loads(rules.read_text()), "rules": [{"unique": ["crm_id"]}]}))
     _schema(root, ns, "crm.task", {"title": f("string", owned_by="crm"), "status": f("string", owned_by="crm"),
                                    "crm_id": f("?string", owned_by="crm"), "deals": f(["crm.deal"], owned_by="crm"),
-                                   "seen": f("?string", owned_by="crm"), "notes": f("?string")})
+                                   "seen": f("?string", owned_by="crm"), "label": f("?string", owned_by="crm"),
+                                   "notes": f("?string")})
     assert not any(load_root(root).values())
     deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
     folder = root / "agentic-assets/dataset/tasks"                       # made by the save (``_seed``)
@@ -262,6 +264,7 @@ def served(tmp_path, monkeypatch):
 
     class TaskData(RecordData):
         status: str | None = None
+        label: str | None = None
         deal_ids: list[str] = []
 
     class Crm:
@@ -297,6 +300,7 @@ def served(tmp_path, monkeypatch):
     source = DataSource(id=str(uuid.uuid4()), provider="crm", account_key="a", name="CRM tasks", asset_ref=str(source_folder),
                         mirror={"dataset": "tasks", "map": {"key": "external_id", "input": {
                             "title": "data.title", "status": "data.status", "crm_id": "external_id", "seen": "occurred_at",
+                            "label": "data.label",
                             "deals": {"link": "crm.deal", "by": "crm_id", "path": "data.deal_ids.*"}}}})
 
     async def ingest_items(specs, **kw):
@@ -460,3 +464,54 @@ async def test_a_change_to_the_apps_own_fields_stays_here(served):
     row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
     done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "notes": "ours"}}})
     assert done.status_code == 200 and served.store.calls == []
+
+
+async def test_the_same_write_from_python_goes_out_too_but_only_the_server_can_send_it(served, monkeypatch):
+    """One way in: ``Dataset.put`` sends an outside-owned change to its system first, exactly as the
+    row action does -- in the server. A script holds no driver, so there the change is refused."""
+    from flow_sdk.builtin.dataset import LinkError
+    from flow_sdk.tags import ws_forward
+
+    refs = await _seed(served)
+    row = {"input": {"title": "Call Acme back", "status": "DONE", "crm_id": "T-1", "deals": [refs["acme"]], "notes": "ours"}}
+    with pytest.raises(LinkError) as refused:                                   # a script: nothing went out
+        await served.tasks.put("t-1", row)
+    assert refused.value.details[0]["code"] == "owned" and served.store.calls == []
+
+    monkeypatch.setattr(ws_forward, "_started", True)                            # the server
+    await served.tasks.put("t-1", row)
+    assert served.store.calls == [("update", "T-1", {"status": "DONE"})]
+    await served.tasks.put_many([{"key": "t-1", "input": {**row["input"], "status": "TODO"}}])
+    assert served.store.calls[-1] == ("update", "T-1", {"status": "TODO"})
+    (made,) = await served.tasks.append([{"input": {"title": "Send the deck", "status": "TODO", "deals": []}}])
+    assert served.store.calls[-1][0] == "create" and made
+    got = {r["key"]: r["input"] for r in served.tasks.rows()["rows"]}
+    assert got["t-1"]["status"] == "TODO" and got["t-1"]["notes"] == "ours" and got["t-2"]["title"] == "Send the deck"
+
+
+async def test_a_mirror_may_only_write_fields_the_schema_says_are_the_outside_systems(project, stamped):
+    """A mapped field the app may write too would take an edit and lose it at the next sweep: the
+    mirror is refused, by name, on the source card -- not left to eat edits."""
+    from flow_sdk.builtin.dataset import LinkError
+    from flow_sdk.datasets.projection import _project, project_source
+
+    source, tasks, _ = project
+    source.mirror = {"dataset": "tasks", "map": {**MAP, "input": {**MAP["input"], "notes": "data.notes"}}}
+    with pytest.raises(LinkError) as refused:
+        await project_source(source)
+    assert refused.value.details[0]["code"] == "not_owned" and "notes" in str(refused.value)
+    with pytest.raises(LinkError):
+        await _project(source.id)
+    assert source.error_code == "mirror_failed" and "notes" in source.error_detail and not tasks.rows()["rows"]
+
+
+async def test_a_field_left_out_of_the_row_is_cleared_in_the_outside_system_too(served):
+    """A put replaces the row: an outside-owned field the caller leaves out is a field cleared -- sent to
+    the system as empty, not refused as someone else's (how a page clears a tag)."""
+    refs = await _seed(served)
+    row = {"title": "Call Acme back", "status": "TODO", "crm_id": "T-1", "deals": [refs["acme"]]}
+    assert (await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row, "label": "hot"}}})).status_code == 200
+    cleared = await _call(served, "put-row", {"key": "t-1", "row": {"input": row}})          # no `label` at all
+    assert cleared.status_code == 200, cleared.text
+    assert served.store.calls == [("update", "T-1", {"label": "hot"}), ("update", "T-1", {"label": None})]
+    assert next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"].get("label") is None

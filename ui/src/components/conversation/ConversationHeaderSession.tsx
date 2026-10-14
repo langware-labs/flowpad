@@ -19,17 +19,28 @@ import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
  * picker first and the launch continues automatically once a project is chosen.
  * The header launch opens on the conversation itself — "read it and report its
  * latest status"; the drawer supplies the full context-aware variant.
+ *
+ * A surface that starts a session on something narrower (the live session, on
+ * its latest message) passes its own `buildPrompt` and `launchOnly`, which
+ * always offers the launch toolbar.
  */
 export function ConversationHeaderSession({
   conversation,
   task,
+  buildPrompt: buildPromptOverride,
+  launchOnly = false,
+  testIdPrefix = 'conversation',
 }: {
   conversation: Conversation | null;
   task?: Task | null;
+  buildPrompt?: () => string;
+  launchOnly?: boolean;
+  testIdPrefix?: string;
 }) {
   const { ensureMapped, dialogProps } = useProjectMappingGate(task ?? undefined, conversation ?? undefined);
   // Only called by a launch, which needs a conversation — so it has one here.
-  const buildPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
+  const buildStatusPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
+  const buildPrompt = buildPromptOverride ?? buildStatusPrompt;
   const { conversationProcess, starting, launch, open } = useConversationSession({
     conversation,
     ensureMapped,
@@ -41,12 +52,12 @@ export function ConversationHeaderSession({
   return (
     <>
       <WorkerToolbar
-        hasProcess={!!conversationProcess}
+        hasProcess={!launchOnly && !!conversationProcess}
         starting={starting}
         onOpen={open}
         onLaunch={launch}
         openTitle="Open the conversation session"
-        testIdPrefix="conversation"
+        testIdPrefix={testIdPrefix}
       />
       <OpenProjectComponent {...dialogProps} />
     </>
