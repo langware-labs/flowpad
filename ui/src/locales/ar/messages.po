@@ -3876,6 +3876,14 @@ msgstr "الخادم الخلفي لا يستجيب. يُرجى المحاولة
 msgid "Background image"
 msgstr "صورة الخلفية"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks"
+msgstr ""
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks are running"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Background tasks are still running. The session will switch over as soon as they finish."
 msgstr "لا تزال المهام الخلفية قيد التشغيل. ستنتقل الجلسة فور انتهائها."
@@ -4417,6 +4425,7 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -7047,8 +7056,10 @@ msgstr ""
 msgid "Could not start the setup"
 msgstr ""
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Could not stop"
 msgstr "تعذر الإيقاف"
 
@@ -24495,6 +24506,10 @@ msgstr "لا يزال العمل جارياً — في انتظار السحاب
 msgid "Stop"
 msgstr "إيقاف"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Stop background work"
+msgstr ""
+
 #: src/components/rag/RagView.tsx
 msgid "Stop covering this folder"
 msgstr ""
@@ -24771,6 +24786,14 @@ msgstr "جارٍ التنظيف"
 msgid "Sweeping…"
 msgstr "جارٍ التنظيف…"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch and end background work"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch anyway"
+msgstr ""
+
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/status-bar.tsx
@@ -24795,8 +24818,16 @@ msgstr "التبديل إلى الوضع الداكن"
 msgid "Switch to light mode"
 msgstr "التبديل إلى الوضع الفاتح"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch to the terminal?"
+msgstr ""
+
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Switch workspace"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switching to the terminal will end the background work. Continue?"
 msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -25213,8 +25244,16 @@ msgid "The agent has asked a question — answer it in the terminal."
 msgstr "طرح الوكيل سؤالاً — أجب عنه في الطرفية."
 
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent has background work running. It cannot move to the terminal with you."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
 msgstr "لا يزال الوكيل يعمل، أو ينتظر إجابتك في الطرفية. ستنتقل الجلسة فور انتهائه."
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
+msgstr ""
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."

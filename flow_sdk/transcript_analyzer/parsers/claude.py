@@ -56,30 +56,43 @@ _UID_FALLBACK_BY_TYPE: dict[str, str] = {
 
 # Recognized Claude line types that carry no chat content — they map to
 # ``MetaEntry`` so they don't pollute the "unknown" warnings stream.
-_META_TYPES = frozenset({
-    "file-history-snapshot",
-    "queue-operation",
-    "custom-title",
-    "ai-title",
-    "pr-link",
-    "attachment",
-    "permission-mode",
-    "last-prompt",
-    "custom-title",
-    # Newer Claude Code session-envelope lines (no chat content).
-    "mode",
-    "agent-name",
-    "bridge-session",
-    # `{"type":"atis-latch","atis":"","sessionId":…}` — written LAST after every
-    # turn, so leaving it unclassified made the tail scan report UNKNOWN for the
-    # whole of a live turn (QA 2026-08-20).
-    "atis-latch",
-    # `{"type":"cost-state",…}` — Claude 2.1.27x writes it after the turn's
-    # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
-    "cost-state",
-})
+_META_TYPES = frozenset(
+    {
+        "file-history-snapshot",
+        "queue-operation",
+        "custom-title",
+        "ai-title",
+        "pr-link",
+        "attachment",
+        "permission-mode",
+        "last-prompt",
+        "custom-title",
+        # Newer Claude Code session-envelope lines (no chat content).
+        "mode",
+        "agent-name",
+        "bridge-session",
+        # `{"type":"atis-latch","atis":"","sessionId":…}` — written LAST after every
+        # turn, so leaving it unclassified made the tail scan report UNKNOWN for the
+        # whole of a live turn (QA 2026-08-20).
+        "atis-latch",
+        # `{"type":"cost-state",…}` — Claude 2.1.27x writes it after the turn's
+        # `last-prompt`; unclassified, it hid the terminal marker, so no turn ended.
+        "cost-state",
+    }
+)
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
+
+
+def _is_background_task_notification(text: str) -> bool:
+    """True for the row Claude Code writes when a background task ends.
+
+    The CLI wakes the agent with a ``user`` row whose text is a ``<task-notification>`` envelope
+    (task id, tool-use id, output file, status, a one-line summary). A person never typed it: it is
+    the harness reporting that work finished, so it is framework-injected like a skill body and
+    must not render as a chat turn from the user.
+    """
+    return text.lstrip().startswith("<task-notification>")
 
 
 def _is_flowpad_prompt_envelope(text: str) -> bool:
@@ -92,10 +105,7 @@ def _is_flowpad_prompt_envelope(text: str) -> bool:
     """
     if "\n# User message\n" not in text:
         return False
-    return (
-        text.startswith("# You are the '")
-        or text.startswith("# Embedded agent specs")
-    )
+    return text.startswith("# You are the '") or text.startswith("# Embedded agent specs")
 
 
 def _resolve_id(raw: dict) -> str:
@@ -126,9 +136,7 @@ def parse_worker_unavailable_event(
         status_code = int(status_raw) if status_raw is not None else None
     except (TypeError, ValueError):
         status_code = None
-    is_rate_limit = provider_error == "rate_limit" or (
-        bool(raw.get("isApiErrorMessage")) and status_code == 429
-    )
+    is_rate_limit = provider_error == "rate_limit" or (bool(raw.get("isApiErrorMessage")) and status_code == 429)
     if not is_rate_limit:
         return None
 
@@ -191,11 +199,13 @@ class ClaudeParser:
         if raw.get("isCompactSummary"):
             message = raw.get("message") or {}
             text = extract_text(message.get("content") or [])
-            return [CompactionEntry(
-                trigger="manual" if "/compact" in text else "auto",
-                summary_preview=text[:500],
-                **base,
-            )]
+            return [
+                CompactionEntry(
+                    trigger="manual" if "/compact" in text else "auto",
+                    summary_preview=text[:500],
+                    **base,
+                )
+            ]
 
         if rtype == "assistant":
             worker_unavailable = parse_worker_unavailable_event(raw, base)
@@ -205,38 +215,60 @@ class ClaudeParser:
         if rtype == "user":
             return [self._parse_user(raw, base)]
         if rtype == "system":
-            return [SystemEntry(
-                subtype=str(raw.get("subtype") or ""),
-                payload={k: v for k, v in raw.items() if k not in {
-                    "type", "subtype", "uuid", "parentUuid", "sessionId",
-                    "timestamp", "cwd", "version", "gitBranch", "userType",
-                    "isSidechain", "message",
-                }},
-                **base,
-            )]
+            return [
+                SystemEntry(
+                    subtype=str(raw.get("subtype") or ""),
+                    payload={
+                        k: v
+                        for k, v in raw.items()
+                        if k
+                        not in {
+                            "type",
+                            "subtype",
+                            "uuid",
+                            "parentUuid",
+                            "sessionId",
+                            "timestamp",
+                            "cwd",
+                            "version",
+                            "gitBranch",
+                            "userType",
+                            "isSidechain",
+                            "message",
+                        }
+                    },
+                    **base,
+                )
+            ]
         if rtype == "progress":
             data = raw.get("data") or {}
-            return [SystemEntry(
-                subtype=str(data.get("type") or "progress"),
-                payload=data,
-                **base,
-            )]
+            return [
+                SystemEntry(
+                    subtype=str(data.get("type") or "progress"),
+                    payload=data,
+                    **base,
+                )
+            ]
         if rtype == "summary":
-            return [SummaryEntry(
-                summary_text=str(raw.get("summary") or ""),
-                **base,
-            )]
+            return [
+                SummaryEntry(
+                    summary_text=str(raw.get("summary") or ""),
+                    **base,
+                )
+            ]
         if rtype == "attachment":
             att = raw.get("attachment")
             if isinstance(att, dict) and att.get("type") == _ATTACHMENT_TYPE_PLAN_MODE_EXIT:
                 plan_file_path = str(att.get("planFilePath") or "")
                 if plan_file_path:
-                    return [ExitPlanModeEntry(
-                        tool_name="ExitPlanMode",
-                        tool_use_id=base["id"],
-                        tool_input={"plan": "", "planFilePath": plan_file_path},
-                        **base,
-                    )]
+                    return [
+                        ExitPlanModeEntry(
+                            tool_name="ExitPlanMode",
+                            tool_use_id=base["id"],
+                            tool_input={"plan": "", "planFilePath": plan_file_path},
+                            **base,
+                        )
+                    ]
         if rtype in _META_TYPES:
             return [MetaEntry(meta_kind=rtype, payload=raw, **base)]
         return [UnknownEntry(raw_data=raw, **base)]
@@ -315,13 +347,15 @@ class ClaudeParser:
             if not isinstance(count, (int, float)) or count <= 0:
                 return
             dim_id = f"{base_id}:usage:dim_{len(out)}"
-            out.append(UsageEntry(
-                id=dim_id,
-                entry_id=entry_id,
-                model=model,
-                **base_envelope,
-                **fields,  # type: ignore[arg-type]
-            ))
+            out.append(
+                UsageEntry(
+                    id=dim_id,
+                    entry_id=entry_id,
+                    model=model,
+                    **base_envelope,
+                    **fields,  # type: ignore[arg-type]
+                )
+            )
 
         # Bare input (NOT in cache) — the prefix the model actually had to
         # process this turn.
@@ -343,18 +377,24 @@ class ClaudeParser:
         if ce:
             _emit(
                 count=ce.get("ephemeral_5m_input_tokens") or 0,
-                io="input", cache="write", cache_tier="5m",
+                io="input",
+                cache="write",
+                cache_tier="5m",
             )
             _emit(
                 count=ce.get("ephemeral_1h_input_tokens") or 0,
-                io="input", cache="write", cache_tier="1h",
+                io="input",
+                cache="write",
+                cache_tier="1h",
             )
         else:
             # No tier breakdown — fall back to the flat total and assume 5m
             # (the API default when ``cache_control`` doesn't specify TTL).
             _emit(
                 count=usage.get("cache_creation_input_tokens") or 0,
-                io="input", cache="write", cache_tier="5m",
+                io="input",
+                cache="write",
+                cache_tier="5m",
             )
         # Server-tool usage — billed per-request, not per-token. The unit
         # change tells the price table to use the per-request rate.
@@ -362,11 +402,15 @@ class ClaudeParser:
         if stu:
             _emit(
                 count=stu.get("web_search_requests") or 0,
-                io="input", unit="request", tool="web_search",
+                io="input",
+                unit="request",
+                tool="web_search",
             )
             _emit(
                 count=stu.get("web_fetch_requests") or 0,
-                io="input", unit="request", tool="web_fetch",
+                io="input",
+                unit="request",
+                tool="web_fetch",
             )
         if msg_id is not None:
             self._usage_entries_by_msg_id[msg_id] = out
@@ -406,7 +450,9 @@ class ClaudeParser:
         text = extract_text(content)
         return UserMessageEntry(
             text=text,
-            is_meta=bool(raw.get("isMeta", False)) or _is_flowpad_prompt_envelope(text),
+            is_meta=bool(raw.get("isMeta", False))
+            or _is_flowpad_prompt_envelope(text)
+            or _is_background_task_notification(text),
             **base,
         )
 
@@ -463,21 +509,25 @@ def build_semantic_tool_entry(
         hunks: list[dict] = []
         if tool_name == "Edit":
             if ti.get("old_string") is not None or ti.get("new_string") is not None:
-                hunks.append({
-                    "old": str(ti.get("old_string") or ""),
-                    "new": str(ti.get("new_string") or ""),
-                    "replace_all": bool(ti.get("replace_all", False)),
-                })
+                hunks.append(
+                    {
+                        "old": str(ti.get("old_string") or ""),
+                        "new": str(ti.get("new_string") or ""),
+                        "replace_all": bool(ti.get("replace_all", False)),
+                    }
+                )
         else:
             edits = ti.get("edits") or []
             if isinstance(edits, list):
                 for ed in edits:
                     if isinstance(ed, dict):
-                        hunks.append({
-                            "old": str(ed.get("old_string") or ""),
-                            "new": str(ed.get("new_string") or ""),
-                            "replace_all": bool(ed.get("replace_all", False)),
-                        })
+                        hunks.append(
+                            {
+                                "old": str(ed.get("old_string") or ""),
+                                "new": str(ed.get("new_string") or ""),
+                                "replace_all": bool(ed.get("replace_all", False)),
+                            }
+                        )
         return FileEditEntry(
             path=str(ti.get("file_path") or ""),
             hunks=hunks,

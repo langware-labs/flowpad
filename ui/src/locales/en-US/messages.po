@@ -3917,6 +3917,14 @@ msgstr "Backend server is not responding. Please try again later."
 msgid "Background image"
 msgstr "Background image"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks"
+msgstr "Background tasks"
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks are running"
+msgstr "Background tasks are running"
+
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Background tasks are still running. The session will switch over as soon as they finish."
 msgstr "Background tasks are still running. The session will switch over as soon as they finish."
@@ -4458,6 +4466,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -7109,8 +7118,10 @@ msgstr "Could not start the live session"
 msgid "Could not start the setup"
 msgstr "Could not start the setup"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Could not stop"
 msgstr "Could not stop"
 
@@ -24729,6 +24740,10 @@ msgstr "Still working — waiting on the cloud. This can take a minute."
 msgid "Stop"
 msgstr "Stop"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Stop background work"
+msgstr "Stop background work"
+
 #: src/components/rag/RagView.tsx
 msgid "Stop covering this folder"
 msgstr "Stop covering this folder"
@@ -25008,6 +25023,14 @@ msgstr "sweeping"
 msgid "Sweeping…"
 msgstr "Sweeping…"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch and end background work"
+msgstr "Switch and end background work"
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch anyway"
+msgstr "Switch anyway"
+
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/status-bar.tsx
@@ -25032,9 +25055,17 @@ msgstr "Switch to dark mode"
 msgid "Switch to light mode"
 msgstr "Switch to light mode"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch to the terminal?"
+msgstr "Switch to the terminal?"
+
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Switch workspace"
 msgstr "Switch workspace"
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switching to the terminal will end the background work. Continue?"
+msgstr "Switching to the terminal will end the background work. Continue?"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -25456,8 +25487,16 @@ msgid "The agent has asked a question — answer it in the terminal."
 msgstr "The agent has asked a question — answer it in the terminal."
 
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent has background work running. It cannot move to the terminal with you."
+msgstr "The agent has background work running. It cannot move to the terminal with you."
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
 msgstr "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
+msgstr "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
