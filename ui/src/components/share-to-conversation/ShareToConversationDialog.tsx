@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -36,7 +36,11 @@ import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
-import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
+import {
+  FileAttachmentPicker,
+  mergePickedFiles,
+  useAnnotatedImagePaste,
+} from '@src/components/conversation/FileAttachmentPicker';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
@@ -160,6 +164,11 @@ export function ShareToConversationDialog({
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const addFiles = useCallback((picked: File[]) => setFiles((prev) => mergePickedFiles(prev, picked).files), []);
+  const handlePaste = useAnnotatedImagePaste(addFiles, {
+    enabled: !busy && !!source.supportsFiles,
+    setText: setNote,
+  });
   const [attachTranscript, setAttachTranscript] = useState(true);
   // "Create bookmark" opt-in (default off): the receiver mints a favorite
   // pointing at the shared asset when it installs. Only offered for bookmarkable
@@ -614,6 +623,7 @@ export function ShareToConversationDialog({
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onPaste={handlePaste}
                   placeholder={t`Add a personal note…`}
                   rows={2}
                   disabled={busy}
