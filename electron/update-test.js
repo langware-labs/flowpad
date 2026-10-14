@@ -26,6 +26,9 @@
  *   FLOWPAD_UPDATE_CONFIG            alternate app-update.yml (a local `generic` feed) for electron-updater (main.js)
  *   FLOWPAD_PYPI_JSON_URL            alternate "latest flowpad" JSON in place of pypi.org (uv-manager.js)
  *   FLOWPAD_UPDATE_TEST_ENGINE_SPEC  what install/upgrade/repair resolve instead of `flowpad@latest` (uv-manager.js)
+ *   FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS  how long the launch-time desktop update check may take before the app
+ *                                    gives up on it (default 20 s). A CI runner can need longer; a check that
+ *                                    gave up means no "Updates available" screen at that launch (main.js)
  *
  * forceRunAfter(): "Restart now" and the desktop-first install end in quitAndInstall(silent, relaunch). The
  * relaunched process is spawned with its output discarded, so in test mode the relaunch is skipped and the
@@ -89,9 +92,15 @@ function answerFor(prompt, data = {}) {
   return answer;
 }
 
+/** The launch-time desktop check bound in ms, or undefined (the app's own default) outside test mode. */
+function checkBoundMs() {
+  const ms = Number(process.env.FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS);
+  return isEnabled() && Number.isFinite(ms) && ms > 0 ? ms : undefined;
+}
+
 /** The `forceRunAfter` argument for quitAndInstall: off in test mode (the harness relaunches itself). */
 function forceRunAfter(forceRun) {
   return isEnabled() ? false : forceRun;
 }
 
-module.exports = { isEnabled, answerFor, event, parseAnswers, forceRunAfter, _setLogLine };
+module.exports = { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, _setLogLine };

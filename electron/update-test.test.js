@@ -7,7 +7,7 @@
  */
 
 const assert = require('assert');
-const { isEnabled, answerFor, event, parseAnswers, forceRunAfter, _setLogLine } = require('./update-test');
+const { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, _setLogLine } = require('./update-test');
 
 let passed = 0;
 function eq(actual, expected, msg) {
@@ -100,6 +100,20 @@ withEnv({ FLOWPAD_UPDATE_TEST: undefined }, () => {
 });
 withEnv({ FLOWPAD_UPDATE_TEST: '1' }, () => {
   eq(forceRunAfter(true), false, 'test mode: the harness relaunches, the updater does not');
+});
+
+// ── checkBoundMs: only in test mode, only a positive number ──────────────────
+withEnv({ FLOWPAD_UPDATE_TEST: undefined, FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: '90000' }, () => {
+  eq(checkBoundMs(), undefined, 'normal run: the app keeps its own bound');
+});
+withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: '90000' }, () => {
+  eq(checkBoundMs(), 90000, 'test mode: the bound from the environment');
+});
+withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: 'soon' }, () => {
+  eq(checkBoundMs(), undefined, 'test mode, garbage value: the app default');
+});
+withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: undefined }, () => {
+  eq(checkBoundMs(), undefined, 'test mode, unset: the app default');
 });
 
 console.log(`update-test.test.js: ${passed} assertions passed`);
