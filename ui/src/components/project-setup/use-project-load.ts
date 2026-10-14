@@ -38,13 +38,18 @@ export function useProjectLoad(
     // on mount instead of trusting the seed for the app's five-minute default.
     staleTime: 0,
     refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
+    // A run finishes whether or not this window is in front: a hidden window that stopped asking kept
+    // showing "Preparing…" over a run that had long failed.
+    refetchIntervalInBackground: true,
   });
   const result = query.data;
   const tree = useQuery({
-    queryKey: ['project-load-tree', projectId, result?.run, result?.state],
-    queryFn: () => Project.setupRun(projectId),
+    queryKey: ['project-load-tree', projectId, asset, result?.run, result?.state],
+    // Opening an app runs THAT app's setup (rooted at it); with no app, the project's own run.
+    queryFn: () => Project.setupRun(projectId, asset),
     enabled: !!result?.run,
     refetchInterval: result?.state === 'running' ? SETUP_POLL_MS : false,
+    refetchIntervalInBackground: true,
   });
   useEffect(() => {
     if (!claimQuestions || !result?.run || result.state !== 'running') return;

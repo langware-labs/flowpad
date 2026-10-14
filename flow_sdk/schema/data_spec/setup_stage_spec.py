@@ -71,3 +71,29 @@ def unique_stages(stages: list[SetupStageSpec]) -> list[SetupStageSpec]:
 __all__ = [
     "STAGE_DONE", "STAGE_LOCKED", "STAGE_PENDING", "SetupStageSpec", "SetupStageStateSpec", "unique_stages",
 ]
+
+
+#: What kind of thing a source is waiting on. ``connection``: an OAuth sign-in it reads through;
+#: ``setup``: its driver's own check (a bot not invited, a stage not run).
+NEED_CONNECTION = "connection"
+NEED_SETUP = "setup"
+
+
+class SetupNeedSpec(DataSpec):
+    """One thing a source still needs before it runs — what its strip and its setup step name.
+
+    ``setup_detail`` is the same story as a sentence; this is the story as data, so a surface can say
+    "Needs GitHub sign-in" without parsing a sentence or knowing a provider.
+    """
+
+    spec_kind: ClassVar[str] = "setup.need"
+    model_config = ConfigDict(frozen=True)
+
+    kind: NonBlank
+    #: The provider (``github``) for a connection.
+    name: str = ""
+    #: What a person calls it (``GitHub``).
+    title: str = ""
+    #: ``missing``, ``needs_reauth``, ``refused`` — why it is not there yet.
+    state: str = ""
+    detail: str = ""

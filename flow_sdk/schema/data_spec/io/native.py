@@ -27,6 +27,8 @@ Only ``save`` treats them differently.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from pathlib import Path
 from typing import Any, Optional
 
@@ -59,14 +61,74 @@ class Text(str):
 
 
 class Binary(bytes):
-    """Bytes that are a file, not a field. Written as ``<field><ext>``; ``path`` as on ``Text``."""
+    """Bytes that are a file, not a field. Written as ``<field><ext>``; ``path`` as on ``Text``.
+
+    A ``Binary`` carries its ``media_type``; the file's extension is derived from it (``names.ext_for_media``),
+    so a decoded screenshot is ``screenshot.png``. Over JSON (a browser, a REST write) bytes travel as a
+    ``data:<media type>;base64,…`` URL — decoded on the way in, and what a JSON read hands back, so a value
+    round-trips through a page unchanged. Bytes given as bytes are ``application/octet-stream`` (``.bin``);
+    a plain string is its UTF-8 bytes, as before.
+    """
 
     path: Optional[Path] = None
 
-    #: What a bare ``Binary`` is written as when nothing says otherwise.
-    ext: str = ".bin"
+    #: What the bytes are; names the file and the data URL.
+    media_type: str
 
-    __get_pydantic_core_schema__ = _carrier_schema(core_schema.bytes_schema)
+    def __new__(cls, data: Any = b"", media_type: str = "application/octet-stream") -> "Binary":
+        out = super().__new__(cls, data)
+        out.media_type = media_type
+        return out
+
+    def __reduce__(self) -> tuple:
+        # copy / deepcopy / pickle keep what the bytes are (a plain ``bytes`` rebuild would drop it).
+        return (type(self), (bytes(self), self.media_type))
+
+    @classmethod
+    def of(cls, data: bytes, media_type: str) -> "Binary":
+        return cls(data, media_type)
+
+    @classmethod
+    def from_file(cls, path: Path) -> "Binary":
+        from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415 — cycle-safe: lazy
+
+        out = cls.of(path.read_bytes(), names.media_for_ext(path.suffix))
+        out.path = path
+        return out
+
+    @property
+    def ext(self) -> str:
+        from flow_sdk.schema.data_spec.io import names  # noqa: PLC0415
+
+        return names.ext_for_media(self.media_type)
+
+    def to_data_url(self) -> str:
+        return f"data:{self.media_type};base64,{base64.b64encode(self).decode('ascii')}"
+
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source: Any, handler: Any) -> Any:
+        def validate(value: Any, inner: Any) -> "Binary":
+            if isinstance(value, cls):
+                return value
+            if isinstance(value, str) and value.startswith("data:"):
+                head, sep, payload = value.partition(",")
+                if not (sep and head.endswith(";base64")):
+                    raise ValueError("a data URL for binary must be base64: data:<media type>;base64,<data>")
+                try:
+                    data = base64.b64decode(payload, validate=True)
+                except (binascii.Error, ValueError) as exc:
+                    raise ValueError(f"the data URL's base64 does not decode: {exc}") from exc
+                return cls.of(data, head[5:-7].strip().lower() or "application/octet-stream")
+            return cls(inner(value))
+
+        return core_schema.no_info_wrap_validator_function(
+            validate,
+            core_schema.bytes_schema(),
+            # The validator always yields a ``Binary``; plain bytes only reach here unvalidated.
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda value: (value if isinstance(value, Binary) else cls(value)).to_data_url(), when_used="json",
+            ),
+        )
 
 
 class FreeForm(dict):

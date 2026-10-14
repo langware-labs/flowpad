@@ -78,6 +78,11 @@ def asset_ref_spellings(p: Path | str) -> list[str]:
     return out
 
 
+def source_gone(ref: Path | str) -> bool:
+    """A declared source that is deleted: absent, and not merely out of reach (see ``source_unreachable``)."""
+    return bool(ref) and not Path(ref).exists() and not source_unreachable(ref)
+
+
 def asset_refs_under(root: Path | str) -> list[str]:
     """The SQL ``LIKE`` patterns that match an ``asset_ref`` stored under ``root`` — one per spelling a row
     may carry (:func:`asset_ref_spellings`), each with ITS OWN separator. A mount is kept in POSIX form

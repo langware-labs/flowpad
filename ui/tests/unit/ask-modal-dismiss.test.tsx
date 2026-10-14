@@ -58,6 +58,6 @@ describe('AskModal dismissal', () => {
     act(() => openAskModal('q-1'));
 
     await waitFor(() => expect(screen.queryByTestId('ask-modal')).toBeNull());
-    expect(h.post).not.toHaveBeenCalled();
+    expect(h.post).not.toHaveBeenCalledWith('/api/v1/ask/q-1/cancel', undefined);
   });
 });

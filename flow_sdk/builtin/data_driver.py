@@ -210,6 +210,18 @@ class DataDriver(DriverRuntime, Entity):
 
     @computed_field
     @property
+    def sign_in_title(self) -> str:
+        """What a person calls the sign-in this driver reads through (its ``auth.connector``) — ``GitHub`` —
+        or ``""`` when it needs none. Read off the provider registry, so no surface spells a provider name."""
+        connector = self.auth.connector if self.auth is not None else ""
+        if not connector:
+            return ""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+        return shipped_provider_title(connector) or connector.title()
+
+    @computed_field
+    @property
     def load_error(self) -> str:
         """Why this folder's source did not load (no ``source.py``, an import error, a name a
         shipped source owns), or ``""``."""

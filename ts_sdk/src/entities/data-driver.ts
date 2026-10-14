@@ -122,6 +122,8 @@ export interface IDataDriver extends IEntity {
   sends?: boolean;
   /** Why the folder's source did not load, or empty. */
   load_error?: string;
+  /** What a person calls the sign-in it reads through (`GitHub`), or empty when it needs none. */
+  sign_in_title?: string;
   reflect?: string[];
   /** The form's fields, under the manifest's own key: how each is drawn. */
   config?: Record<string, SpecConfigField>;
@@ -181,6 +183,7 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';
+  sign_in_title: string = '';
   reflect: string[] = [];
   config: Record<string, SpecConfigField> = {};
   auth: Record<string, unknown> | null = null;
