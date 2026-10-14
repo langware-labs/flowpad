@@ -7328,6 +7328,11 @@ msgstr "تعذر بدء الاتصال بـ GitHub."
 msgid "Couldn't start the GitHub connection."
 msgstr "تعذّر بدء الاتصال بـ GitHub."
 
+#. placeholder {0}: node.label || node.name
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Couldn't terminate {0}"
+msgstr "تعذّر إيقاف {0}"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
 msgstr ""
@@ -25139,6 +25144,14 @@ msgstr "أسطر التمرير للخلف في الطرفية"
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
 msgstr "جلسات الطرفية"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminate"
+msgstr "إيقاف"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminated by user"
+msgstr "أوقفه المستخدم"
 
 #: src/components/automations/RunsList.tsx
 msgid "test"

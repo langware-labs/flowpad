@@ -161,6 +161,7 @@ class ActivityProgressMonitor:
                 self.drop(key[1], subject_entity=key[0])
             node = self.activity(key[1], subject_entity=key[0])
             node.claim_deadline = time.monotonic() + timeout_seconds
+            node._own = True
             return node
 
     # ------------------------------------------------------------------ emission
@@ -187,6 +188,7 @@ class ActivityProgressMonitor:
         tuple is swapped atomically, so the common case — a walk in a process with no sink
         attached — costs one integer add.
         """
+        node._own = True
         root = node.root
         root.seq += 1
         subscribers = self._subscribers
