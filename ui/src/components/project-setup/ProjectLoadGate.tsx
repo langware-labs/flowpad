@@ -49,12 +49,8 @@ export function ProjectLoadGate({
       void load();
     }
   }, [result?.state, displayChecked, lifecycle.starting, loadedLocation, location.key, load]);
-  // Opening an app means "make it work": a load that needs setup, or failed with a setup on offer,
-  // gets that setup once per open, unasked, and it runs HERE — in the view the app will fill, never
-  // in a dialog over it. The backend offers a repair once per failure, so one that does not help
-  // ends here with its reason. Only an APP's open is that consent: a gate for the project alone (a
-  // home display) starting the project's whole setup by itself claimed its questions on a screen
-  // nobody was looking at — it offers Set up instead.
+  // Opening an APP means "make it work": its owed setup (or one repair per failure) runs here, unasked,
+  // in the view the app will fill. A gate for the project alone offers Set up instead.
   const setUp = useRef<string | null>(null);
   useEffect(() => {
     const owed =
@@ -67,6 +63,12 @@ export function ProjectLoadGate({
   const name = project?.displayName || projectId;
   // Working: a load in flight, or a setup run going that is not waiting on the person.
   const busy = lifecycle.starting || !result || result.state === 'running';
+  const status =
+    busy && !lifecycle.questionId ? (
+      result?.state === 'running' ? <Trans>Setting up…</Trans> : <Trans>Checking what this needs…</Trans>
+    ) : (
+      result?.detail || <Trans>Preparing…</Trans>
+    );
   useEffect(() => {
     if (result?.state === 'ready') void client.invalidateQueries({ queryKey: ['service_endpoint'] });
   }, [client, result]);
@@ -88,11 +90,7 @@ export function ProjectLoadGate({
             and a page that does not move reads as stuck (a grey Set up and "waiting on Google Cloud"). */}
         <p role="status" className="flex items-center gap-2" data-testid="project-load-status">
           {busy ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
-          {busy && !lifecycle.questionId
-            ? result?.state === 'running'
-              ? <Trans>Setting up…</Trans>
-              : <Trans>Checking what this needs…</Trans>
-            : result?.detail || <Trans>Preparing…</Trans>}
+          {status}
         </p>
         {lifecycle.error && (
           <p role="alert" className="text-destructive">
