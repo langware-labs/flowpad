@@ -12,10 +12,10 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({ orgRepos: vi.fn() }));
 vi.mock('@src/hooks/use-git-providers', () => ({
   useGitRepos: () => ({
-    data: [repo('langware-labs', 'flowpad'), repo('Initech-contact', 'initech-zone')],
+    data: [repo('langware-labs', 'flowpad'), repo('initech', 'portal')],
     isLoading: false, isError: false, error: null, refetch: vi.fn(), isFetching: false,
   }),
-  useGitOrgs: () => ({ data: { login: 'serans1', orgs: [{ login: 'langware-labs', avatar_url: '' }] } }),
+  useGitOrgs: () => ({ data: { login: 'octocat', orgs: [{ login: 'langware-labs', avatar_url: '' }] } }),
   useGitOrgRepos: (_provider: string, owner: string) => h.orgRepos(owner),
 }));
 
@@ -53,11 +53,11 @@ describe('RepoPicker owner picker', () => {
 
     await openOwners();
     const names = within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent);
-    expect(names).toEqual(['All owners', 'serans1', 'langware-labs', 'Initech-contact']);
-    await userEvent.click(screen.getByRole('option', { name: 'Initech-contact' }));
+    expect(names).toEqual(['All owners', 'octocat', 'langware-labs', 'initech']);
+    await userEvent.click(screen.getByRole('option', { name: 'initech' }));
 
-    expect(screen.getByTestId('repo-picker-owner')).toHaveTextContent('Initech-contact');
-    expect(screen.getByTestId('repo-picker-row-Initech-contact/initech-zone')).toBeInTheDocument();
+    expect(screen.getByTestId('repo-picker-owner')).toHaveTextContent('initech');
+    expect(screen.getByTestId('repo-picker-row-initech/portal')).toBeInTheDocument();
     expect(screen.queryByTestId('repo-picker-row-langware-labs/flowpad')).not.toBeInTheDocument();
     expect(h.orgRepos).toHaveBeenLastCalledWith('');
   });

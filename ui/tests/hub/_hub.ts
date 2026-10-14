@@ -95,7 +95,7 @@ export async function hubConversationTitle(token: string, convId: string): Promi
 
 /** Bob's approved membership row on a hub conversation, read by `token`'s user
  *  (`GET <conv>/list_members/<userId>`). Under the hub's default auto-watch
- *  routing (`AUTO_WATCH_ENABLED`, flowpad/hub/core/network/resource_tracker.py)
+ *  routing (`AUTO_WATCH_ENABLED`, hub resource_tracker.py)
  *  an entity's data ops fan out to every live connection whose user holds a
  *  ROLE path to it — so an approved row IS the hub's routing edge. The legacy
  *  explicit `watch` action is a compatibility no-op there, and its GET always
@@ -115,7 +115,7 @@ export async function hubApprovedMembership(
 }
 
 /** The brand the hub masks every staff reply to. Must equal the hub's
- *  HELPDESK_DISPLAY_NAME (flowpad/config.py). */
+ *  HELPDESK_DISPLAY_NAME (hub config.py). */
 export const HELPDESK_DISPLAY_NAME = 'Flowpad Support';
 
 /** The deployment's own desk, from `/health/version`. Null when this hub

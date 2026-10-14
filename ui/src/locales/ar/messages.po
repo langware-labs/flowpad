@@ -1127,7 +1127,7 @@ msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "{pct}% of your token budget used {windowText}"
-msgstr ">>>>>>> origin/release/v0.2"
+msgstr "تم استخدام {pct}% من رصيد الرموز الخاص بك {windowText}"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx

@@ -35,7 +35,7 @@ def _make_diagnosis() -> FlowpadDiagnosis:
         user_report="the forwarded report just shows a broken chip",
         # Environment snapshot of the REPORTING machine — must survive the trip
         # verbatim; the receiver cannot recompute any of it.
-        reported_by="Shani <shanis@example.test>",
+        reported_by="Erin <erin@example.test>",
         occurred_at="2026-07-16T07:21:52.884575+00:00",
         os="Windows-10-10.0.26200-SP0",
         app_version="0.2.102",
@@ -83,7 +83,7 @@ async def test_pack_unpack_diagnosis_roundtrip(tmp_path):
     assert restored.user_report == "the forwarded report just shows a broken chip"
     # The Details block the receiver sees describes the REPORTER's machine, not
     # theirs — so the whole snapshot has to come back off the wire unchanged.
-    assert restored.reported_by == "Shani <shanis@example.test>"
+    assert restored.reported_by == "Erin <erin@example.test>"
     assert restored.occurred_at == "2026-07-16T07:21:52.884575+00:00"
     assert restored.os == "Windows-10-10.0.26200-SP0"
     assert restored.app_version == "0.2.102"

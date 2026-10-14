@@ -35,7 +35,7 @@ The installer name is taken from `latest.yml`, so the job works both today
 ## Requirements
 
 * Secret `WINGET_TOKEN` in flowpad-desktop: a **classic** PAT, scope `public_repo`, of a
-  GitHub user with push rights to the fork (set 2026-09-14, user `mtzahi`). Fine-grained
+  GitHub user with push rights to the fork. Fine-grained
   tokens cannot open PRs on Microsoft's repository — do not use one.
 * The Microsoft CLA must be signed once by that user (the winget-pkgs bot asks on the first PR).
 * Fork `langware-labs/winget-pkgs` (exists). No `WINGET_FORK_USER` needed.

@@ -172,7 +172,7 @@ def test_the_agents_own_detail_explains_a_check_that_still_fails(tmp_path):
 
     async def launch(*, workdir: Path, prompt: str = "", **_kw) -> PromptResult:
         return PromptResult.not_yet(
-            "The agent ended error. OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72",
+            "The agent ended error. OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72",
             executor="agentic_process-proc-1",
         )
 

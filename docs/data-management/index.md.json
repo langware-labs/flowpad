@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
   "inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162",

@@ -3,14 +3,14 @@
     flow dep list                                  # every declared dependency and its state here
     flow dep add data_source-7c1e… --label "Team knowledge"   # an asset, by id
     flow dep add data_source-0a9d… --asset data_source-7c1e…  # declared in THAT asset's flow.json
-    flow dep add ../langware-os                    # a folder in git is written as its repo
+    flow dep add ../handbook                       # a folder in git is written as its repo
     flow dep add git+https://github.com/acme/handbook#main --path legal --optional
     flow dep add hub:8c1f0b2e-…                    # a hub project
-    flow dep remove langware-os                    # leaves the folder on disk alone
+    flow dep remove handbook                       # leaves the folder on disk alone
     flow dep sync [--update]                       # fetch what is missing; --update pulls Flowpad's clones
     flow dep install policies                      # bring in an optional one
     flow dep load policies [--approve]             # check/load; explicit approval permits setup
-    flow dep check langware-os                     # exit 0 when it is ready here, 4 when not
+    flow dep check handbook                        # exit 0 when it is ready here, 4 when not
 
 ``--project`` names the project; the default is the project whose folder is the working
 directory. Every command prints one JSON envelope.

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "sdk-site",
   "folder_name": "sdk-site",
   "inputs_hash": "46a9cc308231cee3b9616198f219e95839607080b6a06f4e9a9914dc8a8bce09",

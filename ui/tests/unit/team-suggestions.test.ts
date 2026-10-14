@@ -3,7 +3,7 @@
  *
  * Locked here:
  *  - The hub teams (`remote`) the desk knows the user is in are offered, matched
- *    on the name as the sharer types ("zs" finds initech).
+ *    on the name as the sharer types ("ini" finds initech).
  *  - A team the desk knows only locally (not `remote`) has no hub roster to
  *    expand and is never offered.
  *  - A picked team is one participant keyed `team-<id>`, never its members.
@@ -21,12 +21,12 @@ import { participantKey } from '@src/components/contact-picker/use-contacts';
 
 const UUID = (n: number) => `550e8400-e29b-41d4-a716-4466554400${String(n).padStart(2, '0')}`;
 const INITECH = { id: UUID(1), name: 'initech', remote: true };
-const ZOO = { id: UUID(2), name: 'Zoo club', remote: true };
-const LOCAL_ONLY = { id: UUID(3), name: 'zsandbox', remote: false };
+const ZOO = { id: UUID(2), name: 'Inn club', remote: true };
+const LOCAL_ONLY = { id: UUID(3), name: 'inibox', remote: false };
 
-describe('knownTeams + filterTeams — typing "zs"', () => {
+describe('knownTeams + filterTeams — typing "ini"', () => {
   it('offers initech', () => {
-    expect(filterTeams(knownTeams([INITECH, ZOO]), 'zs')).toEqual([{ id: INITECH.id, name: 'initech' }]);
+    expect(filterTeams(knownTeams([INITECH, ZOO]), 'ini')).toEqual([{ id: INITECH.id, name: 'initech' }]);
   });
 
   it('offers every hub team for an empty query', () => {
@@ -34,7 +34,7 @@ describe('knownTeams + filterTeams — typing "zs"', () => {
   });
 
   it('never offers a team that exists only on this desk', () => {
-    expect(filterTeams(knownTeams([INITECH, LOCAL_ONLY]), 'zs')).toEqual([{ id: INITECH.id, name: 'initech' }]);
+    expect(filterTeams(knownTeams([INITECH, LOCAL_ONLY]), 'ini')).toEqual([{ id: INITECH.id, name: 'initech' }]);
   });
 
   it('falls back to the id when a team has no name', () => {

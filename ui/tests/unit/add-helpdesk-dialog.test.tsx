@@ -42,11 +42,11 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 import { AddHelpdeskDialog } from '@src/components/helpdesk/AddHelpdeskDialog';
 
-const DESK_URL = 'https://github.com/langware-labs/langware-support';
+const DESK_URL = 'https://github.com/acme/support';
 
 const BASE = {
-  dependency: 'langware-support',
-  path: '/w/langware-support',
+  dependency: 'support',
+  path: '/w/support',
   already_linked: false,
   helpdesk_id: 'h1',
   display_name: 'Globex Support',
@@ -151,7 +151,7 @@ describe('AddHelpdeskDialog', () => {
     const remove = screen.getByTestId('add-helpdesk-remove');
     await user.click(remove);
     // Removed by its dependency NAME — the folder on disk is left alone.
-    await waitFor(() => expect(project.removeDependency).toHaveBeenCalledWith('langware-support'));
+    await waitFor(() => expect(project.removeDependency).toHaveBeenCalledWith('support'));
 
     // Nothing to open — there is no desk.
     expect(screen.queryByTestId('add-helpdesk-open')).toBeNull();

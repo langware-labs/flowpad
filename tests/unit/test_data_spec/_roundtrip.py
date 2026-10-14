@@ -43,7 +43,7 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         # A ``ShapeForm`` field holds the authoring FORM, not a class.
         return {f"{name}_k": "string", f"{name}_n": ["int"]}
     if ann is PhoneNumberSpec:  # validated digits: a "<name>-v" placeholder is not a number
-        return PhoneNumberSpec(country_code="972", number="0500000000")
+        return PhoneNumberSpec(country_code="972", number="500000000")
     if ann is DockPointerSpec:  # a real tab: the view must be one, and the file named by its project
         return DockPointerSpec(viewType="project", pointer="p/editor/html/vfs/project-p/a.html")
     if ann is RequirementSpec:  # a closed `kind`: the sampler names one

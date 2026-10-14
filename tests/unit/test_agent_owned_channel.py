@@ -15,7 +15,7 @@ from flow_sdk.builtin.data_source import DataSource
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30), pytest.mark.usefixtures("fresh_user_scope")]  # do not increase timeout without approval
 
-CHANNEL = "C08L1P4C95J"
+CHANNEL = "C0123456789"
 
 
 async def _agent(name: str) -> Agent:

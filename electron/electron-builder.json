@@ -147,7 +147,7 @@
     "icon": "resources/icons",
     "category": "Development",
     "artifactName": "${productName}-${arch}.${ext}",
-    "maintainer": "Langware Labs <alice@example.com>",
+    "maintainer": "Langware Labs <diagnosis@langware.ai>",
     "executableArgs": ["--no-sandbox"],
     "extraResources": [
       {

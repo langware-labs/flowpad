@@ -9,7 +9,7 @@
 # Security layering (why this exists):
 #   1. The app pins CLOUDSDK_CORE_PROJECT=flowpad-playground into every worker
 #      env (flow_sdk config gcp_deployment_project_id) — advisory: an agent that
-#      explicitly passes --project langware still succeeds under the user's ADC.
+#      explicitly passes another --project still succeeds under the user's ADC.
 #   2. Hard isolation (follow-up): a dedicated deployer SA with roles only in
 #      flowpad-playground, injected as GOOGLE_APPLICATION_CREDENTIALS.
 #   3. This script's budget kill-switch — bounds the blast radius even if 1-2
@@ -83,7 +83,7 @@ echo "== guard service account =="
 gcloud iam service-accounts describe "${GUARD_SA}" --project="${PROJECT}" >/dev/null 2>&1 \
   || gcloud iam service-accounts create "${GUARD_SA_NAME}" \
        --project="${PROJECT}" --display-name="Budget guard (stop VMs + detach billing)"
-# Grants are project-scoped ONLY — nothing on langware or the billing account.
+# Grants are project-scoped ONLY — nothing on any other project or the billing account.
 # Retry: a freshly created SA takes a little while to become visible to IAM.
 # run.invoker: the Eventarc trigger runs as this SA and must invoke the function.
 for role in roles/compute.instanceAdmin.v1 roles/billing.projectManager roles/run.invoker; do

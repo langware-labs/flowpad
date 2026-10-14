@@ -105,7 +105,7 @@ def workspace(tmp_path, monkeypatch):
 
 
 def test_the_three_source_forms_parse():
-    assert parse_source("git+https://github.com/langware-labs/langware-os#main").branch == "main"
+    assert parse_source("git+https://github.com/acme/handbook#main").branch == "main"
     assert parse_source("hub:8c1f0b2e-1111-4111-8111-111111111111").kind == "hub"
     assert parse_source("file:~/notes").target == "~/notes"
     for bad in ("https://github.com/a/b", "git+not a url", "hub:not-an-id", "file:", "npm:x"):
@@ -175,11 +175,11 @@ async def test_a_git_dependency_is_cloned_linked_indexed_and_left_clean(tmp_path
         "docs/legal/guide.md": "# Guide\n",
     })
     site = await _project(tmp_path, "site")
-    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"langware-os": f"git+{url}#main"}})
+    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"handbook": f"git+{url}#main"}})
 
     states = await site.resolve_dependencies()
 
-    os_dep = _state(states, "langware-os")
+    os_dep = _state(states, "handbook")
     assert os_dep.state == "ready", os_dep
     clone = Path(os_dep.local_path)
     assert clone.parent == workspace, "a missing repo is cloned into the workspace"
@@ -529,8 +529,8 @@ async def test_an_agent_from_a_dependency_runs_in_the_host_and_knows_its_home(tm
         "docs/legal/guide.md": "# Guide\n",
     })
     site = await _project(tmp_path, "site")
-    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"langware-os": f"git+{url}#main"}})
-    os_root = _state(await site.resolve_dependencies(), "langware-os").local_path
+    _declare(Path(site.fs_storage_mount_path), {"dependencies": {"handbook": f"git+{url}#main"}})
+    os_root = _state(await site.resolve_dependencies(), "handbook").local_path
     legal = next(a for a in await Agent.get_all({}) if a.asset_ref and a.asset_ref.startswith(os_root))
 
     assert await legal.home() == os_root
@@ -559,7 +559,7 @@ async def test_an_agent_in_a_plain_dependency_folder_still_gets_its_home(tmp_pat
 
 async def test_rows_in_a_dependency_that_is_a_project_stay_that_projects(tmp_path):
     url = _repo(tmp_path / "remote-os", {"agentic-assets/agent/legal-agent/agent.json": json.dumps(AGENT_JSON)})
-    os_project = await _project(tmp_path, "langware-os", git_url=url)
+    os_project = await _project(tmp_path, "handbook", git_url=url)
     site = await _project(tmp_path, "site")
     await site.add_dependency(os_project.fs_storage_mount_path)
     legal = next(

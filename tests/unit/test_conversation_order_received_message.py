@@ -1,6 +1,6 @@
 """A received message keeps its SEND position after the hub's delivery receipt.
 
-Prod incident (conversation 38d20612): Gadi's question, sent 07:58Z, rendered
+Prod incident: Alice's question, sent 07:58Z, rendered
 BELOW a reply written locally at 13:36Z, and its bubble read 13:39 — the moment
 the delivery receipt was processed. ``project_pointers_to_entity`` documents
 the two-clock rule this pins; the short version is that feed ORDER must read
@@ -33,11 +33,11 @@ from flow_sdk.fs_store.operations.conversation import (
     project_pointers_to_entity,
 )
 
-_CONV_ID = "38d20612-8fe1-496c-9738-fc703150e0b4"
+_CONV_ID = "aaaaaaaa-0000-4000-8000-000000000003"
 _QUESTION_ID = "a335eea0-c400-4baa-a08b-5085e1f1c6e4"
 _REPLY_ID = "0e085c30-d0fe-4478-a87b-4cd38f0ebde4"
 
-_SENT_AT = "2026-09-06T07:58:40.154216+00:00"       # hub-stamped: Gadi hit send
+_SENT_AT = "2026-09-06T07:58:40.154216+00:00"       # hub-stamped: Alice hit send
 _REPLIED_AT = "2026-09-06T13:36:03.702078+00:00"    # our reply, 5h38m later
 _RECEIVED_AT = "2026-09-06T13:39:52.135768+00:00"   # hub marks it received
 _HUB_TOUCH = "2026-09-06T13:39:52.186917+00:00"     # the hub's save, 51ms later
@@ -47,7 +47,7 @@ def _question(**over) -> dict:
     base = {
         "id": _QUESTION_ID, "conversation_id": _CONV_ID,
         "text": "can you fix the application refresh button?",
-        "sender_name": "Gadi Tunes", "sender_id": "gadi-user-id",
+        "sender_name": "Alice Example", "sender_id": "alice-user-id",
         "delivery_status": "sent",
         "created_date": _SENT_AT, "updated_date": _SENT_AT,
     }
@@ -59,7 +59,7 @@ def _reply() -> dict:
     return {
         "id": _REPLY_ID, "conversation_id": _CONV_ID,
         "text": "Fixed - it now does a full window reload.",
-        "sender_name": "Eran Shlomo", "sender_id": "eran-user-id",
+        "sender_name": "Dan Example", "sender_id": "dan-user-id",
         "delivery_status": "sent",
         "created_date": _REPLIED_AT, "updated_date": _REPLIED_AT,
     }

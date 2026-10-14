@@ -40,7 +40,7 @@ def _recording_conversation() -> tuple[SimpleNamespace, list[dict]]:
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_session_event_header_reaches_hub():
     fm = FlowMessage.model_validate(
-        {"text": "Gadi approved the live session", "kind": FlowMessageKind.SESSION_EVENT.value}
+        {"text": "Alice approved the live session", "kind": FlowMessageKind.SESSION_EVENT.value}
     )
     # Guard the premise: validation really does hand back a bare str here. If
     # this ever flips to an enum the test below stops covering the regression.

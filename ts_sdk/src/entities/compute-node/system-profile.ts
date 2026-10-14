@@ -1,6 +1,6 @@
 /**
  * System profile types for Claude Code environment information.
- * These types mirror the Python Pydantic models in flowpad/hub/types/system_profile.py
+ * These types mirror the Python Pydantic models in hub system_profile.py
  */
 
 import { ActionInfo } from '../../models/ActionInfo';

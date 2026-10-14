@@ -54,7 +54,7 @@ SAMPLE_REPO_NAME = "sample-context-git"
 
 README = """# sample-context-git
 
-A sample **context folder** for [Flowpad](https://github.com/serans1/flowpad) — a
+A sample **context folder** for [Flowpad](https://github.com/octocat/flowpad) — a
 git repository you can attach to any project to lend it a ready-made set of
 assets.
 

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
   "inputs_hash": "8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12",

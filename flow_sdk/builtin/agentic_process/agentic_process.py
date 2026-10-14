@@ -1011,9 +1011,9 @@ class AgenticProcess(Entity):
     # Once an AgenticProcess has a ``session_id``, its ``project_id`` and
     # ``workdir`` are frozen: the Claude/Codex transcript on disk is keyed to
     # those values, and any later rewrite silently drifts the record away from
-    # where the jsonl actually lives (see 4c5bd6e4 incident — heal/recover
-    # paths re-stamped these fields against the active dock's project, while
-    # the session had been started elsewhere).
+    # where the jsonl actually lives (heal/recover paths would otherwise
+    # re-stamp these fields against the active dock's project, while the
+    # session had been started elsewhere).
     #
     # ``_binding_lock_armed`` is flipped True by ``_arm_binding_lock`` after
     # construction. Until armed, all writes pass through — Pydantic

@@ -61,7 +61,7 @@ pytestmark = [
 INSTALL_HINT = (
     "the hub has no 'dummyauth' provider. Install it with:\n"
     "  cp -r tests/fixtures/hub_plugins/dummyauth "
-    "../test_flowpad/FlowPad/flowpad/plugins/\n"
+    "<the hub checkout>/flowpad/plugins/\n"
     "then restart the hub with FLOWPAD_ENABLE_TEST_OAUTH=1. "
     "It is absent by default on purpose — a fake provider must never appear in a "
     "real Connections list."

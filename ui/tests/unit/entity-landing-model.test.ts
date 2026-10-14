@@ -17,7 +17,7 @@ const PROJECT_ID = '793e3708-563d-4f80-9ab1-f542ceb16656';
 const origin = (over: Partial<GitOrigin> = {}): GitOrigin => ({
   kind: 'git',
   provider: 'github',
-  owner: 'langware-ishay-sela',
+  owner: 'octo-dev',
   name: 'testing-flow-again',
   branch: 'flow-cloud',
   rel_path: 'agentic-assets/agent/crm-manager',
