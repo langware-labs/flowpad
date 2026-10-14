@@ -95,10 +95,10 @@ def _gather(spec: type, root: Path, *, checked: bool) -> tuple[dict[str, Any], d
             if path.is_file():
                 fields[name] = _document(annotation, path, checked=checked)
         elif place is Placement.FILE_BYTES:
-            path = root / names.field_file(name, getattr(annotation, "ext", ".bin"))
-            if path.is_file() and checked:
-                fields[name] = annotation(path.read_bytes())
-                files[name] = path
+            found = names.bytes_files(root, name) if checked else []
+            if found:
+                fields[name] = annotation.from_file(found[0])
+                files[name] = found[0]
         elif place is Placement.DIR_LIST:
             element = element_of(annotation)
             folder = root / name
