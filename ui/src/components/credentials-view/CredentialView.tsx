@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
-import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, isRequired } from '@sdk';
+import { credentialsService, CredentialRequirement, dataContext, groupSatisfied, holdsValue, isRequired } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
 import { buildCredentialRows } from './credential-rows';
 import { RequirementChip } from './RequirementChip';
@@ -154,7 +154,7 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
             {source.vars.map((v) => {
               const oneOf = v.required === CredentialRequirement.ONE_OF;
               // Nothing is stored for a sign-in: a tool's own (`cli`) or a grant the connection holds (`oauth`).
-              const signIn = v.kind === 'cli' || v.kind === 'oauth';
+              const signIn = !holdsValue(v);
               const word = signIn ? (v.present ? 'in' : 'out') : v.present ? 'set' : oneOf || !isRequired(v) ? 'unset' : 'missing';
               return (
               <li key={v.env_var} className="flex items-center gap-3 px-3 py-2" data-testid={`credential-var-${v.env_var}`} data-present={v.present || undefined}>

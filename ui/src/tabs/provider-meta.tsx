@@ -1,5 +1,7 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
+import { useLingui } from '@lingui/react/macro';
+import { CopyButton } from '@src/components/ui/copy-button';
 /**
  * Terminal provider presentation — the vendor chip glyph/label table and the
  * lazy process tooltip. Lives in its own module (not the controller) because both
@@ -86,16 +88,29 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
 );
 
 /** A path on one line — clipped, always left-to-right (a session's directory, a document's file). */
-export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => (
-  <p
-    className={`truncate font-mono text-[10px] text-muted-foreground ${className ?? ''}`}
-    dir="ltr"
-    title={workdir}
-    data-testid="tab-workdir"
-  >
-    {workdir}
-  </p>
-);
+export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => {
+  const { t } = useLingui();
+  return (
+    <div className={`flex items-center gap-1 ${className ?? ''}`}>
+      <p
+        className="min-w-0 truncate font-mono text-[10px] text-muted-foreground"
+        dir="ltr"
+        title={workdir}
+        data-testid="tab-workdir"
+      >
+        {workdir}
+      </p>
+      <CopyButton
+        value={workdir}
+        title={t`Copy path`}
+        testId="tab-workdir-copy"
+        stopPropagation
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        copiedIconClassName="text-emerald-500"
+      />
+    </div>
+  );
+};
 
 const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({
   process,

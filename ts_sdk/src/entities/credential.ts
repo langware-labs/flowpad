@@ -74,6 +74,11 @@ export function isRequired(v: Weighed | undefined): boolean {
   return requirementOf(v) === CredentialRequirement.MUST;
 }
 
+/** A store keeps a value for it — not a sign-in (`cli`) or a grant (`oauth`), which live elsewhere. */
+export function holdsValue(v: { kind?: string }): boolean {
+  return v.kind !== 'cli' && v.kind !== 'oauth';
+}
+
 /** The either-or group: every `ONE_OF` variable of one credential. */
 export function oneOfGroup<T extends Weighed>(vars: readonly T[]): T[] {
   return vars.filter((v) => requirementOf(v) === CredentialRequirement.ONE_OF);

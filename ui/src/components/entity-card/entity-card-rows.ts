@@ -43,6 +43,56 @@ function people(roster: unknown): string {
   return names.length > 3 ? `${names.slice(0, 3).join(', ')} +${names.length - 3}` : names.join(', ');
 }
 
+/** One field of a nested object, when the value is one. */
+const field = (v: unknown, key: string): unknown => (v && typeof v === 'object' ? (v as Fields)[key] : undefined);
+
+/** "Alive · 12 ms · <detail>" — the endpoint's last health check. */
+function endpointHealth(e: Fields): string {
+  const state = word(field(e.health, 'state'));
+  if (!state) return '';
+  const ms = field(e.health, 'latency_ms');
+  return [state, typeof ms === 'number' ? `${Math.round(ms)} ms` : '', text(field(e.health, 'detail'))]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** "Current · running" — the deployment's sync state beside what the provider says. */
+function endpointStatus(e: Fields): string {
+  const s = e.status;
+  return [word(field(s, 'sync_state')), word(field(s, 'provider_state')), text(field(s, 'message'))]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Where the bytes come from: a port, a folder, a channel, or the apps a proxy routes. */
+function endpointBackend(e: Fields): string | string[] {
+  const b = e.backend as Fields | undefined;
+  switch (b && text(b.type)) {
+    case 'proxy':
+      return count(b!.port) ? `localhost:${count(b!.port)}` : '';
+    case 'static':
+      return text(b!.root);
+    case 'channel':
+      return text(b!.data_source_id);
+    case 'routed': {
+      const routes = (b!.routes && typeof b!.routes === 'object' ? b!.routes : {}) as Record<string, Fields>;
+      return Object.entries(routes).map(([mount, r]) => {
+        const port = field(r.backend, 'port');
+        return `/${mount} → ${typeof port === 'number' ? `localhost:${port}` : text(field(r.backend, 'root'))}`;
+      });
+    }
+    default:
+      return '';
+  }
+}
+
+/** How health is checked: an HTTP path or a command. */
+function endpointCheck(e: Fields): string {
+  const c = e.check ?? field(e.backend, 'health');
+  if (typeof c === 'string') return c;
+  return text(field(c, 'path')) || text(field(c, 'cmd'));
+}
+
 const STATUS: RowSpec = [msg`Status`, (e) => word(e.status)];
 const UPDATED: RowSpec = [msg`Updated`, (e) => ago(e.updated_date)];
 /** A harness transcript, whichever harness wrote it. */
@@ -73,9 +123,12 @@ const ROWS: Record<string, RowSpec[]> = {
   ],
   service_endpoint: [
     [msg`Kind`, (e) => word(e.subkind)],
-    STATUS,
-    [msg`Health`, (e) => word(e.health)],
-    [msg`Protocol`, (e) => text(e.protocol)],
+    [msg`Health`, endpointHealth],
+    [msg`Status`, endpointStatus],
+    [msg`Protocol`, (e) => text(field(e.protocol, 'spec_kind'))],
+    [msg`Serves`, endpointBackend, { copy: true }],
+    [msg`Start`, (e) => text(field(e.backend, 'start_cmd'))],
+    [msg`Check`, endpointCheck],
   ],
   project: [
     [msg`Members`, (e) => people(e.members)],
