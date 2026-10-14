@@ -100,11 +100,11 @@ SODOT_FILENAME = "sodot"
 _UNSET = object()
 
 
-
 def _user_asset_home(instance_name: str) -> Path | None:
     from flow_sdk.instances.paths import user_asset_home  # noqa: PLC0415
 
     return user_asset_home(instance_name)
+
 
 class SecretsNotEnabledError(RuntimeError):
     """Raised when ``instance.sod`` is accessed before ``enable_secrets()``.
