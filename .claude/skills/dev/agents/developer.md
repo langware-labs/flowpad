@@ -77,6 +77,7 @@ This task is part of the Implementation job (job type ii).
 4. **Implement** the changes defined in your submodule's API contracts:
    - Follow exact signatures — parameter names, types, return types
    - Follow existing file structure and naming conventions
+   - An entity `@action` holds no logic: parse the body into a typed model (its validators do the checking), call one entity method that does the work, return the result — see the `slick` skill, principle 4
    - Do not touch files outside your submodule's "Files affected" list
 
 5. **Run your tests** after each meaningful change:

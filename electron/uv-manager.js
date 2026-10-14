@@ -1702,6 +1702,69 @@ class UvManager {
   /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
+  /**
+   * FIRST-install preflight (Windows): can the interpreter uv will build the engine on even RUN?
+   *
+   * Application control (Smart App Control, an organization's App Control policy) refuses the unsigned
+   * CPython of uv's python-build-standalone as a whole or module by module. `uv tool install` finds out only
+   * after it has resolved, downloaded and unpacked ~160 packages — and then FAILS, and the signed runtime
+   * (runtime-repair.js) is installed afterwards. Running the interpreter once first (`python -I -c pass`,
+   * a few seconds) tells at once: a blocked interpreter throws the same error the install would have
+   * (`fromInstall`, the policy text in `stderr`), which the caller sends to the repair directly.
+   *
+   * Anything else — offline, uv's python install failing, a timeout — is NOT a verdict: the real install runs
+   * and reports its own error. Never throws for those; returns `{ ok: true, skipped: true }`.
+   */
+  async probeManagedInterpreter() {
+    if (!(this._isWin !== undefined ? this._isWin : IS_WIN)) return { ok: true, skipped: true };
+    const pin = await this._pythonPinForUpgrade();
+    if (path.win32.isAbsolute(String(pin))) return { ok: true, skipped: true, why: 'a repaired runtime is the pin' };
+    let python;
+    try {
+      // `--no-bin`: no python3.x.exe shims in ~/.local/bin (they would collide with the user's own).
+      try {
+        await this._uv(['python', 'install', pin, '--no-bin'], { timeout: 240000 });
+      } catch (err) {
+        if (!/unexpected argument '--no-bin/.test(String(err.stderr || err.message))) throw err;
+        await this._uv(['python', 'install', pin], { timeout: 240000 }); // an old uv without --no-bin
+      }
+      const found = await this._uv(['python', 'find', pin, '--managed-python'], { timeout: 30000 });
+      python = String(found.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop();
+    } catch (err) {
+      // `uv python find` QUERIES the interpreter itself, so under a policy that refuses the whole interpreter
+      // it is the step that fails (seen on the VM, 2026-10-14): that is the verdict too.
+      if (isPolicyBlockError({ stderr: err.stderr, stdout: err.stdout, message: err.message, code: err.code }) && POLICY_BLOCK_TEXT.test(`${err.stderr || ''}\n${err.message || ''}`)) {
+        this.log.warn('[uv] interpreter preflight: Windows application control blocks the uv-managed Python (uv could not query it)');
+        const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${String(err.stderr || err.message)}`);
+        blocked.stderr = String(err.stderr || err.message);
+        blocked.code = 2;
+        blocked.preflight = true;
+        throw blocked;
+      }
+      this.log.info(`[uv] interpreter preflight skipped: ${String(err.message || err).split('\n')[0]}`);
+      return { ok: true, skipped: true };
+    }
+    if (!python || !fs.existsSync(python)) return { ok: true, skipped: true };
+    try {
+      await (this._execFile || execFileAsync)(python, ['-I', '-c', 'pass'], { timeout: 20000, windowsHide: true });
+      this.log.info(`[uv] interpreter preflight: ${python} runs`);
+      return { ok: true, python };
+    } catch (err) {
+      if (!isPolicyBlockError(err)) {
+        this.log.info(`[uv] interpreter preflight inconclusive (${String(err.message || err).split('\n')[0]}): the install decides`);
+        return { ok: true, skipped: true };
+      }
+      this.log.warn(`[uv] interpreter preflight: Windows application control blocks ${python}`);
+      // The shape of uv's own message for it, so the one detector (policyBlockFromInstallError) reads it like the real thing.
+      const text = `error: Failed to query Python interpreter at \`${python}\`\n  cause: An Application Control policy has blocked this file. (os error 4551)`;
+      const blocked = new Error(`Command failed: preflight of the uv-managed Python\n${text}`);
+      blocked.stderr = text;
+      blocked.code = 2;
+      blocked.preflight = true;
+      throw blocked;
+    }
+  }
+
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     const pin = await this._pythonPinForUpgrade();
@@ -2910,8 +2973,12 @@ class UvManager {
     // environment is intact on disk and the rollback is a rename back — no network, and exactly
     // the environment the user had, not a fresh install of it.
     await this._drainVenvProcesses();
-    // Remembered for the rollback: the release to put back when the set-aside copy is not there.
+    // Remembered for the rollback: the release to put back when the set-aside copy is not there, and whether
+    // there was an engine at all (a repair after a blocked FIRST install has nothing to put back).
     this._preRepairEngineVersion = installed || null;
+    // `markFirstInstallBlocked()`: the app knows the blocked install was the FIRST — whatever is in the venv
+    // (a block during --compile-bytecode comes after it was populated, and `_version.py` is readable) is not an engine.
+    this._hadEngineBeforeRepair = this._firstInstallBlocked ? false : (!!installed || fs.existsSync(this._toolVenvDir()));
     try {
       this._setAsidePreRepairVenv();
     } catch (e) {
@@ -2928,6 +2995,9 @@ class UvManager {
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
   }
+
+  /** The blocked install was the first one: a repair that follows has no previous engine to put back. */
+  markFirstInstallBlocked() { this._firstInstallBlocked = true; }
 
   _preRepairVenvDir() {
     return `${this._toolVenvDir()}.pre-repair`;
@@ -2969,6 +3039,13 @@ class UvManager {
     const venvDir = this._toolVenvDir();
     const aside = this._preRepairVenvDir();
     await this._drainVenvProcesses();
+    if (this._hadEngineBeforeRepair === false) {
+      // The repair followed a blocked first install: there was no engine to put back (what was set aside is the half-built
+      // environment of that install, not an engine), and reinstalling one on the blocked interpreter would only fail again.
+      this.log.warn('[runtime-repair] there was no engine before the repair: nothing to roll back');
+      fs.rmSync(aside, { recursive: true, force: true });
+      return;
+    }
     if (fs.existsSync(aside)) {
       this.log.warn('[runtime-repair] restoring the set-aside engine');
       fs.rmSync(venvDir, { recursive: true, force: true });
