@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 #: had acked, which is a handful at a time.
 _HANDLED: "OrderedDict[str, int]" = OrderedDict()
 _HANDLED_CAP = 512
-#: Hop-by-hop headers the local request makes for itself, plus any cookie-gate credential on the delivery:
-#: this app's own token is attached here, and a second one would be read first and refused.
+#: Hop-by-hop headers the local request makes for itself, plus any cookie on the delivery. A gate header on
+#: it is replaced by this app's own token (``CookieGateAuthHttpx``).
 _DROP = frozenset({"host", "content-length", "transfer-encoding", "connection", "cookie"})
 #: Replays in flight, held so the loop never collects one mid-flight (and a test can await).
 _tasks: "set[asyncio.Task]" = set()
@@ -61,13 +61,10 @@ async def _replay(message: dict) -> int:
     path = "/" + str(message.get("path") or "").lstrip("/")
     query = str(message.get("query") or "")
     url = f"http://127.0.0.1:{get_instance_settings().port}{path}" + (f"?{query}" if query else "")
-    gate = cookie_gate.get_header()  # the url is loopback
-    drop = _DROP | {gate.name} if gate else _DROP
-    headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in drop]
-    headers += [gate] if gate else []
+    headers = [(k, v) for k, v in (message.get("headers") or []) if str(k).lower() not in _DROP]
     try:
         body = base64.b64decode(str(message.get("body_b64") or ""))
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0), auth=cookie_gate.CookieGateAuthHttpx()) as client:
             resp = await client.request(str(message.get("method") or "POST"), url, headers=headers, content=body)
         return resp.status_code
     except Exception as exc:  # noqa: BLE001 — an unreachable route is a status, the hub keeps the delivery

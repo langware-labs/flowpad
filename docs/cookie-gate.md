@@ -37,6 +37,7 @@ cookie names and attributes. Callers use its functions and never see those detai
 | `set_cookie_header(conn)` | the `Set-Cookie` value that hands a browser its cookie |
 | `set_cookie(value)` / `clear_cookie_gate()` | write / delete the token |
 | `install_gate_opener()` | every `urllib` request in this process presents it |
+| `CookieGateAuthHttpx()` | every request an httpx client sends presents it (`httpx.AsyncClient(auth=...)`) |
 | `get_cookie_gate()` | the raw token, for the hub-signed caller check (`service_endpoint`) only |
 
 Keeping the token on this machine is the caller's job: `flow_sdk.utils.networking.is_loopback` tells
@@ -98,7 +99,8 @@ With the switch unset, a token that can be neither read nor created refuses ever
 | Caller | How |
 |---|---|
 | `flow` CLI, function runner, server monitor (`python -m flow_sdk.server.launch`) | `install_gate_opener()` at startup: every `urllib` request to a loopback host carries the cookie |
-| httpx callers (CLI `local_request`, workers, connections, notify, tag relay, webhook relay) | `get_header()`, sent to loopback URLs only |
+| httpx clients (connections, tag relay, webhook relay) | `CookieGateAuthHttpx` on the client: loopback URLs only |
+| Other callers (CLI `local_request`, workers, notify) | `get_header()`, sent to loopback URLs only |
 | Electron | `electron/cookie-gate.js`: the header on its health check, the cookie set once in the shared session, when `waitForBackend` sees the backend up |
 | A browser the user opened themselves | the direct-open rule sets the cookie |
 | A browser sent to log in or connect an account | `/auth/gate` sets the cookie first (below) |
