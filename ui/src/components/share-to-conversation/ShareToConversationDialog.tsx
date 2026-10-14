@@ -807,7 +807,7 @@ export function ShareToConversationDialog({
                       disabled={busy}
                       data-testid="share-send-without"
                     >
-                      {unshippable.gaps.every((g) => g.type_id.startsWith('claude_session-')) ? (
+                      {source.isProcess ? (
                         <Trans>Send without the session</Trans>
                       ) : (
                         <Trans>Send without it</Trans>
