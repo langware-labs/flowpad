@@ -159,9 +159,12 @@ def test_the_shipped_gmail_definition_is_valid():
     manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 
     assert manifest.name == "gmail"
-    assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    assert manifest.vars["GMAIL_ADDRESS"].secret is False
-    assert manifest.vars["GMAIL_APP_PASSWORD"].secret is True
+    assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_GOOGLE", "GMAIL_APP_PASSWORD"]
+    assert manifest.vars["GMAIL_ADDRESS"].secret is False and manifest.vars["GMAIL_ADDRESS"].is_must
+    # Two ways, one of them a Google sign-in covering full mail access (IMAP/SMTP over XOAUTH2).
+    google = manifest.vars["GMAIL_GOOGLE"]
+    assert google.is_one_of and google.is_oauth and (google.provider, google.scopes) == ("google", ["https://mail.google.com/"])
+    assert manifest.vars["GMAIL_APP_PASSWORD"].is_one_of and manifest.vars["GMAIL_APP_PASSWORD"].secret is True
 
 
 def test_a_credential_never_says_where_its_values_live():
