@@ -225,7 +225,25 @@ async def test_a_declared_node_naming_a_missing_wizard_is_a_problem_not_a_pass(p
 def test_a_declared_setup_belongs_to_the_asset_folder_that_holds_it():
     assert _holder("/p/agentic-assets/data_driver/waha/agentic-assets/asset_setup/c") == "data_driver:waha"
     assert _holder("/p/agentic-assets/data_source/feed/asset_setup/c") == "data_source:feed"
+    assert _holder("/p/agentic-assets/webapp/site/agentic-assets/asset_setup/c") == "webapp:site"
     assert _holder(str(Path("/p/agentic-assets/asset_setup/c"))) == "project"
+
+
+@pytest.mark.asyncio
+async def test_a_setup_declared_inside_a_web_app_is_what_opening_that_app_needs(project, monkeypatch):
+    """An app ships what it needs in its own folder (Acme Admin: the project's Google Cloud credential), so
+    opening THAT app waits on it — at the project root it held nothing the app's own load looked at."""
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(
+        name="site-needs", children=["credential:stripe"]))
+    inside = AssetSetup(name="site-needs", asset_ref="/p/agentic-assets/webapp/site/agentic-assets/asset_setup/site-needs")
+
+    async def declared(_q):
+        return [inside]
+
+    monkeypatch.setattr(AssetSetup, "get_all", declared)
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:site-needs",)
+    assert "asset_setup:site-needs" not in tree.nodes["project-p1"].children
 
 
 @pytest.mark.asyncio

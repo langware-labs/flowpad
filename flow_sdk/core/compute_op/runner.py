@@ -1154,8 +1154,10 @@ async def _ask_until_held(asking: Awaitable[AskResult], spec: ComputeOpSpec, *, 
             if said is not None and said.exit_code is ExitCode.OK:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-                # A confirm's answer is ``{}`` (``confirm_spec.py``) -- what Send would have answered.
-                return AskResult.satisfied(f"{spec.display_label}: done.", value={})
+                # The goal holding IS the answer -- the same one an op whose goal held before anyone was asked
+                # gives (``_already``): a confirm's ``{}``, a value read off the check, or none. A fixed ``{}``
+                # failed every question whose answer is a string ("choose one way", once signed in).
+                return _already(spec, said)
             await asyncio.wait({task}, timeout=AUTO_CONTINUE_EVERY_SECONDS)
         return task.result()
     finally:

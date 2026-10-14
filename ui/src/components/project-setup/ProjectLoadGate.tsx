@@ -2,13 +2,14 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
+import { Loader2 } from 'lucide-react';
 import { Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { AskForm } from '@src/components/ask/AskForm';
 import { SetupTreeView } from './SetupTreeView';
 import { useProjectLoad } from './use-project-load';
-import { openProjectLoad, useProjectLoadStore } from './project-load-store';
+import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
 export function ProjectLoadGate({
@@ -48,20 +49,27 @@ export function ProjectLoadGate({
       void load();
     }
   }, [result?.state, displayChecked, lifecycle.starting, loadedLocation, location.key, load]);
-  // A load that failed gets its setup once per open, unasked: opening an app means "make it work".
-  // The backend offers it once per failure, so a setup that does not help ends here with its reason.
-  const repaired = useRef<string | null>(null);
+  // Opening an app means "make it work": a load that needs setup, or failed with a setup on offer,
+  // gets that setup once per open, unasked, and it runs HERE — in the view the app will fill, never
+  // in a dialog over it. The backend offers a repair once per failure, so one that does not help
+  // ends here with its reason. Only an APP's open is that consent: a gate for the project alone (a
+  // home display) starting the project's whole setup by itself claimed its questions on a screen
+  // nobody was looking at — it offers Set up instead.
+  const setUp = useRef<string | null>(null);
   useEffect(() => {
-    if (result?.state !== 'failed' || !result.setup_available || lifecycle.starting) return;
-    if (loadedLocation !== location.key || repaired.current === location.key) return;
-    repaired.current = location.key;
+    const owed =
+      (result?.state === 'setup_required' && !!asset) || (result?.state === 'failed' && result.setup_available);
+    if (!owed || lifecycle.starting) return;
+    if (loadedLocation !== location.key || setUp.current === location.key) return;
+    setUp.current = location.key;
     void load(true);
-  }, [result, lifecycle.starting, loadedLocation, location.key, load]);
+  }, [result, asset, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
+  // Working: a load in flight, or a setup run going that is not waiting on the person.
+  const busy = lifecycle.starting || !result || result.state === 'running';
   useEffect(() => {
-    if (result?.state === 'setup_required') openProjectLoad({ projectId, projectName: name, initial: result });
     if (result?.state === 'ready') void client.invalidateQueries({ queryKey: ['service_endpoint'] });
-  }, [client, projectId, name, result]);
+  }, [client, result]);
   if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
     return children;
   if (lifecycle.missing)
@@ -76,7 +84,16 @@ export function ProjectLoadGate({
     <div className="flex h-full justify-center overflow-auto p-8" data-testid="project-load-gate">
       <div className="flex w-full max-w-xl flex-col gap-4">
         <h2 className="text-lg font-semibold">{name}</h2>
-        <p role="status">{result?.detail || <Trans>Preparing…</Trans>}</p>
+        {/* Never a still sentence while something is happening: a check or a setup can take a while,
+            and a page that does not move reads as stuck (a grey Set up and "waiting on Google Cloud"). */}
+        <p role="status" className="flex items-center gap-2" data-testid="project-load-status">
+          {busy ? <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" /> : null}
+          {busy && !lifecycle.questionId
+            ? result?.state === 'running'
+              ? <Trans>Setting up…</Trans>
+              : <Trans>Checking what this needs…</Trans>
+            : result?.detail || <Trans>Preparing…</Trans>}
+        </p>
         {lifecycle.error && (
           <p role="alert" className="text-destructive">
             {lifecycle.error}
@@ -85,13 +102,11 @@ export function ProjectLoadGate({
         {lifecycle.questionId && (
           <AskForm questionId={lifecycle.questionId} showOp={false} onSettled={lifecycle.settleQuestion} />
         )}
-        {result?.state !== 'setup_required' && <SetupTreeView tree={lifecycle.tree} />}
-        {result?.state === 'setup_required' && (
-          <Button
-            className="self-start"
-            onClick={() => openProjectLoad({ projectId, projectName: name, initial: result })}
-          >
-            <Trans>Setup required</Trans>
+        {/* The steps are for watching a run; while a question is open the question is the screen. */}
+        {result?.state !== 'setup_required' && !lifecycle.questionId && <SetupTreeView tree={lifecycle.tree} />}
+        {result?.state === 'setup_required' && !asset && (
+          <Button className="self-start" disabled={lifecycle.starting} onClick={() => void load(true)}>
+            <Trans>Set up</Trans>
           </Button>
         )}
         {(result?.state === 'failed' || lifecycle.error) && (
