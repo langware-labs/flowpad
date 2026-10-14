@@ -17,7 +17,17 @@ from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 logger = logging.getLogger(__name__)
 _LOCKS = new_registry()
-_RESULTS: dict[str, LoadResult] = {}
+#: Each load's verdict, per ``(provider, asset)``: two apps of one project are two loads, and the run one
+#: of them started (its question, its progress) is never the other's.
+_RESULTS: dict[tuple[str, str], LoadResult] = {}
+#: The asset each provider was last loaded for — what a poll that names none is about.
+_LATEST: dict[str, str] = {}
+
+
+def _keep(pid: str, asset: str, result: LoadResult) -> LoadResult:
+    _RESULTS[(pid, asset)] = result
+    _LATEST[pid] = asset
+    return result
 #: ``(provider, asset)`` whose failed load already had its one setup run: a second failure is the
 #: answer, not a loop.
 _REPAIRED: set[tuple[str, str]] = set()
@@ -53,9 +63,8 @@ def forget(project_id: str) -> None:
     ``load_state`` answers None and the next Load checks again. A RUNNING verdict stays: ``load_state``
     settles it from its run."""
     pid = str(project_id)
-    result = _RESULTS.get(pid)
-    if result is not None and result.state is not LoadState.RUNNING:
-        del _RESULTS[pid]
+    for key in [k for k, v in _RESULTS.items() if k[0] == pid and v.state is not LoadState.RUNNING]:
+        del _RESULTS[key]
 
 
 def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
@@ -63,11 +72,11 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     from flow_sdk.builtin.project_setup import _RUNS, setup_run_address
 
     pid = str(project_id)
-    result = _RESULTS.get(pid)
-    display = result.display if result is not None else None
     # The run was started FOR an app: it is judged on that app whoever asks — a poll that names none
     # must not settle it as ready because the project stands without it.
-    asset = asset or (result.asset if result is not None else None) or ""
+    asset = asset or _LATEST.get(pid, "")
+    result = _RESULTS.get((pid, asset))
+    display = result.display if result is not None else None
     # Opening an app runs that app alone (rooted at it); the project's own run is the other kind.
     root = asset if asset and (pid, asset) in _RUNS else ""
     task = _RUNS.get((pid, root))
@@ -91,7 +100,7 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 )
             except (Exception, asyncio.CancelledError) as exc:
                 result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc) or "Setup was cancelled", display=display)
-            _RESULTS[pid] = result
+            _keep(pid, asset, result)
     return result.model_copy(update={"asset": asset or None}) if result is not None else None
 
 
@@ -150,9 +159,9 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
     on_disk = getattr(asset, "on_disk", None)
     if callable(on_disk) and not on_disk():
         # A stale row is no node of the tree, and a tree without it would settle as ready.
-        gone = _RESULTS[pid] = LoadResult(
+        gone = _keep(pid, target, LoadResult(
             state=LoadState.FAILED, project_id=pid, asset=target,
-            detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}")
+            detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
     # Traverse before taking this provider's lock: opposite ends of a dependency
     # cycle may be loaded concurrently, and must never wait on each other's lock.
@@ -160,9 +169,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         providers = await required_projects(project) if hasattr(project, "dependencies") else []
         children = [await load_project(p, ancestors=(*ancestors, pid)) for p in providers]
     except Exception as exc:
-        result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
-        _RESULTS[pid] = result
-        return result
+        return _keep(pid, target, LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc)))
     async with keyed_loop_lock(_LOCKS, pid):
         current = load_state(pid, asset=target)
         if current is not None and current.state is LoadState.RUNNING:
@@ -217,9 +224,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
-        result = result.model_copy(update={"display": display or None, "asset": target or None})
-        _RESULTS[pid] = result
-        return result
+        return _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
 
 
 async def load_asset(project: Any, asset: Any) -> LoadResult:

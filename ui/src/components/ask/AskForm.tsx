@@ -161,23 +161,10 @@ export function AskForm({
       </div>
 
       {question.detail ? (
-        <div className="text-sm" data-testid="ask-detail">
+        <div className="text-sm text-muted-foreground" data-testid="ask-detail">
           <MarkdownView value={question.detail} compact dataImages />
         </div>
       ) : null}
-
-      {question.guide ? (
-        <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-guide">
-          <MarkdownView value={question.guide} compact />
-        </div>
-      ) : null}
-
-      <AskAssist
-        questionId={questionId}
-        available={question.assist_available}
-        initial={question.assist}
-        onAnswered={agentAnswered}
-      />
 
       <AskChoiceBlock
         choices={question.choices}
@@ -240,6 +227,25 @@ export function AskForm({
           </Button>
         </div>
       )}
+
+      {/* Help comes after the inputs: the answer is the point of the screen, the how-to is for whoever needs it. */}
+      <AskAssist
+        questionId={questionId}
+        available={question.assist_available}
+        initial={question.assist}
+        onAnswered={agentAnswered}
+      />
+
+      {question.guide ? (
+        <details className="text-sm" data-testid="ask-guide">
+          <summary className="cursor-pointer text-muted-foreground">
+            <Trans>How do I get it?</Trans>
+          </summary>
+          <div className="mt-2 rounded border bg-muted/30 p-3">
+            <MarkdownView value={question.guide} compact />
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

@@ -295,3 +295,21 @@ async def test_a_credential_nobody_gave_never_keeps_the_app_beside_it_from_openi
     assert machine.ran == ["install", "service"], "the app alone was installed and started; nobody was asked"
     shown = await load_project(machine.project, tree=machine.tree, asset=web)
     assert shown.state is LoadState.READY, shown.detail
+
+
+def test_one_apps_running_load_is_never_another_apps_answer():
+    """Spora Admin's setup run (asking for Google Cloud) was answered for the Back Office beside it, so
+    opening the Back Office showed Admin's question. Two apps of one project are two loads."""
+    from flow_sdk.core.setup import load as load_module
+
+    pid = "p-two-apps"
+    load_module._keep(pid, "micro_app-admin", load_module.LoadResult(
+        state=LoadState.RUNNING, project_id=pid, run="setup-micro_app-admin"))
+    try:
+        assert load_module.load_state(pid, asset="micro_app-backoffice") is None
+        assert load_module.load_state(pid, asset="micro_app-admin").run == "setup-micro_app-admin"
+        # A poll that names no app is about the one last loaded.
+        assert load_module.load_state(pid).run == "setup-micro_app-admin"
+    finally:
+        load_module._RESULTS.pop((pid, "micro_app-admin"), None)
+        load_module._LATEST.pop(pid, None)

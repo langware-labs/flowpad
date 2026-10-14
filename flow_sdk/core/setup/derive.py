@@ -48,9 +48,10 @@ def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> Compu
 
 def _holder(asset_ref: str) -> str:
     """The node a declared ``asset_setup`` folder is for when it does not say: the asset folder that holds
-    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source), else the project."""
+    it (``data_driver:<name>`` inside a driver, ``data_source:<name>`` inside a source, ``webapp:<name>``
+    inside a web app), else the project."""
     parts = Path(asset_ref).parts
-    for family in ("data_source", "data_driver"):
+    for family in ("data_source", "data_driver", "webapp"):
         for i in range(len(parts) - 2, -1, -1):
             if parts[i] == family and i + 1 < len(parts) and parts[i + 1] != "asset_setup":
                 return f"{family}:{parts[i + 1]}"
@@ -70,6 +71,8 @@ class ProjectTree:
         self.ai = ai
         self.display = display
         self.nodes: dict[str, SetupNode] = {}
+        #: Each web app's node, by the app's name — where a declaration inside its folder attaches.
+        self.webapp_nodes: dict[str, str] = {}
         self.ops: dict[str, ComputeOpSpec] = {}
         self.gaps: list = []
         #: A source's FIRST setup stage: what the source needs is set up before it, never beside it.
@@ -241,6 +244,7 @@ class ProjectTree:
 
     def _webapp_node(self, app) -> str:
         node_id = str(app.typeid)
+        self.webapp_nodes[str(app.name)] = node_id
         label = str(app.title or app.name) if hasattr(app, "title") else str(app.name)
         if self._skipped(node_id, label, app.setup_skipped):
             return node_id
@@ -328,6 +332,9 @@ class ProjectTree:
         if subject.startswith("data_driver:"):
             driver = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if s.provider == driver]
+        if subject.startswith("webapp:"):
+            node = self.webapp_nodes.get(subject.split(":", 1)[1])
+            return [node] if node else [self.root]
         if subject.startswith("data_source:"):
             name = subject.split(":", 1)[1]
             return [str(s.typeid) for s in sources if str(s.name) == name or Path(str(s.asset_ref or "")).name == name]

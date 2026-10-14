@@ -1,6 +1,6 @@
 /**
  * The apps button in the navigation bar: absent with no app, a plain button for one, a list
- * with each app's type for more — every one opened by URL alone, as a tab of its own.
+ * with each app's type for more — every one opened in place, by URL alone.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -59,14 +59,14 @@ describe('the apps button', () => {
       apps.current = [shop];
     });
 
-    it('opens it as a tab of its own, by URL alone', async () => {
+    it('opens it in place, by URL alone', async () => {
       mount();
       const button = screen.getByTestId('top-nav-app');
       expect(button.getAttribute('aria-label')).toBe('Open shop');
       await userEvent.setup().click(button);
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(shop, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
+      expect(openDock.mock.calls[0][2]).toBeUndefined();
     });
 
     it('rests while that app is the one on screen', () => {
@@ -93,14 +93,14 @@ describe('the apps button', () => {
       expect(openDock).not.toHaveBeenCalled();
     });
 
-    it('opens the chosen app as a tab of its own', async () => {
+    it('opens the chosen app in place', async () => {
       mount();
       const user = userEvent.setup();
       await user.click(screen.getByTestId('top-nav-apps'));
       await user.click(screen.getByTestId('top-nav-app-back-office'));
       expect(openDock).toHaveBeenCalledTimes(1);
       expect(openDock.mock.calls[0][0].toUrl('/')).toBe(projectAppDock(admin, 'p1').toUrl('/'));
-      expect(openDock.mock.calls[0][2]).toEqual({ topLevel: true });
+      expect(openDock.mock.calls[0][2]).toBeUndefined();
     });
 
     it('marks the app on screen', async () => {
