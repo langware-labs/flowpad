@@ -25,6 +25,7 @@
     "log-redact.js",
     "app-location.js",
     "update-plan.js",
+    "update-test.js",
     "failure-dialog.js",
     "update-restart.js",
     "progress-watchdog.js",

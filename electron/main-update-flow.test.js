@@ -6,7 +6,8 @@
  * so a few internals are exposed by APPENDING to its source at load time; production code is untouched.
  *
  * Covers: desktop + engine offered together (Update now / Later), the saved engine version, the 90 minute reminder,
- * engine dialogs held back while a desktop update is pending, desktop-only, and the next launch of the new desktop.
+ * engine dialogs held back while a desktop update is pending OR its status is unknown, desktop-first for first-time
+ * setup and repair, the UI's upgrade IPC, desktop-only, and the next launch of the new desktop.
  * Run: `node electron/main-update-flow.test.js` (exits non-zero on failure).
  */
 
@@ -21,7 +22,8 @@ const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
   offerDesktopUpdate, offerPostponedRestartPrompt, backendWaitAborted, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground, waitForBackend,
-  setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
+  setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier, getDesktopUpdateVersion, engineChangeAllowed,
+  getDesktopStatus: () => desktopStatus,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
@@ -45,6 +47,7 @@ function load(opts = {}) {
   const intervals = [];
   global.setInterval = (fn, ms) => { const h = { fn, ms, unref() {} }; intervals.push(h); return h; };
 
+  const ipc = {};
   const dialogCalls = [];
   const responses = [...(opts.dialogResponses || [])];
   let releaseDialog = () => {};
@@ -53,7 +56,10 @@ function load(opts = {}) {
   const BW = function () {}; BW.getAllWindows = () => []; BW.getFocusedWindow = () => null;
   const autoUpdater = Object.assign(new EventEmitter(), {
     downloads: [], quits: [],
-    checkForUpdates: async () => ({ updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } }),
+    checkForUpdates: async () => {
+      if (opts.desktopCheckThrows) throw new Error(opts.desktopCheckThrows);
+      return { updateInfo: { version: opts.desktopFeed || opts.appVersion || '0.2.47' } };
+    },
     downloadUpdate() { autoUpdater.downloads.push(1); return new Promise((r) => { autoUpdater.finishDownload = r; }); },
     quitAndInstall: (...a) => { autoUpdater.quits.push(a); },
   });
@@ -64,7 +70,7 @@ function load(opts = {}) {
     },
     BrowserWindow: BW,
     dialog: { showMessageBox: async (...a) => { const o = a[a.length - 1]; dialogCalls.push(o); if (gate) await gate; return { response: responses.length ? responses.shift() : 1 }; }, showErrorBox() {} },
-    ipcMain: { on() {}, handle() {}, once() {} },
+    ipcMain: { on() {}, handle(ch, fn) { ipc[ch] = fn; }, once() {} },
     shell: mk(), clipboard: mk(), Menu: mk(), nativeImage: mk(), session: mk(), screen: mk(), Tray: mk(), globalShortcut: mk(), powerMonitor: mk(), protocol: mk(), net: mk(), desktopCapturer: mk(), systemPreferences: mk(), Notification: mk(),
   };
   const logLines = [];
@@ -80,7 +86,12 @@ function load(opts = {}) {
     deferPackageVersion(v) { uv.deferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }
     async checkForUpdatesInBackground() { uv.checks++; return false; }
-    async startWithBin() {}
+    async startWithBin() { if (opts.startThrows) throw new Error(opts.startThrows); }
+    isBrokenInstallError(err) { return /flow_sdk/.test(String(err && err.message)); }
+    async ensureUv() { uv.ensured = (uv.ensured || 0) + 1; }
+    async installLatest() { uv.installs = (uv.installs || 0) + 1; }
+    async reinstall() { uv.reinstalls = (uv.reinstalls || 0) + 1; }
+    async start() { uv.started = (uv.started || 0) + 1; }
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
     isInstalling() { return false; }
     setFailureSharer(fn) { this.sharer = fn; }
@@ -117,7 +128,7 @@ function load(opts = {}) {
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
   t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
-  return { t, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
+  return { t, ipc, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -208,7 +219,130 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     await env.t.offerDesktopUpdate('0.2.48');
     await env.t.checkPackageUpdateInBackground();
     eq(env.uv.checks, 0, 'no separate engine dialog while the desktop update is pending');
-    ok(env.logLines.some((l) => /package check skipped: desktop 0\.2\.48 is pending/.test(l)), 'and it says why');
+    ok(env.logLines.some((l) => /engine change hold \(periodic package check\): desktop 0\.2\.48 is pending/.test(l)), 'and it says why');
+  }
+
+  // ── DESKTOP FIRST: the engine is changed only when the desktop status is known and current ──
+  {
+    // Running the latest desktop: the periodic engine check runs.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47' });
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.getDesktopStatus().state, 'current', 'status: current');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 1, 'desktop current → the engine check runs');
+  }
+  {
+    // A newer desktop exists although NOTHING was offered this session (e.g. found by the check alone): hold.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.getDesktopStatus().state, 'available', 'status: available');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'a newer desktop exists → no engine check, even with no pending offer');
+  }
+  {
+    // The desktop check FAILED: "could not tell" is not "up to date".
+    const env = load({ desktopCheckThrows: 'HTTP 500' });
+    await env.t.getDesktopUpdateVersion();
+    eq(env.t.getDesktopStatus().state, 'unknown', 'status: unknown after a failed check');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'unknown desktop status → the engine is held');
+    ok(env.logLines.some((l) => /engine change hold .*status is unknown \(update check failed: HTTP 500\)/.test(l)), 'and the log names the cause');
+  }
+  {
+    // Before any check has answered the status is unknown too (a check that timed out leaves it so).
+    const env = load();
+    eq(env.t.getDesktopStatus().state, 'unknown', 'initial status: unknown');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'an unanswered check holds the engine');
+  }
+  {
+    // "Restart now" failed: the hold on the engine is released for the session (the desktop will not arrive).
+    const env = load({ engineStatus: null, dialogResponses: [0] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'held while the desktop is pending');
+    await env.t.restartApplier.apply();
+    env.t.restartApplier.failed(new Error('could not restart'));
+    eq(env.t.engineChangeAllowed('test'), 'allow', 'released once the desktop could not be applied');
+  }
+  {
+    // The UI's upgrade IPC is refused while a newer desktop exists, before the server or the window is touched.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.ipc['upgrade-flowpad']();
+    eq(r.success, false, 'upgrade-flowpad: refused');
+    eq(r.desktopUpdatePending, true, 'upgrade-flowpad: says a desktop update is pending');
+    eq(env.uv.upgrades.length, 0, 'upgrade-flowpad: the engine was not touched');
+    eq(env.sent.length, 0, 'upgrade-flowpad: the window was not touched');
+  }
+
+  // ── DESKTOP FIRST for the installs that cannot be skipped ───────────────
+  {
+    // First-time setup with a newer desktop: update the desktop, install the engine AFTER the relaunch.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    eq(env.autoUpdater.downloads.length, 1, 'first run: the desktop download started');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload(); 
+    const r = await p;
+    eq(r.ok, false, 'first run: this launch ends — the app is restarting into the update');
+    eq(env.uv.installs || 0, 0, 'first run: the engine was NOT installed under the old desktop');
+    eq(env.autoUpdater.quits, [[true, true]], 'first run: silent install + relaunch');
+    eq(env.dialogCalls.length, 0, 'first run: no "Restart now?" dialog — nothing to lose yet');
+  }
+  {
+    // First-time setup, desktop already current: install as before.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.47' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.t.installAndStartBackend();
+    eq(r.ok, true, 'first run, desktop current: startup succeeds');
+    eq(env.uv.installs, 1, 'first run, desktop current: the engine is installed');
+    eq(env.autoUpdater.downloads.length, 0, 'first run, desktop current: no desktop download');
+  }
+  {
+    // First-time setup and the desktop check failed: install anyway — a missing engine is worse than a version gap.
+    const env = load({ installed: false, desktopCheckThrows: 'offline' });
+    await env.t.getDesktopUpdateVersion();
+    const r = await env.t.installAndStartBackend();
+    eq(r.ok, true, 'first run, unknown desktop: startup succeeds');
+    eq(env.uv.installs, 1, 'first run, unknown desktop: the engine is installed anyway');
+  }
+  {
+    // First-time setup, the desktop update does not download: install the engine with this desktop.
+    const env = load({ installed: false, appVersion: '0.2.47', desktopFeed: '0.2.48' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick();
+    env.autoUpdater.finishDownload(); // finishes WITHOUT an update-downloaded event: the download failed
+    const r = await p;
+    eq(r.ok, true, 'failed desktop download: startup continues');
+    eq(env.uv.installs, 1, 'failed desktop download: the engine is installed with this desktop');
+    eq(env.autoUpdater.quits.length, 0, 'failed desktop download: no restart');
+  }
+  {
+    // Repair of a broken install, newer desktop waiting: the same — desktop first, repair after the relaunch.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', startThrows: 'ModuleNotFoundError: No module named flow_sdk' });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    const p = env.t.installAndStartBackend();
+    await tick(); await tick(); await tick();
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    env.autoUpdater.finishDownload();
+    const r = await p;
+    eq(r.ok, false, 'repair: this launch ends — the app is restarting into the update');
+    eq(env.uv.reinstalls || 0, 0, 'repair: the engine was NOT reinstalled under the old desktop');
+    eq(env.autoUpdater.quits, [[true, true]], 'repair: silent install + relaunch');
+  }
+  {
+    // Repair, desktop current: repair as before.
+    const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', startThrows: 'ModuleNotFoundError: No module named flow_sdk' });
+    await env.t.getDesktopUpdateVersion();
+    await env.t.installAndStartBackend().catch(() => {});
+    eq(env.uv.reinstalls, 1, 'repair, desktop current: the engine is reinstalled');
   }
 
   // ── nothing installed: no "update" ──────────────────────────────────────
@@ -218,6 +352,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.uv.checks, 0, 'flowpad is not installed (first-time setup failed): the periodic check offers no update');
     ok(env.logLines.some((l) => /package check skipped: flowpad is not installed/.test(l)), 'and it says why');
     const installed = load({});
+    await installed.t.getDesktopUpdateVersion(); // the desktop check answered: nothing newer
     await installed.t.checkPackageUpdateInBackground();
     eq(installed.uv.checks, 1, 'an installed flowpad is still checked');
   }
@@ -270,6 +405,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
   {
     // The new desktop was installed on quit after "Later" (nothing agreed): today's engine dialog, never a silent install.
     const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48' });
+    await env.t.getDesktopUpdateVersion(); // the launch-time check answered: running the latest desktop
     fs.writeFileSync(env.statePath, JSON.stringify({ engineVersion: '0.2.180', desktopVersion: '0.2.48', consented: false }));
     await env.t.installAndStartBackend();
     eq(env.uv.upgrades.length, 0, 'no silent install without agreement');
