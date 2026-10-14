@@ -9,7 +9,7 @@
 #
 #   scripts/course_share_live.sh [alice-instance] [bob-instance]
 #
-# Needs the local hub on :8093 (cd ../test_flowpad/FlowPad && uv run python flowpad/run.py).
+# Needs the local hub on :8093 (the hub is a separate service; from your hub checkout: uv run python flowpad/run.py).
 # Screenshots land in artifacts/course-live-<stamp>/.
 set -euo pipefail
 
@@ -25,7 +25,7 @@ export PATH="$HOME/.nvm/versions/node/v22.15.0/bin:$PATH"
 
 if [[ "$(curl -s -o /dev/null -w '%{http_code}' -m 5 "$HUB_URL/api/v1/graph/bootstrap" || true)" != "200" ]]; then
   echo "The hub is not answering at $HUB_URL." >&2
-  echo "Start it:  cd ../test_flowpad/FlowPad && env -u DEPLOY_ENV -u SOD_ENC_KEY uv run python flowpad/run.py" >&2
+  echo "Start it from your hub checkout:  env -u DEPLOY_ENV -u SOD_ENC_KEY uv run python flowpad/run.py" >&2
   exit 1
 fi
 

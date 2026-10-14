@@ -12,38 +12,38 @@ import pytest
 
 from flow_sdk.app.actions.share_action import ShareInvitee
 
-GADI = "090ffc4d-af90-4d74-9514-aa8650abca7a"
+ALICE = "22222222-3333-4444-8555-666666666666"
 
 
 def test_bare_email_string_is_the_original_flat_shape():
-    inv = ShareInvitee.from_wire("Noa@Langware.ai")
-    assert inv.email == "noa@langware.ai"
+    inv = ShareInvitee.from_wire("Grace@Example.com")
+    assert inv.email == "grace@example.com"
     assert inv.user_id is None
     assert inv.role is None
 
 
 def test_bare_uuid_string_is_classified_as_a_user_id_not_an_email():
     """THE BUG: naive email-first detection accepts anything non-empty."""
-    inv = ShareInvitee.from_wire(GADI)
-    assert inv.user_id == GADI
+    inv = ShareInvitee.from_wire(ALICE)
+    assert inv.user_id == ALICE
     assert inv.email is None
 
 
 def test_bare_user_typeid_string_is_classified_as_a_user_id():
-    inv = ShareInvitee.from_wire(f"user-{GADI}")
-    assert inv.user_id == GADI
+    inv = ShareInvitee.from_wire(f"user-{ALICE}")
+    assert inv.user_id == ALICE
     assert inv.email is None
 
 
 def test_object_shape_carries_a_role_for_an_email_recipient():
-    inv = ShareInvitee.from_wire({"idOrEmail": "noa@langware.ai", "role": "admin"})
-    assert inv.email == "noa@langware.ai"
+    inv = ShareInvitee.from_wire({"idOrEmail": "grace@example.com", "role": "admin"})
+    assert inv.email == "grace@example.com"
     assert inv.role == "admin"
 
 
 def test_object_shape_carries_a_role_for_a_user_id_recipient():
-    inv = ShareInvitee.from_wire({"idOrEmail": GADI, "role": "admin"})
-    assert inv.user_id == GADI
+    inv = ShareInvitee.from_wire({"idOrEmail": ALICE, "role": "admin"})
+    assert inv.user_id == ALICE
     assert inv.role == "admin"
 
 
@@ -53,7 +53,7 @@ def test_object_shape_rejects_unknown_or_missing_fields(bad):
         ShareInvitee.from_wire(bad)
 
 
-@pytest.mark.parametrize("bad", [123, None, ["noa@langware.ai"]])
+@pytest.mark.parametrize("bad", [123, None, ["grace@example.com"]])
 def test_rejects_a_shape_that_is_neither_string_nor_object(bad):
     with pytest.raises(ValueError):
         ShareInvitee.from_wire(bad)

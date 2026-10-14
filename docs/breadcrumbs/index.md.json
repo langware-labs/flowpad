@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
   "inputs_hash": "84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36",

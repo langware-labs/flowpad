@@ -113,10 +113,10 @@ describe('myEndpoints', () => {
     // The hub could not be asked whose it is (older hub, failed read): the ONLY thing saying it is
     // theirs is that they cannot change it. This is the row that used to vanish — a person's
     // entire Assets tree showed no LLM Endpoints at all.
-    const givenToMe = offer({ id: 'given', name: 'Gadi +20', holder_typeid: null, can_administer: false });
+    const givenToMe = offer({ id: 'given', name: 'Bob +20', holder_typeid: null, can_administer: false });
     // Everything below is visible to an OWNER and is still not their budget.
     const someoneElse = offer({ id: 'theirs', name: 'Bob +5', holder_typeid: 'user-bob', can_administer: true });
-    const iAdminister = offer({ id: 'admin', name: 'Gadi +1', holder_typeid: null, can_administer: true });
+    const iAdminister = offer({ id: 'admin', name: 'Bob +1', holder_typeid: null, can_administer: true });
     const sharedRoot = offer({ id: 'root', name: 'Global root', holder_typeid: null, can_administer: null });
     const org = offer({ id: 'org', name: 'Acme', holder_typeid: null, can_administer: true });
     const team = offer({ id: 'team', name: 'Platform', holder_typeid: null, can_administer: true });

@@ -64,7 +64,7 @@ standard-library-only helper may use it).
 
 ## What broke a real app — and the call that replaces it
 
-Sales Desk built a CRM-like app on datasets before these calls existed. Each line is a
+One project built a CRM-like app on datasets before these calls existed. Each line is a
 workaround it shipped; the SDK now does the right side — never reproduce the left:
 
 | It did | Do instead |

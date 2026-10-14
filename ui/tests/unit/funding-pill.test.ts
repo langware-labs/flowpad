@@ -75,7 +75,7 @@ function source(typeid: string, over: Partial<LLMSource> = {}): LLMSource {
 
 function funding(resolved: string | null, over: Partial<LLMFundingStatus> = {}): LLMFundingStatus {
   return {
-    available: [endpoint(HUB, 'hub', { name: 'eran default' }), endpoint(HUB2, 'hub', { name: 'global' })],
+    available: [endpoint(HUB, 'hub', { name: 'alice default' }), endpoint(HUB2, 'hub', { name: 'global' })],
     sources: { [KIND]: [] },
     resolved: { [KIND]: resolved ? source(resolved) : null },
     blocked: { [KIND]: resolved ? '' : 'nothing eligible' },
@@ -241,6 +241,6 @@ describe('keysSummary / endpointsSummary', () => {
     const s = endpointsSummary(funding(HUB), { [HUB]: cost(3, 2.58), [HUB2]: cost(100, 1) });
     expect(s.count).toBe(2);
     expect(s.usdLeft).toBe(2.58);
-    expect(s.names).toEqual(['eran default', 'global']);
+    expect(s.names).toEqual(['alice default', 'global']);
   });
 });

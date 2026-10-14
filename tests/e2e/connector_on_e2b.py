@@ -5,7 +5,7 @@ checkout under test (``ops/e2b/flowpad-exec-env/build.sh --local``), its hub rea
 local hub behind ngrok). Host side; run from the hub checkout with its venv (it has the e2b SDK and the
 hub's E2B key), the hub's env stripped of the desk's:
 
-    cd ../test_flowpad/FlowPad && env -u DEPLOY_ENV -u SOD_ENC_KEY PYTHONPATH=. \\
+    cd <the hub checkout> && env -u DEPLOY_ENV -u SOD_ENC_KEY PYTHONPATH=. \\
         FLOWMSG=<the .flowmsg> PROVIDER=<driver name> SOURCE_CONFIG='{...}' \\
         ANSWERS='{"<op>": "<value, or @VAR from the Double's credential>", ...}' [PAIR_OP=<op>] \\
         HUB=http://localhost:8093 EMAIL=<hub user> PASSWORD=... [NODE=<compute_node id>] \\

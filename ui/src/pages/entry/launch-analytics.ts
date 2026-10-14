@@ -15,9 +15,9 @@ import { useEffect, useRef } from 'react';
  * launched, and `launch_abandon` when the page goes away before the machine is entered (and
  * before a failure — leaving a page that already shows an error is not a drop-off).
  *
- * GTM's `launch funnel events` trigger (`^launch_`) routes these to the `hub-launch-page-tag`
- * GA4 tag, which maps each param below through a Data Layer Variable of the same name. So the
- * names here are a wire contract with the GTM container: rename one and GA4 silently loses it.
+ * These are routed by the GTM container, which maps each param below through a Data Layer
+ * Variable of the same name. So the names here are a wire contract with the GTM container:
+ * rename one and GA4 silently loses it.
  *
  * Every push carries EVERY param, `undefined` where it does not apply: the GTM data model is
  * cumulative, so a param left out would be read back from the previous push.

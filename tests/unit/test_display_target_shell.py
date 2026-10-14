@@ -126,9 +126,9 @@ def test_the_output_is_what_lies_between_the_markers_however_the_echo_wraps() ->
     before the start marker. Only what comes after it, up to the end marker, is output."""
     marker = "__flow_abc123"
     stream = (
-        b"shlom@Mac proj % { printf '\\033]7770;__flow_abc123;s\\007'; ls } al\r\nways { printf '"
+        b"alice@Mac proj % { printf '\\033]7770;__flow_abc123;s\\007'; ls } al\r\nways { printf '"
         b"\\033]7770;__flow_abc123;%d\\007' $? }\r\n"
-        b"\x1b]7770;__flow_abc123;s\x07total 8\r\nfile.txt\r\n\x1b]7770;__flow_abc123;0\x07shlom@Mac proj % "
+        b"\x1b]7770;__flow_abc123;s\x07total 8\r\nfile.txt\r\n\x1b]7770;__flow_abc123;0\x07alice@Mac proj % "
     )
     assert Shell.sentinel_output(stream, marker) == b"total 8\r\nfile.txt\r\n"
     assert Shell.sentinel_exit(stream, marker)[0] == 0

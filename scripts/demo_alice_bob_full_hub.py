@@ -8,10 +8,10 @@ conversation is reachable from both instances' stream inboxes:
   Bob:   http://localhost:4099/dock/stream_inbox  → click the new row
 
 Requires:
-  - Local hub on $FLOWPAD_HUB_URL (default http://localhost:8093) — see
-    test_flowpad/FlowPad
+  - Local hub on $FLOWPAD_HUB_URL (default http://localhost:8093) — the hub is
+    a separate service; run it from your hub checkout
   - alice@local.test + bob@local.test seeded on the hub
-    (test_flowpad/FlowPad/ops/scripts/setup_test_users.sh)
+    (ops/scripts/setup_test_users.sh in the hub checkout)
   - flowpad-oss BE on $OSS_BE_PORT (default 9008) — alice
   - flowpad-app BE on $APP_BE_PORT (default 9009) — bob
   - Both BEs logged in (POST /cloud/login fires env-mode auto-login from

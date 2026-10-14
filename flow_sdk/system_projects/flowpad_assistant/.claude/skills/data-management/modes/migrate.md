@@ -60,6 +60,6 @@ still says `data_spec` except history. Do not commit for the user; show `git sta
 
 ## While you are there
 
-If the project's app does any of the Sales Desk workarounds (`modes/app.md`), list
+If the project's app does any of the workarounds in `modes/app.md`, list
 them for the user as follow-ups — row keys, `put`/`check`, ref enums. Do not rewrite
 their app unasked.

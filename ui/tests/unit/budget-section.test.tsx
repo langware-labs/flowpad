@@ -591,8 +591,8 @@ describe('the org’s own people', () => {
     over: Partial<{ user_id: string; name: string; email: string | null; role: string | null }> = {},
   ) => ({
     user_id: UUID(9),
-    name: 'Ishay Sela',
-    email: 'ishay@example.test',
+    name: 'Bob Example',
+    email: 'bob@example.test',
     role: 'admin',
     ...over,
   });
@@ -611,7 +611,7 @@ describe('the org’s own people', () => {
 
     fireEvent.click(screen.getByTestId(`org-people-toggle-${UUID(1)}`));
 
-    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('Ishay Sela');
+    expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('Bob Example');
     expect(screen.getByTestId(`org-person-${UUID(9)}`).textContent).toContain('admin');
   });
 

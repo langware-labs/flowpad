@@ -234,7 +234,7 @@ The shell and the SDK are **independently versioned** — keep their numbers on 
 > comparison reads the `<major>.<minor>.<patch>` **triple first** — the `+local` extra tag only breaks a
 > tie at an **equal** triple. So `0.2.76+local1 < 0.2.77` (the triple `76 < 77` decides; `+local` never
 > gets to matter) → the updater silently reinstalls `0.2.77` over your patch and the desktop runs **stock
-> release, not your code**. The 2026-06-26 incident: merged release (whose `_version.py` lagged PyPI at
+> release, not your code**. A real case: a merged release (whose `_version.py` lagged PyPI at
 > `0.2.76` while PyPI was already `0.2.77`), stamped `0.2.76+local1`, and the self-updater overwrote it
 > within minutes. **Fix:** base on `max(checkout, PyPI)` (= `0.2.77` here) → `0.2.77+local1`, which `>
 > 0.2.77` (equal triple, extra tag wins). Restart `+localN` at 1 when the base moves. A *genuinely* higher
@@ -435,7 +435,7 @@ The pristine `/Applications/Flowpad.app` keeps running production. (Originals ar
 - If a `main.js` fix matters beyond local debugging, **commit it to `electron/`** and ship a
   real desktop build — don't leave it only in the patched copy's `app.asar`.
 
-## Validated end-to-end (2026-06-10)
+## Validated end-to-end
 
 Installed `Flowpad.app` `0.2.28` (hardened-runtime, Developer-ID "Langware Labs", asar
 integrity present, 0 unpacked entries; packed `main.js` byte-identical to `HEAD`). Added

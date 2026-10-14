@@ -583,10 +583,10 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
         tmp_path, "dje",
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder"},
-        manifest_data={"owner": "eran"},
+        manifest_data={"owner": "dan"},
     )
     rec = _extract(FSRef(ds))[0]
-    assert rec.meta_dict()["data"]["owner"] == "eran"  # free dataset data section
+    assert rec.meta_dict()["data"]["owner"] == "dan"  # free dataset data section
 
 
 # ── determinism / counts / hash ──
@@ -719,11 +719,11 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
         tmp_path, "djts",
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder", "title": "T"},
-        manifest_data={"owner": "eran", "team": "ml"},
+        manifest_data={"owner": "dan", "team": "ml"},
     )
     meta = _extract(FSRef(ds))[0].meta_dict()
     assert meta["data_layout"] == "io_folder"          # known field from metadata section
-    assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
+    assert meta["data"] == {"owner": "dan", "team": "ml"}  # free dataset data section
 
 
 def test_dataset_spec_is_parsed_and_compacted(tmp_path: Path) -> None:

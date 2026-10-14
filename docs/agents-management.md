@@ -64,7 +64,7 @@ setting them does not flip `restart_required` on a running process.
 
 | Key | Meaning |
 |-----|---------|
-| `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "0500000000"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `0500000000` are accepted; `digits` / `e164` give `972500000000` / `+972500000000`. |
+| `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "500000000"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `050-000-0000` are accepted; `digits` / `e164` give `972500000000` / `+972500000000`. |
 | `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
 | `auto_launch` | Select this agent to launch once in this project, on opening it or after pulling an update that selects a new agent. |
 | `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |
