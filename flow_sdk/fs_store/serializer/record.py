@@ -47,9 +47,9 @@ def spec_extractor(type_name: str):
         if root is None:
             return []
         try:
-            from flow_sdk.assets.serialization import read_asset_data, read_main
+            from flow_sdk.assets.serialization import read_asset_data_with_header
 
-            obj = read_asset_data(root, info, identity=resolved_id)
+            obj, header = read_asset_data_with_header(root, info, identity=resolved_id)
         except (OSError, UnicodeDecodeError, ValueError, ValidationError, CapsuleError) as exc:
             # Binary under a .md, a rejected manifest, an unreadable file: not
             # this type's record, never the indexer's error counter.
@@ -67,7 +67,7 @@ def spec_extractor(type_name: str):
         fields.pop("type", None)
         fields.pop("asset_ref", None)
         if info.row_derive_fn is not None:
-            _, header = read_main(info, root)
+            # The header the record was just decoded from — not a second read of the file.
             info.row_derive_fn(fields, root, header)
         fields["status"] = fields.get("status") or "active"
         fields["content"] = fts_content(obj, info)

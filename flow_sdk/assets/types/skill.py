@@ -106,16 +106,16 @@ def skill_id(ref: FSRef, yaml_fields: dict[str, Any] | None = None) -> str:
 
 
 
-def skill_asset_hash(ref: FSRef) -> float:
+def skill_asset_hash(ref: FSRef) -> int:
     """mtime across inner content files (SKILL.md, skill.yaml, skill.yml).
 
     Folder mtime doesn't update when child file contents are edited.
     """
     base = ref._path
-    ts = 0.0
+    ts = 0
     for name in SKILL_INNER_FILES:
         try:
-            ts = max(ts, (base / name).stat().st_mtime)
+            ts = max(ts, (base / name).stat().st_mtime_ns)
         except OSError:
             pass
     return ts

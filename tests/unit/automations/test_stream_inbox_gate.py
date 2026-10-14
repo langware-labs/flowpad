@@ -25,32 +25,48 @@ from flow_sdk.tags import emit_tag
 from flow_sdk.tags.bus import drain
 from tests.unit.automations._helpers import history
 
-pytestmark = [pytest.mark.timeout(10), pytest.mark.usefixtures("tmp_records_root", "home")]  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.timeout(10),
+    pytest.mark.usefixtures("tmp_records_root", "home"),
+]  # do not increase timeout without approval
 
 
 async def _source() -> DataSource:
-    source = DataSource(provider="agent", channel="gmail", name=f"mail {uuid.uuid4().hex[:6]}",
-                        account_key=f"{uuid.uuid4().hex[:6]}@x.test", config={"connector": "gmail", "harness": "claude"})
+    source = DataSource(
+        provider="agent",
+        channel="gmail",
+        name=f"mail {uuid.uuid4().hex[:6]}",
+        account_key=f"{uuid.uuid4().hex[:6]}@x.test",
+        config={"connector": "gmail", "harness": "claude"},
+    )
     await source.save()
     return source
 
 
-async def _message(source: DataSource, body: str, *, own: bool = False) -> tuple[SourceItem, FlowMessage]:
+async def _message(
+    source: DataSource, body: str, *, own: bool = False, sent_by: str = ""
+) -> tuple[SourceItem, FlowMessage]:
     item = SourceItem(
-        id=str(uuid.uuid4()), data_source_id=source.id, provider="agent", kind="content.message.email",
-        external_id=f"<{uuid.uuid4().hex[:8]}@x>", name="Charged twice for October", body=body,
+        id=str(uuid.uuid4()),
+        data_source_id=source.id,
+        provider="agent",
+        kind="content.message.email",
+        external_id=f"<{uuid.uuid4().hex[:8]}@x>",
+        name="Charged twice for October",
+        body=body,
         author_external_id=source.account_key if own else "dana@customer.test",
         occurred_at="2026-10-10T10:41:00+00:00",
     )
     await item.save(notify=False)
     fm_id, _ = await project_source_item(item, source=source, notify=False, announce=False)
     fm = await FlowMessage.get_by_id(fm_id)
-    if own:
-        # The test DB has no local user for the projection to attribute our address to; type it the
-        # way the projection would (`MessageSender.user`), which is what the subject reads.
+    if own or sent_by:
+        # Typed the way the projection would (`MessageSender.user`), which is what the subject reads:
+        # our own message carries the local user's id; `sent_by` is a teammate's Flowpad user id.
         from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
-        fm.sender = MessageSender.user("11111111-1111-4111-8111-111111111111")
+        fm.sender = MessageSender.user(sent_by or (await get_or_create_local_user()).id)
         await fm.save(notify=False)
         fm = await FlowMessage.get_by_id(fm_id)
     return item, fm
@@ -65,8 +81,9 @@ async def _agent() -> Agent:
 
 
 async def _rule(source: DataSource, agent: Agent, **kw) -> Trigger:
-    rule = await Trigger.on_message(catch="asks for a refund or disputes a charge", sources=[source], agent=agent,
-                                    prompt="Draft the reply.", **kw)
+    rule = await Trigger.on_message(
+        catch="asks for a refund or disputes a charge", sources=[source], agent=agent, prompt="Draft the reply.", **kw
+    )
     return rule
 
 
@@ -109,7 +126,9 @@ async def test_a_no_costs_one_decision_and_spends_nothing(initialize_test_db, de
     assert len(decision_double["invoked"]) == 1
 
 
-async def test_caught_runs_the_wizard_with_the_message_as_the_agents_input(initialize_test_db, decision_double, decided, mock_driver):
+async def test_caught_runs_the_wizard_with_the_message_as_the_agents_input(
+    initialize_test_db, decision_double, decided, mock_driver
+):
     seen: dict = {}
 
     def behavior(turn):
@@ -229,3 +248,63 @@ async def test_decide_on_and_the_try_list_record_nothing(initialize_test_db, dec
     finally:
         tag_triggers.unregister_tag_trigger(rule.id)
     assert history(rule) == [], "asking is not firing"
+
+
+async def test_a_teammates_flowpad_message_is_asked_about(initialize_test_db, decision_double, mock_driver):
+    """A person-sender is "own" only when it is us: a teammate in a Flowpad conversation is caught."""
+    mock_driver(lambda turn: "Drafted.")
+    source, agent = await _source(), await _agent()
+    rule = await _rule(source, agent)
+    item, fm = await _message(source, "Charged twice, refund please.", sent_by=str(uuid.uuid4()))
+    try:
+        _arrives(item, source)
+        await drain()
+    finally:
+        tag_triggers.unregister_tag_trigger(rule.id)
+    start = history(rule)[0]
+    assert start["hook_event"] == "tag_fire" and start["subject_id"] == fm.id
+    assert len(decision_double["invoked"]) == 1
+
+
+async def test_a_flowpad_conversation_message_fires_an_any_channel_rule(
+    initialize_test_db, decision_double, mock_driver
+):
+    """The hub bridge's announcement (``emit_conversation_message_tag``) reaches a rule on any channel."""
+    from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag
+
+    mock_driver(lambda turn: "Drafted.")
+    source, agent = await _source(), await _agent()
+    rule = await Trigger.on_message(
+        catch="asks for a refund or disputes a charge", sources=[], agent=agent, prompt="Draft the reply."
+    )
+    _, fm = await _message(source, "Charged twice, refund please.", sent_by=str(uuid.uuid4()))
+    try:
+        emit_conversation_message_tag(fm.id, fm.conversation_id)
+        await drain()
+    finally:
+        tag_triggers.unregister_tag_trigger(rule.id)
+    start = history(rule)[0]
+    assert start["hook_event"] == "tag_fire" and start["subject_id"] == fm.id
+
+
+def test_an_attachment_only_message_still_says_what_it_carried():
+    """A teammate's message that is only a session transcript reaches the decision as ``files``,
+    without the message's own conversation and itself (references every hub message carries)."""
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+    from flow_sdk.stream_inbox.message_subject import state_of
+
+    conv, mid = str(uuid.uuid4()), str(uuid.uuid4())
+    fm = FlowMessage(
+        id=mid,
+        text="",
+        conversation_id=conv,
+        sender=MessageSender.user(str(uuid.uuid4())),
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"conversation-{conv}"),
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{mid}"),
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"claude_session-{uuid.uuid4()}"),
+            Attachment(attachment_type=AttachmentType.FILE, data="attachment/screenshot.png"),
+        ],
+    )
+    assert state_of(fm, set()).files == ["claude_session", "screenshot.png"]

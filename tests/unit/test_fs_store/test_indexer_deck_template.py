@@ -196,11 +196,11 @@ def test_asset_hash_tracks_layout_and_common_edits(tmp_path: Path) -> None:
         common={"tokens.css": ":root {}"},
     )
     before = deck_template_asset_hash(FSRef(tpl))
-    os.utime(tpl / "layouts" / "cover-centered.html", (before + 100, before + 100))
+    os.utime(tpl / "layouts" / "cover-centered.html", ns=(before + 100 * 10**9, before + 100 * 10**9))
     after_layout = deck_template_asset_hash(FSRef(tpl))
     assert after_layout > before
 
-    os.utime(tpl / "common" / "tokens.css", (after_layout + 100, after_layout + 100))
+    os.utime(tpl / "common" / "tokens.css", ns=(after_layout + 100 * 10**9, after_layout + 100 * 10**9))
     assert deck_template_asset_hash(FSRef(tpl)) > after_layout
 
 
@@ -210,5 +210,5 @@ def test_asset_hash_tracks_media_add(tmp_path: Path) -> None:
         tmp_path, "media", layouts=["media-full-bleed"], media={"common/logo.png": b"\x89PNG"}
     )
     before = deck_template_asset_hash(FSRef(tpl))
-    os.utime(tpl / "media" / "common", (before + 100, before + 100))
+    os.utime(tpl / "media" / "common", ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert deck_template_asset_hash(FSRef(tpl)) > before
