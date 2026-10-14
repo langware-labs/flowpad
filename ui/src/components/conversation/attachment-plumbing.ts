@@ -9,11 +9,3 @@
  * would render as a dead chip on every reply.
  */
 export const REPLY_MARKER_TYPE = 'prompt_completion';
-
-/**
- * A call on a message and its answer (backend `process_call_spec`): `process_call-<call_id>` carries
- * the call, `returned_value-<call_id>` its outcome, each as JSON in `prompt_preview`. Neither has an
- * entity behind it on any machine — the call card renders them, never a chip.
- */
-export const CALL_MARKER_TYPE = 'process_call';
-export const ANSWER_MARKER_TYPE = 'returned_value';

@@ -52,7 +52,7 @@ export function PromptCallCard({
   role,
   otherName,
   answer,
-  running: runningAtOpen,
+  running,
 }: PromptCallCardProps) {
   const { t } = useLingui();
   const [started, setStarted] = useState(false);
@@ -72,7 +72,7 @@ export function PromptCallCard({
     }
   };
 
-  const state: CardState = answer ? callOutcome(answer) : started || runningAtOpen ? 'running' : 'waiting';
+  const state: CardState = answer ? callOutcome(answer) : started || running ? 'running' : 'waiting';
   const seconds = answer?.duration_s ? ` · ${Math.round(answer.duration_s)}s` : '';
   const head = role === 'recipient' ? t`Prompt from ${otherName}` : t`Prompt · runs once on ${otherName}'s machine`;
   const label: Record<CardState, string> = {

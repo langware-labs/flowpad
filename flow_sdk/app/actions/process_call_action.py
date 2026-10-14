@@ -33,8 +33,8 @@ from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValu
 
 logger = logging.getLogger(__name__)
 
-#: Runs in flight on this machine, by call id. A run outlives the request that started it.
-_RUNNING: dict[str, asyncio.Task] = {}
+#: Runs in flight on this machine: call id -> (conversation id, task). A run outlives its request.
+_RUNNING: dict[str, tuple[str, asyncio.Task]] = {}
 STOPPED = "Stopped by the receiver before it finished."
 
 
@@ -76,11 +76,13 @@ async def _answer(conversation_id: str, call: ProcessCall, answer: ReturnedValue
     )
 
 
-async def _run(conversation_id: str, call: ProcessCall, workdir: Path, someone_typeid: str) -> None:
+async def _run(conversation_id: str, call: ProcessCall, someone_typeid: str) -> None:
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.core.compute.process_call import run_process_call  # noqa: PLC0415
 
     try:
         try:
+            workdir = await _workdir(await Conversation.get_one({"id": conversation_id}))
             answer = await run_process_call(call, workdir=workdir)
         except asyncio.CancelledError:
             answer = ReturnedValue(exit_code=ExitCode.NOT_YET, detail=STOPPED)
@@ -93,7 +95,6 @@ async def _run(conversation_id: str, call: ProcessCall, workdir: Path, someone_t
 
 
 async def decide_process_call(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
-    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
@@ -109,10 +110,10 @@ async def decide_process_call(conversation_id: str, body: dict, someone_typeid: 
         return ApiFailResponse(message="this message carries no call", status_code=400)
 
     if decision == "stop":
-        task = _RUNNING.get(call.call_id)
-        if task is None:
+        running = _RUNNING.get(call.call_id)
+        if running is None:
             return ApiFailResponse(message="this call is not running", status_code=409)
-        task.cancel()
+        running[1].cancel()
         return ApiSuccessResponse(data={"call_id": call.call_id, "status": "stopping"})
 
     local_user = await get_or_create_local_user()
@@ -129,9 +130,7 @@ async def decide_process_call(conversation_id: str, body: dict, someone_typeid: 
         await _answer(conversation_id, call, declined(), someone_typeid)
         return ApiSuccessResponse(data={"call_id": call.call_id, "status": "declined"})
 
-    conv = await Conversation.get_one({"id": conversation_id})
-    workdir = await _workdir(conv)
-    _RUNNING[call.call_id] = asyncio.create_task(_run(conversation_id, call, workdir, someone_typeid))
+    _RUNNING[call.call_id] = (conversation_id, asyncio.create_task(_run(conversation_id, call, someone_typeid)))
     return ApiSuccessResponse(data={"call_id": call.call_id, "status": "running"})
 
 
@@ -161,7 +160,7 @@ async def conversation_process_call() -> ApiResponse:
 @action.post(action_name="process-call-status", types=["conversation"])
 async def conversation_process_call_status() -> ApiResponse:
     """The calls running on this machine — a card that reloads mid-run still says ``working…``."""
-    _, _, refused = _conversation_request()
+    conversation_id, _, refused = _conversation_request()
     if refused is not None:
         return refused
-    return ApiSuccessResponse(data={"running": sorted(_RUNNING)})
+    return ApiSuccessResponse(data={"running": sorted(c for c, (conv, _) in _RUNNING.items() if conv == conversation_id)})

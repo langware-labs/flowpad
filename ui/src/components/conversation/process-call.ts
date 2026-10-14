@@ -24,21 +24,30 @@ export function callOutcome(answer: ReturnedValue): CallOutcome {
   return answer.reported ? 'bad' : 'error';
 }
 
-/** Every answer in a conversation, by call id — and the ids of the messages that carry one,
- *  which the feed hides (an answer renders on its call's card). One pass. */
-export function indexCallAnswers(fms: Iterable<FlowMessage>): {
-  byCall: Map<string, ReturnedValue>;
+/** A conversation's calls and answers, parsed in one pass per update: the call each message
+ *  carries, each call's answer, and the messages carrying an answer — which the feed hides
+ *  (an answer renders on its call's card). `unanswered`: some call still waits or runs. */
+export function indexCalls(fms: Iterable<FlowMessage>): {
+  callByMessage: Map<string, ProcessCall>;
+  answerByCall: Map<string, ReturnedValue>;
   answerMessageIds: Set<string>;
+  unanswered: boolean;
 } {
-  const byCall = new Map<string, ReturnedValue>();
+  const callByMessage = new Map<string, ProcessCall>();
+  const answerByCall = new Map<string, ReturnedValue>();
   const answerMessageIds = new Set<string>();
   for (const fm of fms) {
-    const found = carriedValue<ReturnedValue>(fm.attachment, RETURNED_VALUE_TYPE);
-    if (!found) continue;
-    byCall.set(found.id, found.value);
-    if (fm.id) answerMessageIds.add(fm.id);
+    if (!fm.id) continue;
+    const call = processCallOf(fm);
+    if (call) callByMessage.set(fm.id, call);
+    const answer = carriedValue<ReturnedValue>(fm.attachment, RETURNED_VALUE_TYPE);
+    if (answer) {
+      answerByCall.set(answer.id, answer.value);
+      answerMessageIds.add(fm.id);
+    }
   }
-  return { byCall, answerMessageIds };
+  const unanswered = [...callByMessage.values()].some((c) => !answerByCall.has(c.call_id));
+  return { callByMessage, answerByCall, answerMessageIds, unanswered };
 }
 
 export type CallDecision = 'approve' | 'decline' | 'stop';

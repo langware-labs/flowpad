@@ -17,9 +17,9 @@
  *     own context".
  */
 
-import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, Task, TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, isAttachmentMissing, type Attachment } from '@sdk/entities/flow-message';
-import { ANSWER_MARKER_TYPE, CALL_MARKER_TYPE, REPLY_MARKER_TYPE } from './attachment-plumbing';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Row shapes
@@ -199,7 +199,7 @@ export function buildSharedEntities(
         // A reply marker has no entity behind it on this side — never a shared-context row.
         if (attached.type === REPLY_MARKER_TYPE) continue;
         // Nor is a prompt call or its answer: the value rides the header, never a row.
-        if (attached.type === CALL_MARKER_TYPE || attached.type === ANSWER_MARKER_TYPE) continue;
+        if (attached.type === PROCESS_CALL_TYPE || attached.type === RETURNED_VALUE_TYPE) continue;
         pushTypeId(attached, fm.id, fm, {
           downloaded: fm.body_downloaded ?? false,
           missing: isAttachmentMissing(fm, a),

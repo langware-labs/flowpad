@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AttachmentType, type FlowMessage } from '@sdk';
-import { callOutcome, indexCallAnswers, processCallOf } from '@src/components/conversation/process-call';
+import { callOutcome, indexCalls, processCallOf } from '@src/components/conversation/process-call';
 
 const fm = (id: string, attachment: FlowMessage['attachment']) => ({ id, attachment }) as FlowMessage;
 const callFm = fm('m1', [
@@ -18,12 +18,12 @@ const answerFm = (answer: object) =>
 describe('process call on a message', () => {
   it('reads the call and pairs its answer by call id, marking the answer message', () => {
     expect(processCallOf(callFm)?.exe?.prompt).toBe('switch to feature/x');
-    const { byCall, answerMessageIds } = indexCallAnswers([
-      callFm,
-      answerFm({ exit_code: 0, detail: 'On feature/x.' }),
-    ]);
-    expect(byCall.get('c1')?.detail).toBe('On feature/x.');
-    expect([...answerMessageIds]).toEqual(['m2']);
+    expect(indexCalls([callFm]).unanswered).toBe(true);
+    const index = indexCalls([callFm, answerFm({ exit_code: 0, detail: 'On feature/x.' })]);
+    expect(index.callByMessage.get('m1')?.call_id).toBe('c1');
+    expect(index.answerByCall.get('c1')?.detail).toBe('On feature/x.');
+    expect([...index.answerMessageIds]).toEqual(['m2']);
+    expect(index.unanswered).toBe(false);
   });
 
   it('a malformed preview is no call', () => {
