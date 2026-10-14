@@ -116,7 +116,7 @@ async def test_a_prompt_that_fails_before_running_is_not_left_queued(bootstrappe
 
     assert (await RemoteWorkerSession.get_one({"id": rws.id})).status == S.ERROR.value
     assert (await FlowMessage.get_one({"id": fm.id})).prompt_auto_handled is True
-    assert await ep._queued_turns(rws, None) == []
+    assert await ep._queued_turns(rws) == []
     assert fake_worker["prompts"] == []
 
 

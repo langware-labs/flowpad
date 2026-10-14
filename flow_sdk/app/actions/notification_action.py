@@ -623,6 +623,7 @@ async def _upload_body_and_finalize(
     _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
     return failure
 
+
 async def _finalize_message_dispatch(
     conv: "Conversation",
     fm: "FlowMessage",
@@ -859,7 +860,10 @@ async def check_attachments() -> ApiResponse:
     gaps = await find_unshippable_references(refs)
     gitignored = []
     if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
-        from flow_sdk.builtin.flow_message_bundle import attachments_holding_gitignored, gitignored_payload  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            attachments_holding_gitignored,
+            gitignored_payload,
+        )
 
         gitignored = gitignored_payload(await attachments_holding_gitignored(_typeids_of(refs)))
     return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps), "gitignored": gitignored})
@@ -977,9 +981,7 @@ async def handle_add_message(
         thread_root_id = await thread_root_for_reply(conv.id, anchor)
         if thread_root_id is None:
             field = "reply_to_id" if reply_to_id else "thread_root_id"
-            return ApiFailResponse(
-                message=f"{field} {anchor} is not a message of this conversation", status_code=400
-            )
+            return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -1215,7 +1217,36 @@ async def handle_add_message(
         create_bookmark=create_bookmark,
     )
 
+    if is_prompt_send and start_settings is None and remote_worker_session_id:
+        await _run_if_hosted_here(remote_worker_session_id)
+
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
+
+
+async def _run_if_hosted_here(session_id: str) -> None:
+    """The host typed into its own live session: run the prompt here, now.
+
+    A prompt the GUEST sends reaches the host through the inbound gate; the
+    host's own send never does (it is not inbound), so without this it would
+    only travel to the guest, which cannot run it.
+    """
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ACTIVE_STATUSES,
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+    )
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    session = await RemoteWorkerSession.resolve_state(session_id)
+    # Approved sessions only (ERROR is runnable — the last turn failed).
+    if session is None or session.status not in {*ACTIVE_STATUSES, RemoteWorkerSessionStatus.ERROR}:
+        return
+    cloud_id = (await User.current_sender_participant()).get("user_id")
+    if session.host_process_id or session.is_host(cloud_id):
+        asyncio.create_task(redrive_session_prompts(session))
 
 
 def _reply_policy_of(body: dict) -> Optional[str]:
