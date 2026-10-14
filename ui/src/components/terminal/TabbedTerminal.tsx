@@ -1,10 +1,10 @@
-import { AgenticProcess, tabInProject, tabKey, toplog, TypeId } from '@sdk';
+import { AgenticProcess, TabLifecycleState, tabInProject, tabKey, toplog, TypeId } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useTerminalTabs } from '@src/tabs/use-tab-manager';
+import { useTabLifecycle, useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { terminalPool } from './terminal-pool';
@@ -41,7 +41,12 @@ interface TabbedTerminalProps {
  * no tabs in scope it renders `ProjectHome` (the shared project landing, which
  * owns the spawn openers + their modals).
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId, processId }) => {
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
+  className = '',
+  scope = 'project',
+  spawnProjectId,
+  processId,
+}) => {
   const { currentDock } = useDockNavigation();
   const allTerminalTabs = useTerminalTabs('all');
   // The project scope decides only the empty landing (no terminals here yet). The
@@ -82,7 +87,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
     activePointer && DockPointer.isAgenticProcessPointer(activePointer)
       ? DockPointer.extractAgenticProcessId(activePointer)
       : undefined;
-  const activeTabMissing = !!activeKey && tabs.length > 0 && !activeTab;
+  // Closing the CURRENT tab hides its chip at once (lifecycle `Closing`), while the
+  // navigation to the next tab is still loading — the URL keeps naming the tab for
+  // that window. A tab this client closed is not a missing tab: remember the key it
+  // was closing (the entry is dropped once the backend acks, possibly before the URL
+  // moves) and paint nothing for it instead of the dead-end overlay. A tab that
+  // vanishes WITHOUT a close here (another window, a refusal) still gets the overlay.
+  const activeLifecycle = useTabLifecycle(activeKey);
+  const [closedKey, setClosedKey] = useState<string | null>(null);
+  if (activeLifecycle?.state === TabLifecycleState.Closing && closedKey !== activeKey) setClosedKey(activeKey);
+  const activeTabMissing = !!activeKey && tabs.length > 0 && !activeTab && activeKey !== closedKey;
 
   // One line per time the dead-end overlay goes up.
   useEffect(() => {

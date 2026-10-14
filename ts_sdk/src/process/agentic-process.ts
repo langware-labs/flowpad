@@ -320,6 +320,12 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
   readonly busy?: boolean;
+  /**
+   * A print-mode worker is alive and idle, kept running by background work the agent left behind
+   * (a dev server, a watcher). Not a turn — ``busy`` is false and the chat accepts messages — but it
+   * holds a process; ``stopBackground()`` ends it.
+   */
+  readonly background_work?: boolean;
   /** Null on the wire when the backend has no transcript to derive one from. */
   readonly worker_status?: WorkerStatus | null;
   session_id?: string | null;
@@ -2823,6 +2829,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    */
   async cancelPrompt(): Promise<void> {
     await this.post('cancel-prompt');
+  }
+
+  /**
+   * End the background work a parked worker is waiting on, and the process that holds it.
+   * ``cancelPrompt`` stops a turn; this is for when no turn is running. Rejects (409) when there
+   * is nothing to stop — the work may have ended on its own a moment earlier.
+   */
+  async stopBackground(): Promise<void> {
+    await this.post('stop-background');
   }
 
   /**

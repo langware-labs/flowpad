@@ -1112,8 +1112,9 @@ msgid "{name} isn't installed on this computer yet."
 msgstr ""
 
 #~ msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
-#~ msgstr "لم يتم تثبيت {name} على هذا الجهاز حتى الآن. يُرجى اتباع دليل الإعداد السريع، ثم العودة إلى هنا لتسجيل الدخول.<<<<<<< HEAD"
+#~ msgstr "لم يتم تثبيت {name} على هذا الجهاز حتى الآن. يُرجى اتباع دليل الإعداد السريع، ثم العودة إلى هنا لتسجيل الدخول.#: src/components/top-nav-bar/AppButton.tsx"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
 #~ msgstr "لم يتم تثبيت {name} على هذا الجهاز بعد. ثبّته أدناه، ثم عد إلى هنا لتسجيل الدخول."
 
@@ -1270,7 +1271,7 @@ msgstr "{totalOrphans} سجل يتيم{0} قيد المراجعة."
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "orphans_count"
-msgstr "{totalOrphans} سجل يتيم{0}"
+msgstr ""
 
 #. placeholder {0}: totalResolved !== 1 ? 's' : ''
 #. placeholder {1}: totalResolved !== 1 ? 'them' : 'it'
@@ -2318,10 +2319,10 @@ msgid "Address book"
 msgstr "دفتر العناوين"
 
 #: src/components/top-nav-bar/AppButton.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Admin"
 msgstr "إدارة"
 
-#: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
 
@@ -2683,6 +2684,10 @@ msgstr ""
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "السماح بالربط المحلي"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Allow login — who may sign in to this sandbox from a browser."
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -3915,6 +3920,14 @@ msgstr "الخادم الخلفي لا يستجيب. يُرجى المحاولة
 msgid "Background image"
 msgstr "صورة الخلفية"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks"
+msgstr ""
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks are running"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Background tasks are still running. The session will switch over as soon as they finish."
 msgstr "لا تزال المهام الخلفية قيد التشغيل. ستنتقل الجلسة فور انتهائها."
@@ -4463,6 +4476,7 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -4472,6 +4486,7 @@ msgstr ""
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -7122,8 +7137,10 @@ msgstr ""
 msgid "Could not start the setup"
 msgstr ""
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Could not stop"
 msgstr "تعذر الإيقاف"
 
@@ -9378,6 +9395,10 @@ msgstr "يحرّر"
 #~ msgid "Editing system trigger"
 #~ msgstr "جاري تحرير مشغّل النظام"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Editor"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Effective filters at this endpoint"
 msgstr "المرشحات الفعّالة عند نقطة النهاية هذه"
@@ -11401,6 +11422,10 @@ msgstr "كامل"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Full — complete rescan"
 msgstr "كامل — إعادة مسح شاملة"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Full access"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
@@ -14033,6 +14058,7 @@ msgstr "جاري تحميل المقارنة…"
 
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Loading conversation…"
 msgstr "جاري تحميل المحادثة…"
 
@@ -14339,6 +14365,10 @@ msgstr "تم تسجيل الدخول"
 msgid "Logged out"
 msgstr "تم تسجيل الخروج"
 
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Logical line"
 msgstr "سطر منطقي"
@@ -14348,6 +14378,15 @@ msgstr "سطر منطقي"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "تسجيل الدخول"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Login access"
+msgstr ""
+
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Login access for {0}"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
@@ -16800,6 +16839,10 @@ msgstr "لم يُعثر على معالج بهذا الاسم."
 msgid "No wizard named {0} is installed."
 msgstr ""
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Nobody can log in to this sandbox, including its owner."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -18531,6 +18574,10 @@ msgstr "السجلات اليتيمة"
 msgid "Orphans"
 msgstr "يتامى"
 
+#: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#~ msgid "orphans_count"
+#~ msgstr "{totalOrphans} سجل يتيم{0}"
+
 #. js-lingui-explicit-id
 #. placeholder {0}: (scanStats.grand_orphan ?? 0).toLocaleString()
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -18625,6 +18672,7 @@ msgstr "استبدال"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Owner"
 msgstr "المالك"
 
@@ -20128,6 +20176,10 @@ msgstr ""
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "اقرأ النتيجة في FlowPad"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Reader"
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
@@ -21868,6 +21920,7 @@ msgid "Sample prompts"
 msgstr "أمثلة المطالبات"
 
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "sandbox"
 msgstr "الصندوق الرملي"
 
@@ -21940,6 +21993,7 @@ msgstr "الصناديق"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Save"
 msgstr "حفظ"
 
@@ -24710,6 +24764,10 @@ msgstr "لا يزال العمل جارياً — في انتظار السحاب
 msgid "Stop"
 msgstr "إيقاف"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Stop background work"
+msgstr ""
+
 #: src/components/rag/RagView.tsx
 msgid "Stop covering this folder"
 msgstr ""
@@ -24986,6 +25044,14 @@ msgstr "جارٍ التنظيف"
 msgid "Sweeping…"
 msgstr "جارٍ التنظيف…"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch and end background work"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch anyway"
+msgstr ""
+
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/status-bar.tsx
@@ -25010,8 +25076,16 @@ msgstr "التبديل إلى الوضع الداكن"
 msgid "Switch to light mode"
 msgstr "التبديل إلى الوضع الفاتح"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch to the terminal?"
+msgstr ""
+
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Switch workspace"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switching to the terminal will end the background work. Continue?"
 msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
@@ -25436,8 +25510,16 @@ msgid "The agent has asked a question — answer it in the terminal."
 msgstr "طرح الوكيل سؤالاً — أجب عنه في الطرفية."
 
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent has background work running. It cannot move to the terminal with you."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
 msgstr "لا يزال الوكيل يعمل، أو ينتظر إجابتك في الطرفية. ستنتقل الجلسة فور انتهائه."
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
+msgstr ""
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
@@ -28660,6 +28742,10 @@ msgstr "تم إنشاء لوحة بيضاء"
 #: src/i18n/type-labels.ts
 msgid "Whiteboards"
 msgstr "لوحات بيضاء"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Who may log in to this sandbox"
+msgstr ""
 
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr ""
