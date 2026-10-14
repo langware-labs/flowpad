@@ -90,6 +90,28 @@ export function attachmentDataString(a: Pick<Attachment, 'data'>): string {
   return '';
 }
 
+/** `{id, value}` from the first `<kind>-<id>` TYPE_ID attachment — a JSON object riding its
+ *  `prompt_preview` (a value, not an entity), the mirror of `carried_value` in `flow_message.py`.
+ *  A carrier whose preview is missing or not a JSON object reads as none. */
+export function carriedValue<T extends object>(
+  attachments: readonly Attachment[] | null | undefined,
+  kind: string,
+): { id: string; value: T } | null {
+  const prefix = `${kind}-`;
+  for (const a of attachments ?? []) {
+    if (a?.attachment_type !== AttachmentType.TYPE_ID) continue;
+    const data = attachmentDataString(a);
+    if (!data.startsWith(prefix)) continue;
+    try {
+      const value: unknown = JSON.parse(a.prompt_preview ?? '');
+      return value && typeof value === 'object' ? { id: data.slice(prefix.length), value: value as T } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export interface Attachment {
   attachment_type: AttachmentType;
   /** TypeId string ("type-id"), relative file path, repo path, URL, or — for PROMPT — inline text or "prompt/<filename>" VFS subpath. */

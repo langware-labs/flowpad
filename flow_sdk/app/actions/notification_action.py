@@ -935,6 +935,9 @@ async def handle_add_message(
         and not prompt_files_preview
         and not uploaded_files_preview
         and not asset_references
+        # A message that is only a value — a prompt call, or its answer — is a message too.
+        and not (body.get("call_prompt") or "").strip()
+        and not body.get("attachment")
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
     # An attachment-only send keeps an empty text: each surface names what it carries.
@@ -1060,6 +1063,14 @@ async def handle_add_message(
     raw_attachments = body.get("attachment") or []
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
+    # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).
+    # It rides as an attachment value, never as a Prompt entity — the text is the sender's.
+    call_prompt = (body.get("call_prompt") or "").strip()
+    if call_prompt:
+        from flow_sdk.core.compute.process_call import prompt_call  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.process_call_spec import call_attachment  # noqa: PLC0415
+
+        raw_attachments = [*raw_attachments, call_attachment(prompt_call(call_prompt))]
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI. Skipped
