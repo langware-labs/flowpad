@@ -68,6 +68,8 @@ runs:
           echo "SQLITE_DATABASE_PATH=$RUNNER_TEMP/flowpad_ci_e2e.db"
           echo "FLOWPAD_CLAUDE_HOME=$RUNNER_TEMP/claude-home"
           echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/claude-home"
+          # Every backend this job starts runs with the cookie gate off: the tests' requests carry no token.
+          echo "FLOWPAD_COOKIE_GATE=off"
           echo "SOD_ENC_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
         } >> "$GITHUB_ENV"
       shell: bash
@@ -96,7 +98,6 @@ runs:
         MINIHUB_RELOAD: 'False'          # single process → stable PID
         FLOWPAD_SKIP_DOTENV: 'true'      # env above is authoritative
         FLOWPAD_SKIP_LOCK: 'true'        # isolated test server
-        FLOWPAD_COOKIE_GATE: 'off'       # the UI is a Vite dev server on another port
         # A fresh backend fires first-run setup on the first tab, which steers it to
         # the wizard page. Only the first-run-setup scenario below wants that.
         FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
@@ -168,7 +169,6 @@ runs:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
-        FLOWPAD_COOKIE_GATE: 'off'
         # No FLOWPAD_SKIP_FIRST_RUN_SETUP: the first Playwright scenario IS first-run
         # setup, so this backend must be a fresh install whose trigger may fire.
       run: scripts/ci_e2e_reset_backend.sh
@@ -223,7 +223,6 @@ runs:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
-        FLOWPAD_COOKIE_GATE: 'off'
         FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
       run: scripts/ci_e2e_reset_backend.sh
       shell: bash
@@ -248,7 +247,6 @@ runs:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
-        FLOWPAD_COOKIE_GATE: 'off'
         # A fresh DB fires first-run setup on the first tab: it steers that tab to
         # the wizard page and runs tool checks while the speed budgets are measured.
         FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
