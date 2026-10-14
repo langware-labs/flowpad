@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-816a84f6-dd60-5ab1-9afc-dd620668e009",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "modes",
   "folder_name": "modes",
   "inputs_hash": "54512e8d5301db3dacffd605aef6838beb4fc6ec1e8870136eda9993967e021e",

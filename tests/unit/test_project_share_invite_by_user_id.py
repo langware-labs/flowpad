@@ -21,8 +21,8 @@ import pytest
 from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
 
-GADI = "090ffc4d-af90-4d74-9514-aa8650abca7a"
-NOA = "11111111-2222-4333-8444-555555555555"
+BOB = "22222222-3333-4444-8555-666666666666"
+GRACE = "11111111-2222-4333-8444-555555555555"
 
 
 class _FakeResponse:
@@ -94,9 +94,9 @@ def _invited_by_id(calls, proj: Project) -> dict[str, str]:
 async def test_invite_by_user_id_defaults_to_member(hub):
     proj = Project(name="invite-by-id-default")
 
-    await proj.share(invitees=[ShareInvitee(user_id=GADI)])
+    await proj.share(invitees=[ShareInvitee(user_id=BOB)])
 
-    assert _invited_by_id(hub, proj) == {GADI: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: "member"}
 
 
 # do not increase timeout without approval
@@ -106,9 +106,9 @@ async def test_invite_by_user_id_defaults_to_member(hub):
 async def test_invite_by_user_id_honors_its_own_role(hub, role):
     proj = Project(name="invite-by-id-role")
 
-    await proj.share(invitees=[ShareInvitee(user_id=GADI, role=role)])
+    await proj.share(invitees=[ShareInvitee(user_id=BOB, role=role)])
 
-    assert _invited_by_id(hub, proj) == {GADI: role}
+    assert _invited_by_id(hub, proj) == {BOB: role}
 
 
 # do not increase timeout without approval
@@ -119,9 +119,9 @@ async def test_invite_by_user_id_parses_the_user_typeid_form(hub):
     ``"user-<uuid>"`` typeid string — both mean the same person."""
     proj = Project(name="invite-by-id-typeid")
 
-    await proj.share(invitees=[ShareInvitee(user_id=f"user-{GADI}")])
+    await proj.share(invitees=[ShareInvitee(user_id=f"user-{BOB}")])
 
-    assert _invited_by_id(hub, proj) == {GADI: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: "member"}
 
 
 # do not increase timeout without approval
@@ -134,12 +134,12 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
 
     await proj.share(
         invitees=[
-            ShareInvitee(email="noa@langware.ai", role="admin"),
-            ShareInvitee(user_id=GADI, role="member"),
+            ShareInvitee(email="grace@example.com", role="admin"),
+            ShareInvitee(user_id=BOB, role="member"),
         ]
     )
 
-    assert _invited_by_id(hub, proj) == {GADI: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: "member"}
     email_posts = [
         target["role"]
         for method, path, body in hub
@@ -156,12 +156,12 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
 async def test_invite_skips_a_user_id_already_on_the_roster(hub):
     """Re-sharing must not re-invite someone who already holds a role — the
     hub 400s that as "use change_role", failing the whole share."""
-    hub.state["roster"] = [{"user_id": GADI, "role": "member", "status": "approved"}]
+    hub.state["roster"] = [{"user_id": BOB, "role": "member", "status": "approved"}]
     proj = Project(name="invite-by-id-existing-member")
 
-    await proj.share(invitees=[ShareInvitee(user_id=GADI), ShareInvitee(user_id=NOA)])
+    await proj.share(invitees=[ShareInvitee(user_id=BOB), ShareInvitee(user_id=GRACE)])
 
-    assert _invited_by_id(hub, proj) == {NOA: "member"}
+    assert _invited_by_id(hub, proj) == {GRACE: "member"}
 
 
 # do not increase timeout without approval
@@ -172,9 +172,9 @@ async def test_invite_silently_skips_an_unparseable_id(hub):
     raised — the id must be a real UUID or the hub's point-read 404s."""
     proj = Project(name="invite-by-id-junk")
 
-    await proj.share(invitees=[ShareInvitee(user_id="not-a-uuid"), ShareInvitee(user_id=GADI)])
+    await proj.share(invitees=[ShareInvitee(user_id="not-a-uuid"), ShareInvitee(user_id=BOB)])
 
-    assert _invited_by_id(hub, proj) == {GADI: "member"}
+    assert _invited_by_id(hub, proj) == {BOB: "member"}
 
 
 # do not increase timeout without approval
@@ -186,7 +186,7 @@ async def test_invite_by_user_id_rejects_a_role_outside_the_allowlist(hub, role)
     proj = Project(name="invite-by-id-bad-role")
 
     with pytest.raises(ValueError, match="invite role"):
-        await proj.share(invitees=[ShareInvitee(user_id=GADI, role=role)])
+        await proj.share(invitees=[ShareInvitee(user_id=BOB, role=role)])
 
     assert hub == []
 
@@ -197,7 +197,7 @@ async def test_invite_by_user_id_rejects_a_role_outside_the_allowlist(hub, role)
 async def test_share_with_only_user_id_invitees_invites_them(hub):
     proj = Project(name="invite-by-id-only")
 
-    await proj.share(invitees=[ShareInvitee(user_id=GADI)])
+    await proj.share(invitees=[ShareInvitee(user_id=BOB)])
 
     member_posts = [
         (method, path)
@@ -214,7 +214,7 @@ async def test_every_invite_lands_on_the_project_landing(hub):
     """Every invite names its landing, whichever way the recipient is addressed."""
     proj = Project(name="invite-lands-on-landing")
 
-    await proj.share(invitees=[ShareInvitee(email="noa@langware.ai"), ShareInvitee(user_id=GADI)])
+    await proj.share(invitees=[ShareInvitee(email="grace@example.com"), ShareInvitee(user_id=BOB)])
 
     invites = [body for method, path, body in hub if method == "POST" and path == f"/graph/project/{proj.id}/members"]
     assert len(invites) == 2

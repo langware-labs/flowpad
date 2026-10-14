@@ -22,7 +22,7 @@ def _git(cwd, *args):
 
 
 async def test_recipient_index_keeps_the_shared_project_id(tmp_path):
-    author = tmp_path / "author" / "gtm-studio"
+    author = tmp_path / "author" / "sales-desk"
     (author / "agentic-assets/agent/scrooge").mkdir(parents=True)
     (author / "agentic-assets/agent/scrooge/agent.json").write_text(json.dumps({"title": "Scrooge"}))
     _git(tmp_path, "init", "-q", "-b", "main", str(author))
@@ -30,7 +30,7 @@ async def test_recipient_index_keeps_the_shared_project_id(tmp_path):
     _git(author, "commit", "-qm", "init")
     shared_id = mint_uuid()
     origin = GitOrigin(provider="file", owner=str(author.parent), name=author.name, branch="main", rel_path=".")
-    shared = Project(id=shared_id, name="gtm-studio-shared", remote=True, origin=origin)
+    shared = Project(id=shared_id, name="sales-desk-shared", remote=True, origin=origin)
     await shared.save()
 
     project = await (await Project.get_by_id(shared_id)).setup_from_git_origin()

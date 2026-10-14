@@ -39,7 +39,7 @@ function plan(
       {
         kind: 'me',
         id: 'u',
-        name: 'Eran',
+        name: 'Alice',
         endpoint_id: 'e',
         can_configure: false,
         path,
@@ -82,7 +82,7 @@ describe('TokenPlanCard', () => {
   it('with no cap it says where spend draws from', async () => {
     h.me.mockResolvedValue(
       plan(null, [
-        { endpoint_id: 'e', name: 'default-eran', kind: 'me' },
+        { endpoint_id: 'e', name: 'default-alice', kind: 'me' },
         { endpoint_id: 't', name: 'Team A', kind: 'team' },
       ]),
     );

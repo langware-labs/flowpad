@@ -40,7 +40,7 @@ ScenarioId `7dbcead1-46c8-434c-96d2-eac23050729f`:
 * **browser** — `ui/tests/manual_regression/collaboration/doc_comment_delete_sync.md.ts`
 
 > **⚠ CONFLICT FOUND 2026-09-04 (Phase 11 QA).** The hub refuses this direction today.
-> `flowpad/hub/app/policies.json` puts comment `update`/`delete` at **editor** level; a share
+> `hub policies.json` puts comment `update`/`delete` at **editor** level; a share
 > recipient is granted **member** (→ `reader`), so a recipient may CREATE a comment but not edit
 > or delete it — the hub answers `401 no valid access for role ['member'], action: update`.
 > The policy comment records that this was deliberate, to stop a mere reader editing/deleting

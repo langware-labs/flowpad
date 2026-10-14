@@ -77,10 +77,10 @@ describe('ContactPicker', () => {
     render(<ContactPicker value={[]} onChange={onChange} />);
 
     const input = screen.getByTestId('contact-input');
-    fireEvent.change(input, { target: { value: 'eran@langware.ai' } });
+    fireEvent.change(input, { target: { value: 'alice@example.com' } });
     fireEvent.blur(input);
 
-    expect(onChange).toHaveBeenCalledWith([{ email: 'eran@langware.ai', name: null }]);
+    expect(onChange).toHaveBeenCalledWith([{ email: 'alice@example.com', name: null }]);
   });
 });
 
@@ -90,7 +90,7 @@ describe('AskForHelpDialog', () => {
 
     // The user's path: type the email, move straight on to the title — no Enter.
     const person = screen.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: 'eran@langware.ai' } });
+    fireEvent.change(person, { target: { value: 'alice@example.com' } });
     fireEvent.blur(person);
     fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'Popout button is disabled' } });
 

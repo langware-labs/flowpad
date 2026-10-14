@@ -24,15 +24,15 @@ register_all()
 
 @pytest.mark.asyncio
 async def test_copy_webapp_artifact_pack_then_restore(tmp_path: Path):
-    # A spora-like static app folder (index.html, no package.json, no git).
-    src = tmp_path / "spora-src"
+    # A acme-like static app folder (index.html, no package.json, no git).
+    src = tmp_path / "acme-src"
     src.mkdir()
-    (src / "index.html").write_text("<title>SPORA — Smart Home Simulator</title>", encoding="utf-8")
+    (src / "index.html").write_text("<title>ACME — Smart Home Simulator</title>", encoding="utf-8")
     (src / "app.jsx").write_text("// prototype", encoding="utf-8")
 
     art = Artifact(
         id=mint_uuid(),
-        name="spora",
+        name="acme",
         kind="application.web",
         origin=LocalOrigin(base=str(src.parent), rel_path=src.name),
     )

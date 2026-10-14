@@ -22,7 +22,7 @@ git reuse and clones, hub failures, cycles, the transitive rules — are pinned 
 ```json
 {
   "dependencies": {
-    "langware-os": "git+https://github.com/langware-labs/langware-os#main",
+    "handbook": "git+https://github.com/acme/handbook#main",
     "legal-docs":  { "source": "git+https://github.com/acme/handbook#main", "path": "legal" }
   },
   "optionalDependencies": {
@@ -188,7 +188,7 @@ import { Project } from '@sdk/entities/project';
 
 const project = await Project.getById<Project>(projectId);
 const { dependencies, warnings } = await project.dependencies();
-const added = await project.addDependency('git+https://github.com/langware-labs/langware-os#main');
+const added = await project.addDependency('git+https://github.com/acme/handbook#main');
 await project.installDependency('policies');
 for (const w of warnings) await project.dismissDependencyWarning(w.name);
 ```

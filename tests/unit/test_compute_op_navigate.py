@@ -32,7 +32,7 @@ def _op(*attempts: dict, target: dict | None = ADMIN) -> ComputeOpSpec:
 
 
 def _agent(**fields) -> dict:
-    return {"subkind": "agent", "exe_data": {"agent": "spora-assistant", "prompt": "Start Spora Admin.", **fields}}
+    return {"subkind": "agent", "exe_data": {"agent": "acme-assistant", "prompt": "Start Acme Admin.", **fields}}
 
 
 class Site:
@@ -98,7 +98,7 @@ def test_a_dead_server_is_repaired_then_opened_again():
     assert answer.executor == "agentic_process-repair"
     told = site.turns[0]["prompt"]
     assert "http://localhost:3300/" in told and "Nothing is answering" in told
-    assert "Start Spora Admin." in told and "Earlier attempts" in told
+    assert "Start Acme Admin." in told and "Earlier attempts" in told
 
 
 def test_retries_are_further_turns_told_what_the_navigation_found():

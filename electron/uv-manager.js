@@ -200,7 +200,7 @@ function policyBlockedError(tried) {
  * launch via direct CreateProcess (manifests as "spawn UNKNOWN").
  *
  * The one case where shell:true breaks is an .exe path containing whitespace:
- * cmd.exe splits on the space, so `C:\Users\avi tal\.local\bin\flow.exe`
+ * cmd.exe splits on the space, so `C:\Users\jane doe\.local\bin\flow.exe`
  * becomes `C:\Users\avi`. For that case only, fall back to shell:false and
  * let Node's CreateProcess handle the path natively.
  */
@@ -222,7 +222,7 @@ function quoteWinCmd(cmd) {
 
 /**
  * Quote the ARGUMENTS the same way when the command goes through cmd.exe (shell:true): Node then
- * concatenates them unescaped, so `--python C:\Users\Avi Tal\…\python.exe` reached uv as two
+ * concatenates them unescaped, so `--python C:\Users\Jane Doe\…\python.exe` reached uv as two
  * arguments and the install failed with "unexpected argument". Seen on the Windows VM the first
  * time the runtime repair pinned an interpreter path (user "test 11"). No-op off the shell path,
  * for arguments without whitespace, and for arguments already quoted.
@@ -1864,7 +1864,7 @@ class UvManager {
       }
 
       // shell:true on Windows breaks paths with spaces (e.g.
-      // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
+      // "C:\Users\jane doe\…\flow.exe" gets split on the space). Use shell
       // only when actually needed — see needsShellOnWin().
       const { cmd: flowCmd, args: flowArgs, shell: flowShell } = this._flowCmd(['start']);
       const useShell = flowShell !== undefined ? flowShell : needsShellOnWin(flowCmd);

@@ -22,7 +22,7 @@
  *      confusing failures (PUSH_REJECTED here, a clone 403 on the hub).
  *
  * ── Bring-up ──
- *   cd ../test_flowpad/FlowPad && uv run python flowpad/run.py      # hub :8093
+ *   (in the hub checkout) uv run python flowpad/run.py              # hub :8093
  *   scripts/instance_ctl.sh launch tagit-1                          # FE 500X / BE 600X
  *   cd ui && npx vite --mode hubtest --port 4096 --strictPort       # hub UI
  *

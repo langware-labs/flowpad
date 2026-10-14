@@ -4326,8 +4326,8 @@ async def _prune_expired_invitations() -> None:
 
     The hub keeps expired Invitation rows as an audit trail but no longer
     returns them from ``pending``, so nothing ever updates the local mirror
-    again — without this prune a dead invitation sits in the stream inbox forever
-    (the v0.2.9x "10 phantom Organization invitations" incident). Only
+    again — without this prune a dead invitation sits in the stream inbox
+    forever. Only
     ``remote`` (hub-mirrored) rows are touched: the hub's audit copy stays;
     accepted rows are memberships now and are never invitations to prune.
     """
@@ -4471,16 +4471,15 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         #   302 — post-accept landing redirect: ``Location`` points at
         #         ``/flow_message/<id>`` or ``/conversation/<id>``. The hub
         #         became browser-friendly and redirects the user to the
-        #         unlocked entity after a successful accept. Verified on
-        #         2026-05-28 with a real invitation against app.flowpad.ai.
+        #         unlocked entity after a successful accept.
         #   409 — already accepted (recipient clicked the email link first).
         #         No usable body, but server-side state is what we want and
         #         local cleanup still has work to do (mark accepted, sync).
         #
         # A 302 from this endpoint ALWAYS means the hub bounced us to
         # ``/login.html`` because the request was unauthenticated — the
-        # accept did NOT execute. Probed against app.flowpad.ai on
-        # 2026-05-28: 302 → ``/login.html?target_path=...`` for both
+        # accept did NOT execute. The hub answers
+        # 302 → ``/login.html?target_path=...`` for both
         # missing and invalid Authorization headers. Earlier this code
         # accepted 302 as success and ran local cleanup, which wrote
         # ``accepted=True`` locally for an invitation the hub never
@@ -4491,7 +4490,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 location = resp.headers.get("location") or resp.headers.get("Location") or ""
                 low = location.lower()
                 # A redirect to a login page IS the unauthenticated bounce
-                # (e.g. app.flowpad.ai → /login.html). The accept did NOT run.
+                # (e.g. ``/login.html``). The accept did NOT run.
                 if "login" in low:
                     return ApiFailResponse(
                         message=(

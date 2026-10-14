@@ -16,27 +16,27 @@ const q = (id: string) => screen.queryByTestId(id)?.textContent ?? null;
 
 describe('UserMenuHeader', () => {
   it('shows name, title and email as three lines', () => {
-    render(<UserMenuHeader name="Eran Shlomo" title="Founder & CEO" email="eran@langware.ai" />);
+    render(<UserMenuHeader name="Alice Example" title="Team Lead" email="alice@example.com" />);
 
-    expect(q('user-menu-name')).toBe('Eran Shlomo');
-    expect(q('user-menu-title')).toBe('Founder & CEO');
-    expect(q('user-menu-email')).toBe('eran@langware.ai');
+    expect(q('user-menu-name')).toBe('Alice Example');
+    expect(q('user-menu-title')).toBe('Team Lead');
+    expect(q('user-menu-email')).toBe('alice@example.com');
   });
 
   it('skips the title line when there is no title', () => {
     // The common case today: `title` is a base-entity field nobody has set yet.
     // It must collapse, not render an empty row that pushes the email down.
-    render(<UserMenuHeader name="Eran Shlomo" email="eran@langware.ai" />);
+    render(<UserMenuHeader name="Alice Example" email="alice@example.com" />);
 
     expect(screen.queryByTestId('user-menu-title')).toBeNull();
-    expect(q('user-menu-name')).toBe('Eran Shlomo');
-    expect(q('user-menu-email')).toBe('eran@langware.ai');
+    expect(q('user-menu-name')).toBe('Alice Example');
+    expect(q('user-menu-email')).toBe('alice@example.com');
   });
 
   it('does not print the email twice when it stands in for a missing name', () => {
-    render(<UserMenuHeader email="eran@langware.ai" />);
+    render(<UserMenuHeader email="alice@example.com" />);
 
-    expect(q('user-menu-name')).toBe('eran@langware.ai');
+    expect(q('user-menu-name')).toBe('alice@example.com');
     expect(screen.queryByTestId('user-menu-email')).toBeNull();
   });
 

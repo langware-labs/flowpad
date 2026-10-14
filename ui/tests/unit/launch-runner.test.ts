@@ -86,7 +86,7 @@ const { LaunchFailure, runLaunch } = await import('@src/pages/entry/launch-runne
 
 // Real v4 ids: a Project validates its id.
 const Q = '11111111-2222-4333-8444-555555555555';
-const SPORA = '22222222-3333-4444-8555-666666666666';
+const ACME = '22222222-3333-4444-8555-666666666666';
 const A1 = '33333333-4444-4555-8666-777777777777';
 const QA = '44444444-5555-4666-8777-888888888888';
 const SA = '55555555-6666-4777-8888-999999999999';
@@ -109,7 +109,7 @@ describe('runLaunch', () => {
     mocks.homes = { [Q]: { asset: `agent-${QA}`, type: 'agent' } };
 
     const dock = await runLaunch(
-      { target: { projectId: SPORA }, controllerId: Q },
+      { target: { projectId: ACME }, controllerId: Q },
       {
         computeNodeId: null,
         onStep: (s) => steps.push(s),
@@ -117,9 +117,9 @@ describe('runLaunch', () => {
     );
 
     expect(steps).toEqual(['controller', 'target', 'setup', 'session']);
-    expect(mocks.calls).toEqual([`ensure:${Q}`, `ensure:${SPORA}`, `readiness:${Q}`, `select:${SPORA}`]);
+    expect(mocks.calls).toEqual([`ensure:${Q}`, `ensure:${ACME}`, `readiness:${Q}`, `select:${ACME}`]);
     // A NEW session of the controller's agent, acting in the target — and that is where it lands.
-    expect(mocks.started).toEqual([[QA, SPORA]]);
+    expect(mocks.started).toEqual([[QA, ACME]]);
     expect(dock.toUrl()).toContain(SESSION);
     expect(mocks.faces).toEqual([]);
   });
@@ -127,16 +127,16 @@ describe('runLaunch', () => {
   it('a target that is only on this machine is used where it is — never fetched from the hub', async () => {
     mocks.homes = { [Q]: { asset: `agent-${QA}`, type: 'agent' } };
 
-    await runLaunch({ target: { local: SPORA }, controllerId: Q }, { computeNodeId: null });
+    await runLaunch({ target: { local: ACME }, controllerId: Q }, { computeNodeId: null });
 
-    expect(mocks.calls).toEqual([`ensure:${Q}`, `local:${SPORA}`, `readiness:${Q}`, `select:${SPORA}`]);
-    expect(mocks.started).toEqual([[QA, SPORA]]);
+    expect(mocks.calls).toEqual([`ensure:${Q}`, `local:${ACME}`, `readiness:${Q}`, `select:${ACME}`]);
+    expect(mocks.started).toEqual([[QA, ACME]]);
   });
 
   it('a local target this machine does not hold stops at the target step', async () => {
     mocks.noLocal = true;
 
-    const failure = await runLaunch({ target: { local: SPORA } }, { computeNodeId: null }).catch((e) => e);
+    const failure = await runLaunch({ target: { local: ACME } }, { computeNodeId: null }).catch((e) => e);
 
     expect(failure.step).toBe('target');
     expect(failure.message).toBe("That project isn't on this machine.");
@@ -147,7 +147,7 @@ describe('runLaunch', () => {
     const needsSetup: string[] = [];
 
     await runLaunch(
-      { target: { projectId: SPORA }, controllerId: Q },
+      { target: { projectId: ACME }, controllerId: Q },
       {
         computeNodeId: null,
         onNeedsSetup: (p) => needsSetup.push(p.id),
@@ -155,16 +155,16 @@ describe('runLaunch', () => {
     );
 
     expect(needsSetup).toEqual([Q]);
-    expect(mocks.calls.filter((c) => c.endsWith(`:${SPORA}`))).toEqual([`ensure:${SPORA}`, `select:${SPORA}`]);
+    expect(mocks.calls.filter((c) => c.endsWith(`:${ACME}`))).toEqual([`ensure:${ACME}`, `select:${ACME}`]);
   });
 
   it.each([
     ['controller', Q],
-    ['target', SPORA],
+    ['target', ACME],
   ])('a project that cannot be fetched fails as its own step: %s', async (step, failing) => {
     mocks.failEnsure = failing;
 
-    const failure = await runLaunch({ target: { projectId: SPORA }, controllerId: Q }, { computeNodeId: null }).catch(
+    const failure = await runLaunch({ target: { projectId: ACME }, controllerId: Q }, { computeNodeId: null }).catch(
       (e: unknown) => e,
     );
 
@@ -175,56 +175,56 @@ describe('runLaunch', () => {
   });
 
   it('a session that cannot start fails at the session step with its own reason', async () => {
-    mocks.homes = { [SPORA]: { asset: `agent-${SA}`, type: 'agent' } };
+    mocks.homes = { [ACME]: { asset: `agent-${SA}`, type: 'agent' } };
     mocks.failStart = new Error('claude has no usable LLM source');
 
-    const failure = await runLaunch({ target: { projectId: SPORA } }, { computeNodeId: null }).catch((e: unknown) => e);
+    const failure = await runLaunch({ target: { projectId: ACME } }, { computeNodeId: null }).catch((e: unknown) => e);
 
     expect((failure as InstanceType<typeof LaunchFailure>).step).toBe('session');
     expect((failure as InstanceType<typeof LaunchFailure>).cause).toBe(mocks.failStart);
   });
 
   it('an agent the project does not hold is said, not swapped for the bare project', async () => {
-    mocks.homes = { [SPORA]: { asset: `agent-${SA}`, type: 'agent' } };
+    mocks.homes = { [ACME]: { asset: `agent-${SA}`, type: 'agent' } };
     mocks.noAgent = true;
 
-    const failure = await runLaunch({ target: { projectId: SPORA } }, { computeNodeId: null }).catch((e: unknown) => e);
+    const failure = await runLaunch({ target: { projectId: ACME } }, { computeNodeId: null }).catch((e: unknown) => e);
 
     expect((failure as InstanceType<typeof LaunchFailure>).step).toBe('session');
     expect((failure as Error).message).toContain("isn't in the project's files");
   });
 
   it("the link's agent outranks every home page", async () => {
-    mocks.homes = { [Q]: { asset: `agent-${QA}`, type: 'agent' }, [SPORA]: { asset: `agent-${SA}`, type: 'agent' } };
+    mocks.homes = { [Q]: { asset: `agent-${QA}`, type: 'agent' }, [ACME]: { asset: `agent-${SA}`, type: 'agent' } };
 
-    await runLaunch({ target: { projectId: SPORA }, controllerId: Q, agentId: A1 }, { computeNodeId: null });
+    await runLaunch({ target: { projectId: ACME }, controllerId: Q, agentId: A1 }, { computeNodeId: null });
 
-    expect(mocks.started).toEqual([[A1, SPORA]]);
+    expect(mocks.started).toEqual([[A1, ACME]]);
   });
 
   it("with no controller, the target's own home-page agent is started and nothing is set up", async () => {
-    mocks.homes = { [SPORA]: { asset: `agent-${SA}`, type: 'agent' } };
+    mocks.homes = { [ACME]: { asset: `agent-${SA}`, type: 'agent' } };
     const steps: string[] = [];
 
-    await runLaunch({ target: { projectId: SPORA } }, { computeNodeId: null, onStep: (s) => steps.push(s) });
+    await runLaunch({ target: { projectId: ACME } }, { computeNodeId: null, onStep: (s) => steps.push(s) });
 
     expect(steps).toEqual(['target', 'session']);
-    expect(mocks.calls).toEqual([`ensure:${SPORA}`, `select:${SPORA}`]);
-    expect(mocks.started).toEqual([[SA, SPORA]]);
+    expect(mocks.calls).toEqual([`ensure:${ACME}`, `select:${ACME}`]);
+    expect(mocks.started).toEqual([[SA, ACME]]);
   });
 
   it('a home page that is not an agent opens the way Home opens it', async () => {
-    mocks.homes = { [SPORA]: { asset: 'micro_app-x', type: 'micro_app' } };
+    mocks.homes = { [ACME]: { asset: 'micro_app-x', type: 'micro_app' } };
 
-    await runLaunch({ target: { projectId: SPORA } }, { computeNodeId: null });
+    await runLaunch({ target: { projectId: ACME } }, { computeNodeId: null });
 
     expect(mocks.started).toEqual([]);
-    expect(mocks.faces).toEqual([{ face: { asset: 'micro_app-x', type: 'micro_app' }, projectId: SPORA }]);
+    expect(mocks.faces).toEqual([{ face: { asset: 'micro_app-x', type: 'micro_app' }, projectId: ACME }]);
   });
 
   it('falls back to the project when there is no face to open', async () => {
-    const dock = await runLaunch({ target: { projectId: SPORA } }, { computeNodeId: null });
+    const dock = await runLaunch({ target: { projectId: ACME } }, { computeNodeId: null });
 
-    expect(dock.toUrl()).toContain(SPORA);
+    expect(dock.toUrl()).toContain(ACME);
   });
 });
