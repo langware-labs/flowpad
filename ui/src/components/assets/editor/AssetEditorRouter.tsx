@@ -1,5 +1,7 @@
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import {
+  AssetSetup,
+  ComputeOp,
   Agent,
   SubAgent,
   AgentTrace,
@@ -64,6 +66,8 @@ import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WizardViewer } from './wizard/WizardViewer';
+import { AssetSetupViewer } from './asset-setup/AssetSetupViewer';
+import { ComputeOpViewer } from './compute-op/ComputeOpViewer';
 import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
 import { DiagnosisRequestView } from './diagnosis-request/DiagnosisRequestView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
@@ -479,6 +483,26 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           typeLabel="wizard"
           resolvedEntity={typeIdEntity as Wizard | undefined}
           render={(wizard) => <WizardViewer fsRef={fsRef} wizard={wizard} />}
+        />
+      );
+    case AssetEditor.ASSET_SETUP:
+      return (
+        <EntityResolutionGate<AssetSetup>
+          type={AssetSetup.type}
+          fsRef={fsRef}
+          typeLabel="setup"
+          resolvedEntity={typeIdEntity as AssetSetup | undefined}
+          render={(setup) => <AssetSetupViewer fsRef={fsRef} setup={setup} />}
+        />
+      );
+    case AssetEditor.COMPUTE_OP:
+      return (
+        <EntityResolutionGate<ComputeOp>
+          type={ComputeOp.type}
+          fsRef={fsRef}
+          typeLabel="compute op"
+          resolvedEntity={typeIdEntity as ComputeOp | undefined}
+          render={(op) => <ComputeOpViewer fsRef={fsRef} op={op} />}
         />
       );
     case AssetEditor.MCP:

@@ -1632,12 +1632,16 @@ msgid "A new project folder — everything you create is scoped to it"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
-msgid "A project on the hub — fetched by its id wherever this project opens"
-msgstr ""
+#~ msgid "A project on the hub — fetched by its id wherever this project opens"
+#~ msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "A project on the hub is fetched wherever this project opens; any other is used from its folder on this computer."
+msgstr "المشروع الموجود على Hub يُجلب أينما فُتح هذا المشروع؛ وأي مشروع آخر يُستخدم من مجلده على هذا الحاسوب."
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "A project on the hub, fetched by its id wherever this project opens."
-msgstr ""
+#~ msgid "A project on the hub, fetched by its id wherever this project opens."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
@@ -1889,7 +1893,7 @@ msgid "Activity"
 msgstr "النشاط"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
@@ -2111,8 +2115,8 @@ msgid "Add Hook"
 msgstr "إضافة Hook"
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Add hub project"
-msgstr ""
+#~ msgid "Add hub project"
+#~ msgstr ""
 
 #~ msgid "Add input"
 #~ msgstr ""
@@ -2141,6 +2145,10 @@ msgstr ""
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
 msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Add project"
+msgstr "إضافة مشروع"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
@@ -2291,6 +2299,11 @@ msgstr "روابط إضافية لأسواق الملحقات"
 msgid "Address book"
 msgstr "دفتر العناوين"
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Admin"
+msgstr "إدارة"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
 
@@ -2931,8 +2944,12 @@ msgstr ""
 #~ msgstr "مشروع Flowpad آخر — يصبح مجلده سياقاً لهذا المشروع"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Another Flowpad project — this one depends on its folder"
-msgstr ""
+msgid "Another Flowpad project — on this computer or on the hub"
+msgstr "مشروع Flowpad آخر — على هذا الحاسوب أو على Hub"
+
+#: src/components/assets/dependency-sources.tsx
+#~ msgid "Another Flowpad project — this one depends on its folder"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
@@ -3186,6 +3203,8 @@ msgstr "موافَق عليه لهذه الجلسة"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
 
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "تطبيقات"
@@ -4341,13 +4360,14 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -4667,6 +4687,7 @@ msgstr "المحادثات"
 msgid "check"
 msgstr "فحص"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/automations/TestPanel.tsx
 msgid "Check"
 msgstr ""
@@ -5744,6 +5765,12 @@ msgstr "اتصال"
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Connect {group}"
 msgstr ""
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Connect {label}"
+msgstr "ربط {label}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -8306,8 +8333,9 @@ msgid "Dependencies"
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 msgid "Dependency"
-msgstr ""
+msgstr "تبعية"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Dependency removed"
@@ -8922,6 +8950,10 @@ msgstr "مكتمل"
 msgid "Done!"
 msgstr "تم!"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Done."
+msgstr "اكتمل."
+
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Dot-separated; * matches one part, a trailing * matches the rest (task.*)."
 msgstr ""
@@ -9140,8 +9172,8 @@ msgstr ""
 #~ msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
 
 #: src/hooks/use-add-dependency.tsx
-msgid "Each selected project's folder is added as a dependency."
-msgstr ""
+#~ msgid "Each selected project's folder is added as a dependency."
+#~ msgstr ""
 
 #~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 #~ msgstr ""
@@ -10453,6 +10485,7 @@ msgstr "فشل في بدء الاتصال بـ GitHub"
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Failed to start session"
 msgstr "تعذر بدء الجلسة"
 
@@ -11393,6 +11426,14 @@ msgstr "احصل على FlowPad من flowpad.ai ←"
 msgid "Get it at flowpad.ai"
 msgstr "احصل عليه من flowpad.ai"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your {label} messages here, and answer them from Flowpad."
+msgstr "استقبل رسائل {label} هنا، وأجب عنها من Flowpad."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your messages here"
+msgstr "استقبل رسائلك هنا"
+
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "البدء — {stepsLeft} خطوة متبقية"
@@ -12118,6 +12159,10 @@ msgstr ""
 msgid "How does improving an asset work?"
 msgstr "كيف يعمل تحسين الأصل؟"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "How it is judged done"
+msgstr "كيف يُحكم بأنه اكتمل"
+
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
 msgstr "عدد أحداث متتبّع الخطافات التي يُحتفظ بها في المخزن المؤقت."
@@ -12218,12 +12263,12 @@ msgid "Hub errors suppressed"
 msgstr "تم قمع أخطاء Hub"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Hub project"
-msgstr ""
+#~ msgid "Hub project"
+#~ msgstr ""
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Hub project id or link"
-msgstr ""
+#~ msgid "Hub project id or link"
+#~ msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -12637,6 +12682,10 @@ msgstr "رموز الإدخال"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Input: {0}"
 msgstr "المدخلات: {0}"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Inputs"
+msgstr "المدخلات"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Insert emoji"
@@ -16632,6 +16681,10 @@ msgstr "لا يوجد تطبيق ويب متاح"
 msgid "No web page in this view"
 msgstr ""
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "no wizard by this name was found."
+msgstr "لم يُعثر على معالج بهذا الاسم."
+
 #. placeholder {0}: stage.wizard
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "No wizard named {0} is installed."
@@ -16699,6 +16752,7 @@ msgid "None yet."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "None."
 msgstr ""
 
@@ -16758,6 +16812,10 @@ msgstr ""
 #~ msgid "Not done: {0}"
 #~ msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Not done."
+msgstr "لم يكتمل."
+
 #: src/components/data-sources/source-attention.ts
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
@@ -16798,6 +16856,10 @@ msgstr "غير مثبّت"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
 msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Not listed? Paste a hub project id or link"
+msgstr "غير مدرج؟ الصق معرّف مشروع على Hub أو رابطه"
 
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
@@ -16861,6 +16923,10 @@ msgstr "ليس جاهزاً بعد"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
 msgstr ""
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Not run yet."
+msgstr "لم يُشغَّل بعد."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
@@ -17292,6 +17358,15 @@ msgstr "على القرص"
 #~ msgid "On file change"
 #~ msgstr "عند تغيير الملف"
 
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "On hub"
+msgstr "على Hub"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "On load — each time it is shown"
+msgstr "عند التحميل — في كل مرة يُعرض"
+
+#: src/components/triggers-view/TriggersList.tsx
 #~ msgid "On schedule"
 #~ msgstr "عند الجدول الزمني"
 
@@ -17484,6 +17559,7 @@ msgid "open {name}"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "افتح {name}"
@@ -19096,6 +19172,10 @@ msgstr "اللغة المفضلة للردود"
 #: src/components/settings-view/settings-utils.ts
 msgid "Prefers Reduced Motion"
 msgstr "تفضيل تقليل الحركة"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Prepare — before its steps"
+msgstr "التحضير — قبل خطواته"
 
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Preparing this project for use."
@@ -21019,6 +21099,7 @@ msgstr "جارٍ الاستعادة…"
 msgid "Restrict beta headers"
 msgstr "تقييد ترويسات بيتا"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/automations/RunsView.tsx
 msgid "Result"
 msgstr ""
@@ -21312,6 +21393,7 @@ msgstr ""
 msgid "Rules"
 msgstr "القواعد"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -21321,6 +21403,10 @@ msgstr "القواعد"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
 msgstr "تشغيل"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Run — once its steps are set up"
+msgstr "التشغيل — بعد إعداد خطواته"
 
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run (Skip project)"
@@ -21419,6 +21505,7 @@ msgstr "يُرجى التنفيذ من الطرفية، ثم إعادة تشغي
 msgid "Run in terminal"
 msgstr "تشغيل في الطرفية"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run it"
 msgstr "تشغيل"
@@ -21458,6 +21545,10 @@ msgstr ""
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
 msgstr "تشغيل البرنامج النصي"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Run setup"
+msgstr "تشغيل الإعداد"
 
 #: src/components/account/settings-section.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
@@ -23038,6 +23129,10 @@ msgstr ""
 msgid "Setup instructions"
 msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Setup notes"
+msgstr "ملاحظات الإعداد"
+
 #: src/components/data-sources/source-attention.ts
 #: src/components/data-sources/status-style.ts
 #: src/components/project-home/ProjectDependenciesCard.tsx
@@ -23254,6 +23349,10 @@ msgstr "علامة تبويب Shell"
 msgid "Shell unavailable"
 msgstr "القشرة غير متاحة"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "shipped"
+msgstr "مضمَّن"
+
 #: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "مفتاح قصير الأجل لرابط Open-in-FlowPad العميق"
@@ -23466,6 +23565,10 @@ msgstr ""
 #: src/components/credentials/SecretValueInput.tsx
 msgid "Show value"
 msgstr ""
+
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Showing {name}"
+msgstr "معروض: {name}"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -24412,6 +24515,10 @@ msgstr "الحالة: {0}"
 #~ msgid "step: {0}ms · debounce: {1}ms"
 #~ msgstr "الخطوة: {0}ms · إلغاء الاهتزاز: {1}ms"
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Steps"
+msgstr "الخطوات"
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Steps taken"
 msgstr "الخطوات المتخذة"
@@ -24446,6 +24553,7 @@ msgstr "لا يزال العمل جارياً — يتم حزم المرفقات
 msgid "Still working — waiting on the cloud. This can take a minute."
 msgstr "لا يزال العمل جارياً — في انتظار السحابة. قد يستغرق هذا دقيقة."
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -25101,7 +25209,7 @@ msgstr "هذا الوكيل لم يعد موجودًا في مساحة عملك.
 #~ msgid "That change could not be applied."
 #~ msgstr "تعذّر تطبيق هذا التغيير."
 
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 msgid "That doesn't name a hub project — paste its id or a link to it."
 msgstr ""
 
@@ -26077,6 +26185,10 @@ msgstr ""
 msgid "This one is required. Without it, setup will end unfinished."
 msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "This op does not ship with Flowpad. Running it runs its commands on this computer."
+msgstr "هذه العملية ليست جزءاً من Flowpad. تشغيلها ينفّذ أوامرها على هذا الحاسوب."
+
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
 msgstr ""
@@ -26315,6 +26427,10 @@ msgstr "تشير هذه الجلسة إلى عقدة حوسبة قديمة ول�
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This session URL is malformed or unavailable."
 msgstr "رابط الجلسة هذا غير صحيح أو غير متاح."
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "This setup belongs to no project here, so it has no run to show."
+msgstr "هذا الإعداد لا ينتمي إلى أي مشروع هنا، لذا لا يوجد تشغيل لعرضه."
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
@@ -27524,6 +27640,7 @@ msgstr ""
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "المستخدم"
@@ -28165,6 +28282,10 @@ msgstr "ما هو"
 #~ msgid "What it is for"
 #~ msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "What it runs"
+msgstr "ما الذي يشغّله"
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
 msgstr "ما الذي تم العمل عليه"
@@ -28516,6 +28637,7 @@ msgstr "شجرة العمل"
 msgid "working…"
 msgstr "يعمل…"
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx

@@ -97,7 +97,9 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
 
     async def _scan(self, query):
         token = self.credentials.value("api_token")
-        ...                      # list pages → [(key, raw), ...] sorted by key; let http errors raise
+        ...                      # list pages → [(key, raw), ...] sorted by key; let http errors raise.
+                                 # NO ANSWER IS NOT "NO ROWS": a source that lists everything and returns []
+                                 # removes every stored record -- raise SourceUnavailable when the body is not a listing
 
     async def _lookup(self, key): ...
     def _item(self, key, raw) -> SourceItemSpec: ...
@@ -105,13 +107,19 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
     # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
     # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
-    # through these: docs/data-management/mirroring-a-system-of-record.md
+    # through these (the data-management skill's `references/mirroring.md`; in a repo checkout also
+    # docs/data-management/mirroring-a-system-of-record.md)
     async def create(self, data: WikiPageData) -> SourceItemSpec: ...
     async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
     async def delete(self, origin) -> None: ...
     # A write that takes SEVERAL calls (the record, then its links) answers the record it made even when a
     # later call failed: `SourceItemSpec(origin, data, warnings=("2 links were not set: …",))` -- never an
-    # exception, which loses the record the system now has and makes the retry a duplicate.
+    # exception, which loses the record the system now has and makes the retry a duplicate. EVERY verb:
+    # an `update` that changed the record and then failed to set its links answers warnings too. The
+    # READ-BACK counts: when the write succeeded and re-reading the record fails (a rate limit), answer it
+    # from what the write itself returned, with a warning -- the record exists.
+    # NEVER INVENT A VALUE for a field the system owns (`stage or "prospect"`): record what it has, None
+    # when it has none -- an invented value is mirrored into a row as if the system had said it.
 
     # A system that POSTS changes: take them, and a change outside lands at once instead of at the next poll
     # (docs/data-management/data-sources.md, Webhooks): webhook_challenge / webhook_account / events_from_webhook (+ webhook_authentic).

@@ -1,6 +1,6 @@
-"""API tests for entity-backed conversation prompts: `add_message` with
-``prompt_text`` mints a library Prompt entity and attaches it as TYPE_ID
-(carrying ``prompt_preview``); re-sends dedup by normalized text; every prompt
+"""API tests for conversation prompts: `add_message` with ``prompt_text`` carries
+the text ON THE MESSAGE (an inline PROMPT attachment) and never saves it as a
+library Prompt; every prompt
 send without a session id OPENS a session (guest-minted id, start marker on the
 carrier, local PENDING/DRAFT row). Sends use ``is_draft`` — the local-only path
 that skips the cloud-login gate while still exercising ``_attach_prompt``.
@@ -48,37 +48,39 @@ def _prompt_entity_attachments(fm: FlowMessage) -> list:
     ]
 
 
+def _inline_prompts(fm: FlowMessage) -> list[str]:
+    return [
+        a.data for a in (fm.attachment or [])
+        if a.attachment_type == AttachmentType.PROMPT and not (a.data or "").startswith("prompt/")
+    ]
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_send_prompt_creates_entity_attachment(bootstrapped_client, user):
+async def test_typed_prompt_is_never_saved_to_the_library(bootstrapped_client, user):
+    """What a person types into a session is conversation content. Saved as a library Prompt it
+    became a file in the project's ``agentic-assets/prompt/`` — every sentence of a live session,
+    one ``git add`` from being pushed."""
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
+    before = {p.id for p in await Prompt.get_all()}
 
     resp = await client.post(
         f"/api/v1/graph/conversation/{conv_id}/add_message",
         json={"message": "please run this", "prompt_text": PROMPT_TEXT, "is_draft": True},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
-    fm_id = resp.json()["data"]["flow_message_id"]
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
 
-    fm = await FlowMessage.get_one({"id": fm_id})
-    atts = _prompt_entity_attachments(fm)
-    assert len(atts) == 1
-    att = atts[0]
-    assert att.prompt_preview == PROMPT_TEXT
-
-    prompt_id = att.data.split("-", 1)[1]
-    prompt = await Prompt.get_by_id(prompt_id)
-    assert prompt is not None
-    assert prompt.text == PROMPT_TEXT
-    assert prompt.name == "Fix the auth flow"  # auto-name = first line
-    assert (prompt.use_count or 0) == 0  # sending is not a "use"
+    assert _inline_prompts(fm) == [PROMPT_TEXT]
+    assert _prompt_entity_attachments(fm) == []
+    assert {p.id for p in await Prompt.get_all()} == before
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_image_prompt_file_stays_a_picture_not_text(bootstrapped_client, user):
     """An image attached to a prompt is stored as a prompt-FILE (raw bytes the
-    UI renders inline), never decoded into a garbage text Prompt entity. The
-    typed text still mints its own Prompt — text stays text, image stays image.
+    UI renders inline), never decoded into text. The typed text rides beside it,
+    inline — text stays text, image stays image.
     """
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
@@ -107,14 +109,9 @@ async def test_image_prompt_file_stays_a_picture_not_text(bootstrapped_client, u
     assert on_disk.exists()
     assert on_disk.read_bytes() == PNG_BYTES
 
-    # The typed text still mints exactly one Prompt entity — and the binary image
-    # never leaked into any prompt's text.
-    entity_atts = _prompt_entity_attachments(fm)
-    assert len(entity_atts) == 1
-    assert entity_atts[0].prompt_preview == "describe the screenshot"
-    prompt = await Prompt.get_by_id(entity_atts[0].data.split("-", 1)[1])
-    assert prompt is not None
-    assert "PNG" not in (prompt.text or "")
+    # The typed text rides inline — and the binary image never leaked into it.
+    assert _inline_prompts(fm) == ["describe the screenshot"]
+    assert _prompt_entity_attachments(fm) == []
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -138,26 +135,6 @@ async def test_image_only_prompt_mints_no_text_entity(bootstrapped_client, user)
     ]
     assert len(prompt_files) == 1
     assert _prompt_entity_attachments(fm) == []
-
-
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_resend_same_text_dedups_to_one_prompt(bootstrapped_client, user):
-    client = bootstrapped_client
-    conv_id = await _make_conversation(client)
-
-    first = await client.post(
-        f"/api/v1/graph/conversation/{conv_id}/add_message",
-        json={"message": "run A", "prompt_text": "dedup   me\nplease", "is_draft": True},
-    )
-    second = await client.post(
-        f"/api/v1/graph/conversation/{conv_id}/add_message",
-        json={"message": "run B", "prompt_text": "dedup me please", "is_draft": True},
-    )
-    fm1 = await FlowMessage.get_one({"id": first.json()["data"]["flow_message_id"]})
-    fm2 = await FlowMessage.get_one({"id": second.json()["data"]["flow_message_id"]})
-    [att1] = _prompt_entity_attachments(fm1)
-    [att2] = _prompt_entity_attachments(fm2)
-    assert att1.data == att2.data  # same Prompt entity, whitespace-normalized match
 
 
 def _carrier(fm: FlowMessage, session_id: str):
@@ -305,15 +282,12 @@ async def test_session_event_kind_honored_and_others_rejected(bootstrapped_clien
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_prompts_sharing_an_auto_name_prefix_both_send(bootstrapped_client, user):
-    """Two DIFFERENT prompts whose first line truncates to the same auto-name
-    must both send: the name is the asset path, so the second one is suffixed
-    instead of colliding (this silently killed every second live-session
-    prompt of the same shape)."""
+async def test_prompts_sharing_a_long_first_line_both_send(bootstrapped_client, user):
+    """Two DIFFERENT prompts whose first 40 characters match must both send, each with its own
+    text (a shared auto-name once collided on disk and killed the second)."""
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     prefix = "Reply with exactly the text LIVE-1788652 and nothing else"
-    ids = []
     for tail in ("-A", "-B"):
         resp = await client.post(
             f"/api/v1/graph/conversation/{conv_id}/add_message",
@@ -321,9 +295,4 @@ async def test_prompts_sharing_an_auto_name_prefix_both_send(bootstrapped_client
         )
         assert resp.json().get("status") == "SUCCESS", resp.text
         fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
-        [att] = _prompt_entity_attachments(fm)
-        ids.append(att.data.split("-", 1)[1])
-    assert ids[0] != ids[1]
-    names = [(await Prompt.get_by_id(i)).name for i in ids]
-    assert names[0] != names[1]
-    assert names[1].startswith(names[0].rstrip("…")[:10])
+        assert _inline_prompts(fm) == [prefix + tail]

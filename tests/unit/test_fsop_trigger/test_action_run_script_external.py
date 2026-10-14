@@ -227,3 +227,22 @@ async def test_external_path_is_told_how_to_reach_this_flowpad(tmp_path):
 
     lines = out.read_text().splitlines()
     assert lines == [f"py={sys.executable}", f"inst={get_instance_settings().instance_name}"]
+
+
+async def test_a_script_that_fails_is_a_failed_run(tmp_path):
+    """The shared loop reports an action that ANSWERS a failure (it does not raise): a script that
+    exits non-zero, or is not on disk, lands in the run's errors -- never a clean run row."""
+    from flow_sdk.builtin.trigger import run_trigger_actions
+
+    def rule(script: Path) -> MagicMock:
+        t = _make_fake_trigger()
+        t.then, t.trigger_type, t.project_id = None, "tag", None
+        t.actions = [TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))]
+        return t
+
+    broke = await run_trigger_actions(rule(_make_script(tmp_path, "no.sh", "#!/usr/bin/env bash\nexit 3\n")), [])
+    assert broke.error and "run_script" in broke.error
+    missing = await run_trigger_actions(rule(tmp_path / "absent.sh"), [])
+    assert missing.error and "absent.sh" in missing.error or "no script" in missing.error
+    fine = await run_trigger_actions(rule(_make_script(tmp_path, "ok.sh", "#!/usr/bin/env bash\nexit 0\n")), [])
+    assert fine.error is None

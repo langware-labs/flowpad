@@ -103,7 +103,7 @@ class TestTheSource:
 
     def test_the_manifest_matches_the_source(self):
         """`spec.name == folder == provider`, or `sends` reads false on the wire."""
-        folder = Path("flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/helpdesk")
+        folder = Path(__file__).resolve().parents[1]
         manifest = json.loads((folder / "data_driver.json").read_text())
         assert manifest["name"] == HelpdeskSource.provider == folder.name
         assert manifest["config"]["desk_project_id"]["choices"] is True

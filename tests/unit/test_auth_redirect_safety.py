@@ -1,4 +1,4 @@
-"""``_safe_next`` — the same-origin redirect guard shared by /auth/login_callback
+"""``grants.safe_next`` — the same-origin redirect guard shared by /auth/login_callback
 and /auth/gate.
 
 Both routes reflect a caller-supplied ``next`` into a Location header, so the
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.server.routes.auth import _safe_next
+from flow_sdk.server.grants import safe_next as _safe_next
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
