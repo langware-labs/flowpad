@@ -155,6 +155,9 @@ class _PickerDisk:
         monkeypatch.setattr(ap, "iter_codex_project_paths", lambda **kwargs: iter(()))
         monkeypatch.setattr(ap, "iter_copilot_project_paths", lambda **kwargs: iter(()))
         monkeypatch.setattr(ap, "iter_workspace_project_paths", self._workspace)
+        # The fifth source: prod's workspace folder, read on any non-prod instance. Left real, a listing
+        # depended on which instance the run happened to resolve and what earlier tests left there.
+        monkeypatch.setattr(ap, "iter_prod_workspace_project_paths", lambda **kwargs: iter(()))
 
         # tmp_path is under the system temp dir: keep it past the temp filter.
         real_scan = ap.scan_project_cwds
