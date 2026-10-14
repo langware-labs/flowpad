@@ -73,13 +73,20 @@ class Binary(bytes):
     path: Optional[Path] = None
 
     #: What the bytes are; names the file and the data URL.
-    media_type: str = "application/octet-stream"
+    media_type: str
+
+    def __new__(cls, data: Any = b"", media_type: str = "application/octet-stream") -> "Binary":
+        out = super().__new__(cls, data)
+        out.media_type = media_type
+        return out
+
+    def __reduce__(self) -> tuple:
+        # copy / deepcopy / pickle keep what the bytes are (a plain ``bytes`` rebuild would drop it).
+        return (type(self), (bytes(self), self.media_type))
 
     @classmethod
     def of(cls, data: bytes, media_type: str) -> "Binary":
-        out = cls(data)
-        out.media_type = media_type
-        return out
+        return cls(data, media_type)
 
     @classmethod
     def from_file(cls, path: Path) -> "Binary":

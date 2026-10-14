@@ -31,7 +31,7 @@
     if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
     show(id);
     render();
-    requestAnimationFrame(contrast);
+    contrast();
   };
 
   // ── the host: a shadow root, so the mock's CSS and the bar's never touch ──
@@ -122,6 +122,11 @@
   const $ = (s) => root.querySelector(s);
   const bar = $('.bar'), panel = $('.panel');
   let open = '';
+  let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
+  const panelState = () => open === 'feedback'
+    ? `f|${cur}|${!!data.fbDs}|${stepRows().map((r) => r.key + r.version).join()}`
+    : `${open}|${cur}|${J.length}`;
+  const setPanel = (p) => { open = p; renderPanel(); };
   let draft = { text: '', decision: '', image: '' };
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -142,8 +147,10 @@
   };
   // An attribute, never a class: a page rule like `.dark { --accent: … }` (Flowpad's own tokens) would match the
   // host element and override the bar's colours from outside its shadow root.
-  const contrast = () => host.toggleAttribute('data-mk-dark', !screenIsDark());
-  new MutationObserver(() => requestAnimationFrame(contrast)).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+  const contrastNow = () => host.toggleAttribute('data-mk-dark', !screenIsDark());
+  let contrastQueued = false;   // one check per frame, whoever asks (a step, a drag, a resize, a theme flip)
+  const contrast = () => { if (contrastQueued) return; contrastQueued = true; requestAnimationFrame(() => { contrastQueued = false; contrastNow(); }); };
+  new MutationObserver(contrast).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
 
   // ── rendering ──
   const multiApp = () => new Set(J.map((s) => s.app)).size > 1;
@@ -159,14 +166,15 @@
     const multi = multiApp();
     let on = -1; const cs = crumbs();
     cs.forEach((c, k) => { if (c.from <= cur && (!isBranch(s) || c.app === s.app)) on = k; });
-    $('.n').innerHTML = (multi ? `<span class="trail">${cs.map((c, k) => `<span class="${k === on ? 'on' : ''}">${esc(c.app)}</span>`).join(' ▸ ')}</span><span class="count">·</span>` : '')
+    const trail = cs.map((c, k) => (k === on ? `<span class="on">${esc(c.app)}</span>` : esc(c.app))).join(' ▸ ');
+    $('.n').innerHTML = (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
       + `<span class="count">${cur + 1} of ${J.length}</span>`;
     $('.back').disabled = cur === 0;
     $('.next').disabled = mainAfter(cur) === cur;
     const nOpen = openRows().length;
     $('.fb-count').hidden = !nOpen; $('.fb-count').textContent = nOpen;
     $('.submit').hidden = !nOpen; $('.submit-n').textContent = `(${nOpen})`;
-    if (open) renderPanel();
+    if (open && panelState() !== panelKey) renderPanel();
   }
 
   function placePanel() {
@@ -176,13 +184,14 @@
   }
   function renderPanel() {
     panel.hidden = !open;
+    panelKey = panelState();
     if (!open) return;
     placePanel();
     if (open === 'steps') {
       let n = 0;
       const multi = multiApp();
       panel.innerHTML = '<h4>Screens</h4>' + J.map((s, i) => {
-        const label = isBranch(s) ? `↳ ${esc(s.when || s.title)}${s.when ? ` — ${esc(s.title)}` : ''}` : esc(s.title);
+        const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
         const num = isBranch(s) ? '' : String(++n);
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
       }).join('');
@@ -250,7 +259,7 @@
       Object.assign(data, { sdk, mocksDs, fbDs });
       await loadMock();
       await refresh();
-      mocksDs.onRowsChanged(() => loadMock().then(render));
+      mocksDs.onRowsChanged(loadMock);
       fbDs.onRowsChanged(() => refresh());
     } catch (err) {
       data.error = `Feedback is off: ${err?.message || err}`;
@@ -258,35 +267,35 @@
     }
     finishBoot();
   }
-  async function loadMock() {
+  // Overlapping calls (a write, then the change event it causes) collapse into one run plus at most one more.
+  const coalesced = (fn) => {
+    let running = null, again = false;
+    return () => {
+      if (running) { again = true; return running; }
+      running = (async () => { try { do { again = false; await fn(); } while (again); } finally { running = null; } })();
+      return running;
+    };
+  };
+  const loadMock = coalesced(async () => {
     const found = await data.mocksDs.rows({ match: { key: CFG.key } });
     const row = found.rows[0];
     if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
+    const changed = row.version !== data.mock?.version;
     data.mock = row;
     J = row.input.journey || [];
-  }
-  // The mock's comments, once: the badge counts the open ones, the panel shows this screen's. Calls that
-  // overlap (a save, then the change event it causes) collapse into one fetch plus at most one more.
-  let inflight = null, again = false;
-  async function refresh() {
+    if (changed) render();
+  });
+  // The mock's comments, once: the badge counts the open ones, the panel shows this screen's.
+  const refresh = coalesced(async () => {
     if (!data.fbDs || !data.mock) return;
-    if (inflight) { again = true; return inflight; }
-    inflight = (async () => {
-      do {
-        again = false;
-        const found = await data.fbDs.rows({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } });
-        data.rows = found.rows;
-      } while (again);
-      inflight = null;
-      render();
-    })();
-    return inflight;
-  }
+    data.rows = (await data.fbDs.rows({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } })).rows;
+    render();
+  });
   function finishBoot() {
     cur = Math.max(0, find(location.hash.slice(1)));
     if (typeof window.mockGo !== 'function' && J.length) show(J[cur].id);
     render();
-    requestAnimationFrame(contrast);
+    contrast();
   }
 
   async function saveFeedback() {
@@ -313,10 +322,8 @@
     if (!rows.length || !data.mock) return;
     const btn = $('.submit'); btn.disabled = true;
     try {
-      await data.fbDs.putMany(rows.map((r) => ({ key: r.key, input: { ...r.input, status: 'submitted' } })),
-        { expected: Object.fromEntries(rows.map((r) => [r.key, r.version])) });
+      // The session hears first: if anything after fails, the comments are still open and Submit can run again.
       const m = data.mock;
-      await data.mocksDs.put(CFG.key, { input: { ...m.input, status: 'submitted' } }, { expected: m.version });
       const byStep = {};
       rows.forEach((r) => (byStep[r.input.step] ||= []).push(r.input));
       const lines = J.filter((s) => byStep[s.id]).map((s) => `- ${s.id} (${s.title}): ` + byStep[s.id]
@@ -329,12 +336,16 @@
         if (!proc) throw new Error(`session ${m.input.session} not found`);
         await proc.enqueue(prompt, 'mockify');
       }
+      await data.fbDs.putMany(rows.map((r) => ({ key: r.key, input: { ...r.input, status: 'submitted' } })),
+        { expected: Object.fromEntries(rows.map((r) => [r.key, r.version])) });
+      await data.mocksDs.put(CFG.key, { input: { ...m.input, status: 'submitted' } }, { expected: m.version });
       open = 'feedback';
       await Promise.all([refresh(), loadMock()]);
+      panelKey = panelState();
       panel.innerHTML = `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent${m.input.session ? ' to the session that builds this mock' : ' — no session on the mock row, so nothing was sent; they are saved as submitted'}.</div>`;
       placePanel(); panel.hidden = false;
     } catch (err) {
-      open = 'feedback'; renderPanel();
+      setPanel('feedback');
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not submitted: ${esc(err?.message || err)}</div>`);
     } finally { btn.disabled = false; }
   }
@@ -342,21 +353,21 @@
   // ── controls ──
   $('.back').onclick = () => go(mainBefore(cur));
   $('.next').onclick = () => go(mainAfter(cur));
-  $('.restart').onclick = () => { open = ''; renderPanel(); go(0); };
-  $('.steps').onclick = () => { open = open === 'steps' ? '' : 'steps'; renderPanel(); };
-  $('.fb').onclick = () => { open = open === 'feedback' ? '' : 'feedback'; renderPanel(); };
+  $('.restart').onclick = () => { setPanel(''); go(0); };
+  $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
+  $('.fb').onclick = () => setPanel(open === 'feedback' ? '' : 'feedback');
   $('.submit').onclick = submitAll;
   const minLabel = () => { const m = bar.classList.contains('min'), b = $('.min-btn'); b.textContent = m ? '+' : '–'; b.title = m ? 'Restore' : 'Minimise'; b.setAttribute('aria-label', b.title); };
   if (store.get('min')) bar.classList.add('min');
   minLabel();
   $('.min-btn').onclick = () => {
-    bar.classList.toggle('min'); open = ''; renderPanel(); store.set('min', bar.classList.contains('min')); minLabel();
+    bar.classList.toggle('min'); setPanel(''); store.set('min', bar.classList.contains('min')); minLabel();
     reclamp();
   };
   panel.addEventListener('click', (e) => {
     const t = e.target;
     const row = t.closest('[data-i]');
-    if (row) { open = ''; renderPanel(); go(+row.dataset.i); return; }
+    if (row) { setPanel(''); go(+row.dataset.i); return; }
     const chip = t.closest('[data-dec]');
     if (chip) { draft.decision = draft.decision === chip.dataset.dec ? '' : chip.dataset.dec; renderPanel(); return; }
     if (t.closest('.attach')) { $('.file').click(); return; }
