@@ -12,10 +12,7 @@ never anything there to check them.
 
 from __future__ import annotations
 
-import contextlib
-import os
 import uuid
-from unittest.mock import patch
 
 import pytest
 
@@ -33,12 +30,7 @@ pytestmark = [
 
 
 def _armed(secret: str | None = SECRET):
-    """Force the gate's view of the stored secret; with one, also lift the suite's off switch."""
-    stack = contextlib.ExitStack()
-    stack.enter_context(_stored(secret))
-    if secret is not None:
-        stack.enter_context(patch.dict(os.environ, {"FLOWPAD_COOKIE_GATE": "on"}))
-    return stack
+    return _stored(secret)
 
 
 def _consume_confirmation(ws):
