@@ -27,7 +27,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 
 const PROJECT_ID = 'f20cecb9-72e7-4cd4-92f2-61b5c48b45cf';
-const DOC_PATH = '/Users/shlom/Flowpad workspace/content/machine-learning-2-0.md';
+const DOC_PATH = '/Users/alice/Flowpad workspace/content/machine-learning-2-0.md';
 const DOC_NAME = 'machine-learning-2-0.md';
 const PROCESS_ID = '853880a0-dd7b-4872-9db2-3bc2b97390dd';
 

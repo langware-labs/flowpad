@@ -82,7 +82,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
     """The first claim stays where it is (this computer); a second one, for the same proven sender, delivers the
     same messages to the agent's box — each place answers on its own."""
     source = DataSource(provider="flow_telegram", name="tg", owner=f"agent-{cloud_agent}")
-    proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "665945020"}}
+    proven = {**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "telegram", "claim": {"kind": "user", "key": "111222333"}}
     hub["claims"] = [proven]
 
     added = await source.add_route_action()
@@ -92,7 +92,7 @@ async def test_also_delivering_to_a_cloud_placement_adds_a_second_claim_for_the_
     assert (entity, claim_id, action) == ("webhook", None, "chain")
     assert body == {
         "parent": "@telegram",
-        "claim": {"kind": "user", "key": "665945020"},
+        "claim": {"kind": "user", "key": "111222333"},
         "target": {"kind": "node", "node_typeid": "compute_node-n-9", "data_source_id": str(source.id)},
     }
 
@@ -107,9 +107,9 @@ async def test_also_delivering_a_number_of_ones_own_adds_an_account_claim(hub, c
     second place as an account claim too — the hub's sibling rule is per kind."""
     source = DataSource(provider="whatsapp", name="wa", owner=f"agent-{cloud_agent}")
     hub["claims"] = [{**_claim(source, kind="desktop", instance_id="inst-1"), "provider": "whatsapp",
-                      "claim": {"kind": "account", "key": "972557709288"}}]
+                      "claim": {"kind": "account", "key": "972500000000"}}]
 
     await source.add_route_action()
 
     ((_entity, _claim_id, _action, body),) = hub["posted"]
-    assert body["claim"] == {"kind": "account", "key": "972557709288"} and "proof" not in body
+    assert body["claim"] == {"kind": "account", "key": "972500000000"} and "proof" not in body

@@ -54,10 +54,10 @@ def _markdown_bundle_entry_dir(tmp_path: Path) -> Path:
 
 async def test_received_markdown_inherits_chosen_project_id(tmp_path: Path) -> None:
     # A real project — the install target the user picked in the review modal.
-    project_root = tmp_path / "ziv-shared-project"
+    project_root = tmp_path / "carol-shared-project"
     project_root.mkdir(parents=True)
     pid = Project.derive_id_for_path(str(project_root))
-    proj = Project(id=pid, name="ziv-shared-project", fs_storage_mount_path=str(project_root))
+    proj = Project(id=pid, name="carol-shared-project", fs_storage_mount_path=str(project_root))
     await proj.save()
 
     # 1. The install action resolves the explicit project's mount root + id.

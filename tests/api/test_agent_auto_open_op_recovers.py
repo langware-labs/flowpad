@@ -3,7 +3,7 @@ up → the op navigates again → it opens.
 
 Through the real Use route, with no stand-ins: the place is a real port nobody listens
 on, the repair rung is a real command that starts a real HTTP server there, and the
-verdict is the real probe. (In production the rung is an agent — Spora's assistant;
+verdict is the real probe. (In production the rung is an agent — Acme's assistant;
 a cli rung exercises the same ladder without a harness.)
 """
 from __future__ import annotations
@@ -140,7 +140,7 @@ def _no_leftover_tasks():
 
 
 async def test_a_plain_address_whose_port_an_app_declares_starts_that_app(bootstrapped_client, tmp_path):
-    """Spora's shape: the agent's ``auto_open`` is ``http://localhost:<port>`` — a port, not an app —
+    """A deployed app's shape: the agent's ``auto_open`` is ``http://localhost:<port>`` — a port, not an app —
     and nothing repairs it. The app's ``webapp.json`` declares that port, so the app is started and
     the address opens, instead of the tab recording "Nothing is answering"."""
     from flow_sdk.builtin import webapp_setup

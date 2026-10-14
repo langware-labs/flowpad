@@ -215,7 +215,7 @@ Creating a project skill from Vibe can write into a different real project on di
 In both independent attempts:
 
 - the browser and process entities had the correct new project id and `/private/tmp/flowpad-vibe-vw08-*` workdir;
-- the system skill ran `flow context list`, which instead returned `CurrentProjectTypeId: project-@local`, `CurrentProcessTypeId: null`, `CurrentPathname: /`, and `CurrentProjectPath: /Users/shlom/Flowpad workspace/my_first_project`;
+- the system skill ran `flow context list`, which instead returned `CurrentProjectTypeId: project-@local`, `CurrentProcessTypeId: null`, `CurrentPathname: /`, and `CurrentProjectPath: /Users/alice/Flowpad workspace/my_first_project`;
 - Claude used that stale path and indexed `vibe-qa-greeter` as project `c82a1115-2f20-52e0-aa2a-4658898b5873`;
 - the selected temporary project remained empty; and
 - reload restored an empty Display.
@@ -486,7 +486,7 @@ In both independent runs:
 - the UI rendered `Note: File is missing`; and
 - the browser logged download 404s for the double-appended path.
 
-VW-08 requested `/Users/shlom/Flowpad workspace/my_first_project/.claude/skills/vibe-qa-greeter/SKILL.md/SKILL.md`. VW-12 requested `/private/tmp/flowpad-vibe-vw12-a1.../.claude/skills/vibe-qa-queue/SKILL.md/SKILL.md`, proving the failure is not dependent on the wrong-project path from VIBE-003.
+VW-08 requested `/Users/alice/Flowpad workspace/my_first_project/.claude/skills/vibe-qa-greeter/SKILL.md/SKILL.md`. VW-12 requested `/private/tmp/flowpad-vibe-vw12-a1.../.claude/skills/vibe-qa-queue/SKILL.md/SKILL.md`, proving the failure is not dependent on the wrong-project path from VIBE-003.
 
 #### Independent reproduction evidence
 

@@ -17,7 +17,7 @@ from flow_sdk.core.webpage_status import check_webpage_status, frame_block_reaso
 from tests.unit._ingest_helpers import local_http_server
 
 APP = "http://localhost:9007"
-SITE = "https://github.com/langware-labs/flowpad-hub/pull/1138"
+SITE = "https://github.com/acme/hub/pull/1138"
 
 
 # --- header rules -----------------------------------------------------------

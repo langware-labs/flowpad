@@ -54,7 +54,7 @@ async def test_materialize_adopts_a_supplied_v5_id(bootstrapped_client, tmp_path
     """v5 = derived from a stable key; just as valid an entity id as v4."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())
-    wanted = str(uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/langware-labs/flowpad-hub"))
+    wanted = str(uuid.uuid5(uuid.NAMESPACE_URL, "https://github.com/acme/hub"))
 
     r = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{cn_id}/materialize-project",

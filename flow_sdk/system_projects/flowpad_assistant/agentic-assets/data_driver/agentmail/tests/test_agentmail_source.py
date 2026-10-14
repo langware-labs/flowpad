@@ -35,7 +35,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 INBOX = "me@agentmail.to"
 MSG = {"message_id": "<abc@email.amazonses.com>", "thread_id": "t-1", "timestamp": "2026-08-02T08:28:47.206Z",
-       "from": "Joe the FlowPad agent <joe@agentmail.to>", "to": ["eran@langware.ai"], "subject": "Round trip", "preview": "Hello there."}
+       "from": "Joe the FlowPad agent <joe@agentmail.to>", "to": ["alice@example.com"], "subject": "Round trip", "preview": "Hello there."}
 MAP = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
 LOG = b"%PDF-1.4 the captain's log"
 #: A listed message with files, as AgentMail reports them: metadata only, the bytes behind a signed URL.
@@ -161,7 +161,7 @@ class TestMapping:
         assert (item.external_id, item.thread_key, item.kind) == ("<abc@email.amazonses.com>", "t-1", "content.message.email")
         assert item.author_display == "Joe the FlowPad agent <joe@agentmail.to>"
         assert item.author_external_id == "joe@agentmail.to", "the address is what `_sender_for` compares"
-        assert (item.name, item.body, item.recipients) == ("Round trip", "Hello there.", ["eran@langware.ai"])
+        assert (item.name, item.body, item.recipients) == ("Round trip", "Hello there.", ["alice@example.com"])
 
     async def test_listed_attachments_and_the_answered_message_map(self, mail):
         mail.messages = [WITH_FILES]

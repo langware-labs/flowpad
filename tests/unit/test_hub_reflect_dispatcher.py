@@ -731,8 +731,8 @@ async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch)
 
     monkeypatch.setattr(fma, "_learn_address_book", fake_learn)
     monkeypatch.setattr(Conversation, "save", fake_save)
-    roster = [{"user_id": "u-nir", "name": "Nir", "email": "nir@example.com", "role": "member"}]
-    e = _make_entity(remote=True, members=[{"user_id": "u-nir", "name": "Nir"}])
+    roster = [{"user_id": "u-bob", "name": "Bob", "email": "bob@example.com", "role": "member"}]
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob", "name": "Bob"}])
 
     await mirror_hub_response_into_local(e, "members", roster)
     assert learned == [roster]

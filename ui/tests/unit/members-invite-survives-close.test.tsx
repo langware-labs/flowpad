@@ -39,12 +39,12 @@ vi.mock('@src/components/conversation/useLocalUser', () => ({
 }));
 vi.mock('@src/components/conversation/ContactPermissionsDialog', () => ({ ContactPermissionsDialog: () => null }));
 
-// The address book (contact store). Gadi Tunes is known only by hub id — the
+// The address book (contact store). Bob Stone is known only by hub id — the
 // hub doesn't disclose other people's emails to a non-admin.
 const CONTACTS = [
   { id: 'u-noa', email: 'noa@example.com', name: 'Noa' },
-  { id: 'u-gadi', email: 'gadi@example.com', name: 'Gadi' },
-  { id: 'u-tunes', user_id: 'hub-id-only', email: null, name: 'Gadi Tunes' },
+  { id: 'u-bob', email: 'bob@example.com', name: 'Bob' },
+  { id: 'u-stone', user_id: 'hub-id-only', email: null, name: 'Bob Stone' },
 ];
 vi.mock('@src/components/contact-picker/use-contacts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/components/contact-picker/use-contacts')>()),
@@ -66,8 +66,8 @@ vi.mock('@src/components/contact-picker/AddressBookButton', () => ({
   }) => (
     <button
       type="button"
-      data-testid="address-book-tick-tunes"
-      onClick={() => onChange([...value, { user_id: 'hub-id-only', name: 'Gadi Tunes' }])}
+      data-testid="address-book-tick-stone"
+      onClick={() => onChange([...value, { user_id: 'hub-id-only', name: 'Bob Stone' }])}
     />
   ),
 }));
@@ -85,7 +85,7 @@ function closePane() {
   fireEvent.keyDown(input(), { key: 'Escape' });
 }
 
-// The langware-os share, 2026-10-05: Nir was added to the list, the pane closed,
+// The handbook share, 2026-10-05: Carol was added to the list, the pane closed,
 // and no invite ever left the desktop — Apply is the only step that sends, and
 // closing dropped the list without a word.
 describe('an invite on the list is not lost by closing the pane', () => {

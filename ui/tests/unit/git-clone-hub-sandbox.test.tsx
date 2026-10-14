@@ -26,7 +26,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 import { useGitCloneDialogSubmit } from '@src/components/project-selector/use-ensure-project';
 
-const REPO_URL = 'https://github.com/langware-labs/flowpad-hub.git';
+const REPO_URL = 'https://github.com/acme/hub.git';
 
 function mount(computeNodeId: string | null) {
   const captured: { current: ReturnType<typeof useGitCloneDialogSubmit> | null } = { current: null };
@@ -58,9 +58,9 @@ describe('clone target, by runtime', () => {
       name: string;
       sandboxProject: { name: string; gitOrigin: { owner: string; name: string; branch: string } };
     };
-    expect(arg.name).toBe('flowpad-hub');
-    expect(arg.sandboxProject.gitOrigin.owner).toBe('langware-labs');
-    expect(arg.sandboxProject.gitOrigin.name).toBe('flowpad-hub');
+    expect(arg.name).toBe('hub');
+    expect(arg.sandboxProject.gitOrigin.owner).toBe('acme');
+    expect(arg.sandboxProject.gitOrigin.name).toBe('hub');
     // The picked branch has to reach the box, or it clones the default branch.
     expect(arg.sandboxProject.gitOrigin.branch).toBe('main');
   });

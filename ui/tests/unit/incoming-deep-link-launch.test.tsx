@@ -47,10 +47,10 @@ describe('IncomingDeepLink — ?action=launch', () => {
   });
 
   it('runs the plan the link carries, and scrubs it from the URL', () => {
-    const view = landOn('action=launch&target=spora&controller=q&agent=a1');
+    const view = landOn('action=launch&target=acme&controller=q&agent=a1');
 
     expect(view.getByTestId('launch-dialog')).toBeTruthy();
-    expect(h.plans[0]).toEqual({ target: { projectId: 'spora' }, controllerId: 'q', agentId: 'a1' });
+    expect(h.plans[0]).toEqual({ target: { projectId: 'acme' }, controllerId: 'q', agentId: 'a1' });
     expect(window.location.search).toBe('');
   });
 

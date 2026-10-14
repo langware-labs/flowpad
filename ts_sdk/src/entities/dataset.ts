@@ -341,7 +341,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. With a
-   *  project, `kind` may be the bare name one of its schemas defines (`gtm.icp`). */
+   *  project, `kind` may be the bare name one of its schemas defines (`crm.lead`). */
   static async forKind(kind: string, projectId?: string): Promise<Dataset[]> {
     const { datasets } = await apiClient.get<{ datasets: Partial<IDataset>[] }>(
       `/api/v1/kinds/${encodeURIComponent(kind)}/datasets`,

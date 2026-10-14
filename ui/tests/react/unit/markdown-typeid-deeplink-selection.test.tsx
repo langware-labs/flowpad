@@ -43,7 +43,7 @@ import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
 // The real vault root + doc from the report. (path → typeid) is the genuine
 // observed pair; markdown ids are uuid5 of the vfs path.
 const PROJECT_ID = '72fac107-c8df-5ab0-8cd1-54edb97bbe71';
-const VAULT_ABS = '/Users/shlom/Flowpad workspace/sapora-streams';
+const VAULT_ABS = '/Users/alice/Flowpad workspace/acme-streams';
 const DOC_REL = 'docs/arch_high_level.md';
 const DOC_ABS = `${VAULT_ABS}/${DOC_REL}`;
 const DOC_LEAF = 'arch_high_level.md';
@@ -53,7 +53,7 @@ const VAULT: AssetTypeVault = {
   typeid: 'compute_node-@local',
   relPath: VAULT_ABS.replace(/^\/+/, ''),
   absPath: VAULT_ABS,
-  label: 'Project docs (sapora-streams)',
+  label: 'Project docs (acme-streams)',
   scope: 'user', // only so the default asset filter renders it; scope is irrelevant here
   project_id: null,
 };

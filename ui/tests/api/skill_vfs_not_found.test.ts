@@ -15,7 +15,7 @@
  * miss. Real backend, no mocks.
  *
  * The original report carried one developer's absolute path
- * (``/Users/shlom/Documents/dev/flowpad-oss/.claude/skills/rca``), which made
+ * (``/Users/alice/Documents/dev/flowpad-oss/.claude/skills/rca``), which made
  * this test pass only on that machine. The path was never the subject: what the
  * test needs is A REAL SKILL ON DISK, so it now discovers one under this
  * checkout's ``.claude/skills`` and builds the vfs ref from it.

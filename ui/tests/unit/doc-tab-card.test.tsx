@@ -29,7 +29,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const PATH = '/work/spora/arch_blueprint.html';
+const PATH = '/work/acme/arch_blueprint.html';
 
 function docTab(projectId: string | null): Tab {
   const dock = new DockPointer({ viewType: ViewType.EDITOR, pointer: PATH });
