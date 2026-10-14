@@ -17,7 +17,7 @@ Names should make that obvious.
 | `SubAgent` + `AgentOptions` together | — | **`agent`** |
 | `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
 | `AgenticProcess` (one run) | session | session |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` / `OpencodeSession` / `DeepagentsSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
 | `Mcp` + `McpServer` + `Command` | **tool** | **tool** |
 | `DynamicWorkflow` + `WorkflowRun` | workflow (script) | — |
@@ -64,8 +64,8 @@ configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.
 …); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
 reads `MCP_SERVER`; attaching writes `MCP`.
 
-**We have nine `*SESSION` types** where the ecosystem has one: `claude_session`,
-`codex_session`, `copilot_session`, `skillit_session`, `remote_worker_session`,
+**We have eleven `*SESSION` types** where the ecosystem has one: `claude_session`,
+`codex_session`, `copilot_session`, `opencode_session`, `deepagents_session`, `skillit_session`, `remote_worker_session`,
 `active_session`, `active_sessions`, `session_analysis`, `session_classification`. Ours are
 provider *transcripts*; the thing that actually runs is `AgenticProcess`.
 
@@ -77,7 +77,7 @@ Keep these apart when naming anything new:
 |---|---|
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess`; `OpencodeSession` / `DeepagentsSession` (FlowPad's own transcript of a store-backed worker, snapshotted when shared) |
 | `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
