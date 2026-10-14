@@ -178,3 +178,32 @@ describe('Global row close-all', () => {
     expect(calls).toEqual(['openDock:GLOBAL_HOME', 'closeGlobal']);
   });
 });
+
+describe('focus after the list closes', () => {
+  const closeAutoFocus = () => new Event('focusScope.autoFocusOnUnmount', { cancelable: true });
+
+  it('picking a project leaves focus to the tab it resumes, not the chip', async () => {
+    buckets = [bucket('p1'), bucket('p2')];
+    const { result } = renderHook(() => useProjectListMenu({ currentProjectId: 'p1' }));
+
+    await act(async () => {
+      await result.current.handleSelect(result.current.buckets[1]);
+    });
+    const event = closeAutoFocus();
+    result.current.onCloseAutoFocus(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('a plain close (Escape, click outside) still returns focus to the chip', () => {
+    buckets = [bucket('p1')];
+    const { result } = renderHook(() => useProjectListMenu({ currentProjectId: 'p1' }));
+
+    act(() => result.current.setOpen(true));
+    act(() => result.current.setOpen(false));
+    const event = closeAutoFocus();
+    result.current.onCloseAutoFocus(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

@@ -13,6 +13,7 @@ import functools
 import logging
 import os
 import shutil
+import subprocess
 
 import pytest
 
@@ -212,6 +213,70 @@ def pytest_configure(config):
     os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
     if not getattr(config.option, "basetemp", None):
         config.option.basetemp = str(_TEST_RUN_ROOT / "tmp")
+
+
+# -----------------------------------------------------------------------------
+# The working directory is sandboxed like HOME and the database.
+#
+# "Which project am I in?" is answered from the working directory, and an agent
+# step with no project gets one made for the folder it runs in. With the checkout
+# as the working directory, one such test mounted a project ON the checkout, and
+# every later test that saved an asset outside a request wrote it into the real
+# `agentic-assets/`. Tests run from a throwaway folder instead; a test that needs
+# a file of the repo names it from `__file__`.
+#
+# Each test gets a folder of its own (`_own_working_directory`): a project one test
+# mounts on its folder is then no ancestor of the next test's. Session fixtures run
+# from a shared throwaway folder, entered after collection so test modules are
+# imported from the checkout as ever. The checkout stays importable for child
+# processes through PYTHONPATH, as it was through the working directory.
+# -----------------------------------------------------------------------------
+_REPO_ROOT = _Path(__file__).resolve().parent.parent
+_UNTRACKED_AT_START = pytest.StashKey[set]()
+_TEST_CWD = _TEST_RUN_ROOT / "cwd"
+
+
+def _untracked_in_checkout() -> set[str]:
+    listed = subprocess.run(
+        ["git", "ls-files", "--others", "--exclude-standard"],
+        cwd=_REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return set(listed.stdout.splitlines()) if listed.returncode == 0 else set()
+
+
+def pytest_sessionstart(session):
+    session.config.stash[_UNTRACKED_AT_START] = _untracked_in_checkout()
+
+
+def pytest_collection_finish(session):
+    _TEST_CWD.mkdir(parents=True, exist_ok=True)
+    os.chdir(_TEST_CWD)
+    os.environ["PYTHONPATH"] = os.pathsep.join(filter(None, [str(_REPO_ROOT), os.environ.get("PYTHONPATH")]))
+
+
+@pytest.fixture(autouse=True)
+def _own_working_directory(monkeypatch):
+    # Beside the test's `tmp_path`, never inside it: tests count what is in theirs.
+    monkeypatch.chdir(tempfile.mkdtemp(dir=_TEST_CWD))
+
+
+def pytest_terminal_summary(terminalreporter, config):
+    """Name every file the run left in the checkout; in CI, fail the run for it.
+
+    Only CI fails: a developer's checkout is shared, and a file another session made
+    while the tests ran is not this run's doing.
+    """
+    left = sorted(_untracked_in_checkout() - config.stash[_UNTRACKED_AT_START])
+    if not left:
+        return
+    terminalreporter.section("files left in the checkout", sep="=", red=True, bold=True)
+    for path in left:
+        terminalreporter.line(path)
+    terminalreporter.line("A test wrote into the real checkout. Tests write under tmp_path only.")
+    if os.environ.get("CI"):
+        terminalreporter._session.exitstatus = pytest.ExitCode.TESTS_FAILED
 
 
 from pytest_asyncio import is_async_test

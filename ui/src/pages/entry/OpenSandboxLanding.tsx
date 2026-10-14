@@ -39,7 +39,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * `callback_override` that used to steer it is gone.
  *
  * It exists because the two obvious destinations are both worse. Sending the
- * recipient straight to `open-service` gives them a blank tab for as long as the
+ * recipient straight to `open/system` gives them a blank tab for as long as the
  * hub takes to resume the box and wait for it to answer — tens of seconds with
  * nothing on screen and no way to tell working from broken. Sending them to hub
  * home instead makes them hunt for a card and press Open, which is the one thing
@@ -49,14 +49,14 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * `InstallLanding` (the other two "you arrived from outside the app" pages).
  *
  * Unlike those two this asks for no confirmation. They accepted an invitation to
- * a specific sandbox; the destination is not attacker-chosen, and `open-service`
+ * a specific sandbox; the destination is not attacker-chosen, and `open/system`
  * authorizes the caller anyway — a recipient without a role on the node gets a
  * 403 from the hub rather than a box.
  *
  * IT ALSO LAUNCHES, when the box arriving here was never launched. A sandbox is
  * written down by `createSandbox` and provisioned by `launchSandbox`, and the two
  * are separate clicks — so a machine can be shared while it is still only a row.
- * Redirecting one of those to `open-service` produces the hub's 409, "this
+ * Redirecting one of those to `open/system` produces the hub's 409, "this
  * machine has not been set up yet": a dead end at the end of an invitation, on
  * the one screen where the recipient has no card and no Launch button to fall
  * back to. The card on hub home has always branched on exactly this
@@ -67,7 +67,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
  * Only an OWNER can launch: `ops` is absent from `compute_node`'s policy block,
  * so it resolves through `default_policy`'s `owner: ["*"]` and for nobody else.
  * That is exactly the difference between the share dialog's two modes — a plain
- * share grants `admin` (enough for `open-service`, not for `ops/setup`), while
+ * share grants `admin` (enough for `open/system`, not for `ops/setup`), while
  * the transfer checkbox grants `owner`. So a transferred box launches here, and
  * a merely-shared one says who has to launch it, rather than dying on a 403 the
  * recipient cannot act on.
@@ -157,7 +157,7 @@ export default function OpenSandboxLanding() {
   // (v5 defines it as `isPending && isFetching`, and a disabled query never
   // fetches). So before auth resolved, "still loading" and "loaded, and this box
   // does not exist" were the same observation — and this page took the second
-  // reading, redirected to `open-service`, and the recipient got the 409 this
+  // reading, redirected to `open/system`, and the recipient got the 409 this
   // page exists to prevent. Arriving straight from a sign-in round trip, which is
   // exactly what an invitation does, made that the COMMON path rather than a race.
   const { launchSandbox, provisionProject, steps } = useSandboxes();
@@ -198,9 +198,9 @@ export default function OpenSandboxLanding() {
         // TWO REASONS WEAR THE SAME 401, and they need opposite answers.
         //
         // NO SESSION ("missing or invalid token"). Sign them in and come BACK
-        // HERE. Falling through to `open-service` instead is what broke every
+        // HERE. Falling through to `open/system` instead is what broke every
         // unlaunched transfer: the hub builds the post-login callback from the url
-        // that reached it, so forwarding first makes `open-service` the return
+        // that reached it, so forwarding first makes `open/system` the return
         // address — and the recipient lands on the one route that cannot launch a
         // box, which 409s. The launch page has to be the address they return to.
         // (Measured on staging: sign-in also completes the invitation accept, so
@@ -232,7 +232,7 @@ export default function OpenSandboxLanding() {
         setAccepting(false);
         if (!accepted) {
           // Unreachable, or genuinely not theirs. The hub is the authority on
-          // both, and `open-service` says so in a language the browser renders.
+          // both, and `open/system` says so in a language the browser renders.
           window.location.assign(url);
           return;
         }
@@ -295,7 +295,7 @@ export default function OpenSandboxLanding() {
   //
   // Reloading was the obvious answer and it is wrong: `ops/setup` has already
   // succeeded by the time a clone fails, so `isLaunched` is true and a fresh
-  // arrival takes the "already launched" branch straight to `open-service` —
+  // arrival takes the "already launched" branch straight to `open/system` —
   // opening a box that never got its project, forever. The VM is not the thing
   // that failed and must not be rebuilt (a second setup orphans the live one);
   // the clone is, and it is separately retryable.

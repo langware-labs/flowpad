@@ -30,7 +30,8 @@ export function ProjectLoadDialogRoot() {
 
 function ProjectLoadDialog({ projectId, projectName, initial, onClose }: ProjectLoadPayload & { onClose: () => void }) {
   const { t } = useLingui();
-  const load = useProjectLoad(projectId, initial);
+  // The question was asked about one app when the verdict names one: the approval is for that app too.
+  const load = useProjectLoad(projectId, initial, '', true, initial.asset ?? '');
   const state = load.result?.state;
   const needsSetup = state === 'setup_required';
   // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.

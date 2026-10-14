@@ -11,6 +11,7 @@ from pydantic import field_validator
 from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
 from flow_sdk.assets.identity_carrier import Absent
 from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.materialize import remove_path
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
 from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
@@ -24,6 +25,40 @@ class AssetScanError(ValueError):
     def __init__(self, issues: list[AssetScanIssue]):
         self.issues = issues
         super().__init__("; ".join(f"{i.path}: {i.message}" for i in issues))
+
+
+def remove_asset_files(type_name: str, asset_ref: str | None) -> None:
+    """Delete a removed asset's own files; left behind, the Assets menu keeps counting them and the
+    next index brings the asset back. Only for a type that owns its main document, and only a
+    writable one: a folder holding that document, or the single file a file type is — never a
+    shipped asset, never anything else."""
+    from flow_sdk.assets.layout import File  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+
+    info = SchemaRegistry.get(type_name)
+    path = Path(asset_ref) if asset_ref else None
+    if path is None or info is None or not info.owns_main_ref:
+        return
+    if isinstance(info.shape, File):
+        owned = path.is_file() and path.suffix.lower() in info.shape.exts
+    else:
+        main = getattr(info.shape, "main", None)
+        owned = bool(main) and (path / main).is_file()
+    if not owned or is_protected_path(path) or _is_shipped(path):
+        return
+    remove_path(path)
+
+
+def _is_shipped(path: Path) -> bool:
+    """Inside the SDK's own system project — the "system" scope, asked of the filesystem: this package
+    stays below the entity layer (``tests/unit/assets/test_package_boundary.py``)."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
+    try:
+        root, target = flowpad_assistant_project_root().resolve(), path.resolve()
+    except Exception:  # noqa: BLE001 -- an unreadable path is not a shipped one; the scope classifier says the same
+        return False
+    return target == root or root in target.parents
 
 
 def _broken_link(path: Path) -> Path | None:

@@ -5,7 +5,7 @@
   "vault_root": "docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
-  "inputs_hash": "6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c",
+  "inputs_hash": "84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
@@ -30,9 +30,9 @@
       "name": "bootstrap_default_project.md",
       "rel_path": "bootstrap_default_project.md",
       "title": "Bootstrap's default_project — which project a machine opens",
-      "summary": "Which project a machine opens at bootstrap: browser memory outranks all, then hub default_project one-shot, last active project, @local; resolved per caller, never cached.",
-      "content_hash": "6a61bad72c2dfa14a3949b13635b58917f51c43e261068b7d4d58cb9df981dc8",
-      "size_bytes": 12212
+      "summary": "Bootstrap default_project rules: browser memory outranks all, then hub one-shot instruction, last active non-system project, @local; resolved per caller, never cached.",
+      "content_hash": "a0cb11871a629b0833afe5a6e417a2fc8eaf4e76fb765f1636caa7eb82d41cab",
+      "size_bytes": 12298
     },
     {
       "name": "composer_readiness.md",
@@ -126,9 +126,9 @@
       "name": "sandbox_browser_url.md",
       "rel_path": "sandbox_browser_url.md",
       "title": "Sandbox preview urls: browser vs server",
-      "summary": "A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.",
-      "content_hash": "f498244f792f29b0743a63a63b5e4e6594ef9f0f0f8ad5ced5603e5f7c1244c7",
-      "size_bytes": 5740
+      "summary": "Sandbox preview URLs in a cloud box: loopback for server-side callers, the audience door for the browser, and why E2B_SANDBOX_ID is never the sandbox-id source.",
+      "content_hash": "8309d79c964c5282be90ea893992ce80b8768df91d18b61a42dd6806d7a0422c",
+      "size_bytes": 6325
     },
     {
       "name": "served_html_encoding.md",
@@ -180,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-13T10:49:35Z",
   "latest_process_ref": ""
 }

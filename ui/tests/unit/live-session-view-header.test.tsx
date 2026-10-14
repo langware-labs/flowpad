@@ -22,6 +22,11 @@ vi.mock('@src/components/conversation/MessageComposer', () => ({
     <div data-testid={props.draft ? 'mock-draft-composer' : 'mock-composer'} data-session={props.liveSessionId ?? ''} />
   ),
 }));
+vi.mock('@src/components/conversation/ConversationHeaderSession', () => ({
+  ConversationHeaderSession: (props: { testIdPrefix?: string; launchOnly?: boolean }) => (
+    <div data-testid={`${props.testIdPrefix}-launch-toolbar`} data-launch-only={String(!!props.launchOnly)} />
+  ),
+}));
 
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
@@ -88,6 +93,8 @@ describe('LiveSessionView header', () => {
       </MemoryRouter>,
     );
     expect(screen.getByTestId('live-session-title').textContent).toBe('Run flow index status');
+    // the message menu's "start a worker on this message", beside Disconnect
+    expect(screen.getByTestId('live-session-launch-toolbar')).toBeTruthy();
   });
 
   it('host sees the standing-grant checkbox + reply-policy select, guest sees only the select', () => {

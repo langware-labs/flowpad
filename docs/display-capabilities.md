@@ -176,7 +176,8 @@ It shipped withholding `allow-same-origin`, on the reasoning that an opaque
 origin costs only `localStorage` while keeping an agent-written page away from
 the API. On a **cookie-gated** instance that is wrong: an opaque origin's *site
 for cookies* is null, so every request the document itself makes is cross-site
-and the `SameSite=Lax` `__Host-cookie-gate` cookie is withheld. The frame's
+and the `__Host-grant` cookie (`SameSite=None; Partitioned`, keyed to the
+top-level site) is withheld. The frame's
 first load is parent-initiated and carries the cookie, so the page renders —
 then its own images and its own link clicks each come back as the gate's
 Forbidden page. The host is identical; the host is not what the browser decides

@@ -1,23 +1,42 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Project, type ProjectLoadResult } from '@sdk';
+import { Project, TypeId, WebApp, type ProjectLoadResult } from '@sdk';
 import { claimAskRun, openQuestionOf } from '@src/components/ask/ask-claims';
 import { errorStatus } from '@src/lib/error-message';
 import { SETUP_POLL_MS } from './use-setup-run';
 
-export const projectLoadKey = (projectId: string, display = '') => ['project-load', projectId, display] as const;
+/** The `asset` a Load names for a web app: the one spelling of its typeid, or '' for no app. */
+export const webappAsset = (webappId?: string | null) => (webappId ? new TypeId(WebApp.type, webappId).toString() : '');
 
-/** Projection of the backend lifecycle. Polling only refreshes progress; it never retries Load. */
-export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | null, display = '', claimQuestions = true) {
+export const projectLoadKey = (projectId: string, display = '', asset = '') =>
+  ['project-load', projectId, display, asset] as const;
+
+/**
+ * Projection of the backend lifecycle. Polling only refreshes progress; it never retries Load.
+ *
+ * `asset` is the app being shown, when the load is for one. It must be named: asked about the project
+ * alone, the backend settles without an app that is not installed, starts it uninstalled and calls the
+ * failed run ready.
+ */
+export function useProjectLoad(
+  projectId: string,
+  initial?: ProjectLoadResult | null,
+  display = '',
+  claimQuestions = true,
+  asset = '',
+) {
   const client = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [missing, setMissing] = useState(false);
   const [questionId, setQuestionId] = useState<string | null>(null);
   const query = useQuery({
-    queryKey: projectLoadKey(projectId, display),
-    queryFn: () => Project.loadState(projectId),
+    queryKey: projectLoadKey(projectId, display, asset),
+    queryFn: () => Project.loadState(projectId, asset || undefined),
     initialData: initial ?? undefined,
+    // A seeded verdict is whatever the opener last heard, not what the backend holds now: read it once
+    // on mount instead of trusting the seed for the app's five-minute default.
+    staleTime: 0,
     refetchInterval: (q) => (q.state.data?.state === 'running' ? SETUP_POLL_MS : false),
   });
   const result = query.data;
@@ -47,8 +66,12 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
       setError(null);
       setMissing(false);
       try {
-        await client.cancelQueries({ queryKey: projectLoadKey(projectId, display) });
-        const next = await Project.load(projectId, { approved, ...(display ? { display } : {}) });
+        await client.cancelQueries({ queryKey: projectLoadKey(projectId, display, asset) });
+        const next = await Project.load(projectId, {
+          approved,
+          ...(asset ? { asset } : {}),
+          ...(display ? { display } : {}),
+        });
         client.setQueriesData({ queryKey: ['project-load', projectId] }, next);
         await client.invalidateQueries({ queryKey: ['project-load-tree', projectId] });
         return next;
@@ -62,7 +85,7 @@ export function useProjectLoad(projectId: string, initial?: ProjectLoadResult | 
         setStarting(false);
       }
     },
-    [client, projectId, display],
+    [client, projectId, display, asset],
   );
 
   return {

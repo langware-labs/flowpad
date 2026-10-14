@@ -5,9 +5,11 @@
  *   1. A project with no `locale` opens in ENGLISH — it does not inherit the
  *      language of the project you came from — and is left unset, not stamped:
  *      en-US is the meaning of "no answer", not an answer the user gave.
- *   2. Every language switch (`setLocale` — the same call the footer chip and
- *      the project's Language card make) records onto the CURRENT project only.
- *   3. Re-entering a project switches the app back to its remembered language.
+ *   2. The footer switch (`setLocale`) is this device's own choice: it never
+ *      writes the shared `locale`, but re-entering the project re-applies it.
+ *   3. The project's Language card (`setProjectLocale`) is the only writer of the
+ *      shared `locale`, and it drops this device's own override for the project.
+ *      Re-entering a project switches the app back to its language.
  *   4. An unsupported stored `locale` reads as unset — English, row untouched.
  *   5. Re-loading a project whose `locale` already matches performs no
  *      redundant save (backend `updated_date` stays put).
@@ -21,7 +23,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { randomUUID } from 'crypto';
 
 import { loadProject } from '@src/routes/loaders/load-project';
-import { applySupportedLocales, getLocale, setLocale } from '@src/contexts/locale-context';
+import { applySupportedLocales, getLocale, setLocale, setProjectLocale } from '@src/contexts/locale-context';
 import { apiTestSetup, fetchRow, getTestSignupInfo } from '../utils/test-utils';
 
 const RUN = randomUUID().slice(0, 8);
@@ -68,6 +70,7 @@ describe('per-project language memory (Project.locale)', () => {
     // Restore the global preference directly (not via setLocale — that would
     // record onto whichever test project is still current), then drop fixtures.
     instancePreferences.set(PrefKey.LOCALE, initialLocale);
+    instancePreferences.set(PrefKey.PROJECT_LOCALES, {});
     await projectA?.delete().catch(() => {});
     await projectB?.delete().catch(() => {});
   });
@@ -94,36 +97,48 @@ describe('per-project language memory (Project.locale)', () => {
     expect((await backendProject(projectA.id)).locale ?? null).toBeNull();
   });
 
-  it('a language switch records onto the current project only', async () => {
+  it('a footer switch stays on this device: the shared locale is untouched', async () => {
     await setLocale('he');
     expect(getLocale()).toBe('he');
-    await waitForBackendLocale(projectA.id, 'he');
+    await sleep(600);
+    expect((await backendProject(projectA.id)).locale ?? null).toBeNull();
+  });
+
+  it('the Language card sets the shared locale on that project only', async () => {
+    await setProjectLocale(projectA, 'ar');
+    expect(getLocale()).toBe('ar');
+    await waitForBackendLocale(projectA.id, 'ar');
     // B was never loaded — untouched.
     expect((await backendProject(projectB.id)).locale ?? null).toBeNull();
   });
 
-  it('entering an unset project resets to English, and its switches record there', async () => {
+  it('entering an unset project resets to English, not the last project language', async () => {
     await loadProject(projectB.typeId);
-    // B has no locale → English, NOT project A's Hebrew.
     await waitFor(() => expect(getLocale()).toBe('en-US'));
     expect((await backendProject(projectB.id)).locale ?? null).toBeNull();
-
-    await setLocale('ar');
-    await waitForBackendLocale(projectB.id, 'ar');
-    // A keeps its own memory.
-    expect((await backendProject(projectA.id)).locale).toBe('he');
   });
 
-  it('re-entering a project switches back to its remembered language', async () => {
-    expect(getLocale()).toBe('ar');
+  it("re-entering a project applies this device's footer choice over the shared one", async () => {
+    await loadProject(projectA.typeId);
+    await waitFor(() => expect(getLocale()).toBe('ar'));
+    await setLocale('he'); // a personal pick while A is current
+    await loadProject(projectB.typeId);
+    await waitFor(() => expect(getLocale()).toBe('en-US'));
+
     await loadProject(projectA.typeId);
     await waitFor(() => expect(getLocale()).toBe('he'));
     await waitFor(() => {
       expect(document.documentElement.lang).toBe('he');
       expect(document.documentElement.dir).toBe('rtl');
     });
-    // Applying a remembered language must not clobber the other project's memory.
-    expect((await backendProject(projectB.id)).locale).toBe('ar');
+    // The personal pick never reached the row.
+    expect((await backendProject(projectA.id)).locale).toBe('ar');
+  });
+
+  it('setting the shared locale drops the personal override', async () => {
+    await setProjectLocale(projectA, 'he');
+    await waitForBackendLocale(projectA.id, 'he');
+    expect(instancePreferences.get(PrefKey.PROJECT_LOCALES)).not.toHaveProperty(projectA.id);
   });
 
   it('unsupported locale reads as unset: English, row left alone', async () => {
@@ -144,7 +159,7 @@ describe('per-project language memory (Project.locale)', () => {
   });
 
   it('re-loading a project whose locale already matches saves nothing', async () => {
-    await setLocale('he'); // an explicit choice while B is current → stamps B
+    await setProjectLocale(projectB, 'he'); // the Language card on B → stamps B
     await waitForBackendLocale(projectB.id, 'he');
     const before = await backendProject(projectB.id);
 

@@ -13,17 +13,20 @@ import { openProjectLoad, useProjectLoadStore } from './project-load-store';
 /** The route has already selected identity. Operational work starts after the tab mounts. */
 export function ProjectLoadGate({
   projectId,
+  asset = '',
   display = '',
   children,
 }: {
   projectId: string;
+  /** The app this gate shows, as a TypeId: the load is judged on it, not on the bare project. */
+  asset?: string;
   display?: string;
   children: ReactNode;
 }) {
   const location = useLocation();
   const client = useQueryClient();
   const dialogActive = useProjectLoadStore((state) => state.open && state.payload?.projectId === projectId);
-  const lifecycle = useProjectLoad(projectId, undefined, display, !dialogActive);
+  const lifecycle = useProjectLoad(projectId, undefined, display, !dialogActive, asset);
   const { data: project } = useEntity<Project>(new TypeId(Project.type, projectId));
   const { load } = lifecycle;
   const [loadedLocation, setLoadedLocation] = useState<string | null>(null);

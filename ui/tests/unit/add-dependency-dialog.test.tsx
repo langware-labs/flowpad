@@ -10,7 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { AddDependencyDialog } from '@src/components/assets/AddDependencyDialog';
-import { hubProjectIdFrom } from '@src/components/assets/HubProjectDependencyDialog';
+import { dependencySourceFor, hubProjectIdFrom } from '@src/components/assets/ProjectDependencyDialog';
 
 function renderDialog(onPick = vi.fn(), onOpenChange = vi.fn()) {
   render(
@@ -27,11 +27,12 @@ afterEach(() => {
 });
 
 describe('AddDependencyDialog', () => {
-  it('offers the four sources', () => {
+  it('offers one tile per source — a single Project tile, no separate hub one', () => {
     renderDialog();
-    for (const id of ['project', 'browse', 'git', 'hub']) {
+    for (const id of ['project', 'browse', 'git']) {
       expect(screen.getByTestId(`add-dependency-${id}`)).toBeInTheDocument();
     }
+    expect(screen.queryByTestId('add-dependency-hub')).not.toBeInTheDocument();
   });
 
   it('adds a required dependency by default', async () => {
@@ -51,9 +52,9 @@ describe('AddDependencyDialog', () => {
 
     await user.click(screen.getByTestId('add-dependency-kind-optional'));
     expect(screen.getByTestId('add-dependency-kind-optional')).toHaveAttribute('aria-checked', 'true');
-    await user.click(screen.getByTestId('add-dependency-hub'));
+    await user.click(screen.getByTestId('add-dependency-project'));
 
-    expect(onPick).toHaveBeenCalledWith('hub', 'optional');
+    expect(onPick).toHaveBeenCalledWith('project', 'optional');
   });
 });
 
@@ -69,5 +70,17 @@ describe('hubProjectIdFrom', () => {
   it('refuses anything that names no project', () => {
     expect(hubProjectIdFrom('')).toBeNull();
     expect(hubProjectIdFrom('my-project')).toBeNull();
+  });
+});
+
+describe('dependencySourceFor', () => {
+  const ID = '0f3c2a1b-4d5e-4f60-8a7b-9c0d1e2f3a4b';
+
+  it('saves a published project by its hub id, so it resolves on any machine', () => {
+    expect(dependencySourceFor({ id: ID, hub_published_at: '2026-10-01T00:00:00Z', fs_storage_mount_path: '/w/a' })).toBe(`hub:${ID}`);
+  });
+
+  it('saves an unpublished project by its folder', () => {
+    expect(dependencySourceFor({ id: ID, hub_published_at: null, fs_storage_mount_path: '/w/a' })).toBe('/w/a');
   });
 });

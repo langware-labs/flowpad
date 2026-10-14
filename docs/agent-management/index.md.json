@@ -5,7 +5,7 @@
   "vault_root": "docs",
   "folder_rel_path": "agent-management",
   "folder_name": "agent-management",
-  "inputs_hash": "50ba94cc812628dc84b0f71578f872a78ddc1c2da3e0b882f5453bb9d32441fd",
+  "inputs_hash": "6c210cb3880b199d0942f83b21395d168ba8360ba1ec3c0f7715f51351723a21",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
@@ -46,9 +46,9 @@
       "name": "pty-websocket.md",
       "rel_path": "pty-websocket.md",
       "title": "PTY, Shell State, and WebSocket Transport",
-      "summary": "PTY stack reference: Shell-owned state, backend PTY creation, WebSocket transport and REST-over-WS, disk-backed framed replay, and attach, input, resize, close semantics.",
-      "content_hash": "2594bc1b0791047f28b0f85cb5edabfb2f21230c6cf44b8be070db0e3320fad2",
-      "size_bytes": 33965
+      "summary": "PTY stack reference: Shell-owned state, backend PTY creation, WebSocket transport, connection-membership FSM, disk-backed framed replay, attach/input/resize/close semantics, headless mode and lifecycle holes.",
+      "content_hash": "8f5025b7d2f0ae6584105fa26d6edbfd4621d9484036c6441aa891b1a62ec4f7",
+      "size_bytes": 33947
     },
     {
       "name": "tabs-management.md",
@@ -62,12 +62,12 @@
       "name": "terminal-toolbars.md",
       "rel_path": "terminal-toolbars.md",
       "title": "Terminal Toolbars",
-      "summary": "Reference for the interactive terminal UI's ProcessToolbar controls, CLI options, columns and trace dropdowns, restart signal, session state and PTY versus headless mode.",
-      "content_hash": "e169147a416d4ffde1883b0021b6b284c183db0ec5a322fbeacd74d482f98cbf",
-      "size_bytes": 25923
+      "summary": "Reference for the interactive terminal's ProcessToolbar: debug menu CLI options and gutters, session actions menu, restart-required signal, InteractiveTerminal state, and PTY versus headless mode.",
+      "content_hash": "0e5ac671e00cf689131c5c0cf992c53ad4b83a738ad0606eff5a975021b642ff",
+      "size_bytes": 29332
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-13T10:49:35Z",
   "latest_process_ref": ""
 }

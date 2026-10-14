@@ -25,7 +25,12 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import serialize_toml_cli_value
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgentOptions,
+    hide_flowpad_interpreter,
+    insert_capability_path_dir,
+    worker_bin_folder,
+)
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
@@ -165,6 +170,34 @@ class CodexAgentOptions(AgentOptions):
             flags.extend(["-c", f"{key}={serialize_toml_cli_value(value)}"])
         return flags
 
+    def _shell_path_flags(self) -> list[str]:
+        """Hand codex the worker PATH as ITS shell setting, so the pinned ``flow`` stays first.
+
+        Codex does not run a command with the PATH it was spawned with: it rebuilds one from the
+        user's shell startup files (a replayed snapshot, or a login shell), and whatever those
+        prepend — pyenv shims, a system Python — lands in front of the pin from
+        :func:`flow_cli_env_path`. ``shell_environment_policy.set`` is applied to the command's
+        environment by codex itself; ``allow_login_shell=false`` closes the fallback where a
+        login shell re-runs the startup files on top of it.
+
+        The value is the PATH the worker is spawned with, not the options' own: both transports
+        put the codex bin folder behind the pin after this argv is built (see
+        :func:`build_worker_spawn_env`). Empty when the worker env carries no pin.
+        """
+        path = self.env_vars.get("PATH")
+        if not path:
+            return []
+        folder = worker_bin_folder("codex")
+        if folder:
+            path = insert_capability_path_dir(folder, path)
+        path = hide_flowpad_interpreter({**self.env_vars, "PATH": path})["PATH"]
+        return [
+            "-c",
+            f"shell_environment_policy.set.PATH={serialize_toml_cli_value(path)}",
+            "-c",
+            "allow_login_shell=false",
+        ]
+
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
           * True (default) → ``exec … --json … -`` headless, prompt over stdin;
@@ -174,7 +207,7 @@ class CodexAgentOptions(AgentOptions):
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
         hook_trust = ["--dangerously-bypass-hook-trust"] if self.bypass_hook_trust else []
         dev_flags = self._developer_instruction_flags()
-        extra_cfg = self._extra_config_override_flags()
+        cfg_overrides = self._extra_config_override_flags() + self._shell_path_flags()
         if not self.json_stream:
             return (
                 hook_trust
@@ -182,7 +215,7 @@ class CodexAgentOptions(AgentOptions):
                 + self._interactive_update_flags()
                 + self._interactive_trust_flags()
                 + self._reasoning_effort_flags()
-                + extra_cfg
+                + cfg_overrides
                 + dev_flags
                 + self._common_tail()
             )
@@ -192,7 +225,7 @@ class CodexAgentOptions(AgentOptions):
             head.append("--ephemeral")
         head.append("--json")
         head.extend(self._reasoning_effort_flags())
-        head.extend(extra_cfg)
+        head.extend(cfg_overrides)
         return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     # ── Serialisation ───────────────────────────────────────────────────────

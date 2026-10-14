@@ -9,7 +9,6 @@ result into the visible terminal before attaching for live output. See
 from __future__ import annotations
 
 import asyncio
-
 import time
 from typing import TYPE_CHECKING
 

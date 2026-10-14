@@ -871,6 +871,43 @@ class Project(SetupSkippable, Entity):
         result = load_state(str(self.id), asset=asset)
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
+    # ── the project's apps: which port each process declares, and where it runs now ────────
+
+    async def _own_apps(self, name: str = "") -> list:
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+        apps = [
+            app for app in await WebApp.get_all({"match": {"project_id": self.id}})
+            if app.asset_ref and Path(app.asset_ref).is_dir()
+        ]
+        return [app for app in apps if not name or app.name == name]
+
+    @action.get(action_name="app-ports")
+    async def app_ports_action(self) -> "ApiResponse":
+        """Every process of every app here: the port it declares, its live port, and its state."""
+        from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+        rows: list[dict] = []
+        for app in await self._own_apps():
+            rows.extend(await webapp_setup.ports(str(app.id)))
+        return ApiSuccessResponse(data={"ports": rows})
+
+    @action.post(action_name="app-stop")
+    async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
+        """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
+        from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+        found = await self._own_apps(app)
+        if not found:
+            return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
+        results = []
+        for one in found:
+            answer = await webapp_setup.stop(str(one.id))
+            if restart and answer.ok:
+                answer = await webapp_setup.step(str(one.id), "start", check=False)
+            results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
+        return ApiSuccessResponse(data={"apps": results})
+
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
         """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
