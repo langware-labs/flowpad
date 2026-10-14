@@ -67,7 +67,7 @@ function endpoint(id: string, kind: string, over: Partial<LLMEndpointOffer> = {}
     base_url: '',
     filters: {} as LLMEndpointOffer['filters'],
     limits: {} as LLMEndpointOffer['limits'],
-    holder_typeid: null,
+    is_mine: null,
     ...over,
   };
 }
@@ -109,7 +109,7 @@ function statusWith(resolvedTypeid: string | null, over: Partial<LLMFundingStatu
     endpoints: {
       [DEVICE]: endpoint(DEVICE, 'device'),
       [KEY]: endpoint(KEY, 'api_key'),
-      [HUB]: endpoint(HUB, 'hub', { holder_typeid: 'user-1' }),
+      [HUB]: endpoint(HUB, 'hub', { is_mine: true }),
     },
     active_for: [],
     ...over,
