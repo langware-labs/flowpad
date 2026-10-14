@@ -13,9 +13,18 @@ window.MOCK_BAR_AT = 'bottom';            // real mode: start bottom-right (buil
 ```
 
 Everything else comes from the **mock row** (`mockify.mock`, `schema/`): `journey` — the steps in order —
-and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch, `decisions` (`id`, `question`,
+and on each step `id`, `app`, `title`, `note`, `branch_of` + `when` for a branch, `next`, `decisions` (`id`, `question`,
 `shown`). Screens are `<section data-step="<id>">` (fast mode; the bar shows/hides them) or drawn on load by
 the page's own script (real mode, via `mockGo`). A decision shown on a screen is `data-decision="D2"`.
+
+A control that moves the journey says where it leads: **`data-next="<step id>"`** — and nothing else (no
+`onclick`): a click on it moves the journey. Where a screen goes ON is its step's `next`, else the next
+main-path screen; Next and the hints follow that one rule. On every screen the bar marks the controls in
+the page: the one going on gets `.mk-next` (a soft glow in the bar's accent, a few gentle pulses unless the
+reviewer prefers reduced motion), every other one `.mk-path` (a faint ring); with no control going on,
+the bar's own Next glows. Both use `box-shadow`, so a screen's own outlines (an open decision) stay. A
+`data-next` naming no step warns once in the console. The reviewer can switch hints off at the bottom of
+the screens list (remembered for the session).
 
 `MOCKIFY.journey` (same step shape) is an optional OFFLINE copy, used only when the page is not served by
 Flowpad: navigation works from it, feedback is off.
