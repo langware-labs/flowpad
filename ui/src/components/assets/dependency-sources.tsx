@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cloud, FolderOpen, GitBranch, PackageCheck, PackagePlus } from 'lucide-react';
+import { FolderOpen, GitBranch, PackageCheck, PackagePlus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiButton } from '@src/components/wiki-tip';
@@ -9,7 +9,7 @@ import type { DependencyKind } from '@src/hooks/use-project-dependencies';
 /** Where a dependency comes from. The sources are the same wherever they're
  *  offered — the "+" dialog in the Assets navigator, and the create-new
  *  surface's tiles. */
-export type DependencySource = 'project' | 'browse' | 'git' | 'hub';
+export type DependencySource = 'project' | 'browse' | 'git';
 
 /** The wiki page behind every dependency surface — hoisted so the title is
  *  written once (a wikiword is resolved by page title at runtime, so a typo
@@ -42,7 +42,7 @@ export function useDependencySources(): DependencySourceInfo[] {
       key: 'project',
       Icon: iconForType('project'),
       label: t`Project`,
-      tip: t`Another Flowpad project — this one depends on its folder`,
+      tip: t`Another Flowpad project — on this computer or on the hub`,
       wikiword: DEPENDENCIES_WIKI,
       testId: 'add-dependency-project',
     },
@@ -61,14 +61,6 @@ export function useDependencySources(): DependencySourceInfo[] {
       tip: t`A git repo — cloned (or a local clone reused) wherever this project opens`,
       wikiword: DEPENDENCIES_WIKI,
       testId: 'add-dependency-git',
-    },
-    {
-      key: 'hub',
-      Icon: Cloud,
-      label: t`Hub project`,
-      tip: t`A project on the hub — fetched by its id wherever this project opens`,
-      wikiword: DEPENDENCIES_WIKI,
-      testId: 'add-dependency-hub',
     },
   ];
 }

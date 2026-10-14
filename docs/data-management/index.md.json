@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162",
+  "inputs_hash": "3039734354d3649fbc6b8d8f666d1dacd156a36cc4cc0d3d405d8b47441b6b31",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
+  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
   "files": [
     {
       "name": "asset-capsules.md",
@@ -38,33 +38,33 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "Layout and conventions of data driver and data source asset folders: manifest, source.py, helper modules, tests, and the DataSourceSpec file authored per configured source.",
-      "content_hash": "eed8f13f5c3c9bcb2b3ed34f754536aa3fb20e3e5fd87e2175f9bb6d57f10dc9",
-      "size_bytes": 19247
+      "summary": "Data driver and source asset folders: manifest, source.py, webhooks; an authored source settles to setup if its driver has verify(), else active, new until loaded.",
+      "content_hash": "594932f4eaceebb1cfd96eb39d49b4c0fa277069054bbb3013f20e5e2201dcb6",
+      "size_bytes": 22372
     },
     {
       "name": "data-sources-ui.md",
       "rel_path": "data-sources-ui.md",
       "title": "Data Sources UI (Frontend)",
-      "summary": "Frontend reference for the Data Sources screen: its components, add/edit/pause/replay/delete actions, and per-source health display",
-      "content_hash": "e3fb2d7f5dff20fb5d57d985f91af1c203736ed200919451515b727ed943c1ae",
-      "size_bytes": 6356
+      "summary": "Frontend reference for the Data Sources screen: components, dataManager queries and actions, URL-first navigation, and how status, health and attention reasons render.",
+      "content_hash": "98aed9d03eaf0225b955b54df2cac5cfd788d1c3e7ef38430cafef4341a1313b",
+      "size_bytes": 7116
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "How a DataSource ingests one external stream (driver, config, cursor, origin) into SourceItem records, from connecting to curating into a dataset.",
-      "content_hash": "d8c0e58bcba60163462a58b19ab9ae0171baec9c54d7cecb03880f285cc7ee4a",
-      "size_bytes": 33174
+      "summary": "DataSource ingestion reference: poller and sync pipeline, driver families and traits, status and health, reflect modes, origin identity, change envelope, adding a source.",
+      "content_hash": "0347d613c4a6f58ad719522530aa3d444b8f5c539bb9a69e4560f1d3d5fdf286",
+      "size_bytes": 34686
     },
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec — schemas as Pydantic, the schema as the layout",
-      "summary": "DataSpec, the Pydantic base class for every schema: kinds versus schemas versus values, frozen extra-forbid behavior, and compiling runtime-arriving schemas into subclasses.",
-      "content_hash": "5edde292bf982d1f3541ecfee5aeed6798ef73f1b986857ad3c1d794ed449291",
-      "size_bytes": 21606
+      "summary": "DataSpec, the Pydantic base of every schema: kinds, authoring form, row links and rules, asset_spec as disk layout, entity documents, serializers, and folder-defined data schemas.",
+      "content_hash": "382840c37340b52c7185f2fb981850a341d4833195087b849b2a82b7a7b2be1b",
+      "size_bytes": 24435
     },
     {
       "name": "database.md",
@@ -78,9 +78,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring guide to dataset folder layout on disk: dataset.json manifest, csv versus io_folder layouts, example normalization, and the metadata plus data JSON convention.",
-      "content_hash": "5555ea3969563d5d01a3430a46b7bc96d6bfd065feba6c7ecf4f07e75b6238b8",
-      "size_bytes": 20823
+      "summary": "Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows with eight row verbs, queries, counts, source curation, mirroring, editors and the schema tree.",
+      "content_hash": "ac9dc8e08576d10d6355f3fbedc333b99d9f8dfcc22a0ffc6624702319f1b54d",
+      "size_bytes": 36966
     },
     {
       "name": "entity-index-sync.md",
@@ -94,9 +94,9 @@
       "name": "evals.md",
       "rel_path": "evals.md",
       "title": "Evals — a dataset's own eval, standard results, one report",
-      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run result kinds, verdicts, metrics, slices and the standard report",
-      "content_hash": "2c9b2a20ff27192738c4230ae03bfd349beeb15a1af6fe3ab3886b88ec1f5aed",
-      "size_bytes": 3283
+      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run kinds, verdicts, versioned values, the runner and its report, and the SmartNavigator eval.",
+      "content_hash": "e4a9e9c3f15b3557dfc61fe4b3a322b90ccb6b9754c41d14ab2fa3547bd71ac9",
+      "size_bytes": 3919
     },
     {
       "name": "folder-layout.md",
@@ -171,6 +171,14 @@
       "size_bytes": 4438
     },
     {
+      "name": "mirroring-a-system-of-record.md",
+      "rel_path": "mirroring-a-system-of-record.md",
+      "title": "Mirroring a system of record",
+      "summary": "How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.",
+      "content_hash": "b735c957d279b36d0a2d0ddc1f303bb0f3282b097410317b8621e07a6b014e34",
+      "size_bytes": 13092
+    },
+    {
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
@@ -190,9 +198,9 @@
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "Disk-to-index discovery in flow_sdk: the FSIndexer DFS walker, per-type slots, explicit-only indexing, session lookup, RecordQuery filtering and error records",
-      "content_hash": "14d20b5874ac8abc2538f412ef6425e4e4be112a54848625b208252caa25b5e3",
-      "size_bytes": 39764
+      "summary": "Disk-to-index discovery in flow_sdk: the FSIndexer DFS walker, subprocess and Rust scan backends, per-type slots, indexing triggers including auto-index, session lookup, RecordQuery and orphan handling.",
+      "content_hash": "77325b9a29078258116283dfdee0251c767d31f102610a17c0f01616668934ef",
+      "size_bytes": 40112
     },
     {
       "name": "schema-registry.md",
@@ -236,6 +244,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:50:02Z",
+  "generated_at": "2026-10-13T11:16:14Z",
   "latest_process_ref": ""
 }

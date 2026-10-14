@@ -168,43 +168,24 @@ def _build_reply_flow_message(
     return reply_fm
 
 
-async def _attach_prompt(
-    reply_fm: "FlowMessage",
-    prompt_text: str,
-    prompt_files: list,
-    *,
-    project_id: Optional[str] = None,
-) -> None:
-    """Attach prompts as library ``Prompt`` entities (TYPE_ID attachments).
+async def _attach_prompt(reply_fm: "FlowMessage", prompt_text: str, prompt_files: list) -> None:
+    """Attach what a person typed (or uploaded) as a session turn's prompt.
 
-    The typed text and each uploaded *text* prompt file's content are
-    minted/reused as real Prompt entities via ``find_or_create_prompt`` (dedup by
-    normalized text within the conversation's project scope) and attached as
-    TYPE_ID entries carrying ``prompt_preview`` (inline text so receivers can
-    preview the prompt before the body bundle downloads). Image / binary prompt files instead keep their
-    raw bytes — stored under ``prompt/<name>`` and attached as
-    ``AttachmentType.PROMPT`` files so the UI renders them inline as pictures
-    rather than decoding the bytes into a garbage prompt. Prompts thus behave
-    like every other entity attachment — they ride the body bundle
-    (the unified ``_pack_file_backed_attachment``) and land in the receiver's
-    project library. Legacy
-    ``AttachmentType.PROMPT`` messages
-    keep working read-side; new sends are entity-backed.
+    The text rides ON THE MESSAGE, as an inline ``AttachmentType.PROMPT`` — never as a library
+    ``Prompt`` entity. A typed turn is conversation content: minting an entity for it wrote every
+    sentence of a live session into the project's ``agentic-assets/prompt/`` folder, one
+    ``git add`` away from being pushed. Sharing a prompt that IS in the library is a different
+    send (a ``TYPE_ID`` attachment the caller passes), untouched by this.
+
+    A text prompt file's content rides the same way. Image / binary prompt files keep their raw
+    bytes — stored under ``prompt/<name>`` and attached as ``AttachmentType.PROMPT`` files so the
+    UI renders them inline as pictures rather than decoding the bytes into a garbage prompt.
     """
     from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, Attachment, AttachmentType
-    from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.builtin.prompt_helpers import find_or_create_prompt
     from flow_sdk.storage import get_entity_embedded_storage
 
     new_atts: list = list(reply_fm.attachment or [])
-
-    # Typed text + each *text* prompt file become library Prompt entities; image
-    # / binary files are stored as prompt-file attachments (raw bytes in the
-    # FlowMessage VFS under ``prompt/<name>``) so the UI shows them as pictures
-    # instead of decoding the bytes into a garbage "prompt".
-    texts: list[tuple[str, Optional[str]]] = []  # (text, name hint)
-    if prompt_text:
-        texts.append((prompt_text, None))
+    texts: list[str] = [prompt_text] if prompt_text else []
 
     storage = None
     for uf in prompt_files or []:
@@ -229,21 +210,10 @@ async def _attach_prompt(
             continue
         content = raw_bytes.decode("utf-8", errors="replace")
         if content.strip():
-            texts.append((content, Path(filename).stem or None))
+            texts.append(content)
 
-    seen_prompt_ids: set[str] = set()
-    for text, name_hint in texts:
-        prompt = await find_or_create_prompt(text, project_id=project_id, name=name_hint)
-        if prompt.id in seen_prompt_ids:
-            continue  # inline text and a file with identical content dedup to one
-        seen_prompt_ids.add(prompt.id)
-        new_atts.append(
-            Attachment(
-                attachment_type=AttachmentType.TYPE_ID,
-                data=str(TypeId(type=Prompt.get_type(), id=prompt.id)),
-                prompt_preview=text,
-            )
-        )
+    # Inline text and a file with identical content are one prompt.
+    new_atts.extend(Attachment(attachment_type=AttachmentType.PROMPT, data=text) for text in dict.fromkeys(texts))
     reply_fm.attachment = new_atts
 
 
@@ -623,6 +593,7 @@ async def _upload_body_and_finalize(
     _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
     return failure
 
+
 async def _finalize_message_dispatch(
     conv: "Conversation",
     fm: "FlowMessage",
@@ -859,7 +830,10 @@ async def check_attachments() -> ApiResponse:
     gaps = await find_unshippable_references(refs)
     gitignored = []
     if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
-        from flow_sdk.builtin.flow_message_bundle import attachments_holding_gitignored, gitignored_payload  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            attachments_holding_gitignored,
+            gitignored_payload,
+        )
 
         gitignored = gitignored_payload(await attachments_holding_gitignored(_typeids_of(refs)))
     return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps), "gitignored": gitignored})
@@ -977,9 +951,7 @@ async def handle_add_message(
         thread_root_id = await thread_root_for_reply(conv.id, anchor)
         if thread_root_id is None:
             field = "reply_to_id" if reply_to_id else "thread_root_id"
-            return ApiFailResponse(
-                message=f"{field} {anchor} is not a message of this conversation", status_code=400
-            )
+            return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -1144,12 +1116,7 @@ async def handle_add_message(
         await _attach_asset_references(reply_fm, asset_references)
 
     if prompt_text or prompt_files:
-        await _attach_prompt(
-            reply_fm,
-            prompt_text,
-            prompt_files,
-            project_id=getattr(conv, "project_id", None) or None,
-        )
+        await _attach_prompt(reply_fm, prompt_text, prompt_files)
 
     if remote_worker_session_id:
         # Authoritative wire carrier for the live-session key (the hub drops
@@ -1215,7 +1182,36 @@ async def handle_add_message(
         create_bookmark=create_bookmark,
     )
 
+    if is_prompt_send and start_settings is None and remote_worker_session_id:
+        await _run_if_hosted_here(remote_worker_session_id)
+
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
+
+
+async def _run_if_hosted_here(session_id: str) -> None:
+    """The host typed into its own live session: run the prompt here, now.
+
+    A prompt the GUEST sends reaches the host through the inbound gate; the
+    host's own send never does (it is not inbound), so without this it would
+    only travel to the guest, which cannot run it.
+    """
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ACTIVE_STATUSES,
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+    )
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    session = await RemoteWorkerSession.resolve_state(session_id)
+    # Approved sessions only (ERROR is runnable — the last turn failed).
+    if session is None or session.status not in {*ACTIVE_STATUSES, RemoteWorkerSessionStatus.ERROR}:
+        return
+    cloud_id = (await User.current_sender_participant()).get("user_id")
+    if session.host_process_id or session.is_host(cloud_id):
+        asyncio.create_task(redrive_session_prompts(session))
 
 
 def _reply_policy_of(body: dict) -> Optional[str]:

@@ -2024,7 +2024,8 @@ class FsRecordsActionsMixin:
         if not isinstance(paths, list) or not isinstance(deleted, list):
             return ApiFailResponse(message="'paths' and 'deleted_paths' must be lists", status_code=400)
         try:
-            result = await reindex_paths(paths, deleted)
+            # Arbitrary changed paths, like a session's writes: only a placed file is minted.
+            result = await reindex_paths(paths, deleted, placed_only=True)
         except Exception as e:
             return ApiFailResponse(message=f"Invalidate failed: {e}", status_code=500)
         return ApiSuccessResponse(data=result.as_dict())

@@ -42,7 +42,7 @@ describe('WebappDisplay — an app that is not running yet', () => {
   afterEach(cleanup);
 
   it('uses the shared provider lifecycle gate instead of automatically starting setup', () => {
-    render(<WebappDisplay endpoint={{ webapp_id: 'a1', project_id: 'p1' } as never} src="http://localhost:4173/" />);
+    render(<WebappDisplay endpoint={{ webapp_id: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b', project_id: 'p1' } as never} src="http://localhost:4173/" />);
 
     expect(screen.getByTestId('project-load-gate').textContent).toContain('setup requires approval');
     expect(mocks.setupCalls.at(-1)).toEqual(['p1']);

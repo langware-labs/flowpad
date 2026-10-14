@@ -56,7 +56,26 @@ ENV_FLOWPAD_DESKTOP = "FLOWPAD_DESKTOP"
 ENV_SOD_ENC_KEY = "SOD_ENC_KEY"
 
 DEFAULT_PROD_PORT = 9007
+#: The two audience doors a gated box publishes beside its own UI — fixed, so the hub
+#: can address them on any publishing provider without asking. Not 9008/9009: those
+#: are the dev and test instances' own ports on a desktop. Same numbers on the hub
+#: (``flowpad.config.AUDIENCE_PORTS``); a parity test pins them.
+AUDIENCE_PORTS: dict[str, int] = {"admin": 9017, "app": 9027}
+#: Per-instance override of a door's port, for several instances on one host (``LOCAL_SERVER_PORT``'s
+#: sibling): ``AUDIENCE_PORT_ADMIN`` / ``AUDIENCE_PORT_APP``. A box runs one instance and keeps the defaults.
+ENV_AUDIENCE_PORT = "AUDIENCE_PORT_{audience}"
 DEFAULT_DB_DRIVER = "sqlite"
+
+
+def audience_ports() -> dict[str, int]:
+    """The port each audience door listens on here: the fixed default, or this instance's override."""
+    ports = {}
+    for audience, default in AUDIENCE_PORTS.items():
+        env = os.environ.get(ENV_AUDIENCE_PORT.format(audience=audience.upper()))
+        ports[audience] = int(env) if env and env.isdigit() else default
+    return ports
+
+
 DEFAULT_MINIHUB_HOST = "0.0.0.0"
 
 
@@ -80,11 +99,11 @@ SODOT_FILENAME = "sodot"
 _UNSET = object()
 
 
-
 def _user_asset_home(instance_name: str) -> Path | None:
     from flow_sdk.instances.paths import user_asset_home  # noqa: PLC0415
 
     return user_asset_home(instance_name)
+
 
 class SecretsNotEnabledError(RuntimeError):
     """Raised when ``instance.sod`` is accessed before ``enable_secrets()``.

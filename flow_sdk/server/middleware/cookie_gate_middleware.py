@@ -1,5 +1,5 @@
 """cookie-gate — admission control. Locks this instance to callers who can
-present its secret.
+present a credential the hub stands behind.
 
 Two gates, one per way in, chosen per request:
 
@@ -8,8 +8,9 @@ Two gates, one per way in, chosen per request:
   Electron. Enforces the token in ``<instance_dir>/.cookie_gate`` (FLOWPAD-2233).
   Applies on a desktop and on a cloud box alike.
 * **hub** (``sandbox_cookiegate_middleware``) — requests from outside, through a
-  hub-armed box's public URL (any other ``Host``). Enforces the secret the hub
-  armed (``get_cookie_gate()``).
+  hub-armed box's public URL (any other ``Host``). Admits the secret the hub armed
+  (``get_cookie_gate()``) as the machine header, or a grant / ticket for the system
+  door signed with it (``server/grants.py``).
 
 A non-loopback ``Host`` with no hub secret armed has no legitimate sender — on a
 desktop it is what DNS rebinding produces — so it gets the local gate.
@@ -23,9 +24,6 @@ LIFO. Rejecting here happens before ``RequestTransactionMiddleware`` opens a
 transaction or attaches the ``@local`` user.
 
 Pure ASGI, not ``BaseHTTPMiddleware``, because it must see WebSocket scopes.
-``RequestTransactionMiddleware`` bails on non-HTTP scopes, which is exactly why
-no WS handshake in this app is authenticated today — cookies do ride the
-same-origin WS handshake, but nothing was there to check them.
 """
 
 from __future__ import annotations
@@ -39,10 +37,12 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
-from flow_sdk.instance_settings import cookie_gate
 from flow_sdk.utils.networking import is_loopback
 
 OFF_SWITCH_ENV = "FLOWPAD_COOKIE_GATE"
+
+#: The SECRET itself, from a machine that holds it. Browsers carry ``grants.COOKIE_NAME`` / ``grants.TICKET_PARAM``.
+HEADER_NAME = "x-cookie-gate"
 
 logger = logging.getLogger(__name__)
 

@@ -190,6 +190,20 @@ export interface DatasetSyncResult {
   unlinked?: { key: string; field: string; value: string }[];
 }
 
+/** Every row listener's catch-up, run when the socket is back. ONE listener on the connection however
+ *  many datasets a page listens to — a page over a dozen datasets is ordinary, and a listener each
+ *  trips the connection's listener-count warning. */
+const catchUps = new Set<() => void>();
+let reconnectHooked = false;
+function onReconnected(connection: ConnectionManager, catchUp: () => void): () => void {
+  if (!reconnectHooked) {
+    reconnectHooked = true;
+    connection.on('on_reconnected', () => catchUps.forEach((run) => run()));
+  }
+  catchUps.add(catchUp);
+  return () => void catchUps.delete(catchUp);
+}
+
 /** The tag a row write emits (`flow_sdk/builtin/dataset.py` `Dataset.ROWS_CHANGED`). */
 export const DATASET_ROWS_CHANGED = 'dataset.rows.changed';
 
@@ -441,10 +455,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
       if (moved) handler({ op: 'sync', keys: [], count: 0, version });
     };
     void catchUp();
-    connection.on('on_reconnected', catchUp);
+    const offReconnect = onReconnected(connection, catchUp);
     return () => {
       offTag();
-      connection.off('on_reconnected', catchUp);
+      offReconnect();
     };
   }
 

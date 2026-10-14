@@ -277,6 +277,7 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
           // so auto-focus would pop the first project's tab submenu unhovered and
           // leave it stuck behind whichever row the pointer visits next.
           onOpenAutoFocus={(event) => event.preventDefault()}
+          onCloseAutoFocus={menu.onCloseAutoFocus}
         >
           <ProjectListPopoverContent menu={menu} />
         </PopoverContent>

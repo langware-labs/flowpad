@@ -21,13 +21,13 @@ import { nextSandboxName, WORKSPACE_SERVICE, workspaceServiceUrl } from '@src/ho
 // A real v4 (version nibble 4, variant 8): TypeId validates the shape.
 const NODE_ID = '11111111-2222-4333-8444-555555555555';
 
-describe('open-service route contract', () => {
+describe('open route contract', () => {
   it('addresses the compute node with the action and service the hub expects', () => {
     const url = workspaceServiceUrl(NODE_ID);
 
     expect(url).toContain(`/${ComputeNode.type}/`);
     expect(url).toContain(NODE_ID);
-    expect(url.endsWith(`/open-service/${WORKSPACE_SERVICE}`)).toBe(true);
+    expect(url.endsWith(`/open/${WORKSPACE_SERVICE}`)).toBe(true);
   });
 
   it('names a service and never a port', () => {

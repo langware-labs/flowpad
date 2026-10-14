@@ -1,4 +1,5 @@
 import type { ServedApp } from '@sdk';
+import { webappAsset } from '@src/components/project-setup/use-project-load';
 import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -80,7 +81,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   }, [diagnostics.refresh]);
 
   // The app's own node of its project's setup tree — run once when the display finds the app down.
-  const setupRoot = endpoint?.webapp_id ? `micro_app-${endpoint.webapp_id}` : '';
+  const setupRoot = webappAsset(endpoint?.webapp_id);
   const setupProject = setupRoot ? (endpoint?.project_id ?? '') : '';
   const needsSetup = !!setupProject && verdict.severity === 'fatal' && verdict.code === 'not_running';
 
@@ -121,7 +122,7 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   const showBanner = verdict.severity === 'degraded' && dismissedBanner !== verdict.code;
 
   if (needsSetup) {
-    return <ProjectLoadGate projectId={setupProject}><RefreshLoadedApp refresh={refreshAll} /></ProjectLoadGate>;
+    return <ProjectLoadGate projectId={setupProject} asset={setupRoot}><RefreshLoadedApp refresh={refreshAll} /></ProjectLoadGate>;
   }
 
   if (verdict.severity === 'fatal') {

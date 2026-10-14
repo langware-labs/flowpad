@@ -726,7 +726,7 @@ export function MessageComposer({
         className={cn(
           'flex items-end gap-2 rounded-md border px-2 py-1.5 transition-colors',
           terminal
-            ? 'border-emerald-500/40 bg-zinc-950 font-mono text-zinc-100 focus-within:border-emerald-400/70'
+            ? 'border-emerald-500/40 bg-background font-mono text-foreground focus-within:border-emerald-500/70 dark:bg-zinc-950 dark:focus-within:border-emerald-400/70'
             : 'border-border bg-background focus-within:border-primary/50',
           dragging && 'border-primary bg-primary/5',
         )}
@@ -736,7 +736,7 @@ export function MessageComposer({
           {sessionToggle}
         </div>
         {terminal && (
-          <span className="select-none self-center text-sm text-emerald-400" aria-hidden>
+          <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
             ❯
           </span>
         )}
@@ -753,7 +753,7 @@ export function MessageComposer({
           className={cn(
             'min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50',
             terminal
-              ? 'font-mono text-zinc-100 placeholder:text-zinc-500'
+              ? 'font-mono text-foreground placeholder:text-muted-foreground'
               : 'text-foreground placeholder:text-muted-foreground',
           )}
         />

@@ -35,6 +35,10 @@ Subkind = Literal["record", "dataset"]
 DATASET_SLOTS = ("input", "output", "context")
 
 
+#: An owner's name -- a schema field's ``owned_by``, a mirror's ``by``: one word.
+OWNER_WORD = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
+
 class DataSchemaField(DataSpec):
     """One field of a ``record``: its shape and what it means."""
 
@@ -49,7 +53,7 @@ class DataSchemaField(DataSpec):
     @field_validator("owned_by")
     @classmethod
     def _an_owner_is_a_word(cls, owner: Optional[str]) -> Optional[str]:
-        if owner is not None and not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", owner):
+        if owner is not None and not OWNER_WORD.fullmatch(owner):
             raise ValueError("owned_by names the owner in a word: a-z 0-9 _ - (\"crm\")")
         return owner
 

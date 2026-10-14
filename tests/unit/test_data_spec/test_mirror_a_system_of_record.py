@@ -431,3 +431,46 @@ async def test_a_link_is_made_only_by_a_unique_field(tasks):
         await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.note", "by": "crm_id", "path": "x"}}}, by="crm")
     with pytest.raises(ValueError, match="no dataset holds crm.ghost"):
         await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.ghost", "by": "crm_id", "path": "x"}}}, by="crm")
+
+
+DEAL_MAP = {"key": "external_id", "input": {"name": "name", "crm_id": "external_id"}}
+
+
+async def test_a_record_gone_outside_stays_while_a_row_still_links_to_it(tasks):
+    """One deal deleted in the outside system that a task still links to does not stop the mirror:
+    that row is kept and named, every other change lands, and it goes once nothing links to it."""
+    deals, tasks_ = tasks
+    three = [{"external_id": f"OPP-{n}", "name": name} for n, name in ((1, "Acme"), (2, "Bolt"), (3, "Core"))]
+    await deals.mirror(three, DEAL_MAP)
+    await tasks_.mirror(TASKS, TASK_MAP, by="crm")                      # t-1 links to opp-1 and opp-2
+
+    now = [{"external_id": "OPP-2", "name": "Bolt Ltd"}, {"external_id": "OPP-4", "name": "Dyne"}]   # 1 and 3 are gone
+    done = await deals.mirror(now, DEAL_MAP)
+    assert (done["created"], done["updated"], done["deleted"]) == (["opp-4"], ["opp-2"], ["opp-3"])
+    (kept,) = done["referenced"]
+    assert kept["key"] == "opp-1" and kept["details"][0]["code"] == "referenced" and "t-1" in kept["details"][0]["message"]
+    assert sorted(r["key"] for r in deals.rows()["rows"]) == ["opp-1", "opp-2", "opp-4"] and not tasks_.rows()["problems"]
+    with pytest.raises(ValueError, match="used by"):                    # a plain sync is still all or nothing
+        await deals.sync([{"key": "opp-2", "input": {"name": "Bolt Ltd", "crm_id": "OPP-2"}}])
+
+    await tasks_.mirror(TASKS[1:], TASK_MAP, by="crm")                  # the task that linked to it is gone
+    assert (await deals.mirror(now, DEAL_MAP)) == {"created": [], "updated": [], "unchanged": ["opp-2", "opp-4"], "deleted": ["opp-1"]}
+
+
+async def test_a_link_may_name_the_row_by_its_key_both_ways(tasks):
+    """The outside system holds a KEY of a row that is ours (a tag): ``"by": "key"`` links it in, and
+    a write sends the key back out."""
+    from pathlib import Path
+
+    from flow_sdk.datasets.projection import outside_changes
+
+    deals, tasks_ = tasks
+    await deals.append([{"key": "acme", "input": {"name": "Acme", "crm_id": "OPP-1"}}])
+    by_key = {"key": "external_id", "input": {"title": "name", "crm_id": "external_id",
+                                              "main": {"link": "crm.deal", "by": "key", "path": "data.tag"}}}
+    done = await tasks_.mirror([{"external_id": "T-1", "name": "Call", "data": {"tag": "acme"}},
+                                {"external_id": "T-2", "name": "Mail", "data": {"tag": "ghost"}}], by_key, by="crm", prune=False)
+    rows = {r["key"]: r["input"] for r in tasks_.rows()["rows"]}
+    assert rows["t-1"]["main"] == deals.ref_of(deals.rows()["rows"][0]["id"]) and rows["t-2"].get("main") is None
+    assert done["unlinked"] == [{"key": "t-2", "field": "main", "value": "ghost"}]
+    assert outside_changes(by_key, {"main": rows["t-1"]["main"]}, Path(tasks_._owner()), {}) == {"tag": "acme"}

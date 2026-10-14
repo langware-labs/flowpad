@@ -167,7 +167,7 @@ not overwritten.
 ### The live preview plumbing
 
 `flow show webapp --port <p> → service_endpoint-<id> + route → APP dock → AppDisplayViewer →
-PersistentIframe → direct-url (localhost:<p>, or the box's public host in a sandbox)`:
+PersistentIframe → direct-url (localhost:<p>, or the box's audience door `https://<AUDIENCE_PORT>-<box>.e2b.dev/<route>/` in a sandbox)`:
 
 - `useAppDisplay` resolves an app address (a proxy and its mount, an artifact, a
   webapp asset) to the routes serving it here (`ServedApp`): a `proxy` route is
