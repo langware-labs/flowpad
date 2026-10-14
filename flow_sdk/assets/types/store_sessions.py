@@ -21,7 +21,8 @@ from flow_sdk.fs_store.record_types import RecordType
 _HEAD_LINES = 64
 
 
-def _iter_head_json(path: Path) -> Iterator[dict]:
+def iter_head_json(path: Path) -> Iterator[dict]:
+    """The JSON events on a JSONL's first lines (unparseable lines skipped; a missing file yields none)."""
     try:
         with open(path, encoding="utf-8", errors="replace") as fh:
             for _, line in zip(range(_HEAD_LINES), fh):
@@ -48,7 +49,7 @@ def _deepagents_session_id(event: dict) -> str | None:
 def _identity_key(pick: Callable[[dict], str | None]) -> Callable[[FSRef | Path], str]:
     def key(ref: FSRef | Path) -> str:
         path = Path(getattr(ref, "_path", ref))
-        found = next((sid for event in _iter_head_json(path) if (sid := pick(event))), None)
+        found = next((sid for event in iter_head_json(path) if (sid := pick(event))), None)
         return found or path.stem.removeprefix("session_")
 
     return key
