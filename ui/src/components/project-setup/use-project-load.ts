@@ -41,8 +41,9 @@ export function useProjectLoad(
   });
   const result = query.data;
   const tree = useQuery({
-    queryKey: ['project-load-tree', projectId, result?.run, result?.state],
-    queryFn: () => Project.setupRun(projectId),
+    queryKey: ['project-load-tree', projectId, asset, result?.run, result?.state],
+    // Opening an app runs THAT app's setup (rooted at it); with no app, the project's own run.
+    queryFn: () => Project.setupRun(projectId, asset),
     enabled: !!result?.run,
     refetchInterval: result?.state === 'running' ? SETUP_POLL_MS : false,
   });

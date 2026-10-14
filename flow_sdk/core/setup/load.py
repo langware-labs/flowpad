@@ -63,15 +63,17 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     from flow_sdk.builtin.project_setup import _RUNS, setup_run_address
 
     pid = str(project_id)
-    task = _RUNS.get((pid, ""))
     result = _RESULTS.get(pid)
     display = result.display if result is not None else None
     # The run was started FOR an app: it is judged on that app whoever asks — a poll that names none
     # must not settle it as ready because the project stands without it.
     asset = asset or (result.asset if result is not None else None) or ""
+    # Opening an app runs that app alone (rooted at it); the project's own run is the other kind.
+    root = asset if asset and (pid, asset) in _RUNS else ""
+    task = _RUNS.get((pid, root))
     if task is not None:
         if not task.done():
-            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid), display=display)
+            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid, root), display=display)
         elif result is not None and result.state is LoadState.RUNNING:
             try:
                 answer = task.result()
@@ -84,7 +86,7 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 result = LoadResult(
                     state=LoadState.READY if ready else LoadState.FAILED, project_id=pid,
                     detail=answer.detail if ready else unmet or _leaf_failure(answer.root) or answer.detail,
-                    run=setup_run_address(pid),
+                    run=setup_run_address(pid, root),
                     display=display, setup_available=not ready and (pid, asset) not in _REPAIRED, asset=asset or None,
                 )
             except (Exception, asyncio.CancelledError) as exc:
@@ -181,7 +183,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                 raise ValueError(problem)
             missing = next((c for c in children if c.state is LoadState.SETUP_REQUIRED), None)
             unmet = _unmet(prerequisites, target)
-            needs_setup = not prerequisites.ok or bool(unmet) or missing is not None
+            # Showing one app: only what THAT app needs holds it — nothing beside it ever blocks it.
+            needs_setup = bool(unmet) if target else not prerequisites.ok or bool(unmet) or missing is not None
             if needs_setup and not approved:
                 state = LoadState.FAILED if prerequisites.state is SetupState.REFUSED else LoadState.SETUP_REQUIRED
                 result = LoadResult(state=state, project_id=pid,
@@ -205,7 +208,9 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     if repair:
                         _REPAIRED.add((pid, target))
                         needs_setup = True
-                    run = await start_setup(project, tree=tree if needs_setup else operational,
+                    # Showing one app: set up and start THAT app — the rest of the project (a credential
+                    # nobody has given yet, an app beside it) is its own item and never holds this one.
+                    run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
                                             load_after=needs_setup, providers=providers,
                                             dependency_approval=approved, ancestors=(*ancestors, pid))
                     result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run)
