@@ -14194,6 +14194,7 @@ msgstr "Loading comparison…"
 
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Loading conversation…"
 msgstr "Loading conversation…"
 
