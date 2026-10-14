@@ -188,25 +188,30 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     openLogsBtn.addEventListener('click', () => { api.openLogsFolder().catch(() => {}); });
   }
 
-  // "Share with us": the button reveals the optional-email form; "Send logs" has main build
-  // the zip and upload it to the Flowpad team's intake — nothing to attach or mail. Empty
-  // email sends anonymously. On a failed upload, "Export logs" is offered as the way out.
+  // "Share with us": the click already commits the upload — the popup only asks whether an
+  // email rides along. Every way out of it (Send, ×, Esc) closes it into the same upload;
+  // an empty email uploads anonymously. On a failed upload, "Export logs" is the way out.
   const shareBtn = document.getElementById('share-logs');
-  const shareForm = document.getElementById('share-form');
+  const shareModal = document.getElementById('share-modal');
+  const shareClose = document.getElementById('share-close');
   const shareEmail = document.getElementById('share-email');
   const shareSend = document.getElementById('share-send');
   const shareStatus = document.getElementById('share-status');
   const shareIdle = shareStatus ? shareStatus.textContent : '';
   if (shareBtn && api.shareLogs) {
-    shareBtn.addEventListener('click', () => {
-      if (!shareForm) return;
-      shareForm.hidden = !shareForm.hidden;
-      if (!shareForm.hidden && shareEmail) shareEmail.focus();
-    });
+    let uploading = false;
+    let sent = false;
     const sendLogs = async () => {
-      if (shareSend) { shareSend.disabled = true; shareSend.textContent = 'Uploading…'; }
+      if (uploading || sent) return;
+      uploading = true;
+      const email = shareEmail ? shareEmail.value.trim() : '';
+      if (shareModal) shareModal.hidden = true;
+      shareBtn.disabled = true;
+      if (shareStatus) {
+        shareStatus.className = 'error-share-note';
+        shareStatus.textContent = 'Uploading the logs to the Flowpad team…';
+      }
       try {
-        const email = shareEmail ? shareEmail.value.trim() : '';
         const r = await api.shareLogs(detailEl ? detailEl.textContent : '', email);
         if (shareStatus) {
           shareStatus.className = 'error-share-note ' + (r && r.ok ? 'ok' : 'fail');
@@ -215,7 +220,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
             : `Couldn’t upload the logs${r && r.error ? `: ${r.error}` : ''}. Use “Export logs” to save the zip and send it to the team yourself.`;
         }
         if (r && r.ok) {
-          if (shareForm) shareForm.hidden = true;
+          sent = true; // one upload per run: the button stays disabled after a success
         } else if (exportBtn) {
           exportBtn.hidden = false;
         }
@@ -226,11 +231,21 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
         }
         if (exportBtn) exportBtn.hidden = false;
       } finally {
-        if (shareSend) { shareSend.disabled = false; shareSend.textContent = 'Send logs'; }
+        uploading = false;
+        shareBtn.disabled = sent; // a failed upload re-arms the button for a retry
       }
     };
+    shareBtn.addEventListener('click', () => {
+      if (!shareModal) { sendLogs(); return; }
+      shareModal.hidden = false;
+      if (shareEmail) shareEmail.focus();
+    });
     if (shareSend) shareSend.addEventListener('click', sendLogs);
-    if (shareEmail) shareEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter' && shareSend && !shareSend.disabled) sendLogs(); });
+    if (shareClose) shareClose.addEventListener('click', sendLogs);
+    if (shareEmail) shareEmail.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendLogs(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && shareModal && !shareModal.hidden) sendLogs();
+    });
   }
   // A new error re-arms the note (a retry that fails again shows the default text).
   const resetShareNote = () => { if (shareStatus) { shareStatus.className = 'error-share-note'; shareStatus.textContent = shareIdle; } };
