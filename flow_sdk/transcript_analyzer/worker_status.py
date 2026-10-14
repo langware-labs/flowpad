@@ -299,7 +299,7 @@ _TASK_NOTIFICATION_TOOL_USE_ID = re.compile(r"<tool-use-id>\s*([^<\s]+)\s*</tool
 _TASK_NOTIFICATION_STATUS = re.compile(r"<status>\s*([^<\s]+)\s*</status>")
 
 
-def running_background_tasks(path: "str | _Path") -> set[str]:
+def running_background_tasks(path: "str | _Path", launched_since: "_datetime | None" = None) -> set[str]:
     """Ids of the ``run_in_background`` tool calls whose work is still running.
 
     Background work outlives its turn: the turn ends (``busy`` reads False) while
@@ -311,6 +311,10 @@ def running_background_tasks(path: "str | _Path") -> set[str]:
     a ``user`` entry carrying a ``<task-notification>`` whose ``<tool-use-id>``
     names it and whose ``<status>`` is anything but ``running``. Scans the WHOLE
     file, not the status tail: a launch can sit far behind the tail window.
+
+    ``launched_since`` is when the CURRENT worker started. A launch older than
+    that belonged to a worker that has since died, and its work died with it,
+    so it never gets a notification — counting it would block a switch forever.
     """
     open_ids: set[str] = set()
     try:
@@ -327,6 +331,8 @@ def running_background_tasks(path: "str | _Path") -> set[str]:
         msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
         content = msg.get("content")
         if entry.get("type") == "assistant" and isinstance(content, list):
+            if launched_since is not None and _launched_before(entry, launched_since):
+                continue
             for b in content:
                 if (
                     isinstance(b, dict)
@@ -336,10 +342,16 @@ def running_background_tasks(path: "str | _Path") -> set[str]:
                     and b["input"].get("run_in_background") is True
                 ):
                     open_ids.add(b["id"])
-        elif entry.get("type") == "user":
-            texts = [content] if isinstance(content, str) else []
-            if isinstance(content, list):
-                texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+        else:
+            texts = []
+            if entry.get("type") == "user":
+                texts = [content] if isinstance(content, str) else []
+                if isinstance(content, list):
+                    texts = [b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            elif entry.get("type") == "attachment" and isinstance(entry.get("attachment"), dict):
+                # A notification that lands mid-turn is folded into that turn as a
+                # ``queued_command`` attachment, never written as a ``user`` entry.
+                texts = [str(entry["attachment"].get("prompt") or "")]
             for text in texts:
                 if "<task-notification>" not in text:
                     continue
@@ -374,6 +386,15 @@ def _is_stop_report(entry: dict) -> bool:
         return False
     status = _TASK_NOTIFICATION_STATUS.search(content)
     return status is not None and status.group(1) in _UNANSWERED_TASK_STATUSES
+
+
+def _launched_before(entry: dict, cutoff: _datetime) -> bool:
+    """True when ``entry``'s ``timestamp`` is older than ``cutoff``; an entry
+    without a readable timestamp is kept (counted), never silently dropped."""
+    try:
+        return _datetime.fromisoformat(str(entry["timestamp"]).replace("Z", "+00:00")) < cutoff
+    except (KeyError, ValueError, TypeError):
+        return False
 
 
 def _has_pending_tool_use(chunk: str) -> bool:
