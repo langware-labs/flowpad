@@ -140,6 +140,19 @@ def test_interactive_pty_env_strips_inherited_color_suppression(monkeypatch):
     assert "CLAUDECODE_ENTRYPOINT" not in env
 
 
+def test_interactive_pty_env_drops_the_host_terminals_identity(monkeypatch):
+    """A PTY is its own xterm: started from Terminal.app, zsh would load Apple's session save."""
+    monkeypatch.setenv("TERM_PROGRAM", "Apple_Terminal")
+    monkeypatch.setenv("TERM_PROGRAM_VERSION", "455")
+    monkeypatch.setenv("TERM_SESSION_ID", "w0t0p0:ABC")
+
+    env = _build_interactive_pty_env("test-session")
+
+    assert "TERM_PROGRAM" not in env
+    assert "TERM_PROGRAM_VERSION" not in env
+    assert "TERM_SESSION_ID" not in env
+
+
 def test_interactive_pty_env_preserves_explicit_worker_env(monkeypatch):
     """Per-worker env is explicit intent and overlays the generic PTY defaults."""
     monkeypatch.setenv("NO_COLOR", "1")

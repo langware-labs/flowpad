@@ -33,7 +33,7 @@ def app(tmp_path, monkeypatch):
     folder = tmp_path / "site"
     folder.mkdir()
     (folder / "index.html").write_text("ok")
-    state = SimpleNamespace(endpoint=None, started=[], rows={}, services={}, by_hand=[])
+    state = SimpleNamespace(endpoint=None, started=[], procs=[], rows={}, services={}, by_hand=[])
 
     def make(*, install_cmd="", port=None, ports=None, package=False, start_cmd=SERVER, services=(), id="a1",
              install_check="", at=None):
@@ -75,6 +75,7 @@ def app(tmp_path, monkeypatch):
     def start(command, **kw):
         proc, log = real_start(command, **kw)
         state.started.append(proc.pid)
+        state.procs.append(proc)
         return proc, log
 
     def by_hand(port, *, command=None):
@@ -96,16 +97,20 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setattr(dev_server, "log_dir", lambda: tmp_path / "logs")
     state.make, state.folder, state.by_hand_start = make, folder, by_hand
     yield state
-    # Whatever a test left serving from its folders goes, however it was started. By what listens
-    # there now, not by the pids recorded at start: a pid outlives its process and is handed out again.
-    for proc in state.by_hand:
+    # Every process this test started goes, through the handle it holds: a live handle keeps its pid from
+    # being handed to another process, so this never ends a stranger.
+    for proc in [*state.procs, *state.by_hand]:
         if proc.poll() is None:
             dev_server.stop_group(proc.pid)
         proc.wait()
-    home = os.path.realpath(tmp_path)
-    webapp_setup.app_ports.stop(
-        [one for one in webapp_setup.app_ports.listeners() if webapp_setup.app_ports._inside(one.cwd, home)]
-    )
+    # A server a start handed off to (it outlives its start command) is found by where it serves. Not on
+    # Windows: reading the whole process table there right after killing hung the cleanup for minutes on
+    # the test VM, and such a test stops what it started itself.
+    if sys.platform != "win32":
+        home = os.path.realpath(tmp_path)
+        webapp_setup.app_ports.stop(
+            [one for one in webapp_setup.app_ports.listeners() if webapp_setup.app_ports._inside(one.cwd, home)]
+        )
 
 
 def _free() -> int:

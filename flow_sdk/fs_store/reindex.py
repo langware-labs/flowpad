@@ -139,6 +139,26 @@ def _under_records_root(path: str) -> bool:
         return False
 
 
+async def sources_gone_under(root: str | Path) -> list[str]:
+    """The ``asset_ref`` of every row stored under ``root`` whose source is gone.
+
+    A walk of ``root`` sees only what is still there, so a deleted asset needs this
+    lookup to be reconciled (``reindex_paths(deleted_paths=...)``).
+    """
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_refs_under, source_gone  # noqa: PLC0415
+
+    likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", pattern]) for pattern in asset_refs_under(root)]
+    match = likes[0] if len(likes) == 1 else ExpressionNode(op=QueryOp.OR, operands=likes)
+    owners = Entity.asset_owner_classes()
+    found = await asyncio.gather(*[o.get_all(QueryFilter(type=o.get_type(), match=match)) for o in owners])
+    refs = list(dict.fromkeys(str(row.asset_ref) for rows in found for row in rows or [] if getattr(row, "asset_ref", None)))
+    return await asyncio.to_thread(lambda: [ref for ref in refs if source_gone(ref)])
+
+
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),

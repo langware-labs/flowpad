@@ -1,10 +1,10 @@
-import { Loader2, Terminal } from 'lucide-react';
+import { Loader2, Play } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { Shell } from '@sdk';
+import { ShellTerminal } from '@src/components/terminal/interactive-terminal/ShellTerminal';
 import { Button } from '@src/components/ui/button';
-import { CopyableCommand } from '@src/components/version-popover/version-popover';
 import { cn } from '@src/lib/utils';
-import { useRunInTerminal } from '@src/terminal/use-run-in-terminal';
 import { AskValueInput } from './AskValueInput';
 import type { AskChoice } from './use-ask-question';
 
@@ -14,8 +14,9 @@ import type { AskChoice } from './use-ask-question';
  *
  * One card per way; the picked card opens its own form. A VALUE way is the ordinary input, sent as
  * `<choice>=<value>` so the op knows which way was taken. A SIGN-IN way has nothing to type and
- * nothing to send: the person runs its command, and the backend — which re-checks by itself —
- * closes the question once the sign-in exists. So this never polls; it only waits.
+ * nothing to send: Run starts its command in a terminal of its own, drawn right here under the
+ * choice (the person may have to answer it — a browser sign-in, a prompt), and the backend — which
+ * re-checks by itself — closes the question once the sign-in exists. So this never polls.
  */
 export function AskChoiceBlock({
   choices = [],
@@ -32,9 +33,22 @@ export function AskChoiceBlock({
   onAnswer: (value: string) => void;
 }) {
   const { t } = useLingui();
-  const runInTerminal = useRunInTerminal();
   const [picked, setPicked] = useState(choices[0]?.value ?? '');
   const [values, setValues] = useState<Record<string, string>>({});
+  /** The terminal a sign-in way's command runs in, per choice, once Run was pressed. */
+  const [shells, setShells] = useState<Record<string, string>>({});
+  const [running, setRunning] = useState<string | null>(null);
+  const run = async (choice: AskChoice) => {
+    setRunning(choice.value);
+    try {
+      const shell = await Shell.belongingTo(`ask-choice:${choice.value}`, { name: choice.label || choice.value });
+      await shell.ensureStarted();
+      setShells((prev) => ({ ...prev, [choice.value]: shell.id }));
+      await shell.sendInput(`${choice.command}\r`);
+    } finally {
+      setRunning(null);
+    }
+  };
   if (!choices.length) return null;
 
   return (
@@ -65,25 +79,30 @@ export function AskChoiceBlock({
 
             {on && choice.command ? (
               <div className="flex flex-col gap-2 px-3 pb-3" data-testid="ask-choice-sign-in">
-                <div data-testid="ask-choice-command">
-                  <CopyableCommand command={choice.command} />
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
+                <code className="rounded bg-muted px-2 py-1.5 text-xs" data-testid="ask-choice-command">
+                  {choice.command}
+                </code>
+                {shells[choice.value] ? (
+                  <>
+                    <div className="h-40 overflow-hidden rounded border" data-testid="ask-choice-terminal">
+                      <ShellTerminal shellId={shells[choice.value]} active className="h-full" />
+                    </div>
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-choice-waiting">
+                      <Loader2 className="size-4 animate-spin" />
+                      <Trans>Checking once it finishes…</Trans>
+                    </span>
+                  </>
+                ) : (
                   <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5"
-                    onClick={() => void runInTerminal(choice.command)}
+                    className="gap-1.5 self-start"
+                    disabled={busy || running === choice.value}
+                    onClick={() => void run(choice)}
                     data-testid="ask-choice-run"
                   >
-                    <Terminal className="size-3.5" />
-                    <Trans>Run in terminal</Trans>
+                    <Play className="size-3.5" />
+                    <Trans>Run</Trans>
                   </Button>
-                  <span className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-choice-waiting">
-                    <Loader2 className="size-4 animate-spin" />
-                    <Trans>Waiting for the sign-in…</Trans>
-                  </span>
-                </div>
+                )}
               </div>
             ) : on ? (
               <div className="flex flex-col gap-2 px-3 pb-3">

@@ -62,6 +62,7 @@ from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-
 # Owned here (the model module) so writers (GraphWorkflowManager's born-compatible
 # example stamps) and the indexer's reader agree by construction.
 from flow_sdk.schema.data_spec.layout import EXAMPLE_META  # noqa: F401 — re-exported
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 #: What `examples` holds: paths, folders and cells — never file CONTENTS.
 ARTIFACT_ROW = DEFAULT_DATASET_SPEC.example_type()
@@ -69,6 +70,8 @@ ARTIFACT_ROW = DEFAULT_DATASET_SPEC.example_type()
 MANIFEST = "dataset.json"
 
 logger = logging.getLogger(__name__)
+# One write at a time per dataset while it goes out to the system that owns it (``Dataset._writing``).
+_WRITING = new_registry()
 
 
 def _pairs(rows: Any) -> list[tuple[Optional[str], dict]]:
@@ -807,17 +810,25 @@ class Dataset(Entity):
             logger.warning("dataset %s: %s", self.name, "; ".join(w["message"] for w in through[2]))
         return through
 
+    def _writing(self) -> asyncio.Lock:
+        """Held while a write goes out to the system that owns the rows: the version a writer read is
+        checked, sent out and written here as one step, so a second writer from that version is refused
+        instead of landing over the first, out there and here in a different order. Per process: only
+        the server holds a driver (``_outside_first``)."""
+        return keyed_loop_lock(_WRITING, str(self._folder()))
+
     async def _write_through(self, pairs: list[tuple[Optional[str], dict]], by: Optional[str], expected: Optional[dict],
                              served: bool, here: Any) -> tuple[list[str], list[Optional[str]], list[dict]]:
         """THE row write: ``pairs`` are ``(key, row)`` -- a key of None for a row not named yet. What an
         outside system owns goes to it first (``_outside_first``) and the rows are then written as it
         answered, under the keys its mirror gives them; when nothing of the kind applies, ``here()``
         writes them as given. → ``(ids, the keys written, warnings)``."""
-        through = await self._outside_first(pairs, by, expected, served) if pairs else None
-        if through is None:
-            return here(), [key for key, _ in pairs], []
-        sent, as_, warnings = through
-        return self._put_many_here([{**row, "key": key} for key, row in sent], None, as_), [key for key, _ in sent], warnings
+        async with self._writing():
+            through = await self._outside_first(pairs, by, expected, served) if pairs else None
+            if through is None:
+                return here(), [key for key, _ in pairs], []
+            sent, as_, warnings = through
+            return self._put_many_here([{**row, "key": key} for key, row in sent], None, as_), [key for key, _ in sent], warnings
 
     async def _put_through(self, key: str, row: dict, *, expected: Optional[str] = None, by: Optional[str] = None,
                            served: bool = False) -> tuple[str, str, list[dict]]:
@@ -1658,8 +1669,9 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
-            key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
+                key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except ConflictError as exc:
@@ -1711,8 +1723,9 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            gone = await delete_through(self, body["keys"], body.get("expected"))
-            return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, body["keys"], body.get("expected"))
+                return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):
             return keys

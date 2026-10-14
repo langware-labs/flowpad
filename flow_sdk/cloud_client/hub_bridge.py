@@ -112,6 +112,11 @@ def _attachment_only_body(payload: dict) -> str:
         if not isinstance(a, dict) or a.get("attachment_type") != "type_id":
             continue
         entity_type = str(a.get("data") or "").split("-", 1)[0]
+        # A prompt call and its answer are values, not things sent: say what happened.
+        if entity_type == "process_call":
+            return "Sent you a prompt to run"
+        if entity_type == "returned_value":
+            return "Ran your prompt"
         if entity_type and entity_type not in ("conversation", "flow_message"):
             return f"Sent you: {entity_type}"
     filename = (payload.get("attachment_filename") or "").strip()

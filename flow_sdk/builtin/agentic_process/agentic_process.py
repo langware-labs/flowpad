@@ -2865,6 +2865,32 @@ class AgenticProcess(Entity):
         rows = await Artifact.get_all({"generated_by": str(self.typeid)})
         return ApiSuccessResponse(data={"artifacts": [row.model_dump(mode="json") for row in rows]})
 
+    @action.post(action_name="session-transcript")
+    async def _http_session_transcript(self) -> ApiSuccessResponse | ApiFailResponse:
+        """The session transcript a share attaches for this process — any worker.
+
+        Answers with the transcript's TypeId (indexing that one file if it has no
+        row yet), so no caller builds ``<type>-<session id>``: the type comes from
+        the vendor and the id from the row, which for codex is derived, not the
+        session id. ``type_id`` is null with a ``reason`` when there is nothing to
+        attach. POST: it may write the row.
+        """
+        from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
+            index_session_file,
+        )
+
+        vendor = self._vendor()
+        session_type = vendor.session_entity_type
+        if session_type is None:
+            return ApiSuccessResponse(data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."})
+        path = self.transcript_path
+        if path is None or not path.exists():
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
+        entity_id = await index_session_file(session_type, path)
+        if entity_id is None:
+            return ApiSuccessResponse(data={"type_id": None, "reason": "This session's transcript could not be read."})
+        return ApiSuccessResponse(data={"type_id": f"{session_type}-{entity_id}", "reason": None})
+
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
         """Return project-scoped web artifacts with their local placement."""

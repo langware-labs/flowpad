@@ -176,6 +176,23 @@ async def end_conversation(conversation_id: str, at: Optional[datetime] = None) 
     await conversation.save(notify=False)
 
 
+def _follow_ending(conversation, item) -> bool:
+    """A message that ends its conversation (``MessageData.ends_conversation``: a merged or closed
+    pull request) ends it at the message's time, once; a later message that does not reopens it. A
+    message older than the end (a backfill) leaves it as it is. Answers whether anything changed
+    (the caller saves)."""
+    data = getattr(item, "data", None)
+    at = getattr(data, "sent_at", None) or (iso_to_utc(item.occurred_at) if item.occurred_at else None)
+    if getattr(data, "ends_conversation", False):
+        if conversation.ended_at is None:
+            conversation.ended_at = at or datetime.now(timezone.utc)
+            return True
+    elif conversation.ended_at is not None and at is not None and at > iso_to_utc(conversation.ended_at):
+        conversation.ended_at = None
+        return True
+    return False
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
@@ -371,6 +388,8 @@ async def project_source_item(
         changed = True
     ours = item.is_ours(source)
     if stamp_conversation(conversation, item, ours=ours):
+        changed = True
+    if _follow_ending(conversation, item):
         changed = True
     if changed:
         await conversation.save(notify=False)

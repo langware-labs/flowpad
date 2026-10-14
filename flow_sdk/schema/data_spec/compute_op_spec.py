@@ -159,11 +159,16 @@ class CliOp(ExeData):
     #: A setup step of the run's web app (``{{webapp}}``: ``install`` / ``build`` / ``start``), run IN this
     #: backend the same way (``builtin/webapp_setup.step``).
     webapp_step: Optional[str] = None
+    #: What a setup requirement itself needs (``credential:<provider>`` / ``provider:<provider>``), answered for
+    #: the run's project (``{{project}}``) IN this backend (``builtin/project_setup.requirement_step``) — the
+    #: nodes a connection's own needs become in the setup tree.
+    requirement_step: Optional[str] = None
 
     @model_validator(mode="after")
     def _has_a_command(self) -> "CliOp":
-        if not self.commands and not self.source_step and not self.webapp_step:
-            raise ValueError("a cli op needs a command for at least one platform, a source_step or a webapp_step")
+        if not self.commands and not self.source_step and not self.webapp_step and not self.requirement_step:
+            raise ValueError(
+                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step")
         return self
 
     def command_for(self, platform: str = "") -> Optional[str]:

@@ -21,8 +21,8 @@ import { projectAppDock, useProjectApps, type ProjectApp } from './use-project-a
  * The project's apps, one click away: a button that opens the app when there is one, and a list
  * of them — each with its type, user or admin — when there are more.
  *
- * The click only navigates: the app opens as a tab of its own (never beside a chat), and the load
- * that starts an app that is not running belongs to the view it lands on. Which app is showing is
+ * The click only navigates: the app opens in place, where the user already is (no tab of its own),
+ * and the load that starts an app that is not running belongs to the view it lands on. Which app is showing is
  * read off the URL. Absent when the project has no app, and on the hub, which starts nothing.
  */
 export function AppButton({ project }: { project?: Project | null }) {
@@ -33,8 +33,7 @@ export function AppButton({ project }: { project?: Project | null }) {
 
   const projectId = String(project.id);
   const shownId = appDockAddress(currentDock ?? null)?.microAppId ?? null;
-  const open = (entry: ProjectApp) =>
-    navigation.openDock(projectAppDock(entry, projectId), undefined, { topLevel: true });
+  const open = (entry: ProjectApp) => navigation.openDock(projectAppDock(entry, projectId));
 
   if (apps.length === 1) {
     const [only] = apps;
