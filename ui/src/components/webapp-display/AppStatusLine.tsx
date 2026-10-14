@@ -3,6 +3,7 @@ import { Trans } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
+import type { ComponentProps } from 'react';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
@@ -21,6 +22,7 @@ export function AppStatusLine({ projectId, app }: { projectId: string; app: stri
     queryKey: key,
     queryFn: () => Project.appPorts(projectId),
     refetchInterval: STATUS_POLL_MS,
+    staleTime: STATUS_POLL_MS,
   });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState('');
@@ -53,20 +55,24 @@ export function AppStatusLine({ projectId, app }: { projectId: string; app: stri
       {page.port ? <span className="text-muted-foreground" data-testid="app-status-port">:{page.port}</span> : null}
       {page.note || problem ? <span className="text-muted-foreground">{problem || page.note}</span> : null}
       <span className="ms-auto flex gap-1">
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={busy} onClick={() => void act(true)}>
+        <LineButton disabled={busy} onClick={() => void act(true)}>
           <Trans>Restart</Trans>
-        </Button>
+        </LineButton>
         {up ? (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={busy} onClick={() => void act(false)}>
+          <LineButton disabled={busy} onClick={() => void act(false)}>
             <Trans>Stop</Trans>
-          </Button>
+          </LineButton>
         ) : null}
         {page.log ? (
-          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => navigation.openFile(page.log!)}>
+          <LineButton onClick={() => navigation.openFile(page.log!)}>
             <Trans>Logs</Trans>
-          </Button>
+          </LineButton>
         ) : null}
       </span>
     </div>
   );
+}
+
+function LineButton(props: ComponentProps<typeof Button>) {
+  return <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" {...props} />;
 }

@@ -23,14 +23,15 @@ _RESULTS: dict[tuple[str, str], LoadResult] = {}
 #: The asset each provider was last loaded for — what a poll that names none is about.
 _LATEST: dict[str, str] = {}
 
+#: ``(provider, asset)`` whose failed load already had its one setup run: a second failure is the
+#: answer, not a loop.
+_REPAIRED: set[tuple[str, str]] = set()
+
 
 def _keep(pid: str, asset: str, result: LoadResult) -> LoadResult:
     _RESULTS[(pid, asset)] = result
     _LATEST[pid] = asset
     return result
-#: ``(provider, asset)`` whose failed load already had its one setup run: a second failure is the
-#: answer, not a loop.
-_REPAIRED: set[tuple[str, str]] = set()
 
 
 class LoadTree:

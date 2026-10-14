@@ -39,7 +39,6 @@ export function AskChoiceBlock({
   const [shells, setShells] = useState<Record<string, string>>({});
   const [running, setRunning] = useState<string | null>(null);
   const run = async (choice: AskChoice) => {
-    if (!choice.command) return;
     setRunning(choice.value);
     try {
       const shell = await Shell.belongingTo(`ask-choice:${choice.value}`, { name: choice.label || choice.value });
