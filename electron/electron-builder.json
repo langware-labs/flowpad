@@ -13,6 +13,7 @@
     "uv-manager.js",
     "flow-rs-keychain.js",
     "semver.js",
+    "update-test.js",
     "loading.html",
     "loading-renderer.js",
     "loading-logo.png",
