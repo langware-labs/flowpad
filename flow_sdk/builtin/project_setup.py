@@ -491,10 +491,11 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
             from flow_sdk.schema.data_spec.asset_setup_spec import (  # noqa: PLC0415
                 LoadState,
                 SetupState,
-                SetupTreeResult,
             )
 
             dependencies = providers if providers is not None else (await required_projects(project) if not root else [])
+            # Best effort: a provider that is not ready is said, never a reason to stop setting this one up.
+            held: list[str] = []
             for provider in dependencies:
                 if str(provider.id) in ancestors:
                     continue
@@ -506,7 +507,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                         continue
                 elif child.state is LoadState.READY:
                     continue
-                return SetupTreeResult(state=SetupState.BLOCKED, detail=f"Dependency {provider.name}: {child.detail}")
+                held.append(f"Dependency {provider.name}: {child.detail}")
 
             async with SharedShell() as base:
                 result = await execute_setup(
@@ -516,15 +517,20 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # A person pressed Set up on THIS project: every node in it is theirs to run.
                     approved=True, control=control,
                 )
-                if result.ok and load_after:
+                if load_after:
+                    # Best effort: what IS set up loads (an app starts) even when something beside it is not.
+                    # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
                     operational = LoadTree(tree)
-                    result = await execute_setup(
+                    loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
                         shell=functools.partial(_setup_shell, inner=base), approved=True, control=control,
                     )
+                    result = loaded if result.ok else result
+                if held and result.ok:
+                    return result.model_copy(update={"state": SetupState.BLOCKED, "detail": "; ".join(held)})
                 return result
 
         # Detached: the run takes minutes and asks the person questions; a plain task

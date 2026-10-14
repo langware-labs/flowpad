@@ -215,7 +215,7 @@ async def test_a_run_for_one_app_is_judged_on_that_app_whoever_asks_how_it_went(
 
     started = await load_project(machine.project, tree=machine.tree, asset=SimpleNamespace(typeid="down"))
     assert started.state is LoadState.RUNNING
-    await project_setup._RUNS[(machine.project.id, "")]
+    await project_setup._RUNS[(machine.project.id, "down")]
     polled = load_state(machine.project.id)
     assert polled.state is LoadState.FAILED and "Down" in polled.detail
     assert load_state(machine.project.id, asset="down").state is LoadState.FAILED
@@ -270,3 +270,28 @@ async def test_a_setup_run_started_outside_a_load_drops_the_verdict_it_outdates(
     await asyncio.sleep(0)  # the run's done-callbacks
 
     assert load_state(pid) is None
+
+
+def app_beside_a_credential(machine):
+    """An app and a credential the person has not given, under one project — the fresh Acme clone."""
+    root = machine.tree.root
+    machine.nodes[root] = SetupNode(id=root, children=("cred", "web"))
+    machine.nodes["cred"] = SetupNode(id="cred", label="Google Cloud", run=wizard("prepare"))
+    machine.nodes["web"] = SetupNode(id="web", label="Admin", run=wizard("install"), on_load=wizard("service"),
+                                     independent=True)
+    machine.broken.add("prepare")
+    return SimpleNamespace(typeid="web")
+
+
+@pytest.mark.asyncio
+async def test_a_credential_nobody_gave_never_keeps_the_app_beside_it_from_opening(machine):
+    """Nothing blocks: setting the project up installs and starts the app even though the credential
+    beside it fails, and the app's own load is READY. The run itself still says what is not set up."""
+    web = app_beside_a_credential(machine)
+    assert (await load_project(machine.project, tree=machine.tree, asset=web)).state is LoadState.SETUP_REQUIRED
+    assert (await load_project(machine.project, tree=machine.tree, asset=web, approved=True)).state is LoadState.RUNNING
+    run = await project_setup._RUNS[(machine.project.id, "web")]
+    assert run.ok, run.detail
+    assert machine.ran == ["install", "service"], "the app alone was installed and started; nobody was asked"
+    shown = await load_project(machine.project, tree=machine.tree, asset=web)
+    assert shown.state is LoadState.READY, shown.detail
