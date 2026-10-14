@@ -23,14 +23,27 @@ import type { AskItem } from './AskItems';
  *  a question someone has open never times out, one nobody shows any more ends a minute later. */
 export const KEEP_OPEN_MS = 20_000;
 
+/** One timer per question on screen, however many screens show it (a modal over a dialog with the same form). */
+const keepingOpen = new Map<string, { screens: number; timer: ReturnType<typeof setInterval> }>();
+
 /** While `questionId` is on screen, the op asking it keeps waiting for the answer. */
 export function useKeepQuestionOpen(questionId: string | null | undefined): void {
   useEffect(() => {
     if (!questionId) return;
-    const say = () => void Promise.resolve(apiClient.post(`/api/v1/ask/${questionId}/seen`)).catch(() => undefined);
-    say();
-    const timer = setInterval(say, KEEP_OPEN_MS);
-    return () => clearInterval(timer);
+    const held = keepingOpen.get(questionId);
+    if (held) {
+      held.screens += 1;
+    } else {
+      const say = () => void Promise.resolve(apiClient.post(`/api/v1/ask/${questionId}/seen`)).catch(() => undefined);
+      say();
+      keepingOpen.set(questionId, { screens: 1, timer: setInterval(say, KEEP_OPEN_MS) });
+    }
+    return () => {
+      const entry = keepingOpen.get(questionId);
+      if (!entry || (entry.screens -= 1) > 0) return;
+      clearInterval(entry.timer);
+      keepingOpen.delete(questionId);
+    };
   }, [questionId]);
 }
 

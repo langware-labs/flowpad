@@ -261,9 +261,9 @@ def _list_webapp_artifacts(process_id: str, query: str) -> list[dict]:
 
 def _answers(port: int) -> bool:
     """Something speaks HTTP on ``port`` — asked only of a holder the process table cannot name."""
-    from flow_sdk.core.dev_server import loopback_status, loopback_urls  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_answers  # noqa: PLC0415
 
-    return any(loopback_status(url, 2) is not None for url in loopback_urls(port))
+    return loopback_answers(port, timeout=2)
 
 
 def _where(port: int, folder: Path, start_cmd: str, name: str) -> tuple[int, bool]:

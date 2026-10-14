@@ -324,14 +324,17 @@ class _Walk:
 
         # Best effort: the node's own run is attempted whatever its children came to. A node with a child
         # that is not set up still says so first — that is what it is waiting on.
+        failed = ""
         if spec.run is not None:
             node.run = await self.wizard(spec, spec.run, act, node, "run", scope)
             await self._record(spec, node.run)
+            if not node.run.ok:
+                failed = node.run.detail or "did not finish"
         if stuck:
             names = ", ".join(child.label for child in stuck)
             return self.settle(node, act, SetupState.BLOCKED, f"waiting on {names}")
-        if node.run is not None and not node.run.ok:
-            return self.settle(node, act, self._unmet(), node.run.detail or "did not finish")
+        if failed:
+            return self.settle(node, act, self._unmet(), failed)
         # What stands on its own never held this node up; say which of them it settled without.
         apart = f"; not set up: {', '.join(child.label for child in left)}" if left else ""
         return self.settle(node, act, SetupState.DONE, _done_detail(node) + apart)
