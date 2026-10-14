@@ -9,7 +9,7 @@ import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
-import { FileAttachmentPicker, mergePickedFiles, useAnnotatedImagePaste } from '@src/components/conversation/FileAttachmentPicker';
+import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
@@ -17,7 +17,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import { Loader2, MessageSquarePlus, Pencil } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -37,10 +37,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const addFiles = useCallback((picked: FileList | File[] | null) => {
-    setFiles((prev) => mergePickedFiles(prev, picked).files);
-  }, []);
-  const handlePaste = useAnnotatedImagePaste(addFiles, { enabled: !busy, setText: setInitialMessage });
+  const { addFiles, handlePaste } = useFileStateAttach(setFiles, { enabled: !busy, setText: setInitialMessage });
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
