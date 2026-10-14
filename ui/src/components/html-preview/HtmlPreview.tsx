@@ -31,8 +31,8 @@ import { useFS } from '@src/hooks/useFS';
  *
  * A sandboxed frame WITHOUT `allow-same-origin` has an opaque origin, and an
  * opaque origin's *site for cookies* is null — so every request the document
- * itself makes counts as cross-site, and the `SameSite=Lax` `__Host-cookie-gate`
- * cookie is withheld from all of them. Same host or not: the host is not what
+ * itself makes counts as cross-site, and the `__Host-grant` cookie (`SameSite=None;
+ * Partitioned`, keyed to the top-level site) is withheld from all of them. Same host or not: the host is not what
  * the browser is deciding on. The symptom is precise and was measured on e2b —
  * the frame's FIRST load is initiated by the parent, so it carries the cookie
  * and the page renders; then its own image fetch and its own link clicks arrive

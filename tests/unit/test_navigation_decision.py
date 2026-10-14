@@ -39,6 +39,19 @@ def log_temp(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def index_storage(tmp_path):
+    """Storage for the index, so the log is indexed here as it is in a running instance."""
+    import flow_sdk.request_context.methods as ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+
+    ctx.set_default_test_storage_fallback(LocalStorageDriver(str(tmp_path / "blobs")))
+    try:
+        yield
+    finally:
+        ctx.set_default_test_storage_fallback(None)
+
+
+@pytest.fixture
 def hub(monkeypatch):
     state = {"endpoints": [JEV], "answer": ("agentic", 0.99)}
 
@@ -162,6 +175,19 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         log_temp_runs = navigation_log.folder().parent / "runs"
         run, _ = await evals.run(Dataset.at(navigation_log.folder()), kinds=["train"], out_dir=log_temp_runs)
         assert (run.examples, run.counts["unlabelled"], run.metrics["precision"]) == (1, 3, 1.0)
+    finally:
+        write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+
+
+async def test_the_log_belongs_to_the_user_not_to_every_project(hub, log_temp, index_storage):
+    """It lives in Flowpad's temp folder — inside no project and no known root — so its row was
+    born with no scope, and the project filter lists a scope-less dataset under every project."""
+    write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+    try:
+        await _decide_and_log("open data sources")
+        row = await navigation_log._indexed()
+        assert row is not None, "the log was not indexed"
+        assert (row.scope, row.project_id) == ("user", None)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 

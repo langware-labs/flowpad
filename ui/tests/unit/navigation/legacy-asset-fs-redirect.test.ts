@@ -18,13 +18,13 @@ function captureRedirect(dock: DockPointer, requestPath: string): Response | nul
 describe('legacy Assets fs route canonicalization', () => {
   it('replace-redirects a relative route to canonical local VFS identity', () => {
     const redirect = captureRedirect(
-      new DockPointer(ViewType.ASSETS, 'fs/Users/shlom/docs', { editorMode: 'view' }),
-      '/dock/assets/fs/Users/shlom/docs',
+      new DockPointer(ViewType.ASSETS, 'fs/Users/alice/docs', { editorMode: 'view' }),
+      '/dock/assets/fs/Users/alice/docs',
     );
 
     expect(redirect?.status).toBe(302);
     expect(redirect?.headers.get('Location')).toBe(
-      '/dock/assets/fs/vfs/compute_node-%40local/Users/shlom/docs?editorMode=view',
+      '/dock/assets/fs/vfs/compute_node-%40local/Users/alice/docs?editorMode=view',
     );
   });
 
@@ -46,7 +46,7 @@ describe('legacy Assets fs route canonicalization', () => {
   it('does not redirect an already-canonical route', () => {
     const dock = new DockPointer(
       ViewType.ASSETS,
-      'fs/vfs/compute_node-@local/Users/shlom/docs',
+      'fs/vfs/compute_node-@local/Users/alice/docs',
     );
     expect(captureRedirect(dock, dock.toUrl())).toBeNull();
   });

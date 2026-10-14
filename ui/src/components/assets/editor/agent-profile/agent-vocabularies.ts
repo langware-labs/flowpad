@@ -51,15 +51,10 @@ export const AGENT_MACHINE_SIZES = Object.values(ComputeNodeSize);
 /**
  * The Deploy tab's own display text — `ComputeNodeSizeLabels` plus an
  * indicative hourly price. Owned HERE, not in the shared SDK entity: that
- * label is mirrored verbatim into the hub's own vendored SDK copy
- * (`flowpad/ui/sdk/src/entities/compute-node/machine-status.ts`) and read by
- * an unrelated hub surface, so a price baked in there ships stale the moment
- * E2B's rate changes, with no build step to catch it. This component is the
- * only place that wants a price at all.
- *
- * Prices are E2B usage rates ($0.000014/vCPU-s, $0.0000045/GiB-s —
- * $0.0504/vCPU-hr, $0.0162/GiB-hr) x1.7, precomputed: sm $0.1332 -> $0.2264,
- * md $0.2340 -> $0.3978, lg $0.4680 -> $0.7956 per hour.
+ * label is mirrored verbatim into the hub's own SDK copy and read by an
+ * unrelated hub surface, so a price baked in there would ship stale with no
+ * build step to catch it. This component is the only place that wants a
+ * price at all.
  */
 const MACHINE_SIZE_HOURLY_PRICE: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: '$0.226/hr',
@@ -75,15 +70,8 @@ export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object
  * The monthly-billed machines (the hub's `gcp_vm` provider): the machine's strength and a MONTHLY
  * price — these run, and bill, all month. Owned here for the same reason as the hourly prices.
  *
- * The specs are what the hub creates (`GCP_COMPUTE_SIZE_MACHINE_TYPES` in flowpad-hub config.py —
- * change both together): sm e2-small, md e2-medium (both shared-core, bursting), lg e2-custom-4-8192.
- * Prices are the VM alone, us-central1 on-demand at 730 h/month (Cloud Billing catalog, 2026-10-05:
- * E2 core $0.02181159/h, ram $0.00292353/GiB-h; E2 custom core $0.02290217/h, ram $0.00306971/GiB-h),
- * x1.7, precomputed and rounded to the dollar:
- *   sm e2-small         (2 CPU shared, 2 GB): $12.23 -> $21/mo
- *   md e2-medium        (2 CPU shared, 4 GB): $24.46 -> $42/mo
- *   lg e2-custom-4-8192 (4 CPU, 8 GB):        $84.80 -> $144/mo
- * Not included: the 20 GB boot + 30 GB workspace pd-balanced disks ($5.00) and the IPv4 ($3.65).
+ * The specs mirror what the hub creates per size — change both together. Prices are for the
+ * machine alone, rounded to the dollar.
  */
 const MACHINE_SIZE_MONTHLY: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: '2 CPU · 2 GB · $21/mo',

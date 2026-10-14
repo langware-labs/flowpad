@@ -45,6 +45,7 @@ import type {
   ProjectContextDirInfo,
   ProjectCustomization,
   ProjectMember,
+  SetupTreeResult,
 } from './project-types';
 export type * from './project-types';
 
@@ -225,44 +226,20 @@ export interface ProjectReadiness {
   gaps: ProjectSetupRequirement[];
 }
 
-/** Where one node of the setup tree stands (`setup.node`). */
-export type SetupNodeState = 'pending' | 'running' | 'done' | 'failed' | 'blocked' | 'refused' | 'held' | 'skipped';
-
-/** One step of a node's wizard, as its run answered it. */
-export interface SetupStepAnswer {
-  exit_code?: number;
-  detail?: string;
-  ran?: boolean;
-}
-
-/** A node's `prepare` / `run` wizard result: its own verdict and each step's answer. */
-export interface SetupWizardAnswer extends SetupStepAnswer {
-  steps?: Record<string, SetupStepAnswer>;
-}
-
-/** One asset of the setup tree (`SetupNodeResult`): set up after its children. */
-export interface SetupNodeResult {
-  id: string;
-  label: string;
-  /** Depth under the root (root = 0). */
-  level: number;
-  state: SetupNodeState;
-  detail: string;
-  prepare: SetupWizardAnswer | null;
-  run: SetupWizardAnswer | null;
-  children: SetupNodeResult[];
-  /** Set up already under another parent this run; its subtree shows there. */
-  shared: boolean;
-}
-
-/** The whole setup (`SetupTreeResult`): the root node, and the run's own verdict. */
-export interface SetupTreeResult {
-  state: SetupNodeState;
-  detail: string;
-  root: SetupNodeResult | null;
-  total: number;
-  done: number;
-  ran: boolean;
+/** One process of a project's app (`GET project/<id>/app-ports`). */
+export interface ProjectAppPort {
+  app: string;
+  /** `page`, or a service's name. */
+  process: string;
+  declared: number | null;
+  required: boolean;
+  /** `running`, `stopped`, or `conflict` (its port is held by another program). */
+  state: string;
+  port: number | null;
+  pid: number | null;
+  note: string;
+  /** The log the process writes, when Flowpad started it and it is running. */
+  log?: string | null;
 }
 
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
@@ -889,9 +866,13 @@ export class Project extends APIEntity<Project> {
   }
 
   /** Read-only preview of the asset's current declarations plus candidate additions. */
-  async previewDependencies(asset: string, sources: string[]): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
+  async previewDependencies(
+    asset: string,
+    sources: string[],
+  ): Promise<Pick<ProjectDependencies, 'dependencies' | 'warnings'>> {
     const response = await this.post<Pick<ProjectDependencies, 'dependencies' | 'warnings'> | null>(
-      'preview-dependencies', { asset, sources },
+      'preview-dependencies',
+      { asset, sources },
     );
     if (!response) throw new Error('Could not preview dependencies');
     return response;
@@ -1066,11 +1047,39 @@ export class Project extends APIEntity<Project> {
     return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
   }
 
+  /** Stop the setup run going here (`POST project/<id>/setup-stop`): its commands killed, its question withdrawn.
+   *  Starting again resumes. Answers whether a run was stopped. */
+  static async stopSetup(projectId: string, root = ''): Promise<boolean> {
+    const actionInfo = new ActionInfo('setup-stop', Project.type, projectId, 'POST');
+    if (root) actionInfo.bodyParameters = { root };
+    const data = await dataManager.callAction<{ root: string } | void, { stopped: boolean }>(actionInfo);
+    return data?.stopped ?? false;
+  }
+
   /** Undo a local skip (`POST project/<id>/setup-unskip`). Answers with the readiness that follows. */
   static async unskipSetup(projectId: string, typeid: string, name = ''): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
     actionInfo.bodyParameters = { typeid, name };
     return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Every process of every app of the project here (`GET project/<id>/app-ports`): its declared port, its live
+   *  port and its state. */
+  static async appPorts(projectId: string): Promise<ProjectAppPort[]> {
+    const actionInfo = new ActionInfo('app-ports', Project.type, projectId, 'GET');
+    const data = await dataManager.callAction<void, { ports: ProjectAppPort[] }>(actionInfo);
+    return data?.ports ?? [];
+  }
+
+  /** Stop an app of the project on this machine, whoever started it (`POST project/<id>/app-stop`); `restart`
+   *  starts it again on its port. Answers whether it worked, and why not. */
+  static async stopApp(projectId: string, app: string, restart = false): Promise<{ ok: boolean; detail: string }> {
+    const actionInfo = new ActionInfo('app-stop', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { app, restart };
+    const data = await dataManager.callAction<{ app: string; restart: boolean }, { apps: { ok: boolean; detail: string }[] }>(
+      actionInfo,
+    );
+    return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */

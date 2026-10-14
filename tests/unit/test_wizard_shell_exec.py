@@ -88,7 +88,7 @@ async def test_on_output_fires_when_the_command_writes_and_not_when_it_is_silent
         timeout_seconds=5,
         workdir=Path(tmp_path),
         platform="linux",
-        on_output=lambda: heard.append(1),
+        on_output=lambda _line: heard.append(1),
     )
     assert len(heard) >= 2  # stdout and stderr each spoke
 

@@ -409,9 +409,12 @@ Eight verbs, the same in Python, TypeScript, REST and `dm_ctl`:
 (`delete` and `rename` alone are the ENTITY's verbs — they act on the dataset itself — so the row
 verbs carry `_row`. Writes are awaited; reads are plain calls.)
 
-Four laws. (1) Every write is checked first and is all or nothing. (2) A refusal is read by
+Four laws. (1) Every write is checked first and is all or nothing — except a MIRROR of an outside
+system (`mirror`, `sync(lenient=True)`), which keeps a record that does not fit as a problem row and
+writes the rest (see [mirroring a system of record](mirroring-a-system-of-record.md)). (2) A refusal is read by
 `details[].code` — `[{path, code, message}]` on every refusal, with `errors` as its lines: **400** the
-row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`),
+row does not fit (`shape:<type>`, `dangling_ref`, `inline_row`, `rule`, `unique`, `owned`, `row`,
+and in a mirrored dataset `not_writable`, `source_refused`, `unlinked`),
 **404** no such row, **409** it changed since (`conflict`, `gone`) or is still linked to (`referenced`).
 In Python these are `RowRefused` (alias `LinkError`), `LookupError`, `ConflictError`. (3) One bad row
 never hides the others. (4) A change is announced as a hint (`dataset.rows.changed`: keys, never
@@ -443,13 +446,14 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 | `POST check-row {row}` | `{ok, errors, details}` for one row — shape, references and the schema's rules, links checked even when the shape fails; writes nothing |
 | `GET example/<key or id>` | one example's slot VALUES (an editor's read) |
 | `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
-| `GET rows` | `{rows, total, problems, linked?}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset, expand}` (JSON) and `?q=` answer only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit |
+| `GET rows` | `{rows, total, problems, linked?, version}`: every row that fits with its slot values, and the ones that do not, by key with all their errors — one bad row hides nothing. `?filter={match, order_by, limit, offset, expand}` (JSON) and `?q=` answer only the rows that match, ordered and paged; `total` counts the matches before paging, and `problems` is still every row that does not fit; `version` is the rows as a whole these were read from |
+| `GET rows-version` | `{version}`: the rows as a whole (`Dataset.rows_version` — a digest of every row file's path, size and mtime, no row read; `""` with no rows yet). Any write by anyone moves it; a listener compares it with the last it heard and re-reads only when it moved |
 | `GET count` | `{total, groups, metrics?}`: how many rows match `?filter=` / `?q=`, and per `?group_by=<path or bucket>,…`: `[{by, count, metrics?}]`; `?metrics={name: "distinct:<path>"}`, `?order_by=`, `?week_start=` |
 | `GET used-by[?keys=a,b]` | `{used_by: {key: [{dataset_id, kind, key}]}}`: who links to each row; `[]` for a row nothing links to |
 | `POST put-rows {rows, expected?}` | create or replace several rows (`[{key, input, …}]`) as ONE step: every row checked first, one that does not fit (400, `details` under `<key>.<path>`) or changed since `expected` (`{key: version}`, 409) writes nothing |
 | `POST delete-rows {keys, expected?}` | remove several rows as ONE step, or none: 404 a key that is no row, 409 a row changed since or still referenced. Rows removed together do not hold each other back |
 | `POST sync-rows {rows, prune?, match?}` | make the dataset hold exactly `rows` → `{created, updated, unchanged, deleted}`: a row that reads the same is not rewritten; rows not listed are removed unless `prune` is false, and only those `match` selects when given. All or nothing |
-| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows`; see [mirroring a system of record](mirroring-a-system-of-record.md) |
+| `POST mirror {source_id, map, by?, prune?, match?}` | make the dataset the typed mirror of a data source's items (`{key: <path>, input: {<field>: <path>}}`) → as `sync-rows` plus `misfit?: [{key, details}]` (records kept as problem rows) and `unlinked?: [{key, field, value}]`; NOT all or nothing — one record that does not fit never stops the rest; see [mirroring a system of record](mirroring-a-system-of-record.md) |
 | `POST rows-changed {op, keys}` | a writer outside the server says rows changed (`Dataset.announce`); the server emits the event below. Writes nothing |
 | `POST validate` | every row read as the declared schema; names each row that does not fit by its `key` (and `example_id`), with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
@@ -457,8 +461,11 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
 those, not the lines. Three numbers are not the same: `num_examples` counts every row folder,
 `count().total` and `rows().total` count the rows that FIT (the rest are `problems`).
-A field kept in step with a copy outside Flowpad follows the three-way rule:
-`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`.
+A field that must live both here and in an outside system is THAT SYSTEM'S field: mirrored in,
+marked `owned_by`, and an edit here is sent there first
+([mirroring a system of record](mirroring-a-system-of-record.md)) — never kept in step by hand.
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`
+is for two stores with no source between them (a file copied to a drive), not for a mirrored row.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;
@@ -534,8 +541,9 @@ file under `<project>/.flow/runs/`; a second run waits, or `wait=False` raises `
 `dataset:<id>`, data `{op: put|delete|rename|sync, keys (at most 100), count}`, never a value — and
 the tag is forwarded to the app (`tags/ws_forward.py`): `dataset.onRowsChanged(handler)` in
 TypeScript. A writer outside the server process tells the running instance (`Dataset.announce`, the
-`rows-changed` action) — best effort: an event is a hint to re-read, and a write never fails for it.
-An event sent while a page was disconnected is not replayed: re-read on focus too.
+`rows-changed` action) — telling is never a reason for a write to fail. A write made while a page
+was disconnected is told on reconnect by comparing the rows' `version` (`docs/flow-events.md`): the
+event is enough, and an app never polls or re-reads on focus.
 
 Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check. One value
 against a kind, outside any dataset: `POST /api/v1/kinds/<kind>/check {value}` → `{ok, errors, details,

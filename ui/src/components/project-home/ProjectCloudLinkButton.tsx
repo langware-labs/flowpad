@@ -101,7 +101,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
         data-testid="project-publish"
         data-state="published"
         title={t`Open project in cloud`}
-        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-green-600/30 bg-green-600/10 px-2 text-xs font-medium text-green-700 transition-colors hover:bg-green-600/15 dark:text-green-400"
+        className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md border border-green-600/30 bg-green-600/10 px-2 text-xs font-medium text-green-700 transition-colors hover:bg-green-600/15 dark:text-green-400"
       >
         {body}
       </a>
@@ -109,7 +109,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
       <span
         data-testid="project-publish"
         data-state="published"
-        className="inline-flex h-7 items-center gap-1.5 rounded-md border border-green-600/30 bg-green-600/10 px-2 text-xs font-medium text-green-700 dark:text-green-400"
+        className="inline-flex h-7 items-center gap-1.5 whitespace-nowrap rounded-md border border-green-600/30 bg-green-600/10 px-2 text-xs font-medium text-green-700 dark:text-green-400"
       >
         {body}
       </span>

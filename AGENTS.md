@@ -48,7 +48,7 @@ npm run dev
 
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
-> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
 ### Validating the HUB UI (non-negotiable)
 
@@ -182,6 +182,9 @@ If a backend route can't be called through `apiClient` because it doesn't return
 * **`Agent` is reserved; the `.claude/agents/*.md` prompt asset is `SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
 
 ### Staging OAuth validation
+
+- Use the existing Chrome extension connection (`debugMcp` browser tools) for browser validation. Do not ask the user to enable Chrome remote debugging or switch to the real-browser CLI when the extension is available.
+- The installed ChatGPT extension is reachable through the bundled browser client in `mcp__node_repl__js`: import `browser-client.mjs`, assign the result of `setupBrowserRuntime()` to `agent`, and select the extension browser with profile `langware.ai`. `debugMcp` may instead be configured for CDP; inspect its configuration before calling it an extension connection. If browser actions report a missing Codex executable, check `CODEX_CLI_PATH` against the installed app's `codex-cli/bin/codex` path.
 
 - The real hub repository is `/Users/shlom/Documents/dev/test_flowpad/FlowPad`; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
 - Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in as `eran@langware.ai`.

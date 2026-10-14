@@ -95,6 +95,7 @@ export function SweepOrphansDialog({
   }, [scopeType, action, refreshIndexStatus, onOpenChange, scope]);
 
   const busy = scanning || sweeping;
+  const actionWord = action === 'delete' ? t`delete` : t`ignore`;
   const title = scopeType ? t`Orphan ${scopeType} records` : t`Orphan records`;
   const headerCount = scopeType ? scopeTotal : totalOrphans;
 
@@ -244,7 +245,7 @@ export function SweepOrphansDialog({
               disabled={busy}
             >
               {sweeping ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              {sweeping ? t`Sweeping…` : t`Sweep ${scopeTotal} (${action})`}
+              {sweeping ? t`Sweeping…` : t`Sweep ${scopeTotal} (${actionWord})`}
             </Button>
           )}
         </DialogFooter>

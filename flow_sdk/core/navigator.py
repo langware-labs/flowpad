@@ -81,7 +81,10 @@ CANDIDATE_LIMIT = 5
 
 # ── the label space ──────────────────────────────────────────────────────────
 
-_SKIP = {"assistant"}  # the assistant is where the request was typed
+_SKIP = {
+    "assistant",  # the assistant is where the request was typed
+    "tasks",  # retired: a redirect shim to the task list (`assets/list/task`), which owns the word
+}
 AGENTIC = (
     "Not a plain open or a listed action: the request needs reasoning, an answer or explanation, writing "
     "or changing content, deleting or restarting something, diagnosis, several steps, or the thing to "
@@ -194,7 +197,9 @@ _FIXED_NAMES = {"url:/discover": ("discover", "discover page", "marketplace")}
 @lru_cache(maxsize=1)
 def _screen_words() -> frozenset[str]:
     """Every word that names a screen on the map -- its label, aliases and slug."""
-    return frozenset(n.lower() for p in navigation_map().places for n in (p.label, *p.aliases, p.view.replace("-", " ")))
+    return frozenset(
+        n.lower() for p in navigation_map().places if p.view not in _SKIP for n in (p.label, *p.aliases, p.view.replace("-", " "))
+    )
 
 
 @lru_cache(maxsize=1)

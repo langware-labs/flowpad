@@ -8,7 +8,7 @@ is about a report that would otherwise be silently wrong:
 1. **A desk that does not serve is not reported as success.** Resolution walks
    the project's own root first, then context roots in declaration order, and
    stops at the first desk. Attaching a second desk therefore changes nothing
-   about routing — so saying "adopted: CloudNSite" would name a vendor that
+   about routing — so saying "adopted: Globex" would name a vendor that
    will not receive a single ticket.
 2. **"Not a desk" keeps the folder.** The repo is still a perfectly good
    dependency; the clone already happened. Detaching would be a second,
@@ -111,14 +111,14 @@ async def test_adopting_a_desk_repo_reports_the_desk_and_its_portal(tmp_path: Pa
     """The happy path: the manifest's fields come back, and so does a REAL portal
     Project id — the value ``helpdesk-ensure`` needs to open the vendor's portal
     instead of the hub's default desk."""
-    url = _desk_repo(_mkdir(tmp_path, "vendor"), display_name="CloudNSite Support", queue_id=QUEUE_A)
+    url = _desk_repo(_mkdir(tmp_path, "vendor"), display_name="Globex Support", queue_id=QUEUE_A)
     project = await _project(tmp_path, "customer")
 
     response = await project.adopt_helpdesk_from_git(url)
     data = response.data
 
     assert data["outcome"] == "adopted"
-    assert data["display_name"] == "CloudNSite Support"
+    assert data["display_name"] == "Globex Support"
     assert data["desk_project_id"] == QUEUE_A
     assert data["helpdesk_id"]
     assert data["welcome_message"] == "Ask us anything."
@@ -201,7 +201,7 @@ async def test_a_second_desk_is_reported_as_shadowed_not_adopted(tmp_path: Path)
 async def test_re_adopting_the_same_desk_reports_already_adopted(tmp_path: Path):
     """A repeat add is idempotent and must not claim to have done work — the
     dialog says 'Already attached' and goes straight to Open."""
-    url = _desk_repo(_mkdir(tmp_path, "vendor"), display_name="CloudNSite Support", queue_id=QUEUE_A)
+    url = _desk_repo(_mkdir(tmp_path, "vendor"), display_name="Globex Support", queue_id=QUEUE_A)
     project = await _project(tmp_path, "customer")
 
     first = (await project.adopt_helpdesk_from_git(url)).data
@@ -220,7 +220,7 @@ async def test_the_adopted_checkout_stays_pullable(tmp_path: Path):
     checkout and makes the desk's next ``git pull`` abort. A vendor desk that
     cannot pull stops receiving updates — the whole pitch."""
     vendor = _mkdir(tmp_path, "vendor")
-    url = _desk_repo(vendor, display_name="CloudNSite Support", queue_id=QUEUE_A)
+    url = _desk_repo(vendor, display_name="Globex Support", queue_id=QUEUE_A)
     project = await _project(tmp_path, "customer")
 
     data = (await project.adopt_helpdesk_from_git(url)).data

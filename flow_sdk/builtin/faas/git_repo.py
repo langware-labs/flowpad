@@ -57,6 +57,85 @@ def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
     return result
 
 
+# A status read is ONE shell script on a POSIX node, and these lines are how its
+# answer is told apart: ``@@flowpad-git:<name>@@`` opens a section, and
+# ``@@flowpad-git:<name>=<value>@@`` states a fact (a command's exit status) and
+# closes the one before it. No porcelain v1 entry, numstat row or remote URL can
+# start with ``@@``, so the marker needs no per-call nonce. Text before the first
+# marker is the unnamed section — the porcelain status itself.
+_SECTION_OPEN, _SECTION_CLOSE = "@@flowpad-git:", "@@"
+
+# status + remote + "does origin carry this branch" in one invocation. ``|| exit``
+# keeps "not a git repository" the script's own exit status, exactly as the bare
+# command's was.
+_STATUS_SCRIPT = """\
+git status --porcelain=v1 --branch --untracked-files=all || exit $?
+printf '\\n@@flowpad-git:remote@@\\n'
+git ls-remote --get-url
+printf '\\n@@flowpad-git:remote-rc=%s@@\\n' "$?"
+b=$(git symbolic-ref -q --short HEAD) && git show-ref --verify --quiet "refs/remotes/origin/$b"
+printf '\\n@@flowpad-git:origin-branch-rc=%s@@\\n' "$?"
+"""
+
+# The tracked half of the line counts, appended to the status script: is there a
+# HEAD, and the diff against it through the repository's REAL index. Nothing here
+# names a throwaway index — that script runs only when there is something untracked.
+_TRACKED_COUNTS_SCRIPT = """\
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+printf '\\n@@flowpad-git:numstat@@\\n'
+git diff --numstat HEAD
+printf '\\n@@flowpad-git:numstat-rc=%s@@\\n' "$?"
+else
+printf '\\n@@flowpad-git:unborn=1@@\\n'
+fi
+"""
+
+# Untracked files, counted through a throwaway index that is removed on the way
+# out whatever happened. ``{token}`` keeps two concurrent polls off each other's files.
+_UNTRACKED_COUNTS_SCRIPT = """\
+d=$(git rev-parse --absolute-git-dir) && [ -n "$d" ] || exit 0
+i="${{d%/}}/flowpad-status-{token}.index"
+p="${{d%/}}/flowpad-status-{token}.paths"
+trap 'rm -f "$i" "$p"' EXIT
+git ls-files --others --exclude-standard -z >"$p" || exit 0
+[ -s "$p" ] || exit 0
+GIT_INDEX_FILE="$i" GIT_LITERAL_PATHSPECS=1 git add -N --pathspec-from-file="$p" --pathspec-file-nul
+GIT_INDEX_FILE="$i" GIT_LITERAL_PATHSPECS=1 git diff --numstat
+"""
+
+# A repo with no commits: the whole worktree through a throwaway index.
+_UNBORN_COUNTS_SCRIPT = """\
+d=$(git rev-parse --absolute-git-dir) && [ -n "$d" ] || exit 0
+i="${{d%/}}/flowpad-status-index-{token}"
+trap 'rm -f "$i"' EXIT
+GIT_INDEX_FILE="$i" git add -A -N
+GIT_INDEX_FILE="$i" git diff --numstat
+"""
+
+
+def _split_sections(output: str) -> tuple[dict[str, str], dict[str, str]]:
+    """A status script's stdout → ``({section: text}, {fact: value})``.
+
+    Output carrying no marker at all is one unnamed section: the porcelain
+    status alone, with nothing known about the remote.
+    """
+    sections: dict[str, list[str]] = {"": []}
+    facts: dict[str, str] = {}
+    current: list[str] | None = sections[""]
+    for line in output.split("\n"):
+        if line.startswith(_SECTION_OPEN) and line.endswith(_SECTION_CLOSE):
+            name = line[len(_SECTION_OPEN) : -len(_SECTION_CLOSE)]
+            if "=" in name:
+                key, _, value = name.partition("=")
+                facts[key] = value
+                current = None
+            else:
+                current = sections.setdefault(name, [])
+        elif current is not None:
+            current.append(line)
+    return {name: "\n".join(lines) for name, lines in sections.items()}, facts
+
+
 # What git operation a conflicted working tree is stopped in. ``None`` with
 # conflicted paths means no operation is open — re-applying a pull's autostash
 # conflicted, and git kept the stash.
@@ -348,8 +427,78 @@ class GitRepo:
             logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
             return CliResult.of_process("git " + " ".join(args), None, "", f"{type(exc).__name__}: {exc}")
 
+    async def _git_script(self, script: str) -> CliResult:
+        """Run a POSIX ``sh`` script of git commands in ``self.work_dir`` — ONE
+        invocation on the node, where the same commands sent one by one cost a
+        round trip each (and the Git panel asks every few seconds).
+
+        Same contract as ``_git``: never raises, same env as every git call
+        (no prompt, ``LC_ALL=C``), and the same refusal on a Mac whose
+        ``/usr/bin/git`` is Apple's installer stub — the executor makes that
+        check for a ``git`` argv, and this one is ``sh``. POSIX nodes only: a
+        Windows node's shell is cmd.exe, and callers keep the per-command path there.
+        """
+        from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+        from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable  # noqa: PLC0415
+
+        on_this_machine = getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE
+        if on_this_machine and not git_usable():
+            return CliResult.of_process("git", EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
+        _, env = self._folder._auth(False)  # the env every git call carries
+        try:
+            return await self._folder.executor.run(["sh", "-c", script], cwd=self.work_dir, env=env)
+        except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
+            logger.debug("git script failed in %s", self.work_dir, exc_info=True)
+            return CliResult.of_process("git", None, "", f"{type(exc).__name__}: {exc}")
+
+    async def _status_reads(
+        self, line_counts: bool
+    ) -> tuple[str, str, dict[str, tuple[int | None, int | None]], bool | None] | None:
+        """``(porcelain v1 status, remote URL or "", line counts, origin has this
+        branch)``; None when not a repo. The last is None when it was not read.
+
+        One invocation on a POSIX node — status, the remote and the tracked line
+        counts — plus one more only when there is something untracked to count
+        (or no commit yet).
+        """
+        if self._windows_shell:
+            status = await self._git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
+            if not status.ok:
+                return None
+            counts = await self._line_counts() if line_counts else {}
+            # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
+            # through insteadOf rewrites — and never touches the network.
+            remote = await self._git("ls-remote", "--get-url")
+            return status.stdout, (remote.stdout.strip() if remote.ok else ""), counts, None
+
+        reply = await self._git_script(_STATUS_SCRIPT + (_TRACKED_COUNTS_SCRIPT if line_counts else "") + "exit 0\n")
+        if not reply.ok:
+            return None
+        sections, facts = _split_sections(reply.stdout)
+        status_out = sections[""]
+        remote_url = sections.get("remote", "").strip() if facts.get("remote-rc") == "0" else ""
+        counts: dict[str, tuple[int | None, int | None]] = {}
+        if line_counts:
+            if "unborn" in facts:
+                counts = await self._unborn_line_counts()
+            else:
+                if facts.get("numstat-rc") == "0":
+                    counts = _parse_numstat(sections.get("numstat", ""))
+                # Counts are looked up per status entry, so with no ``??`` entry
+                # there is no untracked count anyone would read.
+                if any(line.startswith("??") for line in status_out.splitlines()):
+                    counts.update(await self._untracked_line_counts())
+        return status_out, remote_url, counts, facts.get("origin-branch-rc") == "0"
+
+    async def _script_numstat(self, script: str) -> dict[str, tuple[int | None, int | None]]:
+        """Run one of the counts scripts (fresh scratch token) and parse its numstat."""
+        counted = await self._git_script(script.format(token=uuid4().hex))
+        return _parse_numstat(counted.stdout) if counted.ok else {}
+
     async def _line_counts(self) -> dict[str, tuple[int | None, int | None]]:
-        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD.
+        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD —
+        the per-command path a Windows node takes (a POSIX node reads them inside
+        ``_status_reads``' one script).
 
         Two halves, so the cost tracks the CHANGE, not the size of the repo:
 
@@ -376,6 +525,8 @@ class GitRepo:
 
     async def _untracked_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
         """``(insertions, 0)`` per untracked, non-ignored file."""
+        if not self._windows_shell:
+            return await self._script_numstat(_UNTRACKED_COUNTS_SCRIPT)
         listed = await self._git("ls-files", "--others", "--exclude-standard", "-z")
         if not listed.ok or not listed.stdout.strip("\0"):
             return {}
@@ -408,6 +559,8 @@ class GitRepo:
         HEAD to diff tracked paths against, and nothing yet committed to cost
         a re-hash of.
         """
+        if not self._windows_shell:
+            return await self._script_numstat(_UNBORN_COUNTS_SCRIPT)
         found = await self._git("rev-parse", "--absolute-git-dir")
         git_dir = found.stdout.strip()
         if not found.ok or not git_dir:
@@ -569,9 +722,10 @@ class GitRepo:
         """Return working-tree status, or the files changed by an immutable commit.
 
         ``line_counts`` fills each file's ``insertions``/``deletions``. It is
-        opt-in because it costs three to six more git spawns (see
-        ``_line_counts``), and only the Git panel shows the counts —
-        the footer pill and other status readers need just the file list.
+        opt-in because it costs a diff against HEAD, and a second invocation when
+        there are untracked files to count (see ``_status_reads``), and only the
+        Git panel shows the counts — the footer pill and other status readers
+        need just the file list.
 
         Schema::
 
@@ -587,21 +741,17 @@ class GitRepo:
         if revision is not None:
             return await self._get_commit_status(revision, line_counts=line_counts)
 
-        # One combined call replaces is_init + get_branch + ahead/behind +
-        # file-list (4 git spawns → 1). ``--branch`` prepends a
+        # ``status_out`` opens with ``--branch``'s
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
-        # remaining lines are the same porcelain v1 file entries parsed below.
-        # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
-        status = await self._git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
-        if not status.ok:
+        # remaining lines are porcelain v1 file entries parsed below.
+        # ``numstat`` is one count per path, staged and unstaged and untracked
+        # together, so a file's ``+/-`` is its whole change against HEAD.
+        reads = await self._status_reads(line_counts)
+        if reads is None:
             return GitStatus(error="not a git repository")
-        status_out = status.stdout
+        status_out, remote_text, numstat, origin_has_branch = reads
 
         branch, upstream, ahead, behind = None, None, 0, 0
-
-        # One count per path, staged and unstaged and untracked together, so a
-        # file's ``+/-`` is its whole change against HEAD.
-        numstat = await self._line_counts() if line_counts else {}
 
         # File list comes from the same ``status_out`` above. ``--untracked-files=all``
         # lists each untracked file individually instead of collapsing a wholly-
@@ -650,10 +800,7 @@ class GitRepo:
                 )
             )
 
-        # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
-        # through insteadOf rewrites — and never touches the network.
-        remote = await self._git("ls-remote", "--get-url")
-        remote_url = (remote.stdout.strip() or None) if remote.ok else None
+        remote_url = remote_text or None
         if remote_url:
             # Credentials embedded in an https remote never leave the node.
             remote_url = re.sub(r"^(https?://)[^@/]+@", r"\1", remote_url)
@@ -665,6 +812,12 @@ class GitRepo:
         operation = await self._open_operation() if unmerged or branch is None else None
         conflict = GitConflict(paths=unmerged, operation=operation) if unmerged or operation else None
 
+        candidate = None
+        if branch and not upstream and remote_url:
+            if origin_has_branch is None:
+                candidate = await self._upstream_candidate(branch)
+            elif origin_has_branch:
+                candidate = f"origin/{branch}"
         return GitStatus(
             error=None,
             branch=branch,
@@ -675,7 +828,7 @@ class GitRepo:
             conflict=conflict,
             remote_url=remote_url,
             remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
-            upstream_candidate=await self._upstream_candidate(branch) if branch and not upstream and remote_url else None,
+            upstream_candidate=candidate,
         )
 
     async def _commit_show_args(self, revision: str) -> tuple[str, ...]:

@@ -1,0 +1,11 @@
+{
+  "type": "agent",
+  "id": "a0f825bf-7c6d-48aa-afbe-cc4e1e295a45",
+  "name": "prompt-runner",
+  "description": "Runs one prompt someone sent in a conversation, on this machine, after its owner approved it.",
+  "avatar": "▶️",
+  "worker_type": "claude",
+  "model": "sm",
+  "permission_mode": "bypassPermissions",
+  "enabled": true
+}

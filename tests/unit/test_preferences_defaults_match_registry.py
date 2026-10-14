@@ -11,7 +11,7 @@ default. A disagreement means the Preferences screen shows one value while the
 backend acts on another, silently and permanently.
 
 Deliberately generic rather than auto-index-specific: it covers the four
-pre-existing mirrors (``indexer_backend``, the three folder-consent keys) at the
+pre-existing mirrors (``diskio_backend``, the three folder-consent keys) at the
 same cost as covering one.
 """
 from __future__ import annotations
@@ -114,7 +114,7 @@ def test_registry_parse_found_the_entries() -> None:
     every assertion below vacuous."""
     defaults = _registry_defaults()
     assert len(defaults) > 20, f"only parsed {len(defaults)} registry entries"
-    assert defaults["preferences.advanced.indexer_backend"] == "python"
+    assert defaults["preferences.advanced.diskio_backend"] == "python"
 
 
 def test_every_seeded_default_matches_the_registry() -> None:

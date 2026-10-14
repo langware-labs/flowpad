@@ -21,7 +21,7 @@ export const nodeOf = (model: SchemaRoot[], kind: string) =>
 /** The entity type of a data schema — the SDK ships no class for it. */
 export const DATA_SCHEMA_TYPE = 'data_schema';
 
-/** A kind without its namespace (`--gtm_studio--.gtm.icp` → `gtm.icp`). */
+/** A kind without its namespace (`--sales_desk--.crm.lead` → `crm.lead`). */
 export const bareKind = (kind: string) => splitNamespace(kind)[1];
 
 /** The schemas, in any shown project, whose fields name `kind`. */

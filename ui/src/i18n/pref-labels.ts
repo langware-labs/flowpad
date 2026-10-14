@@ -52,7 +52,7 @@ const PREF_LABELS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.SMART_NAVIGATION_LOG]: msg`Smart navigation log`,
   [PrefKey.SCROLLBACK_LINES]: msg`Terminal scrollback lines`,
   [PrefKey.EXPERIMENTAL_FLAGS]: msg`Experimental flags`,
-  [PrefKey.INDEXER_BACKEND]: msg`Indexer backend`,
+  [PrefKey.DISKIO_BACKEND]: msg`Disk I/O backend`,
   [PrefKey.AUTO_INDEX_ENABLED]: msg`Index project on selection`,
   [PrefKey.AUTO_INDEX_TYPE]: msg`Index depth`,
   [PrefKey.AUTO_INDEX_TRIGGER]: msg`Index when`,
@@ -77,11 +77,11 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.SMART_NAVIGATION_LOG]: msg`Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.`,
   [PrefKey.SCROLLBACK_LINES]: msg`How many lines of terminal output to retain in the scrollback buffer.`,
   [PrefKey.EXPERIMENTAL_FLAGS]: msg`Free-form JSON for experimental feature toggles. Invalid JSON is not saved.`,
-  [PrefKey.INDEXER_BACKEND]: msg`Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run.`,
+  [PrefKey.DISKIO_BACKEND]: msg`Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan.`,
   [PrefKey.AUTO_INDEX_ENABLED]: msg`Index a project’s files when you open it, so its assets and search are ready without a manual index run.`,
   [PrefKey.AUTO_INDEX_TYPE]: msg`Fast re-reads only the files that changed since the last index. Full re-reads every file in the project.`,
   [PrefKey.AUTO_INDEX_TRIGGER]: msg`Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees.`,
-  [PrefKey.AUTO_INDEX_FUNCTION]: msg`Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects. No effect when the Rust indexer backend is selected.`,
+  [PrefKey.AUTO_INDEX_FUNCTION]: msg`Subprocess runs the file walk in a separate process, so a large or slow tree can’t stall the server (database writes stay in the server either way). Thread runs it in-process — lower startup cost, better for small projects.`,
   [PrefKey.LOCALE]: msg`Interface language and text direction.`,
   [PrefKey.VIEW_MODE]: msg`Surface complexity: Vibe (simplest, creator), Standard (minimal), or Advanced.`,
   [PrefKey.SHOW_SYSTEM_PROJECTS]: msg`Include built-in system projects in the project picker.`,
@@ -96,7 +96,7 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
  * two preferences can be translated differently.
  *
  * Deliberately partial. Engine and mode names that read as proper nouns in every
- * language — `Python (FSIndexer)`, `Rust (RSIndexer)`, and the view modes, whose
+ * language — `Python`, `Rust`, and the view modes, whose
  * wording the footer View toggle also shows — are left to fall through to the
  * registry rather than translated in one place and not the other.
  */

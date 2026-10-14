@@ -193,7 +193,7 @@ async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(
 @async_context
 async def test_the_run_reports_through_the_activity_tree():
     """The wizard's own progress, addressed in its entity subject_entity."""
-    from flow_sdk.activity import Activity
+    from tests.unit._activity_trees import recorded_trees
     from flow_sdk.core.wizard import run_wizard
 
     record = await index_path("wizard", SHIPPED, write=False)
@@ -210,22 +210,23 @@ async def test_the_run_reports_through_the_activity_tree():
         for folder in OPS:
             await index_path("compute_op", folder, write=False)
 
-        result = await run_wizard(
-            spec,
-            subject_entity=str(wizard.typeid),
-            activity_path="wizard/chain-check",
-            trusted=True,
-            workdir=SHIPPED.parent,
-            shell=_everything_is_installed,
-            resolve_op=_resolve_op,
-            resolve_wizard=_resolve_wizard,
-        )
+        with recorded_trees() as trees:
+            result = await run_wizard(
+                spec,
+                subject_entity=str(wizard.typeid),
+                activity_path="wizard/chain-check",
+                trusted=True,
+                workdir=SHIPPED.parent,
+                shell=_everything_is_installed,
+                resolve_op=_resolve_op,
+                resolve_wizard=_resolve_wizard,
+            )
         assert list(result.steps) == ["claude-code", "python", "git", "node"]
         assert result.ok, f"the shipped wizard failed here: {result.detail}"
         assert not any(step.ran for step in result.steps.values()), (
             "every check holds on this shell, so nothing may run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
         )
-        root = Activity.get("wizard/chain-check", subject_entity=str(wizard.typeid)).spec()
+        root = trees.at("wizard/chain-check", str(wizard.typeid))
         assert root.total == 4 and root.skipped == 4 and root.errors_count == 0
     finally:
         await _cleanup(wizard)

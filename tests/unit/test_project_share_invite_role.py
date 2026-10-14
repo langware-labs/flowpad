@@ -68,9 +68,9 @@ def _invited_roles(calls, proj: Project) -> dict[str, str]:
 async def test_invite_defaults_to_member_with_no_role(hub):
     proj = Project(name="invite-role-default")
 
-    await proj.share(invitees=[ShareInvitee(email="noa@langware.ai")])
+    await proj.share(invitees=[ShareInvitee(email="grace@example.com")])
 
-    assert _invited_roles(hub, proj) == {"noa@langware.ai": "member"}
+    assert _invited_roles(hub, proj) == {"grace@example.com": "member"}
 
 
 # do not increase timeout without approval
@@ -82,14 +82,14 @@ async def test_invite_grants_a_different_role_per_recipient(hub):
 
     await proj.share(
         invitees=[
-            ShareInvitee(email="noa@langware.ai", role="admin"),
-            ShareInvitee(email="gadi@langware.ai"),
+            ShareInvitee(email="grace@example.com", role="admin"),
+            ShareInvitee(email="alice@example.com"),
         ]
     )
 
     assert _invited_roles(hub, proj) == {
-        "noa@langware.ai": "admin",
-        "gadi@langware.ai": "member",  # no role on the invitee -> the default
+        "grace@example.com": "admin",
+        "alice@example.com": "member",  # no role on the invitee -> the default
     }
 
 
@@ -99,9 +99,9 @@ async def test_invite_grants_a_different_role_per_recipient(hub):
 async def test_invite_grants_editor(hub):
     proj = Project(name="invite-role-editor")
 
-    await proj.share(invitees=[ShareInvitee(email="noa@langware.ai", role="editor")])
+    await proj.share(invitees=[ShareInvitee(email="grace@example.com", role="editor")])
 
-    assert _invited_roles(hub, proj) == {"noa@langware.ai": "editor"}
+    assert _invited_roles(hub, proj) == {"grace@example.com": "editor"}
 
 
 # do not increase timeout without approval
@@ -113,6 +113,6 @@ async def test_invite_rejects_a_role_outside_the_allowlist(hub, role):
     proj = Project(name="invite-role-bad")
 
     with pytest.raises(ValueError, match="invite role"):
-        await proj.share(invitees=[ShareInvitee(email="noa@langware.ai", role=role)])
+        await proj.share(invitees=[ShareInvitee(email="grace@example.com", role=role)])
 
     assert hub == []

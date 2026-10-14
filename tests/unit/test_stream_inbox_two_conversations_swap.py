@@ -1,9 +1,9 @@
 """Two conversations must not trade places while their messages download.
 
-Captured from a real stream inbox: the two top rows visibly swapped during a hub-switch
+Modelled on a real stream inbox: the two top rows visibly swapped during a hub-switch
 rebuild, right before the per-conversation message counters appeared — i.e. at the
-moment the messages started landing. The fixture is those two conversations and
-their nine messages, copied verbatim from the live DB (ids, both clocks, senders).
+moment the messages started landing. The fixture is two conversations and their
+nine messages with the observed clocks; ids, senders and text are synthetic.
 
 Stream Inbox order is ``conversation.updated_date`` descending. The final answer is not in
 question — A's newest message is 11:43:05 and B's is 09:38:33, so A belongs above B
@@ -28,8 +28,8 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "stream_inbox_swap_two_conversations.json"
-A = "f69ce445"  # 'Integrate Supabase…'  — newest message 11:43:05, belongs on top
-B = "d813eec8"  # 'Explain Z Campus…'    — newest message 09:38:33
+A = "aaaaaaaa"  # 'Add sign-in…'       — newest message 11:43:05, belongs on top
+B = "bbbbbbbb"  # 'Explain how the…'   — newest message 09:38:33
 
 
 @pytest.fixture()

@@ -9,6 +9,7 @@
   "group_order": 0,
   "group_icon_name": "Slack",
   "default_name": "Flow Slack agent",
+  "featured": true,
   "config": {
     "claim_id": {
       "type": "text",

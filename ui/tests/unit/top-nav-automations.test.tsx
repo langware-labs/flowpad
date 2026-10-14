@@ -29,6 +29,7 @@ vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () 
 vi.mock('@src/components/top-nav-bar/NewChatButton', () => ({ NewChatButton: () => null }));
 vi.mock('@src/components/top-nav-bar/RuntimeChip', () => ({ RuntimeChip: () => null }));
 vi.mock('@src/components/top-nav-bar/ProjectSetupButton', () => ({ ProjectSetupButton: () => null }));
+vi.mock('@src/components/top-nav-bar/AppButton', () => ({ AppButton: () => null }));
 vi.mock('@src/components/workspace/workspace-switcher', () => ({ NewWorkspaceDialogHost: () => null }));
 vi.mock('@src/hooks/use-workspaces', () => ({ useActiveWorkspace: () => ({ contains: () => true }) }));
 vi.mock('@src/tabs/use-tab-manager', () => ({ useLastKnownTab: () => null, useTabProjectBuckets: () => ({ buckets: [], globalTabCount: 0 }) }));

@@ -16,7 +16,7 @@ from tests.unit.test_data_spec.test_row_links import _dataset, _schema
 pytestmark = pytest.mark.timeout(5)
 
 ITEMS = [
-    {"id": "i1", "external_id": "OPP-1", "name": "Acme renewal", "provider": "crm", "data": {"stage": "open", "amount": 12, "owner": {"name": "Ami"}}},
+    {"id": "i1", "external_id": "OPP-1", "name": "Acme renewal", "provider": "crm", "data": {"stage": "open", "amount": 12, "owner": {"name": "Heidi"}}},
     {"id": "i2", "external_id": "OPP-2", "name": "Bolt pilot", "provider": "crm", "data": {"stage": "won", "amount": 30}},
     {"id": "i3", "external_id": "", "name": "no id yet", "provider": "crm", "data": {"stage": "open"}},
 ]
@@ -40,14 +40,14 @@ async def test_a_sources_items_become_typed_rows(deals):
     done = await deals.mirror(ITEMS, MAP, by="crm")
     assert done == {"created": ["opp-1", "opp-2"], "updated": [], "unchanged": [], "deleted": []}     # the item with no key is skipped
     rows = {r.key: r.input.model_dump(mode="json", exclude_none=True) for r in deals.read_rows()}
-    assert rows["opp-1"] == {"name": "Acme renewal", "stage": "open", "crm_id": "OPP-1", "owner": "Ami", "source": "crm"}
+    assert rows["opp-1"] == {"name": "Acme renewal", "stage": "open", "crm_id": "OPP-1", "owner": "Heidi", "source": "crm"}
     assert rows["opp-2"] == {"name": "Bolt pilot", "stage": "won", "crm_id": "OPP-2", "source": "crm"}   # an absent path is left out
 
 
 async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
     await deals.mirror(ITEMS, MAP, by="crm")
     await deals.put("opp-1", {"input": {**deals.example("opp-1")["input"], "notes": "call back Tuesday"}})   # the app's own field
-    moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Ami"}})]                # the CRM moved one, dropped the other
+    moved = [dict(ITEMS[0], data={"stage": "won", "amount": 12, "owner": {"name": "Heidi"}})]                # the CRM moved one, dropped the other
     done = await deals.mirror(moved, MAP, by="crm")
     assert done == {"created": [], "updated": ["opp-1"], "unchanged": [], "deleted": ["opp-2"]}
     row = deals.example("opp-1")["input"]
@@ -59,21 +59,100 @@ async def test_mirroring_again_is_a_sync_and_keeps_what_the_app_owns(deals):
     assert (await deals.mirror(moved, MAP, by="crm", prune=False))["deleted"] == []
 
 
-async def test_a_mirror_is_all_or_nothing_and_says_what_it_cannot_map(deals):
+async def test_a_mirror_refuses_what_is_the_callers_mistake(deals):
     from flow_sdk.builtin.dataset import LinkError
 
     with pytest.raises(LinkError) as refused:                                  # without `by`: the CRM's fields are not ours to set
         await deals.mirror(ITEMS, MAP)
     assert {d["code"] for d in refused.value.details} == {"owned"} and deals.read_rows() == []
-    bad = [dict(ITEMS[0]), dict(ITEMS[1], data={"stage": "maybe"})]
-    with pytest.raises(LinkError, match="opp-2.input.stage"):
-        await deals.mirror(bad, MAP, by="crm")
-    assert deals.read_rows() == []
     with pytest.raises(ValueError, match="two items map to the row key 'opp-1'"):
         await deals.mirror([ITEMS[0], dict(ITEMS[0], external_id="opp 1")], MAP, by="crm")
     for wrong in ({}, {"key": "external_id"}, {"key": 3, "input": {}}):
         with pytest.raises(ValueError, match="map:"):
             await deals.mirror(ITEMS, wrong, by="crm")
+
+
+BAD = [dict(ITEMS[0]), dict(ITEMS[1], data={"stage": "maybe"})]          # the CRM holds a stage the schema does not allow
+
+
+async def test_a_mirror_keeps_the_rows_that_fit_and_names_the_misfits(deals):
+    """The outside system's value is not ours to fix: the record is kept as a problem row, with its
+    input intact, and every other record is still mirrored."""
+    done = await deals.mirror(BAD, MAP, by="crm")
+    assert done["created"] == ["opp-1"] and [m["key"] for m in done["misfit"]] == ["opp-2"]
+    assert done["misfit"][0]["details"][0]["path"] == "input.stage"
+    rows, problems = deals.rows_and_problems()
+    assert [r.key for r in rows] == ["opp-1"]
+    assert [(p["key"], p["input"]["stage"], p["input"]["name"]) for p in problems] == [("opp-2", "maybe", "Bolt pilot")]
+
+
+async def test_a_misfit_still_listed_is_not_pruned_and_one_gone_is(deals):
+    await deals.mirror(BAD, MAP, by="crm")
+    again = await deals.mirror(BAD, MAP, by="crm")
+    assert again["deleted"] == [] and [m["key"] for m in again["misfit"]] == ["opp-2"]
+    gone = await deals.mirror(BAD[:1], MAP, by="crm")
+    assert gone["deleted"] == ["opp-2"] and "misfit" not in gone and deals.rows_and_problems()[1] == []
+
+
+async def test_a_misfit_that_fits_again_becomes_a_row_and_keeps_its_id(deals):
+    await deals.mirror(BAD, MAP, by="crm")
+    before = deals.rows_and_problems()[1][0]["id"]
+    done = await deals.mirror(ITEMS, MAP, by="crm")
+    assert done["updated"] == ["opp-2"] and "misfit" not in done
+    row = next(r for r in deals.read_rows() if r.key == "opp-2")
+    assert row.id == before and row.input.stage == "won"
+
+
+async def test_a_row_that_stops_fitting_keeps_what_the_app_owns(deals):
+    await deals.mirror(ITEMS, MAP, by="crm")
+    await deals.put("opp-2", {"input": {**deals.example("opp-2")["input"], "notes": "ours"}})
+    await deals.mirror(BAD, MAP, by="crm")
+    problem = deals.rows_and_problems()[1][0]
+    assert (problem["key"], problem["input"]["notes"], problem["input"]["stage"]) == ("opp-2", "ours", "maybe")
+
+
+async def test_a_row_is_found_by_its_natural_key_not_its_row_key(deals):
+    """A row made before the mirror, keyed as its author liked, holds the record's id in the mapped key
+    field: the mirror adopts it -- same key, same id, every link to it kept -- instead of minting a twin."""
+    await deals.put("acme-renewal", {"input": {"name": "Acme (old name)", "stage": "open", "crm_id": "OPP-1", "notes": "ours"}}, by="crm")
+    before = deals.example("acme-renewal")["id"]
+    done = await deals.mirror(ITEMS, MAP, by="crm")
+    assert done["updated"] == ["acme-renewal"] and done["created"] == ["opp-2"] and done["deleted"] == []
+    row = deals.example("acme-renewal")
+    assert row["id"] == before and (row["input"]["name"], row["input"]["notes"]) == ("Acme renewal", "ours")
+    assert (await deals.mirror(ITEMS, MAP, by="crm"))["unchanged"] == ["acme-renewal", "opp-2"]
+
+
+async def test_a_required_list_the_map_does_not_name_starts_empty_on_a_mirrored_row(tmp_path):
+    """The app's own required list (a deal's objections) is not the CRM's to fill: a row the mirror
+    makes gets `[]`, so the record fits -- and what the app later puts in it is kept."""
+    from flow_sdk.schema.data_spec.declared import load_root
+
+    root, ns = tmp_path / "proj", "unittestreq" + uuid.uuid4().hex[:8]
+    f = lambda shape, **more: {"shape": shape, "description": "x", **more}   # noqa: E731
+    _schema(root, ns, "crm.deal", {"name": f("string", owned_by="crm"), "crm_id": f("string", owned_by="crm"),
+                                   "objections": f(["string"]), "dates": f({"won": "?string"}), "notes": f("?string")})
+    assert not any(load_root(root).values())
+    deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
+    small = {"key": "external_id", "input": {"name": "name", "crm_id": "external_id"}}
+    done = await deals.mirror(ITEMS, small, by="crm")
+    assert done["created"] == ["opp-1", "opp-2"] and "misfit" not in done
+    made = deals.example("opp-1")["input"]
+    assert made["objections"] == [] and not any((made["dates"] or {}).values())     # the map, empty, in its full shape
+    await deals.put("opp-1", {"input": {**deals.example("opp-1")["input"], "objections": ["price"]}})
+    assert (await deals.mirror(ITEMS, small, by="crm"))["unchanged"] == ["opp-1", "opp-2"]
+    assert deals.example("opp-1")["input"]["objections"] == ["price"]
+
+
+async def test_sync_stays_all_or_nothing(deals):
+    """Only a mirror is lenient: an app's batch write still fits whole or writes nothing."""
+    from flow_sdk.builtin.dataset import LinkError
+
+    rows = [{"key": "a", "input": {"name": "A", "stage": "open", "crm_id": "A"}},
+            {"key": "b", "input": {"name": "B", "stage": "maybe", "crm_id": "B"}}]
+    with pytest.raises(LinkError, match="b.input.stage"):
+        await deals.sync(rows, by="crm")
+    assert deals.read_rows() == [] and deals.rows_and_problems()[1] == []
 
 
 async def test_in_the_server_a_data_source_is_mirrored_as_its_provider(deals, monkeypatch):
@@ -352,3 +431,46 @@ async def test_a_link_is_made_only_by_a_unique_field(tasks):
         await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.note", "by": "crm_id", "path": "x"}}}, by="crm")
     with pytest.raises(ValueError, match="no dataset holds crm.ghost"):
         await tasks_.mirror(TASKS, {"key": "external_id", "input": {"main": {"link": "crm.ghost", "by": "crm_id", "path": "x"}}}, by="crm")
+
+
+DEAL_MAP = {"key": "external_id", "input": {"name": "name", "crm_id": "external_id"}}
+
+
+async def test_a_record_gone_outside_stays_while_a_row_still_links_to_it(tasks):
+    """One deal deleted in the outside system that a task still links to does not stop the mirror:
+    that row is kept and named, every other change lands, and it goes once nothing links to it."""
+    deals, tasks_ = tasks
+    three = [{"external_id": f"OPP-{n}", "name": name} for n, name in ((1, "Acme"), (2, "Bolt"), (3, "Core"))]
+    await deals.mirror(three, DEAL_MAP)
+    await tasks_.mirror(TASKS, TASK_MAP, by="crm")                      # t-1 links to opp-1 and opp-2
+
+    now = [{"external_id": "OPP-2", "name": "Bolt Ltd"}, {"external_id": "OPP-4", "name": "Dyne"}]   # 1 and 3 are gone
+    done = await deals.mirror(now, DEAL_MAP)
+    assert (done["created"], done["updated"], done["deleted"]) == (["opp-4"], ["opp-2"], ["opp-3"])
+    (kept,) = done["referenced"]
+    assert kept["key"] == "opp-1" and kept["details"][0]["code"] == "referenced" and "t-1" in kept["details"][0]["message"]
+    assert sorted(r["key"] for r in deals.rows()["rows"]) == ["opp-1", "opp-2", "opp-4"] and not tasks_.rows()["problems"]
+    with pytest.raises(ValueError, match="used by"):                    # a plain sync is still all or nothing
+        await deals.sync([{"key": "opp-2", "input": {"name": "Bolt Ltd", "crm_id": "OPP-2"}}])
+
+    await tasks_.mirror(TASKS[1:], TASK_MAP, by="crm")                  # the task that linked to it is gone
+    assert (await deals.mirror(now, DEAL_MAP)) == {"created": [], "updated": [], "unchanged": ["opp-2", "opp-4"], "deleted": ["opp-1"]}
+
+
+async def test_a_link_may_name_the_row_by_its_key_both_ways(tasks):
+    """The outside system holds a KEY of a row that is ours (a tag): ``"by": "key"`` links it in, and
+    a write sends the key back out."""
+    from pathlib import Path
+
+    from flow_sdk.datasets.projection import outside_changes
+
+    deals, tasks_ = tasks
+    await deals.append([{"key": "acme", "input": {"name": "Acme", "crm_id": "OPP-1"}}])
+    by_key = {"key": "external_id", "input": {"title": "name", "crm_id": "external_id",
+                                              "main": {"link": "crm.deal", "by": "key", "path": "data.tag"}}}
+    done = await tasks_.mirror([{"external_id": "T-1", "name": "Call", "data": {"tag": "acme"}},
+                                {"external_id": "T-2", "name": "Mail", "data": {"tag": "ghost"}}], by_key, by="crm", prune=False)
+    rows = {r["key"]: r["input"] for r in tasks_.rows()["rows"]}
+    assert rows["t-1"]["main"] == deals.ref_of(deals.rows()["rows"][0]["id"]) and rows["t-2"].get("main") is None
+    assert done["unlinked"] == [{"key": "t-2", "field": "main", "value": "ghost"}]
+    assert outside_changes(by_key, {"main": rows["t-1"]["main"]}, Path(tasks_._owner()), {}) == {"tag": "acme"}

@@ -2,7 +2,7 @@
 delete, rename, check, and the key on every row read back.
 
 Before these, a dataset could only be appended to under numbered names, and a row did not say which
-folder it was -- so an app that kept records in a dataset (GTM Studio) re-computed the uuid5 example
+folder it was -- so an app that kept records in a dataset (Sales Desk) re-computed the uuid5 example
 id in the browser and wrote the layout's files itself.
 """
 
@@ -73,13 +73,13 @@ async def test_a_key_that_cannot_be_a_folder_name_is_refused(tmp_path, bad):
 async def test_put_creates_then_replaces_and_keeps_gold_and_metadata(tmp_path):
     d = _dataset(tmp_path)
     eid = await d.put("acme", {"input": {"name": "Acme"}, "kind": "eval"})
-    await d.annotate(eid, {"value": 3}, by="ami")
+    await d.annotate(eid, {"value": 3}, by="heidi")
     assert await d.put("acme", {"input": {"name": "Acme Inc", "status": "won"}}) == eid
     row = d.example("acme")
     assert row["input"] == {"name": "Acme Inc", "status": "won"}
     assert row["ground_truth"] == {"value": 3, "note": None}    # an input edit never drops the gold
     assert row["kind"] == "eval"
-    assert row["metadata"]["annotations"][0]["by"] == "ami"
+    assert row["metadata"]["annotations"][0]["by"] == "heidi"
     assert [p.name for p in (tmp_path / "examples").iterdir()] == ["acme"]   # no scratch dir left
 
 

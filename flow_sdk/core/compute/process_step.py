@@ -208,6 +208,9 @@ async def launch_step_process(
     input: Any = None,  # noqa: A002 — the launch verb's own word
     #: Context chips stamped on the process (``<type>-<uuid>`` strings).
     shared_context_entities: Optional[list[str]] = None,
+    #: Keep the prompt on the process row (``context_data.wizard_step_prompt``). Off for a prompt
+    #: someone SENT (a message's process call): it is theirs, and the row is indexed and kept.
+    remember_prompt: bool = True,
 ) -> PromptResult:
     """Spawn a headless agent process for one step and wait for it to settle.
 
@@ -266,7 +269,7 @@ async def launch_step_process(
             worker_type=worker_type,
             name=name,
             workdir=str(workdir),
-            context_data={**(context_data or {}), "wizard_step_prompt": prompt},
+            context_data={**(context_data or {}), **({"wizard_step_prompt": prompt} if remember_prompt else {})},
             target_typeid_str=target_typeid_str,
         )
         if input is not None:

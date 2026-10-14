@@ -2,7 +2,7 @@
  * A project switch ALWAYS switches — through the REAL resolver and dispatcher
  * (docs/navigation/dock-loading.md).
  *
- * RCA 2026-10-09 (prod 0.2.200): switching to gtm-studio resumed its last tab,
+ * RCA 2026-10-09 (prod 0.2.200): switching to sales-desk resumed its last tab,
  * the `gtm-pipeline` micro app. A stored tab pointer is identity only
  * (`{"viewType":"app","pointer":"micro_app-…"}`), so the resumed URL named no
  * project; the `app` view has no loader of its own, and `adoptScopeProject` on
@@ -30,7 +30,7 @@ import { fakeTabStore, recordRequests, runDockLoader, seedBootstrap } from '../.
 
 /** The project being left. */
 const LEFT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-/** The project being entered (gtm-studio). */
+/** The project being entered (sales-desk). */
 const ENTERED = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const CN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const MICRO_APP = '9eb756fb-2e56-594f-9ed2-820e5dc552e9';

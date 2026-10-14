@@ -5,7 +5,7 @@ closed: code=1006``). Funding reads "is this box signed in" from ``hub_ws_manage
 verification (``llm_source._hub_has_token`` → ``core.status.hub_status``), and the
 verification is asked only at boot. If a reconnect forgets it, every hub-funded LLM
 endpoint is refused with "this box is not logged in to the hub" ten minutes after the
-app starts -- observed on a tart VM where gadi+72's Begin allocation went ineligible
+app starts -- observed on a tart VM where alice+72's Begin allocation went ineligible
 at the first reconnect after a manual verify.
 
 Nothing in the manager is stubbed: a real local WebSocket server plays the hub (greets,
@@ -69,7 +69,7 @@ class _Hub:
 async def hub(sod_env, monkeypatch):
     clear_user()
     save_credentials(UserHubCredentials(api_key="token", expires_at=time.time() + 3600, user={"id": USER_ID}))
-    set_user({"id": USER_ID, "email": "gadi+72@langware.ai"})
+    set_user({"id": USER_ID, "email": "alice+72@example.com"})
     fake = _Hub()
     from flow_sdk.server.routes import websocket
 

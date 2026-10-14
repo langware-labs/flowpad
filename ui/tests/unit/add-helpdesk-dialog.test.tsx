@@ -42,14 +42,14 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 
 import { AddHelpdeskDialog } from '@src/components/helpdesk/AddHelpdeskDialog';
 
-const DESK_URL = 'https://github.com/langware-labs/langware-support';
+const DESK_URL = 'https://github.com/acme/support';
 
 const BASE = {
-  dependency: 'langware-support',
-  path: '/w/langware-support',
+  dependency: 'support',
+  path: '/w/support',
   already_linked: false,
   helpdesk_id: 'h1',
-  display_name: 'CloudNSite Support',
+  display_name: 'Globex Support',
   welcome_message: 'Ask us anything.',
   avatar_url: null,
   desk_project_id: 'q1',
@@ -103,7 +103,7 @@ describe('AddHelpdeskDialog', () => {
     expect(project.adoptHelpdeskFromGit).toHaveBeenCalledWith(DESK_URL, '', false);
 
     expect(await screen.findByTestId('add-helpdesk-result-adopted')).toBeTruthy();
-    expect(screen.getByText('CloudNSite Support')).toBeTruthy();
+    expect(screen.getByText('Globex Support')).toBeTruthy();
     // The context rows are stale after any attach — the host must refetch.
     expect(onAdded).toHaveBeenCalled();
 
@@ -151,7 +151,7 @@ describe('AddHelpdeskDialog', () => {
     const remove = screen.getByTestId('add-helpdesk-remove');
     await user.click(remove);
     // Removed by its dependency NAME — the folder on disk is left alone.
-    await waitFor(() => expect(project.removeDependency).toHaveBeenCalledWith('langware-support'));
+    await waitFor(() => expect(project.removeDependency).toHaveBeenCalledWith('support'));
 
     // Nothing to open — there is no desk.
     expect(screen.queryByTestId('add-helpdesk-open')).toBeNull();
@@ -183,7 +183,7 @@ describe('AddHelpdeskDialog', () => {
           response: {
             data: {
               message:
-                'Repository is already materialized for branch main; requested demo/cloudnsite-agents',
+                'Repository is already materialized for branch main; requested demo/globex-agents',
             },
           },
         }),
@@ -197,6 +197,6 @@ describe('AddHelpdeskDialog', () => {
     // The 409 names BOTH branches; a generic "could not add" would strand the
     // user with no idea that a stale checkout is the reason.
     const err = await screen.findByTestId('add-helpdesk-error');
-    expect(err.textContent).toContain('demo/cloudnsite-agents');
+    expect(err.textContent).toContain('demo/globex-agents');
   });
 });

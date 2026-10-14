@@ -43,13 +43,18 @@ app runs on.
 
 ## How to work
 
-1. **Reproduce before you change anything.** Check the port first — `lsof -nP
-   -iTCP:<port> -sTCP:LISTEN` — then `curl -sS -i http://localhost:<port>/`.
-   The failure you can see is the one you can fix.
+1. **Reproduce before you change anything.** Ask Flowpad first — `flow app
+   ports` says, per process of each app, the port it declares, where it runs
+   now, and whether another program holds its port — then `curl -sS -i
+   http://localhost:<port>/`. The failure you can see is the one you can fix.
 2. **Match the fix to the cause.** `not_running` usually means the dev server
    died and needs restarting, not that the code is wrong — do not rewrite an app
-   whose only problem is that nothing is serving it. `not_http` means something
-   else has taken the port. `server_error` and `crashed` are code.
+   whose only problem is that nothing is serving it. Restart it with `flow app
+   restart <app name>`, never by launching its server yourself: Flowpad starts
+   it on the port the app declares, backend before frontend. `not_http`, or a
+   `conflict` in `flow app ports`, means another program holds the port — say
+   which one; do not stop a process that is not this app's. `server_error` and
+   `crashed` are code.
 3. **Use the skills.** `web-app-builder` owns how these apps are structured and
    how their servers start — follow it rather than inventing a layout.
    `web-tester` reproduces console and network errors that a curl cannot see;

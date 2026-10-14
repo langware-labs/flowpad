@@ -45,7 +45,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
   openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
-  shareLogs: (detail) => ipcRenderer.invoke('share-logs', detail),
+  shareLogs: (detail, email) => ipcRenderer.invoke('share-logs', detail, email),
   quitApp: () => ipcRenderer.send('quit-app'),
   // Re-run the install/start in-app after a failed first install (no relaunch).
   retryStartup: () => ipcRenderer.send('retry-startup'),

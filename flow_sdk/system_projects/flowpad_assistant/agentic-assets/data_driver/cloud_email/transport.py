@@ -46,7 +46,7 @@ def mailbox_refusal(exc):
         return SourceUnavailable(f"the mailbox could not be reached: {reason}")
     if status == 404:
         return NotFound(reason or "This agent has no mailbox.")
-    return http.error_for_status(status, reason)
+    return http.error_for_status(status, reason=reason)
 
 
 __all__ = ["AppMailbox", "mailbox_refusal"]

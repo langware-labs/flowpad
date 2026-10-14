@@ -153,16 +153,12 @@ session route operations back through this skill and its contracts).
 | Supabase Postgres | 54322 | postgresql://…:54322     |
 | Supabase Studio   | 54323 | http://127.0.0.1:54323   |
 
-**Never assume a port** — other builds are serving on this machine, and the
-template's `npm run dev` hard-pins `--port 3000`, which fails with
-`EADDRINUSE` when another build owns it. Ask for each port right before you
-bind it, in this order: `<be-port>` from `flow app free-dev-port --bare`,
-start the backend on it, THEN `<fe-port>` from `flow app free-dev-port --bare`
-again (the backend now holds the first one, so you get a different port) and
-start the frontend with `npx next dev --port <fe-port>` instead of
-`npm run dev`. Set `BACKEND_URL=http://localhost:<be-port>` in
-`frontend/.env.local` so the rewrite follows the backend. `flow show webapp`
-gets the port `next dev` printed as `Local:` — never an assumed one.
+**Ports belong to `webapp.json`, and Flowpad starts the servers.** Each process of the app — the
+frontend, and the backend as its `api` service — is declared there with its start command, and
+Flowpad starts both, on free ports, backend first. The frontend is told the backend's port in
+`FLOWPAD_APP_PORT_API` (read by `next.config.ts`), so nothing is written into `.env.local`.
+Never pick a port yourself, never start the app's servers by hand, and never copy a port number
+into a prompt or a file: read it with `flow app ports`.
 
 The frontend proxies `/api/*` to the backend via a Next.js rewrite
 (`next.config.ts`), so client code always fetches relative `/api/...` paths.
@@ -171,18 +167,17 @@ Next.js route handlers under `app/api/` take precedence over the proxy.
 ## Start the app
 
 ```bash
-# Backend — on a port the picker hands you
-BE_PORT=$(flow app free-dev-port --bare)
-cd backend && .venv/bin/uvicorn main:app --reload --port $BE_PORT
-# …then BACKEND_URL=http://localhost:$BE_PORT in frontend/.env.local
-
-# Frontend (separate terminal) — pick again once the backend is up
-FE_PORT=$(flow app free-dev-port --bare)
-cd frontend && npx next dev --port $FE_PORT     # not `npm run dev` (pins 3000)
+flow app ports                 # each process: the port it declares, where it runs now, its state
+flow app restart <app name>    # stop it and start it again (backend first, then the frontend)
+flow app stop <app name>       # stop it, whoever started it
+flow app ports --bare <app name>        # the frontend's port, for $(...)
+flow app ports --bare <app name>/api    # the backend's
 
 # Database (optional for pure-UI work; needs Docker)
 supabase start
 ```
+
+Opening the app (its tab, the project's home page, the app button) starts it when it is not running.
 
 The landing page (`/`) is a live status board: it shows whether the FastAPI
 backend, the Next route handlers, and Supabase are reachable — use it to verify
@@ -199,22 +194,44 @@ as its home page. Nothing else registers an app; `flow app serve` / `flow app op
   "name": "<app folder name>",
   "title": "Shop",
   "build": ".",
-  "endpoints": [
-    { "name": "web",
-      "serving": { "type": "proxy", "start_cmd": "npx next dev --port {port}", "health": "/",
-                   "install_cmd": "python3 setup.py" } }
+  "mounts": [
+    { "audience": "app",
+      "serving": { "type": "proxy", "start_cmd": "npx next dev --hostname 127.0.0.1 --port {port}", "health": "/",
+                   "install_cmd": "python3 setup.py", "install_check": "frontend/node_modules" } }
+  ],
+  "services": [
+    { "name": "api", "protocol": { "spec_kind": "api.rest" },
+      "serving": { "type": "proxy", "start_cmd": "cd backend && .venv/bin/uvicorn main:app --host 127.0.0.1 --port {port}",
+                   "health": "/api/health" } }
   ]
 }
 ```
 
 - `name` is the folder name — one noun. `build` is the subdir Flowpad serves as files: `.` for a
   static app with no build step (the `template-flowpad` case), `dist` for a toolchain that emits one.
-- `endpoints` says what the app exposes. **No `endpoints` means one: the `build` folder, served by
-  Flowpad as a static site.** A dev server is a `proxy` entry: `start_cmd` with `{port}` where the
-  server takes its port (never a hardcoded port — the placement picks a free one), `health` (a path
-  that answers below 500 once the server is up), and only when the defaults are wrong `install_cmd`
-  (default: `npm ci` when there is a `package.json`) and `build_cmd` (default: no build). Rules and
-  the API shape: `docs/snippets/service-endpoints.md` §3.
+- `mounts` says who the app is for and how it is served. `audience` is `app` (the project's end
+  users — the default) or `admin` (its operators: a back office, a console for the project itself);
+  wherever the project is placed, each audience is ONE proxy on an origin of its own, and every app
+  for it is a route there. `path` is where under that proxy: `""` makes this app the audience's
+  root, unsaid it mounts at its own name. **No `mounts` means one: the `build` folder, served by
+  Flowpad as a static site to the `app` audience.** A dev server is a `proxy` serving: `start_cmd`
+  with `{port}` where the server takes its port, `health` (a path that answers below 500 once the
+  server is up), and only when the defaults are wrong `install_cmd` (default: `npm ci` when there is a
+  `package.json`; give a declared one an `install_check`, a path that exists once it ran) and
+  `build_cmd` (default: no build). An API the app brings along is not a mount: declare it under
+  `services` (`name`, `protocol`, a `proxy` serving) — it is started before the page, and the page
+  reads its port from `FLOWPAD_APP_PORT_<NAME>`.
+- **Ports.** With nothing declared, Flowpad picks a free port each start. When the app must be on a
+  known port (an OAuth redirect, another program that calls it), declare it on that serving:
+  `"ports": { "local": { "port": 3300, "required": true } }`. `required: true` — the app runs on that
+  port or not at all: if another program holds it, starting fails and names who holds it.
+  `required: false` — the port is a preference, and a free one is picked when it is taken. `local` is
+  the only environment. Two apps of one project may not require the same port. Rules and the API shape:
+  `docs/snippets/service-endpoints.md` §3.
+- A dev server binds **loopback only** (`--hostname 127.0.0.1` for Next, `--host 127.0.0.1` for Vite,
+  `host="127.0.0.1"` for uvicorn; Flowpad also sets `HOST=127.0.0.1` in its environment). It is reached
+  through Flowpad's own door for its audience, which is what admits a browser to it; a server that binds
+  every interface on a cloud box is public to anyone who knows the sandbox id, with no door at all.
 - Declare a dev server only when the app NEEDS one to be the app (Next, Vite with HMR, a backend).
   A folder of plain files served from `build` is faster and survives a restart; prefer it.
 

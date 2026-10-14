@@ -66,9 +66,9 @@ describe('project readiness store', () => {
 
 describe('the warning', () => {
   it('names the project and how many things are left, and is routed by its id', () => {
-    const warning = createProjectSetupRequiredWarning('spora', 3);
+    const warning = createProjectSetupRequiredWarning('acme', 3);
     expect(warning.id).toBe(WARNING_IDS.PROJECT_SETUP_REQUIRED);
     expect(warning.message).toBe('Project setup required');
-    expect(warning.description).toContain('spora: 3 things');
+    expect(warning.description).toContain('acme: 3 things');
   });
 });

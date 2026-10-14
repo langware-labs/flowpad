@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267
-inputs_hash: 6f732baee9de13f459fd5bc0253542a5efc7ff25d61085eb8eeae8fe6bdd5d7c
+inputs_hash: 84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-07T14:33:53Z'
+vault_root: docs
+generated_at: '2026-10-13T10:49:35Z'
 latest_process_ref: ''
 file_count: 21
 subfolder_count: 0
@@ -20,7 +20,7 @@ subfolder_count: 0
 ## Files
 - [Agent activity readout rules](agent_activity_readout.md) — Rules for the chat activity line naming what an agent is doing now: frames come only from the process, with a 500ms floor.
 - [An agent session keeps the agent as its identity](agent_session_persona.md) — Why an agent-launched session must answer as that agent, not vibe: prepareAgentSession embeds vibe as a layer with asPersona false.
-- [Bootstrap's default_project — which project a machine opens](bootstrap_default_project.md) — Which project a machine opens at bootstrap: browser memory outranks all, then hub default_project one-shot, last active project, @local; resolved per caller, never cached.
+- [Bootstrap's default_project — which project a machine opens](bootstrap_default_project.md) — Bootstrap default_project rules: browser memory outranks all, then hub one-shot instruction, last active non-system project, @local; resolved per caller, never cached.
 - [Composer readiness is a generation property, not a recent-bytes property](composer_readiness.md) — Why the PTY composer-ready gate blocked forever: the vendor paints its marker only on a full redraw, so a 64KB scan window goes blind.
 - [A process declares its persona; the renderer never infers one](declared_persona.md) — Why a session's persona must be declared by the caller via set_ap_persona rather than inferred from how many sub-agents are embedded.
 - [Dev port picking for agent-started servers](dev_port_picking.md) — Agent-started dev servers must ask for a port via flow app free-dev-port rather than typing one; the probe, the band, and why no lease exists.
@@ -32,7 +32,7 @@ subfolder_count: 0
 - [NULL sort order in the SQLite driver](null_sort_order.md) — NULL sort order in the SQLite driver: missing sort values bucket first, never compared against real ones, and never coerced to empty string.
 - [Prompt queue didn't drain in PTY mode](pty_queue_drain.md) — Why a queued prompt never drained in PTY mode: the turn-end edge read _last_broadcast_key off an AgenticProcess re-hydrated fresh per event.
 - [PTY turn cut off mid-generation](pty_turn_liveness.md) — Why a long PTY turn was truncated mid-generation: transcript silence is a working agent, so the inactivity fallback misread a busy worker as idle.
-- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — A dev-server port has two correct URLs in a cloud box: loopback for the server, the public per-port host for the browser.
+- [Sandbox preview urls: browser vs server](sandbox_browser_url.md) — Sandbox preview URLs in a cloud box: loopback for server-side callers, the audience door for the browser, and why E2B_SANDBOX_ID is never the sandbox-id source.
 - [Served app HTML must be read as UTF-8](served_html_encoding.md) — Served app HTML must be read as UTF-8: without an encoding it decodes as cp1252 on Windows, giving mojibake and 500s.
 - [Surface change must reconcile the transcript](surface_transcript_reconcile.md) — A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.
 - [Terminal RTL/bidi rendering contract](terminal_bidi.md) — Terminal RTL/bidi rendering contract: one bidi paragraph per row, buffer order chosen per CLI rather than platform, stamped on container mount and vendor resolution.

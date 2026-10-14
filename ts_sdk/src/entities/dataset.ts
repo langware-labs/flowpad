@@ -4,6 +4,7 @@
  * items into examples, `annotate` writes an example's gold label.
  */
 import { APIEntity, registerEntity } from '../APIEntity';
+import type { ApiWarning } from '../ApiResponse';
 import apiClient from '../client';
 import { IEntity, EntityMerge } from '../IEntity';
 import type { EvalExampleRow, EvalRun, EvalTrace } from '../evals/types';
@@ -183,6 +184,24 @@ export interface DatasetSyncResult {
   unchanged: string[];
   deleted: string[];
   num_examples: number;
+  /** `mirror` only: records whose value does not fit the row kind, kept as problem rows (`rows().problems`). */
+  misfit?: { key: string; details: CheckDetail[] }[];
+  /** `mirror` only: link ids no row holds, left out of the row. */
+  unlinked?: { key: string; field: string; value: string }[];
+}
+
+/** Every row listener's catch-up, run when the socket is back. ONE listener on the connection however
+ *  many datasets a page listens to — a page over a dozen datasets is ordinary, and a listener each
+ *  trips the connection's listener-count warning. */
+const catchUps = new Set<() => void>();
+let reconnectHooked = false;
+function onReconnected(connection: ConnectionManager, catchUp: () => void): () => void {
+  if (!reconnectHooked) {
+    reconnectHooked = true;
+    connection.on('on_reconnected', () => catchUps.forEach((run) => run()));
+  }
+  catchUps.add(catchUp);
+  return () => void catchUps.delete(catchUp);
 }
 
 /** The tag a row write emits (`flow_sdk/builtin/dataset.py` `Dataset.ROWS_CHANGED`). */
@@ -193,6 +212,10 @@ export interface DatasetRowsChange {
   op: 'put' | 'delete' | 'rename' | 'sync';
   keys: string[];
   count: number;
+  /** The rows as a whole after this write (the same `version` a `rows()` read carries); what
+   *  `onRowsChanged` compares on reconnect. `sync` with no keys is "something moved while you were
+   *  away". */
+  version: string;
 }
 
 /** Who a write is made for, as the row actions read it. `by` names the outside system the writer
@@ -318,7 +341,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   }
 
   /** The datasets whose rows are `kind`, in `projectId` when given — find them once, by kind. With a
-   *  project, `kind` may be the bare name one of its schemas defines (`gtm.icp`). */
+   *  project, `kind` may be the bare name one of its schemas defines (`crm.lead`). */
   static async forKind(kind: string, projectId?: string): Promise<Dataset[]> {
     const { datasets } = await apiClient.get<{ datasets: Partial<IDataset>[] }>(
       `/api/v1/kinds/${encodeURIComponent(kind)}/datasets`,
@@ -341,11 +364,13 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return this.post('promote', { source_item_ids: sourceItemIds });
   }
 
-  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
+  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. In a mirrored
+   *  dataset a record the outside system made but not all of is still written, with `warnings`
+   *  (`source_partial`) saying what was not set. */
   async append(
     rows: DatasetRowInput[],
     options: { by?: string } = {},
-  ): Promise<{ example_ids: string[]; num_examples: number }> {
+  ): Promise<{ example_ids: string[]; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('append', { rows, ...writer(options) });
   }
 
@@ -356,9 +381,18 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
    *  `input.stage_dates.won`; a date compares as its ISO string. */
   async rows(
     query: DatasetRowQuery = {},
-  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow> }> {
-    return this.get('rows', rowQueryParams(query));
+  ): Promise<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }> {
+    const found = await this.get<{ rows: DatasetRow[]; total: number; problems: DatasetRowProblem[]; linked?: Record<string, LinkedRow>; version: string }>(
+      'rows',
+      rowQueryParams(query),
+    );
+    this.rowsRead = found.version; // a read is a sighting too (`onRowsChanged`)
+    return found;
   }
+
+  /** The rows version the last `rows()` on this instance read — so a listener on it never asks the
+   *  page to re-read what it just read, whichever came first, the read or the subscription. */
+  private rowsRead?: string;
 
   /** How many rows match — the SAME `match` and `q` as `rows`, so a number and the list behind it
    *  are one question — and, with `group_by`, how many per distinct combination (a path, or a date
@@ -383,20 +417,49 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   /** Hear that rows of THIS dataset were written — by this app, another one, or a script — instead
    *  of polling: `handler` gets what happened (`op`), up to 100 of the `keys` that moved and how
    *  many moved in all (`count`) — never the values: re-read the rows you show (`rows(query)`).
-   *  One call per write, however many rows it wrote. Best effort (a hint to re-read, not a log):
-   *  an event sent while the page was disconnected is not replayed, so still re-read on focus.
-   *  Returns the function that stops listening. */
+   *  One call per write, however many rows it wrote. The event is enough — no timer, no re-read on
+   *  focus: a write made while the socket was down is told once it is back, as `{op: 'sync',
+   *  keys: [], count: 0, version}` — the rows' version moved past the last one this listener heard
+   *  or this instance read. Returns the function that stops listening. */
   onRowsChanged(handler: (change: DatasetRowsChange) => void): () => void {
     // The server's tags reach this page's bus over the socket. A served app's `initSdk()` does not
     // open one (only the full UI does, after paint), so listening opens it — both are idempotent,
-    // and a socket that cannot open leaves the page re-reading on focus, never an error here.
+    // and a socket that cannot open is not an error here: it is retried, and the catch-up below
+    // runs once it opens.
     startTagBridge();
-    void ConnectionManager.getInstance()
-      .connect()
-      .catch(() => undefined);
-    return EventBus.on(DATASET_ROWS_CHANGED, (event) => handler(event.data as unknown as DatasetRowsChange), {
-      target: targetOf('dataset', this.id),
-    });
+    const connection = ConnectionManager.getInstance();
+    void connection.connect().catch(() => undefined);
+    // The last version THIS listener heard — its own, so two views on one dataset each catch up.
+    let heard: string | undefined;
+    const offTag = EventBus.on(
+      DATASET_ROWS_CHANGED,
+      (event) => {
+        const change = event.data as unknown as DatasetRowsChange;
+        heard = change.version;
+        handler(change);
+      },
+      { target: targetOf('dataset', this.id) },
+    );
+    // What was missed while the socket was down: one small read, and a `sync` only when the version
+    // is one neither this listener heard nor this instance read. The first check is the baseline.
+    const catchUp = async () => {
+      let version: string;
+      try {
+        ({ version } = await this.get<{ version: string }>('rows-version'));
+      } catch {
+        return; // the server is away: the next reconnect asks again
+      }
+      const known = heard ?? this.rowsRead;
+      const moved = known !== undefined && version !== heard && version !== this.rowsRead;
+      heard = version;
+      if (moved) handler({ op: 'sync', keys: [], count: 0, version });
+    };
+    void catchUp();
+    const offReconnect = onReconnected(connection, catchUp);
+    return () => {
+      offTag();
+      offReconnect();
+    };
   }
 
   /** Every eval run on this dataset, newest first (summaries — no slices). */
@@ -434,7 +497,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     key: string,
     row: Omit<DatasetRowInput, 'key'>,
     options: { expected?: string; by?: string } = {},
-  ): Promise<{ example_id: string; key: string; num_examples: number }> {
+  ): Promise<{ example_id: string; key: string; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('put-row', { key, row, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 
@@ -450,7 +513,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   async putMany(
     rows: DatasetKeyedRow[],
     options: { expected?: Record<string, string>; by?: string } = {},
-  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number }> {
+  ): Promise<{ example_ids: string[]; keys: string[]; num_examples: number; warnings?: ApiWarning[] }> {
     return this.post('put-rows', { rows, ...(options.expected ? { expected: options.expected } : {}), ...writer(options) });
   }
 

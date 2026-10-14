@@ -34,7 +34,7 @@ const RUNNING_FORK_WIRE_ENTITY = {
     fork_session_id: '5f2a19c4-90bb-4a6d-a924-b4b70cf299b5',
     permission_mode: 'bypassPermissions',
   },
-  workdir: '/Users/Gadi/Flowpad workspace/my_first_project',
+  workdir: '/Users/alice/Flowpad workspace/my_first_project',
   name: 'Say hi in one word (fork)',
 } as const;
 

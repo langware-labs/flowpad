@@ -22,9 +22,9 @@ id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
 | `run_command(...)` | HUB `compute_node.py:246` | `CLICommand` | no | api `tests/api/test_shell_tool_and_command.py` |
 | `exists / write_files / read_files / list_dir / create_folders / delete_files` | HUB `compute_node.py:262,266,291,297,301,305` | `bool` / `list[str]` / `dict` / `dict` / `None` / `None` | no | unit `tests/unit/test_faas_transfer.py` |
 | `set_env` | HUB `compute_node.py:372` | `None` | no | none found |
-| `open_service_url(service)` | HUB `compute_node.py:1936` | `str` (hub URL, no secret, no port) | no | unit `test_open_service_route_contract.py:112,126,148` |
-| `_internal_service(name)` / `_INTERNAL_SERVICES` | HUB `compute_node.py:2017` / `:2007` | `InternalService`, raises on miss | no | unit `test_compute_node_service_allowlist.py:29-56,179` |
-| `_may_receive_the_gate()` | HUB `compute_node.py:1973` | `bool` | no | api `test_compute_node_open_service.py:135-194` |
+| `open_url(audience)` | HUB `compute_node.py` | `str` (hub URL `compute_node/<id>/open/<door>`, no secret, no port) | no | unit `test_open_service_route_contract.py` |
+| `_door(audience)` | HUB `compute_node.py` | the placement's `ServiceEndpoint` for `system` / `admin` / `app`, `None` on miss | no | unit `test_compute_node_service_allowlist.py` |
+| `admission.admit(principal, endpoint)` | HUB `app/services/admission.py` | `bool` — the row's `open-<door>` policy | no | unit `test_admission.py`; api `test_compute_node_open_service.py` |
 | `_stored_cookie_gate()` | HUB `compute_node.py:855` | `str \| None`, never writes | no | unit `test_workspace_health_probe_gate.py:68` |
 | `_is_agent` / `_runtime_for` | HUB `compute_node.py:512` / `:524` | `bool` / `str` | no | unit `test_workspace_runtime_label.py:28` |
 | tool commands (9) | HUB `compute_node_tools.py:122,137,246,263,277,307,327,342,381` | `ApiResponse` (box envelope passthrough) | no — all go through `call_box_action` | unit `tests/unit/test_compute_node_tools.py`; **`reconcile_manifest` has zero tests** yet is driven from the browser at OSS `ui/src/hooks/use-sandboxes.ts:314` |
@@ -42,9 +42,9 @@ id: bfba1aab-22b7-46fa-a295-8fa95ab6237f
 | `_workspace_login` | HUB `compute_node.py:866-920` | `tuple[bool, str]` — the same slot carries an email on success and an error sentence on failure, and is then persisted as `logged_in_user` (`:984`) | no | unit `test_workspace_runtime_label.py`; long `test_auto_login_sandbox.py` |
 | `_cookie_gate_secret` | HUB `compute_node.py:825-853` | `str` — **and `await self.update()` at `:852`**; a read path that writes | no | api `test_pentest_secrets_compute.py:48-86` |
 | `_restart_workspace_app` | HUB `compute_node.py:791` | `str` (trimmed stderr, falling back to stdout) | coupled to E2B env-prefix mechanics (comment `:812`) | none |
-| `_open_service_failure` | HUB `compute_node.py:2042-2063` | `ApiFailResponse` **or** starlette `HTMLResponse`, per `Accept` | no | api `test_compute_node_open_service.py:119` |
-| `open_service_action` / `_open_service_op` | HUB `compute_node.py:2155` / `:2065` | `RedirectResponse(302)` \| `HTMLResponse` \| `ApiFailResponse` | see §2.4 | api `test_compute_node_open_service.py` (13); long `test_open_internal_service.py` |
-| ~~`get_host_action`~~ | deleted | — | a caller-supplied port was a selector into the box; `open-service/<name>` resolves through the machine's endpoints | — |
+| `_open_service_failure` → `admission.refusal` | HUB `app/services/admission.py` | `ApiFailResponse` **or** starlette `HTMLResponse`, per `Accept` | no | api `test_compute_node_open_service.py` |
+| `open_action` / `_open_op` (`open/<door>`) | HUB `compute_node.py` | `RedirectResponse(302)` with a signed ticket \| `{"url"}` on `await=1` \| `HTMLResponse` \| `ApiFailResponse` | see §2.4 | api `test_compute_node_open_service.py`; long `test_open_internal_service.py` |
+| ~~`get_host_action`~~ | deleted | — | a caller-supplied port was a selector into the box; `open/<door>` resolves through the placement's rows | — |
 | `auto_login_action` | HUB `compute_node.py:2170` | `ApiSuccessResponse(data={"auto_login","logged_in_user"})` | no | api `test_auto_login.py` (19 tests) |
 | PTY: `terminal_command` + 6 handlers | HUB `compute_node.py:1260,1306,1450,1577,1612,1681,1747,1811` | `ApiResponse` wrapping `ResponseMessage.model_dump()` — **except `_close_pty_session`'s not-found branch, which returns the model, not `model_dump()`** (`:1747+`) | session key is `(self.id, self.node_provider_id, session_id)` at `:1364,1392,1485,1648,1716,1774,1824` | only api `test_pentest_identity_auth.py:159` (case-folding) |
 | `_tool_op` / `ops` | HUB `compute_node.py:1885` / `:1899` | `ApiResponse \| StreamingResponse`; every raise flattens to `ApiFailResponse(str(e))` at `:1933-1934` | no | unit `test_compute_node_tools.py:445-475` asserts registration + name-disjointness |

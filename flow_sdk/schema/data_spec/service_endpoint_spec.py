@@ -59,14 +59,19 @@ def surface_of(kind: str) -> Literal["web", "api"]:
 
 #: A ``ServiceEndpoint``'s subkind — what it is FOR, a closed set (``docs/ontology.md``: a subkind is a
 #: variant within one type; the endpoint's kind, ``service_endpoint.<subkind>``, is derived). What it
-#: SPEAKS is the protocol's own kind, open and namespaced.
+#: SPEAKS is the protocol's own kind, open and namespaced — MCP is a protocol (``api.mcp``), never a subkind.
 #:
-#: * ``admin`` — administers the machine or a workload: the box's FlowPad app, its shell/fs MCP, a pgAdmin.
-#: * ``app``   — a UI people use: a web app.
-#: * ``agent`` — talks to an agent: its ``chat`` (``api.chat.openai``), an MCP-UI surface.
+#: * ``system``  — the machine itself: its FlowPad app (``flowpad.workspace``) and the hub's shell/fs MCP.
+#: * ``admin``   — the project's operator-facing web app: ONE proxy per placement, hub identity at the gate.
+#: * ``app``     — the project's end-user web app: ONE proxy per placement, the visitor gate.
+#: * ``agent``   — talks to an agent: its ``chat`` (``api.chat.openai``), an MCP-UI surface.
 #: * ``service`` — anything else the deployment exposes (a REST API, a database port).
-EndpointSubkind = Literal["admin", "app", "agent", "service"]
-ENDPOINT_SUBKINDS: tuple[str, ...] = ("admin", "app", "agent", "service")
+EndpointSubkind = Literal["system", "admin", "app", "agent", "service"]
+ENDPOINT_SUBKINDS: tuple[str, ...] = ("system", "admin", "app", "agent", "service")
+#: The two audiences a project's web apps are served to. A placement has AT MOST ONE endpoint of each —
+#: its proxy for that audience — and every web app of the project is a ROUTE of one of them.
+WEB_AUDIENCES: tuple[str, ...] = ("admin", "app")
+WebAudience = Literal["admin", "app"]
 
 
 def default_subkind(protocol_kind: str) -> str:
@@ -76,7 +81,7 @@ def default_subkind(protocol_kind: str) -> str:
     except ValueError:
         return "service"  # an ill-formed kind is refused by the protocol's own validation, not here
     if kind == PROTOCOL_WORKSPACE:
-        return "admin"
+        return "system"
     if kind == PROTOCOL_API_CHAT_OPENAI:
         return "agent"
     if kind and surface_of(kind) == "web":
@@ -235,7 +240,77 @@ class ChannelBackend(DataSpec):
     data_source_id: str
 
 
-Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(discriminator="type")]
+#: What one route of a :class:`RoutedBackend` serves from: files, or a process.
+RouteBackend = Annotated[Union[StaticBackend, ProxyBackend], Field(discriminator="type")]
+
+#: A mount: one path segment under an audience proxy; ``""`` is that audience's root app.
+MOUNT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._~-]*$|^$"
+
+
+class RouteSpec(DataSpec):
+    """One app behind an audience proxy: how its bytes are produced, and which app it is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    backend: RouteBackend
+    #: The webapp DEFINITION (a ``micro_app`` asset) this route serves, when it serves one.
+    webapp_id: Optional[str] = None
+    #: The Artifact this route serves, when it serves one.
+    artifact_id: Optional[str] = None
+
+
+class RoutedBackend(DataSpec):
+    """One proxy, many apps: the first path segment picks the app (``routes`` key), ``""`` is the root app.
+
+    The backend of a placement's ``admin`` and ``app`` endpoints. ``/<mount>/…`` is served by
+    ``routes[<mount>]`` with the mount stripped; a path whose first segment names no mount is the
+    root app's. A route added or removed changes only this — never the endpoint's id or its address.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: Literal["routed"] = "routed"
+    routes: dict[Annotated[str, Field(pattern=MOUNT_PATTERN)], RouteSpec] = {}
+
+    def resolve(self, sub_path: str) -> tuple[Optional[str], str]:
+        """``(mount, rest)`` for a path under the proxy — the named mount, else the root app, else None."""
+        head, _, rest = str(sub_path or "").lstrip("/").partition("/")
+        if head and head in self.routes:
+            return head, rest
+        return ("", str(sub_path or "").lstrip("/")) if "" in self.routes else (None, "")
+
+
+Backend = Annotated[
+    Union[StaticBackend, ProxyBackend, ChannelBackend, RoutedBackend], Field(discriminator="type")
+]
+
+
+# ── an app as it is served ──────────────────────────────────────────────────
+
+
+class ServedRouteSpec(DataSpec):
+    """One app as it is served on a placement, as a caller reads it: which proxy, which mount, what serves it.
+
+    The answer shape of everything that reports "where is this app served" (``webapp-artifacts``,
+    ``register-webapp-artifact``): a route of a placement's audience proxy, flattened. ``id`` is
+    the PROXY's — the address is ``(id, route)``. A ``proxy`` backend has an address of its own
+    (``direct-url?route=``); ``static`` is reached through the proxy.
+    """
+
+    spec_kind: ClassVar[str] = "endpoint.served_route"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: str
+    #: The app's mount on that proxy; ``""`` is the audience's root app.
+    route: str
+    name: str
+    subkind: EndpointSubkind
+    parent_type_id: Optional[str] = None
+    project_id: Optional[str] = None
+    protocol: TaggedProtocol
+    backend: RouteBackend
+    webapp_id: Optional[str] = None
+    artifact_id: Optional[str] = None
 
 
 # ── what a deployment declares it exposes ───────────────────────────────────
@@ -280,6 +355,12 @@ __all__ = [
     "ProtocolSpec",
     "ProxyBackend",
     "RestProtocol",
+    "RouteBackend",
+    "RouteSpec",
+    "RoutedBackend",
+    "ServedRouteSpec",
+    "WEB_AUDIENCES",
+    "WebAudience",
     "StaticBackend",
     "TaggedProtocol",
     "WebAppProtocol",

@@ -433,7 +433,7 @@ function describeRuntimeBlock(match, { repairable, priorFailure }) {
     lines.push(`"${match.module}" belongs to a Python package, not to the interpreter, so a runtime repair cannot help. ` +
       'Smart App Control blocks files it does not know yet (this usually happens right after a package release) ' +
       'and clears on its own once the file gains reputation, typically within a few days. Try again later, or if this ' +
-      'computer is managed by an organization, ask IT to allow the file; use “Share with us” to send the logs.');
+      'computer is managed by an organization, ask IT to allow the file; use “Send Report” to send the logs.');
   } else if (repairable) {
     lines.push('FlowPad can attempt to repair its Python runtime without changing Windows security settings: ' +
       'it downloads the official CPython build published by the Python Software Foundation, verifies every file\'s signature, ' +
@@ -441,7 +441,7 @@ function describeRuntimeBlock(match, { repairable, priorFailure }) {
   } else if (priorFailure) {
     lines.push(`A repair was already attempted for this version (${priorFailure.at}) and ${priorFailure.result === 'ok' ? 'succeeded, but the engine is blocked again' : `failed: ${priorFailure.detail || 'see the logs'}`}. ` +
       'If this computer is managed by an organization, its policy may need IT approval before FlowPad can run; ' +
-      'use “Share with us” to send the logs.');
+      'use “Send Report” to send the logs.');
   }
   lines.push('', 'Blocked:', `  ${match.line}`);
   if (match.file) lines.push(`  in ${match.file}`);

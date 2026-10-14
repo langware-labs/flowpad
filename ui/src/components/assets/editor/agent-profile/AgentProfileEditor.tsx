@@ -2,7 +2,7 @@ import { Agent, AGENT_AVATAR_FILE, AGENT_AVATAR_REF, FSRef, type AgentVersionSta
 import { isHubOnly } from '@sdk/utils/hub-runtime';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2, Trash2 } from 'lucide-react';
 
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
@@ -28,6 +28,10 @@ import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DocumentSaveNotice } from '../DocumentSaveNotice';
 import type { DocumentValue } from '@sdk/fs/AssetDocument';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useNestedHost } from '../nested-host';
 
 interface AgentProfileEditorProps {
   /** Always resolved — AssetEditorRouter renders this inside an
@@ -55,6 +59,18 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
 
   const agentRef = useRef(agent);
   agentRef.current = agent;
+  const { navigation } = useDockNavigation();
+  const nested = useNestedHost();
+  const onDelete = useCallback(() => {
+    showDeleteAssetModal({
+      name: agentRef.current.title || agentRef.current.name || t`this agent`,
+      onConfirm: async () => {
+        await agentRef.current.delete();
+      },
+      // Nested in another editor: back to it, not to the agent list.
+      onAfterDelete: () => (nested ? nested.close() : navigation.openDock(DockPointer.forAssetList(Agent.type))),
+    });
+  }, [navigation, nested, t]);
   const writeQueueRef = useRef<Promise<boolean>>(Promise.resolve(true));
   const content = useMarkdownContent(mainRef, { autoSave: false, reloadKey: entityReloadKey(agent.updated_date) });
   const contentRef = useRef(content);
@@ -264,6 +280,19 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
             )}
           </div>
         </div>
+        {!hub && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            aria-label={t`Delete agent`}
+            title={t`Delete agent`}
+            data-testid="agent-delete"
+            className="shrink-0 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       {/* ── body: the definition on the left, where it runs on the right ── */}

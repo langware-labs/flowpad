@@ -159,19 +159,20 @@ not overwritten.
   `context_data.last_shown`. Stream focus is only the fallback for code/diff
   noise on the bare process URL.
 - **A running app is an address:** `flow show webapp --port <p>` registers the
-  server as a `proxy` `ServiceEndpoint` of the project's placement and the display
-  NAVIGATES to its APP dock (`/dock/app/service_endpoint-<id>`), like every other
+  server as a `proxy` route (`port-<p>`) of the project's placement's `app` proxy
+  and the display NAVIGATES to its APP dock
+  (`/dock/app/service_endpoint-<id>?route=port-<p>`), like every other
   shown target. Stream focus never carries a port into the display any more.
 
 ### The live preview plumbing
 
-`flow show webapp --port <p> → service_endpoint-<id> → APP dock → AppDisplayViewer →
-PersistentIframe → direct-url (localhost:<p>, or the box's public host in a sandbox)`:
+`flow show webapp --port <p> → service_endpoint-<id> + route → APP dock → AppDisplayViewer →
+PersistentIframe → direct-url (localhost:<p>, or the box's audience door `https://<AUDIENCE_PORT>-<box>.e2b.dev/<route>/` in a sandbox)`:
 
-- `useAppDisplay` resolves an app address (an endpoint, an artifact, a webapp
-  asset) to the endpoints serving it here: a `proxy` endpoint is the `dev`
-  runtime, loaded at its `direct-url`; a `static` one is `served`, loaded through
-  `service_endpoint/<id>/service/`.
+- `useAppDisplay` resolves an app address (a proxy and its mount, an artifact, a
+  webapp asset) to the routes serving it here (`ServedApp`): a `proxy` route is
+  the `dev` runtime, loaded at its `direct-url`; a `static` one is `served`,
+  loaded through `service_endpoint/<id>/service/<mount>/`.
 - `WebappDisplay` diagnoses a failing app through the endpoint's `probe` (it dials
   the port from the machine the app runs on) and hands the fixer the endpoint.
 - When a WEBAPP artifact is received through a git-backed share, the artifact row

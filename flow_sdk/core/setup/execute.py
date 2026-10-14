@@ -49,10 +49,13 @@ async def execute_setup(
     check_only: bool = False,
     approved: bool = False,
     on_change: Optional[OnChange] = None,
+    record: bool = True,
     **seams,
 ) -> SetupTreeResult:
     """Set up ``root_id`` (or, ``check_only``, say whether it is). Never raises for an outcome.
 
+    ``record=False``: a pass that is not THE setup (the load after it) runs under the same lock but leaves the
+    run's record alone — the record is the setup's verdict, never a later pass's.
     ``resolve_op`` / ``resolve_wizard`` default to the indexes (``ComputeOp`` / ``Wizard`` by name, each
     with its own trust). ``seams`` reach ``setup_tree`` untouched (``launch``, ``platform``) — tests.
     """
@@ -80,7 +83,8 @@ async def execute_setup(
 
     async def changed(tree: SetupTreeResult) -> None:
         # The lock above is held for the whole run — re-taking it here would self-deadlock (``_mutate``).
-        record_tree(key, tree, already_locked=True)
+        if record:
+            record_tree(key, tree, already_locked=True)
         if on_change is not None:
             await on_change(tree)
 
@@ -91,10 +95,11 @@ async def execute_setup(
     try:
         result = await setup_tree(
             root_id, resolve_node=resolve_node, activity_path=activity_path, subject_entity=subject_entity,
-            workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved, wizard_id=SETUP_RUN,
+            workdir=cwd or workdir, shell=shell, inputs=inputs, approved=approved,
             on_change=changed, **resolvers, **seams,
         )
-        record_tree(key, result, already_locked=True)
+        if record:
+            record_tree(key, result, already_locked=True)
     finally:
         ASKING_RUN.reset(asking)
         lock.release()

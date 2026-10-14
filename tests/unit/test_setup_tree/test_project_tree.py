@@ -98,7 +98,7 @@ def project(tmp_path, monkeypatch):
     async def driver_of(provider):
         return drivers.get(provider)
 
-    async def by_name(name):
+    async def by_name(name, near=""):
         return wizards.get(name)
 
     async def all_setups(_q):
@@ -174,6 +174,12 @@ async def test_the_whole_project_comes_up_leaf_first(project, monkeypatch, tmp_p
         return ReturnedValue(exit_code=ExitCode.OK if held else ExitCode.NOT_YET, ran=not check)
 
     monkeypatch.setattr(webapp_setup, "step", app_step)
+
+    async def requirement_holds(project_id, which, *, check):
+        """A connection's own needs (its credential, its provider) are there: this test is about order."""
+        return True, ""
+
+    monkeypatch.setattr(project_setup, "requirement_step", requirement_holds)
     recorded = []
     monkeypatch.setattr(derive, "_stage_recorder", lambda wizard, target: _recorder(recorded, wizard.name, target))
     tree = await ProjectTree(project, ai=False).load()
@@ -219,7 +225,25 @@ async def test_a_declared_node_naming_a_missing_wizard_is_a_problem_not_a_pass(p
 def test_a_declared_setup_belongs_to_the_asset_folder_that_holds_it():
     assert _holder("/p/agentic-assets/data_driver/waha/agentic-assets/asset_setup/c") == "data_driver:waha"
     assert _holder("/p/agentic-assets/data_source/feed/asset_setup/c") == "data_source:feed"
+    assert _holder("/p/agentic-assets/webapp/site/agentic-assets/asset_setup/c") == "webapp:site"
     assert _holder(str(Path("/p/agentic-assets/asset_setup/c"))) == "project"
+
+
+@pytest.mark.asyncio
+async def test_a_setup_declared_inside_a_web_app_is_what_opening_that_app_needs(project, monkeypatch):
+    """An app ships what it needs in its own folder (Spora Admin: the project's Google Cloud credential), so
+    opening THAT app waits on it — at the project root it held nothing the app's own load looked at."""
+    monkeypatch.setattr(AssetSetup, "spec", lambda self: AssetSetupSpec(
+        name="site-needs", children=["credential:stripe"]))
+    inside = AssetSetup(name="site-needs", asset_ref="/p/agentic-assets/webapp/site/agentic-assets/asset_setup/site-needs")
+
+    async def declared(_q):
+        return [inside]
+
+    monkeypatch.setattr(AssetSetup, "get_all", declared)
+    tree = await ProjectTree(project).load()
+    assert tree.nodes["micro_app-a1"].children == ("asset_setup:site-needs",)
+    assert "asset_setup:site-needs" not in tree.nodes["project-p1"].children
 
 
 @pytest.mark.asyncio
@@ -246,3 +270,39 @@ async def test_an_app_load_includes_project_and_attached_declarations(project, m
     assert "project-p1" in tree.nodes
     assert tree.nodes["micro_app-a1"].children == ("asset_setup:home-load",)
     assert tree.nodes["asset_setup:home-load"].on_load.name == "waha-container"
+
+
+async def test_two_projects_shipping_one_wizard_name_resolve_to_the_nearer_copy(monkeypatch):
+    """A dependency's own asset_setup runs ITS ``waha-setup``, not the same-named wizard a driver elsewhere ships."""
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin import shipped_lookup
+
+    ours = SimpleNamespace(asset_ref="/w/waha-service/agentic-assets/wizard/waha-setup", id=1)
+    theirs = SimpleNamespace(asset_ref="/x/waha/agentic-assets/data_driver/waha/agentic-assets/wizard/waha-setup", id=2)
+
+    class Rows:
+        @staticmethod
+        async def get_all(_):
+            return [theirs, ours]
+
+    monkeypatch.setattr(shipped_lookup, "is_running_install_path", lambda _: False)
+    near = "/w/waha-service/agentic-assets/asset_setup/waha-service"
+    assert await shipped_lookup.by_name_preferring_this_install(Rows, "waha-setup", near=near) is ours
+
+
+@pytest.mark.asyncio
+async def test_an_app_whose_folder_is_gone_is_not_something_to_set_up(monkeypatch, tmp_path):
+    from flow_sdk.builtin.faas.micro_app import WebApp
+
+    (tmp_path / "here").mkdir()
+    rows = [WebApp(name="here", asset_ref=str(tmp_path / "here")),
+            WebApp(name="gone", asset_ref=str(tmp_path / "old-install" / "gone")),
+            WebApp(name="row-only")]
+
+    async def get_all(_query):
+        return rows
+
+    monkeypatch.setattr(WebApp, "get_all", get_all)
+    tree = ProjectTree(SimpleNamespace(id="p1", name="Shop", fs_storage_mount_path=str(tmp_path)))
+    assert [app.name for app in await tree._webapps()] == ["here"]

@@ -390,6 +390,25 @@ async def test_cancel_reports_abort_not_exit_error(tmp_path: Path, monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_a_cancel_that_lands_before_the_spawn_still_stops_the_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stop is pressed while the CLI is still being spawned: there is no process to signal yet, and the
+    turn must not run on as if nobody asked."""
+    worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
+    out: list = []
+
+    async def _run():
+        async for fd in worker.execute(prompt="hi", context=AgenticContext(workdir=str(tmp_path))):
+            out.append(fd)
+
+    task = asyncio.create_task(_run())
+    await worker.close_session()
+    await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
+
+    assert "turn_aborted" in [fd.attributes.get("subtype") for fd in out]
+
+
+@pytest.mark.asyncio
 async def test_close_session_terminates_running_worker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
     patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")

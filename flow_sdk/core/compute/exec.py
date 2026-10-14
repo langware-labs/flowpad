@@ -76,8 +76,16 @@ def flow_env() -> dict[str, str]:
     return env
 
 
-async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[], None]]) -> bytes:
-    """Read a stream to EOF, telling ``on_output`` each time bytes arrive.
+def last_line(text: str) -> str:
+    """The last non-empty line of a chunk of output — what a command is doing right now."""
+    for line in reversed(text.replace("\r", "\n").splitlines()):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
+async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[str], None]]) -> bytes:
+    """Read a stream to EOF, telling ``on_output`` the latest line each time bytes arrive.
 
     A plain ``read()`` would answer only at the end, so nothing could say the command was still
     producing output. An observer that raises is ignored: reporting must never fail the command.
@@ -90,7 +98,7 @@ async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[], 
         chunks.append(chunk)
         if on_output is not None:
             try:
-                on_output()
+                on_output(last_line(chunk.decode("utf-8", "replace")))
             except Exception:  # noqa: BLE001
                 logger.debug("shell output observer failed", exc_info=True)
 
@@ -112,14 +120,15 @@ async def run_shell(
     extra_env: Optional[dict] = None,
     platform: str = "",
     stop: Optional[asyncio.Event] = None,
-    on_output: Optional[Callable[[], None]] = None,
+    on_output: Optional[Callable[[str], None]] = None,
     on_spawn: Optional[Callable[[int], None]] = None,
     fresh: bool = False,  # noqa: ARG001 -- every command here IS a fresh process (see ``SharedShell``)
 ) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
 
-    ``on_output`` is called each time the command writes to stdout or stderr: the one real sign of
-    life a shell step gives, so a caller can tell a quiet install from a hung one. ``on_spawn`` is
+    ``on_output`` is called with the latest line each time the command writes to stdout or stderr:
+    the one real sign of life a shell step gives, so a caller can tell a quiet install from a hung
+    one, and say what it is doing. ``on_spawn`` is
     told the process id once it exists, so a caller can look at what the command has started (a
     window an installer opened) while it runs.
 

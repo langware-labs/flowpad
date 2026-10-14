@@ -293,7 +293,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
   }
 
   {
-    // No window to show the error panel in: the native dialog (with "Share with us") must be AWAITED, because the
+    // No window to show the error panel in: the native dialog (with "Send Report") must be AWAITED, because the
     // caller quits the app as soon as this returns false — quitting first would close the only explanation.
     const env = load({ holdDialog: true });
     env.t.setMainWindow(null);
@@ -301,7 +301,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     const p = env.t.showStartupErrorPanel('boom', { retryable: true }).then((v) => { settled = v; });
     await tick(); await tick();
     eq(env.dialogCalls.length, 1, 'the native dialog is shown');
-    ok(env.dialogCalls[0].buttons.includes('Share with us'), 'and it offers Share with us');
+    ok(env.dialogCalls[0].buttons.includes('Send Report'), 'and it offers Send Report');
     eq(settled, null, 'the call does not return while the dialog is still open');
     env.releaseDialog();
     await p;
@@ -338,7 +338,7 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     env.t.setMainWindow(null);
     await env.t.reportStartupCrash(new Error('no window'), 'startApp');
     eq(env.dialogCalls.length, 1, 'no window → native dialog');
-    ok(env.dialogCalls[0].buttons.includes('Share with us'), 'with Share with us');
+    ok(env.dialogCalls[0].buttons.includes('Send Report'), 'with Send Report');
   }
 
     // ── a policy block in the LAUNCHER's output (flow start → pydantic → _pydantic_core, Rich-wrapped) ──

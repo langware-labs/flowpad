@@ -2,7 +2,7 @@ import type { Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Flag, LocalePicker } from '@src/components/locale/LocalePicker';
-import { DEFAULT_LOCALE, setLocale, useSupportedLocales } from '@src/contexts/locale-context';
+import { DEFAULT_LOCALE, setProjectLocale, useSupportedLocales } from '@src/contexts/locale-context';
 import { ChevronDown, Languages } from 'lucide-react';
 import React, { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -12,15 +12,13 @@ interface ProjectLanguageCardProps {
 }
 
 /**
- * The project's language setting — "which language is this project read in".
+ * The project's language setting — "which language is this project read in",
+ * for every member.
  *
- * Picking one calls the same `setLocale` the footer chip calls: it switches the
- * app language (catalog + `<html lang/dir>`) AND stamps the choice onto the
- * current project, so opening or switching into the project later re-applies it
- * (`applyProjectLocale`, from `loadProject`). This card only renders for the
- * ACTIVE project — ProjectHome gates its entity-bound cards on that — which is
- * why one `setLocale` call is the whole write path and the card never touches
- * `project.locale` itself.
+ * This card is the ONLY writer of the shared `project.locale` (`setProjectLocale`):
+ * the footer chip changes just this device's language, so a stray footer switch
+ * never changes the project for everyone. This card only renders for the ACTIVE
+ * project — ProjectHome gates its entity-bound cards on that.
  */
 export const ProjectLanguageCard: React.FC<ProjectLanguageCardProps> = ({ project }) => {
   const { t } = useLingui();
@@ -37,7 +35,7 @@ export const ProjectLanguageCard: React.FC<ProjectLanguageCardProps> = ({ projec
 
   const handleSelect = (code: string) => {
     setOpen(false);
-    void setLocale(code);
+    void setProjectLocale(project, code);
   };
 
   // Nothing to choose between when the backend ships a single locale — same
@@ -54,8 +52,8 @@ export const ProjectLanguageCard: React.FC<ProjectLanguageCardProps> = ({ projec
       </div>
       <p className="mb-4 text-xs text-muted-foreground">
         <Trans>
-          The language this project is worked in. Choosing one switches the app now, and switches back to it every time
-          you open this project.
+          The language this project is worked in, for everyone in it. To change only your own language, use the language
+          picker in the footer.
         </Trans>
       </p>
 

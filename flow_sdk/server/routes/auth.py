@@ -17,11 +17,12 @@ import os
 from secrets import compare_digest
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from flow_sdk.cli.auth.secrets import is_secrets_enabled
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.server.grants import safe_next
 
 from .. import state
 from .cloud import _render_result_page
@@ -29,18 +30,6 @@ from .cloud import _render_result_page
 router = APIRouter(prefix="/auth")
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_next(candidate: str | None) -> str:
-    """A same-origin redirect target, or the app's root.
-
-    ``startswith("/")`` alone is not enough: ``//evil.com`` is a protocol-relative
-    URL, which a browser follows straight off the origin. Anything that is not a
-    single-slash absolute path is refused.
-    """
-    if not candidate or not candidate.startswith("/") or candidate.startswith("//"):
-        return "/"
-    return candidate
 
 
 @router.get("/oauth/complete", response_class=HTMLResponse)
@@ -101,42 +90,61 @@ async def oauth_loopback_callback(state: str = Query(""), code: str = Query(""),
 
 @router.get("/gate")
 async def gate(
-    cookie_gate: str = Query(None, alias="cookie-gate"),
+    ticket: str = Query(None),
     next: str = Query(None),
 ):
-    """Trade the cookie-gate secret for the httpOnly cookie, then redirect.
+    """Trade the hub's ticket for this box's grant cookie, then redirect.
 
-    The browser's one cold request. It cannot already hold the cookie: the
-    callback that armed this instance was curl'd over sandbox loopback, so that
-    Set-Cookie went to curl. The hub therefore points the browser here, secret in
-    hand, and the redirect leaves a clean URL bar.
+    The browser's one cold request at the system door. It cannot already hold the
+    grant: the hub admitted it (``service_endpoint/<id>/open``) and sent it here with a
+    ticket — the grant subject signed with this box's gate secret, good for a minute.
+    The box verifies it with the secret it already holds and keeps the same subject as a
+    cookie signed with a key of its own (``server/grants.py``). The secret itself is in
+    neither; the redirect leaves a clean URL bar.
 
     Not a path exemption — ``CookieGateMiddleware`` gates this route like every
-    other, and it is reachable precisely *because* the caller presented the
-    secret. Being a route rather than a branch in the middleware is what lets the
-    caller state its intent instead of having it guessed from headers: the hub's
-    curl wants ``login_callback`` and gets it, the browser wants a cookie and
-    asks here.
+    other, and it is reachable precisely *because* the caller presented the ticket.
 
     On an unarmed instance this is inert — it redirects without setting anything,
-    so a stale gate link still lands in the app rather than 404ing.
+    so a stale link still lands in the app rather than 404ing.
+    """
+    from flow_sdk.server import grants
+    from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
+
+    landing = safe_next(next)
+    traded = grants.exchange(ticket, audience=SYSTEM_AUDIENCE, landing=landing)
+    # No ticket for this door: the middleware already admitted the caller some other way, so land them.
+    return traded or RedirectResponse(url=landing, status_code=302, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/revoke")
+async def revoke(request: Request):
+    """``POST /auth/revoke {"caller": <typeid or null>, "endpoints": [<id>, …]}`` — the hub closing doors.
+
+    Someone's standing narrowed on the hub (a member removed, a role lowered, a stamp
+    withdrawn, a placement deleted); their grants on these endpoints are refused from now
+    until they would have expired anyway. ``caller`` null means everyone's, the visitor's
+    included. Only the hub's hop may say so: the request must carry the gate SECRET as the
+    machine header — a browser's grant cookie, which also passes the middleware, is not
+    enough to revoke anybody.
     """
     from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
-    from flow_sdk.server.middleware.cookie_gate_middleware import COOKIE_NAME
-
-    response = RedirectResponse(url=_safe_next(next), status_code=302)
+    from flow_sdk.responses.response import ApiSuccessResponse
+    from flow_sdk.server import grants
+    from flow_sdk.server.middleware.cookie_gate_middleware import HEADER_NAME
+    from flow_sdk.server.service_serving import fail
 
     secret = get_cookie_gate()
-    if secret is not None and cookie_gate and compare_digest(cookie_gate, secret):
-        response.set_cookie(
-            COOKIE_NAME,
-            secret,
-            path="/",
-            secure=True,
-            httponly=True,
-            samesite="lax",
-        )
-    return response
+    presented = request.headers.get(HEADER_NAME) or ""
+    if not secret or not compare_digest(presented, secret):
+        return fail(403, "the hub's hop only")
+    body = await request.json()
+    caller = body.get("caller") if isinstance(body, dict) else None
+    endpoints = body.get("endpoints") if isinstance(body, dict) else None
+    if not isinstance(endpoints, list) or not all(isinstance(e, str) and e for e in endpoints):
+        return fail(400, "endpoints: a list of ids")
+    count = grants.revoke(str(caller) if caller else None, endpoints)
+    return JSONResponse(status_code=200, content=ApiSuccessResponse(data={"revoked": count}).model_dump(mode="json"))
 
 
 @router.get("/login_callback", response_class=HTMLResponse)
@@ -256,7 +264,7 @@ async def login_callback(
         # A link that asked to land somewhere lands in the app: on its path, or on home when
         # that path is refused. The page below is for a sign-in that named nowhere to go.
         if next:
-            return RedirectResponse(url=_safe_next(next), status_code=302)
+            return RedirectResponse(url=safe_next(next), status_code=302)
 
         user_id = user_info.get("id", "Unknown")
         s = get_instance_settings()

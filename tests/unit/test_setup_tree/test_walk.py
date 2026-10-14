@@ -69,7 +69,8 @@ class Tree:
         self.ops: dict[str, ComputeOpSpec] = {}
         self.asked: list[str] = []
 
-    def node(self, id, *, prepare=None, run=None, children=(), trusted=True, inputs=(), wizard=None):
+    def node(self, id, *, prepare=None, run=None, children=(), trusted=True, inputs=(), wizard=None,
+             independent=False):
         for op in (prepare, run):
             if op:
                 self.ops[op] = _op(op)
@@ -81,6 +82,7 @@ class Tree:
             children=tuple(children),
             trusted=trusted,
             inputs=tuple(inputs),
+            independent=independent,
         )
         return self
 
@@ -203,7 +205,7 @@ async def test_a_runaway_depth_is_refused_before_anything_runs(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_a_failed_child_blocks_its_ancestors_and_its_siblings_still_run(tmp_path):
+async def test_a_failed_child_blocks_nothing_and_its_ancestors_say_what_they_wait_on(tmp_path):
     tree = (
         Tree()
         .node("p", run="p-run", children=["mid", "c"])
@@ -218,8 +220,8 @@ async def test_a_failed_child_blocks_its_ancestors_and_its_siblings_still_run(tm
 
     assert result.state is SetupState.BLOCKED
     assert _states(result) == {"p": "blocked", "mid": "blocked", "a": "failed", "b": "done", "c": "done"}
-    assert "mid-run" not in machine.installs and "p-run" not in machine.installs
-    assert machine.installs == ["a-run", "b-run", "c-run"]
+    # Best effort: every run is attempted, a failed child's parents included.
+    assert machine.installs == ["a-run", "b-run", "mid-run", "c-run", "p-run"]
     assert "waiting on A" in result.root.children[0].detail
     assert "waiting on MID" in result.detail
     assert (result.total, result.done) == (5, 2)
@@ -297,7 +299,8 @@ async def test_a_resumed_run_continues_from_the_broken_leaf(tmp_path):
 
     second = await _setup(tree, "p", machine, tmp_path)
 
-    assert second.ok and machine.installs == ["b-run", "p-run"]
+    # p's own run already happened on the first pass, best effort: only the broken leaf is left.
+    assert second.ok and machine.installs == ["b-run"]
 
 
 @pytest.mark.asyncio
@@ -432,7 +435,7 @@ async def test_a_node_records_what_its_run_answered_and_a_check_records_nothing(
 
 
 @pytest.mark.asyncio
-async def test_a_node_with_a_problem_fails_with_it_and_blocks_its_parent(tmp_path):
+async def test_a_node_with_a_problem_fails_with_it_and_its_parent_waits_on_it(tmp_path):
     tree = Tree().node("p", run="p-run", children=["broken", "fine"]).node("fine", run="f-run")
     tree.nodes["broken"] = SetupNode(id="broken", label="Container", problem="names the wizard 'nope', which is not here")
     machine = Machine()
@@ -441,7 +444,7 @@ async def test_a_node_with_a_problem_fails_with_it_and_blocks_its_parent(tmp_pat
 
     assert _states(result) == {"p": "blocked", "broken": "failed", "fine": "done"}
     assert result.root.children[0].detail == "names the wizard 'nope', which is not here"
-    assert machine.installs == ["f-run"]
+    assert machine.installs == ["f-run", "p-run"], "best effort: the parent's own run is still attempted"
 
 
 async def test_a_skipped_node_settles_skipped_runs_nothing_and_holds_up_no_parent(tmp_path):
@@ -457,3 +460,23 @@ async def test_a_skipped_node_settles_skipped_runs_nothing_and_holds_up_no_paren
     assert "key-op" not in machine.installs, "a skipped node's wizard never runs"
     assert result.state is SetupState.DONE and result.done == result.total, "skipped counts as settled"
 
+
+
+@pytest.mark.asyncio
+async def test_a_failed_node_that_stands_on_its_own_holds_up_nobody(tmp_path):
+    tree = (
+        Tree()
+        .node("p", run="p-run", children=["app-a", "app-b", "need"])
+        .node("app-a", run="a-run", independent=True)
+        .node("app-b", run="b-run", independent=True)
+        .node("need", run="need-run")
+    )
+    machine = Machine(broken={"a-run"})
+
+    result = await _setup(tree, "p", machine, tmp_path)
+
+    assert result.state is SetupState.DONE
+    assert _states(result) == {"p": "done", "app-a": "failed", "app-b": "done", "need": "done"}
+    assert machine.installs == ["a-run", "b-run", "need-run", "p-run"]
+    assert result.root.detail == "set up; not set up: APP-A"
+    assert (result.total, result.done) == (4, 3)

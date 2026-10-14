@@ -15,6 +15,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.trigger import Trigger
@@ -32,6 +33,7 @@ async def _fire(
     changes: list[ChangeEvent],
     *,
     is_test: bool = False,
+    run_id: Optional[str] = None,
 ) -> None:
     """Apply a debounce-batch of file-change events to a trigger.
 
@@ -125,6 +127,7 @@ async def _fire(
                 # log readers (TriggerLogViewer lens, hook-shape invocation
                 # rows) continue rendering before the UI consumes the new
                 # batch fields.
+                **({"id": run_id} if run_id else {}),
                 "hook_event": "file_change",
                 "reason": (
                     f"File {first.change_type}: {first.path}"
@@ -282,8 +285,12 @@ class FSOpWatcher:
         ``resetDb()``, and a just-wiped-and-re-seeded row has no missed-change
         window anyway.
         """
+        from flow_sdk.builtin.trigger_arming import runs_here  # noqa: PLC0415
+
         triggers = await Trigger.list_by_type(TriggerType.FSOP)
         for t in triggers:
+            if not await runs_here(t):   # another machine's place (`runs_on`), or another install's copy
+                continue
             if catch_up:
                 try:
                     await _catch_up_if_changed(t)

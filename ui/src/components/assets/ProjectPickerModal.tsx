@@ -112,12 +112,16 @@ export function ProjectPickerModal({
   // (live `checkedIds` would make rows jump between the two groups mid-click).
   const [initialSelected, setInitialSelected] = useState<Set<string>>(new Set(selectedIds));
 
+  // Keyed on the ids' CONTENT: a caller passing a fresh array each render (`selectedIds={[]}`) re-ran this
+  // on every parent render, wiping the search and the ticks mid-pick — Confirm then added another project.
+  const selectedKey = selectedIds.join('\n');
   useEffect(() => {
     if (!open) return;
-    setCheckedIds(new Set(selectedIds));
-    setInitialSelected(new Set(selectedIds));
+    const ids = selectedKey ? selectedKey.split('\n') : [];
+    setCheckedIds(new Set(ids));
+    setInitialSelected(new Set(ids));
     setSearch('');
-  }, [open, selectedIds]);
+  }, [open, selectedKey]);
 
   const rows = useMemo<RowItem[]>(() => {
     const out: RowItem[] = [];

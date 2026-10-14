@@ -35,10 +35,10 @@ export function sourceLook(source: DataSource): SourceLook {
 export function SourceStatusLine({ source, className }: { source: DataSource; className?: string }) {
   const { t } = useLingui();
   const look = sourceLook(source);
-  // One view of the line: parked, held (running, but a file waits on a person), or the source's own look.
+  // One view of the line: parked, held (running, but a file or its mirror waits on a person), or the source's own look.
   const view = source.isParked
     ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
-    : source.isHeld
+    : source.isHeld || source.isMirrorBroken
       ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
       : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
   return (
@@ -131,6 +131,7 @@ export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: Acti
 const NOTE: Partial<Record<AttentionKind, string>> = {
   unresolved: 'border-amber-500/60 bg-amber-500/10',
   held: 'border-amber-500/60 bg-amber-500/10',
+  mirror: 'border-amber-500/60 bg-amber-500/10',
   parked: 'border-red-500/60 bg-red-500/10',
 };
 

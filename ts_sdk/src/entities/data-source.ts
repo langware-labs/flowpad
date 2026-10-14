@@ -57,6 +57,7 @@ export interface IDataSource extends IEntity {
   config?: Record<string, unknown>;
   status?: SourceStatus;
   setup_detail?: string;
+  setup_needs?: SetupNeed[];
   verified_at?: string | null;
   poll_interval_seconds?: number;
   window_days?: number;
@@ -205,6 +206,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  #eng, then press Verify again." Written by the driver's verdict, so the
    *  card never has to guess why a source is in `setup`. */
   setup_detail: string = '';
+  /** The same, as data: what `setup` waits on — a sign-in (`connection`) or the driver's own check (`setup`).
+   *  A surface names it ("Needs GitHub sign-in") without parsing a sentence or knowing a provider. */
+  setup_needs: SetupNeed[] = [];
   verified_at: string | null = null;
   poll_interval_seconds: number = 300;
   window_days: number = 7;
@@ -242,6 +246,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;
     this.setup_detail = entity.setup_detail ?? this.setup_detail;
+    this.setup_needs = entity.setup_needs ?? this.setup_needs;
     this.verified_at = entity.verified_at ?? this.verified_at;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
@@ -284,6 +289,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  to make them agree (`error_detail` names the files). Not broken: the source keeps polling. */
   get isHeld(): boolean {
     return this.health === 'ok' && this.error_code === 'write_back_held';
+  }
+
+  /** Running, but the dataset it mirrors into is not the mirror of its records: the sweep failed
+   *  (`mirror_failed`) or some records did not fit the row kind (`mirror_misfit`); `error_detail` says
+   *  which. Not broken: the source keeps polling, and a good sweep clears it. */
+  get isMirrorBroken(): boolean {
+    return this.health === 'ok' && (this.error_code === 'mirror_failed' || this.error_code === 'mirror_misfit');
   }
 
   /** Stopped on purpose: nothing is fetched until a person resumes it. */
@@ -497,6 +509,19 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 }
 
+/** One thing a source in `setup` still needs (`SetupNeedSpec`). */
+export interface SetupNeed {
+  /** `connection`: a sign-in it reads through; `setup`: its driver's own check. */
+  kind: 'connection' | 'setup' | string;
+  /** The provider, for a connection (`github`). */
+  name?: string;
+  /** What a person calls it (`GitHub`). */
+  title?: string;
+  /** `missing`, `needs_reauth`, `refused`. */
+  state?: string;
+  detail?: string;
+}
+
 /** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */
 export interface VerifyResult {
   status: SourceStatus;
@@ -510,4 +535,6 @@ export interface VerifyResult {
   pending?: string[];
   /** The provider did not answer, so nothing is known about the setup; the status stands. */
   transient?: boolean;
+  /** The connection layer's answer as data — the sign-in it needs. */
+  needs?: SetupNeed[];
 }

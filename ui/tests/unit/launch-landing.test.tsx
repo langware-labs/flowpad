@@ -270,7 +270,7 @@ describe('/launch?agent= and ?project=', () => {
   };
   /** A controller's agent (Q): it needs a target picked. */
   const controllerInfo = { ...standardInfo, project_name: 'q-agent-test', subkind: 'controller' };
-  const spora = new Project({ id: TARGET_PROJECT, name: 'spora', git_origin: hubRepo('git_repo-bbbb') });
+  const acme = new Project({ id: TARGET_PROJECT, name: 'acme', git_origin: hubRepo('git_repo-bbbb') });
 
   beforeEach(() => {
     // jsdom's real `location.assign` is unimplemented; swap it for a spy.
@@ -376,7 +376,7 @@ describe('/launch?agent= and ?project=', () => {
 
   it('a controller asks for a cloud target first: the cloud waits for one, the desktop picks its own', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: controllerInfo };
-    mocks.projects = [spora, new Project({ id: AGENT_PROJECT, name: 'q-agent-test', git_origin: hubRepo('x') })];
+    mocks.projects = [acme, new Project({ id: AGENT_PROJECT, name: 'q-agent-test', git_origin: hubRepo('x') })];
 
     renderLanding(`?agent=${AGENT_ID}`);
 
@@ -394,7 +394,7 @@ describe('/launch?agent= and ?project=', () => {
 
   it('a controller on a picked project: the box gets the target, and the controller BESIDE it', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: controllerInfo };
-    mocks.projects = [spora];
+    mocks.projects = [acme];
 
     renderLanding(`?agent=${AGENT_ID}`);
     await waitFor(() => expect(screen.getByTestId('launch-target-select')).toBeTruthy());
@@ -403,9 +403,9 @@ describe('/launch?agent= and ?project=', () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalled());
     expect(mocks.createSandbox).toHaveBeenCalledWith({
-      name: 'spora',
+      name: 'acme',
       sandboxProject: {
-        name: 'spora',
+        name: 'acme',
         gitOrigin: hubRepo('git_repo-bbbb'),
         projectId: TARGET_PROJECT,
         companions: [{ gitOrigin: controllerInfo.origin, name: 'q-agent-test', projectId: AGENT_PROJECT }],
@@ -600,7 +600,7 @@ describe('/launch?agent= and ?project=', () => {
 
   it('a controller with projects to pick from asks for one', async () => {
     mocks.launchInfo = { [`agent/${AGENT_ID}`]: controllerInfo };
-    mocks.projects = [spora];
+    mocks.projects = [acme];
 
     renderLanding(`?agent=${AGENT_ID}`);
 

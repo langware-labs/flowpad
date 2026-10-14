@@ -42,6 +42,8 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnnotationGutter } from './AnnotationGutter';
+import { SurfaceSwitchWaitNotice } from './SurfaceSwitchWaitNotice';
+import { useSurfaceSwitchWait } from './use-process-surface';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
 import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
@@ -200,7 +202,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // render) skip mounting the xterm container entirely so no PtySync attach is
   // attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
-  const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
+  // Chat and the terminal are mutually exclusive: a chat surface over a live PTY
+  // is only ever a switch on its way. When that switch has to WAIT (the agent is
+  // mid-turn, or background work still runs in the PTY) the terminal stays on
+  // screen with a line saying why, instead of a chat whose questions and
+  // prompts would land in a terminal nobody sees.
+  const switchWait = useSurfaceSwitchWait(process?.id);
+  const showSimpleChat = wantChat ? !embedded && !!process && !switchWait : isHeadless;
   // The chat pane is a full render of the transcript (a 600-row chat ≈ 4 s). The surface
   // is GLOBAL — one view mode for the whole app — so every pooled panel, shown or not,
   // used to mount its pane when the mode flipped to chat and unmount it on the way back:
@@ -797,7 +805,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // Never synced: its attach sizes the PTY (and repaints) when it comes on screen.
     if (!term || !synced || (synced.cols === term.cols && synced.rows === term.rows)) return;
     driftRef.current = true;
-    toplog.log('pty', `fit_unsent shell=${sessionId} xterm=${term.cols}x${term.rows} synced=${synced.cols}x${synced.rows}`);
+    toplog.log(
+      'pty',
+      `fit_unsent shell=${sessionId} xterm=${term.cols}x${term.rows} synced=${synced.cols}x${synced.rows}`,
+    );
   }, [sessionId]);
 
   // Refit terminal when annotation gutter or file panel appears/disappears — and size the PTY
@@ -1091,7 +1102,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!term) return;
     term.options.theme = resolvedTheme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [resolvedTheme]);
-
 
   // The owning TerminalPanel starts/attaches an AgenticProcess after the route
   // commits. Shell WS reconnects remain owned by Shell's ConnectionManager
@@ -1829,6 +1839,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                         hideCounter
                       />
                     </FrozenWhenHidden>
+                  </div>
+                )}
+                {/* A held-back switch, either direction: says why the pane has
+                    not changed yet (renders nothing while nothing waits). */}
+                {!embedded && (
+                  <div className="absolute inset-x-0 top-0 z-[61]">
+                    <SurfaceSwitchWaitNotice processId={process?.id} />
                   </div>
                 )}
                 {/* Standard-view simple chat — opaque overlay above xterm +
