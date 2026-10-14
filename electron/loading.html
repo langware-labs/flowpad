@@ -298,6 +298,10 @@
       z-index: 108; /* above .error-overlay (100), below the logs viewer (110) */
     }
 
+    /* `display: flex` above beats the hidden attribute's UA `display: none` — restate it,
+       or the popup is visible from page load. */
+    .share-modal-overlay[hidden] { display: none; }
+
     .share-modal {
       position: relative;
       width: min(420px, calc(100vw - 48px));
@@ -499,8 +503,9 @@
       <button class="share-modal-close" id="share-close" title="Close and upload">&times;</button>
       <h3>Share logs with the Flowpad team</h3>
       <p class="share-modal-text">
-        You may add your email so we can tie this upload to you — though we can’t promise a reply.
-        The logs are uploaded when this window closes, with or without an email.
+        You can add your email address to help us associate this upload with you, although we can’t
+        guarantee a response. The logs will be uploaded automatically when you close this window,
+        whether or not you provide an email address.
       </p>
       <div class="share-modal-row">
         <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
