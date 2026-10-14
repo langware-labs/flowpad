@@ -350,6 +350,32 @@ def running_background_tasks(path: "str | _Path") -> set[str]:
     return open_ids
 
 
+#: A task that ENDED without finishing: the report the CLI writes when a session resumes and finds work its
+#: previous process left running ("didn't finish before the previous session ended"), or when the user stopped
+#: it. ``completed`` / ``failed`` are different: they wake the agent, which answers (measured on real
+#: transcripts: 91% / 100% are followed by an assistant row; a stopped/killed report, 0% in print mode).
+_UNANSWERED_TASK_STATUSES = frozenset({"stopped", "killed"})
+
+
+def _is_stop_report(entry: dict) -> bool:
+    """True for a ``user`` row that only REPORTS a task that was stopped or killed.
+
+    It is machinery, not a prompt: the agent owes it no answer. Read as a prompt, it makes a tail that
+    ends on it look like a request nobody answered, and after a while ``api_timeout`` — busy for good,
+    on a session whose terminal is sitting idle at its prompt.
+    """
+    if entry.get("type") != "user":
+        return False
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, list):
+        content = " ".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    if not isinstance(content, str) or not content.lstrip().startswith("<task-notification>"):
+        return False
+    status = _TASK_NOTIFICATION_STATUS.search(content)
+    return status is not None and status.group(1) in _UNANSWERED_TASK_STATUSES
+
+
 def _has_pending_tool_use(chunk: str) -> bool:
     """True when the latest assistant ``tool_use`` has no completion evidence.
 
@@ -476,6 +502,12 @@ def _scan_reversed(
         if t in _IGNORED_TYPES:
             continue
         if t == "system" and entry.get("subtype") in _IGNORED_SYSTEM_SUBTYPES:
+            continue
+        # A stop report is not a prompt (see ``_is_stop_report``). When it is the NEWEST row nothing
+        # answered it, so look past it at what the agent last actually did. When the agent DID respond,
+        # its rows come after it and the report stays what every user row is here: the boundary that keeps
+        # the previous turn's ``end_turn`` from reading as this turn's.
+        if last_type is None and _is_stop_report(entry):
             continue
         if last_type is None:
             last_type = t
