@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -36,11 +36,7 @@ import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
-import {
-  FileAttachmentPicker,
-  mergePickedFiles,
-  useAnnotatedImagePaste,
-} from '@src/components/conversation/FileAttachmentPicker';
+import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
@@ -164,8 +160,7 @@ export function ShareToConversationDialog({
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const addFiles = useCallback((picked: File[]) => setFiles((prev) => mergePickedFiles(prev, picked).files), []);
-  const handlePaste = useAnnotatedImagePaste(addFiles, {
+  const { handlePaste } = useFileStateAttach(setFiles, {
     enabled: !busy && !!source.supportsFiles,
     setText: setNote,
   });
