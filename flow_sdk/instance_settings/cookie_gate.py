@@ -15,6 +15,7 @@ attributes) stay in this module. Callers use:
 * ``set_cookie_header`` — the ``Set-Cookie`` value that hands a browser its cookie
 * ``set_cookie`` / ``clear_cookie_gate`` — write / delete the token
 * ``install_gate_opener`` — every urllib request in this process presents it
+* ``CookieGateAuthHttpx`` — every request an httpx client sends presents it
 * ``get_cookie_gate``   — the raw token, for the hub-signed caller check only
 
 Keeping the token on this machine is the caller's job:
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import NamedTuple
 from urllib.parse import urlsplit
 
+import httpx
 from starlette.datastructures import URL
 from starlette.requests import HTTPConnection
 
@@ -177,6 +179,23 @@ def install_gate_opener() -> None:
     machine. Called once at startup by the processes that call the backend: the
     ``flow`` CLI, the function runner and the server monitor. The backend itself never does."""
     urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_GateCookieJar())))
+
+
+class CookieGateAuthHttpx(httpx.Auth):
+    """Presents this instance's token, as the ``X-Cookie-Gate`` header, on every request
+    an httpx client sends to this machine's loopback hosts and nowhere else. Set once
+    where the client is built: ``httpx.AsyncClient(auth=CookieGateAuthHttpx())``.
+
+    It runs once per request, before httpx follows any redirect, and httpx strips only
+    ``Authorization`` on a cross-origin redirect -- so a client that turns
+    ``follow_redirects`` on would carry the token to wherever it is sent next. Leave
+    redirects off on a client that uses this."""
+
+    def auth_flow(self, request: httpx.Request):
+        token = _token() if is_loopback(request.url.host) else None
+        if token:
+            request.headers[_HEADER_NAME] = token
+        yield request
 
 
 # ---------------------------------------------------------------------------

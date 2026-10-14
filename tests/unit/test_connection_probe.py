@@ -142,9 +142,6 @@ async def test_the_relay_forwards_the_probe_headers(monkeypatch):
         return SimpleNamespace(status_code=200)
 
     monkeypatch.setattr(httpx.AsyncClient, "request", request)
-    from flow_sdk.instance_settings import cookie_gate
-
-    monkeypatch.setattr(cookie_gate, "get_header", lambda: None)
     import flow_sdk.instance_settings as settings
 
     monkeypatch.setattr(settings, "get_instance_settings", lambda: SimpleNamespace(port=1))

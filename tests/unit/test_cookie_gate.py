@@ -191,3 +191,30 @@ def test_clear_on_an_unarmed_instance_reports_nothing_changed(sod_env):
     """So a caller can say "already open" instead of implying it did something."""
     assert cookie_gate.clear_cookie_gate() is False
     assert cookie_gate.get_cookie_gate() is None
+
+
+# ---------------------------------------------------------------------------
+# CookieGateAuthHttpx
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("url", "carries"),
+    [
+        ("http://127.0.0.1:9007/api/v1/x", True),
+        ("http://localhost:9007/api/v1/x", True),
+        ("https://hub.example/api/v1/x", False),
+    ],
+)
+def test_httpx_auth_presents_the_token_on_loopback_only(sod_env, url, carries):
+    import httpx
+
+    cookie_gate.set_cookie("s3cret")
+    seen = []
+    transport = httpx.MockTransport(lambda request: seen.append(request) or httpx.Response(200))
+
+    with httpx.Client(auth=cookie_gate.CookieGateAuthHttpx(), transport=transport) as client:
+        client.get(url)
+
+    presented = seen[0].headers.get(cookie_gate.get_header().name)
+    assert cookie_gate.verify_cookie(presented or "") is carries
