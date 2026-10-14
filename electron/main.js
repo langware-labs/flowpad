@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor, session } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
@@ -788,7 +788,7 @@ function handleDeepLink(url) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
-      cookieGate.loadWithCookie(mainWindow, localUrl, log);
+      mainWindow.loadURL(localUrl);
     } else {
       // Window not ready yet — apply after startup completes.
       pendingDeepLink = localUrl;
@@ -1243,6 +1243,12 @@ async function waitForBackend({
     result.policyBlock = policyBlock(); // Electron's own reading of the log, to check the two agree
   }
   if (result.ready) {
+    // The one place the gate cookie goes in: the backend has written its token by now, and every
+    // window shares the default session, so every load after this carries it. A failure still
+    // loads the UI (the backend answers 403).
+    await cookieGate.injectCookie(session.defaultSession, BACKEND_URL).catch((err) => {
+      log.warn(`[cookie-gate] could not set the cookie: ${err && err.message}`);
+    });
     log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
   } else if (result.reason === 'policy-blocked') {
     log.error(`Backend blocked by Windows application control after ${result.elapsedSec}s: ${policyBlockMatch.line} (${policyBlockMatch.path})`);
@@ -1969,7 +1975,7 @@ async function startApp() {
     }
   });
   mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
-  cookieGate.loadWithCookie(mainWindow, startUrl, log);
+  mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
   if (isDev) {
@@ -2489,7 +2495,7 @@ async function upgradeFlowpadAndRestart() {
     const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
-      await cookieGate.loadWithCookie(mainWindow, BACKEND_URL, log);
+      mainWindow.loadURL(BACKEND_URL);
     }
 
     return { success: ready };

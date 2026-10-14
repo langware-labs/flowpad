@@ -46,22 +46,13 @@ function eq(actual, expected, msg) {
 
   // injectCookie: sets it when there is a token, does nothing when there is none.
   const set = [];
-  const session = { cookies: { set: async (d) => set.push(d) } };
+  let flushed = 0;
+  const session = { cookies: { set: async (d) => set.push(d), flushStore: async () => { flushed += 1; } } };
   eq(await gate.injectCookie(session, 'http://localhost:9007', null), false, 'no token, nothing set');
   eq(set.length, 0, 'nothing set without a token');
   eq(await gate.injectCookie(session, 'http://localhost:9007', 'tok-123'), true, 'token set');
   eq(set[0].name, 'cookie-gate-9007', 'cookie name per port');
-
-  // loadWithCookie: injects for the URL's origin, then loads; a failing jar still loads.
-  const loads = [];
-  const win = (cookiesSet) => ({ webContents: { session: { cookies: { set: cookiesSet } } }, loadURL: (u) => loads.push(u) });
-  fs.writeFileSync(file, 'tok-123');
-  const injected = [];
-  await gate.loadWithCookie(win(async (d) => injected.push(d)), 'http://localhost:9007/dock/home?x=1');
-  // readToken() defaults to the real token path here, so only the load order is asserted.
-  eq(loads, ['http://localhost:9007/dock/home?x=1'], 'loads the full url');
-  await gate.loadWithCookie(win(async () => { throw new Error('jar'); }), 'http://localhost:9007/', { warn() {} });
-  eq(loads.length, 2, 'a failed injection still loads');
+  eq(flushed, 1, 'written to disk once set');
 
   fs.rmSync(dir, { recursive: true, force: true });
   console.log(`cookie-gate.test.js: ${passed} passed`);
