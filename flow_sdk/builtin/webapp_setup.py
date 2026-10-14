@@ -52,13 +52,9 @@ def health_answers(port: int, path: str = "/") -> bool:
 
     Asked on each loopback (``dev_server.LOOPBACKS``): a Vite or Next server on ``localhost`` listens on
     ``::1`` alone, a uvicorn on ``127.0.0.1`` alone."""
-    from flow_sdk.core.dev_server import loopback_status, loopback_urls  # noqa: PLC0415
+    from flow_sdk.core.dev_server import loopback_answers  # noqa: PLC0415
 
-    for url in loopback_urls(port, path):
-        status = loopback_status(url, PROBE_SECONDS)
-        if status is not None:
-            return status < 500
-    return False
+    return loopback_answers(port, path, timeout=PROBE_SECONDS, healthy=lambda status: status < 500)
 
 
 async def _app(webapp_id: str):
@@ -414,16 +410,15 @@ async def stop(webapp_id: str) -> ReturnedValue:
     if app is None or not app.asset_ref:
         return _answer(ExitCode.NOT_FOUND, f"there is no web app {webapp_id!r} here", ran=False)
 
-    def running() -> tuple[list, list[int]]:
-        """``(this app's listeners, the ports it is served on by something that cannot be named)``."""
+    def looks() -> list:
         snapshot = app_ports.listeners()
-        looks = [_look(app, process, set(), snapshot) for process in _processes(app)]
-        unnamed = [answer.port for answer, _mine, up in looks if up and answer.holder is None]
-        return [one for _answer_, mine, _up in looks for one in mine], unnamed
+        return [_look(app, process, set(), snapshot) for process in _processes(app)]
 
-    found, unnamed = await asyncio.to_thread(running)
+    seen = await asyncio.to_thread(looks)
+    found = [one for _found, mine, _up in seen for one in mine]
+    # A container's published port, another user's process: there is no process of ours to end.
+    unnamed = [answer.port for answer, _mine, up in seen if up and answer.holder is None]
     if unnamed:
-        # A container's published port, another user's process: there is no process of ours to end.
         ports = ", ".join(str(port) for port in unnamed)
         return _answer(
             ExitCode.NOT_YET,
@@ -460,8 +455,18 @@ async def ports(webapp_id: str) -> list[dict]:
             "port": found.port if live else None,
             "pid": found.holder.pid if live and found.holder is not None else None,
             "note": f"also declared by {clash}" if clash else found.note,
+            "log": _log_of(app, process, found.port) if live else None,
         })
     return rows
+
+
+def _log_of(app, process, port) -> Optional[str]:
+    """The log the process writes, where Flowpad started it (``dev_server.start_process``); None otherwise."""
+    from flow_sdk.core import dev_server  # noqa: PLC0415
+
+    name = dev_server._slug(f"{app.name}-{process.name}".strip("-"))
+    log = dev_server.log_dir() / f"{name}-{port}.log"
+    return str(log) if port and log.is_file() else None
 
 
 async def _keep_route(app, mount, port: int, command: str) -> bool:

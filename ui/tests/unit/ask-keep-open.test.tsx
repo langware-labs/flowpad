@@ -44,3 +44,22 @@ it('says the question is on screen at once and every 20 s while it is shown, and
   });
   expect(seen()).toBe(4);
 });
+
+it('two screens showing one question send one heartbeat between them', async () => {
+  const first = render(<AskForm questionId="q1" />);
+  const second = render(<AskForm questionId="q1" />);
+  await act(async () => {
+    vi.advanceTimersByTime(KEEP_OPEN_MS);
+  });
+  expect(seen()).toBe(2);
+  first.unmount();
+  await act(async () => {
+    vi.advanceTimersByTime(KEEP_OPEN_MS);
+  });
+  expect(seen()).toBe(3);
+  second.unmount();
+  await act(async () => {
+    vi.advanceTimersByTime(KEEP_OPEN_MS * 2);
+  });
+  expect(seen()).toBe(3);
+});
