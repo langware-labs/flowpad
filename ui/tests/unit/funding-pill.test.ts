@@ -9,14 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HubLogin, InstallState, LLMSourceAuthority, LLMSourceOrigin, LoginState } from '@sdk';
-import type {
-  HarnessStatus,
-  LLMChainHop,
-  LLMEndpointOffer,
-  LLMFundingStatus,
-  LLMSource,
-  StatusRecord,
-} from '@sdk';
+import type { HarnessStatus, LLMChainHop, LLMEndpointOffer, LLMFundingStatus, LLMSource, StatusRecord } from '@sdk';
 
 import {
   endpointsSummary,
@@ -53,7 +46,7 @@ function endpoint(typeid: string, kind: string, over: Partial<LLMEndpointOffer> 
     base_url: '',
     filters: {} as LLMEndpointOffer['filters'],
     limits: {} as LLMEndpointOffer['limits'],
-    holder_typeid: null,
+    is_mine: null,
     ...over,
   } as LLMEndpointOffer;
 }
@@ -124,7 +117,18 @@ function record(h: HarnessStatus, over: Partial<StatusRecord> = {}): StatusRecor
 }
 
 function hop(remaining: LLMChainHop['remaining']): LLMChainHop {
-  return { id: 'x', name: 'x', provider: null, is_root: false, has_credential: true, enabled: true, breaker: { state: 'closed', open_until: null }, limits: {} as LLMChainHop['limits'], remaining, effective_filters: {} as LLMChainHop['effective_filters'] };
+  return {
+    id: 'x',
+    name: 'x',
+    provider: null,
+    is_root: false,
+    has_credential: true,
+    enabled: true,
+    breaker: { state: 'closed', open_until: null },
+    limits: {} as LLMChainHop['limits'],
+    remaining,
+    effective_filters: {} as LLMChainHop['effective_filters'],
+  };
 }
 
 describe('pillForHarness', () => {
@@ -163,7 +167,11 @@ describe('pillForHarness', () => {
   });
 
   it('a not-installed CLI is Not installed whatever the funding record says', () => {
-    const pill = pillForHarness(record(harness({ install: InstallState.NotInstalled, login: LoginState.NA })), funding(DEVICE), KIND);
+    const pill = pillForHarness(
+      record(harness({ install: InstallState.NotInstalled, login: LoginState.NA })),
+      funding(DEVICE),
+      KIND,
+    );
     expect(pill.kind).toBe('not_installed');
   });
 
@@ -178,7 +186,11 @@ describe('pillForHarness', () => {
   });
 
   it('a key-only harness (no device login) with nothing stored reads No source', () => {
-    const pill = pillForHarness(record(harness({ has_device_login: false, login: LoginState.NA })), funding(null), KIND);
+    const pill = pillForHarness(
+      record(harness({ has_device_login: false, login: LoginState.NA })),
+      funding(null),
+      KIND,
+    );
     expect(pill.kind).toBe('none');
     // No account to sign in to: the way forward is a key.
     expect(pill.action).toBe('add_key');
@@ -197,7 +209,14 @@ describe('tightestCostLimit / usdLeft', () => {
       hop({ tokens_per_day: { limit: 1000, used: 999, remaining: 1, window: 'day', resets_at: null } }),
       hop({
         cost_usd_per_day: { limit: 5, used: 1, remaining: 4, window: 'day', resets_at: null },
-        cost_usd_total: { limit: 3, used: 0.42, remaining: 2.58, window: 'total', key: 'cost_usd_total', resets_at: null },
+        cost_usd_total: {
+          limit: 3,
+          used: 0.42,
+          remaining: 2.58,
+          window: 'total',
+          key: 'cost_usd_total',
+          resets_at: null,
+        },
       }),
     ]);
     expect(r?.key).toBe('cost_usd_total');
