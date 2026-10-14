@@ -208,6 +208,8 @@ class AgentOp(ExeData):
     spec_kind: ClassVar[str] = "compute_op.agent"
     DEFAULT_TIMEOUT: ClassVar[float] = AGENT_TIMEOUT
     ANSWER: ClassVar[type[ReturnedValue]] = PromptResult
+    #: The agent's own declared ``output`` is its contract: the launch already held the value to it.
+    PLAIN_VALUE: ClassVar[bool] = True
 
     #: The agent's name, resolved through ``get_agent_local_deployment``.
     agent: str

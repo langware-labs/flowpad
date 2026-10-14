@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock, Zap } from 'lucide-react';
-import { isProcessFailed, resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
+import { Check, CheckCheck, Clock, FileText, Loader2, Zap } from 'lucide-react';
+import type { AutomationState } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
@@ -51,7 +52,13 @@ interface MessageBubbleProps {
   /** The quick door to a rule on messages like this one: a ⚡ beside the star, and a ⋮ item. */
   onAutomate?: () => void;
   /** The session an automation started on this message: ⚡ + who, a link to it. */
-  automation?: { name: string; status?: string | null; onOpen: () => void };
+  automation?: {
+    name: string;
+    state: AutomationState;
+    onOpen: () => void;
+    /** The value the session handed back (its declared output): a chip that opens it in its kind's viewer. */
+    value?: { label: string; onOpen: () => void } | null;
+  };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -438,17 +445,33 @@ export function MessageBubble({
               type="button"
               onClick={automation.onOpen}
               className={`${CHIP_LAYOUT} border ${
-                isProcessFailed(automation.status)
+                automation.state === 'failed'
                   ? 'border-dashed border-border text-muted-foreground'
                   : 'border-foreground/25 bg-background text-foreground'
               }`}
               title={t`Open the session`}
               data-testid="message-automation-chip"
-              data-status={automation.status ?? ''}
+              data-status={automation.state}
             >
-              <Zap className="h-3 w-3 shrink-0" />
+              {automation.state === 'working' ? (
+                <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+              ) : (
+                <Zap className="h-3 w-3 shrink-0" />
+              )}
               <span className="max-w-[24rem] truncate">{automation.name}</span>
             </button>
+            {automation.value && (
+              <button
+                type="button"
+                onClick={automation.value.onOpen}
+                className={`${CHIP_LAYOUT} border border-foreground/25 bg-background text-foreground hover:bg-accent`}
+                title={t`Open what it returned`}
+                data-testid="message-automation-value"
+              >
+                <FileText className="h-3 w-3 shrink-0" />
+                <span className="max-w-[24rem] truncate">{automation.value.label}</span>
+              </button>
+            )}
           </div>
         )}
         {/* An opened task stays in view: its chip (opens it), its status and its owner — both act here. */}
