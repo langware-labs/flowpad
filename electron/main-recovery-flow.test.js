@@ -97,7 +97,10 @@ function load(opts = {}) {
   const venv = path.join(HOME, 'uv', 'tools', 'flowpad');
   class FakeUv {
     constructor() { uv.instance = this; }
-    getInstalledFlowBin() { return '/fake/bin/flow'; }
+    getInstalledFlowBin() { return opts.noEngine ? null : '/fake/bin/flow'; }
+    async ensureUv() {}
+    async probeManagedInterpreter() { uv.probes = (uv.probes || 0) + 1; if (opts.preflightBlocked) throw Object.assign(new Error('preflight'), { stderr: 'error: Failed to query Python interpreter at `C:\\u\\python.exe`\n  cause: An Application Control policy has blocked this file. (os error 4551)', code: 2 }); return { ok: true }; }
+    async installLatest() { uv.installs = (uv.installs || 0) + 1; if (opts.installFails) throw opts.installFails(uv.installs); this._flowBin = '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.203'; }
     _toolVenvDir() { return venv; }
@@ -105,12 +108,12 @@ function load(opts = {}) {
     deferPackageVersion() {}
     async upgrade() {}
     async checkForUpdatesInBackground() { return false; }
-    async startWithBin(bin) { this._flowBin = bin; uv.starts++; }
+    async startWithBin(bin) { if (opts.startFails) throw opts.startFails(); this._flowBin = bin; uv.starts++; }
     useFlowBin(bin) { this._flowBin = bin; }
     async start() { if (!this._flowBin) throw new Error('flow binary not set — call startWithBin() or installLatest() first'); uv.starts++; }
     stop() { uv.stops++; return Promise.resolve(); }
     async codeIntegrityEvents() { return opts.ciEvents || ''; }
-    async repairRuntime() { uv.repairs++; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
+    async repairRuntime(args) { uv.repairs++; uv.lastRepair = args; if (opts.repairOk) return { ok: true, python: 'C:\\r\\python.exe' }; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
     isInstalling() { return false; }
     setFailureSharer() {}
     openPackageDialogVersion() { return null; }
@@ -343,6 +346,97 @@ function load(opts = {}) {
     eq(panel.repairable, false, 'no Repair button for a wheel module');
     env.t.setQuitting(true); env.ipcMain.emit('retry-startup'); await settle(); await done;
     delete global.fetch;
+  }
+
+  // ── 2026-10-12: the block hits the engine INSTALL (uv builds pybars3 from source → setuptools → unicodedata) ──
+  {
+    const stderr = 'error: Failed to build `pybars3==0.9.7`\n  Caused by: Call to `setuptools.build_meta:__legacy__.get_requires_for_build_wheel` failed (exit code: 1)\nTraceback (most recent call last):\n  File "C:\\u\\setuptools\\unicode_utils.py", line 2, in <module>\n    import unicodedata\nImportError: DLL load failed while importing unicodedata: An Application Control policy has blocked this file.\n';
+    const env = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad --python 3.11 --force\n' + stderr), { stderr, code: 1 }) });
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, r.installBlock && r.installBlock.module], [false, 'unicodedata'], 'a block in the install output comes back as an install block naming the module, not as a generic failure');
+    eq(env.panels().length, 0, 'no generic error panel was shown for it');
+    // The repair panel for it: nothing was launched, so nothing is stopped (a bare `flow stop` kills whatever holds the port).
+    let retries = 0;
+    const done = env.t.handleFatalFailure({ match: r.installBlock, record: null, retry: async () => { retries++; return { ok: false, installBlock: r.installBlock }; } });
+    await settle(10);
+    const [panel] = env.panels();
+    ok(panel && panel.policyBlocked, 'the application-control panel');
+    ok(/unicodedata/.test(panel.detail), 'it names the blocked module');
+    ok(/uv tool install/.test(panel.detail), 'and where the evidence came from');
+    eq(env.uv.stops, 0, 'the install never launched a backend: nothing is stopped');
+    env.ipcMain.emit('retry-startup'); await settle(20);
+    eq(retries, 1, 'Retry anyway re-runs the INSTALL (there is no engine to start)');
+    eq(env.panels().length, 2, 'and a repeat block shows the panel again');
+    env.t.setQuitting(true); env.ipcMain.emit('retry-startup'); await settle(); await done;
+    // A retry that fails for another reason: the failure is described in the repair panel (no second panel from the install).
+    const env3 = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('x'), { stderr: stderr, code: 1 }) });
+    env3.t.primeLaunchCheck();
+    const blk = (await env3.t.installAndStartBackend()).installBlock;
+    const quietEnv = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad\nerror: Failed to download distributions: network unreachable'), { stderr: 'network unreachable', code: 1 }) });
+    quietEnv.t.primeLaunchCheck();
+    const q = await quietEnv.t.installAndStartBackend({ quiet: true });
+    eq([q.ok, !!q.error, quietEnv.panels().length], [false, true, 0], 'quiet: the failure comes back to the caller, no panel of its own');
+    const done3 = env3.t.handleFatalFailure({ match: blk, record: null, retry: async () => ({ ok: false, error: Object.assign(new Error('Command failed: uv tool install flowpad'), { stderr: 'error: Failed to download distributions: network unreachable', code: 1 }) }) });
+    await settle(10);
+    env3.ipcMain.emit('retry-startup'); await settle(20);
+    const shown = env3.panels();
+    ok(shown.length === 2 && /The install failed again/.test(shown[1].detail) && /network unreachable/.test(shown[1].detail), 'a retry that fails for another reason: the new failure is in the panel');
+    env3.t.setQuitting(true); env3.ipcMain.emit('retry-startup'); await settle(); await done3;
+    // The engine's LAUNCHER blocked (start() fails, text says Device Guard): not an install block, the old generic path with its own evidence.
+    const env4 = load({ startFails: () => Object.assign(new Error('This computer\u2019s application-control policy (Windows Defender Application Control / Device Guard) blocks the programs Flowpad needs to start its engine.'), { policyBlocked: true }) });
+    env4.t.primeLaunchCheck();
+    const r4 = await env4.t.installAndStartBackend({ quiet: true });
+    eq([r4.ok, r4.installBlock], [false, undefined], 'a blocked launcher (start) is not labelled as a blocked install');
+    // A failure that is not a block stays the generic panel path.
+    const env2 = load({ noEngine: true, binReady: false, installFails: () => Object.assign(new Error('Command failed: uv tool install flowpad\nerror: Failed to download distributions: network unreachable'), { stderr: 'network unreachable', code: 1 }) });
+    env2.t.primeLaunchCheck();
+    const r2 = await env2.t.installAndStartBackend();
+    eq([r2.ok, r2.installBlock], [false, undefined], 'a network failure is not an install block');
+    env.t.setQuitting(false);
+  }
+
+  // ── The preflight: a blocked interpreter never reaches `uv tool install` ──
+  {
+    const env = load({ noEngine: true, binReady: false, preflightBlocked: true, installFails: () => new Error('the install must not run') });
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, r.firstInstall, !!r.installBlock, env.uv.probes, env.uv.installs || 0], [false, true, true, 1, 0], 'a blocked interpreter is found by the preflight: install block on the first install, and `uv tool install` never ran');
+    const okEnv = load({ noEngine: true, binReady: false });
+    okEnv.t.primeLaunchCheck();
+    const r2 = await okEnv.t.installAndStartBackend();
+    eq([okEnv.uv.probes, okEnv.uv.installs], [1, 1], 'an interpreter that runs: the preflight passes and the install follows');
+  }
+
+  // ── A blocked FIRST install repairs itself: no panel, no click (there is no engine to lose) ──
+  {
+    // Repair is Windows-only (`repairable`): the block runs as on Windows on every platform the tests run on.
+    const platformDesc = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const block = { line: 'cause: An Application Control policy has blocked this file. (os error 4551)', module: null, traceback: 'x', path: 'the engine install (uv tool install output)' };
+      const env = load({ noEngine: true, binReady: false, repairOk: true });
+      env.t.primeLaunchCheck();
+      const ok1 = await env.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }), autoRepair: true });
+      eq([ok1, env.uv.repairs, env.panels().length], [true, 1, 0], 'first install blocked: the repair ran by itself and no panel was shown');
+      // The automatic repair fails: the panel appears (with the reason), and the repair is not retried on its own.
+      const env2 = load({ noEngine: true, binReady: false });
+      env2.t.primeLaunchCheck();
+      const done2 = env2.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }), autoRepair: true });
+      await settle(20);
+      eq([env2.uv.repairs, env2.panels().length], [1, 1], 'the automatic repair failed: one attempt, then the panel');
+      ok(/Repair failed at step/.test(env2.panels()[0].detail), 'and it says why');
+      env2.t.setQuitting(true); env2.ipcMain.emit('retry-startup'); await settle(); await done2;
+      // Not asked for (an engine exists): the panel and the user's consent, as before.
+      const env3 = load({ noEngine: true, binReady: false, repairOk: true });
+      env3.t.primeLaunchCheck();
+      const done3 = env3.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }) });
+      await settle(10);
+      eq([env3.uv.repairs, env3.panels().length], [0, 1], 'without autoRepair the panel waits for the user');
+      env3.t.setQuitting(true); env3.ipcMain.emit('retry-startup'); await settle(); await done3;
+    } finally {
+      Object.defineProperty(process, 'platform', platformDesc);
+    }
   }
 
   // ── Export logs: the zip lands where the user chose ─────────────────────
