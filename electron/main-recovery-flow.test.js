@@ -99,6 +99,7 @@ function load(opts = {}) {
     constructor() { uv.instance = this; }
     getInstalledFlowBin() { return opts.noEngine ? null : '/fake/bin/flow'; }
     async ensureUv() {}
+    async probeManagedInterpreter() { uv.probes = (uv.probes || 0) + 1; if (opts.preflightBlocked) throw Object.assign(new Error('preflight'), { stderr: 'error: Failed to query Python interpreter at `C:\\u\\python.exe`\n  cause: An Application Control policy has blocked this file. (os error 4551)', code: 2 }); return { ok: true }; }
     async installLatest() { uv.installs = (uv.installs || 0) + 1; if (opts.installFails) throw opts.installFails(uv.installs); this._flowBin = '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.203'; }
@@ -112,7 +113,7 @@ function load(opts = {}) {
     async start() { if (!this._flowBin) throw new Error('flow binary not set — call startWithBin() or installLatest() first'); uv.starts++; }
     stop() { uv.stops++; return Promise.resolve(); }
     async codeIntegrityEvents() { return opts.ciEvents || ''; }
-    async repairRuntime() { uv.repairs++; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
+    async repairRuntime(args) { uv.repairs++; uv.lastRepair = args; if (opts.repairOk) return { ok: true, python: 'C:\\r\\python.exe' }; throw Object.assign(new Error('not in this test'), { step: 'download' }); }
     isInstalling() { return false; }
     setFailureSharer() {}
     openPackageDialogVersion() { return null; }
@@ -393,6 +394,50 @@ function load(opts = {}) {
     const r2 = await env2.t.installAndStartBackend();
     eq([r2.ok, r2.installBlock], [false, undefined], 'a network failure is not an install block');
     env.t.setQuitting(false);
+  }
+
+  // ── The preflight: a blocked interpreter never reaches `uv tool install` ──
+  {
+    const env = load({ noEngine: true, binReady: false, preflightBlocked: true, installFails: () => new Error('the install must not run') });
+    env.t.primeLaunchCheck();
+    const r = await env.t.installAndStartBackend();
+    eq([r.ok, r.firstInstall, !!r.installBlock, env.uv.probes, env.uv.installs || 0], [false, true, true, 1, 0], 'a blocked interpreter is found by the preflight: install block on the first install, and `uv tool install` never ran');
+    const okEnv = load({ noEngine: true, binReady: false });
+    okEnv.t.primeLaunchCheck();
+    const r2 = await okEnv.t.installAndStartBackend();
+    eq([okEnv.uv.probes, okEnv.uv.installs], [1, 1], 'an interpreter that runs: the preflight passes and the install follows');
+  }
+
+  // ── A blocked FIRST install repairs itself: no panel, no click (there is no engine to lose) ──
+  {
+    // Repair is Windows-only (`repairable`): the block runs as on Windows on every platform the tests run on.
+    const platformDesc = Object.getOwnPropertyDescriptor(process, 'platform');
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    try {
+      const block = { line: 'cause: An Application Control policy has blocked this file. (os error 4551)', module: null, traceback: 'x', path: 'the engine install (uv tool install output)' };
+      const env = load({ noEngine: true, binReady: false, repairOk: true });
+      env.t.primeLaunchCheck();
+      const ok1 = await env.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }), autoRepair: true });
+      eq([ok1, env.uv.repairs, env.panels().length], [true, 1, 0], 'first install blocked: the repair ran by itself and no panel was shown');
+      eq(env.uv.lastRepair.skipStaging, true, 'and it skips the scratch install of the engine (there is none to protect)');
+      // The automatic repair fails: the panel appears (with the reason), and the repair is not retried on its own.
+      const env2 = load({ noEngine: true, binReady: false });
+      env2.t.primeLaunchCheck();
+      const done2 = env2.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }), autoRepair: true });
+      await settle(20);
+      eq([env2.uv.repairs, env2.panels().length], [1, 1], 'the automatic repair failed: one attempt, then the panel');
+      ok(/Repair failed at step/.test(env2.panels()[0].detail), 'and it says why');
+      env2.t.setQuitting(true); env2.ipcMain.emit('retry-startup'); await settle(); await done2;
+      // Not asked for (an engine exists): the panel and the user's consent, as before.
+      const env3 = load({ noEngine: true, binReady: false, repairOk: true });
+      env3.t.primeLaunchCheck();
+      const done3 = env3.t.handleFatalFailure({ match: block, record: null, retry: async () => ({ ok: false }) });
+      await settle(10);
+      eq([env3.uv.repairs, env3.panels().length], [0, 1], 'without autoRepair the panel waits for the user');
+      env3.t.setQuitting(true); env3.ipcMain.emit('retry-startup'); await settle(); await done3;
+    } finally {
+      Object.defineProperty(process, 'platform', platformDesc);
+    }
   }
 
   // ── Export logs: the zip lands where the user chose ─────────────────────

@@ -1347,10 +1347,14 @@ function waitForPanelAction() {
 // `retry`, for a block that hit the engine INSTALL (nothing to start yet): what "Retry anyway" runs instead of
 // starting the engine — it re-runs the install and resolves `{ ok, installBlock? }` like installAndStartBackend.
 // Such a block never launched a backend, so nothing is stopped: a bare `flow stop` would kill whatever holds the port.
-async function handleFatalFailure({ match: firstMatch, record: firstRecord, retry = null }) {
+// `autoRepair`: the block hit the FIRST install, so there is no engine to lose: the repair (the signed PSF runtime)
+// runs at once, without the panel and the click; the panel appears only if the repair itself fails. It is tried once.
+async function handleFatalFailure({ match: firstMatch, record: firstRecord, retry = null, autoRepair = false }) {
   let match = firstMatch;
   let record = firstRecord;
   let extraDetail = '';
+  let autoRepairPending = !!autoRepair;
+  const noEngineYet = !!autoRepair; // `autoRepair` is only ever asked for on a blocked first install
   const stopBackend = () => {
     if (retry && !(uvManager && uvManager.hasLaunchedBackend())) return;
     if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[fatal-failure] backend stop failed: ${e.message}`));
@@ -1403,17 +1407,25 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
       detail += ` An update to ${latest} was already attempted for this failure (${plan.prior.at}, ${plan.prior.outcome}); it is not offered again.`;
     }
     log.error(`[fatal-failure] ${detail}`);
-    const shown = await showStartupErrorPanel(detail, {
-      retryable: true,
-      policyBlocked: policy,
-      repairable,
-      extras: { retryLabel: 'Retry anyway', retryWarning: fatalFailure.RETRY_WARNING, updateVersion, exportable: true, fatalKind: kind },
-    });
-    if (!shown) {
-      app.quit();
-      return false;
+    let action;
+    if (autoRepairPending && repairable) {
+      autoRepairPending = false;
+      log.info('[runtime-repair] the first install was blocked: repairing automatically (no engine to lose)');
+      action = 'repair';
+    } else {
+      autoRepairPending = false;
+      const shown = await showStartupErrorPanel(detail, {
+        retryable: true,
+        policyBlocked: policy,
+        repairable,
+        extras: { retryLabel: 'Retry anyway', retryWarning: fatalFailure.RETRY_WARNING, updateVersion, exportable: true, fatalKind: kind },
+      });
+      if (!shown) {
+        app.quit();
+        return false;
+      }
+      action = await waitForPanelAction();
     }
-    const action = await waitForPanelAction();
     if (isQuitting) return false;
     startupFailed = false;
     await pendingBackendStop;
@@ -1435,6 +1447,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord, retr
       try {
         const result = await uvManager.repairRuntime({
           versions,
+          skipStaging: noEngineYet, // a blocked FIRST install: nothing to protect, so no scratch install of the whole engine
           onProgress: (m) => sendStatus(`Repairing the FlowPad runtime — ${m}`),
           startBackend: async () => { sendStatus('Starting flowpad'); markPhase('backend-start', { repair: true }); await uvManager.start(); },
           healthCheck: async () => {
@@ -1724,6 +1737,9 @@ async function installAndStartBackend({ quiet = false } = {}) {
       sendStatus('Checking Python installation');
       await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') }));
 
+      // A few seconds to learn whether the interpreter even runs (Windows application control): a blocked one goes
+      // straight to the repair instead of failing a download-and-unpack of ~160 packages first.
+      await installStep(() => uvManager.probeManagedInterpreter());
       await installStep(() => uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') }));
       backendJustUpgraded = true;
 
@@ -1754,7 +1770,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
       // A block on the FIRST install leaves a half-built environment that is not an engine to roll back to
       // (a block during --compile-bytecode happens after the venv is populated and readable).
       if (firstInstall && uvManager && typeof uvManager.markFirstInstallBlocked === 'function') uvManager.markFirstInstallBlocked();
-      return { ok: false, installBlock };
+      return { ok: false, installBlock, firstInstall };
     }
 
     const details = [
@@ -1892,6 +1908,7 @@ async function startApp() {
         const recovered = await handleFatalFailure({
           match: result.installBlock,
           record: null,
+          autoRepair: !!result.firstInstall,
           retry: async () => {
             const g = await startGuard.run('startup', () => installAndStartBackend({ quiet: true }));
             return g.skipped ? { ok: false } : g.result;

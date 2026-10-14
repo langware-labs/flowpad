@@ -230,7 +230,8 @@ function harness(overrides = {}) {
     ...overrides,
   };
   const progress = [];
-  const run = (state = {}) => performRuntimeRepair({
+  const run = (state = {}, extra = {}) => performRuntimeRepair({
+    ...extra,
     io,
     paths: { runtimeDir: 'C:\\L\\Flowpad\\runtime', downloadsDir: 'C:\\L\\Flowpad\\runtime\\downloads' },
     versions: { appVersion: '0.2.52', engineVersion: '0.2.202' },
@@ -255,6 +256,18 @@ function harness(overrides = {}) {
     eq(h.saved[1].attempts[0].result, 'ok', 'the successful attempt is recorded');
     ok(h.progress.some((m) => /50%/.test(m)), 'download progress reaches the panel');
     ok(!h.calls.includes('rollback') && !h.calls.some((c) => c.startsWith('remove')), 'nothing removed, nothing rolled back');
+  }
+  {
+    // First install blocked (no engine yet): the scratch install of the whole engine is skipped; everything else runs.
+    const h = harness();
+    const r = await h.run({}, { skipStaging: true });
+    ok(r.ok, 'repair without staging succeeds');
+    ok(!h.calls.some((c) => c.startsWith('stage')), 'no staging venv was built');
+    ok(h.calls.some((c) => c.startsWith('engine')) && h.calls.includes('start') && h.calls.includes('health'), 'the engine is installed, started and health-checked');
+    ok(r.steps.some((s) => /^stage/.test(String(s.step || s)) || /skipped: there is no engine/.test(JSON.stringify(s))), 'the skipped stage is recorded');
+    const withStage = harness();
+    await withStage.run();
+    ok(withStage.calls.some((c) => c.startsWith('stage')), 'by default (an engine exists) the staging still runs');
   }
   {
     // An official 3.11 is already there: reused, nothing downloaded or installed.
