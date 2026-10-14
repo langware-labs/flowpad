@@ -96,7 +96,7 @@ With the switch unset, a token that can be neither read nor created refuses ever
 
 | Caller | How |
 |---|---|
-| `flow` CLI, function runner, server monitor (`python -m flow_sdk.server.launch`) | `install_gate_opener()` at startup: every `urllib` request to a loopback host carries the cookie |
+| `flow` CLI, function runner, server monitor (`python -m flow_sdk.server.launch`), the backend itself (in-app diagnose) | `install_gate_opener()` at startup: every `urllib` request to a loopback host carries the cookie |
 | httpx clients (connections, tag relay, webhook relay) | `CookieGateAuthHttpx` on the client: loopback URLs only |
 | Other callers (CLI `local_request`, workers, notify) | `get_header()`, sent to loopback URLs only |
 | Electron | `electron/cookie-gate.js`: the header on its health check, the cookie set once in the shared session, when `waitForBackend` sees the backend up |

@@ -177,7 +177,9 @@ class _GateCookieJar(http.cookiejar.CookieJar):
 def install_gate_opener() -> None:
     """Make every ``urllib.request.urlopen`` in this process present the token to this
     machine. Called once at startup by the processes that call the backend: the
-    ``flow`` CLI, the function runner and the server monitor. The backend itself never does."""
+    ``flow`` CLI, the function runner, the server monitor, and the backend itself (for code
+    running in it, such as the in-app diagnose). The machine is not the boundary the gate
+    guards -- anything running here can read the token file -- the browser is."""
     urllib.request.install_opener(urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_GateCookieJar())))
 
 
