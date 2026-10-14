@@ -308,6 +308,23 @@ def cancel(question_id: str) -> bool:
     return _settle(question_id, lambda future: future.set_exception(Cancelled()))
 
 
+#: How long a question stays asked after a screen last said it is showing it (``seen``). A person who has
+#: the question open is given as long as they keep it open; one who walked away is given this long.
+SEEN_SECONDS = 60.0
+
+
+def seen(question_id: str) -> bool:
+    """A screen is showing this question: it keeps waiting at least ``SEEN_SECONDS`` from now. While the
+    question stays on screen (the screen says so every ~20 s) it has no deadline; once nobody shows it,
+    the op's own deadline — or this one — ends it. False when nothing is waiting under that id."""
+    question = _PENDING.get(question_id)
+    if question is None:
+        return False
+    if question.deadline is not None:
+        question.deadline = max(question.deadline, asyncio.get_running_loop().time() + SEEN_SECONDS)
+    return True
+
+
 def forget(question_id: str) -> None:
     """Drop a question nobody will wait for — one that was never shown."""
     _PENDING.pop(question_id, None)
