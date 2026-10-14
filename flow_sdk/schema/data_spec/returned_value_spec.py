@@ -139,6 +139,11 @@ class ReturnedValue(DataSpec):
     #: from ``ran`` sent a wizard that called itself — and a box with no agent
     #: harness — to 409 as if they were merely busy.
     busy: bool = False
+    #: The callee gave its OWN account of the outcome (an agent's receipt). With NOT_YET it tells
+    #: the two failures apart: reported -> the callee ran and says it could not do it (``detail`` is
+    #: its reason); not reported -> the run itself broke (``detail`` is ours). A FIELD, like ``ran``,
+    #: so nobody tells them apart by reading the sentence.
+    reported: bool = False
     duration_s: float = 0.0
     #: The typed id of what ran it — ``agentic_process-<id>`` or ``shell-<id>``.
     #: ``None`` for a plain subprocess, or when nothing ran. A STRING, because a

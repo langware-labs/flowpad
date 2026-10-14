@@ -1,5 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Boxes, File as FileIcon, MessagesSquare, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
+import {
+  Boxes,
+  File as FileIcon,
+  MessagesSquare,
+  MonitorPlay,
+  Paperclip,
+  Send,
+  Smile,
+  SquareTerminal,
+  Trash2,
+  X,
+} from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
@@ -187,6 +198,8 @@ export function MessageComposer({
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
   const [taskItOn, setTaskItOn] = useState(false);
+  // Prompt call on send: the text goes as a one-shot prompt the receiver approves and runs once.
+  const [promptCallOn, setPromptCallOn] = useState(false);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -312,7 +325,9 @@ export function MessageComposer({
     // Inside a session view every send is a prompt: it rides as a PROMPT
     // attachment (the host's gate keys on it; the backend synthesizes the body).
     const isPromptSend = !!trimmed && !!liveSessionId;
-    const messageBody = isPromptSend ? '' : trimmed;
+    // A prompt call: the text rides as the call, not as the message body.
+    const isCallSend = !!trimmed && promptCallOn && canStartSession;
+    const messageBody = isPromptSend || isCallSend ? '' : trimmed;
     const outgoingFiles = isPromptSend ? undefined : files.length > 0 ? files : undefined;
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = isPromptSend
       ? buildSessionStartExtras({
@@ -321,6 +336,7 @@ export function MessageComposer({
           sessionId: liveSessionId ?? null,
         })
       : {};
+    if (isCallSend) extras.callPrompt = trimmed;
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
     if (assetSelection.selectedTypeIds.length > 0) {
       extras.assetReferences = assetSelection.selectedTypeIds;
@@ -398,6 +414,7 @@ export function MessageComposer({
         setFiles([]);
         setAssetRefs([]);
         setTaskItOn(false);
+        setPromptCallOn(false);
       }
       // Your own send always brings you to the latest, even if you had scrolled up.
       scrollToLatest?.();
@@ -571,6 +588,31 @@ export function MessageComposer({
     </button>
   ) : null;
 
+  // A prompt call is offered wherever a live session is: the same other machine, run once, async.
+  const promptCallToggle = canStartSession ? (
+    <button
+      type="button"
+      onClick={() => setPromptCallOn((on) => !on)}
+      disabled={isDisabled}
+      aria-pressed={promptCallOn}
+      title={
+        promptCallOn
+          ? t`This message is a prompt — ${hostName} approves it, it runs once on their machine, you get its status`
+          : t`Attach a prompt — runs once on ${hostName}'s machine after they approve it`
+      }
+      data-testid="composer-prompt-call"
+      className={cn(
+        'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
+        promptCallOn
+          ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      <SquareTerminal className="h-3.5 w-3.5" />
+      {promptCallOn && <Trans>Prompt</Trans>}
+    </button>
+  ) : null;
+
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
   const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId;
   const taskItToggle = canTaskIt ? (
@@ -734,6 +776,7 @@ export function MessageComposer({
         <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
           {attachButtons}
           {sessionToggle}
+          {promptCallToggle}
         </div>
         {terminal && (
           <span className="select-none self-center text-sm text-emerald-600 dark:text-emerald-400" aria-hidden>
@@ -746,7 +789,13 @@ export function MessageComposer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           onPaste={(e) => void handlePaste(e)}
-          placeholder={dragging ? t`Drop files here` : (placeholder ?? t`Reply to sender…`)}
+          placeholder={
+            dragging
+              ? t`Drop files here`
+              : promptCallOn
+                ? t`Prompt to run on ${hostName}'s machine…`
+                : (placeholder ?? t`Reply to sender…`)
+          }
           rows={1}
           disabled={isDisabled}
           data-testid={terminal ? 'live-session-input' : undefined}

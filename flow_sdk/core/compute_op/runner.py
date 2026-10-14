@@ -1283,9 +1283,10 @@ async def _agent(
             update={
                 "exit_code": ExitCode.NOT_YET,
                 "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
+                "reported": receipt.reported,
             }
         )
-    return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
+    return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary, "reported": True})
 
 
 def _agent_scope(exe: AgentOp, values: Optional[dict]) -> "tuple[Any, LaunchContext]":

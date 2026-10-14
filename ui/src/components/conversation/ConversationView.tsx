@@ -53,6 +53,7 @@ import {
   shouldShowSoloSendNotice,
   type ConversationItem,
 } from './conversation-items';
+import { indexCallAnswers, processCallOf, runningProcessCalls } from './process-call';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -488,15 +489,37 @@ export function ConversationView({
   // messages collapse onto the message that opened the session (the anchor);
   // follow-ups, replies and lifecycle lines are hidden from the thread and
   // live in the session view.
+  // A prompt call's answer is a message of its own on the wire, but it reads as the call's status:
+  // it renders on the call's card, never as a bubble.
+  const callAnswers = useMemo(() => indexCallAnswers(messagesById.values()), [messagesById]);
+  // Calls running on this machine, asked once per conversation — a card mounting mid-run says "working…".
+  const [runningCalls, setRunningCalls] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    let live = true;
+    void runningProcessCalls(conversationId)
+      .then((ids) => live && setRunningCalls(new Set(ids)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [conversationId]);
+  const promptCallFor = (fm: FlowMessage | null) => {
+    const call = processCallOf(fm);
+    if (!call) return null;
+    return { call, answer: callAnswers.byCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
+  };
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
+    const feed = orderedItems.filter(
+      (it) => !(it.kind === ConversationItemKind.POINTER && callAnswers.answerMessageIds.has(it.messageId)),
+    );
     if (threadId) {
-      const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
+      const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
     const threaded: ConversationItem[] = [];
     const plain: ConversationItem[] = [];
-    for (const item of orderedItems) {
+    for (const item of feed) {
       (itemThreadId(item, getFm) ? threaded : plain).push(item);
     }
     return [
@@ -598,6 +621,8 @@ export function ConversationView({
           onTaskIt={handleTaskIt}
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
+          promptCall={promptCallFor(fm)}
+          callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
         />
       );
     }

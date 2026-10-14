@@ -42,6 +42,9 @@ export interface ReturnedValue {
   /** Something else holds the slot this call needs — a wizard's lock, a turn
    *  in flight. The one NOT_YET worth retrying later; never-started is not busy. */
   busy?: boolean;
+  /** The callee gave its OWN account (an agent's receipt). With NOT_YET it tells "ran and says it
+   *  could not" (true) from "the run itself broke" (false) — never read off the sentence. */
+  reported?: boolean;
   duration_s?: number;
   /** Typed id of what ran it: `agentic_process-<id>` or `shell-<id>`. */
   executor?: string | null;

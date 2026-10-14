@@ -69,6 +69,8 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import type { WorkerType } from './conversation-session-constants';
+import { PromptCallCard } from './PromptCallCard';
+import type { ProcessCall, ReturnedValue } from '@sdk';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -233,6 +235,11 @@ interface FlowMessageBubbleProps {
   taskPeople?: TaskPeople;
   /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
+  /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
+   *  replied, and whether it is running on this machine right now. */
+  promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** The conversation's other participant — the machine a prompt call I send runs on. */
+  callPeerName?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -262,6 +269,8 @@ export function FlowMessageBubble({
   onTaskIt,
   taskPeople,
   onLaunchWorker,
+  promptCall = null,
+  callPeerName = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
@@ -720,6 +729,17 @@ export function FlowMessageBubble({
     : [];
   const footer = (
     <>
+      {promptCall && (
+        <PromptCallCard
+          call={promptCall.call}
+          running={promptCall.running}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          role={isCurrentUser ? 'sender' : 'recipient'}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+          answer={promptCall.answer}
+        />
+      )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
