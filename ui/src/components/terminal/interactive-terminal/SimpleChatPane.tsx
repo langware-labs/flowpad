@@ -116,7 +116,7 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   const anchorIndex = useMemo(() => nearestGroup(turnGroups, focusAt), [turnGroups, focusAt]);
   const paneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (anchorIndex === null) scrollRef.current?.scrollToBottom();
+    if (anchorIndex === null) scrollRef.current?.follow();
   }, [turnGroups.length, activity.active, anchorIndex]);
   // Focused: open at the moment asked for, once per moment — a live turn appending below must not
   // yank the reader back to it.
@@ -127,7 +127,11 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   }, [focusAt, anchorIndex !== null]);
 
   return (
-    <div ref={paneRef} className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
+    <div
+      ref={paneRef}
+      className={cn('flex h-full min-h-0 flex-col bg-background', className)}
+      data-testid="simple-chat-pane"
+    >
       <LinkScope process={process}>
         <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
           {!hasRows ? (
@@ -143,8 +147,12 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
                 <ChatActivityLine process={process} />
               ) : (
                 <div>
-                  <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
-                  <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+                  <p className="text-[15px] font-medium text-foreground">
+                    <Trans>Start a conversation</Trans>
+                  </p>
+                  <p className="mt-1 text-sm">
+                    <Trans>Send a message below and the agent will get to work.</Trans>
+                  </p>
                 </div>
               )}
             </div>

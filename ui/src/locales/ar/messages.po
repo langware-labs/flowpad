@@ -15500,6 +15500,10 @@ msgstr ""
 #~ msgid "New message"
 #~ msgstr "رسالة جديدة"
 
+#: src/components/AutoScrollContainer.tsx
+msgid "New messages"
+msgstr "رسائل جديدة"
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "New messages will appear here on the next poll."
 msgstr "ستظهر الرسائل الجديدة هنا في الجلب التالي."

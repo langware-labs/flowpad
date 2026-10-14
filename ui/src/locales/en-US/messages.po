@@ -15648,6 +15648,10 @@ msgstr "New MCP server"
 #~ msgid "New message"
 #~ msgstr "New message"
 
+#: src/components/AutoScrollContainer.tsx
+msgid "New messages"
+msgstr "New messages"
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "New messages will appear here on the next poll."
 msgstr "New messages will appear here on the next poll."
