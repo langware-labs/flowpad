@@ -9,11 +9,14 @@ JSON read, so the page round-trips it unchanged.
 from __future__ import annotations
 
 import base64
-from typing import Optional
+import copy
+import pickle
+from typing import ClassVar, Optional
 
 import pytest
 from pydantic import ValidationError
 
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
 from flow_sdk.schema.data_spec.io import Binary
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -25,25 +28,34 @@ PNG_URL = "data:image/png;base64," + base64.b64encode(PNG).decode()
 
 
 class Shot(DataSpec):
+    spec_kind: ClassVar[str] = "unittest.binary.shot"
     text: str
     screenshot: Optional[Binary] = None
 
 
+class Shots(DatasetSpec[ExampleSpec[Shot, DataSpec, DataSpec]]):
+    spec_kind: ClassVar[str] = "unittest.binary.dataset"
+
+
+def shot(screenshot=PNG_URL) -> Shot:
+    return Shot.model_validate({"text": "t", "screenshot": screenshot})
+
+
 def test_a_data_url_decodes_to_the_bytes_and_names_its_extension():
-    shot = Shot.model_validate({"text": "t", "screenshot": PNG_URL})
-    assert bytes(shot.screenshot) == PNG
-    assert shot.screenshot.ext == ".png"
+    s = shot()
+    assert bytes(s.screenshot) == PNG
+    assert s.screenshot.media_type == "image/png" and s.screenshot.ext == ".png"
 
 
 def test_a_json_read_hands_back_the_same_data_url():
-    shot = Shot.model_validate({"text": "t", "screenshot": PNG_URL})
-    assert shot.model_dump(mode="json")["screenshot"] == PNG_URL
+    s = shot()
+    assert s.model_dump(mode="json")["screenshot"] == PNG_URL
     # Python mode stays bytes: only the wire form is a URL.
-    assert isinstance(shot.model_dump()["screenshot"], bytes)
+    assert isinstance(s.model_dump()["screenshot"], bytes)
 
 
 def test_it_is_written_as_a_real_png_and_read_back_as_one(tmp_path):
-    Shot.model_validate({"text": "t", "screenshot": PNG_URL}).save(tmp_path)
+    shot().save(tmp_path)
     files = {p.name for p in tmp_path.iterdir() if p.is_file()}
     assert "screenshot.png" in files and "screenshot.bin" not in files
     assert (tmp_path / "screenshot.png").read_bytes() == PNG
@@ -53,48 +65,36 @@ def test_it_is_written_as_a_real_png_and_read_back_as_one(tmp_path):
 
 
 def test_replacing_the_image_with_another_type_leaves_one_file(tmp_path):
-    Shot.model_validate({"text": "t", "screenshot": PNG_URL}).save(tmp_path)
-    jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff\xe0jpeg").decode()
-    Shot.model_validate({"text": "t", "screenshot": jpeg}).save(tmp_path)
+    shot().save(tmp_path)
+    shot("data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff\xe0jpeg").decode()).save(tmp_path)
     assert sorted(p.name for p in tmp_path.glob("screenshot.*")) == ["screenshot.jpg"]
 
 
 def test_clearing_it_removes_the_file_whatever_its_extension(tmp_path):
-    Shot.model_validate({"text": "t", "screenshot": PNG_URL}).save(tmp_path)
-    Shot.model_validate({"text": "t", "screenshot": None}).save(tmp_path)
+    shot().save(tmp_path)
+    shot(None).save(tmp_path)
     assert not list(tmp_path.glob("screenshot.*"))
 
 
 def test_plain_bytes_keep_bin():
-    shot = Shot.model_validate({"text": "t", "screenshot": b"\x00\x01"})
-    assert shot.screenshot.ext == ".bin"
+    assert shot(b"\x00\x01").screenshot.ext == ".bin"
+
+
+def test_a_copy_keeps_what_the_bytes_are():
+    original = shot().screenshot
+    for clone in (copy.copy(original), copy.deepcopy(original), pickle.loads(pickle.dumps(original))):
+        assert bytes(clone) == PNG and clone.media_type == "image/png"
 
 
 @pytest.mark.parametrize("bad", ["data:image/png,notbase64", "data:image/png;base64,***"])
 def test_a_data_url_that_does_not_decode_is_refused(bad):
     with pytest.raises(ValidationError):
-        Shot.model_validate({"text": "t", "screenshot": bad})
-
-
-# ── over the row routes: what the browser's Dataset client calls ─────────────
-
-from typing import ClassVar  # noqa: E402
-
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec  # noqa: E402
-
-
-class Feedback(DataSpec):
-    spec_kind: ClassVar[str] = "unittest.binary.feedback"
-    text: str
-    screenshot: Optional[Binary] = None
-
-
-class Feedbacks(DatasetSpec[ExampleSpec[Feedback, DataSpec, DataSpec]]):
-    spec_kind: ClassVar[str] = "unittest.binary.dataset"
+        shot(bad)
 
 
 @pytest.mark.asyncio
 async def test_a_page_saves_a_screenshot_and_reads_it_back_over_http(tmp_path):
+    """What the browser's Dataset client calls: ``put-row`` with a data URL, then ``rows``."""
     from flow_sdk.builtin.dataset import Dataset
     from tests.unit._graph_client import call_local
 
