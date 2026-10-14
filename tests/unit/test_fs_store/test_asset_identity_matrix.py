@@ -443,3 +443,14 @@ def test_shipped_asset_declares_an_install_independent_key(
     assert str(Path(getattr(ref, "_path", ref)).resolve()) not in stable_key, (
         f"{type_name}: the stable key still embeds the install path — {stable_key!r}"
     )
+
+
+def test_an_installed_copilot_transcript_keeps_its_session_id(tmp_path: Path) -> None:
+    """An install keeps the file name, so a received Copilot transcript is
+    ``<project>/agentic-assets/copilot_session/events.jsonl``: its parent is the type folder,
+    not the session. The id comes from the ``session.start`` event, so the installed row is the
+    shared one and Open finds it."""
+    events = tmp_path / "agentic-assets" / "copilot_session" / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text(json.dumps({"type": "session.start", "data": {"sessionId": V4}}) + "\n", encoding="utf-8")
+    assert resolve_id(_info("copilot_session"), FSRef(events)) == V4
