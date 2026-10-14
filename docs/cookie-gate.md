@@ -15,9 +15,7 @@ password.
 
 ## The token
 
-**Where it lives.** `<flow_home>/instances/<instance>/.cookie_gate`, a plain file (0600 on posix; the
-user profile's inherited ACL on Windows). The first request a backend serves creates it (`O_EXCL`, so
-two processes racing on first boot end up with one token), and every read goes to the file, so
+**Where it lives.** `<flow_home>/instances/<instance>/.cookie_gate`, a plain file. Every read goes to the file, so
 nothing is cached. The CLI and Electron read the same file.
 
 **On a hub box** the hub overwrites it with its own secret at launch (`flow auth set-cookie-gate`,
