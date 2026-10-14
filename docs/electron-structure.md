@@ -46,7 +46,8 @@ Electron (main.js)
 | `update-restart.js` | `createRestartApplier` — "Restart now": stops the backend, installs, and recovers if the restart fails. |
 | `update-plan.js` | The combined update flow: `decideOffer`, `savePendingEngine`, `markPendingEngineConsented`, `planAfterDesktopUpdate`, `createReadyReminder`. |
 | `startup-error.js` | `describeStartupFailure` and `summarizeOutput` — panel text and which steps to show. |
-| `support-bundle.js` | "Share with us": `collectLogs`, `buildSupportZip`, `buildMailtoUrl`, `redact`. |
+| `support-bundle.js` | "Share with us" zip: `collectLogs`, `buildSupportZip`, `redact`. |
+| `support-upload.js` | "Share with us" upload: `uploadSupportBundle` — the zip to the hub's anonymous `/support-bundle` intake (GCS). |
 | `zip-writer.js` | Dependency-free zip writer (`createZip`, `crc32`). |
 | `log-redact.js` | Secret redaction in logs: `redactUrl`, `redactLogMessage`, `installLogRedaction`. |
 | `app-location.js` | AppTranslocation detection and the offer to move to `/Applications` (macOS only). |
@@ -133,9 +134,10 @@ If everything is blocked, a `policyBlocked` error is raised and the panel hides 
 In Share, `support-bundle.redact` also covers `fp_(live|test)_`.
 
 ### 3.7 Share with us
-Sent to `diagnosis@langware.ai`, subject `Flowpad startup problem - YYYY-MM-DD`.
-Only the newest desktop log and the newest server log are included. It is a `mailto:` (limited to 1800 characters);
-the zip is built locally (`MAX_LOG_BYTES` = 2 MB per file).
+The zip is built locally (`MAX_LOG_BYTES` = 2 MB per file; newest desktop + server + monitor logs, secrets masked)
+and uploaded to the hub's anonymous `POST /api/v1/support-bundle` intake (`FLOWPAD_CLOUD_URL`), which stores it in
+GCS and notifies the team; the hub answers a `submission_id` the user can quote. The email address is optional
+(error-panel form; native failure dialogs send anonymously). On upload failure the panel offers "Export logs".
 
 ### 3.8 AppTranslocation
 On macOS, an app running from a transient location is offered, once per version, a move to `/Applications`

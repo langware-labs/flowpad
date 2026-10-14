@@ -2,9 +2,8 @@
 
 /*
  * The "Share with us" bundle: the newest desktop log and the newest backend-server log, a small
- * info.txt, zipped, with obvious secrets masked — plus the mailto: link that opens the user's own
- * mail client. A mailto: URL cannot carry an attachment, so the caller also reveals the zip in the
- * file manager and the mail body says which file to attach. Nothing is sent by the app itself.
+ * info.txt, zipped, with obvious secrets masked. The caller uploads it to the hub's support-bundle
+ * intake (support-upload.js), or saves it where the user chooses ("Export logs").
  */
 
 const fs = require('fs');
@@ -12,10 +11,9 @@ const os = require('os');
 const path = require('path');
 const { createZip } = require('./zip-writer');
 
-// Only the tail of each log goes in: the cause of a startup failure is at the end, and a mail
-// attachment has to stay small. (A size bound on what we attach, not a wait or timeout.)
+// Only the tail of each log goes in: the cause of a startup failure is at the end, and the
+// upload has to stay small. (A size bound on what we send, not a wait or timeout.)
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
-const MAILTO_MAX_LENGTH = 1800; // several Windows mail handlers truncate longer command lines
 
 const MASK = '[REDACTED]';
 const REDACTIONS = [
@@ -114,24 +112,4 @@ function buildSupportZip({ sources, info, detail, outDir = os.tmpdir(), now = ne
   };
 }
 
-const SUBJECT_TITLE = 'Flowpad startup problem';
-
-/** Fixed title + the local date, so a team mailbox threads/sorts a day's reports together. */
-function supportSubject(now = new Date()) {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${SUBJECT_TITLE} - ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-}
-
-/** A mailto: URL that stays short enough for every handler; the body is trimmed to fit. */
-function buildMailtoUrl({ to, subject, body }) {
-  const make = (b) => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(b)}`;
-  let text = body;
-  let url = make(text);
-  while (url.length > MAILTO_MAX_LENGTH && text.length > 40) {
-    text = `${text.slice(0, Math.max(40, Math.floor(text.length * 0.85)))}…`;
-    url = make(text);
-  }
-  return url;
-}
-
-module.exports = { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl, supportSubject, SUBJECT_TITLE, MAX_LOG_BYTES, MAILTO_MAX_LENGTH };
+module.exports = { redact, newestFile, tailText, collectLogs, buildSupportZip, MAX_LOG_BYTES };
