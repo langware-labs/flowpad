@@ -92,7 +92,7 @@ The backend is instance-scoped. Read the port from the instance's `server.json`:
 ```bash
 PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); print(json.load(open(pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'))['port'])")
 BASE="http://localhost:$PORT/api/v1"
-GATE="X-Cookie-Gate: $(cat ~/.flow/instances/${FLOW_INSTANCE:-prod}/.cookie_gate 2>/dev/null)"   # the backend refuses requests without its token
+GATE="X-Cookie-Gate: $(flow auth get-cookie-gate 2>/dev/null)"   # the backend refuses requests without its token
 ```
 
 If `server.json` is missing, that instance's backend is not running — stop and tell the user.
