@@ -6,8 +6,9 @@ what the Flowpad runtime asks a source beyond the contract."""
 from __future__ import annotations
 
 from contextlib import AbstractAsyncContextManager
-from typing import Any, AsyncIterator, Mapping, Optional, Protocol, runtime_checkable
+from typing import Any, AsyncIterator, ClassVar, Mapping, Optional, Protocol, runtime_checkable
 
+from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.call import CallEvent, IncomingCall
 from flow_sdk.sources.values.items import FileItem, MessageData, MessageItem, SourceItemSpec, UserProfile
@@ -69,6 +70,26 @@ class Reacting(Protocol):
 
     async def react(self, target: CloudOrigin, emoji: str) -> None: ...
     async def unreact(self, target: CloudOrigin, emoji: str = "") -> None: ...
+
+
+@runtime_checkable
+class Acting(Protocol):
+    """Act on a whole conversation (approve, close, merge) — the channel's ``actions`` say which.
+    ``conversation`` is the conversation's origin on this source (``kind``/``namespace`` of its
+    messages, ``key`` its thread handle). An action that writes a message into the conversation
+    answers it, and it is recorded as ours; one that does not answers ``None``. An unknown or
+    refused action raises (``Rejected``)."""
+
+    actions: ClassVar[tuple[ActionSpec, ...]]
+
+    async def act(self, conversation: CloudOrigin, action: str, text: str = "") -> Optional[MessageItem]: ...
+
+
+def actions_of(cls: object) -> tuple[ActionSpec, ...]:
+    """The actions a driver class (or source) declares, ``()`` when it is not ``Acting``. A protocol
+    with a data member refuses ``issubclass``, so this reads the two members directly."""
+    actions = getattr(cls, "actions", None)
+    return tuple(actions) if callable(getattr(cls, "act", None)) and isinstance(actions, (tuple, list)) else ()
 
 
 @runtime_checkable
@@ -156,6 +177,7 @@ CAPABILITIES: dict[str, type] = {
     "messaging": Messaging,
     "drafting": Drafting,
     "reacting": Reacting,
+    "acting": Acting,
     "verifiable": Verifiable,
     "choosing": Choosing,
     "identified": Identified,
@@ -170,6 +192,7 @@ def capabilities_of(source: object) -> tuple[str, ...]:
 
 
 __all__ = [
+    "Acting",
     "CAPABILITIES",
     "CallSession",
     "Calling",
@@ -186,5 +209,6 @@ __all__ = [
     "StableHandle",
     "Verdict",
     "Verifiable",
+    "actions_of",
     "capabilities_of",
 ]

@@ -41,6 +41,7 @@ import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { MessageComposer } from './MessageComposer';
+import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -938,6 +939,8 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       {approveSessionPicker}
+      {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
+      {conversation && <ConversationActions conversation={conversation} onDone={() => void handleRefresh()} />}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
@@ -1085,6 +1088,7 @@ export function ConversationView({
           {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
         </p>
       )}
+      <ConversationEndedLine endedAt={conversation?.ended_at} />
       {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
       {(messagesLoaded || !!messagesError) && (
         <MessageComposer

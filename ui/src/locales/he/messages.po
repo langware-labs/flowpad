@@ -1087,15 +1087,15 @@ msgstr ""
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{name} is added. It needs <0>one thing from you</0> before it can bring messages in."
-msgstr ""
+msgstr "{name} נוסף. נדרש <0>דבר אחד ממך</0> לפני שיוכל להביא הודעות."
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{name} is added. Setting it up…"
-msgstr ""
+msgstr "{name} נוסף. מגדירים אותו…"
 
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "{name} is listening."
-msgstr ""
+msgstr "{name} מאזין."
 
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "{name} is not set up on this machine"
@@ -1253,7 +1253,7 @@ msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
-msgstr ""
+msgstr "ההתחברות ל-{title} צריכה חידוש"
 
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{tooltip} — click to open Records Scanner"
@@ -7102,7 +7102,7 @@ msgstr "לא ניתן להתחיל כניסה"
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Could not start the {0} sign-in."
-msgstr ""
+msgstr "לא ניתן להתחיל את ההתחברות ל-{0}."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
@@ -10889,7 +10889,7 @@ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Finish later"
-msgstr ""
+msgstr "לסיים אחר כך"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
@@ -15233,11 +15233,11 @@ msgstr "נדרש עבור:"
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Needs {0} sign-in"
-msgstr ""
+msgstr "נדרשת התחברות ל-{0}"
 
 #: src/components/data-sources/source-attention.ts
 msgid "Needs {title} sign-in"
-msgstr ""
+msgstr "נדרשת התחברות ל-{title}"
 
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
@@ -15262,7 +15262,7 @@ msgstr ""
 
 #: src/components/project-setup/SetupTreeView.tsx
 msgid "Needs you — above"
-msgstr ""
+msgstr "ממתין לך — למעלה"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Needs your approval"
@@ -17120,7 +17120,7 @@ msgstr "אין — האשף הזה מופעל ידנית. כדי שירוץ מע
 
 #: src/components/data-sources/source-attention.ts
 msgid "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
-msgstr ""
+msgstr "שום דבר לא יגיע עד ש-{title} יחובר. לחץ על הגדרה — זה לוקח דקה."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Nothing attached."
@@ -23743,7 +23743,7 @@ msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצ
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Sign in to {0}"
-msgstr ""
+msgstr "התחברות ל-{0}"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
@@ -24157,7 +24157,7 @@ msgstr "במתן"
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "So {name} can read your {0} messages and send your replies as you. You stay signed in."
-msgstr ""
+msgstr "כדי ש-{name} יוכל לקרוא את הודעות ה-{0} שלך ולשלוח את התשובות שלך בשמך. ההתחברות נשמרת."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
@@ -28211,7 +28211,7 @@ msgstr "ממתין לך"
 #. placeholder {0}: signIn.title
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Waiting for you to approve on {0}…"
-msgstr ""
+msgstr "ממתין לאישור שלך ב-{0}…"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Waiting for you to approve…"
@@ -29241,3 +29241,11 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Ended · {when}"
+msgstr "הסתיים · {when}"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "Why?"
+msgstr "למה?"
