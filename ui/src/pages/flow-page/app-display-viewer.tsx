@@ -1,9 +1,11 @@
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { webappAsset } from '@src/components/project-setup/use-project-load';
 import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { useCallback, useEffect, useRef } from 'react';
 import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
 import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
+import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
 import { WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -238,6 +240,9 @@ export function AppDisplayViewer({
         onRuntimeChange={setRuntime}
         onRefresh={() => frameRef.current?.refresh()}
       />
+      {definition?.project_id && definition.name ? (
+        <AppStatusLine projectId={definition.project_id} app={definition.name} />
+      ) : null}
       <div className="min-h-0 flex-1">
         <WebappDisplay
           // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
@@ -258,7 +263,15 @@ export function AppDisplayViewer({
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
   const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
   return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
-    ? <ProjectLoadGate key={provider} projectId={provider}>{display}</ProjectLoadGate>
+    ? (
+      <ProjectLoadGate
+        key={provider}
+        projectId={provider}
+        asset={webappAsset(microAppId)}
+      >
+        {display}
+      </ProjectLoadGate>
+    )
     : display;
 }
 

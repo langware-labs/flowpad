@@ -119,6 +119,13 @@ group routing, or where a deployment answers, read
 creating the agent remains `agent-builder`, and connecting its source remains
 `connect-data-source`. An explanation or audit does not require either mutation workflow.
 
+## Keeping data in step with a system outside Flowpad
+
+"Keep my CRM deals / tickets / tasks here", "sync X with Y", "mirror ..." is two skills, in this
+order: `connect-data-source` connects (or writes) the source, then `data-management` declares the
+dataset it mirrors into and which fields are the outside system's. Nothing here is a script of
+your own — do not write a sync loop, an API client or a state file.
+
 ## Other actions
 
 For records, search, process or message actions, open the matching file in this skill directory and follow it literally. Do not improvise from the table below — the files are the specification.

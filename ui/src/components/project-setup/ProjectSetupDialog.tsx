@@ -366,7 +366,8 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {setup.tree && (
+        {/* The steps are for watching a run; while a question is open the question is the screen. */}
+        {setup.tree && !questionId && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>

@@ -231,7 +231,7 @@ def _run_source(env: Optional[dict]) -> str:
 def _check_in_process(spec: ComputeOpSpec) -> bool:
     """The op's check is a step this backend answers itself (a source's, a web app's) — its detail is a reason."""
     check = spec.completion_check
-    return check is not None and bool(check.source_step or check.webapp_step)
+    return check is not None and bool(check.source_step or check.webapp_step or check.requirement_step)
 
 
 async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: str) -> Optional[CliResult]:
@@ -243,6 +243,8 @@ async def _in_process(op: CliOp, env: Optional[dict], *, check: bool, platform: 
         return said if check else said.model_copy(update={"value": value_from_stdout(said.stdout)})
     if op.webapp_step and _run_value(env, "webapp"):
         return await _webapp_step(op, env, check=check)
+    if op.requirement_step:  # it names everything it needs (its project included): any run answers it here
+        return await _requirement_step(op, env, check=check)
     return None
 
 
@@ -266,6 +268,19 @@ async def _webapp_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliRes
         exit_code=answer.exit_code, detail=answer.detail, ran=answer.ran, value=answer.value,
         command=f"app step {webapp} {which}" + (" --check" if check else ""),
         returncode=int(answer.exit_code), stdout="", stderr="" if answer.ok else str(answer.detail or ""),
+    )
+
+
+async def _requirement_step(op: CliOp, env: Optional[dict], *, check: bool) -> CliResult:
+    """What a setup requirement needs (``project_setup.requirement_step``), in this process."""
+    from flow_sdk.builtin.project_setup import requirement_step  # noqa: PLC0415
+
+    which = str(op.requirement_step)
+    ok, detail = await requirement_step(_run_value(env, "project"), which, check=check)
+    code = ExitCode.OK if ok else ExitCode.NOT_YET
+    return CliResult(
+        exit_code=code, detail=detail, ran=not check, command=f"requirement step {which}" + (" --check" if check else ""),
+        returncode=int(code), stdout="", stderr="" if ok else detail,
     )
 
 
@@ -1139,8 +1154,10 @@ async def _ask_until_held(asking: Awaitable[AskResult], spec: ComputeOpSpec, *, 
             if said is not None and said.exit_code is ExitCode.OK:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
-                # A confirm's answer is ``{}`` (``confirm_spec.py``) -- what Send would have answered.
-                return AskResult.satisfied(f"{spec.display_label}: done.", value={})
+                # The goal holding IS the answer -- the same one an op whose goal held before anyone was asked
+                # gives (``_already``): a confirm's ``{}``, a value read off the check, or none. A fixed ``{}``
+                # failed every question whose answer is a string ("choose one way", once signed in).
+                return _already(spec, said)
             await asyncio.wait({task}, timeout=AUTO_CONTINUE_EVERY_SECONDS)
         return task.result()
     finally:
@@ -1268,9 +1285,10 @@ async def _agent(
             update={
                 "exit_code": ExitCode.NOT_YET,
                 "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
+                "reported": receipt.reported,
             }
         )
-    return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
+    return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary, "reported": True})
 
 
 def _agent_scope(exe: AgentOp, values: Optional[dict]) -> "tuple[Any, LaunchContext]":

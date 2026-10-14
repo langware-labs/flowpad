@@ -1,6 +1,6 @@
 """``ONE_OF``: a credential's either-or group, and the ``cli`` variable that can be one of its ways.
 
-Spora's Google access is the case: a service-account key file OR a gcloud sign-in — either is enough,
+Acme's Google access is the case: a service-account key file OR a gcloud sign-in — either is enough,
 and a sign-in is nothing a store holds. Real isolated DB, real project, real credential service; the
 sign-in's check is a real shell one-liner (``exit 0`` / ``exit 1``).
 """

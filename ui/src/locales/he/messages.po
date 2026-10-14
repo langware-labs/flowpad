@@ -434,10 +434,12 @@ msgstr ""
 msgid "{0} estimated · {1} unpriced"
 msgstr "{0} משוערות · {1} ללא תמחור"
 
+#. placeholder {0}: action.label
 #. placeholder {0}: builtinFailing[0].name
 #. placeholder {0}: button.label
 #: src/components/account/user-info.tsx
 #: src/components/automations/AutomationsList.tsx
+#: src/components/conversation/ConversationActions.tsx
 msgid "{0} failed"
 msgstr "{0} נכשל"
 
@@ -1085,6 +1087,18 @@ msgstr ""
 #~ msgid "{name} has no account to sign into — it runs on an LLM key. Add one under “LLM API keys” above and pick it here."
 #~ msgstr ""
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is added. It needs <0>one thing from you</0> before it can bring messages in."
+msgstr "{name} נוסף. נדרש <0>דבר אחד ממך</0> לפני שיוכל להביא הודעות."
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is added. Setting it up…"
+msgstr "{name} נוסף. מגדירים אותו…"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{name} is listening."
+msgstr "{name} מאזין."
+
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "{name} is not set up on this machine"
 msgstr ""
@@ -1238,6 +1252,10 @@ msgstr ""
 
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} פריטים"
+
+#: src/components/data-sources/source-attention.ts
+msgid "{title} sign-in needs renewing"
+msgstr "ההתחברות ל-{title} צריכה חידוש"
 
 #: src/components/search-index/IndexerStatusPill.tsx
 msgid "{tooltip} — click to open Records Scanner"
@@ -1632,12 +1650,16 @@ msgid "A new project folder — everything you create is scoped to it"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
-msgid "A project on the hub — fetched by its id wherever this project opens"
-msgstr ""
+#~ msgid "A project on the hub — fetched by its id wherever this project opens"
+#~ msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "A project on the hub is fetched wherever this project opens; any other is used from its folder on this computer."
+msgstr "פרויקט שנמצא ב-Hub נמשך בכל מקום שבו הפרויקט הזה נפתח; כל פרויקט אחר נלקח מהתיקייה שלו במחשב הזה."
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "A project on the hub, fetched by its id wherever this project opens."
-msgstr ""
+#~ msgid "A project on the hub, fetched by its id wherever this project opens."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "A project with that name exists"
@@ -1889,7 +1911,7 @@ msgid "Activity"
 msgstr "פעילות"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials-view/EnvFilesChip.tsx
@@ -2111,8 +2133,8 @@ msgid "Add Hook"
 msgstr "הוסף חוק"
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Add hub project"
-msgstr ""
+#~ msgid "Add hub project"
+#~ msgstr ""
 
 #~ msgid "Add input"
 #~ msgstr ""
@@ -2141,6 +2163,10 @@ msgstr ""
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Add people to {teamName}"
 msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Add project"
+msgstr "הוספת פרויקט"
 
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
@@ -2291,10 +2317,12 @@ msgstr "כתובות URL נוספות לשוק התוספים"
 msgid "Address book"
 msgstr "ספר כתובות"
 
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/hub-home/LoginAccessField.tsx
 msgid "Admin"
-msgstr ""
+msgstr "ניהול"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Adopt a support desk published as a git repository"
 #~ msgstr ""
 
@@ -2939,8 +2967,12 @@ msgstr ""
 #~ msgstr "פרויקט Flowpad אחר — התיקייה שלו משמשת כקונטקסט לפרויקט זה"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Another Flowpad project — this one depends on its folder"
-msgstr ""
+msgid "Another Flowpad project — on this computer or on the hub"
+msgstr "פרויקט Flowpad אחר — במחשב הזה או ב-Hub"
+
+#: src/components/assets/dependency-sources.tsx
+#~ msgid "Another Flowpad project — this one depends on its folder"
+#~ msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "another hub budget — {label}"
@@ -3108,6 +3140,7 @@ msgstr ""
 msgid "API Timeout"
 msgstr "פסק זמן ל-API"
 
+#: src/components/asset-counters/app-counters.tsx
 #: src/types/ViewType.ts
 #: src/types/ViewType.ts
 msgid "App"
@@ -3174,6 +3207,7 @@ msgid "Approve now"
 msgstr "לאשר עכשיו"
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "Approve once"
 msgstr "לאשר פעם אחת"
@@ -3194,9 +3228,15 @@ msgstr "מאושר לסשן הזה"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
 
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "אפליקציות"
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Apps in {projectName} with a deployment"
+msgstr ""
 
 #: src/components/account/system-log.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
@@ -3525,6 +3565,10 @@ msgstr "לצרף"
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Attach a plan or skill"
 msgstr "צרף תוכנית או כישור"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Attach a prompt — runs once on {hostName}'s machine after they approve it"
+msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Attach all"
@@ -3899,6 +3943,10 @@ msgstr "קישורים נכנסים"
 #: src/components/account/database-section.tsx
 msgid "Backup DB"
 msgstr "גיבוי בסיס נתונים"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "bad"
+msgstr ""
 
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
@@ -4357,17 +4405,20 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/ConversationActions.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -4685,6 +4736,7 @@ msgstr "שיחות"
 msgid "check"
 msgstr "בדיקה"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/automations/TestPanel.tsx
 msgid "Check"
 msgstr ""
@@ -4745,6 +4797,10 @@ msgstr "בדיקת Git…"
 msgid "Checking if you have a local clone of the repository."
 msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
 
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Checking once it finishes…"
+msgstr ""
+
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Checking out the projects and opening the session."
 msgstr ""
@@ -4764,6 +4820,10 @@ msgstr "בודק את אינדקס התגיות…"
 #: src/components/funding-chip/FundingChip.tsx
 msgid "Checking what funds {harnessLabel}…"
 msgstr "בודק מה מממן את {harnessLabel}…"
+
+#: src/components/project-setup/ProjectLoadGate.tsx
+msgid "Checking what this needs…"
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -5732,6 +5792,7 @@ msgstr "הגדר את החשבון שלך, העדפות היישום והודע�
 #~ msgstr "מוגדר במקורות נתונים — אין קובץ בדיסק"
 
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Confirm"
@@ -5759,9 +5820,20 @@ msgstr ""
 msgid "Connect"
 msgstr "התחבר"
 
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connect {0}"
+msgstr ""
+
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Connect {group}"
 msgstr ""
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Connect {label}"
+msgstr "חיבור {label}"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a channel people can reach this agent on"
@@ -6338,6 +6410,10 @@ msgstr "לא ניתן היה להקצות תיבת דואר"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
 msgstr "לא ניתן להוסיף הערות לתצוגה"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Could not answer the prompt"
+msgstr ""
 
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Could not ask for help"
@@ -7048,6 +7124,11 @@ msgstr "לא יכול להתחיל חדר"
 msgid "Could not start sign-in"
 msgstr "לא ניתן להתחיל כניסה"
 
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Could not start the {0} sign-in."
+msgstr "לא ניתן להתחיל את ההתחברות ל-{0}."
+
 #: src/components/conversation/ConversationView.tsx
 msgid "Could not start the live session"
 msgstr "לא ניתן היה להתחיל את סשן זמן האמת"
@@ -7320,6 +7401,11 @@ msgstr "לא ניתן להתחיל את החיבור ל-GitHub."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Couldn't start the GitHub connection."
 msgstr "לא ניתן היה להתחיל את החיבור ל-GitHub."
+
+#. placeholder {0}: node.label || node.name
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Couldn't terminate {0}"
+msgstr "לא ניתן היה לעצור את {0}"
 
 #: src/lib/publish-state.ts
 msgid "Couldn't update"
@@ -7840,6 +7926,7 @@ msgid "Declared on the agent's card. Not yet applied to the worker."
 msgstr "מוגדר בכרטיס הסוכן. טרם הוחל על העובד."
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Decline"
@@ -7857,6 +7944,7 @@ msgstr "דחה (מודיע למזמין)"
 msgid "Decline failed"
 msgstr "הדחייה נכשלה"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "declined"
 msgstr "נדחה"
@@ -8302,6 +8390,10 @@ msgstr "מחיקה…"
 msgid "Delivered"
 msgstr "סופק"
 
+#: src/components/conversation/PromptCallCard.tsx
+msgid "delivered · waiting for {otherName} to approve"
+msgstr ""
+
 #: src/components/data-sources/ChannelRouteControl.tsx
 msgid "Delivered to"
 msgstr ""
@@ -8326,8 +8418,9 @@ msgid "Dependencies"
 msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 msgid "Dependency"
-msgstr ""
+msgstr "תלות"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Dependency removed"
@@ -8382,6 +8475,7 @@ msgid "Deployment WorldView"
 msgstr "מבט־על של הפריסה"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/graph-view/ui/NodeDetails.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
@@ -8929,6 +9023,7 @@ msgstr "הושלם"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -8941,6 +9036,10 @@ msgstr "בוצע"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Done!"
 msgstr "בוצע!"
+
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Done."
+msgstr "הושלם."
 
 #: src/components/automations/blocks/WhenBlock.tsx
 msgid "Dot-separated; * matches one part, a trailing * matches the rest (task.*)."
@@ -9160,8 +9259,8 @@ msgstr ""
 #~ msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
 
 #: src/hooks/use-add-dependency.tsx
-msgid "Each selected project's folder is added as a dependency."
-msgstr ""
+#~ msgid "Each selected project's folder is added as a dependency."
+#~ msgstr ""
 
 #~ msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 #~ msgstr ""
@@ -9498,6 +9597,10 @@ msgstr "הסתיים"
 msgid "Ended"
 msgstr ""
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "Ended · {when}"
+msgstr "הסתיים · {when}"
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Endpoint id"
 msgstr ""
@@ -9623,6 +9726,7 @@ msgstr ""
 msgid "Environment Variables"
 msgstr "משתני סביבה"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "שגיאה"
@@ -9781,6 +9885,14 @@ msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Every allowance given, changed or removed here and in everything funded by it. Read-only."
+msgstr ""
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Every app in {projectName}"
+msgstr ""
+
+#: src/components/asset-counters/app-counters.tsx
+msgid "Every app on this machine"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
@@ -10477,6 +10589,7 @@ msgstr "כישלון בהתחלת חיבור GitHub"
 #: src/components/lens-viewer/shared/transcript-features/useTranscriptSession.ts
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הסשן"
 
@@ -10817,6 +10930,10 @@ msgstr ""
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Finish installing the FlowPad GitHub App on {repo}, then"
 msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Finish later"
+msgstr "לסיים אחר כך"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
@@ -11421,6 +11538,14 @@ msgstr "הורידו את FlowPad ב-flowpad.ai ←"
 msgid "Get it at flowpad.ai"
 msgstr "אפשר להוריד אותו ב-flowpad.ai"
 
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your {label} messages here, and answer them from Flowpad."
+msgstr "קבלו כאן את ההודעות שלכם מ-{label}, וענו עליהן מתוך Flowpad."
+
+#: src/components/stream-inbox-view/AttachedChannelsBar.tsx
+msgid "Get your messages here"
+msgstr "קבלו את ההודעות שלכם כאן"
+
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "תחילת העבודה — נותרו {stepsLeft} שלבים"
@@ -11643,6 +11768,10 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
 msgstr "עלה כיוון למעלה"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "good"
+msgstr ""
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
@@ -12138,6 +12267,10 @@ msgstr "מארח"
 msgid "hours"
 msgstr ""
 
+#: src/components/ask/AskForm.tsx
+msgid "How do I get it?"
+msgstr ""
+
 #: src/components/data-sources/GroupChoice.tsx
 msgid "How do you want to connect {group}?"
 msgstr ""
@@ -12145,6 +12278,10 @@ msgstr ""
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "How does improving an asset work?"
 msgstr "איך עובד שיפור נכסים?"
+
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "How it is judged done"
+msgstr "איך נקבע שזה הושלם"
 
 #: src/i18n/pref-labels.ts
 msgid "How many hook-sniffer events to retain in the buffer."
@@ -12246,12 +12383,12 @@ msgid "Hub errors suppressed"
 msgstr "שגיאות Hub דוכאו"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "Hub project"
-msgstr ""
+#~ msgid "Hub project"
+#~ msgstr ""
 
 #: src/components/assets/HubProjectDependencyDialog.tsx
-msgid "Hub project id or link"
-msgstr ""
+#~ msgid "Hub project id or link"
+#~ msgstr ""
 
 #: src/components/version-popover/hub-release-label.tsx
 msgid "Hub release, and the UI build serving it"
@@ -12665,6 +12802,10 @@ msgstr "טוקני קלט"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "Input: {0}"
 msgstr "קלט: {0}"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Inputs"
+msgstr "קלטים"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Insert emoji"
@@ -13222,6 +13363,7 @@ msgid "kind"
 msgstr "סוג"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
@@ -14284,6 +14426,7 @@ msgid "Logout"
 msgstr "התנתק"
 
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Logs"
 msgstr "יומנים"
 
@@ -15149,6 +15292,15 @@ msgstr "נדרש עבור"
 msgid "Needed for:"
 msgstr "נדרש עבור:"
 
+#. placeholder {0}: p.sign_in_title
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Needs {0} sign-in"
+msgstr "נדרשת התחברות ל-{0}"
+
+#: src/components/data-sources/source-attention.ts
+msgid "Needs {title} sign-in"
+msgstr "נדרשת התחברות ל-{title}"
+
 #: src/components/assets/editor/agent-trace/simple/report-language.ts
 msgid "Needs a look"
 msgstr "דורש בדיקה"
@@ -15169,6 +15321,10 @@ msgstr ""
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Needs values"
 msgstr ""
+
+#: src/components/project-setup/SetupTreeView.tsx
+msgid "Needs you — above"
+msgstr "ממתין לך — למעלה"
 
 #: src/components/collaboration/GuestPermissionChip.tsx
 msgid "Needs your approval"
@@ -16673,6 +16829,10 @@ msgstr "אין אפליקציה זמינה"
 msgid "No web page in this view"
 msgstr ""
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "no wizard by this name was found."
+msgstr "לא נמצא אשף בשם הזה."
+
 #. placeholder {0}: stage.wizard
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "No wizard named {0} is installed."
@@ -16744,6 +16904,7 @@ msgid "None yet."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "None."
 msgstr ""
 
@@ -16803,6 +16964,10 @@ msgstr ""
 #~ msgid "Not done: {0}"
 #~ msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Not done."
+msgstr "לא הושלם."
+
 #: src/components/data-sources/source-attention.ts
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "עדיין לא הוערך — שום דבר לא קבע איך המקור הזה מתחיל, ולכן הוא לא נמשך."
@@ -16843,6 +17008,10 @@ msgstr "לא מותקן"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
 msgstr ""
+
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "Not listed? Paste a hub project id or link"
+msgstr "לא ברשימה? הדביקו מזהה או קישור של פרויקט ב-Hub"
 
 #: src/i18n/cli-messages.ts
 msgid "Not logged in"
@@ -16906,6 +17075,10 @@ msgstr "עדיין לא מוכן"
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "not run yet"
 msgstr ""
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Not run yet."
+msgstr "עדיין לא הורץ."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
@@ -17010,6 +17183,10 @@ msgstr "אין — האשף הזה מופעל ידנית. כדי שירוץ מע
 
 #~ msgid "Nothing — this wizard runs with no parameters."
 #~ msgstr ""
+
+#: src/components/data-sources/source-attention.ts
+msgid "Nothing arrives until {title} is connected. Press Setup — it takes a minute."
+msgstr "שום דבר לא יגיע עד ש-{title} יחובר. לחץ על הגדרה — זה לוקח דקה."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Nothing attached."
@@ -17337,6 +17514,15 @@ msgstr "בדיסק"
 #~ msgid "On file change"
 #~ msgstr "בעת שינוי קובץ"
 
+#: src/components/assets/ProjectDependencyDialog.tsx
+msgid "On hub"
+msgstr "ב-Hub"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "On load — each time it is shown"
+msgstr "בטעינה — בכל פעם שהוא מוצג"
+
+#: src/components/triggers-view/TriggersList.tsx
 #~ msgid "On schedule"
 #~ msgstr "לפי לוח זמנים"
 
@@ -17487,6 +17673,7 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 #: src/components/runs/RunPreviewRoot.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -17529,6 +17716,7 @@ msgid "open {name}"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "פתיחת {name}"
@@ -17549,6 +17737,10 @@ msgstr ""
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
 msgstr "פתח טרמינל של {workerName}"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Open a .flowmsg and install what it carries"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Open a new isolated git worktree session on a separate branch"
@@ -19143,6 +19335,10 @@ msgstr "שפה מועדפת לתגובות"
 msgid "Prefers Reduced Motion"
 msgstr "העדפה לתנועה מופחתת"
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Prepare — before its steps"
+msgstr "הכנה — לפני השלבים שלו"
+
 #: src/components/project-setup/ProjectLoadDialog.tsx
 msgid "Preparing this project for use."
 msgstr "Preparing this project for use."
@@ -19316,6 +19512,7 @@ msgid "project"
 msgstr "פרויקט"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/dependency-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -19500,12 +19697,17 @@ msgid "prompt"
 msgstr "הנחיה"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/quick-create/registry.ts
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/i18n/type-labels.ts
 msgid "Prompt"
 msgstr "פרומפט"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Prompt · runs once on {otherName}'s machine"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Prompt Annotation"
@@ -19534,6 +19736,10 @@ msgstr "פרומפט ל-Claude Code במחשב של {hostName}…"
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Prompt for your Claude Code…"
 msgstr "פרומפט ל-Claude Code שלך…"
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "Prompt from {otherName}"
+msgstr ""
 
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
@@ -19572,8 +19778,9 @@ msgstr "טקסט הפרומפט"
 msgid "Prompt to run"
 msgstr "פרומפט להרצה"
 
-#~ msgid "Prompt to run on {hostName}'s machine…"
-#~ msgstr ""
+#: src/components/conversation/MessageComposer.tsx
+msgid "Prompt to run on {hostName}'s machine…"
+msgstr ""
 
 #: src/components/conversation/attachment-actions/PromptAttachmentPreview.tsx
 msgid "Prompt to run:"
@@ -21006,6 +21213,7 @@ msgstr "תשובות"
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyViewer.tsx
 msgid "Restart"
@@ -21069,6 +21277,7 @@ msgstr "משחזר…"
 msgid "Restrict beta headers"
 msgstr "הגבלת כותרות בטא"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/automations/RunsView.tsx
 msgid "Result"
 msgstr ""
@@ -21362,6 +21571,8 @@ msgstr ""
 msgid "Rules"
 msgstr "חוקים"
 
+#: src/components/ask/AskChoiceBlock.tsx
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -21371,6 +21582,10 @@ msgstr "חוקים"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
 msgstr "הרץ"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Run — once its steps are set up"
+msgstr "הרצה — אחרי שהשלבים שלו הוגדרו"
 
 #: src/components/collaboration/useApproveLiveSession.tsx
 msgid "Run (Skip project)"
@@ -21463,12 +21678,12 @@ msgstr "הפעל מהטרמינל שלך, ואז הפעל את Flowpad מחדש:
 #~ msgid "Run from your terminal:"
 #~ msgstr "הפעל מהטרמינל שלך:"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
 msgid "Run in terminal"
 msgstr "הרץ בטרמינל"
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Run it"
 msgstr "הרצה"
@@ -21508,6 +21723,10 @@ msgstr ""
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
 msgstr "הרץ סקריפט"
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Run setup"
+msgstr "הרצת ההגדרה"
 
 #: src/components/account/settings-section.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
@@ -21561,10 +21780,12 @@ msgstr "באיזה פרויקט להריץ את סשן זמן האמת הזה?"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/footer/activity-words.ts
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "running"
 msgstr "פועל"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/automations/automation-words.ts
 #: src/components/automations/RunsView.tsx
@@ -22538,6 +22759,7 @@ msgstr "סיכום עצמי"
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/automations/BusView.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 #: src/components/organization/invite-row.tsx
@@ -22903,6 +23125,7 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23015,6 +23238,7 @@ msgstr ""
 msgid "Setting up your project…"
 msgstr "הכנת הפרויקט שלך…"
 
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Setting up…"
 msgstr ""
@@ -23032,6 +23256,7 @@ msgstr "הגדרות"
 
 #: src/components/account/settings-section.tsx
 #: src/components/automations/AutomationPage.tsx
+#: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/data-sources/SourceSetupButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
@@ -23090,10 +23315,13 @@ msgstr ""
 msgid "Setup instructions"
 msgstr ""
 
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "Setup notes"
+msgstr "הערות הגדרה"
+
 #: src/components/data-sources/source-attention.ts
 #: src/components/data-sources/status-style.ts
 #: src/components/project-home/ProjectDependenciesCard.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 #: src/components/top-nav-bar/ProjectSetupButton.tsx
 msgid "Setup required"
@@ -23305,6 +23533,10 @@ msgstr "כרטיסיית Shell"
 #: src/routes/loaders/load-project.ts
 msgid "Shell unavailable"
 msgstr "shell לא זמין"
+
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "shipped"
+msgstr "מובנה"
 
 #: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
@@ -23519,6 +23751,10 @@ msgstr ""
 msgid "Show value"
 msgstr ""
 
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Showing {name}"
+msgstr "מוצג: {name}"
+
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Showing 20 of {0} entries"
@@ -23579,6 +23815,11 @@ msgstr ""
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Sign in first, then this source can fund a run."
 msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Sign in to {0}"
+msgstr "התחברות ל-{0}"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Sign in to {name}"
@@ -23988,6 +24229,11 @@ msgstr "השהה סימנייה"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Snoozed"
 msgstr "במתן"
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "So {name} can read your {0} messages and send your replies as you. You stay signed in."
+msgstr "כדי ש-{name} יוכל לקרוא את הודעות ה-{0} שלך ולשלוח את התשובות שלך בשמך. ההתחברות נשמרת."
 
 #: src/components/settings-view/settings-utils.ts
 msgid "SOCKS Proxy Port"
@@ -24464,6 +24710,10 @@ msgstr "סטטוס: {0}"
 #~ msgid "step: {0}ms · debounce: {1}ms"
 #~ msgstr "צעד: {0}ms · debounce: {1}ms"
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "Steps"
+msgstr "שלבים"
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Steps taken"
 msgstr "שלבים בוצעו"
@@ -24498,11 +24748,14 @@ msgstr "עדיין עובד — אורז ומעלה את הקבצים המצור
 msgid "Still working — waiting on the cloud. This can take a minute."
 msgstr "עדיין עובד — ממתין לענן. זה עשוי לקחת דקה."
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/webapp-display/AppStatusLine.tsx
 msgid "Stop"
 msgstr "עצור"
 
@@ -25104,6 +25357,14 @@ msgstr "שורות גלילה לאחור בטרמינל"
 msgid "Terminal Sessions"
 msgstr "סשני טרמינל"
 
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminate"
+msgstr "עצירה"
+
+#: src/components/footer/ActivityDetailsModal.tsx
+msgid "Terminated by user"
+msgstr "נעצר על ידי המשתמש"
+
 #: src/components/automations/RunsList.tsx
 msgid "test"
 msgstr ""
@@ -25173,7 +25434,7 @@ msgstr "הסוכן הזה כבר אינו בסביבת העבודה שלך"
 #~ msgid "That change could not be applied."
 #~ msgstr "לא ניתן היה להחיל את השינוי."
 
-#: src/components/assets/HubProjectDependencyDialog.tsx
+#: src/components/assets/ProjectDependencyDialog.tsx
 msgid "That doesn't name a hub project — paste its id or a link to it."
 msgstr ""
 
@@ -25562,6 +25823,7 @@ msgstr "התקציב החדש נכנס לתוקף מיד, והנוכחי נסג�
 msgid "The organization's budget and its stored key are deleted, and every team drawing on it stops spending until a new one is set up. Allocations already given to teams and people are not refunded — they will point at a budget that no longer exists."
 msgstr ""
 
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
 msgstr ""
@@ -26138,6 +26400,10 @@ msgid "This message carries no assets."
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
+msgid "This message is a prompt — {hostName} approves it, it runs once on their machine, you get its status"
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
 msgid "This message will also become a task"
 msgstr ""
 
@@ -26156,6 +26422,10 @@ msgstr ""
 #: src/components/ask/AskItems.tsx
 msgid "This one is required. Without it, setup will end unfinished."
 msgstr ""
+
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "This op does not ship with Flowpad. Running it runs its commands on this computer."
+msgstr "הפעולה הזו אינה מגיעה עם Flowpad. הרצתה מריצה את הפקודות שלה במחשב הזה."
 
 #: src/components/organization/budgets/PayingProviderSetup.tsx
 msgid "This organization draws its budget from Flowpad's shared pool. Bringing your own key isn't offered for an organization already set up this way."
@@ -26395,6 +26665,10 @@ msgstr "הסשן הזה מצביע על צומת מחשוב מיושנת ולא 
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "This session URL is malformed or unavailable."
 msgstr "כתובת הסשן אינה תקינה או אינה זמינה."
+
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
+msgid "This setup belongs to no project here, so it has no run to show."
+msgstr "ההגדרה הזו אינה שייכת לאף פרויקט כאן, ולכן אין הרצה להציג."
 
 #: src/components/terminal/interactive-terminal/side-windows/useAnalysisImprovements.ts
 msgid "This skill has uncommitted changes — improve runs only on a clean skill."
@@ -26871,6 +27145,7 @@ msgid "total"
 msgstr "סה״כ"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-counters/app-counters.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/ui/bulk-confirm-dialog.tsx
@@ -27424,8 +27699,8 @@ msgid "Upload"
 msgstr "העלאה"
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
-msgid "Upload a .flowmsg and install what it carries into this project"
-msgstr ""
+#~ msgid "Upload a .flowmsg and install what it carries into this project"
+#~ msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
@@ -27448,7 +27723,6 @@ msgid "Upload image"
 msgstr "העלו תמונה"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "העלאת הודעה"
 
@@ -27604,6 +27878,7 @@ msgstr ""
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "User"
 msgstr "משתמש"
@@ -28031,12 +28306,17 @@ msgid "waiting for the code"
 msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
-msgid "Waiting for the sign-in…"
-msgstr "ממתין להתחברות…"
+#~ msgid "Waiting for the sign-in…"
+#~ msgstr "ממתין להתחברות…"
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "waiting for you"
 msgstr "ממתין לך"
+
+#. placeholder {0}: signIn.title
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Waiting for you to approve on {0}…"
+msgstr "ממתין לאישור שלך ב-{0}…"
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Waiting for you to approve…"
@@ -28065,6 +28345,10 @@ msgstr "סורק את מערכת הקבצים ומאנדקס מחדש רק רש�
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index). Read-only — no DB writes, no <0>last_indexed_at</0> bump."
 msgstr "סורק את מערכת הקבצים ומדווח ספירות וגדלים לפי סוג (ובקרוב, ההפרש מול האינדקס). קריאה בלבד — ללא כתיבה ל-DB, ללא עדכון <0>last_indexed_at</0>."
+
+#: src/components/conversation/PromptCallCard.tsx
+msgid "wants to run on your machine"
+msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "wants to run prompts on your machine"
@@ -28244,6 +28528,10 @@ msgstr "מה זה"
 
 #~ msgid "What it is for"
 #~ msgstr ""
+
+#: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
+msgid "What it runs"
+msgstr "מה הוא מריץ"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What it worked on"
@@ -28481,6 +28769,10 @@ msgstr "למה זה נדרש"
 msgid "Why it ran"
 msgstr ""
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "Why?"
+msgstr "למה?"
+
 #: src/i18n/type-labels.ts
 msgid "Wiki Entries"
 msgstr "ערכי ויקי"
@@ -28596,11 +28888,14 @@ msgstr ""
 msgid "Working Tree"
 msgstr "עץ עבודה"
 
+#: src/components/conversation/PromptCallCard.tsx
 #: src/components/conversation/SessionCard.tsx
 msgid "working…"
 msgstr "עובד…"
 
+#: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx

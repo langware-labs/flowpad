@@ -82,4 +82,6 @@ export enum RecordType {
   // A diagnosis someone else runs (`flow diagnose <id>`). A local row with no file -- the
   // request and its runs live on the hub; its editor reads them through the type's actions.
   DIAGNOSIS_REQUEST = 'diagnosis_request',
+  ASSET_SETUP = 'asset_setup',
+  COMPUTE_OP = 'compute_op',
 }

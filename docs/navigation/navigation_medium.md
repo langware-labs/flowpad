@@ -70,7 +70,7 @@ Columns:
 | # | from | sentence | target |
 |---|---|---|---|
 | 31 | /dock/assets/project-home | I want to bring Dana onto this one so she can see it and work on it with me | ACTION: invite-members |
-| 32 | /dock/home | take me over to my langware-site project, the one with the marketing pages | entity:project |
+| 32 | /dock/home | take me over to my acme-site project, the one with the marketing pages | entity:project |
 | 33 | /dock/agentic_process/<id> | what does this project actually depend on? draw it for me | /dock/graph/project/<id> |
 | 34 | /dock/assets/project-home | a colleague emailed me a .flowmsg file, where do I drop it in here? | ACTION: upload-flowmsg |
 | 35 | /dock/home | there's a repo on github I want to work on, pull it down as a new projet | ACTION: new-project-from-git |

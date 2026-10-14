@@ -58,10 +58,10 @@ async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
     from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
     try:
+        if not await runs_here(entity):   # every kind: another machine's place holds the file, never arms it
+            await disarm_trigger(str(entity.id))
+            return
         if entity.trigger_type == TriggerType.SCHEDULE:
-            if not await runs_here(entity):
-                await disarm_trigger(str(entity.id))
-                return
             await entity._register_schedule_job()
         elif entity.trigger_type == TriggerType.FSOP:
             # The watcher's startup walk covers a trigger seeded BEFORE it
@@ -81,12 +81,11 @@ async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
 
 
 async def runs_here(entity: Any) -> bool:
-    """Whether a schedule belongs to a place on THIS machine.
+    """Whether a trigger (of any kind) belongs to a place on THIS machine.
 
     ``runs_on`` names a Deployment. It runs here only if that Deployment is known
     here and ``is_local`` — a teammate's clone, or the desktop for a cloud
-    machine's schedule, holds the file but never arms it. No ``runs_on`` is the
-    legacy rule: every machine that indexes it.
+    machine's rule, holds the file but never arms it. No ``runs_on``: every machine that indexes it.
     """
     if not trigger_runs_here(entity):
         return False

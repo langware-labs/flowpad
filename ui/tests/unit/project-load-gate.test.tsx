@@ -44,12 +44,12 @@ it('runs Load again when the same completed dependency home is opened, without r
   expect(useProjectLoadStore.getState().open).toBe(false);
 });
 
-function gate() {
+function gate(asset = '') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={['/dock/app/service']}>
-        <ProjectLoadGate projectId={projectId}><p>Service home</p></ProjectLoadGate>
+        <ProjectLoadGate projectId={projectId} asset={asset}><p>Service home</p></ProjectLoadGate>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -86,4 +86,28 @@ it('a project that is gone is said to be gone, with no retry that could never wo
   expect(await screen.findByTestId('project-load-missing')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   expect(screen.queryByText(/status code 404/)).not.toBeInTheDocument();
+});
+
+it('an app that needs setup sets up in place: no dialog over it, then the app', async () => {
+  const required: ProjectLoadResult = { ...ready, state: 'setup_required', detail: 'Service: waiting on Google Cloud' };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(required);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: '', running: false, tree: null });
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? ready : required));
+  const asset = 'micro_app-77777777-7777-4777-8777-777777777778';
+  gate(asset);
+  expect(await screen.findByText('Service home')).toBeInTheDocument();
+  expect(load.mock.calls).toEqual([[projectId, { approved: false, asset }], [projectId, { approved: true, asset }]]);
+  expect(useProjectLoadStore.getState().open).toBe(false);
+});
+
+it('a gate for the project alone offers Set up instead of starting the whole setup by itself', async () => {
+  const required: ProjectLoadResult = { ...ready, state: 'setup_required', detail: 'Service: waiting on Google Cloud' };
+  vi.spyOn(Project, 'loadState').mockResolvedValue(required);
+  const load = vi.spyOn(Project, 'load').mockImplementation(async (_id, options) => (options?.approved ? ready : required));
+  gate();
+  const setUp = await screen.findByRole('button', { name: 'Set up' });
+  expect(load.mock.calls).toEqual([[projectId, { approved: false }]]);
+  await userEvent.click(setUp);
+  await waitFor(() => expect(load.mock.calls.at(-1)).toEqual([projectId, { approved: true }]));
+  expect(useProjectLoadStore.getState().open).toBe(false);
 });

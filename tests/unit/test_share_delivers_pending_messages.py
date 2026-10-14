@@ -50,7 +50,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
         text="diagnostics body",
         conversation_id=conv_id,
         sender_id="local-user",
-        sender_name="Ami Levy",
+        sender_name="Heidi Example",
         outbound=True,  # as the flow-diagnose report writes it
     )
     await msg.save()
@@ -83,7 +83,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
             header,
         ),
     ):
-        await conv.share(recipients=["gadi@langware.ai"])
+        await conv.share(recipients=["alice@example.com"])
 
     # The bug's switch: with deliver() in share(), the pending
     # offline message is pushed through the normal send pipeline. Without it,
@@ -132,7 +132,7 @@ async def test_share_joins_before_any_fallible_post_create_work():
         patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),
         patch("flow_sdk.cloud_client.client.ApiConfig", MagicMock()),
     ):
-        await conv.share(recipients=["gadi@langware.ai"])
+        await conv.share(recipients=["alice@example.com"])
 
     assert events[0] == f"/graph/conversation/{conv.id}/join"
     assert events[1:3] == ["link", "deliver"]

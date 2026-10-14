@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.wiki.service import resolve_legacy_unscoped
 
-
 router = APIRouter()
 
 

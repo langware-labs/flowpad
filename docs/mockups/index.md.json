@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-5b9f0a97-5a77-5c30-908d-c988dddc394f",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "mockups",
   "folder_name": "mockups",
   "inputs_hash": "37ccad137bb783214c9e2d92540a123aa77a8c55ae5e95653ee87a095da7e7ee",

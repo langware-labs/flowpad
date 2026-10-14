@@ -1,4 +1,4 @@
-"""Local dev servers: pick a port, probe it, start a server detached, wait for it.
+"""Local dev servers: probe a port, start a server detached, wait for it.
 
 One home for what ``flow app open`` (the CLI) and a placement exposing a
 webapp's endpoints (``webapp_placement``) both do. Stdlib only and synchronous —
@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import os
 import re
-import signal
 import socket
 import subprocess
-import sys
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -25,22 +23,46 @@ def log_dir() -> Path:
     return get_instance_settings().logs_dir / "app-open"
 
 
-def find_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
-
-
 #: Both loopbacks. A Node server told ``localhost`` binds ``::1`` alone on a modern Node (it resolves the
 #: name verbatim), a Python one ``127.0.0.1`` alone: a probe that asks one address calls the other "never
 #: opened" while the server's own log says ready.
-LOOPBACKS = ("127.0.0.1", "::1")
+#: What a launched server is told to bind: this machine only.
+LOOPBACK_HOST = "127.0.0.1"
+LOOPBACKS = (LOOPBACK_HOST, "::1")
 
 
 def loopback_urls(port: int, path: str = "/") -> list[str]:
     """``path`` on ``port`` at each loopback, IPv6 bracketed — what a health probe asks, in order."""
     rel = path if path.startswith("/") else "/" + path
     return [f"http://{'[' + host + ']' if ':' in host else host}:{int(port)}{rel}" for host in LOOPBACKS]
+
+
+def loopback_status(url: str, timeout: float) -> Optional[int]:
+    """The HTTP status ``url`` — an address on THIS machine — answers with, or None when nothing does.
+
+    Asked directly, never through the system's proxy: ``urllib``'s default opener reads the proxy
+    settings and, on Windows, resolves the host by name to decide whether to bypass them — seconds to
+    tens of seconds per probe on a box with slow name lookup, for an address that is always local."""
+    import urllib.error  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(url, timeout=timeout) as response:  # noqa: S310 -- loopback only
+            return int(response.status)
+    except urllib.error.HTTPError as error:
+        return int(error.code)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def loopback_answers(port: int, path: str = "/", *, timeout: float, healthy=lambda status: True) -> bool:
+    """Something answers HTTP at ``path`` on ``port`` on either loopback, and ``healthy(status)`` holds."""
+    for url in loopback_urls(port, path):
+        status = loopback_status(url, timeout)
+        if status is not None:
+            return healthy(status)
+    return False
 
 
 def port_open(port: int) -> bool:
@@ -70,11 +92,19 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
 
 
-def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[subprocess.Popen, str]:
+def start_process(
+    command: str, *, cwd: Path, port: int, name: str, env: Optional[dict[str, str]] = None
+) -> tuple[subprocess.Popen, str]:
     """Start *command* in its own session, logging to ``log_dir()``. Returns ``(process, log_file)``.
 
     ``PORT`` is set as well as whatever the command line says: a server that
     reads its port from the environment needs no ``{port}`` in its command.
+    ``env`` adds to it: the ports of the app's other processes (``FLOWPAD_APP_PORT_<NAME>``).
+    ``HOST`` is set to loopback as a HINT (Next honours it; Vite and uvicorn take
+    a flag, which the templates pass): the process is reached only through this
+    machine's own door (``server/audience_listener.py``), which is what admits a
+    browser to it. A server that binds every interface on a box whose ports are
+    public has no door at all; an author who binds it so in the command owns that.
     """
     logs = log_dir()
     logs.mkdir(parents=True, exist_ok=True)
@@ -88,7 +118,7 @@ def start_process(command: str, *, cwd: Path, port: int, name: str) -> tuple[sub
         stdout=log,
         stderr=subprocess.STDOUT,
         start_new_session=True,
-        env={**os.environ, "PORT": str(port)},
+        env={**os.environ, **(env or {}), "PORT": str(port), "HOST": LOOPBACK_HOST},
     )
     log.close()
     return proc, str(log_file)
@@ -115,75 +145,9 @@ def log_tail(log_file: str, lines: int = 8) -> str:
 def stop_group(pid: int) -> None:
     """Kill the session ``start_process`` made (the shell AND the server under it) and wait until it is
     gone, so its port is free when this returns. Killing only the shell leaves the server holding the port."""
-    import psutil  # noqa: PLC0415 -- leaf module
+    from flow_sdk.core.app_ports import kill_trees  # noqa: PLC0415 -- app_ports imports this module
 
-    try:
-        shell = psutil.Process(pid)
-        group = [shell, *shell.children(recursive=True)]
-    except psutil.Error:
-        group = []
-    try:
-        if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)  # noqa: S603, S607
-        else:
-            os.killpg(pid, signal.SIGKILL)
-    except OSError:
-        pass
-    psutil.wait_procs(group)
-
-
-# ── which process is OURS ─────────────────────────────────────────────────────────────────────────────
-# A port answering is not proof the app answers. What a start launched is recorded beside its log
-# (pid + the process's own start time, so a recycled pid is never mistaken for it); "running" asks it.
-
-
-def owner_dir() -> Path:
-    """Where what was started is recorded. Beside the logs, not in them: clearing logs must not turn a
-    server we started into a stranger's."""
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415 -- leaf module
-
-    return get_instance_settings().logs_dir.parent / "app-open"
-
-
-def _owner_file(key: str) -> Path:
-    return owner_dir() / f"{_slug(key)}.json"
-
-
-def record_owner(key: str, pid: int, port: int) -> None:
-    import psutil  # noqa: PLC0415
-
-    from flow_sdk.instances.atomic import write_json_atomic  # noqa: PLC0415
-
-    try:
-        created = psutil.Process(pid).create_time()
-    except psutil.Error:
-        return
-    target = _owner_file(key)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(target, {"pid": pid, "port": int(port), "created": created})
-
-
-def owner(key: str) -> Optional[dict]:
-    """What the last start of ``key`` launched, or None when Flowpad never started it (a server the
-    person runs themselves)."""
-    from flow_sdk.instances.atomic import read_json  # noqa: PLC0415
-
-    record = read_json(_owner_file(key))
-    return record if "pid" in record else None
-
-
-def owner_alive(record: dict) -> bool:
-    import psutil  # noqa: PLC0415
-
-    try:
-        process = psutil.Process(int(record["pid"]))
-        return process.create_time() == record.get("created") and process.status() != psutil.STATUS_ZOMBIE
-    except (psutil.Error, ValueError, TypeError):
-        return False
-
-
-def clear_owner(key: str) -> None:
-    _owner_file(key).unlink(missing_ok=True)
+    kill_trees([pid])
 
 
 def install_command(start_cmd: str, folder: Path) -> str:
@@ -196,6 +160,17 @@ def install_command(start_cmd: str, folder: Path) -> str:
 
 
 __all__ = [
-    "LOOPBACKS", "clear_owner", "find_free_port", "install_command", "log_dir", "log_tail", "loopback_urls", "owner",
-    "owner_alive", "owner_dir", "port_open", "record_owner", "start_detached", "start_process", "stop_group", "wait_for_port",
+    "LOOPBACK_HOST",
+    "LOOPBACKS",
+    "install_command",
+    "log_dir",
+    "log_tail",
+    "loopback_answers",
+    "loopback_status",
+    "loopback_urls",
+    "port_open",
+    "start_detached",
+    "start_process",
+    "stop_group",
+    "wait_for_port",
 ]

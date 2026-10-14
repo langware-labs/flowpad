@@ -58,9 +58,9 @@ import { NewSandboxDialog } from '@src/pages/hub-home/NewSandboxDialog';
 // `displayName` is what the shared project picker renders (project-items.ts).
 const withRepo = {
   id: 'p-hub',
-  name: 'flowpad-hub',
-  displayName: 'flowpad-hub',
-  origin: { provider: 'github', owner: 'langware-labs', name: 'flowpad-hub', branch: 'main', rel_path: '.' },
+  name: 'hub',
+  displayName: 'hub',
+  origin: { provider: 'github', owner: 'acme', name: 'hub', branch: 'main', rel_path: '.' },
 } as never;
 
 const desk = {
@@ -105,14 +105,14 @@ describe('new desktop: project + asset packages', () => {
   it('loads the project you are working on, without being asked', async () => {
     renderDialog();
 
-    expect(within(screen.getByTestId('loaded-project-values')).getByText('flowpad-hub')).toBeInTheDocument();
+    expect(within(screen.getByTestId('loaded-project-values')).getByText('hub')).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId('create-sandbox'));
 
     expect(launched().sandboxProject).toMatchObject({
-      name: 'flowpad-hub',
+      name: 'hub',
       projectId: 'p-hub',
-      gitOrigin: expect.objectContaining({ name: 'flowpad-hub' }),
+      gitOrigin: expect.objectContaining({ name: 'hub' }),
     });
   });
 

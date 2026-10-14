@@ -2,10 +2,10 @@
   "schema_version": 1,
   "typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3",
+  "inputs_hash": "5e5890ee98d330bb56de2d02aa323db34079406bf4d03f2ae6023730c614ac5c",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -30,9 +30,9 @@
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers — interface",
-      "summary": "CLI driver layer interface: the WorkerDriver protocol and per-vendor packages (Claude, Codex, Copilot, OpenCode) through which AgenticProcess drives coding-agent CLIs.",
-      "content_hash": "003bc55ff363645bb19f488bc3fc8433ca596bc755b4038099a786858d16d57b",
-      "size_bytes": 39301
+      "summary": "CLI driver layer interface: WorkerDriver protocol, AgentOptions argv builder, capability matrix for Claude, Codex, Copilot and OpenCode, API-key auth, and wiring a new vendor.",
+      "content_hash": "499d95beb7329f7096d8967af2c321b0cb0d0845fff6e519f11441e378684891",
+      "size_bytes": 39300
     },
     {
       "name": "compute-node.md",
@@ -54,9 +54,9 @@
       "name": "pty-layer.md",
       "rel_path": "pty-layer.md",
       "title": "PTY layer — interface",
-      "summary": "The internal PTY layer's API surface: PtyRegistry and PtyState membership FSM, framed stream files, terminal-command endpoints, WS attach lifecycle, replay route and seq rule.",
-      "content_hash": "c2c8d70b65497a43818fbecea01e7e725a3f11ed9c356b9d2c7779049436b6a9",
-      "size_bytes": 16587
+      "summary": "Internal PTY layer API surface: PtyRegistry and PtyState membership FSM, PtyStreamFile framed stream, LocalComputeProvider, terminal-command endpoints, WS lifecycle, replay route and seq rule.",
+      "content_hash": "e84c0601cf9ed6eb87dd5723452bfae42f74a8a583729bb136876fe3e14a4a83",
+      "size_bytes": 17023
     },
     {
       "name": "session-naming.md",
@@ -86,12 +86,12 @@
       "name": "test-coverage.md",
       "rel_path": "test-coverage.md",
       "title": "Test coverage — the agentic-process stack, per area × per front",
-      "summary": "Audit matrix of test coverage for the agentic-process stack by area and front (unit, api, vitest, react, long)",
-      "content_hash": "dd579d15f18c890a26b0fd86fc593499031e37e9a4f717a92bab48e01644b507",
-      "size_bytes": 19936
+      "summary": "Audit matrix of test coverage for the agentic-process stack (AgenticProcess, Shell, PTY layer, ComputeNode, CLI drivers, status model) by front, with remaining gaps.",
+      "content_hash": "9731c2f06231f9d9714a16083729d1a635bc9735012e30c522f95b7b1e8d681f",
+      "size_bytes": 20090
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-13T10:49:35Z",
   "latest_process_ref": ""
 }

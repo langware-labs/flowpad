@@ -37,7 +37,7 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 
 PARENT_ID = "01a073f4-c4d4-7a23-885a-0b1ad3f67a06"
 SUBAGENT_ID = "01a07405-7431-7331-bfd3-d8541e8eb7b9"
-CWD = "/Users/shlom/Documents/dev/flowpad-oss"
+CWD = "/Users/alice/Documents/dev/flowpad-oss"
 
 
 def _user_meta() -> dict:

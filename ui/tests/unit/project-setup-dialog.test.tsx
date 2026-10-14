@@ -71,8 +71,15 @@ afterEach(() => {
 async function open(readiness: ProjectReadiness, onOpenChange = vi.fn()) {
   vi.spyOn(Project, 'setupRequirements').mockResolvedValue(readiness);
   vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
-  render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={onOpenChange} />);
-  await screen.findByTestId('project-setup-requirements');
+  render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={onOpenChange} />);
+  // Until ``readiness`` has been drawn, not until the dialog is up: the Required list is there (empty)
+  // before the requirements arrive, so waiting for it alone returns ahead of the data on a slow render.
+  await waitFor(() => {
+    if (readiness.ready) expect(screen.getByTestId('project-setup-ready')).toBeInTheDocument();
+    else expect(screen.getByTestId('project-setup-requirements').children).toHaveLength(readiness.to_do.length);
+    if (readiness.optional?.length) expect(screen.getByTestId('project-setup-optional')).toBeInTheDocument();
+    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped')).toBeInTheDocument();
+  });
   return onOpenChange;
 }
 
@@ -93,7 +100,7 @@ describe('ProjectSetupDialog', () => {
       path === '/api/v1/ask' ? { questions: [{ id: 'q1', run: RUN }] } : path === '/api/v1/ask/q1' ? QUESTION : null,
     );
 
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
 
     expect(await screen.findByTestId('project-setup-req-google-cloud')).toHaveTextContent('Service account key');
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-start')));
@@ -105,7 +112,7 @@ describe('ProjectSetupDialog', () => {
   it('says so when there is nothing to set up', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ ...NOT_READY, ready: true, to_do: [] });
 
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
 
     expect(await screen.findByTestId('project-setup-ready')).toBeInTheDocument();
     expect(screen.queryByTestId('project-setup-start')).toBeNull();
@@ -360,7 +367,7 @@ describe('ProjectSetupDialog — controlling a run', () => {
     h.get.mockResolvedValue(null);
     const stop = vi.spyOn(Project, 'stopSetup').mockResolvedValue(true);
 
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
 
     const status = await screen.findByTestId('project-setup-status');
     await waitFor(() => expect(status).toHaveTextContent('Setting up CREDENTIAL:GMAIL'));
@@ -378,13 +385,13 @@ describe('ProjectSetupDialog — controlling a run', () => {
     const run = vi
       .spyOn(Project, 'setupRun')
       .mockResolvedValue({ run: RUN, running: false, tree: tree('failed', 'failed') });
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
     await waitFor(() => expect(screen.getByTestId('project-setup-start')).toHaveTextContent('Retry'));
     expect(screen.getByTestId('project-setup-status')).toHaveTextContent('1 did not finish');
     cleanup();
 
     run.mockResolvedValue({ run: RUN, running: false, tree: tree('stopped', 'stopped') });
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
     await waitFor(() => expect(screen.getByTestId('project-setup-status')).toHaveTextContent('Stopped'));
     expect(screen.getByTestId('project-setup-start')).toHaveTextContent('Continue');
   });

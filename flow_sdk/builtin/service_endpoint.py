@@ -157,11 +157,15 @@ class ServiceEndpoint(Entity):
         async def state_of(route) -> tuple[str, str]:
             if route.backend.type == "static":
                 root = route.backend.root
-                return ("alive", "") if await asyncio.to_thread(Path(root).is_dir) else ("failing", f"{root} is missing")
+                return (
+                    ("alive", "") if await asyncio.to_thread(Path(root).is_dir) else ("failing", f"{root} is missing")
+                )
             return await _http_state(route.backend.port, route.backend.health, timeout)
 
         routes = self.backend.routes
-        found = await asyncio.gather(*(state_of(route) for route in routes.values()))  # one slow app does not queue the rest
+        found = await asyncio.gather(
+            *(state_of(route) for route in routes.values())
+        )  # one slow app does not queue the rest
         failing = [f"/{mount}: {detail}" for mount, (state, detail) in zip(routes, found) if state != "alive"]
         return ("failing", "; ".join(failing)) if failing else ("alive", "")
 
@@ -272,10 +276,15 @@ class ServiceEndpoint(Entity):
             if url is None:
                 return ApiFailResponse(message="the hub did not resolve this cloud endpoint", status_code=502)
         else:
-            backend = self.proxy_of(route)
-            if backend is None:
-                return ApiFailResponse(message="a static endpoint has no address of its own", status_code=409)
-            url = local_direct_url(backend.port)
+            if self.subkind not in WEB_AUDIENCES:
+                return ApiFailResponse(message="only an audience proxy has a browser address", status_code=409)
+            if route and self.route(route) is None:
+                return ApiFailResponse(message="no such route on this endpoint", status_code=404)
+            url = local_direct_url(self, route)
+            if url is None:
+                return ApiFailResponse(
+                    message="a static route has no address of its own on this machine", status_code=409
+                )
         if str(redirect).lower() in ("1", "true", "yes"):
             return RedirectResponse(url, status_code=302, headers={"Cache-Control": "no-store"})
         return ApiSuccessResponse(data={"url": url})
@@ -316,19 +325,24 @@ class ServiceEndpoint(Entity):
         return str(data.get("url") or "") or None if isinstance(data, dict) else None
 
 
-def local_direct_url(port: int) -> str:
-    """Where a BROWSER reaches *port* on this machine.
+def local_direct_url(endpoint, route: Optional[str] = None) -> Optional[str]:
+    """Where a BROWSER reaches an audience proxy of this machine, or None when it has no address here.
 
-    ``localhost`` on a desktop, where the viewer sits at the machine. Inside a
-    cloud box the viewer does not, so the box's public per-port host is the
-    answer. The probe asks the other question — where the port is from HERE —
-    and loopback is right for it on both.
+    Inside a cloud box: the box's DOOR for that audience — its own listener on the fixed
+    audience port (``AUDIENCE_PORTS``), which admits a browser by the grant it carries and
+    reaches the process over loopback. Never the process's port: on a box whose ports are
+    public that would be a door with no lock. On a desktop, where the viewer sits at the
+    machine and nothing is published, the process's own loopback address — a folder has none.
     """
     from flow_sdk.compute.providers.compute_provider import sandbox_public_url  # noqa: PLC0415
+    from flow_sdk.instance_settings.base_settings import audience_ports  # noqa: PLC0415
     from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
 
     sandbox_id = own_sandbox_id()
-    return sandbox_public_url(int(port), sandbox_id) if sandbox_id else f"http://localhost:{int(port)}"
+    if sandbox_id:
+        return sandbox_public_url(audience_ports()[endpoint.subkind], sandbox_id) + (f"/{route}/" if route else "/")
+    backend = endpoint.proxy_of(route)
+    return f"http://localhost:{int(backend.port)}" if backend is not None else None
 
 
 async def _http_state(port: int, path: str, timeout: float) -> tuple[str, str]:

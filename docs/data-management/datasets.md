@@ -461,8 +461,11 @@ chooses is `a-z 0-9 _ -`; `append` numbers rows that bring none (`0001`, `0002`,
 Every refusal and problem carries `details` beside `errors` — the code list is in the model above; read
 those, not the lines. Three numbers are not the same: `num_examples` counts every row folder,
 `count().total` and `rows().total` count the rows that FIT (the rest are `problems`).
-A field kept in step with a copy outside Flowpad follows the three-way rule:
-`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`.
+A field that must live both here and in an outside system is THAT SYSTEM'S field: mirrored in,
+marked `owned_by`, and an edit here is sent there first
+([mirroring a system of record](mirroring-a-system-of-record.md)) — never kept in step by hand.
+`flow_sdk.datasets.merge.three_way(here, there, agreed)` → `"same"` / `"here"` / `"there"` / `"hold"`
+is for two stores with no source between them (a file copied to a drive), not for a mirrored row.
 
 **Asking for some rows.** A `match` is the entity query expression (`flow_sdk/db/drivers/query.py`
 `ExpressionNode`), evaluated in memory over a row as the API hands it out (`flow_sdk/datasets/query.py`;

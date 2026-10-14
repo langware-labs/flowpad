@@ -74,7 +74,7 @@ async def _desk(root: Path, name: str, queue_id: str) -> Helpdesk:
 @pytest.mark.asyncio
 async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Path) -> None:
     target = await _project(tmp_path / "customer")
-    await _desk(tmp_path / "customer", "cloudnsite", ROOT_QUEUE)
+    await _desk(tmp_path / "customer", "globex", ROOT_QUEUE)
     with patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback:
         assert await _routed_to(target.id, "Need help") == ROOT_QUEUE
     fallback.assert_not_awaited()
@@ -95,7 +95,7 @@ async def test_desk_attached_by_path_still_routes_without_a_project_of_its_own(
     """
     context_root = tmp_path / "vendor-desk"
     context_root.mkdir(parents=True, exist_ok=True)
-    await _desk(context_root, "cloudnsite", FIRST_CONTEXT_QUEUE)
+    await _desk(context_root, "globex", FIRST_CONTEXT_QUEUE)
     # Deliberately NO `_project(context_root)` — that is the whole point.
     target = await _project(tmp_path / "customer", contexts=[context_root])
 
@@ -120,7 +120,7 @@ async def test_a_desk_naming_no_usable_queue_says_so_before_falling_through(
     diagnosable — otherwise it is indistinguishable from "no desk adopted"."""
     context_root = tmp_path / "vendor-desk"
     await _project(context_root)
-    await _desk(context_root, "cloudnsite", "not-a-uuid")
+    await _desk(context_root, "globex", "not-a-uuid")
     target = await _project(tmp_path / "customer", contexts=[context_root])
 
     with caplog.at_level("WARNING"):

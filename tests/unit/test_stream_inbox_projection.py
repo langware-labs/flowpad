@@ -219,13 +219,13 @@ class TestSenderMapping:
     async def test_an_external_sender_is_never_empty(self):
         from flow_sdk.stream_inbox.projection import _sender_for
 
-        item = SourceItem(author_external_id="ami@langware.ai", author_display="Ami")
+        item = SourceItem(author_external_id="heidi@example.com", author_display="Heidi")
         source = SimpleNamespace(account_key="me@example.com")
         sender, name = await _sender_for(item, source, "gmail")
         # A message with no sender is never counted unread at all, so a stranger
         # must still be named — typed, and on the wire as `<channel>:<address>`.
-        assert (sender.kind, sender.wire_id) == ("external", "gmail:ami@langware.ai")
-        assert name == "Ami"
+        assert (sender.kind, sender.wire_id) == ("external", "gmail:heidi@example.com")
+        assert name == "Heidi"
 
     @pytest.mark.asyncio
     async def test_an_unknown_author_still_yields_a_sender(self):

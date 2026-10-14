@@ -20,7 +20,7 @@ def test_discover_webapps_prefers_framework_frontend_over_static_page(tmp_path):
         encoding="utf-8",
     )
 
-    static = tmp_path / "spora-sim" / "project"
+    static = tmp_path / "acme-sim" / "project"
     static.mkdir(parents=True)
     (static / "index.html").write_text("<div>demo</div>", encoding="utf-8")
 

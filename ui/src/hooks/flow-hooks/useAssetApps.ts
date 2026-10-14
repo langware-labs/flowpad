@@ -16,7 +16,7 @@ export const EDITOR_APP_KIND = 'application.web.editor';
  * anything ingested. Matching per parent instead would be a query per rendered
  * card, most of them for a menu nobody opens.
  */
-const appsQuery = new QueryRequest({
+export const appsQuery = new QueryRequest({
   type: WebApp.type,
   scope: [],
   name: 'asset-apps',

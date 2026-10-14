@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from flow_sdk import service_log
 from flow_sdk.actions import action
 from flow_sdk.assets.creation import AssetPathCollisionError
+from flow_sdk.assets.folder import remove_asset_files
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
 from flow_sdk.cloud_client.shared.errors import HubError, is_permission_refusal
@@ -191,6 +192,9 @@ async def handle_delete_by_id():
             status_code=403,
             detail=f"Delete entity failed: {target_typeid.type}(id:{target_typeid.id})",
         )
+    # The row is gone; an asset that owns its files takes them with it. Left on disk they are
+    # still counted by the Assets menu (a file walk) over a list (the index) that no longer has them.
+    remove_asset_files(target_typeid.type, getattr(entity, "asset_ref", None))
     # A delete may answer what it removed (a cascade's ids); the route answers whether it did.
     return ApiSuccessResponse[bool](data=bool(is_deleted), message="Entity was deleted successfully.")
 

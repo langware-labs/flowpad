@@ -31,7 +31,7 @@ function plan(over: Partial<TokenPlanScope>): TokenPlan {
       {
         kind: 'me',
         id: 'u',
-        name: 'Eran',
+        name: 'Alice',
         endpoint_id: 'llm_endpoint-e',
         can_configure: false,
         path: [],
@@ -71,7 +71,7 @@ describe('TokenPlanChip', () => {
         headline: { key: 'cost_usd_per_day', used: 10, limit: 200, remaining: 190, resets_at: null, window: 'day' },
         remaining: [],
         path: [
-          { endpoint_id: 'me', name: 'default-eran', kind: 'me' },
+          { endpoint_id: 'me', name: 'default-alice', kind: 'me' },
           { endpoint_id: 't', name: 'Team A', kind: 'team' },
         ],
       }),

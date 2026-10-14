@@ -76,13 +76,13 @@ if (IS_WIN) {
   eq(needsShellOnWin('flow.cmd'), true, 'bare .cmd → needs shell');
   eq(needsShellOnWin('C:\\Users\\joe\\.local\\bin\\flow.exe'), true,
     '.exe path without spaces → cmd.exe is fine');
-  eq(needsShellOnWin('C:\\Users\\avi tal\\.local\\bin\\flow.exe'), false,
+  eq(needsShellOnWin('C:\\Users\\jane doe\\.local\\bin\\flow.exe'), false,
     '.exe path WITH spaces → bypass cmd.exe (it would split on the space)');
-  eq(needsShellOnWin('C:\\Users\\avi tal\\.local\\bin\\flow.cmd'), true,
+  eq(needsShellOnWin('C:\\Users\\jane doe\\.local\\bin\\flow.cmd'), true,
     '.cmd path with spaces still needs the shell (gets quoted)');
 } else {
   eq(needsShellOnWin('uv'), false, 'non-Windows → never shell');
-  eq(needsShellOnWin('/Users/avi tal/.local/bin/flow'), false, 'non-Windows → never shell (2)');
+  eq(needsShellOnWin('/Users/jane doe/.local/bin/flow'), false, 'non-Windows → never shell (2)');
 }
 
 // ── PYTHON_VERSION (read from pyproject.toml, never hand-pinned) ────────────
@@ -111,7 +111,7 @@ passed += 2;
 // ── quoteWinCmd ─────────────────────────────────────────────────────────────
 eq(quoteWinCmd('uv'), 'uv', 'no whitespace → unchanged');
 eq(quoteWinCmd('C:\\bin\\flow.exe'), 'C:\\bin\\flow.exe', 'no whitespace path → unchanged');
-eq(quoteWinCmd('C:\\avi tal\\flow.cmd'), '"C:\\avi tal\\flow.cmd"', 'whitespace → quoted');
+eq(quoteWinCmd('C:\\jane doe\\flow.cmd'), '"C:\\jane doe\\flow.cmd"', 'whitespace → quoted');
 
 // ── parseNetstatPids ────────────────────────────────────────────────────────
 const netstat = [
@@ -1399,7 +1399,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         });
         eq(resU, false, 'unrecovered upgrade reports failure');
         const failure = shown.find((o) => o.title === 'Update failed');
-        ok(failure && failure.buttons.includes('Share with us'), 'the Update failed dialog offers Share with us');
+        ok(failure && failure.buttons.includes('Send Report'), 'the Update failed dialog offers Send Report');
         ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
         eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
       }

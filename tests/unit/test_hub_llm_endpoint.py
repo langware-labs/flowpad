@@ -677,13 +677,13 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
     given = {
         "id": "11111111-2222-4333-8444-555555555555",
         "type": "llm_endpoint",
-        "name": "Gadi +20",
+        "name": "Alice +20",
         "expand": {"allowed_actions": ["read", "invoke"]},
     }
     administered = {
         "id": "22222222-2222-4333-8444-555555555555",
         "type": "llm_endpoint",
-        "name": "Gadi +1",
+        "name": "Alice +1",
         "expand": {"allowed_actions": ["read", "invoke", "update", "delete"]},
     }
     globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
@@ -703,14 +703,14 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
     assert params_seen[0] == {"expand": "permissions"}, "the scoped listing must ask for permissions"
     assert params_seen[1] is None, "the catalog is asked WITHOUT them -- see below"
     assert all(e.holder_typeid is None for e in by_name.values()), "no allowances read -> no holder claimed"
-    assert by_name["Gadi +20"].can_administer is False, "a reader holds it; it was handed to them"
-    assert by_name["Gadi +1"].can_administer is True, "an administrator's own allowance for somebody else"
+    assert by_name["Alice +20"].can_administer is False, "a reader holds it; it was handed to them"
+    assert by_name["Alice +1"].can_administer is True, "an administrator's own allowance for somebody else"
     # NOT False. The catalog's root reaches every signed-in user through a stamp rather than a role
     # edge, so "cannot change it" there would read as "it was given to me" and put the shared pool
     # in everybody's personal list.
     assert by_name["global"].can_administer is None
     # And it survives `to_wire`, or the box would answer the UI with the field missing.
-    assert by_name["Gadi +20"].to_wire()["can_administer"] is False
+    assert by_name["Alice +20"].to_wire()["can_administer"] is False
 
 
 async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_edge(env, monkeypatch) -> None:

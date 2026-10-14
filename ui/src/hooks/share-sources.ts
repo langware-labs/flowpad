@@ -13,7 +13,7 @@
  * `prepare()` is resolve-once: its result is cached, so a click → error → retry
  * reuses the same payload instead of re-resolving.
  */
-import { AgenticProcess, Artifact, dataManager, fsManager, TypeId, type ConversationSendPayload } from '@sdk';
+import { ActionInfo, AgenticProcess, Artifact, dataManager, fsManager, TypeId, type ConversationSendPayload } from '@sdk';
 
 export interface SharePrepPayload {
   /** Serialized TypeIds → TYPE_ID attachments on the FlowMessage. */
@@ -208,13 +208,12 @@ export function artifactShareSource(
 }
 
 /**
- * AgenticProcess session: share the session's ClaudeTranscript
- * (``claude_session`` entity — its id IS the Claude session id). The
- * transcript rides as the TYPE_ID attachment (the message chip) and the
- * shared context carries transcript + process, so the backend's mutual
- * context linking connects process ↔ message. Optionally attaches the raw
- * transcript jsonl as a file. No fork, no Task — the transcript is the
- * shared artifact.
+ * AgenticProcess session: share the session's transcript entity (any worker:
+ * ``claude_session``, ``codex_session``, ``copilot_session``). The transcript
+ * rides as the TYPE_ID attachment (the message chip) and the shared context
+ * carries transcript + process, so the backend's mutual context linking
+ * connects process ↔ message. Optionally attaches files. No fork, no Task —
+ * the transcript is the shared artifact.
  */
 export function agenticProcessShareSource(
   typeId: TypeId,
@@ -230,39 +229,22 @@ export function agenticProcessShareSource(
   };
 }
 
-/**
- * Resolve which session a vibe/agentic process is running.
- *
- * The frontend no longer reads or ships transcript BYTES. A session is a
- * file-backed entity, so attaching ``claude_session-<id>`` is enough — the
- * bundle packer carries the transcript from the session's own ``asset_ref``,
- * inside the session's entry, like every other file-backed asset. The browser
- * used to read the jsonl and attach it as a file named ``conversation.jsonl``,
- * a name reserved for message transport, which is why the receiver then had to
- * re-pair file↔session by searching file contents for the session id.
- *
- * Never throws: an unresolvable session comes back as `attached: false` with a
- * reason the caller can surface.
- */
-export async function loadSessionTranscript(
-  typeId: TypeId,
-): Promise<{ sessionId?: string; attached: boolean; failureReason?: string }> {
-  const proc = await dataManager
-    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
+/** The transcript entity a share attaches for a process (any worker), as the backend's
+ *  ``session-transcript`` action names it; undefined when it has none. Never throws. */
+export async function loadSessionTranscript(typeId: TypeId): Promise<string | undefined> {
+  const action = new ActionInfo('session-transcript', AgenticProcess.type, typeId.id, 'POST');
+  const result = await dataManager
+    .callAction<Record<string, never>, { type_id: string | null }>(action)
     .catch(() => null);
-  const sessionId = proc?.session_id ?? undefined;
-  return sessionId
-    ? { sessionId, attached: true }
-    : { attached: false, failureReason: 'This process has no session yet.' };
+  return result?.type_id ?? undefined;
 }
 
-/** Share prep for an AgenticProcess (session): the ClaudeTranscript
- *  (`claude_session-<id>`) is the chip and rides the shared context alongside
- *  the process, so the backend's mutual context linking connects the two. */
+/** Share prep for an AgenticProcess (session): the session's transcript is
+ *  the chip and rides the shared context alongside the process, so the
+ *  backend's mutual context linking connects the two. */
 async function prepareProcessTranscript(typeId: TypeId, o: SharePrepOptions): Promise<SharePrepPayload> {
-  const { sessionId } = o.attachTranscript === false ? { sessionId: undefined } : await loadSessionTranscript(typeId);
+  const transcriptRef = o.attachTranscript === false ? undefined : await loadSessionTranscript(typeId);
 
-  const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
   const processRef = `${AgenticProcess.type}-${typeId.id}`;
   return {
     // The chip: the transcript when a session exists, else the process.

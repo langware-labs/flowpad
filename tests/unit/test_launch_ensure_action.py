@@ -41,8 +41,8 @@ def calls(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_checked_out_project_passes_through(tmp_path, monkeypatch, calls):
-    project = await Project(name=str(tmp_path / "spora")).save()
-    (tmp_path / "spora").mkdir(exist_ok=True)
+    project = await Project(name=str(tmp_path / "acme")).save()
+    (tmp_path / "acme").mkdir(exist_ok=True)
 
     async def _hydrate(cls, *_a, **_k):
         calls["hydrate"].append(True)
@@ -169,7 +169,7 @@ async def test_a_launch_waits_its_turn_behind_an_index_already_running(tmp_path,
 
     async def _ensure(project_id, someone_typeid=None):
         order.append("ensure")
-        return Project(id=project_id, name="spora")
+        return Project(id=project_id, name="acme")
 
     monkeypatch.setattr(launch_action.ComputeNode, "get_local", classmethod(_get_local))
     monkeypatch.setattr(launch_action, "ensure_launched_project", _ensure)
@@ -189,7 +189,7 @@ async def test_a_launched_projects_assets_are_the_projects_own(tmp_path, monkeyp
     from flow_sdk.builtin import project_setup
     from flow_sdk.builtin.credential_status import credentials_status
 
-    root = tmp_path / "spora"
+    root = tmp_path / "acme"
     pack = root / "agentic-assets" / "credential" / "google-cloud"
     pack.mkdir(parents=True)
     (pack / "credential.json").write_text(json.dumps({"name": "google-cloud", "schema": 2, "vars": {"GCP_KEY": {}}}))

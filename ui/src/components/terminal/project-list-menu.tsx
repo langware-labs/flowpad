@@ -20,7 +20,7 @@ import { ProjectLaunchBar } from './project-launch-bar';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
 
@@ -332,6 +332,9 @@ export interface ProjectListMenu {
   /** Whether the list popover is showing. The trigger's Popover is controlled by this. */
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** For the host's `PopoverContent`: a close that navigated leaves focus to the
+   *  destination view instead of returning it to the trigger. */
+  onCloseAutoFocus: (event: Event) => void;
   currentProjectId: string | null;
   /** Open project buckets with system projects filtered out, in arrival order. */
   buckets: TabProjectBucket[];
@@ -373,7 +376,24 @@ export function useProjectListMenu({
   currentProjectName,
 }: ProjectListMenuOptions): ProjectListMenu {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
+  const [open, setOpenState] = useState(false);
+  // Radix hands focus back to the trigger when the popover closes. After a pick
+  // that navigates, the destination view owns focus (a terminal focuses itself on
+  // activation) — returning it to the chip would steal the cursor from that view.
+  const navigatedOnClose = useRef(false);
+  const setOpen = (next: boolean) => {
+    if (next) navigatedOnClose.current = false;
+    setOpenState(next);
+  };
+  const closeForNavigation = () => {
+    navigatedOnClose.current = true;
+    setOpen(false);
+  };
+  const onCloseAutoFocus = (event: Event) => {
+    if (!navigatedOnClose.current) return;
+    navigatedOnClose.current = false;
+    event.preventDefault();
+  };
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const [closingId, setClosingId] = useState<string | null>(null);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
@@ -432,7 +452,7 @@ export function useProjectListMenu({
         });
         return;
       }
-      setOpen(false);
+      closeForNavigation();
       navigation.openDock(await dockForProjectEntry(recovered.id, currentDock), undefined, { topLevel: true });
     } finally {
       setRecoveringId(null);
@@ -450,7 +470,7 @@ export function useProjectListMenu({
       return;
     }
     if (bucket.state === 'live' && bucket.project) {
-      setOpen(false);
+      closeForNavigation();
       // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the
       // workspace being left, never painted in its mode.
       navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock), undefined, { topLevel: true });
@@ -502,7 +522,7 @@ export function useProjectListMenu({
   // Global is already current). URL-first: resolve the most-recently-active
   // global tab (or Home) and navigate; the loader re-scopes off the URL.
   const handleSelectGlobal = async () => {
-    setOpen(false);
+    closeForNavigation();
     navigation.openDock(await dockForGlobalEntry(currentDock));
   };
 
@@ -511,7 +531,7 @@ export function useProjectListMenu({
   // project switch too.
   const handleSelectTab = (tab: Tab) => {
     if (!tab.dockPointer) return;
-    setOpen(false);
+    closeForNavigation();
     navigation.openDock(tab.dockPointer as DockPointer);
   };
 
@@ -528,6 +548,7 @@ export function useProjectListMenu({
   return {
     open,
     setOpen,
+    onCloseAutoFocus,
     currentProjectId,
     buckets,
     projectTotal,

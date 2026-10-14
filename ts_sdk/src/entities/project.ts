@@ -226,6 +226,22 @@ export interface ProjectReadiness {
   gaps: ProjectSetupRequirement[];
 }
 
+/** One process of a project's app (`GET project/<id>/app-ports`). */
+export interface ProjectAppPort {
+  app: string;
+  /** `page`, or a service's name. */
+  process: string;
+  declared: number | null;
+  required: boolean;
+  /** `running`, `stopped`, or `conflict` (its port is held by another program). */
+  state: string;
+  port: number | null;
+  pid: number | null;
+  note: string;
+  /** The log the process writes, when Flowpad started it and it is running. */
+  log?: string | null;
+}
+
 /** `GET project/<id>/setup-run` — the app-run setup: going or not, and its tree so far. */
 export interface ProjectSetupRun {
   /** The run's address — what its questions name (`Question.run`). */
@@ -1045,6 +1061,25 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('setup-unskip', Project.type, projectId, 'POST');
     actionInfo.bodyParameters = { typeid, name };
     return (await dataManager.callAction<Record<string, string>, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Every process of every app of the project here (`GET project/<id>/app-ports`): its declared port, its live
+   *  port and its state. */
+  static async appPorts(projectId: string): Promise<ProjectAppPort[]> {
+    const actionInfo = new ActionInfo('app-ports', Project.type, projectId, 'GET');
+    const data = await dataManager.callAction<void, { ports: ProjectAppPort[] }>(actionInfo);
+    return data?.ports ?? [];
+  }
+
+  /** Stop an app of the project on this machine, whoever started it (`POST project/<id>/app-stop`); `restart`
+   *  starts it again on its port. Answers whether it worked, and why not. */
+  static async stopApp(projectId: string, app: string, restart = false): Promise<{ ok: boolean; detail: string }> {
+    const actionInfo = new ActionInfo('app-stop', Project.type, projectId, 'POST');
+    actionInfo.bodyParameters = { app, restart };
+    const data = await dataManager.callAction<{ app: string; restart: boolean }, { apps: { ok: boolean; detail: string }[] }>(
+      actionInfo,
+    );
+    return data?.apps?.[0] ?? { ok: false, detail: `no app named ${app}` };
   }
 
   /** The setup run's state (`GET project/<id>/setup-run`). */

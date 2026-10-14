@@ -62,7 +62,7 @@ import {
   sourceForOrigin,
   useChannelAttribution,
 } from '@src/components/conversation/channel-attribution';
-import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
+import { AttachedChannelsBar, ConnectChannelPrompt, useAttachedChannels } from './AttachedChannelsBar';
 import { ChannelAttentionBar } from './ChannelAttentionBar';
 import {
   attentionAmong,
@@ -81,6 +81,7 @@ import {
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { CategoryChips, COMPACT } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
+import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { RowActions } from '@src/components/conversation/RowActions';
 import { attachmentSummary } from '@src/components/conversation/useAttachments';
 
@@ -463,6 +464,7 @@ export function ConversationListRow({
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
       data-unread={isUnread ? 'true' : 'false'}
+      data-ended={conv.ended_at ? 'true' : 'false'}
       data-kind={isInvitationRow ? 'invitation' : 'user'}
       onClick={handleClick}
       data-selected={selected ? 'true' : 'false'}
@@ -470,7 +472,7 @@ export function ConversationListRow({
         isInvitationRow && !selectMode ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
-      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''}`}
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''} ${conv.ended_at ? 'opacity-60' : ''}`}
     >
       {/* Multi-select tick. Stops propagation so ticking a row never opens it.
           Always visible per line with a readable border — a dimmed one (/30 at
@@ -637,7 +639,7 @@ export function StreamInboxView({
   // The channel filter: source ids the list is narrowed to. Local like the text
   // search, and empty means everything.
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
-  const { rows: ownerChannels, specFor } = useAttachedChannels(channelsOwner);
+  const { rows: ownerChannels, specFor, offers: channelOffers } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
     (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
@@ -1306,6 +1308,7 @@ export function StreamInboxView({
                   <UsersRound className="me-1 h-3.5 w-3.5" />
                   <Trans>New group</Trans>
                 </Button>
+                <ProjectUploadMessageButton />
               </div>
             )}
             {/* RIGHT — actions for the current view */}
@@ -1453,6 +1456,7 @@ export function StreamInboxView({
               <AttachedChannelsBar
                 owner={channelsOwner}
                 rows={ownerChannels}
+                offers={channelOffers}
                 specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}
@@ -1483,6 +1487,10 @@ export function StreamInboxView({
                       ? t`No messages from this channel yet`
                       : t`No conversations`}
             </span>
+            {/* An owner with no channel connected: the empty list is where connecting one is offered. */}
+            {channelsOwner && !embedded && !inArchivedView && !inUnreadView && !searchActive && !columnFilterActive && (
+              <ConnectChannelPrompt owner={channelsOwner} offers={channelOffers} />
+            )}
             {!inArchivedView && !searchActive && !columnFilterActive && attention.length === 0 && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />

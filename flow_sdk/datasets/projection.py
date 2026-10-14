@@ -34,6 +34,8 @@ def check_mirror(value: Any) -> Optional[dict]:
     """A source's ``mirror`` as declared, or ``ValueError`` saying what is wrong with it: a dataset
     name, a map (``{"key": <path>, "input": {...}}``) whose key path is also mapped to a field -- how a
     row finds its record again -- and an optional ``by``."""
+    from flow_sdk.schema.data_spec.data_schema_spec import OWNER_WORD  # noqa: PLC0415
+
     if value in (None, {}):
         return None
     if not isinstance(value, dict) or set(value) - {"dataset", "map", "by"}:
@@ -45,8 +47,8 @@ def check_mirror(value: Any) -> Optional[dict]:
         raise ValueError('mirror.map: {"key": <path>, "input": {<field>: <path>}} is required')
     if key_field(shape) is None:
         raise ValueError(f"mirror.map: map the key path {shape['key']!r} to a field too: it is how a row finds its record again")
-    if value.get("by") is not None and not isinstance(value["by"], str):
-        raise ValueError("mirror.by: the name the rows are written as is a string")
+    if value.get("by") is not None and not (isinstance(value["by"], str) and OWNER_WORD.fullmatch(value["by"])):
+        raise ValueError('mirror.by: the name the rows are written as is one word, as a schema\'s `owned_by` ("crm")')
     return value
 
 
@@ -78,15 +80,31 @@ async def project_source(source: Any) -> Optional[dict]:
     if dataset is None:
         return None
     mirror = source.mirror
-    return await dataset.mirror(source, mirror["map"], by=mirror.get("by") or source.provider)
+    by = mirror.get("by") or source.provider
+    # A mapped field is rewritten from the record on every sweep. One the schema lets the app write
+    # too would take an edit and silently lose it at the next sweep -- so the map may only name fields
+    # the schema says are this system's (`owned_by`): an edit to one goes to the system first.
+    owned = _owned(dataset)
+    loose = [name for name in mirror["map"]["input"] if owned.get(name) != by]
+    if loose:
+        raise _refused("not_owned", f"the mirror writes {', '.join(loose)} as {by!r}, but the row kind does not say "
+                                    f'`"owned_by": "{by}"` on {"it" if len(loose) == 1 else "them"}: an edit made here '
+                                    f"would be lost at the next sweep")
+    return await dataset.mirror(source, mirror["map"], by=by)
 
 
-def _misfit_detail(misfit: list) -> Optional[str]:
-    if not misfit:
-        return None
-    keys = ", ".join(str(m.get("key")) for m in misfit[:3])
-    more = f" and {len(misfit) - 3} more" if len(misfit) > 3 else ""
-    return f"{len(misfit)} record(s) did not fit the row kind: {keys}{more}"
+def _misfit_detail(misfit: list, referenced: list = ()) -> Optional[str]:
+    """One sentence for the source card: what the sweep kept that is not a clean row."""
+    def named(rows: list, what: str) -> Optional[str]:
+        if not rows:
+            return None
+        keys = ", ".join(str(m.get("key")) for m in rows[:3])
+        more = f" and {len(rows) - 3} more" if len(rows) > 3 else ""
+        return f"{len(rows)} {what}: {keys}{more}"
+
+    said = [s for s in (named(list(misfit), "record(s) did not fit the row kind"),
+                        named(list(referenced), "row(s) gone outside are still used here")) if s]
+    return "; ".join(said) or None
 
 
 async def _stamp_mirror(source: Any, code: Optional[str], detail: Optional[str]) -> None:
@@ -118,8 +136,8 @@ async def _project(source_id: str) -> None:
         raise
     logger.info("[mirror] %s → %s: %s", source.name, source.mirror["dataset"],
                 {k: len(v) if isinstance(v, list) else v for k, v in (done or {}).items()})
-    misfit = (done or {}).get("misfit") or []
-    await _stamp_mirror(source, MIRROR_MISFIT if misfit else None, _misfit_detail(misfit))
+    detail = _misfit_detail((done or {}).get("misfit") or [], (done or {}).get("referenced") or [])
+    await _stamp_mirror(source, MIRROR_MISFIT if detail else None, detail)
 
 
 async def _on_sync(event: Any) -> None:
@@ -143,6 +161,14 @@ def start_dataset_projection() -> None:
 # ── write-through: a change to an outside-owned field goes to the outside system ──────────────────
 
 _WRITABLE = re.compile(r"data\.([A-Za-z_][A-Za-z0-9_]*)")
+
+
+_EMPTY = (None, "", [], {})
+
+
+#: ``"by": "key"`` in a link spec: the outside system holds the linked row's KEY (the path grammar's
+#: ``key``), not a field of it -- for rows the outside system does not have (your own, tagged onto its).
+ROW_KEY = "key"
 
 
 def is_link(spec: Any) -> bool:
@@ -189,8 +215,11 @@ def _outside_id(ref: Any, by: str, owner: Path, links: dict) -> Any:
 
     if (ref, by) not in links:
         found = Dataset.find_row(ref, owner) if isinstance(ref, str) else None
-        rows = found[0].rows({"key": found[1]})["rows"] if found else []
-        links[(ref, by)] = rows[0]["input"].get(by) if rows else None
+        if found and by == ROW_KEY:
+            links[(ref, by)] = found[1]
+        else:
+            rows = found[0].rows({"key": found[1]})["rows"] if found else []
+            links[(ref, by)] = rows[0]["input"].get(by) if rows else None
     return links[(ref, by)]
 
 
@@ -311,7 +340,7 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
     A refusal from the outside system is ``LinkError`` code ``source_refused``; nothing more is sent."""
     from flow_sdk.builtin.dataset import ConflictError, LinkError  # noqa: PLC0415
 
-    if not _owned(dataset):
+    if not any(who != by for who in _owned(dataset).values()):
         return None                                      # nothing here is anyone else's: no I/O at all
     source = await mirror_of(dataset)
     if source is None:
@@ -327,9 +356,11 @@ async def write_through(dataset: Any, rows: list[tuple[Optional[str], dict]], by
         old = (have.get(key) or {}).get("input") if key else None
         new = row.get("input") if isinstance(row.get("input"), dict) else {}
         if old is None:
-            sent = {f: v for f, v in new.items() if f in owned and v not in (None, "", [], {})}
+            sent = {f: v for f, v in new.items() if f in owned and v not in _EMPTY}
         else:
-            sent = {f: new.get(f) for f in owned if f in new and new.get(f) != old.get(f)}
+            # a put REPLACES the row's input: a field left out is a field cleared, and is sent as one
+            sent = {f: new.get(f) for f in owned
+                    if new.get(f) != old.get(f) and not (new.get(f) in _EMPTY and old.get(f) in _EMPTY)}
         plan.append([key, row, old, sent, None])
     if not any(step[3] for step in plan):
         return None

@@ -18,10 +18,10 @@ import { errorMessage, errorStatus } from '@src/lib/error-message';
 /**
  * The role a shared sandbox is granted at.
  *
- * `admin` is the floor for admission: `policies.json` grants `open-service` only
- * at admin, and `_may_receive_the_gate` requires the same rank before the
- * cookie-gate secret is attached to the URL. Anything lower produces a link that
- * 403s at the sandbox's own gate — a share that looks like it worked.
+ * `admin` is the floor for admission: `policies.json` grants `open-system` on the
+ * machine's workspace endpoint only at admin, and `admission.admit` asks exactly that
+ * before a ticket is minted. Anything lower produces a link that 403s at the hub's
+ * `open` — a share that looks like it worked.
  *
  * It also carries `delete`. That is a deliberate, accepted trade-off, not an
  * oversight: the dialog says so in as many words.
@@ -229,9 +229,9 @@ export async function shareSandboxByEmail(
  *
  * The SAME destination the invitation email uses, and that is the whole point:
  * ONE shared link, with one set of powers. It used to be `workspaceServiceUrl`
- * — the hub's `open-service` route — on the reasoning that it is the same url
+ * — the hub's `open/system` route — on the reasoning that it is the same url
  * the card's Open button follows. True, and it made the copied link strictly
- * weaker than the emailed one, because `open-service` OPENS a box and cannot
+ * weaker than the emailed one, because `open` OPENS a box and cannot
  * BUILD one: pointed at a sandbox that was created but never launched, it
  * answers 409 "this machine has not been set up yet" and the recipient is out of
  * moves. A sandbox is written down and launched by two separate clicks, so being
@@ -240,7 +240,7 @@ export async function shareSandboxByEmail(
  *
  * `/compute_node/<id>` is the page that knows both verbs. It launches the box
  * when the box needs launching and the recipient may launch it, and redirects
- * through `open-service` otherwise — which is still what does the authorizing,
+ * through `open/system` otherwise — which is still what does the authorizing,
  * the resuming and the waiting. This adds a step in front of that route; it
  * takes nothing away from it.
  *

@@ -124,7 +124,7 @@ async def check_kind(kind: str, body: dict = Body(...), project: str = "") -> Ap
 @router.get("/api/v1/kinds/{kind}/resolve", response_model=None)
 async def resolve_kind(kind: str, project: str) -> ApiResponse | JSONResponse:
     """``{kind}``: the full name of the kind a schema of ``project`` defines as ``kind`` (its bare
-    name, ``gtm.icp`` → ``--gtm_studio--.gtm.icp``); 404 when the project defines none."""
+    name, ``crm.lead`` → ``--sales_desk--.crm.lead``); 404 when the project defines none."""
     from flow_sdk.schema.data_spec.declared import kind_in  # noqa: PLC0415
 
     root, missing = await _root_or_404(project)

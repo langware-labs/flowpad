@@ -227,7 +227,7 @@ class ProjectMoveError(ValueError):
 
 def project_name_key(name: str | None) -> str:
     """The name two projects may not share: case-insensitive, and spaces, ``-`` and
-    ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
+    ``_`` fold together — "Sales Desk", "sales-desk" and "sales_desk" are one name."""
     return re.sub(r"[\s_\-]+", "-", (name or "").casefold()).strip("-")
 
 
@@ -871,6 +871,43 @@ class Project(SetupSkippable, Entity):
         result = load_state(str(self.id), asset=asset)
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
+    # ── the project's apps: which port each process declares, and where it runs now ────────
+
+    async def _own_apps(self, name: str = "") -> list:
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+
+        apps = [
+            app for app in await WebApp.get_all({"match": {"project_id": self.id}})
+            if app.asset_ref and Path(app.asset_ref).is_dir()
+        ]
+        return [app for app in apps if not name or app.name == name]
+
+    @action.get(action_name="app-ports")
+    async def app_ports_action(self) -> "ApiResponse":
+        """Every process of every app here: the port it declares, its live port, and its state."""
+        from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+        rows: list[dict] = []
+        for app in await self._own_apps():
+            rows.extend(await webapp_setup.ports(str(app.id)))
+        return ApiSuccessResponse(data={"ports": rows})
+
+    @action.post(action_name="app-stop")
+    async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
+        """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
+        from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+
+        found = await self._own_apps(app)
+        if not found:
+            return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
+        results = []
+        for one in found:
+            answer = await webapp_setup.stop(str(one.id))
+            if restart and answer.ok:
+                answer = await webapp_setup.step(str(one.id), "start", check=False)
+            results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
+        return ApiSuccessResponse(data={"apps": results})
+
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
         """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
@@ -1024,7 +1061,7 @@ class Project(SetupSkippable, Entity):
 
         A rename changes the name, never the folder (the path keys sessions,
         records and discovery), so the two drift apart; the UI flags the drift.
-        Compared as ``project_name_key``, so "gtm studio" in ``gtm-studio/`` matches."""
+        Compared as ``project_name_key``, so "sales desk" in ``sales-desk/`` matches."""
         mount = self.fs_storage_mount_path
         if not mount or self.hidden:
             return None
@@ -2023,7 +2060,7 @@ class Project(SetupSkippable, Entity):
         # A fresh slot every time, named after the ENGAGEMENT rather than the
         # template: two engagements from one template are two independent
         # working copies, and a customer whose folder is called
-        # ``cloudnsite-bootstrap`` has been handed the vendor's name for their
+        # ``globex-bootstrap`` has been handed the vendor's name for their
         # own work. An empty/absent preferred root is the driver's clone target.
         from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 

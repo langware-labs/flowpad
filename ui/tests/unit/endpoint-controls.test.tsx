@@ -81,7 +81,7 @@ import {
 /**
  * Pinning one model must STICK rather than refuse. The tier a person's machine asks for lives in
  * their own CLI config, which this page cannot reach, so narrowing `models_allow` alone produced
- * "model anthropic/claude-sonnet-4.5 not allowed by endpoint Gadi +20" and left the person with no
+ * "model anthropic/claude-sonnet-4.5 not allowed by endpoint Bob +20" and left the person with no
  * way to fix it. The hub resolves `filters.aliases` at the entry BEFORE the filter check and
  * rewrites the request, so the redirect is what makes a pin work unattended.
  */
@@ -92,7 +92,7 @@ import {
  */
 describe('SEED_BY_SCOPE', () => {
   /** These are a HINT now, not a write: the hub chooses what a new wallet allows
-   *  (`_seed_models` / `MEMBER_DEFAULT_MODELS` in `flowpad/hub/builtin/llm_endpoint.py`), because it
+   *  (`_seed_models` / `MEMBER_DEFAULT_MODELS` in `hub llm_endpoint.py`), because it
    *  is also what mints a person's default on their first bootstrap — a path this screen is not on,
    *  and the reason a person used to be restricted only if an admin had opened the page. Kept in
    *  step by hand, like the asset-editor contract: drift shows up as a stale placeholder, never as

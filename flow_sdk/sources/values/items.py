@@ -127,6 +127,9 @@ class MessageData(Payload):
     #: Entities this message is about, as TypeId strings (``"task-<id>"``) — the projection puts them
     #: on the message as its shared context, so the conversation can show (and act on) them.
     refs: tuple[str, ...] = ()
+    #: This message ends its conversation (a pull request merged or closed, a ticket resolved): the
+    #: projection stamps ``Conversation.ended_at``; a later message that does not end it reopens it.
+    ends_conversation: bool = False
 
 
 class EmailMessageData(MessageData):

@@ -119,11 +119,10 @@ async def start_tag_triggers() -> None:
     from flow_sdk.builtin.trigger import Trigger
     from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
+    from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
+
     for trigger in await Trigger.list_by_type(TriggerType.TAG):
-        try:
-            register_tag_trigger(trigger)
-        except Exception:
-            logger.exception("TAG trigger %s: arming failed", trigger.name)
+        await arm_trigger(trigger)   # the one gate: its place (`runs_on`), then the subscription
 
 
 def _suppressed(trigger: "Trigger", reason_code: str, reason: str,
@@ -424,7 +423,8 @@ def _declined(trigger: "Trigger", event: "FlowEvent", gate: GateOutcome) -> None
 
 
 async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str],
-                        *, is_test: bool, gate: Optional[GateOutcome] = None) -> dict[str, Any]:
+                        *, is_test: bool, gate: Optional[GateOutcome] = None,
+                        run_id: Optional[str] = None) -> dict[str, Any]:
     """Log, activate, dispatch, log the outcome — shared by a real fire and *Run once now*.
 
     TWO rows per fire, joined on ``event_id``. The ``tag_fire`` row is written
@@ -461,7 +461,7 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
     # The fire's scope for a `then` wizard: the causing envelope and, when the gate was asked about a
     # subject, its state under its key and the launch context the agent step stamps (with what the rule
     # decided and this run's row id, minted here so the session can name the run that started it).
-    row_id = str(mint_uuid())
+    row_id = run_id or str(mint_uuid())
     inputs: dict[str, Any] = {EVENT_KEY: event.model_dump(mode="json")}
     scope_key = ""
     caught = gate.caught_state if gate is not None else None
@@ -510,7 +510,8 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             "error": error, "duration_ms": outcome.duration_ms}
 
 
-async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str]) -> None:
+async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str], *,
+                       run_id: Optional[str] = None) -> None:
     """*Run once now* for a TAG rule: the real fire path with every guard off.
 
     A test runs even when the rule is switched off and never spends what a real
@@ -521,7 +522,7 @@ async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optiona
     this as a background task.
     """
     async with _locks.setdefault(trigger.id or "", asyncio.Lock()):
-        await _run_tag_fire(trigger, event, event_id, is_test=True)
+        await _run_tag_fire(trigger, event, event_id, is_test=True, run_id=run_id)
 
 
 def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:

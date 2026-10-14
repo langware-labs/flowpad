@@ -237,8 +237,8 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * The dock's scope filter (what the Chats navigator reads to list history) must
  * be a PROJECTION of that same id — not the project that happened to be ambient
  * when the scope was seeded at click (`openDock`, NavigationActions). When they
- * diverge (open an oss chat while sapora-streams was active → URL carries
- * sapora's scope), `replace()` the URL onto the same pointer carrying the
+ * diverge (open an oss chat while acme-streams was active → URL carries
+ * acme's scope), `replace()` the URL onto the same pointer carrying the
  * process's own project scope. This runs at LOAD, so it also corrects deep
  * links / hard refresh / back-forward, not just the click path. A genuinely
  * projectless target actively removes any seeded project scope so its tab and

@@ -5,7 +5,7 @@ This pins a fix that was already made once and did nothing. E2B populates
 process started at boot -- the one that answers ``direct-url`` -- the variable is
 present and EMPTY. Measured on a live box: ``flow_sdk.server.run`` reported
 ``E2B_SANDBOX_ID=`` while a terminal in the same sandbox reported
-``ivshr0pshcpupip2m0pqk``.
+``sbx123``.
 
 A resolver that reads the env therefore passes any test that sets the env and
 changes nothing in production, which is exactly what happened. Nothing here is
@@ -50,7 +50,7 @@ def test_a_plain_machine_never_claims_to_be_a_sandbox(monkeypatch):
 
 
 def test_public_url_shape_matches_what_e2b_serves():
-    assert sandbox_public_url(8000, "ivshr0pshcpupip2m0pqk") == ("https://8000-ivshr0pshcpupip2m0pqk.e2b.dev")
+    assert sandbox_public_url(8000, "sbx123") == ("https://8000-sbx123.e2b.dev")
 
 
 class _FakeMmdsResponse:
@@ -68,7 +68,7 @@ class _FakeMmdsResponse:
 
 
 def test_a_cache_hit_before_the_hub_assigns_sandbox_outlives_the_assignment(monkeypatch, tmp_path):
-    """RCA (prod compute_node f41f5c42-a8fa-4934-8cda-9080f09d24bd, 2026-09-24):
+    """RCA (a prod compute node, 2026-09-24):
     ``own_sandbox_id`` is ``@lru_cache(maxsize=1)`` for the process lifetime.
     Something asks it (an early ``ops/status`` call, a preview-url builder --
     ``local_direct_url`` in ``flow_sdk/builtin/service_endpoint.py``) before
