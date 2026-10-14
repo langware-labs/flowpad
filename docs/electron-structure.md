@@ -136,8 +136,10 @@ In Share, `support-bundle.redact` also covers `fp_(live|test)_`.
 ### 3.7 Share with us
 The zip is built locally (`MAX_LOG_BYTES` = 2 MB per file; newest desktop + server + monitor logs, secrets masked)
 and uploaded to the hub's anonymous `POST /api/v1/support-bundle` intake (`FLOWPAD_CLOUD_URL`), which stores it in
-GCS and notifies the team; the hub answers a `submission_id` the user can quote. The email address is optional
-(error-panel form; native failure dialogs send anonymously). On upload failure the panel offers "Export logs".
+GCS and notifies the team; the hub answers a `submission_id` the user can quote. Clicking "Share with us"
+already commits the upload: a popup asks for an optional email, and every way out of it — Send, ×, Esc —
+uploads (empty email = anonymous; native failure dialogs send anonymously). On upload failure the panel
+offers "Export logs".
 
 ### 3.8 AppTranslocation
 On macOS, an app running from a transient location is offered, once per version, a move to `/Applications`

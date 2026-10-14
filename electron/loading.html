@@ -286,13 +286,61 @@
     .error-share-note.ok { color: hsl(140 40% 60%); }
     .error-share-note.fail { color: hsl(0 70% 65%); }
 
-    /* "Share with us" inline form: an optional email + send (FLOWPAD-2251). */
-    .error-share-form {
+    /* "Share with us" popup (FLOWPAD-2251): the optional-email ask. Closing it in ANY
+       way — send, ×, Esc — uploads the logs; the email is the only variable. */
+    .share-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: hsl(0 0% 0% / 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 108; /* above .error-overlay (100), below the logs viewer (110) */
+    }
+
+    .share-modal {
+      position: relative;
+      width: min(420px, calc(100vw - 48px));
+      padding: 20px;
+      background: hsl(0 0% 7%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.75rem;
+    }
+
+    .share-modal h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: hsl(0 0% 90%);
+      margin-bottom: 8px;
+    }
+
+    .share-modal-text {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 55%);
+      margin-bottom: 14px;
+    }
+
+    .share-modal-row {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
-      margin-bottom: 12px;
     }
+
+    .share-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 1.1rem;
+      line-height: 1;
+      color: hsl(0 0% 50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .share-modal-close:hover { color: hsl(0 0% 85%); }
 
     .share-email {
       flex: 1 1 220px;
@@ -444,6 +492,23 @@
     <pre class="logs-content" id="logs-content"></pre>
   </div>
 
+  <!-- "Share with us" popup. The upload is already decided when it opens: send, the ×
+       and Esc all close it INTO the upload — the email field is the only choice in it. -->
+  <div class="share-modal-overlay" id="share-modal" hidden>
+    <div class="share-modal">
+      <button class="share-modal-close" id="share-close" title="Close and upload">&times;</button>
+      <h3>Share logs with the Flowpad team</h3>
+      <p class="share-modal-text">
+        You may add your email so we can tie this upload to you — though we can’t promise a reply.
+        The logs are uploaded when this window closes, with or without an email.
+      </p>
+      <div class="share-modal-row">
+        <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
+        <button class="quit-btn" id="share-send">Send logs</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Startup error panel: replaces the native OS error popup. Retry is shown
        only for a failed install/start (retryable), not for a backend timeout. -->
   <div class="error-overlay" id="error-overlay">
@@ -457,14 +522,9 @@
         <button class="quit-btn" id="share-logs">Share with us</button>
         <button class="quit-btn" id="export-logs" hidden>Export logs</button>
       </div>
-      <!-- Revealed by "Share with us": email is optional, empty sends anonymously. -->
-      <div class="error-share-form" id="share-form" hidden>
-        <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
-        <button class="quit-btn" id="share-send">Send logs</button>
-      </div>
       <p class="error-share-note" id="share-status">
-        “Share with us” zips your latest logs (passwords and tokens are masked) and sends them to the
-        Flowpad team. Adding your email lets us reply; leaving it empty sends anonymously.
+        “Share with us” zips your latest logs (passwords and tokens are masked) and uploads them to the
+        Flowpad team.
       </p>
 
       <div class="error-step">
