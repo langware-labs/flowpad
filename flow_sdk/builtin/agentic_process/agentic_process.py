@@ -1165,6 +1165,7 @@ class AgenticProcess(Entity):
         *,
         input: Any = None,
         output_spec: Any = None,
+        on_executor: Callable[[str], None] | None = None,
         **kwargs,
     ) -> "PromptResult":
         """One-shot: create → send → wait → answer → stop. Answers a ``PromptResult`` — ``text`` is the
@@ -1174,6 +1175,7 @@ class AgenticProcess(Entity):
         ``input`` / ``output_spec``: typed folder I/O — see ``process_io``. Headless by default
         (``pty_mode=True`` for the interactive transport); ``workdir`` defaults to the caller's cwd;
         an unnamed worker is the harness selected in settings.
+        ``on_executor`` receives the exact child identity before its first turn.
         """
         from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
             finish_io,
@@ -1193,6 +1195,8 @@ class AgenticProcess(Entity):
         proc = cls(workdir=workdir, **kwargs)
         prepare_io(proc, input=input, output_spec=spec)
         try:
+            if on_executor is not None:
+                on_executor(str(proc.typeid))
             if not proc.pty_mode:
                 return await take_turn(proc, instruction, spec)
             started = await proc.start_pty()

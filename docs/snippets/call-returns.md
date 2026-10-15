@@ -31,6 +31,29 @@ raise, unless the caller opts into `raise_for_status()`.
 
 Every `python` fence below is run by `tests/unit/test_call_returns_snippets.py` (how, just below).
 
+## Durable calls
+
+Use `ComputeOp.start(input=..., approved=True)` in Python or
+`op.start(input, {approved: true})` in TypeScript when work must outlive a client
+request. Admission returns a private call record with `call_id` and
+`invocation_id`; retain the block identity and call ID. Read it with
+`ComputeOp.get_call(call_id)` / `op.get_call(callId)`. Reading never starts work.
+
+The record state is `running`, `completed`, `interrupted`, or `failed`.
+Only a completed record carries the tagged `ReturnedValue` in `result`; still
+check its outcome and value presence before chaining. A completed refusal is
+not successful output. Validation rejects invalid input before admission, and
+approval still precedes executable imports. Each start creates new work:
+invocation correlation is not an idempotency key and an uncertain request must
+not be silently retried.
+
+Records survive backend restarts. Unfinished work whose executor has stopped
+is reported interrupted without replay; this does not roll back prior effects.
+A surviving external agent is not, by itself, proof that its enclosing Python
+block can resume. Persisted executor information is for correlation, not a
+promise of checkpoint recovery. Awaited `call` and Wizard composition retain
+their existing contracts.
+
 ## TypeScript calls
 
 `dataManager.callFlowAction<R>(actionInfo, transport)` returns the FlowCall answer
@@ -174,6 +197,7 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     not_applicable_codes: list[int]
     setup: Text                               # setup.md — what an agent or a model is given
     setup_timeout_seconds: float | None       # how long an assist agent gets; unset ⇒ SETUP_TIMEOUT (10 min)
+    log: CallLogSpec | None                   # every call a dataset row in temp, with its run's trace
 ```
 
 ```jsonc

@@ -33,8 +33,9 @@ are separate outcomes too.
 
 A list is one value unless the caller explicitly maps it. `chain` composes
 blocks through Wizard; it does not name another runtime. `invocation_id`
-correlates one call and its child observations; it is not a block ID or an
-idempotency key. `value_present` distinguishes nullable output from no output.
+is the trace id of one top-level run: every call in it, across agents and
+messages, carries it, and `parent_call_id` names the call that made each one. It
+is not a block ID or an idempotency key. `value_present` distinguishes nullable output from no output.
 See [FlowCall blocks](snippets/flowcall-blocks.md).
 
 ## Cross-walk
