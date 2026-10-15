@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
-const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
+const { buildSupportZip, redact } = require('./support-bundle');
+const { uploadSupportBundle } = require('./support-upload');
 const { redactUrl, installLogRedaction } = require('./log-redact');
 const { offerMoveToApplications } = require('./app-location');
 const { showFailureDialog } = require('./failure-dialog');
@@ -16,7 +17,7 @@ const UvManager = require('./uv-manager');
 const { createShutdown, relaunchAfterStop } = require('./shutdown');
 const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
 const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
-const { createPolicyBlockProbe, detectPolicyBlockInLog, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
+const { createPolicyBlockProbe, detectPolicyBlockInLog, policyBlockFromInstallError, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
 // FLOWPAD-2231: the monitor's fatal-failure record, the desktop update as a recovery route, the startup journal.
 const fatalFailure = require('./fatal-failure');
 const updateRecovery = require('./update-recovery');
@@ -1297,7 +1298,7 @@ async function showStartupErrorPanel(detail, { retryable = false, policyBlocked 
   }
   // No window to render into — degrade to the native dialog.
   // Awaited: the caller quits the app when this returns false, and quitting before the user answers would
-  // close the one dialog that explains the failure (and the "Share with us" button on it).
+  // close the one dialog that explains the failure (and the "Send Report" button on it).
   await showFailureDialog({
     dialog,
     title: 'Flowpad couldn’t start',
@@ -1341,13 +1342,20 @@ function waitForPanelAction() {
 //   Repair FlowPad (Windows, repairable kinds, once per app+engine version — runtime-repair.js),
 //   Update FlowPad to X (the desktop updater, checked without the backend, ONCE per version and failure —
 //   update-recovery.js; never claimed to fix a blocked runtime), Retry anyway (with the warning that an
-//   unchanged runtime will fail the same way), Export logs / Share with us.
+//   unchanged runtime will fail the same way), Export logs / Send Report.
 // Resolves true when the backend is healthy again; false when the app is quitting (or quitting into an update).
-async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
+// `retry`, for a block that hit the engine INSTALL (nothing to start yet): what "Retry anyway" runs instead of
+// starting the engine — it re-runs the install and resolves `{ ok, installBlock? }` like installAndStartBackend.
+// Such a block never launched a backend, so nothing is stopped: a bare `flow stop` would kill whatever holds the port.
+// `autoRepair`: the block hit the FIRST install, so there is no engine to lose: the repair (the signed PSF runtime)
+// runs at once, without the panel and the click; the panel appears only if the repair itself fails. It is tried once.
+async function handleFatalFailure({ match: firstMatch, record: firstRecord, retry = null, autoRepair = false }) {
   let match = firstMatch;
   let record = firstRecord;
   let extraDetail = '';
+  let autoRepairPending = !!autoRepair;
   const stopBackend = () => {
+    if (retry && !(uvManager && uvManager.hasLaunchedBackend())) return;
     if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[fatal-failure] backend stop failed: ${e.message}`));
   };
   stopBackend(); // the monitor has stopped already on a record; on Electron's own match it would keep restarting
@@ -1387,7 +1395,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
       }
       detail +=
         (extraDetail ? `\n\n${extraDetail}` : '') +
-        `\n\nServer log (${match.path}):\n${match.traceback}` +
+        `\n\nEvidence — ${match.path}:\n${match.traceback}` +
         `\n\nWindows Code Integrity events (3077/3089, last 30 min):\n${ciEvents || '(none readable — the policy may not log to the Operational channel, or the log is empty)'}`;
     } else {
       detail = fatalFailure.describeFatalFailure(record || { kind, fatal: true, reason: (match && match.line) || 'The FlowPad engine stopped.' }) +
@@ -1398,17 +1406,25 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
       detail += ` An update to ${latest} was already attempted for this failure (${plan.prior.at}, ${plan.prior.outcome}); it is not offered again.`;
     }
     log.error(`[fatal-failure] ${detail}`);
-    const shown = await showStartupErrorPanel(detail, {
-      retryable: true,
-      policyBlocked: policy,
-      repairable,
-      extras: { retryLabel: 'Retry anyway', retryWarning: fatalFailure.RETRY_WARNING, updateVersion, exportable: true, fatalKind: kind },
-    });
-    if (!shown) {
-      app.quit();
-      return false;
+    let action;
+    if (autoRepairPending && repairable) {
+      autoRepairPending = false;
+      log.info('[runtime-repair] the first install was blocked: repairing automatically (no engine to lose)');
+      action = 'repair';
+    } else {
+      autoRepairPending = false;
+      const shown = await showStartupErrorPanel(detail, {
+        retryable: true,
+        policyBlocked: policy,
+        repairable,
+        extras: { retryLabel: 'Retry anyway', retryWarning: fatalFailure.RETRY_WARNING, updateVersion, exportable: true, fatalKind: kind },
+      });
+      if (!shown) {
+        app.quit();
+        return false;
+      }
+      action = await waitForPanelAction();
     }
-    const action = await waitForPanelAction();
     if (isQuitting) return false;
     startupFailed = false;
     await pendingBackendStop;
@@ -1452,7 +1468,7 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
           (err.policyBlocked
             ? '\nThe policy also blocked the repair itself. If this computer is managed by an organization, IT approval may be required before FlowPad can run.'
             : '') +
-          '\nUse “Share with us” or “Export logs” to send the logs.';
+          '\nUse “Send Report” or “Export logs” to send the logs.';
         continue;
       }
     }
@@ -1461,12 +1477,24 @@ async function handleFatalFailure({ match: firstMatch, record: firstRecord }) {
     sendStatus('Retrying');
     markPhase('backend-start', { retry: true });
     try {
-      await uvManager.start();
+      if (retry) {
+        // The install is what was blocked: run it again (uv keeps what it fetched); a repeat block shows the panel again.
+        const r = await retry();
+        if (!r.ok) {
+          if (r.installBlock) { match = r.installBlock; record = null; extraDetail = ''; }
+          else extraDetail = `The install failed again: ${r.error ? describeStartupFailure(r.error) : 'see the logs'}`;
+          continue;
+        }
+      } else {
+        await uvManager.start();
+      }
     } catch (err) {
       extraDetail = describeStartupFailure(err);
       continue;
     }
-    const w = await waitForBackend();
+    // A retry that re-ran the install boots an engine that was just unpacked: the same wider window as after any
+    // install (PyPI fetch, bytecode warm-up, antivirus scan on Windows).
+    const w = await waitForBackend(retry ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined);
     if (backendWaitAborted(w)) return false;
     if (w.ready) return true;
     stopBackend();
@@ -1553,8 +1581,22 @@ async function showRecoveryEntry(why) {
 // Resolves { ok: true, backendJustUpgraded } — or { ok: false } after rendering
 // the error panel with a Retry button, so startApp() can run it again. A fresh
 // UvManager per attempt: nothing from a failed attempt leaks into the retry.
-async function installAndStartBackend() {
+// A step of the install (uv itself, `uv tool install`, the broken-install reinstall): an error from it is tagged,
+// so the catch below can tell "the install was blocked" from "the engine's launcher was blocked" (start()'s own
+// policyBlockedError, whose text also says Device Guard, keeps its own path and its own evidence).
+async function installStep(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && typeof err === 'object') err.fromInstall = true;
+    throw err;
+  }
+}
+
+// `quiet`: the caller (the repair panel's Retry) shows its own panel for a failure — no second panel from here.
+async function installAndStartBackend({ quiet = false } = {}) {
   let backendJustUpgraded = false;
+  let firstInstall = false;
   // Install and start backend via uv + flow CLI
   uvManager = new UvManager(log, { stateDir: FLOW_HOME });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
@@ -1677,8 +1719,8 @@ async function installAndStartBackend() {
         if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
         log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
         sendStatus('Repairing Flowpad installation');
-        await uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') });
-        await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
+        await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') }));
+        await installStep(() => uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') }));
         backendJustUpgraded = true;
         const repairedVersion = uvManager.getInstalledVersionSync();
         sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
@@ -1689,10 +1731,14 @@ async function installAndStartBackend() {
       log.info('First-time setup: flow binary not found, installing latest from PyPI');
       sendStatus('Setting up Flowpad (first time)');
 
+      firstInstall = true;
       sendStatus('Checking Python installation');
-      await uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') });
+      await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') }));
 
-      await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
+      // A few seconds to learn whether the interpreter even runs (Windows application control): a blocked one goes
+      // straight to the repair instead of failing a download-and-unpack of ~160 packages first.
+      await installStep(() => uvManager.probeManagedInterpreter());
+      await installStep(() => uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') }));
       backendJustUpgraded = true;
 
       const version = uvManager.getInstalledVersionSync();
@@ -1710,6 +1756,20 @@ async function installAndStartBackend() {
       return { ok: false };
     }
     log.error(`Failed to start Python backend: ${String(error?.message || error).split('\n')[0]}`);
+
+    // FLOWPAD-2231: Windows application control refused the interpreter DURING the install (uv builds a
+    // dependency from source, compiles bytecode): the same block, earlier than any backend. The panel that
+    // names it and offers the signed runtime (Repair), not the generic error whose Retry fails the same way.
+    // Only an error of the install steps counts: the evidence is uv's output (the text exists on Windows only;
+    // Repair itself is gated there).
+    const installBlock = error && error.fromInstall ? policyBlockFromInstallError(error) : null;
+    if (installBlock) {
+      log.error(`[fatal-failure] the engine install was blocked by Windows application control: ${installBlock.line}`);
+      // A block on the FIRST install leaves a half-built environment that is not an engine to roll back to
+      // (a block during --compile-bytecode happens after the venv is populated and readable).
+      if (firstInstall && uvManager && typeof uvManager.markFirstInstallBlocked === 'function') uvManager.markFirstInstallBlocked();
+      return { ok: false, installBlock, firstInstall };
+    }
 
     const details = [
       error?.message || String(error),
@@ -1729,6 +1789,7 @@ async function installAndStartBackend() {
     // In-app panel with Retry (uv keeps what it already fetched in its
     // cache, so a retry after a slow or flaky download is usually seconds).
     // Only if the loading window is already gone is the failure fatal.
+    if (quiet) return { ok: false, error };
     if (!(await showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) }))) {
       app.quit();
     }
@@ -1840,6 +1901,21 @@ async function startApp() {
     let result = await guardedInstallAndStart();
     while (!result.ok) {
       if (isQuitting) return;
+      if (result.installBlock) {
+        // The install itself was blocked: the repair panel; Retry re-runs the install.
+        const recovered = await handleFatalFailure({
+          match: result.installBlock,
+          record: null,
+          autoRepair: !!result.firstInstall,
+          retry: async () => {
+            const g = await startGuard.run('startup', () => installAndStartBackend({ quiet: true }));
+            return g.skipped ? { ok: false } : g.result;
+          },
+        });
+        if (!recovered) return;
+        backendReady = true;
+        break;
+      }
       if (result.fatalRecord) {
         // The panel on the monitor's record, without starting the backend (installAndStartBackend).
         const rec = fatalFailure.reconcileFatalReason({ record: result.fatalRecord, probeMatch: null });
@@ -1986,7 +2062,7 @@ async function startApp() {
   // running from the pre-start flow).
   checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
-// Anything that escapes to the top level must reach the user with "Share with us" — an unhandled rejection in
+// Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
 // startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
 let crashReported = false;
 async function reportStartupCrash(err, where) {
@@ -2136,47 +2212,43 @@ ipcMain.handle('open-logs-folder', async () => {
   return !err;
 });
 
-// "Share with us" on the startup error panel. Builds a zip of the newest desktop log and the
-// newest backend-server log (tails, obvious secrets masked), opens the user's own mail client
-// with a short message to the team, and shows the zip in the file manager to attach — a
-// mailto: URL cannot carry an attachment, and nothing is sent until the user presses Send.
-// Recipient: the diagnosis mailbox (also where the in-app "Report issue" mail goes, flow_sdk/app/actions/report_action.py).
-// Subject: a fixed title + the date (supportSubject).
-const SUPPORT_EMAIL = 'diagnosis@langware.ai';
+// "Send Report" on the startup error panel. Builds a zip of the newest desktop log and the
+// newest backend-server log (tails, obvious secrets masked) and uploads it to the hub's
+// anonymous support-bundle intake (support-upload.js), which stores it in GCS and notifies
+// the team — nothing for the user to attach or mail (FLOWPAD-2251). `email` is the user's
+// optional reply address; empty means anonymous.
 
 /**
- * Build the support bundle and open the mail client (nothing is sent until the user presses Send).
- * `headline` finishes the sentence "Flowpad <version> on <platform> …" in the mail body.
+ * Build the support bundle and upload it. On success the submissionId is the reference the
+ * user can quote to support; on failure zipPath still points at the built zip, so the
+ * caller can offer "Export logs" as the offline fallback.
+ * `headline` says which failure this is ("window crashed", "did not start") in the bundle's info.txt.
  * Used by the error panel (IPC) and by every native failure dialog (failure-dialog.js).
  */
-async function shareDiagnostics(detail, headline = 'did not start') {
+async function shareDiagnostics(detail, headline = 'did not start', email = '') {
   try {
-    const { shell } = require('electron');
     const shownError = redact(String(detail || '')).slice(0, 4000);
+    const info = { ...supportInfo(), context: headline };
     const bundle = buildSupportZip({
       sources: supportSources(),
-      info: supportInfo(),
+      info,
       detail: shownError + supportFailureRecordText(),
     });
     log.info(`[share-logs] built ${bundle.zipPath} (${bundle.bytes} bytes; included: ${bundle.included.join(', ') || 'none'})`);
-    shell.showItemInFolder(bundle.zipPath);
-    const body = [
-      `Please attach this file (it is highlighted in the folder that just opened):`,
-      bundle.zipPath,
-      '',
-      `Flowpad ${app.getVersion()} on ${process.platform} ${process.arch} ${headline}.`,
-      '',
-      shownError.slice(0, 700),
-    ].join('\n');
-    await shell.openExternal(buildMailtoUrl({ to: SUPPORT_EMAIL, subject: supportSubject(), body }));
-    return { ok: true, zipPath: bundle.zipPath, bytes: bundle.bytes, included: bundle.included, missing: bundle.missing, to: SUPPORT_EMAIL };
+    const upload = await uploadSupportBundle({ cloudUrl: FLOWPAD_CLOUD_URL, zipPath: bundle.zipPath, email, info });
+    if (!upload.ok) {
+      log.warn(`[share-logs] upload failed: ${upload.error}`);
+      return { ok: false, error: upload.error, zipPath: bundle.zipPath };
+    }
+    log.info(`[share-logs] uploaded ${bundle.zipPath} as ${upload.submissionId}`);
+    return { ok: true, submissionId: upload.submissionId, zipPath: bundle.zipPath, bytes: bundle.bytes, included: bundle.included, missing: bundle.missing };
   } catch (err) {
     log.warn(`[share-logs] failed: ${err.message}`);
     return { ok: false, error: err.message };
   }
 }
 
-ipcMain.handle('share-logs', (_event, detail) => shareDiagnostics(detail, 'did not start'));
+ipcMain.handle('share-logs', (_event, detail, email) => shareDiagnostics(detail, 'did not start', email));
 
 ipcMain.on('quit-app', () => {
   app.quit();
@@ -2404,8 +2476,9 @@ ipcMain.handle('restart-backend', async () => {
 ipcMain.on('update-desktop-recovery', () => {});
 
 /**
- * "Export logs" on the failure panel: the same zip "Share with us" builds (support-bundle.js) saved where
- * the user chooses, for a user without a mail client — or whose policy blocks the mailto handler.
+ * "Export logs" on the failure panel: the same zip "Send Report" builds (support-bundle.js) saved where
+ * the user chooses — the manual way to get the logs to the team when the upload cannot reach the
+ * service (offline, blocked egress, or the intake itself failing).
  */
 async function exportDiagnostics(detail) {
   try {

@@ -2322,6 +2322,7 @@ msgid "Address book"
 msgstr "ספר כתובות"
 
 #: src/components/top-nav-bar/AppButton.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Admin"
 msgstr "ניהול"
 
@@ -2687,6 +2688,10 @@ msgstr "לאפשר סשני זמן אמת בלי לבקש אישור"
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Local Binding"
 msgstr "אפשור קשירה מקומית"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Allow login — who may sign in to this sandbox from a browser."
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Allow Unix Sockets"
@@ -3920,6 +3925,14 @@ msgstr "שרת הסיוג לא מגיב. אנא נסה שוב מאוחר יות�
 msgid "Background image"
 msgstr "תמונת רקע"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks"
+msgstr "משימות רקע"
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Background tasks are running"
+msgstr "משימות רקע רצות"
+
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Background tasks are still running. The session will switch over as soon as they finish."
 msgstr "משימות רקע עדיין רצות. הסשן יעבור ברגע שהן יסתיימו."
@@ -4468,6 +4481,7 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
@@ -4477,6 +4491,7 @@ msgstr ""
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -7133,8 +7148,10 @@ msgstr ""
 msgid "Could not start the sign-in."
 msgstr ""
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "Could not stop"
 msgstr "לא ניתן לעצור"
 
@@ -9398,6 +9415,10 @@ msgstr "עורך"
 #~ msgid "Editing system trigger"
 #~ msgstr "ערוך Trigger של מערכת"
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Editor"
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "Effective filters at this endpoint"
 msgstr "הסינונים הפעילים בנקודת הקצה הזו"
@@ -11425,6 +11446,10 @@ msgstr "מלא"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Full — complete rescan"
 msgstr "מלא — סריקה מחדש מלאה"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Full access"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Full environment variable dictionary"
@@ -14057,6 +14082,7 @@ msgstr "טוען השוואה…"
 
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
+#: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Loading conversation…"
 msgstr "טוען שיחה…"
 
@@ -14363,6 +14389,10 @@ msgstr "מחובר לחשבון"
 msgid "Logged out"
 msgstr "מנותק מהחשבון"
 
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Logging in opens the full FlowPad on this sandbox. Only the owner can change who may."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Logical line"
 msgstr "שורה לוגית"
@@ -14372,6 +14402,15 @@ msgstr "שורה לוגית"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "כניסה"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Login access"
+msgstr ""
+
+#. placeholder {0}: sandbox?.name || t`sandbox`
+#: src/pages/hub-home/LoginAccessDialog.tsx
+msgid "Login access for {0}"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
@@ -16824,6 +16863,10 @@ msgstr "לא נמצא אשף בשם הזה."
 msgid "No wizard named {0} is installed."
 msgstr ""
 
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Nobody can log in to this sandbox, including its owner."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -18659,6 +18702,7 @@ msgstr "דרוס"
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/data-sources/DataSourcePage.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/pages/hub-home/LoginAccessField.tsx
 msgid "Owner"
 msgstr "בעלים"
 
@@ -20168,6 +20212,10 @@ msgstr ""
 #: src/pages/entry/DiagnosisRequestLanding.tsx
 msgid "Read the result in FlowPad"
 msgstr "קריאת התוצאה ב-FlowPad"
+
+#: src/pages/hub-home/LoginAccessField.tsx
+msgid "Reader"
+msgstr ""
 
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
@@ -21912,6 +21960,7 @@ msgid "Sample prompts"
 msgstr "פרומפטים לדוגמה"
 
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "sandbox"
 msgstr "סנדבוקס"
 
@@ -21984,6 +22033,7 @@ msgstr "סנדבוקסים"
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/token-plan/SetBudgetSheet.tsx
+#: src/pages/hub-home/LoginAccessDialog.tsx
 msgid "Save"
 msgstr "שמור"
 
@@ -24761,6 +24811,10 @@ msgstr "עדיין עובד — ממתין לענן. זה עשוי לקחת דק
 msgid "Stop"
 msgstr "עצור"
 
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "Stop background work"
+msgstr "עצור עבודת רקע"
+
 #: src/components/rag/RagView.tsx
 msgid "Stop covering this folder"
 msgstr ""
@@ -25037,6 +25091,14 @@ msgstr "מנקה"
 msgid "Sweeping…"
 msgstr "מנקה…"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch and end background work"
+msgstr "עבור וסיים את העבודה ברקע"
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch anyway"
+msgstr "עבור בכל זאת"
+
 #: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/status-bar.tsx
@@ -25061,9 +25123,17 @@ msgstr "עבור למצב אפל"
 msgid "Switch to light mode"
 msgstr "עבור למצב אור"
 
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switch to the terminal?"
+msgstr "לעבור לטרמינל?"
+
 #: src/components/project-home/ProjectHomeMenu.tsx
 msgid "Switch workspace"
 msgstr ""
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "Switching to the terminal will end the background work. Continue?"
+msgstr "המעבר לטרמינל יסיים את העבודה ברקע. להמשיך?"
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 #: src/components/diagnose/diagnosis-details.tsx
@@ -25487,8 +25557,16 @@ msgid "The agent has asked a question — answer it in the terminal."
 msgstr "הסוכן שאל שאלה — יש לענות עליה בטרמינל."
 
 #: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
+msgid "The agent has background work running. It cannot move to the terminal with you."
+msgstr "לסוכן יש עבודה שרצה ברקע. היא לא יכולה לעבור איתך לטרמינל."
+
+#: src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice.tsx
 msgid "The agent is still working, or waiting for your answer in the terminal. The session will switch over as soon as it finishes."
 msgstr "הסוכן עדיין עובד, או מחכה לתשובה שלך בטרמינל. הסשן יעבור ברגע שהוא יסיים."
+
+#: src/components/entity-execution-panel/BackgroundWorkChip.tsx
+msgid "The agent left work running in the background. You can keep chatting. Stopping it ends that work."
+msgstr "הסוכן השאיר עבודה שרצה ברקע. אפשר להמשיך לשוחח. עצירה תסיים את העבודה הזו."
 
 #: src/pages/entry/launch-runner.ts
 msgid "The agent this link names isn't in the project's files."
@@ -28715,6 +28793,10 @@ msgstr "Whiteboard נוצרה"
 #: src/i18n/type-labels.ts
 msgid "Whiteboards"
 msgstr "לוחות ציור"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Who may log in to this sandbox"
+msgstr ""
 
 #~ msgid "Who this agent is — its system prompt."
 #~ msgstr "מי הוא הסוכן הזה — פרומפט המערכת שלו."
