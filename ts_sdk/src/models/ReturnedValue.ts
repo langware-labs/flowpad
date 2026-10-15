@@ -64,15 +64,25 @@ export interface CliResult extends ReturnedValue {
 export interface PromptResult extends ReturnedValue {
   /** The full reply, beside the declared `value`. */
   text?: string;
+  /** Files produced by a declared-output run, or selected for a channel reply. */
+  files?: string[];
 }
 
 export interface AskResult extends ReturnedValue {
   cancelled?: boolean;
 }
 
+/** Showing a place: delivery and usability are separate facts. */
+export interface NavigateResult extends ReturnedValue {
+  pointer?: string;
+  connection_id?: string | null;
+  delivered?: boolean;
+  verdict?: string | null;
+}
+
 export interface WizardResult extends ReturnedValue {
   /** Each step's own answer, by step id. A step never reached is absent. */
-  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult & DecisionVerdict>>;
+  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & NavigateResult & WizardResult & DecisionVerdict>>;
   /** The step whose `on_fail: stop` ended the run early; empty when none did. */
   stopped_at?: string;
 }
@@ -103,7 +113,11 @@ export const ANSWER_KIND = {
   ask: 'compute.returned.ask',
   wizard: 'compute.returned.wizard',
   decision: 'compute.returned.decision',
+  navigate: 'compute.returned.navigate',
 } as const;
+
+export const isNavigateResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is NavigateResult =>
+  answer?.spec_kind === ANSWER_KIND.navigate;
 
 /** Is this answer a process record? Read from its kind — not inferred from
  *  whichever field happens to be present (`command` is empty on a record that

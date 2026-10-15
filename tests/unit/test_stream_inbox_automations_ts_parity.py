@@ -1,7 +1,7 @@
 """Cross-language parity for what Phase B added and the TS SDK mirrors by hand.
 
 `AutomationRun` / `AutomationSummary` (`automation_spec.py` ↔ `automation-types.ts`) and
-`DecisionVerdict` (`returned_value_spec.py` ↔ `models/ReturnedValue.ts`): every field Python
+`ReturnedValue` and its subclasses (`returned_value_spec.py` ↔ `models/ReturnedValue.ts`): every field Python
 sends must be one TypeScript declares, or the UI silently never reads it.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.schema.data_spec.automation_spec import AutomationRun, AutomationSummary
-from flow_sdk.schema.data_spec.returned_value_spec import DecisionVerdict, ReturnedValue
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -41,7 +41,19 @@ def test_every_python_field_is_declared_in_typescript(spec, path, interface):
     assert not missing, f"{interface}: TypeScript does not declare {sorted(missing)}"
 
 
-def test_decision_verdict_fields_are_mirrored():
-    own = set(DecisionVerdict.model_fields) - set(ReturnedValue.model_fields)
-    declared = _ts_fields(_REPO / "ts_sdk/src/models/ReturnedValue.ts", "DecisionVerdict")
-    assert own <= declared, f"DecisionVerdict: TypeScript does not declare {sorted(own - declared)}"
+@pytest.mark.parametrize("spec", [ReturnedValue, *ReturnedValue.__subclasses__()], ids=lambda spec: spec.__name__)
+def test_flowcall_result_fields_and_kinds_are_mirrored(spec):
+    path = _REPO / "ts_sdk/src/models/ReturnedValue.ts"
+    own = set(spec.model_fields)
+    if spec is not ReturnedValue:
+        own -= set(ReturnedValue.model_fields)
+        assert f"'{spec.spec_kind}'" in path.read_text(), spec.__name__
+    declared = _ts_fields(path, spec.__name__)
+    assert own <= declared, f"{spec.__name__}: TypeScript does not declare {sorted(own - declared)}"
+
+
+def test_flowcall_exit_codes_are_mirrored():
+    text = (_REPO / "ts_sdk/src/models/ReturnedValue.ts").read_text()
+    body = re.search(r"export const ExitCode = \{(.*?)\}", text, re.DOTALL).group(1)
+    declared = {name: int(value) for name, value in re.findall(r"(\w+): (\d+)", body)}
+    assert declared == {code.name: int(code) for code in ExitCode}

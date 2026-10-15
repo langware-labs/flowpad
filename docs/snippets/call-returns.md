@@ -18,10 +18,36 @@ a message and correlates its answer. REST and CLI adapters expose those parts;
 `ApiResponse` is the transport envelope, not the FlowCall answer.
 
 The scope is participating work calls, not every SDK method. HTTP success says
-the request was handled; read the answer for the work's outcome. `send_turn()`
-answers whether a turn was **accepted**, while `run()` waits for its result.
+the request was handled; read the answer for the work's outcome. Python `AgenticProcess.send_turn()`
+answers whether a turn was **accepted**, while `AgenticProcess.run()` waits for its result.
 Expected unsuccessful outcomes are returned; only bad input and broken systems
 raise, unless the caller opts into `raise_for_status()`.
+
+## TypeScript calls
+
+`dataManager.callFlowAction<R>(actionInfo, transport)` returns the FlowCall answer
+for `http` (default), `ws`, or `prefer-ws`. It validates the shared answer fields
+and preserves subtype fields, nested values, and unknown tagged values. The generic
+`R` describes the expected subtype; it does not add runtime subtype validation.
+Raw and streaming responses are outside this method's contract.
+
+Expected outcomes remain values, including a valid legacy HTTP 409 busy answer
+(`NOT_YET`, `busy=true`, `ran=false`). Authentication, validation, network, and
+server errors still throw. Transport selection happens once: a failed WebSocket
+send is never replayed over HTTP. Existing `callAction*` methods retain their
+contracts, including the envelope returned by `callActionOverWS`.
+
+| Method | What its answer means |
+| --- | --- |
+| `ComputeOp.check()` / `ComputeOp.run(approved)` | The completed check or operation's outcome and value, through `callFlowAction`. |
+| `AgenticProcess.sendTurn(instruction, options?)` | Admission only; no optimistic message echo or completion wait. `workerSessionId` is optional. |
+| `Agent.launch(prompt)` | Launch admission; `executor` identifies the process to observe. |
+| Legacy `AgenticProcess.executeInstruction()` | Retains its message echo, readiness checks, and optional completion wait. |
+| Legacy `Agent.run(prompt)` | Retains its admission response and throwing HTTP error behavior. |
+
+For admission methods, `OK` means accepted, not completed. Observe the process
+identified by `executor` for subsequent work. `PromptResult.files` carries file
+paths; `NavigateResult.delivered` and `verdict` distinguish delivery from usability.
 
 **Every fence on this page is checked.** `tests/unit/test_call_returns_snippets.py`
 runs every `python` fence as written; a line ending `# <expected>` is asserted
