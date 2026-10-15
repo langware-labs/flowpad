@@ -100,7 +100,7 @@ EXPECTED = {
     "SPEC": "spec",
     "PROMPT": "prompt",
     "CONVERSATION": "conversation",
-    "WHITEBOARD": "whiteboard",
+    "CHART": "chart",
     "DATASET": "dataset",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",

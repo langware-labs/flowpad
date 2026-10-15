@@ -296,7 +296,7 @@ process_result, shell, notification, data_source, source_item, llm_endpoint
 A selection of registered types:
 
 ```
-task, skill, subagent, command, plan, markdown, spec, deck, whiteboard,
+task, skill, subagent, command, plan, markdown, spec, deck, chart,
 spreadsheet, dataset, claude_session, claude_md, claude_memory, claude_rules,
 claude_hook, claude_error, claude_debug_log, todo_file, mcp_server,
 codex_session, copilot_session, ...

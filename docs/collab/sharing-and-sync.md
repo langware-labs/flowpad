@@ -20,7 +20,7 @@ lives in the sibling docs linked at the end.
 
 There is exactly one share UI:
 `ui/src/components/share-to-conversation/ShareToConversationDialog.tsx`
-(component `~82-291`). Markdown, whiteboards, agentic-process sessions, raw
+(component `~82-291`). Markdown, charts, agentic-process sessions, raw
 files, a message forward, a task/plan/ask-help — all open *this* dialog. They
 differ only in the `ShareSource` they hand it.
 
@@ -52,7 +52,7 @@ The ~7 sources, each a thin factory:
 
 | Source (`share-sources.ts`) | What it attaches |
 | --- | --- |
-| `genericEntityShareSource` (`81-97`) | a doc/entity (markdown, whiteboard) as **one** TYPE_ID ref + the same ref as shared context. No fork, no Task. |
+| `genericEntityShareSource` (`81-97`) | a doc/entity (markdown, chart) as **one** TYPE_ID ref + the same ref as shared context. No fork, no Task. |
 | `agenticProcessShareSource` (`108-143`) | the session's `claude_session` transcript as the chip; shared context = `[transcript, process]` so backend mutual-linking joins process ↔ message. Optionally attaches the raw `.jsonl` (`isProcess` → transcript toggle). |
 | `fileShareSource` (`150-172`) | **raw bytes, no entity** — downloads via `fsManager`, rides as a FILE in the body bundle (same path as a pasted screenshot). `assetReferences`/`sharedContextEntities` are empty. |
 | `messageForwardShareSource` (`195-197`) | nothing — a `noAssetShareSource` (`179-188`) that only labels the share; the backend `forward` action owns packaging. Committed via the dialog's `commit` override. |

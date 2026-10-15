@@ -29,7 +29,7 @@ async function pickProjectId(request: APIRequestContext): Promise<string> {
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -177,9 +177,9 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     for (let i = 0; i < 5; i++) {
       await page.evaluate((n) => {
         const lib = (window as any).__excalidrawLib;
-        const api = (window as any).__whiteboardApi;
+        const api = (window as any).__chartApi;
         api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: n * 20, y: 10, width: 40, height: 40, label: { text: `R${n}` } }]) });
-        (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+        (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
       }, i);
       await page.waitForTimeout(80); // rapid, but < the 750ms debounce window
     }
@@ -208,12 +208,12 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     // Add a 1x1 PNG as an excalidraw file + an image element referencing it.
     const dataURL = await page.evaluate(() => {
       const lib = (window as any).__excalidrawLib;
-      const api = (window as any).__whiteboardApi;
+      const api = (window as any).__chartApi;
       const url = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
       api.addFiles([{ id: 'u4-file-1', dataURL: url, mimeType: 'image/png', created: Date.now() }]);
       const els = lib.convertToExcalidrawElements([{ type: 'image', x: 20, y: 20, width: 40, height: 40, fileId: 'u4-file-1' }]);
       api.updateScene({ elements: els });
-      (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+      (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
       return url;
     });
 
@@ -235,7 +235,7 @@ test.describe('Whiteboard — UI / UX (U1–U4)', () => {
     await openEditor(page, id);
     await page.waitForTimeout(1_500);
     const imgCount = await page.evaluate(() =>
-      (window as any).__whiteboardApi.getSceneElements().filter((e: any) => e.type === 'image').length,
+      (window as any).__chartApi.getSceneElements().filter((e: any) => e.type === 'image').length,
     );
     expect(imgCount, 'image element survives reload').toBeGreaterThanOrEqual(1);
     expect(await page.getByRole('heading', { name: /^Error$/ }).count()).toBe(0);

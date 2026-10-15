@@ -181,7 +181,7 @@ def register_discovery_functions(idx: FSIndexer) -> None:
     # is unknown.
     #
     # This is the ONLY discovery path for every flowpad-native asset — task, spec,
-    # deck, whiteboard, journey, graph_workflow, agent_trace, the two report types,
+    # deck, chart, journey, graph_workflow, agent_trace, the two report types,
     # prompt, plan, and INSTALLED (received) transcripts. Each of those used to
     # carry a bespoke walker over a hand-written ``.claude/<something>`` path;
     # those directories were never part of any harness's vocabulary, so the types

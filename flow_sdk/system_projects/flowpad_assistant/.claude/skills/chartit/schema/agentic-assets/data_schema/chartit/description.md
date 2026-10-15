@@ -1,12 +1,12 @@
-# chartit — interactive charts and the feedback on them
+# chartit — the data behind sequence charts, and the feedback on any chart
 
 | kind | a value is |
 |---|---|
-| `chartit.chart` | one interactive chart: its type, its data, where it is served, the session that builds it |
-| `chartit.sequence` | the data of a sequence (network flow) chart: participants and the messages between them |
+| `chartit.sequence` | a `format: sequence` Chart's `chart.json`: participants and the messages between them |
 | `chartit.participant` | one lifeline of a sequence chart |
-| `chartit.message` | one arrow of a sequence chart (from = to: a self-call) |
-| `chartit.feedback` | one comment a reviewer left on a chart, optionally on one element of it |
+| `chartit.message` | one arrow — or, with `ref`, a sub-flow block opening another Chart |
+| `chartit.feedback` | one comment a reviewer left on a Chart (any format), optionally on one element of it |
 
-Charts live in the project's `charts` dataset (row key = the chart's slug); feedback in `chart-feedback`
-(row key = `<chart>-<base36 time>`). Written only through the SDK / `dm_ctl`.
+Charts themselves are Flowpad **Chart** entities (`agentic-assets/chart/<name>/`), not rows. Feedback
+lives in the project's `chart-feedback` dataset (row key = `<chart name>-<base36 time>`), written only
+through the SDK / `dm_ctl`.

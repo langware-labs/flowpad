@@ -112,6 +112,12 @@ Keep these apart when naming anything new:
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
 
+**Chart** (`flow_sdk/builtin/chart.py`, `agentic-assets/chart/<name>/`) is ours: ONE visual
+asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source file it keeps
+(`chart.json` / `board.json` / the ```mermaid``` block of `CHART.md`). It replaced the
+WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
+data-viz chart over a dataset, and not the `graph-view`.
+
 ## Contexts — three different things
 
 | Name | What it holds | Owner / scope |

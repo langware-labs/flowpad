@@ -57,7 +57,7 @@ def test_builtin_types_have_dispatch_slots_wired():
 
     for t in (
         "skill", "markdown", "plan", "claude_md", "subagent", "command", "task",
-        "whiteboard", "spec", "claude_session", "codex_session",
+        "chart", "spec", "claude_session", "codex_session",
         "markdown_index", "project", "claude_memory", "claude_rules",
     ):
         info = SchemaRegistry.get(t)
@@ -67,12 +67,12 @@ def test_builtin_types_have_dispatch_slots_wired():
 
 
 def test_asset_hash_fn_only_for_folder_inner_file_types():
-    """Folder-backed asset types (skill, whiteboard, task) carry a custom
+    """Folder-backed asset types (skill, chart, task) carry a custom
     asset_hash_fn; flat-file types fall back to the generic mtime hash."""
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
     assert SchemaRegistry.get("skill").asset_hash_fn is not None
-    assert SchemaRegistry.get("whiteboard").asset_hash_fn is not None
+    assert SchemaRegistry.get("chart").asset_hash_fn is not None
     assert SchemaRegistry.get("task").asset_hash_fn is not None
     assert SchemaRegistry.get("markdown").asset_hash_fn is None
 

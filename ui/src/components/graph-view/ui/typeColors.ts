@@ -16,7 +16,7 @@ const HEX_COLORS: Record<string, string> = {
   claude_md: '#84cc16',
   claude_memory: '#ec4899',
   claude_rules: '#ef4444',
-  whiteboard: '#ec4899',
+  chart: '#ec4899',
   bookmark: '#a855f7',
   comment: '#14b8a6',
   command: '#f43f5e',

@@ -26,7 +26,7 @@ vi.mock('@src/hooks/use-asset-types', () => ({
   useAssetTypes: (options: { allUserTypes?: boolean }) => ({
     types: [
       { type_name: 'agent', creatable: true },
-      ...(options.allUserTypes ? [{ type_name: 'whiteboard', creatable: true }] : []),
+      ...(options.allUserTypes ? [{ type_name: 'chart', creatable: true }] : []),
     ],
   }),
 }));
@@ -78,9 +78,9 @@ describe('quick-create adoption sections', () => {
 
   it('offers advanced creation types when the host requests all user types', () => {
     const { rerender } = render(<TooltipProvider><QuickCreatePanel {...handlers} sections={['write']} /></TooltipProvider>);
-    expect(screen.queryByRole('button', { name: 'Whiteboard', exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Chart', exact: true })).not.toBeInTheDocument();
     rerender(<TooltipProvider><QuickCreatePanel {...handlers} sections={['write']} allUserTypes /></TooltipProvider>);
-    expect(screen.getByRole('button', { name: 'Whiteboard', exact: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Chart', exact: true })).toBeInTheDocument();
   });
 
   it('places the host Vibe launcher before provider tiles under Launch', () => {
