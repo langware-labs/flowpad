@@ -4475,7 +4475,6 @@ msgstr ""
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11086,7 +11085,6 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
 #: src/components/webapp-display/useWebappFix.ts
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fix the web app"
 msgstr "إصلاح تطبيق الويب"
 
@@ -11105,10 +11103,6 @@ msgstr "معالجة هذه المشاكل تقوي المهارة لكل تشغ
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "جارٍ الإصلاح…"
-#: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "إصلاح الإعداد"
-
 
 #~ msgid "Flow answers from its own box · shown here"
 #~ msgstr ""
@@ -11121,11 +11115,6 @@ msgstr "رسالة Flow"
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
-#. placeholder {0}: fix.toolCount
-#: src/components/project-setup/SetupFailureActions.tsx
-msgid "Fixing the setup… ({0} steps)"
-msgstr "جارٍ إصلاح الإعداد… ({0} خطوات)"
-
 msgstr "Flowpad"
 
 #~ msgid "FlowPad"
@@ -18148,7 +18137,6 @@ msgid "Open project in cloud"
 msgstr "فتح المشروع في السحابة"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Open project list"
 msgstr "فتح قائمة المشاريع"
 
@@ -24746,7 +24734,6 @@ msgid "Status"
 msgstr "الحالة"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Status & cleanup"
 msgstr ""
 
@@ -25767,14 +25754,6 @@ msgstr "الضيف"
 #: src/components/footer.tsx
 msgid "The guides couldn't load ({guidesFailed}) — a person can still help."
 msgstr ""
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "تعذّر بدء الإصلاح."
-
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 msgid "The health check did not answer"
@@ -27338,7 +27317,8 @@ msgstr "المشغّلات"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -28886,7 +28866,6 @@ msgid "Wizard"
 msgstr "معالج"
 
 #: src/components/wizard/WizardHost.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Wizard close failed"
 msgstr "فشل إغلاق المعالج"
 
@@ -29437,3 +29416,19 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "Fix the setup"
+msgstr "إصلاح الإعداد"
+
+#: src/components/project-setup/SetupFailureActions.tsx
+msgid "Fixing the setup…"
+msgstr "جارٍ إصلاح الإعداد…"
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not start."
+msgstr "تعذّر بدء الإصلاح."

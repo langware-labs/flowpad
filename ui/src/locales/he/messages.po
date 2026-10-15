@@ -4475,7 +4475,6 @@ msgstr ""
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -11086,7 +11085,6 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/webapp-display/useWebappFix.ts
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Fix the web app"
 msgstr "תקנו את אפליקציית הווב"
 
@@ -11105,10 +11103,6 @@ msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עת�
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fixing…"
 msgstr "מתקן…"
-#: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "תיקון ההגדרה"
-
 
 #~ msgid "Flow answers from its own box · shown here"
 #~ msgstr ""
@@ -11121,11 +11115,6 @@ msgstr "הודעת זרימה"
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/DiscoverChrome.tsx
 msgid "Flowpad"
-#. placeholder {0}: fix.toolCount
-#: src/components/project-setup/SetupFailureActions.tsx
-msgid "Fixing the setup… ({0} steps)"
-msgstr "מתקן את ההגדרה… ({0} צעדים)"
-
 msgstr "Flowpad"
 
 #~ msgid "FlowPad"
@@ -18148,7 +18137,6 @@ msgid "Open project in cloud"
 msgstr "פתחו את הפרויקט בענן"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Open project list"
 msgstr "פתיחת רשימת הפרויקטים"
 
@@ -24742,7 +24730,6 @@ msgid "Status"
 msgstr "סטטוס"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
 msgid "Status & cleanup"
 msgstr ""
 
@@ -25763,14 +25750,6 @@ msgstr "האורח"
 #: src/components/footer.tsx
 msgid "The guides couldn't load ({guidesFailed}) — a person can still help."
 msgstr ""
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "לא ניתן היה להפעיל את התיקון."
-
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 msgid "The health check did not answer"
@@ -27334,7 +27313,8 @@ msgstr "טריגרים"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
+#: src/components/project-setup/ProjectLoadDialog.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -28882,7 +28862,6 @@ msgid "Wizard"
 msgstr "אשף"
 
 #: src/components/wizard/WizardHost.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Wizard close failed"
 msgstr "סגירת האשף נכשלה"
 
@@ -29433,3 +29412,19 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "Fix the setup"
+msgstr "תיקון ההגדרה"
+
+#: src/components/project-setup/SetupFailureActions.tsx
+msgid "Fixing the setup…"
+msgstr "מתקן את ההגדרה…"
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not start."
+msgstr "לא ניתן היה להפעיל את התיקון."
