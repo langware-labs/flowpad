@@ -132,10 +132,10 @@ class SetupRequirementSpec(DataSpec):
 
     @property
     def missing(self) -> list[SetupVarSpec]:
-        """What is still to provide: every absent value, and of a ONE_OF group its members only while
-        none of them is there (any one settles it)."""
+        """What is still to provide: every absent value, and of a ONE_OF group every member while the group is
+        unsettled (any one settles it) — a way already there is still offered, so the person can pick it."""
         held = group_held(self.vars, self.setup_choice)
-        return [v for v in self.vars if not v.present and not (v.is_one_of and held)]
+        return [v for v in self.vars if (not held if v.is_one_of else not v.present)]
 
     @property
     def is_oauth(self) -> bool:
