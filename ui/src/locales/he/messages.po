@@ -10852,10 +10852,13 @@ msgstr "רשומה בפיד"
 msgid "Feedback"
 msgstr "משוב"
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: {0}"
-msgstr "המשוב כבוי: {0}"
+#~ msgid "Feedback is off: {0}"
+#~ msgstr "המשוב כבוי: {0}"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: {offReason}"
+msgstr ""
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
@@ -26007,16 +26010,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
-#~ msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. The step above says what it found."
-msgstr ""
+#~ msgid "The fixer could not repair this setup. The step above says what it found."
+#~ msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not start."
-#~ msgstr "לא ניתן היה להפעיל את התיקון."
+msgid "The fixer could not start."
+msgstr "לא ניתן היה להפעיל את התיקון."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"

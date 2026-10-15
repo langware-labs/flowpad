@@ -10937,10 +10937,13 @@ msgstr "Feed Entry"
 msgid "Feedback"
 msgstr "Feedback"
 
-#. placeholder {0}: err instanceof Error ? err.message : String(err)
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
-msgid "Feedback is off: {0}"
-msgstr "Feedback is off: {0}"
+#~ msgid "Feedback is off: {0}"
+#~ msgstr "Feedback is off: {0}"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: {offReason}"
+msgstr "Feedback is off: {offReason}"
 
 #: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
@@ -26247,16 +26250,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
-#~ msgstr "The fixer could not repair this setup. Open the process to see what it found."
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "The fixer could not repair this setup. Open the process to see what it found."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. The step above says what it found."
-msgstr "The fixer could not repair this setup. The step above says what it found."
+#~ msgid "The fixer could not repair this setup. The step above says what it found."
+#~ msgstr "The fixer could not repair this setup. The step above says what it found."
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not start."
-#~ msgstr "The fixer could not start."
+msgid "The fixer could not start."
+msgstr "The fixer could not start."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"

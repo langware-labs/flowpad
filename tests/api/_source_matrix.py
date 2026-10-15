@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import _common, source_cmd
+from flow_sdk.core.oauth import provider_probe
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module, read_manifest
 
 NAMES = sorted(p.name for p in SHIPPED_ROOT.iterdir() if (p / "data_driver.json").is_file())
@@ -127,6 +128,12 @@ async def run_case(name: str, driver, client, monkeypatch, tmp_path) -> None:
     for leftover in await DataSource.get_all({"provider": name}):
         await leftover.delete()
 
+    # Each case doubles its provider's credentials; the machine's sign-in for its connector is part of
+    # that double. Verify asks it, and a source still owing a sign-in is refused a sync.
+    async def signed_in(_provider):
+        return {"ok": True}
+
+    monkeypatch.setattr(provider_probe, "connection_answer", signed_in)
     with cases.case(monkeypatch, tmp_path) as case:
         source_id = await driver.create(name, case["config"], case.get("fields", {}))
         assert "ready" in await driver.verify(source_id)

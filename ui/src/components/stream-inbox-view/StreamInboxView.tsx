@@ -729,7 +729,7 @@ export function StreamInboxView({
   // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
   // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
   // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
-  // One PAGE, not the whole inbox: the view's latest N (`before` null = now, live) or the N older
+  // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
   // than the dock URL's `before`. A body search lists its hits instead.
   const { navigation, currentDock } = useDockNavigation();
   const pageBefore = currentDock?.pageBefore ?? null;
@@ -812,7 +812,7 @@ export function StreamInboxView({
   // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
 
-  // Refresh = read every channel of this inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
+  // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
   // A channel waiting on setup or paused is not read; it says so on its own strip.
   const handleRefresh = useCallback(async () => {
     setFetching(true);
