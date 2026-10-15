@@ -7,9 +7,10 @@ description: 'Turns a product idea into a clickable HTML mock of the user journe
   per-screen feedback box (text + image) whose comments are saved as typed rows and
   sent back to this session in one Submit. The mock and its feedback are typed data
   (kinds mockify.mock / mockify.feedback, built with the data-management skill). Two
-  modes: fast (HTML in the product''s tokens, minutes) and real (built from a running
-  app''s own captured DOM and CSS, checked side by side so it looks exactly like the
-  app). Use for "mock this flow", "show me the UX", "prototype the journey", "how
+  modes: real, the default (built from a running app''s own captured DOM and CSS,
+  checked side by side so it looks exactly like the app), and fast (HTML in the
+  product''s tokens, minutes — only for a product that does not run here, or when
+  the user asks for a rough sketch). Use for "mock this flow", "show me the UX", "prototype the journey", "how
   would the user do X — show me", "make a clickable mock", or a design discussion that
   needs screens before code; also when feedback on a mock arrives. NOT for a working
   app (web-app-builder), a one-page report or chart (html-builder), or slides (decker).'
@@ -21,24 +22,28 @@ A mock exists to get a decision. It shows the journey screen by screen, in the p
 the details being discussed written ON the screens; the reviewer walks it, leaves comments per screen,
 and submits them back to you. It is not the product: no backend of its own, no real data.
 
-**A mock is data.** Its journey is a `mockify.mock` row in the project's `mocks` dataset; every comment
+**A mock never lives in the repo.** Every mock, its kinds, its datasets and its feedback live in the
+**mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo.
+Nothing is written into the repo until the person presses **💾 Save** in the journey bar (or asks for it in
+words) — then §8 copies that one mock in. Never `install_data.py`, `DM ds-put` or a mock folder into the repo.
+
+**A mock is data.** Its journey is a `mockify.mock` row in the mock project's `mocks` dataset; every comment
 is a `mockify.feedback` row in `mock-feedback` (text, optional image, optional decision id, status).
 The page reads and writes those rows through the Flowpad SDK. Every data step follows the
 **data-management** skill — load it, and obey its ground rules (probe first, rows only through
 `dm_ctl` / the SDK, never by hand). `DM` below is its `dm_ctl` shell function.
 
-## 0. Once per project: the kinds and datasets
+## 0. The mock project (once per repo, again whenever the skill's kinds change)
 
 ```bash
-python3 -I <this skill>/scripts/install_data.py <project root>      # prints the next commands
-flow schema apply <project>/agentic-assets/data_schema               # exit 0, every status ok
-flow record index <project>/agentic-assets/dataset/mocks --types dataset
-flow record index <project>/agentic-assets/dataset/mock-feedback --types dataset
+"$FLOWPAD_PYTHON" <this skill>/scripts/mock_project.py ensure <repo root>
+# {"root": "<mock project>", "project_id", "ns", "mocks": "<…/dataset/mocks>", "feedback": "<…/dataset/mock-feedback>", "webapps": "<…/webapp>"}
 ```
 
-It copies `schema/` (the four kinds) under the project's own `ns` and writes the two `dataset.json`.
-No `ns` yet: data-management `schema` mode, Gate 1. First time on this Flowpad: prove the kinds in a
-data-management probe (good value fits, a broken one is refused) before installing.
+It makes (or finds) `$TMPDIR/mockify/<repo folder name>/`, registers it as a project, installs the kinds
+(`schema/`, in the repo's namespace) and the `mocks` / `mock-feedback` datasets, applies and indexes them.
+Repeat it any time: it finds the same project. `<mock project>` below is its `root`. First time on this
+Flowpad: prove the kinds in a data-management probe (good value fits, a broken one is refused).
 
 ## 1. Pin the journey — as the mock row
 
@@ -54,7 +59,7 @@ done      Flowpad  Listening              PRs arrive as conversations
 ```
 
 ```bash
-DM ds-put <project>/agentic-assets/dataset/mocks <slug> '{"input": {"title": "…", "mode": "fast",
+DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title": "…", "mode": "real",
   "status": "draft", "session": "<this process id>", "journey": [{"id": "home", "app": "Flowpad",
   "title": "Home", "note": "…", "decisions": [{"id": "D1", "question": "…", "shown": "…"}]}, …]}}'
 ```
@@ -66,30 +71,38 @@ DM ds-put <project>/agentic-assets/dataset/mocks <slug> '{"input": {"title": "�
   branch's "Try again") says so with `next: <step id>`. Back / Next follow the main path; branches are reached from
   their screen's own buttons or the screens list.
 - Decisions get ids unique across the mock (D1, D2…) in the step that asks them.
-- `session` is YOUR agentic process id (`flow context`) — where Submit sends the feedback.
+- `session` is YOUR agentic process id (`flow context`) — where Send delivers the feedback.
+- `folder` is the mock's web app folder in the mock project (absolute) — the review panel's Open folder shows it.
+- `repo` is the repo root (absolute) — where **💾 Save** puts the mock (§8).
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
-## 2. Pick the mode
+## 2. Pick the mode — real is the default
 
 | mode | when | fidelity |
 |---|---|---|
-| **fast** | the screens are new, in a third-party product, or a first rough pass | recognisable |
-| **real** | the screens extend an app that runs here (Flowpad, the user's app) | identical |
+| **real** (default) | any screen of an app that runs here — Flowpad, the user's app — new, redesigned or existing | identical |
+| **fast** | only a product that does not run here (a third-party site), or when the user asks for a rough sketch | recognisable |
 
-When the user says the mock "doesn't look like our app", that is real mode — do not restyle by hand again.
+Use **real** unless one of fast's two reasons holds. A screen being "new" is not one: every redesigned
+screen is new, and it still has to be built from the app's own components. `/sdk/flowpad.css` carries
+tokens only (colours, radius, theme) — no button, card, tab, badge or dialog — so a fast Flowpad screen is
+hand-made components that match the colours and miss the shapes. When the user says the mock "doesn't
+look like our app", it was built fast: rebuild it real — do not restyle by hand again.
 
-- **fast**: copy `templates/fast-mock/` to `<project>/agentic-assets/webapp/mock-<slug>/`, fill
-  `webapp.json`, set `MOCKIFY.key = '<slug>'`, one `<section data-step="<id>">` per step. Flowpad screens use
-  `/sdk/flowpad.css`; another product gets its recognisable frame (colours, font, logo text).
 - **real**: follow `reference/real-capture.md` — capture the live app's DOM and CSS on a test instance,
   build new screens by cloning its real elements and using its components' own classes (checked with
-  `scripts/check_classes.py`), assemble with `scripts/build_mock.py --key <slug>` into the same webapp folder.
+  `scripts/check_classes.py`), assemble with `scripts/build_mock.py --key <slug> --project <project_id>` into the same webapp folder.
+- **fast**: copy `templates/fast-mock/` to `<mock project>/agentic-assets/webapp/mock-<slug>/`, fill
+  `webapp.json`, set `MOCKIFY.key = '<slug>'` and `MOCKIFY.project = '<project_id>'` (from §0), one `<section data-step="<id>">` per step. The product gets its
+  recognisable frame (colours, font, logo text); a Flowpad sketch uses `/sdk/flowpad.css` for its tokens.
 
 ## 3. The journey bar — always, never hand-made
 
 Paste `assets/journey-bar.js` inline as the last script (build_mock.py does it in real mode) and set
-`MOCKIFY.key = '<slug>'`. It reads the mock row and gives the reviewer Restart, Back / Next, where they
+`MOCKIFY.key = '<slug>'` and `MOCKIFY.project` (build_mock.py `--project <project_id>`). It reads the mock row and gives the reviewer Restart, Back / Next, where they
 are, the screens list, per-screen feedback and Submit — contract and controls: `assets/journey-bar.md`.
+Its 🎯 picker (where the MOCK label was) lets the reviewer point at one element and comment on it, like
+DevTools' element picker; the comment keeps where it is and a numbered bubble marks it on the screen.
 Every control on a screen that moves the journey says where it leads with **`data-next="<step id>"`** — a
 click on it then moves the journey by itself; no `onclick` needed.
 
@@ -130,20 +143,22 @@ Never report a mock you have not looked at.
 
 `flow show webapp` with the served app, then reply with: the step list (one line each), what is real vs
 invented, the open decisions (D1…), and one line: "Walk it, press 💬 on any screen to leave a comment or
-an image, and **Submit** when done — it comes back to me." Mention anything the real app did along the
+an image, then **Review & send**: you see exactly what I will receive, and Send delivers it." Mention anything the real app did along the
 way that looked wrong.
 
-## 7. Reading feedback (when a Submit prompt arrives)
+## 7. Reading feedback (when a Send prompt arrives)
 
 The prompt names the mock and its ref. Read the comments as rows:
 
 ```bash
-DM ds-rows <project>/agentic-assets/dataset/mock-feedback \
+DM ds-rows <mock project>/agentic-assets/dataset/mock-feedback \
   --match '{"input.mock": "<mock ref>", "input.status": "submitted"}'
 ```
 
 Each row: `step`, `text`, `decision` (a D-id it answers), `screenshot` (an image — it is on disk as
-`<row folder>/input/screenshot.<ext>`; open it), `created`. Then:
+`<row folder>/input/screenshot.<ext>`; open it), `created`, and — when the reviewer pointed at an element —
+`anchor` (`selector` to find it in the screen's HTML, `label`, its `html`, its position) and `element_shot`
+(`input/element_shot.png`: the element as it looked). Change THAT element; the selector is where to look. Then:
 
 1. Answer per step and per decision, in the mock's journey order — say what you will change and what
    you will not, and why.
@@ -152,3 +167,18 @@ Each row: `step`, `text`, `decision` (a D-id it answers), `screenshot` (an image
 3. Set each comment you acted on to `addressed` (`DM ds-put-many` with their versions); set the mock to
    `revised`, then `in_review` again once re-shown.
 4. Verify again (§5) and re-show.
+
+## 8. Save to repo (only when the person asks)
+
+The journey bar's **💾 Save** shows where the mock will go and, on confirm, sends you one line:
+`Save mock "<slug>" to the repo: … mock_project.py save <repo> <slug>`. Run exactly that:
+
+```bash
+"$FLOWPAD_PYTHON" <this skill>/scripts/mock_project.py save <repo root> <slug>
+# {"saved": "<repo>/agentic-assets/webapp/mock-<slug>", "files": [...]}
+```
+
+It copies ONE mock into `<repo>/agentic-assets/webapp/mock-<slug>/`: the page and its assets, `mock.json`
+(the mock row's value) and the journey written into the page, so it navigates with no datasets. Feedback,
+datasets and kinds stay in the mock project. Tell the person the folder and that it is NOT committed —
+committing is theirs to ask for.
