@@ -10,6 +10,10 @@
     "here": {
       "shape": "?navigation.here",
       "description": "Where they were when they typed it."
+    },
+    "replay": {
+      "shape": "?navigator.replay",
+      "description": "Replay recorded search matches instead of searching -- what an eval sends. Absent: the navigator searches."
     }
   }
 }

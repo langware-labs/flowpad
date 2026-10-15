@@ -1,7 +1,7 @@
 """The SmartNavigator eval: each example through the official inference, judged against its golds.
 
-The input is the example's own ``navigator.request`` (utterance + here) and its RECORDED search
-candidates -- never this machine's search -- so a run is judged on the options the example was
+The input is the example's own ``navigator.request`` (utterance + here) with its RECORDED search
+candidates, through the ``smart-navigator`` FlowCall block -- never this machine's search -- so a run is judged on the options the example was
 labelled against. The decision API is whatever the hub offers (``versions`` names it).
 """
 
@@ -10,7 +10,7 @@ from typing import get_args
 
 from flow_sdk.decision import DecisionFailure, failure_detail
 from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, verdict_of
-from flow_sdk.navigation import MIN_CONFIDENCE, code_version, decide_run, same_place
+from flow_sdk.navigation import MIN_CONFIDENCE, call, code_version, same_place
 
 
 def _right(target, golds):
@@ -20,11 +20,12 @@ def _right(target, golds):
 
 async def evaluate_example(row):
     recorded = row.context.candidates if row.context else []
-    out, answer = await decide_run(
-        row.input.model_dump(mode="json", exclude_none=True),
-        # Live: this machine's search answers again (what a search change is measured with).
-        candidates=None if _live() else [c.model_dump(mode="json", exclude_none=True) for c in recorded],
-    )
+    request = row.input.model_dump(mode="json", exclude_none=True)
+    # Live: this machine's search answers again (what a search change is measured with).
+    if not _live():
+        request["replay"] = {"candidates": [c.model_dump(mode="json", exclude_none=True) for c in recorded]}
+    answer = await call(request)  # the smart-navigator block: always OK, the outcome in value
+    out = answer.value
     trace = EvalTrace(kind="navigator.run", value=answer.run.model_dump(mode="json", exclude_none=True))
     # The decision API did not answer (quota, no endpoint, outage): nothing was judged, so the
     # example is an error -- never an abstention that would pass for the navigator's own choice.

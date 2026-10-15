@@ -117,11 +117,10 @@ async def test_a_file_target_is_navigated_by_the_ui_not_asked(hub):
 
 
 async def _decide_and_log(utterance: str) -> None:
-    from flow_sdk.core.navigation_decision import decide_run
+    """One decision through the smart-navigator block, whose FlowCall log writes the row."""
+    from flow_sdk.core.navigation_decision import call
 
-    request = {"utterance": utterance, "here": HERE}
-    outcome, answer = await decide_run(request)
-    navigation_log.log_soon(request, outcome, answer)
+    await call({"utterance": utterance, "here": HERE})
     await navigation_log.drain()
 
 

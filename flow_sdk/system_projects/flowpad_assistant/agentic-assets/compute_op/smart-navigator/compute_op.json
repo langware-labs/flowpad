@@ -1,0 +1,18 @@
+{
+  "type": "compute_op",
+  "id": "18d298ae-9bbf-459f-b06d-75d728f6f543",
+  "name": "smart-navigator",
+  "label": "Smart navigator",
+  "description": "Routes what was typed into the magic line: a dock to open, or the prompt for the assistant.",
+  "subkind": "python",
+  "exe_data": {},
+  "input": "navigator.request",
+  "output": "navigation.outcome",
+  "log": {
+    "dataset_kind": "navigator.dataset",
+    "name": "smart-navigation-log",
+    "title": "SmartNavigationLog",
+    "enabled_by": "preferences.advanced.smart_navigation_log",
+    "row": "log_row"
+  }
+}

@@ -1647,17 +1647,17 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="navigation-decision", methods=["post"])
     async def _navigation_decision_action(self) -> ApiResponse:
         """``POST {utterance, here?}`` -> ``navigation.outcome``: a dock to navigate, OR a prompt
-        for the assistant (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
+        for the assistant -- the shipped ``smart-navigator`` FlowCall block (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
         tab that asked is (``get_request_connection_info``) -- its own ``browser_context`` -- so the
         UI sends only what was typed.
         Never fails: anything missing or unsure is the prompt, and with no decision API on the
         hub that is every answer. With SmartNavigationLog on, the decision is appended to the
-        SmartNavigationLog dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
+        SmartNavigationLog dataset AFTER this answers -- by the block (``flow_sdk.core.navigation_log``)."""
         from pydantic import ValidationError  # noqa: PLC0415
 
         from flow_sdk.core.navigation import here_from, kind  # noqa: PLC0415
-        from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
-        from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415
+        from flow_sdk.core.navigation_decision import call as call_navigator  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import get_request_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
@@ -1672,10 +1672,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             here = (await here_from(info.browser_context if info else {}, navigator=True)).model_dump(
                 mode="json", exclude_none=True
             )
-        request = {"utterance": str(body.get("utterance") or ""), "here": here}
-        outcome, answer = await decide_run(request)
-        log_soon(request, outcome, answer)
-        return ApiSuccessResponse(data=outcome.model_dump(mode="json", exclude_none=True))
+        utterance = str(body.get("utterance") or "")
+        request = {"utterance": utterance, "here": here}
+        answer = await call_navigator(request)  # logs the decision itself
+        if answer.exit_code != ExitCode.OK or not answer.has_value:
+            # The block always answers a value; anything else is a broken install -- still the prompt.
+            logging.warning("smart-navigator answered nothing usable: %s", answer.detail)
+            return ApiSuccessResponse(data={"decision": {"route": "agentic"}, "candidates": [], "prompt": utterance})
+        return ApiSuccessResponse(data=answer.value.model_dump(mode="json", exclude_none=True))
 
     @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
     async def _llm_endpoint_action(self) -> ApiResponse:

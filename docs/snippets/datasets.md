@@ -118,13 +118,13 @@ until someone reviews it.
 ```python
 from flow_sdk import evals
 from flow_sdk.core import navigation_log
-from flow_sdk.core.navigation_decision import decide_run
+from flow_sdk.navigation import call
 from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
 
 write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
 request = {"utterance": "summarize the README", "here": {"view": "home"}}
-outcome, answer = await decide_run(request)      # what the navigation-decision action runs
-await navigation_log.log(request, outcome, answer)  # ...and then, after answering, this
+answer = await call(request)       # the smart-navigator block -- what the navigation-decision action runs
+await navigation_log.drain()       # its FlowCall log writes the row after answering
 
 log = await navigation_log.dataset()               # SmartNavigationLog
 row = log.read_rows()[-1]
