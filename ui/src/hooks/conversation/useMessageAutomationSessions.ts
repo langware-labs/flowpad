@@ -60,11 +60,17 @@ function sessionConversationId(process: AgenticProcess): string | null {
   return target.startsWith('conversation-') ? target.slice('conversation-'.length) : null;
 }
 
-/** The newest automation session per key (newest wins: a rule run twice on one message shows its latest). */
-function newestBy(processes: readonly AgenticProcess[], keyOf: (p: AgenticProcess) => string | null): Map<string, AgenticProcess> {
+const byRule = (p: AgenticProcess) => !!automationLineage(p);
+const byHand = (p: AgenticProcess) => !automationLineage(p);
+
+/** The newest session per key among those `keep` admits (newest wins: a rule run twice on one message shows its latest). */
+function newestBy(
+  processes: readonly AgenticProcess[],
+  keyOf: (p: AgenticProcess) => string | null,
+  keep: (p: AgenticProcess) => boolean = byRule,
+): Map<string, AgenticProcess> {
   const out = new Map<string, AgenticProcess>();
-  // Most sessions on a conversation were not started by a rule: drop those before ordering the rest.
-  const started = processes.filter((p) => automationLineage(p));
+  const started = processes.filter(keep);
   started.sort((a, b) => String(a.created_date ?? '').localeCompare(String(b.created_date ?? '')));
   for (const process of started) {
     const key = keyOf(process);
@@ -81,20 +87,23 @@ const signature = (sessions: ReadonlyMap<string, AgenticProcess>): string =>
 
 /** The newest sessions per key, as ONE map for as long as nothing a reader shows has changed: the live query
  *  hands a new list on every change to any session of the conversation, and a new map would re-walk the feed. */
-function useNewestBy(processes: readonly AgenticProcess[], keyOf: (p: AgenticProcess) => string | null): ReadonlyMap<string, AgenticProcess> {
+function useNewestBy(
+  processes: readonly AgenticProcess[],
+  keyOf: (p: AgenticProcess) => string | null,
+  keep: (p: AgenticProcess) => boolean = byRule,
+): ReadonlyMap<string, AgenticProcess> {
   const held = useRef<{ map: ReadonlyMap<string, AgenticProcess>; signature: string } | null>(null);
   return useMemo(() => {
-    const map = newestBy(processes, keyOf);
+    const map = newestBy(processes, keyOf, keep);
     const sig = signature(map);
     if (held.current?.signature !== sig) held.current = { map, signature: sig };
     return held.current.map;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `keyOf` is a module constant at both call sites
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `keyOf` and `keep` are module constants at every call site
   }, [processes]);
 }
 
-export function useMessageAutomationSessions(
-  conversationId: string | null | undefined,
-): ReadonlyMap<string, AgenticProcess> {
+/** Every session keyed to this conversation (`target_typeid_str`) — live. */
+function useConversationProcesses(conversationId: string | null | undefined): readonly AgenticProcess[] {
   const request = useMemo(
     () =>
       new QueryRequest({
@@ -106,7 +115,25 @@ export function useMessageAutomationSessions(
     [conversationId],
   );
   const { data: processes = NONE } = useEntitiesQuery<AgenticProcess>(request, { enabled: !!conversationId });
-  return useNewestBy(processes, sessionMessageId);
+  return processes;
+}
+
+/** The newest session per message, both kinds from ONE live query: started by a rule (`automation`) and
+ *  started by hand from the message's ⋮ menu (`manual`). */
+export function useMessageSessions(conversationId: string | null | undefined): {
+  automation: ReadonlyMap<string, AgenticProcess>;
+  manual: ReadonlyMap<string, AgenticProcess>;
+} {
+  const processes = useConversationProcesses(conversationId);
+  const automation = useNewestBy(processes, sessionMessageId);
+  const manual = useNewestBy(processes, sessionMessageId, byHand);
+  return { automation, manual };
+}
+
+export function useMessageAutomationSessions(
+  conversationId: string | null | undefined,
+): ReadonlyMap<string, AgenticProcess> {
+  return useNewestBy(useConversationProcesses(conversationId), sessionMessageId);
 }
 
 const NO_IDS: readonly string[] = [];

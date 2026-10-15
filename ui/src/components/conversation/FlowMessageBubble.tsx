@@ -46,6 +46,7 @@ import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
+import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -222,6 +223,8 @@ interface FlowMessageBubbleProps {
   onAutomate?: (fm: FlowMessage) => void;
   /** The session an automation started on this message (`useMessageAutomationSessions`). */
   automationSession?: AgenticProcess | null;
+  /** The session started by hand from this message's ⋮ menu (`useMessageSessions`). */
+  session?: AgenticProcess | null;
   /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
   lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
@@ -277,6 +280,7 @@ export function FlowMessageBubble({
   lifecycle = null,
   onAutomate,
   automationSession = null,
+  session = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -751,6 +755,9 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
+      {session && fm.conversation_id && (
+        <MessageSessionChip session={session} messageId={messageId} conversationId={fm.conversation_id} />
+      )}
     </>
   );
 
