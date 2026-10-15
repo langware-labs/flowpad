@@ -19,7 +19,7 @@ indexed.
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union
 
 from pydantic import computed_field, model_validator
 
@@ -29,9 +29,11 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.compute.declared_value import MISSING, DeclaredShapeError
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.compute_call_spec import CallRecord
 from flow_sdk.schema.data_spec.compute_op_spec import (
     AgentOp,
     AskOp,
+    CallLogSpec,
     CliOp,
     DecisionOp,
     NavigateOp,
@@ -94,6 +96,9 @@ class ComputeOp(Entity):
     setup_timeout_seconds: Optional[float] = APIField(
         default=None, description="How long an agent following setup gets (AI Assist); unset = the default."
     )
+    log: Optional[CallLogSpec] = APIField(
+        default=None, description="Log every call as a dataset row in temp, with its run's trace."
+    )
 
     _api_visible: ClassVar[bool] = True
 
@@ -123,6 +128,12 @@ class ComputeOp(Entity):
         if len(rows) > 1:
             raise DeclaredShapeError(f"Ambiguous compute op {ref!r}; choose its TypeId or project")
         return rows[0] if rows else None
+
+    @computed_field
+    @property
+    def durable_calls_supported(self) -> bool:
+        """Runtime capability; older servers omit it rather than implying support."""
+        return True
 
     @computed_field
     @property
@@ -202,6 +213,9 @@ class ComputeOp(Entity):
         parent: "object | None" = None,
         input: Any = MISSING,
         invocation_id: str | None = None,
+        call_id: str | None = None,
+        parent_call_id: str | None = None,
+        on_executor: Callable[[str], None] | None = None,
     ) -> "ReturnedValue":
         """Reach the goal, produce the value, or say what is missing.
 
@@ -238,8 +252,10 @@ class ComputeOp(Entity):
                 workdir=workdir,
                 on_status=lambda text: node.current(text),
                 input=input,
+                call_id=call_id,
                 context=CallContext(asset_folder=Path(self.asset_ref), workdir=workdir, project=self.project_id,
-                                    invocation_id=correlation, parent=node, shipped=self.is_system()),
+                                    invocation_id=correlation, parent_call_id=parent_call_id, parent=node,
+                                    shipped=self.is_system(), on_executor=on_executor),
             )
             node.current(answer.detail)
             return answer
@@ -252,10 +268,68 @@ class ComputeOp(Entity):
 
     async def call(self, *, input: Any = MISSING, approved: bool = False, subject: str = "",
                    workdir: Optional[Path] = None, parent: Any = None,
-                   invocation_id: str | None = None) -> "ReturnedValue":
+                   invocation_id: str | None = None, call_id: str | None = None,
+                   parent_call_id: str | None = None,
+                   on_executor: Callable[[str], None] | None = None) -> "ReturnedValue":
         """Call the same operation with a declared input; legacy run stays available."""
         return await self.run(input=input, approved=approved, subject=subject, workdir=workdir,
-                              parent=parent, invocation_id=invocation_id)
+                              parent=parent, invocation_id=invocation_id, call_id=call_id,
+                              parent_call_id=parent_call_id, on_executor=on_executor)
+
+    def _calls_folder(self) -> Path:
+        from flow_sdk.fs_store.record_paths import data_dir_for
+
+        return data_dir_for(EntityType.COMPUTE_OP.value, self.id) / "calls"
+
+    async def start(self, *, input: Any = MISSING, approved: bool = False,
+                    invocation_id: str | None = None, parent_call_id: str | None = None) -> CallRecord:
+        """Persist admission and run independently of the requesting connection.
+
+        A caller's ``invocation_id`` joins its run (``parent_call_id`` names the calling call);
+        without one, this call is a run's root.
+        """
+        from flow_sdk.core.compute_op import durable
+        from flow_sdk.core.compute_op.runner import validate_call_input
+
+        spec = self.spec()
+        if spec is not None and (approved or self.is_system()):
+            input = validate_call_input(spec, input)
+        return durable.start(
+            self._calls_folder(), block=str(self.typeid), project_id=self.project_id,
+            input=None if input is MISSING else input, input_present=input is not MISSING,
+            invocation_id=invocation_id, parent_call_id=parent_call_id,
+            execute=lambda identity, attach: self.call(input=input, approved=approved,
+                                                      invocation_id=invocation_id or identity, call_id=identity,
+                                                      parent_call_id=parent_call_id, on_executor=attach),
+        )
+
+    async def get_call(self, call_id: str) -> CallRecord | None:
+        """Retrieve this operation's answer without executing or replaying it."""
+        from flow_sdk.core.compute_op.durable import read
+
+        return read(self._calls_folder(), call_id)
+
+    @action.post(action_name="start")
+    async def start_action(self, approved: bool = False, input: Any = MISSING,
+                           invocation_id: str | None = None, parent_call_id: str | None = None) -> ApiResponse:
+        if (refused := _bad_trace(invocation_id, parent_call_id)) is not None:
+            return refused
+        try:
+            record = await self.start(input=input, approved=approved,
+                                      invocation_id=invocation_id, parent_call_id=parent_call_id)
+        except DeclaredShapeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        return ApiSuccessResponse(data=record.model_dump(mode="json"))
+
+    @action.get(action_name="get_call")
+    async def get_call_action(self, call_id: str) -> ApiResponse:
+        try:
+            record = await self.get_call(call_id)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        if record is None:
+            return ApiFailResponse(message="Call not found for this operation", status_code=404)
+        return ApiSuccessResponse(data=record.model_dump(mode="json"))
 
     @action.get(action_name="check")
     async def check_action(self) -> ApiResponse:
@@ -264,14 +338,18 @@ class ComputeOp(Entity):
         return ApiSuccessResponse(data=(await self.check()).model_dump(mode="json"))
 
     @action.post(action_name="run")
-    async def run_action(self, approved: bool = False, input: Any = MISSING, answer_tagged: bool = False) -> ApiResponse:
+    async def run_action(self, approved: bool = False, input: Any = MISSING, answer_tagged: bool = False,
+                         invocation_id: str | None = None, parent_call_id: str | None = None) -> ApiResponse:
         """``POST /compute_op/<id>/run`` — ask, act, prove.
 
         Every answer is a 200 carrying the ``ReturnedValue``, REFUSED included:
         the exit code is the answer, and a caller reads it from one place.
         """
+        if (refused := _bad_trace(invocation_id, parent_call_id)) is not None:
+            return refused
         try:
-            answer = await self.run(approved=approved, input=input)
+            answer = await self.run(approved=approved, input=input,
+                                    invocation_id=invocation_id, parent_call_id=parent_call_id)
         except DeclaredShapeError as exc:
             return ApiFailResponse(message=str(exc), status_code=422)
         if answer_tagged or input is not MISSING or self.input is not None or self.output is not None or self.subkind is OpSubkind.PYTHON:
@@ -282,3 +360,13 @@ class ComputeOp(Entity):
 
             return ApiSuccessResponse(data=TypeAdapter(Tagged[ReturnedValue]).dump_python(answer, mode="json"))
         return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+
+def _bad_trace(invocation_id: str | None, parent_call_id: str | None) -> ApiResponse | None:
+    """A caller's trace ids are adopted only as entity UUIDs (the id policy's adopt gate)."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+    for name, value in (("invocation_id", invocation_id), ("parent_call_id", parent_call_id)):
+        if value is not None and not is_valid_entity_id(value):
+            return ApiFailResponse(message=f"{name} must be an entity UUID", status_code=422)
+    return None

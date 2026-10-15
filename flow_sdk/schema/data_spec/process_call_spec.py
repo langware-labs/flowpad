@@ -34,6 +34,9 @@ class ProcessCall(DataSpec):
     #: ``status``: the answer carries the outcome and one sentence, never the output.
     #: ``full`` is reserved for sending the output back too.
     reply: Literal["status", "full"] = "status"
+    #: The sender's run (``CallContext.invocation_id``): the receiver's agent joins that trace,
+    #: under this call. Absent from older senders, so the call is then a run of its own.
+    invocation_id: Optional[str] = None
 
 
 def process_call_in(attachments: Any) -> Optional[ProcessCall]:

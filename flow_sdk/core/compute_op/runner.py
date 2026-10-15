@@ -326,25 +326,33 @@ async def _source_step(op: CliOp, env: Optional[dict], *, check: bool, platform:
     )
 
 
-async def run_op(spec: ComputeOpSpec, *, input: Any = MISSING, asset_folder: Optional[Path] = None,
-                 context: Any = None, **kwargs: Any) -> ReturnedValue:
-    """Authorize, validate typed input, then use the existing operation state machine."""
-    from flow_sdk.core.compute_op.context import CallContext  # noqa: PLC0415
-
-    if not kwargs.get("trusted", False):
-        return refused_for(spec)
+def validate_call_input(spec: ComputeOpSpec, input: Any = MISSING) -> Any:
+    """Validate before admission or effects through the same declared-shape seam."""
     if input is not MISSING:
         if spec.input is None:
             raise DeclaredShapeError("input was supplied but this block declares no input")
         input = to_declared(TypeAdapter(TaggedValue).validate_python(input), spec.input)
     elif spec.input is not None:
         raise DeclaredShapeError("this block requires input")
+    return input
+
+
+async def run_op(spec: ComputeOpSpec, *, input: Any = MISSING, asset_folder: Optional[Path] = None,
+                 context: Any = None, call_id: str | None = None, **kwargs: Any) -> ReturnedValue:
+    """Authorize, validate typed input, then use the existing operation state machine."""
+    from flow_sdk.core.compute_op.context import CallContext  # noqa: PLC0415
+
+    if not kwargs.get("trusted", False):
+        return refused_for(spec)
+    input = validate_call_input(spec, input)
     if context is None and asset_folder is not None:
         context = CallContext(asset_folder=Path(asset_folder), workdir=kwargs.get("workdir"))
     if context is not None:
         workdir = Path(kwargs.get("workdir") or context.workdir or Path.cwd())
         kwargs["workdir"] = workdir
-        context = replace(context, call_id=str(mint_uuid()), workdir=workdir)
+        # The one place a call becomes a call: a context that already names one is its caller's.
+        context = replace(context, call_id=call_id or str(mint_uuid()), workdir=workdir,
+                          parent_call_id=context.call_id or context.parent_call_id)
     needs_folder = input is not MISSING and spec.exe_data.INPUT_FOLDER
     with tempfile.TemporaryDirectory(prefix="flowcall-input-") if needs_folder else nullcontext(None) as folder:
         if input is not MISSING:
@@ -353,9 +361,14 @@ async def run_op(spec: ComputeOpSpec, *, input: Any = MISSING, asset_folder: Opt
                 payload.save(folder)
                 kwargs["env"] = {**(kwargs.get("env") or {}), "FLOWPAD_CALL_INPUT_DIR": folder}
             kwargs["values"] = {**(kwargs.get("values") or {}), "input": input}
+        started = time.monotonic()
         answer = await _run_op(spec, input=input, context=context, **kwargs)
     if context is not None:
         answer = answer.model_copy(update={"invocation_id": context.invocation_id})
+    if spec.log is not None:
+        from flow_sdk.core.compute_op.call_log import log_soon  # noqa: PLC0415
+
+        log_soon(spec, input, answer, context, (time.monotonic() - started) * 1000)
     return answer
 
 
@@ -1348,6 +1361,11 @@ async def _agent(
         return mounted
     if input is not MISSING:
         mounted = input if isinstance(input, DataSpec) else DataSpec.parse({"input": spec.input})(input=input)
+    def progress_update(progress):
+        if context is not None and getattr(progress, "executor", None):
+            context.attach_executor(progress.executor)
+        report(getattr(progress, "text", "") or "")
+
     # An agent that runs a machine-wide installer blocks on the same permission prompt a command does.
     async with _permission_prompt_watch(spec.display_label, platform, say, f"{spec.display_label}: agent") as report:
         said = await launch(
@@ -1359,7 +1377,7 @@ async def _agent(
                           **({"invocation_id": context.invocation_id, "call_id": context.call_id} if context else {})},
             target_typeid_str=agent_context.target_typeid_str or subject,
             timeout_seconds=spec.exe_data.timeout(),
-            on_status=lambda progress: report(getattr(progress, "text", "") or ""),
+            on_status=progress_update,
             executor=executor,
             input=mounted,
             shared_context_entities=agent_context.shared_context_entities,

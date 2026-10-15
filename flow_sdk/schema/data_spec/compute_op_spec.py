@@ -572,6 +572,29 @@ class Rung(DataSpec):
         return exe_data_by_subkind(data)
 
 
+class CallLogSpec(DataSpec):
+    """A block's call log (``core/compute_op/call_log``): each call a row of a dataset in temp."""
+
+    #: The rows' registered dataset kind -- the block's eval set kind, so its eval reads the log.
+    #: Absent: rows in the block's own ``input`` / ``output`` shapes.
+    dataset_kind: Optional[str] = None
+    #: Rows kept; past it the oldest go. A log, not a store.
+    max_rows: int = Field(default=500, gt=0)
+    #: A row's ``input`` or ``output`` over this many JSON bytes is not kept (an input: no row).
+    max_row_bytes: int = Field(default=65536, gt=0)
+    #: The log's folder in temp. Absent: ``call-log-<block>``.
+    name: str = ""
+    #: The log dataset's title. Absent: ``CallLog <block>``.
+    title: str = ""
+    #: An instance preference that turns the log on (``preferences.advanced.smart_navigation_log``).
+    #: Absent: always on.
+    enabled_by: str = ""
+    #: A function in the block's ``call.py``, ``(input, answer) -> row | None``, that writes the row
+    #: as ``dataset_kind`` holds it; ``None`` skips the call. The run's trace joins its ``data``.
+    #: Absent: the block's ``input`` / ``output`` as they are.
+    row: str = ""
+
+
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
@@ -616,6 +639,8 @@ class ComputeOpSpec(AssetDocumentSpec):
     setup: Text = ""
     #: How long an agent following ``setup`` gets (an ask's AI Assist). Unset: ``SETUP_TIMEOUT``.
     setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
+    #: Log every call of this block as a dataset row, with its run's trace. Absent: no log.
+    log: Optional[CallLogSpec] = None
 
     def setup_timeout(self) -> float:
         return self.setup_timeout_seconds or SETUP_TIMEOUT
@@ -627,7 +652,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     @model_serializer(mode="wrap")
     def _legacy_document(self, handler):
         result = handler(self)
-        for field in ("input", "output"):
+        for field in ("input", "output", "log"):
             if field not in self.model_fields_set and getattr(self, field) is None:
                 result.pop(field, None)
         return result

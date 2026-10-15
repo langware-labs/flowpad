@@ -15,7 +15,8 @@ from flow_sdk.schema.data_spec._namespace import loading
 from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 
 
-def _load_call(context: CallContext):
+def load_module(context: CallContext):
+    """The block's ``call.py`` as a module -- loaded fresh, under its project's namespace."""
     folder = context.asset_folder.resolve()
     ns = asset_namespace(folder, None, shipped=context.shipped)
     if not context.shipped and not ns:
@@ -26,8 +27,12 @@ def _load_call(context: CallContext):
             digest.update(str(path.relative_to(folder)).encode())
             digest.update(path.read_bytes())
     with loading(ns):
-        module = load_package_module(folder, "call", "flowpad_call_" + digest.hexdigest(), fresh_source=True)
-    call = getattr(module, "call", None)
+        return load_package_module(folder, "call", "flowpad_call_" + digest.hexdigest(), fresh_source=True)
+
+
+def _load_call(context: CallContext):
+    folder = context.asset_folder.resolve()
+    call = getattr(load_module(context), "call", None)
     if not callable(call):
         raise TypeError(f"{folder / 'call.py'} must define call(input, *, context)")
     return call

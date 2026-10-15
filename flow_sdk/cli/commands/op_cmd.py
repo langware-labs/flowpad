@@ -3,6 +3,7 @@
     flow op list                 — every op and what it is for
     flow op check <name>         — ask the question; change nothing
     flow op run <name>           — ask, make the one call, prove
+    flow op trace <invocation>   — one run's logged calls, as a tree (blocks with a ``log``)
 
 A thin HTTP caller over the same entity actions the UI calls; no logic here. With NO backend
 running, ``check`` / ``run`` run a SHIPPED op in this process instead (``core.wizard.local_run``),
@@ -214,11 +215,25 @@ def run(
     _exit_with(returned)
 
 
+@op_app.command("trace", help="One run's logged calls as a tree: every block call that shares its invocation id.")
+def trace(invocation_id: Annotated[str, typer.Argument(help="The run's invocation id (a ReturnedValue's invocation_id).")]) -> None:
+    from flow_sdk.core.compute_op.call_log import trace as run_trace  # noqa: PLC0415
+
+    # The logs are files in this instance's temp folder: read here, no backend needed.
+    roots = run_trace(invocation_id)
+    if not roots:
+        fail(EXIT_NOT_FOUND, "TRACE_NOT_FOUND", f"No logged calls for run {invocation_id} (only blocks with a `log` are logged).")
+    ok({"invocation_id": invocation_id, "calls": roots})
+
+
 def _call_body(approved: bool, input_json: Optional[str], input_file: Optional[Path]) -> dict:
     """Preserve omitted input separately from explicit JSON null."""
     if input_json is not None and input_file is not None:
         fail(EXIT_REQUEST_FAILED, "INVALID_INPUT", "Use either --input-json or --input-file.")
-    body: dict[str, Any] = {"approved": approved}
+    from flow_sdk.utils.environment import inherited_trace  # noqa: PLC0415
+
+    # A worker spawned by a call joins that call's run (``apply_worker_env``).
+    body: dict[str, Any] = {"approved": approved, **inherited_trace()}
     try:
         if input_file is not None:
             input_json = sys.stdin.read() if str(input_file) == "-" else input_file.read_text(encoding="utf-8")
