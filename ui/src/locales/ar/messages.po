@@ -18749,13 +18749,13 @@ msgstr "تم فتح مقارنة الأصول."
 msgid "Opened existing project"
 msgstr "تم فتح المشروع الموجود"
 
-#: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
-
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Opening {name}…"
 msgstr ""
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Opening app…"
+msgstr "Opening app…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
