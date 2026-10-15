@@ -276,6 +276,13 @@ class ComputeOp(Entity):
                               parent=parent, invocation_id=invocation_id, call_id=call_id,
                               parent_call_id=parent_call_id, on_executor=on_executor)
 
+    @classmethod
+    async def for_folder(cls, folder: "Path | str") -> "ComputeOp | None":
+        """The indexed op whose block lives in ``folder`` -- the one this instance knows there."""
+        here = Path(folder).resolve()
+        rows = await cls.get_all({"name": here.name})
+        return next((op for op in rows if op.asset_ref and Path(op.asset_ref).resolve() == here), None)
+
     def _calls_folder(self) -> Path:
         from flow_sdk.fs_store.record_paths import data_dir_for
 

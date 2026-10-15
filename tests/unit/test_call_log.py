@@ -147,3 +147,17 @@ async def test_cli_trace_prints_the_run(tmp_path):
     shown = CliRunner().invoke(op_app, ["trace", run])
     assert shown.exit_code == 0 and '"shown"' in shown.output
     assert CliRunner().invoke(op_app, ["trace", str(mint_uuid())]).exit_code == 4
+
+
+async def test_a_row_names_the_version_that_answered_it(tmp_path):
+    from flow_sdk.core.compute_op.python import block_version
+
+    spec, folder = block(tmp_path, "versioned", log={})
+    await call(spec, folder, 1)
+    before = block_version(folder)
+    assert block_version(folder) == before  # an unchanged folder: the same version
+    (folder / "call.py").write_text((folder / "call.py").read_text() + "\n# changed\n")
+    await call(spec, folder, 2)
+    first, second = (r["data"] for r in rows(spec))
+    assert first["version"] == before != second["version"]
+    assert (first["block_folder"], first["model"]) == (str(folder), None)
