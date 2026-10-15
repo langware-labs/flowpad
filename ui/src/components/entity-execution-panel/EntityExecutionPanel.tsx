@@ -32,6 +32,7 @@ import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { BackgroundWorkChip } from './BackgroundWorkChip';
 import { QueueChip } from './QueueChip';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -1038,7 +1039,12 @@ export function EntityExecutionPanel({
         // attachments on, a pasted image becomes a chip sent with the text.
         onPasteImages={allowImagePaste && (activeProcess || !allowAttachments) ? handlePasteImages : undefined}
         allowAttachments={allowAttachments}
-        leadingSlot={<QueueChip process={activeProcess} />}
+        leadingSlot={
+          <div className="flex items-center gap-2">
+            <QueueChip process={activeProcess} />
+            <BackgroundWorkChip process={activeProcess} />
+          </div>
+        }
         history={inputHistory}
         animateEnqueue
         // The PROCESS id, which is what makes a draft follow the session across

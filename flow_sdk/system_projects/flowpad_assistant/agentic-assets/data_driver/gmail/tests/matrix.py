@@ -15,6 +15,7 @@ from typing import Optional, Sequence
 
 from pydantic import SecretStr
 
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
@@ -303,8 +304,7 @@ class Double:
 @contextmanager
 def case(monkeypatch, tmp_path):
     with Double() as double:
-        for name, value in double.secrets.items():
-            monkeypatch.setenv(name, value)
+        monkeypatch.setattr(DataDriver.loaded("gmail"), "credentials_for", double.credentials)
         double.deliver("The treasure is under the mast.", sender="sailor@example.com")
         yield {
             "config": double.config,

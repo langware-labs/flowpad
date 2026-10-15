@@ -2,10 +2,10 @@
   "schema_version": 1,
   "typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "navigation",
   "folder_name": "navigation",
-  "inputs_hash": "1723a9d033623b559b0456fbc24db7541c5ba64869dd2b3c5f1e01c1b070df25",
+  "inputs_hash": "dc4f1396605cdcf0c96bc096e0cb851bb04ca1efcea386fc4f89e211942ec515",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
@@ -22,8 +22,8 @@
       "name": "navigation-sentences.md",
       "rel_path": "navigation-sentences.md",
       "title": "Navigation sentences — the whole Flowpad UX surface",
-      "summary": "Catalog of 200 example magic-line sentences covering every Flowpad screen, tab and action, each mapped to its navigation target, used as the classifier's coverage map.",
-      "content_hash": "095b280439884f429d98a6cd54431c5be5bc90b0fc4cf0f3ad1ee45b99e20c56",
+      "summary": "Two hundred navigation requests mapped to screens, entities, files, URLs, logs, or assistant actions for classifier coverage.",
+      "content_hash": "0b6ddfa0171140da14cd96f576819f1b40f0f9f90cf38e5b9c498f1c7cf838de",
       "size_bytes": 13001
     },
     {
@@ -38,9 +38,9 @@
       "name": "navigation_medium.md",
       "rel_path": "navigation_medium.md",
       "title": "Smart navigation — 200 medium sentences",
-      "summary": "Second smart-navigator eval suite: 200 medium-difficulty magic-line sentences in twenty app-area groups, each with its starting dock address and expected target.",
-      "content_hash": "e56750c59b49a9eb7cc72f08ee6212430d212f0b8e5441e38aa60c06e72d2264",
-      "size_bytes": 28573
+      "summary": "Two hundred contextual navigation sentences covering indirect wording, typos, source screens, expected destinations, and assistant handoffs.",
+      "content_hash": "a6bb37a4c362ee9685fad592e74e49258d37105f51a89bc89e58a24f9ae2d394",
+      "size_bytes": 28569
     },
     {
       "name": "project-home-page.md",
@@ -52,6 +52,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-15T06:44:33.280599+00:00",
   "latest_process_ref": ""
 }

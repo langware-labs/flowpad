@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({ mode: 'advanced', pty: true }));
 // ones, so each is drivable on its own.
 const ready = vi.hoisted(() => ({ value: true }));
 const busy = vi.hoisted(() => ({ value: false }));
+// A chat worker parked on background work: alive and idle, so NOT busy.
+const background = vi.hoisted(() => ({ value: false }));
 const switchMode = vi.hoisted(() =>
   vi.fn((mode: string) => {
     state.pty = mode === 'interactive';
@@ -52,6 +54,9 @@ const process = {
     return !state.pty;
   },
   status: 'running',
+  get background_work() {
+    return background.value;
+  },
   switchMode,
   loadHistory: () => Promise.resolve(),
 };
@@ -81,6 +86,7 @@ describe('process surface reconciliation during panel startup', () => {
     state.pty = true;
     ready.value = true;
     busy.value = false;
+    background.value = false;
     switchMode.mockReset();
     switchMode.mockImplementation((mode: string) => {
       state.pty = mode === 'interactive';
@@ -170,6 +176,39 @@ describe('process surface reconciliation during panel startup', () => {
     expect(switchMode).toHaveBeenCalledTimes(2);
     expect(switchMode).toHaveBeenLastCalledWith('cli');
     expect(state.pty).toBe(false);
+    expect(waitOf()).toBe(null);
+  });
+
+  it('retries a switch to the terminal held back by a parked chat worker once its background work is gone', async () => {
+    // The worker is idle between turns, kept alive by work the agent left running — so it is not
+    // `busy`, and ending that work flips no busy edge. Without `background_work` as a retry trigger
+    // the switch the user confirmed ("Switch anyway") would wait forever.
+    state.mode = 'standard';
+    state.pty = false;
+    background.value = true;
+    const view = render(<Surface canSwitch marker="standard" />);
+    await act(async () => {});
+
+    switchMode.mockImplementationOnce(() =>
+      Promise.reject(
+        Object.assign(new Error('Request failed with status code 409'), {
+          response: { status: 409, data: { status: 'FAIL', message: BACKGROUND_TASKS_RUNNING } },
+        }),
+      ),
+    );
+    state.mode = 'advanced';
+    view.rerender(<Surface canSwitch marker="advanced" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(waitOf()).toBe('background');
+    expect(state.pty).toBe(false);
+
+    background.value = false; // the user ended the work; `busy` never moved
+    view.rerender(<Surface canSwitch marker="advanced-work-gone" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(2);
+    expect(switchMode).toHaveBeenLastCalledWith('interactive');
+    expect(state.pty).toBe(true);
     expect(waitOf()).toBe(null);
   });
 

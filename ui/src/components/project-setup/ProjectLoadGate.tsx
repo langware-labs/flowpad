@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
@@ -7,8 +7,10 @@ import { Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { AskForm } from '@src/components/ask/AskForm';
+import { SetupFailureActions } from './SetupFailureActions';
+import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
-import { useProjectLoad } from './use-project-load';
+import { useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
 /** The route has already selected identity. Operational work starts after the tab mounts. */
@@ -31,16 +33,34 @@ export function ProjectLoadGate({
   const { data: project } = useEntity<Project>(new TypeId(Project.type, projectId));
   const { load } = lifecycle;
   const [loadedLocation, setLoadedLocation] = useState<string | null>(null);
+  // Phase one, validate: an app this session already saw up and that still answers opens at once — no
+  // load, no spinner, nothing refetched under it. Held across opens, so a re-open shows the app on its
+  // first frame and checks behind it; only a failed check falls through to load (and setup).
+  const validKey = validLoad.key(projectId, asset, display);
+  // true: show the app; null: no verdict held, its check in flight — a blank frame for its few
+  // milliseconds, never a status that flashes; false: load.
+  const [valid, setValid] = useState<boolean | null>(() => (!asset ? false : validLoad.has(validKey) || null));
   useEffect(() => {
     let live = true;
-    void load().then(() => {
+    void (async () => {
+      if (asset) {
+        const verdict = await Project.validateLoad(projectId, asset, display).catch(() => null);
+        if (!live) return;
+        const up = verdict?.state === 'ready';
+        validLoad.set(validKey, up);
+        setValid(up);
+        if (up) return;
+      }
+      await load();
       if (live) setLoadedLocation(location.key);
-    });
+    })();
     return () => {
       live = false;
     };
-  }, [load, location.key]);
+  }, [load, location.key, projectId, asset, display, validKey]);
   const result = lifecycle.result;
+  const fix = useSetupFix(projectId, result, lifecycle.error, () => void load());
+  const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
   // Continue with that check once the shared run completes; never retry a failed load.
   const displayChecked = !display || result?.display === display;
@@ -65,13 +85,27 @@ export function ProjectLoadGate({
   const busy = lifecycle.starting || !result || result.state === 'running';
   const status =
     busy && !lifecycle.questionId ? (
-      result?.state === 'running' ? <Trans>Setting up…</Trans> : <Trans>Checking what this needs…</Trans>
+      result?.state === 'running' ? (
+        result.phase === 'load' ? (
+          <Trans>Starting…</Trans>
+        ) : (
+          <Trans>Setting up…</Trans>
+        )
+      ) : (
+        <Trans>Checking what this needs…</Trans>
+      )
     ) : (
       result?.detail || <Trans>Preparing…</Trans>
     );
   useEffect(() => {
-    if (result?.state === 'ready') void client.invalidateQueries({ queryKey: ['service_endpoint'] });
-  }, [client, result]);
+    // A load that just brought the app up moved its address; a validated one moved nothing.
+    if (result?.state === 'ready' && loadedLocation === location.key) {
+      validLoad.set(validKey, true);
+      void client.invalidateQueries({ queryKey: ['service_endpoint'] });
+    }
+  }, [client, result, loadedLocation, location.key, validKey]);
+  if (valid) return children;
+  if (valid === null) return null;
   if (result?.state === 'ready' && displayChecked && !lifecycle.starting && loadedLocation === location.key)
     return children;
   if (lifecycle.missing)
@@ -101,16 +135,21 @@ export function ProjectLoadGate({
           <AskForm questionId={lifecycle.questionId} showOp={false} onSettled={lifecycle.settleQuestion} />
         )}
         {/* The steps are for watching a run; while a question is open the question is the screen. */}
-        {result?.state !== 'setup_required' && !lifecycle.questionId && <SetupTreeView tree={lifecycle.tree} />}
+        {/* Phase two, load, only starts what is set up: a status line, not the setup tree. */}
+        {result?.state !== 'setup_required' && result?.phase !== 'load' && !lifecycle.questionId && (
+          <SetupTreeView tree={lifecycle.tree} />
+        )}
         {result?.state === 'setup_required' && !asset && (
           <Button className="self-start" disabled={lifecycle.starting} onClick={() => void load(true)}>
             <Trans>Set up</Trans>
           </Button>
         )}
-        {(result?.state === 'failed' || lifecycle.error) && (
-          <Button className="self-start" disabled={lifecycle.starting} onClick={() => void load()}>
-            <Trans>Try again</Trans>
-          </Button>
+        {fix.show && (
+          <SetupFailureActions
+            fix={fix}
+            busy={lifecycle.starting}
+            onCancel={() => void navigate(-1)}
+          />
         )}
       </div>
     </div>

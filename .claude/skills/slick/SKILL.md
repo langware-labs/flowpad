@@ -28,6 +28,14 @@ layered on top: where does this go, what's the seam, how do I prove it.
 `references/anchors.md` is the concrete file/symbol index for every pattern
 below — open it when you need the exact path or class to model after.
 
+## FlowCall vocabulary
+
+For call outcomes, returned values, and composition, use **FlowCall** for the
+mechanism. Read `docs/snippets/call-returns.md` and the `ReturnedValue` schema
+before reviewing transport code. `ComputeOp` describes work, `ReturnedValue`
+is its answer contract, and a wizard composes calls. Do not replace expected
+work outcomes with exceptions or confuse HTTP success with reaching the goal.
+
 ## Modes
 
 The eight principles below are the rubric. There are three ways to apply them:
@@ -200,6 +208,13 @@ new ActionInfo('prompt', AgenticProcess.type, id, 'POST')   // ts_sdk
 
 * Generic behavior goes on the **base** **`Entity`** with `types="all"`; the named
   type is the first consumer, not the scope.
+
+* **An action holds no logic.** The `@action` method is the HTTP edge: read the
+  body, turn it into a typed value (a schema/model whose validators do the
+  checking — a `ValidationError` becomes the 400), call ONE method on the entity
+  that does the work, and return its result. No validation, normalization,
+  branching or persistence in the action body — those live in the model and the
+  entity method, where a test or another caller can reach them without HTTP.
 
 * **Don't add a parallel action when an existing one can branch.** One action
   that routes internally beats two near-identical actions and the SDK method

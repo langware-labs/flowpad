@@ -15,7 +15,15 @@ type EntityQueryState<T> = {
   notFound: boolean;
 };
 
+/** The state a target starts in. A target the cache already holds starts READY with it: the
+ *  subscribe below runs only after commit, so starting `undefined` here rendered every cached
+ *  target as missing for one commit — a list row whose latest-message pointer moved to a known
+ *  message vanished and came back. */
 function initialState<T>(typeId: TypeId | null, enabled: boolean): EntityQueryState<T> {
+  const cached = typeId && enabled ? (dataManager.getByTypeIdFromCache(typeId) as T | null) : null;
+  if (cached) {
+    return { data: cached, isLoading: false, isFetching: false, error: null, isError: false, isSuccess: true, notFound: false };
+  }
   return {
     data: typeId && enabled ? undefined : null,
     isLoading: !!(typeId && enabled),
@@ -74,17 +82,20 @@ export function useEntity<T extends APIEntity<T>>(
         return () => {};
       }
 
-      // Set loading state immediately when subscribing
-      stateRef.current = {
-        data: undefined,
-        isLoading: true,
-        isFetching: true,
-        error: null,
-        isError: false,
-        isSuccess: false,
-        notFound: false,
-      };
-      callback(); // Trigger re-render immediately with loading state
+      // Set loading state immediately when subscribing — unless the cache already answers
+      // (`initialState`), which `initialize` confirms without a fetch.
+      if (stateRef.current.data === undefined) {
+        stateRef.current = {
+          data: undefined,
+          isLoading: true,
+          isFetching: true,
+          error: null,
+          isError: false,
+          isSuccess: false,
+          notFound: false,
+        };
+        callback(); // Trigger re-render immediately with loading state
+      }
 
       let unsubscribe: (() => void) | undefined;
       let cancelled = false;

@@ -59,6 +59,10 @@ export interface AskChoice {
   file: boolean;
   /** A sign-in command: nothing is typed, the person runs it. Empty: a value is typed. */
   command: string;
+  /** A sign-in through Flowpad: the screen connects this provider (its grant covering `scopes`), then answers
+   *  the choice's `value` — nothing typed, nothing stored. Empty: not this kind of way. */
+  provider?: string;
+  scopes?: string[];
 }
 
 export interface AskQuestion {

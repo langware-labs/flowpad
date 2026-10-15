@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
-from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
+from flow_sdk.schema.data_spec.credential_status_spec import active_way
 from flow_sdk.schema.data_spec.permission_spec import (
     MECHANISM_API_KEY,
     STATUS_DECLARED,
@@ -261,14 +261,24 @@ async def _local_funding_item(agent: "Agent", project: Any) -> Optional[Readines
     return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=kind, fix=f"{reason}: run `flow llm set auto`")
 
 
-def _needed_names(row) -> list[str]:
-    """The stored values a credential requirement stands on: every MUST one, and of a ONE_OF group the
-    members held — or, while none is, every member a store can hold (any one of them would do)."""
-    ways = [v for v in row.vars if v.is_one_of]
-    held = [v for v in ways if v.present]
-    return [v.env_var for v in row.vars if v.is_must] + [
-        v.env_var for v in (held or ways) if v.kind is not CredentialVarKind.CLI
-    ]
+def _needed_names(row, declared: list[str] = ()) -> list[str]:
+    """The values a credential requirement stands on: ``declared`` (what a driver names; default: none), every
+    MUST one, and of a ONE_OF group its active way (``active_way`` — whatever holds it: a store, a sign-in, a
+    grant) — or, while none is there, every member a store can hold (any one of them would do). A declared
+    member of the group counts only while it is the way in use."""
+    by_name = {v.env_var: v for v in row.vars}
+    ways = [v.env_var for v in row.vars if v.is_one_of]
+    if declared and not ways:
+        return list(declared)
+    active = active_way(by_name, row.setup_choice, lambda name: by_name[name].present)
+    if not active:
+        group = [n for n in ways if by_name[n].holds_value]
+    else:  # a sign-in there unchosen holds no stored value to name: it settles the group by itself
+        group = [active] if active == row.setup_choice or by_name[active].holds_value else []
+    needed = [v.env_var for v in row.vars if v.is_must] + group
+    if not declared:
+        return needed
+    return [n for n in declared if n not in ways or n in needed] + [n for n in needed if n not in declared]
 
 
 def _values_item(
@@ -309,7 +319,7 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
             row = rows.get(req.name)
-            names = req.vars or (_needed_names(row) if row else [])
+            names = _needed_names(row, declared=req.vars) if row is not None else list(req.vars or [])
             if not names and row is not None and row.state == "connected":
                 # Held with no stored value at all: a sign-in on this computer settles its ONE_OF group.
                 return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where="signed in on this computer")

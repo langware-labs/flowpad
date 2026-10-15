@@ -36,6 +36,7 @@ from flow_sdk.core.oauth.provider_registry import (
     OAuthFlowKind,
     TokenShape,
     client_id_for,
+    client_secret_for,
     get_local_provider,
     user_credentials_name,
 )
@@ -954,6 +955,8 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             "state": final_state,
             "code_verifier": session.code_verifier,
         }
+        if secret := client_secret_for(provider.name):
+            token_data["client_secret"] = secret
 
         # Exchange code for token.
         #

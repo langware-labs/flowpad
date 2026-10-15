@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  type DataSource,
-  OAuthStatus,
-  type SetupNeed,
-  type SetupNodeResult,
-  type SetupTreeResult,
-  oauthService,
-} from '@sdk';
-import { useOAuthFlowComplete } from '@sdk/react/hooks';
+import { type DataSource, type SetupNeed, type SetupNodeResult, type SetupTreeResult } from '@sdk';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { errorMessage } from '@src/lib/error-message';
+import { useProviderSignIn } from '@src/components/oauth/use-provider-sign-in';
 import { Button } from '@src/components/ui/button';
 import { Dialog } from '@src/components/ui/dialog';
 import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
@@ -117,28 +110,14 @@ export function SourceSetupPanel({
   const stopped = !running && !setup.starting && tree !== null && tree.state !== 'done';
   // A sign-in the run stopped on: the person signs in HERE, in their browser; the run only checked it.
   const signIn = !running && !setup.starting ? pendingConnection(tree, source.setup_needs) : null;
-  const [connecting, setConnecting] = useState(false);
   const name = source.name || source.provider;
-  const connect = async () => {
-    if (!signIn) return;
-    setConnecting(true);
-    try {
-      await oauthService.connect(signIn.provider);
-    } catch (e: unknown) {
-      setConnecting(false);
-      setRefused(errorMessage(e, t`Could not start the ${signIn.title} sign-in.`));
-    }
-  };
   // The grant landed (code flow, device flow, or a grant the hub already held): set up again — the
   // connection now checks out and the walk goes on to the source's own Verify.
-  useOAuthFlowComplete(
-    signIn?.provider ?? '',
-    (msg) => {
-      setConnecting(false);
-      if (msg.status === OAuthStatus.SUCCESS) begin();
-    },
-    !!signIn,
-  );
+  const { connecting, signIn: connect } = useProviderSignIn(signIn?.provider ?? '', {
+    onGranted: begin,
+    onError: (e) => setRefused(errorMessage(e, t`Could not start the ${signIn?.title ?? ''} sign-in.`)),
+    listen: !!signIn,
+  });
   const done = !running && tree?.state === 'done';
   useEffect(() => onListening?.(done), [done, onListening]);
 

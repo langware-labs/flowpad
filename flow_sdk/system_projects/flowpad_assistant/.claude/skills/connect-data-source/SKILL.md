@@ -47,7 +47,7 @@ connect request.
 | Skill arg | Load | What it does |
 | --- | --- | --- |
 | *(none)*, or a natural request — **the default** | `modes/connect.md` | Map the request onto a source, configure it, prove each gate, show it |
-| `author <system>` | `modes/author.md` | Write a NEW self-contained source folder (`data_driver.json` + `source.py` + its tests), index it, then connect it |
+| `author <system>` | `modes/author.md` | Reuse or extend a configurable driver first; write a new self-contained driver only when none fits, then index and connect it |
 | `debug [<source>]` | `modes/debug.md` | Ordered diagnosis of a source that is failing, empty or stuck |
 | `define <source>` | `modes/define.md` | Sample the items, agree an output shape, create the dataset bound to the source, label an example |
 | `list` | *(inline, below)* | Read-only — what is connected and how healthy it is |
@@ -78,6 +78,7 @@ fails** with what the user must do:
 | When you need to… | Load |
 | --- | --- |
 | turn a person's words into a provider + config | `references/mapping.md` |
+| several resources share a provider's transport, or copied drivers need consolidation | [references/configurable-drivers.md](references/configurable-drivers.md) |
 | a mail/agent source whose fetch is a worker — its budgets, and why its sync reports nothing | `references/process-sdk.md` |
 | run any mechanic — specs, create, verify, poll, observe, snapshot | `scripts/source_ctl.py` |
 | sample items, create a dataset, promote, annotate, snapshot counts | `scripts/dataset_ctl.py` |

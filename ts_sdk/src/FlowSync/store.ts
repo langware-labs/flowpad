@@ -10,6 +10,9 @@ import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import type { ReturnedValue } from '../models/ReturnedValue';
+import { readFlowAnswer, readFlowEnvelope } from './flow-call';
+import { isAxiosError } from 'axios';
 import { BootstrapInfo, DeferredInfo, ScanInfo } from '../models/BootstrapInfo';
 import { isValidIdentifier, isValidUUIDv4, TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
@@ -1812,6 +1815,42 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         break;
     }
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /** FlowCall answers survive either transport; expected work outcomes do not throw.
+   * Transport is selected once, never retried on the other transport after a send.
+   * The older callAction methods retain their existing envelope/error contracts.
+   */
+  public async callFlowAction<R extends ReturnedValue = ReturnedValue>(
+    actionInfo: ActionInfo,
+    transport: 'http' | 'ws' | 'prefer-ws' = 'http',
+  ): Promise<R> {
+    if (actionInfo.isStreaming || actionInfo.isRawResponse) {
+      throw new Error('FlowCall requires a JSON answer, not a raw or streaming response');
+    }
+    if (transport === 'ws' || (transport === 'prefer-ws' && ConnectionManager.getInstance().connected)) {
+      if (typeof FormData !== 'undefined' && actionInfo.bodyParameters instanceof FormData) {
+        throw new Error('FlowCall multipart bodies require HTTP');
+      }
+      return readFlowEnvelope(await this.sendOverWS(actionInfo)) as R;
+    }
+    try {
+      return readFlowAnswer(await this.callAction<void, unknown>(actionInfo)) as R;
+    } catch (error) {
+      // Older admission actions use 409 for a held slot. Do not reinterpret
+      // authorization, validation, network, or server errors as work outcomes.
+      if (isAxiosError(error) && error.response?.status === 409) {
+        const envelope = error.response.data;
+        if (envelope?.status === 'FAIL') {
+          try {
+            return readFlowEnvelope(envelope) as R;
+          } catch {
+            // Keep the original transport error, including its status and body.
+          }
+        }
+      }
+      throw error;
+    }
   }
 
   public async callActionOverWS<_Req, Res>(

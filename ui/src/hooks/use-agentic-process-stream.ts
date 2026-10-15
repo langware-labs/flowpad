@@ -15,10 +15,10 @@
  * only re-emits when items actually changed (length or per-item identity).
  */
 
-import { AgenticProcess, FlowData } from '@sdk';
+import { AgenticProcess, FlowData, FlowElementTypes } from '@sdk';
 import { useHistoryLoadAlert } from '@src/hooks/use-history-load-alert';
 import { retireObservedEchoes } from '@src/hooks/retire-observed-echoes';
-import { useCallback, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 
 export function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
   // Every surface that renders the stream comes through here, so this is the one
@@ -67,4 +67,10 @@ export function useAgenticProcessStream(process: AgenticProcess | null): FlowDat
   }, [process]);
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** How many tools a process has called so far — the "steps" a running agent shows. */
+export function useProcessToolCount(process: AgenticProcess | null): number {
+  const items = useAgenticProcessStream(process);
+  return useMemo(() => items.filter((fd) => fd.elementType === FlowElementTypes.TOOL_CALL).length, [items]);
 }

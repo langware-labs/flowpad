@@ -73,6 +73,13 @@ Then do it in the user's project and read it back the same way.
 
 ## Reference
 
+Before adding a driver for another external resource, check whether an existing driver can
+express it through configuration. For example, Twenty people, companies, members, tasks and
+opportunities are five configured sources of one `twenty` driver, sharing transport code.
+Different SDK families or fundamentally different transports can justify separate drivers;
+different endpoints or record fields alone do not. Implementation and migration guidance live
+in [connect-data-source's configurable-driver recipe](../connect-data-source/references/configurable-drivers.md).
+
 | When you need to… | Load |
 | --- | --- |
 | the shape grammar — primitives, `?`, `enum:`, lists, maps, kinds by name | `references/shape-forms.md` |
