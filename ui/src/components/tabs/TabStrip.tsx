@@ -171,6 +171,10 @@ const CHIP_MAX_PX = 200;
 const CHIP_MIN_PX = 40;
 const COMPACT_BELOW_PX = 110;
 const ICON_ONLY_BELOW_PX = 64;
+/** Hover time before a tab's icon turns into its favorite star, so a plain tab click never lands on the star. 0 = immediate. */
+const TAB_STAR_HOVER_DELAY_MS = 1500;
+/** Visibility flips after the hover delay; leaving the tab flips it back at once. */
+const TAB_STAR_SWAP = 'transition-[visibility] duration-0 group-hover:[transition-delay:var(--tab-star-delay)]';
 
 export const TabStrip: React.FC<TabStripProps> = ({
   items,
@@ -521,10 +525,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
         {...(item.dataAttributes ?? {})}
         data-active={isActive ? 'true' : undefined}
       >
-        <span className="relative inline-flex shrink-0 items-center justify-center">
-          <span className={`inline-flex ${showStar ? 'group-hover:invisible' : ''}`}>{item.standsFor?.icon ?? item.icon}</span>
+        <span
+          className="relative inline-flex shrink-0 items-center justify-center"
+          style={{ '--tab-star-delay': `${TAB_STAR_HOVER_DELAY_MS}ms` } as React.CSSProperties}
+        >
+          <span className={`inline-flex ${showStar ? `${TAB_STAR_SWAP} group-hover:invisible` : ''}`}>
+            {item.standsFor?.icon ?? item.icon}
+          </span>
           {item.favorite && showStar && (
-            <span className="invisible absolute inset-0 flex items-center justify-center group-hover:visible">
+            <span
+              className={`invisible absolute inset-0 flex items-center justify-center ${TAB_STAR_SWAP} group-hover:visible`}
+            >
               <TabFavoriteStar favorite={item.favorite} chip={() => tabRefs.current[key] ?? null} />
             </span>
           )}
