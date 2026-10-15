@@ -12,7 +12,7 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { isHubOnly } from '../utils/hub-runtime';
-import type { CredentialRequirement, CredentialVarCommand, CredentialVarKind } from '../entities/credential';
+import type { CredentialRequirement, CredentialVarCommand, CredentialVarKind, CredentialWay } from '../entities/credential';
 
 export type CredentialScopeName = 'user' | 'project';
 /** A store a form can choose: the scope's env file, or the vault. */
@@ -47,6 +47,8 @@ export interface CredentialVarStatus {
   store: CredentialValueStore;
   /** A value exists in that store; for a `cli` variable, its check passed. */
   present: boolean;
+  /** `ONE_OF`: the way this variable belongs to; empty = its own name. */
+  way?: string;
   /** `cli`: the command that signs in on THIS machine; empty for every other kind. */
   login?: string;
   /** `oauth`: the provider whose grant this way is, and the scopes it must cover (store `connection`). */
@@ -94,6 +96,8 @@ export interface CredentialStatusRow {
   vars: CredentialVarStatus[];
   /** The ONE_OF way set up on this machine (the credential row's `setup_choice`); empty when none is chosen. */
   setup_choice?: string;
+  /** `ONE_OF`: how each way of several variables is offered, by way name (`CredentialSpec.ways`). */
+  ways?: Record<string, CredentialWay>;
 }
 
 export type CredentialKind = 'env' | 'oauth';
@@ -197,6 +201,7 @@ export interface CredentialManifestVar {
   account_key?: boolean;
   secret?: boolean;
   help_url?: string;
+  way?: string;
 }
 
 export interface CredentialManifestInput {
@@ -212,6 +217,7 @@ export interface CredentialManifestInput {
   setup?: string;
   lm_provider?: string;
   vars: Record<string, CredentialManifestVar>;
+  ways?: Record<string, CredentialWay>;
 }
 
 export interface SaveCredentialRequest {

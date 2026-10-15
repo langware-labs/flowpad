@@ -369,7 +369,8 @@ class AskChoiceSpec(DataSpec):
     """One way to answer a question that offers several (``AskOp.choices``).
 
     A value choice is typed (or picked, a ``file``); the answer is ``<value>=<what was given>``, one string.
-    A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
+    A ``fields`` choice is several values given together: one input per field, answered as newline-joined
+    ``<field value>=<what was given>`` lines. A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
     question closes by itself once its goal holds (``auto_continue``)."""
 
     spec_kind: ClassVar[str] = "compute_op.ask.choice"
@@ -378,6 +379,10 @@ class AskChoiceSpec(DataSpec):
     value: str
     label: str = ""
     hint: str = ""
+    #: Where to get the value — shown as a link under its input.
+    help_url: str = ""
+    #: The example shown in an empty input.
+    placeholder: str = ""
     secret: bool = False
     file: bool = False
     #: The command the person runs instead of giving a value, on this machine.
@@ -386,6 +391,8 @@ class AskChoiceSpec(DataSpec):
     #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
     provider: str = ""
     scopes: list[str] = []
+    #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
+    fields: list["AskChoiceSpec"] = []
 
 
 class AskItemSpec(DataSpec):

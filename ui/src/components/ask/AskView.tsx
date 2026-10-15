@@ -96,7 +96,7 @@ export default function AskView() {
     <div className="flex h-full items-center justify-center p-6" data-testid="ask-view">
       <div className="flex w-full max-w-md flex-col gap-4">
         <div>
-          <h1 className="text-base font-medium" data-testid="ask-prompt">
+          <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">
             {question.prompt}
           </h1>
           {question.detail ? (

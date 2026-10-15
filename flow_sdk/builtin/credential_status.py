@@ -242,7 +242,7 @@ async def credentials_status(
         stores: set[str] = set()
         for env_var, var in (spec.vars or {}).items():
             shown = dict(env_var=env_var, label=var.label, hint=var.hint, help_url=var.help_url,
-                         required=_requirement(var, env_var in required), kind=var.kind)
+                         required=_requirement(var, env_var in required), kind=var.kind, way=var.way)
             if var.is_cli:
                 # Not signed in until its check says so, below — once the stored values are known.
                 var_rows.append(CredentialVarStatusSpec(
@@ -289,6 +289,7 @@ async def credentials_status(
             value_store=next(iter(stores)) if len(stores) == 1 else "mixed",
             lm_provider=spec.lm_provider or "",
             setup_choice=spec.chosen,
+            ways=dict(spec.ways or {}),
         )))
 
     # A sign-in lives on this computer: it is asked only for the deployment that IS this computer, and a

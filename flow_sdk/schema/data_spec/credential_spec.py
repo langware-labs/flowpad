@@ -18,6 +18,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.compute_op_spec import CliOp
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.credential_contract import (
     CredentialKind,
     CredentialRequirement,
@@ -78,6 +79,9 @@ class CredentialVarSpec(DataSpec):
     scopes: list[str] = Field(default_factory=list)
     #: Where to get this particular value.
     help_url: str = ""
+    #: ONE_OF: the way this variable belongs to. ONE_OF variables sharing a ``way`` are given together
+    #: (an address and its app password); empty — the variable is a way of its own, named after itself.
+    way: str = ""
 
     @property
     def is_must(self) -> bool:
@@ -117,6 +121,8 @@ class CredentialVarSpec(DataSpec):
             raise ValueError("provider and scopes belong to an oauth variable (kind: oauth)")
         if self.is_oauth and not self.is_one_of:
             raise ValueError("an oauth variable is one way of a ONE_OF group (required: ONE_OF)")
+        if self.way and not self.is_one_of:
+            raise ValueError("a way belongs to a ONE_OF variable (required: ONE_OF)")
         return self
 
     @field_validator("provider")
@@ -173,6 +179,9 @@ class CredentialSpec(DataSpec):
     optional_scopes: list[str] = Field(default_factory=list)
     #: The variables, keyed by env var NAME. Required for ``env``; an ``oauth`` credential needs none.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
+    #: ONE_OF: how each way of several variables is offered (its title and one line under it), by way name.
+    #: A way of one variable is offered by that variable's own label and hint.
+    ways: dict[str, CredentialWaySpec] = Field(default_factory=dict)
     #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
     #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
@@ -233,8 +242,14 @@ class CredentialSpec(DataSpec):
                 raise ValueError("a credential declares at least one variable")
             if self.provider or self.scopes or self.optional_scopes:
                 raise ValueError("provider and scopes belong to an oauth credential (kind: oauth)")
-            if len([v for v in self.vars.values() if v.is_one_of]) == 1:
-                raise ValueError("ONE_OF is a choice: a credential declares at least two ONE_OF variables, or none")
+            grouped = ways(self.vars)
+            for way, members in grouped.items():
+                if len(members) > 1 and any(not self.vars[m].holds_value for m in members):
+                    raise ValueError(f"way {way!r}: a sign-in (cli or oauth) variable is alone in its way")
+            if len(grouped) == 1:
+                raise ValueError("ONE_OF is a choice: a credential declares at least two ONE_OF ways, or none")
+            if unknown := sorted(set(self.ways) - set(grouped)):
+                raise ValueError(f"ways {unknown} name no ONE_OF way of this credential")
             if self.lm_provider and any(v.is_one_of or not v.holds_value for v in self.vars.values()):
                 raise ValueError("an lm_provider credential is one stored key (no ONE_OF, no cli variable)")
         return self

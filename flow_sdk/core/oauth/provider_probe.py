@@ -36,8 +36,10 @@ def get_probe(provider: str) -> Optional[OAuthProbeSpec]:
     return descriptor.probe if descriptor is not None else None
 
 
-def account_key_from(provider: str, body: dict[str, Any]) -> Optional[str]:
-    probe = get_probe(provider)
+def account_key_from(provider: str, body: dict[str, Any], probe: Any = None) -> Optional[str]:
+    """The account key ``body`` carries, read by ``probe`` (default: the provider's own; a fallback probe
+    that answered reads its own fields)."""
+    probe = probe or get_probe(provider)
     if probe is None:
         return None
     if probe.account_key_parts:
@@ -112,12 +114,17 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
     }
     try:
         async with httpx.AsyncClient(timeout=PROBE_TIMEOUT_SECONDS) as client:
-            response = await client.request(
-                probe.method,
-                probe.url,
-                params=dict(probe.query),
-                headers=headers,
-            )
+            while True:
+                response = await client.request(
+                    probe.method,
+                    probe.url,
+                    params=dict(probe.query),
+                    headers={**headers, **dict(probe.headers)},
+                )
+                # Refused, not rejected: the grant may not cover this endpoint — its fallback may be covered.
+                if response.status_code != 403 or probe.fallback is None:
+                    break
+                probe = probe.fallback
     except Exception as exc:  # noqa: BLE001
         reason = str(exc) or type(exc).__name__
         return ProbeResult(
@@ -164,7 +171,7 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
     return ProbeResult(
         ok=True,
         identity=_first_text(body, probe.identity_fields),
-        account_key=account_key_from(provider, body),
+        account_key=account_key_from(provider, body, probe),
     )
 
 

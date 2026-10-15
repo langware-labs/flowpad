@@ -4,7 +4,7 @@
  * all, which `.env.local` keys are offered for packing.
  */
 import { describe, expect, it } from 'vitest';
-import { missingNeeds, type CredentialStatusRow, type CredentialsStatus } from '@sdk';
+import { groupSatisfied, missingNeeds, type CredentialStatusRow, type CredentialsStatus } from '@sdk';
 import {
   buildCredentialRows,
   buildDetectedGroups,
@@ -151,6 +151,27 @@ describe('buildCredentialRows', () => {
 
     expect(needs(none)).toEqual([['PROJECT'], ['KEY_FILE', 'ADC']]);
     expect(needs(one)).toEqual([['PROJECT']]);
+  });
+
+  it('a way of several members holds the group only once every member is there', () => {
+    const paired = (address: boolean, password: boolean) =>
+      row({
+        name: 'gmail',
+        scope: 'project',
+        vars: [
+          v('GMAIL_GOOGLE', { required: 'ONE_OF', kind: 'oauth', store: 'connection', present: false, found_in: null, way: 'google' }),
+          v('GMAIL_ADDRESS', { required: 'ONE_OF', present: address, way: 'app_password' }),
+          v('GMAIL_APP_PASSWORD', { required: 'ONE_OF', present: password, way: 'app_password' }),
+        ],
+      });
+    const [half] = buildCredentialRows(status({ credentials: [paired(true, false)] }));
+    const [whole] = buildCredentialRows(status({ credentials: [paired(true, true)] }));
+
+    expect(needs(half)).toEqual([['GMAIL_GOOGLE', 'GMAIL_ADDRESS', 'GMAIL_APP_PASSWORD']]);
+    expect(needs(whole)).toEqual([]);
+    expect(groupSatisfied(paired(true, true).vars, 'app_password')).toBe(true);
+    expect(groupSatisfied(paired(true, true).vars, 'GMAIL_APP_PASSWORD')).toBe(true);
+    expect(groupSatisfied(paired(true, true).vars, 'google')).toBe(false);
   });
 
   it('keys rows by typeid, so the same name in both scopes is two rows', () => {

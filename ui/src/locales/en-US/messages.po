@@ -948,6 +948,10 @@ msgstr "{display} — renames in Flowpad only"
 msgid "{displayName} connection failed"
 msgstr "{displayName} connection failed"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{done} of {total} set up"
+msgstr "{done} of {total} set up"
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
 msgstr "{doneCount} records"
@@ -4984,6 +4988,10 @@ msgstr "Checking the app…"
 msgid "Checking the help desk files"
 msgstr "Checking the help desk files"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Checking the sign-in…"
+msgstr "Checking the sign-in…"
+
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
 msgstr "Checking the tag index…"
@@ -6103,8 +6111,13 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "Connected"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connected — {as}"
+msgstr "Connected — {as}"
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6250,6 +6263,7 @@ msgstr "Context list actions"
 msgid "context tokens"
 msgstr "context tokens"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
@@ -7828,6 +7842,11 @@ msgstr "Create New Project"
 msgid "Create new…"
 msgstr "Create new…"
 
+#. placeholder {0}: shownUrl(field.help_url)
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Create one at {0}"
+msgstr "Create one at {0}"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
@@ -9309,6 +9328,7 @@ msgstr "done"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -18021,8 +18041,8 @@ msgstr "On Disk"
 #~ msgstr "On file change"
 
 #: src/components/assets/ProjectDependencyDialog.tsx
-msgid "On hub"
-msgstr "On hub"
+#~ msgid "On hub"
+#~ msgstr "On hub"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -19005,8 +19025,12 @@ msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "optional — skipped here"
-msgstr "optional — skipped here"
+#~ msgid "optional — skipped here"
+#~ msgstr "optional — skipped here"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Optional — skipped on this machine"
+msgstr "Optional — skipped on this machine"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -20749,6 +20773,10 @@ msgstr "Reader"
 msgid "Reading"
 msgstr "Reading"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "reading {account}"
+msgstr "reading {account}"
+
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Reading dependencies…"
 msgstr "Reading dependencies…"
@@ -21692,8 +21720,12 @@ msgid "Required"
 msgstr "Required"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "required — it will not work here until it is set up"
-msgstr "required — it will not work here until it is set up"
+#~ msgid "required — it will not work here until it is set up"
+#~ msgstr "required — it will not work here until it is set up"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Required — skipped on this machine"
+msgstr "Required — skipped on this machine"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
@@ -23364,7 +23396,6 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
