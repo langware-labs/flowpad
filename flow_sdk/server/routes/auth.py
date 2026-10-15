@@ -287,6 +287,8 @@ async def login_callback(
     except Exception as e:
         from flow_sdk.cli.auth.cloud_login import _broadcast_oauth_error
 
+        # The caller (the hub logging a box in) sees only the status: the reason is logged here.
+        logger.warning("login_callback failed: %s", e)
         state.login_result = {"success": False, "error": str(e), "message": "Login failed"}
         state.login_received.set()
         if oauth_request_id:
