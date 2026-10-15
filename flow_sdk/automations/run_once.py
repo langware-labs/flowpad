@@ -148,7 +148,7 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
             project_id=trigger.project_id,
             is_test=True,
         )
-        _spawn(run_schedule_fire(trigger, event_id, is_test=True, run_id=run_id), run_id, tid)
+        _spawn(run_schedule_fire(trigger, event_id, is_test=True, run_id=run_id, inputs=event), run_id, tid)
         return RunOnceStarted(trigger_id=tid, run_id=run_id, event_id=event_id)
 
     # HOOK: a rule folder runs its own trigger.py against a sample prompt event.
