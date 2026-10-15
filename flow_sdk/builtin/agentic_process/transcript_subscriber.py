@@ -46,9 +46,7 @@ async def _route_to_ap(
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
     try:
-        aps = await AgenticProcess.local_rows(
-            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
-        )
+        aps = await AgenticProcess.local_owners_of_session(session_id)
     except Exception:
         _log.exception("transcript_subscriber: AP lookup failed for session %s", session_id)
         return False

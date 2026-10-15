@@ -79,6 +79,18 @@ def codex_sessions_fn(
 
 
 
+def thread_source_of(payload: dict) -> str:
+    """``thread_source`` of a parsed ``session_meta`` payload (see ``rollout_thread_source``)."""
+    declared = payload.get("thread_source")
+    if declared:
+        return str(declared)
+    # Older rollouts predate ``thread_source`` but still carry the spawn edge,
+    # which is equally conclusive.
+    source = payload.get("source")
+    spawned = bool(payload.get("parent_thread_id")) or (isinstance(source, dict) and "subagent" in source)
+    return "subagent" if spawned else ""
+
+
 def rollout_thread_source(path: str | Path) -> str:
     """``session_meta.thread_source`` for a rollout — ``"subagent"`` for a
     thread Codex spawned under a parent, ``"user"`` for a top-level session,
@@ -93,17 +105,7 @@ def rollout_thread_source(path: str | Path) -> str:
     try:
         for raw in _iter_head_json(Path(path)):
             if (raw.get("type") or "") == "session_meta":
-                payload = raw.get("payload") or {}
-                declared = payload.get("thread_source")
-                if declared:
-                    return str(declared)
-                # Older rollouts predate ``thread_source`` but still carry the
-                # spawn edge, which is equally conclusive.
-                source = payload.get("source")
-                spawned = bool(payload.get("parent_thread_id")) or (
-                    isinstance(source, dict) and "subagent" in source
-                )
-                return "subagent" if spawned else ""
+                return thread_source_of(raw.get("payload") or {})
     except (OSError, json.JSONDecodeError):
         pass
     return ""
