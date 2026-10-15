@@ -397,7 +397,23 @@ async def set_credential_by_name(
             await write_setup_choice(spec, way)
         except ValueError as e:
             raise CredentialError(str(e)) from e
+    await _reverify_waiting_sources(spec.name, project)
     return stored
+
+
+async def _reverify_waiting_sources(name: str, project: Any) -> None:
+    """The project's sources still in setup that read credential ``name`` check again now: setting the credential
+    is what they waited on, and nothing else re-checks a source in setup (the poller runs active ones only)."""
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+
+    for source in await DataSource.get_all({"status": SourceStatus.SETUP.value}):
+        auth = source._auth()
+        if getattr(auth, "credential", "") != name or (project is not None and str(source.project_id) != str(project.id)):
+            continue
+        try:
+            await source.verify()
+        except Exception:  # noqa: BLE001 — storing the value succeeded; a failed re-check leaves the source as it was
+            logger.warning("credential %s: could not re-check source %s", name, source.id, exc_info=True)
 
 
 def shipped_provider_title(provider: str) -> str:
