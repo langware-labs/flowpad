@@ -20,6 +20,7 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 ALLOWED: dict[str, str] = {
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
     "flow_sdk/schema/data_spec/layout.py": "row_version walks ONE example folder (a dataset row's own files)",
+    "flow_sdk/core/compute_op/python.py": "hashes ONE Python compute op's own folder (its .py files) to key its module",
     "flow_sdk/system_projects/flowpad_assistant/.claude/skills/data-management/scripts/dm_ctl.py": (
         "walks only the schema / dataset folders it just copied into a $TMPDIR probe (no .flow), "
         "to read their namespaces and re-namespace their JSON"

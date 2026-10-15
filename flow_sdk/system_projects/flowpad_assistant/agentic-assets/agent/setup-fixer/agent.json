@@ -5,7 +5,7 @@
   "description": "Repairs a project's failed setup flow so the next load passes. Launched by the backend on a failed load.",
   "avatar": "🔧",
   "worker_type": "claude",
-  "model": "md",
+  "model": "sm",
   "permission_mode": "bypassPermissions",
   "enabled": true,
   "load_flowpad_assistant": true

@@ -87,7 +87,7 @@ export interface LoadOlderResult {
 /**
  * Ask a stream inbox's sources (an owner's, or one source's) for the page of messages older than
  * `before` (`stream-inbox-load-older`). What arrives projects into conversations like any message,
- * and the live page query picks them up — this only asks. An agent's inbox is named by `agent_id`,
+ * and the live page query picks them up — this only asks. An agent's stream inbox is named by `agent_id`,
  * as every stream-inbox action names it; the local user's by nothing.
  */
 export async function loadOlderConversations(before: string, scope: ConversationScope): Promise<LoadOlderResult> {
