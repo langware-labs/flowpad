@@ -2419,7 +2419,7 @@ msgstr ""
 #: src/routes/loaders/load-agent-stream-inbox.ts
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "Agent stream inbox not found"
-msgstr "תיבת הדואר הנכנס של הסוכן לא נמצאה"
+msgstr "הדואר הנכנס של הסוכן לא נמצא"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -3889,7 +3889,7 @@ msgstr "חזרה למאגרים"
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Back to stream inbox"
-msgstr "חזרה לתיבת הדואר הנכנס"
+msgstr "חזרה לדואר הנכנס"
 
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Back to tabs"
@@ -8828,7 +8828,7 @@ msgstr "השלך טיוטה זו?"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Discard unsaved changes and go back to stream inbox"
-msgstr "בטל שינויים שלא נשמרו וחזור לתיבת הדואר הנכנס"
+msgstr "בטל שינויים שלא נשמרו וחזור לדואר הנכנס"
 
 #: src/components/account/user-info.tsx
 #: src/components/collaboration/LiveSessionView.tsx
@@ -11700,7 +11700,7 @@ msgstr "חזרה"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Go back to stream inbox"
-msgstr "חזור לתיבת הדואר הנכנס"
+msgstr "חזור לדואר הנכנס"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
@@ -11734,7 +11734,7 @@ msgstr "עבור לסשן"
 
 #: src/routes/loaders/load-conversation.ts
 msgid "Go to stream inbox"
-msgstr "מעבר לתיבת הדואר הנכנס"
+msgstr "מעבר לדואר הנכנס"
 
 #: src/components/conversation/ChannelMessageExtras.tsx
 msgid "Go to the quoted message"
@@ -11991,7 +11991,7 @@ msgstr "קבצים מוסתרים"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Hidden from your stream inbox"
-msgstr "מוסתר מתיבת הדואר הנכנס שלך"
+msgstr "מוסתר מהדואר הנכנס שלך"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -12029,7 +12029,7 @@ msgstr "הסתרת סינונים ומגבלות"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent — still visible in Stream Inbox; reappears when a new message arrives"
-msgstr "הסתרה מהשיחות האחרונות — עדיין נראה בתיבת הדואר הנכנס; מופיע שוב כשהודעה חדשה מגיעה"
+msgstr "הסתרה מהשיחות האחרונות — עדיין נראה בדואר הנכנס; מופיע שוב כשהודעה חדשה מגיעה"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Hide from Recent conversations"
@@ -23841,7 +23841,7 @@ msgstr "הירשם לחשבון Flowpad Cloud שלך כדי לצפות ולהש�
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Sign in to your Flowpad Cloud account to view your stream inbox and conversations."
-msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את תיבת הדואר הנכנס ואת השיחות שלך."
+msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את הדואר הנכנס ואת השיחות שלך."
 
 #~ msgid "Sign in with {account}"
 #~ msgstr "התחברו עם {account}"
@@ -24787,15 +24787,15 @@ msgstr "שורה שמורה"
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
 msgid "Stream Inbox"
-msgstr "תיבת הדואר הנכנס"
+msgstr "דואר נכנס"
 
 #: src/i18n/type-labels.ts
 msgid "Stream Inbox Manager"
-msgstr "מנהל תיבת הדואר הנכנס"
+msgstr "מנהל הדואר הנכנס"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Stream inbox view"
-msgstr "תצוגת תיבת הדואר הנכנס"
+msgstr "תצוגת הדואר הנכנס"
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/llm-endpoints/FiltersEditor.tsx
@@ -26049,7 +26049,7 @@ msgstr ""
 #: src/routes/loaders/load-agent-stream-inbox.ts
 #: src/routes/loaders/load-agent-stream-inbox.ts
 msgid "This Agent stream inbox URL is malformed."
-msgstr "כתובת ה-URL של תיבת הדואר הנכנס של הסוכן שגויה."
+msgstr "כתובת ה-URL של הדואר הנכנס של הסוכן שגויה."
 
 #~ msgid "This app could not be set up"
 #~ msgstr ""
@@ -26126,7 +26126,7 @@ msgstr "שיחה זו היא רק מקומית. היא תוסר מהתקן זה.
 
 #: src/components/conversation/ConversationRoute.tsx
 msgid "This conversation is not in this Agent stream inbox."
-msgstr "השיחה הזו אינה בתיבת הדואר הנכנס של הסוכן."
+msgstr "השיחה הזו אינה בדואר הנכנס של הסוכן."
 
 #: src/components/conversation/ChannelParticipants.tsx
 msgid "This conversation is on {label}: the people in it are on {label}, not Flowpad members."
@@ -27321,7 +27321,7 @@ msgstr "לא ניתן לאחזר ענפים. אנא בדקו את הרשאות �
 
 #: src/components/conversation/conversation-category.ts
 msgid "Unarchive — back to Stream Inbox"
-msgstr "הוצאה מארכיון — חזרה לתיבת הדואר הנכנס"
+msgstr "הוצאה מארכיון — חזרה לדואר הנכנס"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/conversation/AttachmentChip.tsx
