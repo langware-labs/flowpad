@@ -18749,13 +18749,13 @@ msgstr "נפתחה השוואת הנכסים"
 msgid "Opened existing project"
 msgstr "פתח פרויקט קיים"
 
-#: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
-
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Opening {name}…"
 msgstr ""
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Opening app…"
+msgstr "Opening app…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"

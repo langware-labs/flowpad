@@ -18927,13 +18927,13 @@ msgstr "Opened Asset compare."
 msgid "Opened existing project"
 msgstr "Opened existing project"
 
-#: src/components/webapp-display/WebappSetupGate.tsx
-msgid "Opening app…"
-msgstr "Opening app…"
-
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Opening {name}…"
 msgstr "Opening {name}…"
+
+#: src/components/webapp-display/WebappSetupGate.tsx
+msgid "Opening app…"
+msgstr "Opening app…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Opening task…"
