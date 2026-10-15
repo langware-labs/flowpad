@@ -271,6 +271,10 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     const r = await env.ipc['upgrade-flowpad']();
     ok(r.success === false && r.desktopUpdatePending === true, 'after a failed restart: the UI upgrade is refused');
     eq(env.uv.upgrades.length, 0, 'after a failed restart: the engine was not touched');
+    // The pre-start engine prompt (a start in the same session, e.g. macOS `activate`) is held too.
+    await env.t.installAndStartBackend();
+    eq(env.uv.checks, 0, 'after a failed restart: the pre-start engine prompt does not run');
+    eq(env.uv.upgrades.length, 0, 'after a failed restart: the pre-start path did not touch the engine');
   }
   {
     // The desktop update is FULLY DOWNLOADED (update-downloaded emitted) and the user said Later at the ready prompt:
