@@ -384,7 +384,8 @@ def test_the_two_egress_seams_now_agree():
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
-            # `is_unread`/`unread_count`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
+            # `is_unread`/`unread_count`/`archived`: this viewer's unread and archive, projected by
+            # `stream_inbox.recompute_unread`.
             # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
             # `address`/`started_at`/`ended_at`: who a channel conversation is with and when it ran —
             # stamped by the local projection from the channel's own messages.
@@ -392,8 +393,8 @@ def test_the_two_egress_seams_now_agree():
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
             # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
-             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
+             "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
              "channel_answered"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
@@ -416,6 +417,7 @@ def test_the_two_egress_seams_now_agree():
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",
+                "archived",
                 # Stamped by the local projection with `channel_source_id`, never by a caller.
                 "channel_answered",
                 "private_context_entities_",

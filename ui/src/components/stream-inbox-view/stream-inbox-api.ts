@@ -1,4 +1,5 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { ActionInfo, Agent, dataManager } from '@sdk';
+import type { ConversationScope } from './channel-owner';
 
 export interface FetchResult {
   created: number;
@@ -75,4 +76,30 @@ export async function searchStreamInbox(q: string, agentId?: string): Promise<Se
   action.bodyParameters = { q, ...(agentId ? { agent_id: agentId } : {}) };
   const result = await dataManager.callAction<{ q: string }, { conversation_ids?: string[] }>(action);
   return new Set(result?.conversation_ids ?? []);
+}
+
+export interface LoadOlderResult {
+  fetched: number;
+  /** No source has anything older to give: what is held is all there is. */
+  exhausted: boolean;
+}
+
+/**
+ * Ask a stream inbox's sources (an owner's, or one source's) for the page of messages older than
+ * `before` (`stream-inbox-load-older`). What arrives projects into conversations like any message,
+ * and the live page query picks them up — this only asks. An agent's inbox is named by `agent_id`,
+ * as every stream-inbox action names it; the local user's by nothing.
+ */
+export async function loadOlderConversations(before: string, scope: ConversationScope): Promise<LoadOlderResult> {
+  const action = new ActionInfo('stream-inbox-load-older', null, null, 'POST');
+  action.bodyParameters = {
+    before,
+    ...('sourceId' in scope
+      ? { source_id: scope.sourceId }
+      : scope.owner.type === Agent.type
+        ? { agent_id: scope.owner.id }
+        : {}),
+  };
+  const result = await dataManager.callAction<Record<string, string>, LoadOlderResult>(action);
+  return result ?? { fetched: 0, exhausted: true };
 }
