@@ -15573,6 +15573,10 @@ msgstr "مطلوب من أجل"
 msgid "Needed for:"
 msgstr "مطلوب من أجل:"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Needed to run {projectName} on this computer."
+msgstr ""
+
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Needs {0} sign-in"
@@ -18815,6 +18819,7 @@ msgstr ""
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr ""
 
@@ -20023,6 +20028,10 @@ msgstr "تم إعادة تسمية المشروع"
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Project Required"
 msgstr "مشروع مطلوب"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Project requirements"
+msgstr ""
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
@@ -21481,6 +21490,7 @@ msgstr ""
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr ""
@@ -23535,6 +23545,7 @@ msgstr ""
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23545,8 +23556,8 @@ msgid "Set up (runs an agentic process)"
 msgstr "إعداد (يشغّل عملية ذاتية التنفيذ)"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Set up {projectName}"
-msgstr ""
+#~ msgid "Set up {projectName}"
+#~ msgstr ""
 
 #~ msgid "Set up {title}"
 #~ msgstr ""
@@ -26596,6 +26607,10 @@ msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إ
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
 
+#: src/tabs/tab-row-item.tsx
+msgid "This asset is not part of this project"
+msgstr ""
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this budget"
 msgstr "هذه الميزانية"
@@ -28319,6 +28334,10 @@ msgstr "الأصول المستخدمة"
 msgid "Used by"
 msgstr "تُستخدم بواسطة"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Used by: {usedBy}"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
 msgstr ""
@@ -29073,8 +29092,8 @@ msgid "What this project has published, and what it could."
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
-msgstr ""
+#~ msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "What this source places in the project is added to .gitignore — it may be private."
