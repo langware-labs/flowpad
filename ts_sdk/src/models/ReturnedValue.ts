@@ -81,6 +81,8 @@ export interface PromptResult extends ReturnedValue {
   text?: string;
   /** Files produced by a declared-output run, or selected for a channel reply. */
   files?: string[];
+  /** The LLM endpoint that answered a `prompt` op (its TypeId): which model a logged call measured. */
+  endpoint?: string | null;
 }
 
 export interface AskResult extends ReturnedValue {
