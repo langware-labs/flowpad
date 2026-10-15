@@ -5256,6 +5256,12 @@ class AgenticProcess(Entity):
         descriptor = await asyncio.to_thread(lambda: self.transcript)
         if descriptor is None or not descriptor.session_id:
             return None
+        # Discovery can match by cwd and launch time, which finds a sibling's
+        # session as readily as our own. A session another process already
+        # owns is never ours.
+        owners = await AgenticProcess.local_owners_of_session(descriptor.session_id)
+        if any(owner.id != self.id for owner in owners):
+            return None
         await self._persist_transcript_session_id(descriptor)
         return self.session_id if self.session_id == descriptor.session_id else None
 
@@ -8322,6 +8328,13 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
+
+    @classmethod
+    async def local_owners_of_session(cls, session_id: str) -> list["AgenticProcess"]:
+        """Every local process stamped with ``session_id`` (shared/forked sessions can have several)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        return await cls.local_rows(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
 
     @classmethod
     async def get_by_session_id(cls, session_id: str) -> "AgenticProcess | None":
