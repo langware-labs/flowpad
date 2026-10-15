@@ -4,10 +4,11 @@
  * setup details (what is unfinished, where its messages go, why it is parked).
  */
 import { useCallback, useState } from 'react';
-import { type DataSource, type DataDriver } from '@sdk';
+import { type DataSource, type DataDriver, type SyncReport } from '@sdk';
 import { CheckCircle2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
@@ -35,10 +36,10 @@ export function sourceLook(source: DataSource): SourceLook {
 export function SourceStatusLine({ source, className }: { source: DataSource; className?: string }) {
   const { t } = useLingui();
   const look = sourceLook(source);
-  // One view of the line: parked, held (running, but a file waits on a person), or the source's own look.
+  // One view of the line: parked, held (running, but a file or its mirror waits on a person), or the source's own look.
   const view = source.isParked
     ? { text: 'text-foreground', dot: PARKED_DOT, label: t`Parked`, title: i18n._(ATTENTION.parked.next) }
-    : source.isHeld
+    : source.isHeld || source.isMirrorBroken
       ? { text: 'text-amber-600 dark:text-amber-400', dot: 'bg-amber-500', label: t`Running · needs you`, title: source.error_detail || undefined }
       : { text: look.text, dot: look.dot, label: i18n._(look.label), title: undefined };
   return (
@@ -53,27 +54,49 @@ export function SourceStatusLine({ source, className }: { source: DataSource; cl
   );
 }
 
+/** What one Pull answered, in one line — read off the generic report only, so every source family (messages,
+ *  files, records) says it the same way: "2 new · 1 updated", "Up to date", or why it did not run. */
+export function pullSummary(report: SyncReport): { ok: boolean; text: string } {
+  if (report.ran === false) return { ok: false, text: report.detail || i18n._(msg`Not fetched`) };
+  if (report.health && report.health !== 'ok') {
+    return { ok: false, text: report.error_detail || i18n._(msg`The source did not answer`) };
+  }
+  const parts = [
+    report.created ? i18n._(msg`${report.created} new`) : '',
+    report.updated ? i18n._(msg`${report.updated} updated`) : '',
+    report.removed ? i18n._(msg`${report.removed} removed`) : '',
+  ].filter(Boolean);
+  return { ok: true, text: parts.length ? parts.join(' · ') : i18n._(msg`Up to date`) };
+}
+
+/** Pull one source NOW (`syncNow`: a cycle runs and is reported), never "queued for the next tick" — the one
+ *  person-triggered pull every surface shares. Never throws: a failure is its answer. */
+export async function pullNow(source: DataSource): Promise<{ ok: boolean; text: string }> {
+  try {
+    return pullSummary(await source.syncNow());
+  } catch (error) {
+    return { ok: false, text: errorMessage(error, i18n._(msg`The source could not be pulled`)) };
+  }
+}
+
 /**
  * Pull changes now. Reports through `notify`, like every verb on these screens: an inline note would be a second
- * result channel, and which one you got would depend on which action you picked.
+ * result channel, and which one you got would depend on which action you picked. `pulling` holds for the whole
+ * cycle, so the control spins until the source has actually been read.
  */
 export function useSourcePull(source: DataSource) {
-  const { t } = useLingui();
   const [pulling, setPulling] = useState(false);
   const pull = useCallback(async () => {
     setPulling(true);
     try {
-      // Not synchronous: the detail says "on the next tick", which is the expectation this toast exists to set.
-      notify.success({ title: source.name || source.provider, message: (await source.pollNow()).detail });
-    } catch (error) {
-      notify.error({
-        title: t`Could not pull ${source.name || source.provider}`,
-        message: errorMessage(error, t`The source was not queued.`),
-      });
+      const { ok, text } = await pullNow(source);
+      const title = source.name || source.provider;
+      if (ok) notify.success({ title, message: text });
+      else notify.error({ title, message: text });
     } finally {
       setPulling(false);
     }
-  }, [source, t]);
+  }, [source]);
   return { pull, pulling };
 }
 
@@ -131,6 +154,7 @@ export function SourceActions({ source, spec, onEdit, onReplay, onDelete }: Acti
 const NOTE: Partial<Record<AttentionKind, string>> = {
   unresolved: 'border-amber-500/60 bg-amber-500/10',
   held: 'border-amber-500/60 bg-amber-500/10',
+  mirror: 'border-amber-500/60 bg-amber-500/10',
   parked: 'border-red-500/60 bg-red-500/10',
 };
 

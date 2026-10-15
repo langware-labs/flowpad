@@ -53,6 +53,9 @@ interface ChatPlanModeValue {
   setPlanPending: (v: boolean) => void;
   /** True while an answer/execute send started here is in flight. */
   sending: boolean;
+  /** The question the worker's hook reported it is blocked on — the fallback
+   *  when the transcript does not carry the call yet. */
+  hookQuestion: AgenticProcess['pending_user_input'] | null;
   /** Answer an AskUserQuestion as the next turn (stays in plan mode if pending). */
   answer: (text: string) => Promise<void>;
   /** Approve + run the plan in the process's normal mode, then leave plan mode. */
@@ -67,6 +70,7 @@ const FALLBACK: ChatPlanModeValue = {
   togglePlan: () => {},
   setPlanPending: () => {},
   sending: false,
+  hookQuestion: null,
   answer: async () => {},
   execute: async () => {},
 };
@@ -85,6 +89,7 @@ export function ChatPlanModeProvider({
   const canAnswerInline = !!process && process.isHeadless;
   const planToggleEnabled = canAnswerInline && !!process.supports_plan_mode;
   const respondEnabled = !!process;
+  const hookQuestion = process?.pending_user_input ?? null;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -132,10 +137,21 @@ export function ChatPlanModeProvider({
       togglePlan,
       setPlanPending,
       sending,
+      hookQuestion,
       answer,
       execute,
     }),
-    [planToggleEnabled, respondEnabled, canAnswerInline, planPending, togglePlan, sending, answer, execute],
+    [
+      planToggleEnabled,
+      respondEnabled,
+      canAnswerInline,
+      planPending,
+      togglePlan,
+      sending,
+      hookQuestion,
+      answer,
+      execute,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

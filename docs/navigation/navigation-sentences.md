@@ -63,7 +63,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 31 | open project home | /dock/assets/project-home |
 | 32 | open my project | /dock/project/<id> |
 | 33 | switch project | ACTION: project list |
-| 34 | open the gtm-studio project | entity:project |
+| 34 | open the sales-desk project | entity:project |
 | 35 | create a new project | ACTION: new project dialog |
 | 36 | open a folder as a project | ACTION: open folder |
 | 37 | clone a repo | ACTION: new project from git |
@@ -94,7 +94,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 58 | show workflows | /dock/assets/list/dynamic_workflow |
 | 59 | show journeys | /dock/assets/list/journey |
 | 60 | show wizards | /dock/assets/list/wizard |
-| 61 | show whiteboards | /dock/assets/list/whiteboard |
+| 61 | show charts | /dock/assets/list/chart |
 | 62 | show my decks | /dock/assets/list/deck |
 | 63 | show deck templates | /dock/assets/list/deck_template |
 | 64 | show spreadsheets | /dock/assets/list/spreadsheet |
@@ -122,7 +122,7 @@ Measure the navigator against it with `scripts/navigation_coverage.py` (see `nav
 | 82 | new workflow | ACTION: quick-create dynamic_workflow |
 | 83 | create a task | ACTION: quick-create task |
 | 84 | new markdown doc | ACTION: quick-create markdown |
-| 85 | open a new whiteboard | ACTION: quick-create whiteboard |
+| 85 | open a new chart | ACTION: quick-create chart |
 | 86 | add an MCP server | ACTION: quick-create mcp |
 | 87 | add a credential | ACTION: quick-create credential |
 | 88 | add an API key | ACTION: quick-create credential |

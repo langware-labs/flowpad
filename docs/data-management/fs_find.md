@@ -14,7 +14,7 @@ For the neighbouring description of how discovery is consumed by the record laye
 
 ## Methodology
 
-The bench harness (thrown away after results were captured; was hosted at `github.com/serans1/fs-discovery-bench`) creates a synthetic tree of 2,000 `.md` files scattered across ~200 nested directories, interleaved with `node_modules`, `.git`, `__pycache__`, `.venv`, `dist`, `build` noise directories. It then times four discovery methods, taking the median of 3 repeats per method:
+The bench harness (thrown away after results were captured) creates a synthetic tree of 2,000 `.md` files scattered across ~200 nested directories, interleaved with `node_modules`, `.git`, `__pycache__`, `.venv`, `dist`, `build` noise directories. It then times four discovery methods, taking the median of 3 repeats per method:
 
 1. **`Path.rglob('*.md')`** — pure-Python walk with no pruning.
 2. **`os.walk` pruned** — pure-Python walk that skips standard noise directories (`node_modules`, `.git`, `__pycache__`, `.venv`, `dist`, `build`).

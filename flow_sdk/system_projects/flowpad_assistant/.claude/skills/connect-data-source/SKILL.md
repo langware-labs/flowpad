@@ -37,6 +37,11 @@ into a source that demonstrably works, and shows it to the user.
 > **5. Say what is the user's step.** Credentials, OAuth and bot invites are
 > theirs. Name the exact click; never loop waiting for it.
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract. Sources keep paging, cursors and session lifecycles; a block may process a finite page without replacing the source driver.
+
 ## Modes (from the skill arg)
 
 The FIRST whitespace-separated token, if it is exactly `author`, `debug`,
@@ -47,7 +52,7 @@ connect request.
 | Skill arg | Load | What it does |
 | --- | --- | --- |
 | *(none)*, or a natural request — **the default** | `modes/connect.md` | Map the request onto a source, configure it, prove each gate, show it |
-| `author <system>` | `modes/author.md` | Write a NEW self-contained source folder (`data_driver.json` + `source.py` + its tests), index it, then connect it |
+| `author <system>` | `modes/author.md` | Reuse or extend a configurable driver first; write a new self-contained driver only when none fits, then index and connect it |
 | `debug [<source>]` | `modes/debug.md` | Ordered diagnosis of a source that is failing, empty or stuck |
 | `define <source>` | `modes/define.md` | Sample the items, agree an output shape, create the dataset bound to the source, label an example |
 | `list` | *(inline, below)* | Read-only — what is connected and how healthy it is |
@@ -78,12 +83,14 @@ fails** with what the user must do:
 | When you need to… | Load |
 | --- | --- |
 | turn a person's words into a provider + config | `references/mapping.md` |
+| several resources share a provider's transport, or copied drivers need consolidation | [references/configurable-drivers.md](references/configurable-drivers.md) |
 | a mail/agent source whose fetch is a worker — its budgets, and why its sync reports nothing | `references/process-sdk.md` |
 | run any mechanic — specs, create, verify, poll, observe, snapshot | `scripts/source_ctl.py` |
 | sample items, create a dataset, promote, annotate, snapshot counts | `scripts/dataset_ctl.py` |
 | the gate-safe transport both scripts share (never call it directly) | `scripts/_ctl_common.py` |
 | know what a manifest may declare | `docs/data-management/data-source-asset.md` (repo) |
 | know how the sync loop, health and reflect behave | `docs/data-management/data-sources.md` (repo) |
+| connect a WhatsApp agent through hub claims, or diagnose channel/deployment routing | [Flow SDK channel documentation map](../flowpad-assistance/sdk-channels.md) — source checkout required |
 | present something to the user, or take them somewhere | the `flowpad-navigation` skill |
 
 ## Showing the user

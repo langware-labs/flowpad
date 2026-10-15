@@ -41,6 +41,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     latch_spawn_failure,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import error_frame
+from flow_sdk.builtin.agentic_process.worker_turns import WorkerTurns
 from flow_sdk.responses.response import ApiSuccessResponse
 
 if TYPE_CHECKING:
@@ -104,6 +105,10 @@ async def run_headless_turn(
     log_prefix = f"{type(driver).__name__}.headless_prompt"
 
     register_prompt_worker(process.id, worker)
+    # The turns this worker runs (see ``worker_turns``): one turn for a worker that exits
+    # with its answer, several for one the agent left background work running in.
+    turns = WorkerTurns(process, worker, log_prefix=log_prefix)
+    turns.register()
     # See the module docstring: from here until create_task, this frame owns the
     # slot. Every exit path below must release it.
     try:
@@ -133,6 +138,7 @@ async def run_headless_turn(
         # broadcast it now so the closing notify_updated (which carries the
         # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
         object.__setattr__(process, "_turn_in_flight", True)
+        turns.open = True
         try:
             await process.notify_updated()
         except Exception:
@@ -153,6 +159,9 @@ async def run_headless_turn(
                     raise setup_error
                 async for fd in worker.execute(prompt=prompt, context=context):
                     await adopt_session(worker.get_session_id())
+                    fd = await turns.route(fd)
+                    if fd is None:
+                        continue
                     try:
                         await process.emit_flow_data(fd.model_dump())
                     except Exception:
@@ -169,6 +178,7 @@ async def run_headless_turn(
             except Exception:
                 logger.exception("%s: worker error", log_prefix)
             finally:
+                turns.discard()
                 unregister_prompt_worker(process.id, worker)
                 if on_turn_finally is not None:
                     try:
@@ -184,6 +194,7 @@ async def run_headless_turn(
     except BaseException:
         # _run_turn never took ownership of the slot — release it here so the
         # next turn is not permanently rejected with a 409.
+        turns.discard()
         unregister_prompt_worker(process.id, worker)
         raise
     return ApiSuccessResponse(data={"status": "started", "worker": driver.name})

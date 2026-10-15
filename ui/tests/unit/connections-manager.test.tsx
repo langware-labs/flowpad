@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
+  openFile: vi.fn(),
   connect: vi.fn(),
   attach: vi.fn(),
   detach: vi.fn(),
@@ -81,7 +82,7 @@ vi.mock('@src/components/status/use-status-record', () => ({
 // `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
 // not render. The host owns navigation so the harness rows can stay presenters.
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: {}, currentDock: null }),
+  useDockNavigation: () => ({ navigation: { openFile: h.openFile }, currentDock: null }),
 }));
 vi.mock('@src/notifications', () => ({
   notify: { error: h.notifyError, success: vi.fn(), info: vi.fn() },
@@ -490,7 +491,7 @@ describe('ConnectionsManager — adding a credential', () => {
     expect(screen.getByTestId('credential-save').hasAttribute('disabled')).toBe(true);
   });
 
-  it('packing detected keys opens the form with those names and no value fields', async () => {
+  it('auto setup saves edited details and preserves blank values without a selection dialog', async () => {
     h.status = statusWith({
       files: [
         {
@@ -505,20 +506,30 @@ describe('ConnectionsManager — adding a credential', () => {
     });
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
-    await userEvent.click(screen.getByTestId('detected-key-user-QA_A'));
-    await userEvent.click(screen.getByTestId('detected-pack-user'));
+    expect(screen.getByText('Environment variables')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Open QA_B in .env.local at line 2' }));
+    expect(h.openFile).toHaveBeenCalledWith('/h/.env.local', { line: 2 });
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    await userEvent.type(screen.getByLabelText('Value for QA_A'), 'new-value');
+    await userEvent.click(screen.getByRole('button', { name: 'Details for QA_A' }));
+    await userEvent.type(screen.getByLabelText('Label'), 'Account token');
+    await userEvent.type(screen.getByLabelText('Hint'), 'Copy from settings');
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(screen.getByRole('button', { name: 'Add variable' }));
+    await userEvent.type(screen.getByLabelText('New variable name 1'), 'NEW_KEY');
+    await userEvent.type(screen.getByLabelText('New variable value 1'), 'new-secret');
+    await userEvent.click(screen.getByRole('button', { name: 'Save details' }));
 
-    expect(screen.getByTestId('credential-var-name-0').textContent).toBe('QA_A');
-    expect(screen.queryByTestId('credential-var-value-0')).toBeNull();
-
-    await userEvent.type(screen.getByTestId('credential-title'), 'QA pack');
-    // Authoring a definition says how to get its values: the AI setup follows it.
-    await userEvent.type(screen.getByTestId('credential-setup'), 'Read them off the QA console.');
-    await userEvent.click(screen.getByTestId('credential-save'));
-
-    await waitFor(() => expect(h.save).toHaveBeenCalled());
-    expect(h.save.mock.calls[0][0]).toMatchObject({ scope: 'user', values: {} });
-    expect(Object.keys((h.save.mock.calls[0][0] as { manifest: { vars: object } }).manifest.vars)).toEqual(['QA_A']);
+    await waitFor(() => expect(h.save).toHaveBeenCalledTimes(3));
+    expect(h.save.mock.calls[0][0]).toMatchObject({
+      scope: 'user', auto_declare: true, manifest: { name: '', vars: { QA_A: { label: 'Account token', hint: 'Copy from settings' } } }, values: { QA_A: 'new-value' },
+    });
+    expect(h.save.mock.calls[1][0]).toMatchObject({
+      scope: 'user', auto_declare: true, manifest: { name: '', vars: { QA_B: {} } }, values: {},
+    });
+    expect(h.save.mock.calls[2][0]).toMatchObject({
+      auto_declare: true, manifest: { name: '', vars: { NEW_KEY: {} } }, values: { NEW_KEY: 'new-secret' },
+    });
   });
 });
 

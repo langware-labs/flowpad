@@ -6,8 +6,8 @@ import { recordContentRef, vfsEditorTarget } from '@src/components/assets/editor
 describe('recordContentRef', () => {
   const authority = new TypeId('compute_node', 'd6978791-9503-5f73-a4f2-d85e581a4fff');
 
-  it('gives a whiteboard editor the folder containing its primary markdown file', () => {
-    const mainRef = new FSRef('/tmp/board/WHITE_BOARD.md', authority, 'text');
+  it('gives a chart editor the folder containing its primary markdown file', () => {
+    const mainRef = new FSRef('/tmp/board/CHART.md', authority, 'text');
 
     const contentRef = recordContentRef(mainRef, true);
 

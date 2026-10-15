@@ -4,6 +4,7 @@ id: 91856acd-d005-470d-b3c8-0e762229408a
 
 # Claude Guidelines for flow-cli
 
+
 ## Quick Start
 
 ### Prerequisites (Windows)
@@ -48,7 +49,7 @@ npm run dev
 
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
-> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
 ### Validating the HUB UI (non-negotiable)
 
@@ -172,6 +173,19 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
 
+## FlowCall — recognize the call-and-result contract
+
+**FlowCall** names Flowpad's mechanism for invoking work, receiving a structured
+outcome and value, and composing results. `ReturnedValue` is its answer contract;
+`ComputeOp`, `Wizard`, and `ProcessCall` are participating parts, not synonyms.
+For questions about FlowCall, ReturnedValue, or how work calls return and compose
+values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
+`flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
+before investigating `ActionInfo` or `ApiResponse` transport plumbing.
+Keep the architectural name distinct from existing code identifiers.
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
+
 ## Naming — check the glossary before inventing a noun
 
 **[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
@@ -182,6 +196,9 @@ If a backend route can't be called through `apiClient` because it doesn't return
 * **`Agent` is reserved; the `.claude/agents/*.md` prompt asset is `SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
 
 ### Staging OAuth validation
+
+- Use the existing Chrome extension connection (`debugMcp` browser tools) for browser validation. Do not ask the user to enable Chrome remote debugging or switch to the real-browser CLI when the extension is available.
+- The installed ChatGPT extension is reachable through the bundled browser client in `mcp__node_repl__js`: import `browser-client.mjs`, assign the result of `setupBrowserRuntime()` to `agent`, and select the extension browser with profile `langware.ai`. `debugMcp` may instead be configured for CDP; inspect its configuration before calling it an extension connection. If browser actions report a missing Codex executable, check `CODEX_CLI_PATH` against the installed app's `codex-cli/bin/codex` path.
 
 - The real hub repository is `/Users/shlom/Documents/dev/test_flowpad/FlowPad`; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
 - Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in as `eran@langware.ai`.

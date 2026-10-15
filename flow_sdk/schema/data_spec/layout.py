@@ -99,25 +99,51 @@ def row_id(ex_dir: Path, dataset_id: str, metadata: Optional[dict[str, Any]] = N
     return held or example_id(dataset_id, Path(ex_dir).name)
 
 
-def row_version(ex_dir: Path) -> str:
-    """A row's version: a digest of every file in its folder. Read off the bytes, so a row that no
-    longer fits its schema has one too (it can be repaired or deleted with a version check), and any
-    write -- by Flowpad or anyone -- moves it. Hidden files and folders (``.DS_Store``) are not the
-    row: a file browser dropping one never makes a save look like a conflict."""
-    import hashlib  # noqa: PLC0415
+def _row_files(root: Path):
+    """Every file under ``root``, in one order, as ``(relative posix path, Path)``. Hidden files and
+    folders (``.DS_Store``) are not the row: a file browser dropping one never makes a save look
+    like a conflict."""
     import os  # noqa: PLC0415
 
-    digest = hashlib.sha256()
-    root = Path(ex_dir)
     for here, dirs, files in os.walk(root):
         dirs[:] = sorted(d for d in dirs if not d.startswith("."))
         for name in sorted(f for f in files if not f.startswith(".")):
             path = Path(here) / name
-            digest.update(path.relative_to(root).as_posix().encode() + b"\0")
-            try:
-                digest.update(path.read_bytes())
-            except OSError:
-                pass
+            yield path.relative_to(root).as_posix(), path
+
+
+def row_version(ex_dir: Path) -> str:
+    """A row's version: a digest of every file in its folder. Read off the bytes, so a row that no
+    longer fits its schema has one too (it can be repaired or deleted with a version check), and any
+    write -- by Flowpad or anyone -- moves it."""
+    import hashlib  # noqa: PLC0415
+
+    digest = hashlib.sha256()
+    for rel, path in _row_files(Path(ex_dir)):
+        digest.update(rel.encode() + b"\0")
+        try:
+            digest.update(path.read_bytes())
+        except OSError:
+            pass
+    return digest.hexdigest()[:16]
+
+
+def rows_version(folder) -> str:
+    """The rows of a dataset folder as a whole, as one version: a digest of every row file's path,
+    size and mtime -- a stat walk, no bytes read, so any write by anyone moves it. ``""`` with no
+    rows yet. The same files ``row_version`` hashes, one level up."""
+    import hashlib  # noqa: PLC0415
+
+    root = Path(folder) / EXAMPLES_DIR
+    if not root.is_dir():
+        return ""
+    digest = hashlib.sha256()
+    for rel, path in _row_files(root):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        digest.update(f"{rel}\0{st.st_size}\0{st.st_mtime_ns}\0".encode())
     return digest.hexdigest()[:16]
 
 
@@ -725,10 +751,17 @@ class FolderLayout(DatasetLayout):
         target = examples_dir / check_key(key)
         if target.is_dir() and not stored_row_id(ex.metadata):
             ex = ex.model_copy(update={"metadata": {**ex.metadata, ROW_ID: row_id(target, dataset_id)}})
+        return self._swap_in(target, lambda scratch: self.write_example(scratch, ex, contents=contents))
+
+    @staticmethod
+    def _swap_in(target: Path, build: Any) -> str:
+        """The atomic replace every example write goes through: ``build(scratch)`` writes the example
+        into a scratch dir beside ``target`` and answers its id; the scratch then takes ``target``'s
+        place, so a reader sees the old example or the new one, never half of each."""
         stamp = uuid.uuid4().hex[:8]
-        scratch, old = examples_dir / f".{key}.new-{stamp}", examples_dir / f".{key}.old-{stamp}"
+        scratch, old = target.parent / f".{target.name}.new-{stamp}", target.parent / f".{target.name}.old-{stamp}"
         try:
-            rid = self.write_example(scratch, ex, contents=contents)
+            rid = build(scratch)
             if target.exists():
                 target.rename(old)
             scratch.rename(target)
@@ -737,6 +770,30 @@ class FolderLayout(DatasetLayout):
                 if leftover.exists():
                     shutil.rmtree(leftover)
         return rid
+
+    def put_problem_example(self, folder, key: str, input: dict[str, Any], *, dataset_id: str,   # noqa: A002 -- the slot's name
+                            main_document: str, kind: str = "train") -> str:
+        """Write a row whose ``input`` does NOT fit the row kind -- as stored, unchecked -- so the
+        dataset reports it as a problem (``rows_and_problems``) with its input intact, rather than
+        losing it. What a mirror does with a record the outside system holds in a shape the schema
+        does not: the inverse of ``io.reader.read_fields``, every field inline in the slot's main
+        document. Same scratch-and-swap as ``put_example``; a replaced row keeps its id and kind.
+        Returns the id."""
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+        examples_dir = Path(folder) / EXAMPLES_DIR
+        examples_dir.mkdir(parents=True, exist_ok=True)
+        target = examples_dir / check_key(key)
+        meta = _load_example_meta(target)[0] if target.is_dir() else {}
+        rid = row_id(target, dataset_id, meta) if target.is_dir() else mint_uuid()
+
+        def build(scratch: Path) -> str:
+            (scratch / "input").mkdir(parents=True)
+            _write(scratch / "input" / main_document, json.dumps(input, indent=2, default=str, ensure_ascii=False) + "\n")
+            self.write_example_meta(scratch, {**meta, ROW_ID: rid, "kind": meta.get("kind") or kind}, {})
+            return rid
+
+        return self._swap_in(target, build)
 
     def delete_example(self, folder, example_id_: str, *, dataset_id: str) -> str:
         """Remove one example (its whole directory). Returns its key; ``LookupError`` when absent."""

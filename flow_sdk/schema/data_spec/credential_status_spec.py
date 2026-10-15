@@ -4,11 +4,12 @@ Names and presence only — no value ever appears in these shapes.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Callable, Mapping, Optional
 
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     CredentialRequirement,
@@ -32,10 +33,20 @@ class CredentialVarStatusSpec(DataSpec):
     #: deployment requires it beyond the credential (``DeploymentSecretsSpec.require``).
     required: Requirement = CredentialRequirement.MUST
     kind: CredentialVarKind = CredentialVarKind.TEXT
-    #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
+    #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type —
+    #: ``cli`` for a sign-in a command-line tool holds, ``connection`` for an oauth grant.
     store: str = "env"
-    #: A value exists in that store.
+    #: A value exists in that store (cli: its check passed on this computer; oauth: the grant is held and
+    #: covers ``scopes``).
     present: bool = False
+    #: oauth: the provider whose grant this way is, and the scopes it must cover.
+    provider: str = ""
+    scopes: list[str] = []
+    #: cli: the command a person runs on this computer to sign in.
+    login: str = ""
+    #: cli: the declaration's own ``login`` / ``check`` (every OS) — what an edit of the credential sends back.
+    login_spec: Optional[CliOp] = None
+    check_spec: Optional[CliOp] = None
     #: Where a value was found at all: ``env`` / ``vault`` / the remote store type / None.
     found_in: Optional[str] = None
     #: ``missing`` (no value anywhere), ``wrong-store`` (a value in the other local store) or
@@ -47,6 +58,45 @@ class CredentialVarStatusSpec(DataSpec):
     @property
     def is_must(self) -> bool:
         return self.required is CredentialRequirement.MUST
+
+    @property
+    def is_one_of(self) -> bool:
+        return self.required is CredentialRequirement.ONE_OF
+
+    @property
+    def holds_value(self) -> bool:
+        """A store keeps a value for it — not a sign-in (``cli``) or a grant (``oauth``), which live elsewhere."""
+        return self.kind not in (CredentialVarKind.CLI, CredentialVarKind.OAUTH)
+
+
+def way_order(vars: Mapping[str, Any], choice: str = "") -> list[str]:
+    """Which way of a ONE_OF group is active — the order, said once: the way chosen here (``choice``, while it
+    names a member), else a stored value's way, then a grant's (``oauth``), then a tool's sign-in (``cli``), each
+    in declaration order. ``vars`` maps a name to anything with ``is_one_of`` and ``kind``."""
+    ways = {name: v for name, v in vars.items() if v.is_one_of}
+    if choice and choice in ways:
+        return [choice]
+    rank = {CredentialVarKind.OAUTH: 1, CredentialVarKind.CLI: 2}
+    return sorted(ways, key=lambda name: rank.get(ways[name].kind, 0))
+
+
+def active_way(vars: Mapping[str, Any], choice: str, held: Callable[[str], bool]) -> str:
+    """The active way: the chosen one (held or not), else the first in :func:`way_order` that ``held`` says is
+    there; ``""`` when none is."""
+    order = way_order(vars, choice)
+    if choice and order == [choice]:
+        return choice
+    return next((name for name in order if held(name)), "")
+
+
+def group_held(vars: list, choice: str = "") -> bool:
+    """The ONE_OF rule, said once: no group, or its active way (:func:`active_way`) present. ``vars`` are anything
+    with ``env_var``, ``is_one_of``, ``kind`` and ``present`` (a status row's, a setup requirement's)."""
+    by_name = {v.env_var: v for v in vars}
+    if not any(v.is_one_of for v in vars):
+        return True
+    active = active_way(by_name, choice, lambda name: by_name[name].present)
+    return bool(active) and by_name[active].present
 
 
 class CredentialStatusRowSpec(DataSpec):
@@ -84,10 +134,18 @@ class CredentialStatusRowSpec(DataSpec):
     setup_skipped: Optional[SetupSkipSpec] = None
     #: Where its folder is on this machine — what "Skip → Always" would remove.
     asset_ref: str = ""
-    #: ``connected`` (every required value present / the grant held and covering), ``partial`` (some values;
+    #: The ONE_OF way set up here (``Credential.chosen``); ``""`` when none is chosen yet.
+    setup_choice: str = ""
+    #: ``connected`` (every MUST value present and one of the ONE_OF ones / the grant held and covering), ``partial`` (some values;
     #: a grant missing scopes), ``needs_reauth`` (oauth: the grant went stale) or ``missing``.
     state: str
     vars: list[CredentialVarStatusSpec] = []
+
+    @property
+    def missing(self) -> list[str]:
+        """The variables still needed: every absent MUST, and a ONE_OF group's members while none is there."""
+        held = group_held(self.vars, self.setup_choice)
+        return [v.env_var for v in self.vars if not v.present and (v.is_must or (v.is_one_of and not held))]
 
 
 class DetectedKeySpec(DataSpec):

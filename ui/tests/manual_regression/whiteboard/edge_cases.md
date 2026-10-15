@@ -36,12 +36,12 @@ tags: [whiteboard, edge]
 * Open a fresh whiteboard. Generate 100 rectangle elements via:
   ```js
   const lib = window.__excalidrawLib;
-  const api = window.__whiteboardApi;
+  const api = window.__chartApi;
   const els = lib.convertToExcalidrawElements(
     Array.from({length:100}, (_,i) => ({ type:'rectangle', x:(i%10)*60, y:Math.floor(i/10)*60, width:50, height:50, label:{text:`N${i}`} }))
   );
   api.updateScene({ elements: els });
-  window.__whiteboardOnChange(els, api.getAppState(), api.getFiles());
+  window.__chartOnChange(els, api.getAppState(), api.getFiles());
   ```
 * Wait 2000ms past debounce.
 * Validate `<folder>/board.json` contains all 100 elements (+ their text labels, ~200 elements total).

@@ -1,3 +1,6 @@
+import { OwnerLoadGate } from '@src/components/project-setup/OwnerLoadGate';
+import { AgentHomeAfterLoad } from '@src/project-home-page/AgentHomeAfterLoad';
+import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM, CONSUMER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
 import { PrimaryContentRegion, PrimaryContentFallback } from '@sdk/react/primary-content';
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -189,7 +192,7 @@ function ContentPanelBody({
 
   const { user } = useAuth();
 
-  const { agent } = useAgentContext();
+  const { agent, project } = useAgentContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer();
@@ -594,7 +597,25 @@ function ContentPanelBody({
     }
   };
 
-  const body = renderBody(bodyViewType);
+  const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
+  const display = currentDock?.isActiveDisplay ? (currentDock.hostProcessId ?? '') : '';
+  const loadProject = providerProject || (display ? project?.id : undefined);
+  const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
+  const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
+  const renderedBody = homeAgent && consumerProject
+    ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
+    : renderBody(bodyViewType);
+  const body = loadProject ? (
+    <OwnerLoadGate
+      urlProject={loadProject}
+      appId={bodyViewType === ViewType.APP && !homeAgent ? (appDockAddress(currentDock)?.microAppId ?? null) : null}
+      display={display}
+    >
+      {renderedBody}
+    </OwnerLoadGate>
+  ) : (
+    renderedBody
+  );
 
   return (
     <div data-testid="content-panel" className="flex h-full w-full flex-col bg-background">

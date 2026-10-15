@@ -38,6 +38,7 @@ FIELDS = ("worker_status", "worker_status_detail", "busy", "ready_for_input")
 
 _RESOLVERS = [
     (_claude_sessions, "get_claude_session"),
+    (_codex_driver, "find_codex_resumable_session"),
     (_codex_driver, "find_codex_session_jsonl"),
     (_codex_driver, "find_latest_codex_session_jsonl"),
     (_copilot_driver, "find_copilot_session_jsonl"),

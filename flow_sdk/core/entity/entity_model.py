@@ -4,6 +4,7 @@ import functools
 import inspect
 import logging
 import os
+import time
 import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -176,12 +177,12 @@ class PathQueryOptions:
     offset: int = 0
 
 
-# Sane upper bound for an asset epoch (year ~2200). ``asset_hash_fn`` is
-# contractually a freshness stat that today returns the deepest inner-file
-# mtime, but a future impl could return a byte-hash — reject any value outside a
-# plausible epoch range so it can never poison ``updated_date`` with a garbage
-# far-future timestamp; the caller falls back to the folder mtime.
-_MAX_ASSET_EPOCH = 7_258_118_400.0
+# How far past "now" an asset's own clock may read and still be believed. A per-type
+# ``asset_hash_fn`` is a freshness fingerprint in INTEGER NANOSECONDS: for most folder
+# types the newest inner-file mtime, for manifest / entity-document types a SUM of
+# several mtimes and sizes. Only the first is a time. A sum of two files lands decades in
+# the future, so bounding by the present rejects it and the caller keeps the folder mtime.
+_ASSET_EPOCH_SLACK_S = 86_400.0
 
 
 # The private/shared context buckets and their per-entry sidecars. These hold a
@@ -229,11 +230,11 @@ def _union_context_bucket(current, incoming):
 def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
     """Best "real last-modified" epoch for a source path, or None.
 
-    ``getmtime(src_path)`` catches add/remove of children; for folder-backed
-    types the registered ``asset_hash_fn`` returns the deepest INNER-file mtime
-    (a dir's own mtime misses child-content edits). MAX of the two so BOTH an
-    added file (folder mtime moves) and an edited inner file (asset_hash moves)
-    advance the stamp — this is what drives the FE body-reindex reactivity loop.
+    ``getmtime(src_path)`` catches add/remove of children; a dir's own mtime misses
+    child-content edits, so the type's ``asset_hash_fn`` is folded in where it is a
+    time (see ``_ASSET_EPOCH_SLACK_S``). MAX of the two so BOTH an added file and an
+    edited inner file advance the stamp — this is what drives the FE body-reindex
+    reactivity loop.
     """
     epoch: float | None = None
     try:
@@ -248,11 +249,11 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
         if hash_fn is not None:
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
 
-            val = float(hash_fn(FSRef(src_path)))
-            if 0 < val <= _MAX_ASSET_EPOCH:
+            val = hash_fn(FSRef(src_path)) / 1_000_000_000
+            if 0 < val <= time.time() + _ASSET_EPOCH_SLACK_S:
                 epoch = val if epoch is None else max(epoch, val)
     except (OSError, ValueError, TypeError):
-        pass  # non-mtime asset_hash_fn or bad path → keep getmtime
+        pass  # bad path or a fingerprint that is not a number → keep getmtime
     return epoch
 
 

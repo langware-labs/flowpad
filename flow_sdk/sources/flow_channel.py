@@ -78,7 +78,7 @@ class AppHub:
             if exc.status_code in (403, 404):
                 return None
             if exc.status_code:
-                raise error_for_status(exc.status_code, exc.reason) from exc
+                raise error_for_status(exc.status_code, reason=exc.reason) from exc
             if exc.kind is HubFailureKind.NOT_CONFIGURED:
                 raise Rejected("no hub is configured for this machine") from exc
             raise SourceUnavailable(f"the hub did not answer: {exc.reason}") from exc

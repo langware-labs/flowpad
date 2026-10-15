@@ -43,7 +43,7 @@ Single source: `.env.example` at the project root (copied per-service by
 | `NEXT_PUBLIC_SUPABASE_URL`      | `http://127.0.0.1:54321`                              | frontend |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | printed by `supabase start` — paste it in            | frontend |
 | `DATABASE_URL`                  | `postgresql://postgres:postgres@127.0.0.1:54322/postgres` | frontend (Drizzle), backend |
-| `BACKEND_URL`                   | `http://localhost:<be-port>` (the port you start uvicorn on) | next.config.ts rewrite |
+| `BACKEND_URL`                   | leave unset locally — Flowpad tells the frontend the backend's port (`FLOWPAD_APP_PORT_API`); set it only for a deployed backend | next.config.ts rewrite |
 
 After `supabase start` prints its summary, copy the `anon key` into
 `frontend/.env.local`. `supabase status` re-prints it any time.
@@ -51,13 +51,10 @@ After `supabase start` prints its summary, copy the `anon key` into
 ## Day-to-day loop
 
 ```bash
-# terminal 1 — backend (auto-reload) on a picked port, never an assumed one
-BE_PORT=$(flow app free-dev-port --bare)
-cd backend && .venv/bin/uvicorn main:app --reload --port $BE_PORT
-
-# terminal 2 — frontend (hot reload) — pick again once the backend is up
-FE_PORT=$(flow app free-dev-port --bare)
-cd frontend && npx next dev --port $FE_PORT     # not `npm run dev` (pins 3000)
+# Flowpad starts both halves from webapp.json — the backend (the `api` service) first, then the
+# frontend — on free ports, and reloads are the dev servers' own. Never start them by hand.
+flow app ports                 # where each half runs now
+flow app restart <app name>    # after changing webapp.json, or when a server is stuck
 
 # database, when you need it
 supabase start    # boots Postgres + auth + storage + studio (Docker)
@@ -78,11 +75,10 @@ supabase db reset   # replays supabase/migrations/*.sql
 
 ## Troubleshooting
 
-- **Port already in use** (`EADDRINUSE`) — another build owns it. Do NOT
-  stop that process (it is someone else's app) and do NOT guess another
-  number: pick a free one with `flow app free-dev-port --bare` and start on
-  that (`--port` for uvicorn, `npx next dev --port` for Next; update
-  `BACKEND_URL` in `frontend/.env.local` if the backend port changed).
+- **A port is held by another program** — Flowpad says which port, and who holds it. Do NOT stop
+  that process unless it is this app's own stray server (`flow app stop <app name>` stops those).
+  If the app declares the port as `required`, free the port or change the declaration in
+  `webapp.json`; without a declared port Flowpad simply picks another.
 - **`supabase start` fails** — Docker isn't running. Start Docker Desktop and
   retry. The app itself still runs without it.
 - **Supabase card shows "not configured"** — `NEXT_PUBLIC_SUPABASE_ANON_KEY`

@@ -326,6 +326,15 @@ export class Agent extends APIEntity<Agent> {
     return (await this.post('run', { prompt })) as PromptResult;
   }
 
+  /** Launch admission: OK means accepted; executor names the process to observe.
+   * Unlike the legacy run method, a held slot is returned as a FlowCall answer.
+   */
+  async launch(prompt: string): Promise<PromptResult> {
+    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
+    action.bodyParameters = { prompt };
+    return dataManager.callFlowAction<PromptResult>(action);
+  }
+
   /**
    * Add a scheduled run: a child trigger asset under this agent's folder that
    * runs the agent headlessly with `prompt`. Indexed and armed before it

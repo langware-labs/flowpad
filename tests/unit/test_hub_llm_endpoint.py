@@ -512,14 +512,12 @@ async def test_the_listing_unions_the_catalog_so_the_global_root_is_offered(env,
         asked.append(action)
         if action is None:
             return {"data": [mine]}
-        if action == "allowances":
-            return {"allowances": []}
         return [globalroot, mine]  # the catalog repeats rows the caller has a role on
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     names = [e.name for e in await fetch_hub_llm_endpoints()]
 
-    assert asked == [None, "catalog", "allowances"], "both listings, then the caller's own allowances"
+    assert asked == [None, "catalog"], "the two listings, and nothing else -- `mine` rides the first"
     assert names == ["my allocation", "global"], f"expected the union, de-duplicated; got {names}"
 
 
@@ -663,12 +661,11 @@ async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bin
 
 async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, monkeypatch) -> None:
     """The scoped listing is read WITH the hub's permission expansion, and the answer is what tells
-    a wallet handed TO somebody from one they administer FOR somebody else when the hub's own
-    answer (``token_plan/allowances`` -> ``holder_typeid``) is unavailable.
+    BOTH answers ride that one expansion: ``allowed_actions`` -> ``can_administer``, and ``mine``
+    -> ``is_mine``. One read, two facts, and neither derivable from the other.
 
-    On the wire a wallet handed to somebody and one they administer for somebody else are otherwise
-    identical rows, so ``can_administer`` is the fallback that keeps a hand-allocated budget visible
-    to the person it was made for while hiding it from the admin who minted it.
+    Here the hub sends only the first, which is what an older hub does. ``can_administer`` is still
+    answered and ``is_mine`` stays None -- unanswered, never "no".
     """
     import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
@@ -677,13 +674,13 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
     given = {
         "id": "11111111-2222-4333-8444-555555555555",
         "type": "llm_endpoint",
-        "name": "Gadi +20",
+        "name": "Alice +20",
         "expand": {"allowed_actions": ["read", "invoke"]},
     }
     administered = {
         "id": "22222222-2222-4333-8444-555555555555",
         "type": "llm_endpoint",
-        "name": "Gadi +1",
+        "name": "Alice +1",
         "expand": {"allowed_actions": ["read", "invoke", "update", "delete"]},
     }
     globalroot = {"id": "7f1c9d2e-0000-4a00-8000-11e0e0e0e0e0", "type": "llm_endpoint", "name": "global"}
@@ -693,8 +690,6 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
         params_seen.append(kwargs.get("params"))
         if action is None:
             return {"data": [given, administered]}
-        if action == "allowances":
-            return None  # an older hub: no such read
         return [globalroot]
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
@@ -702,61 +697,67 @@ async def test_the_listing_says_which_budgets_this_person_may_only_spend(env, mo
 
     assert params_seen[0] == {"expand": "permissions"}, "the scoped listing must ask for permissions"
     assert params_seen[1] is None, "the catalog is asked WITHOUT them -- see below"
-    assert all(e.holder_typeid is None for e in by_name.values()), "no allowances read -> no holder claimed"
-    assert by_name["Gadi +20"].can_administer is False, "a reader holds it; it was handed to them"
-    assert by_name["Gadi +1"].can_administer is True, "an administrator's own allowance for somebody else"
+    assert all(e.is_mine is None for e in by_name.values()), "no `mine` in the expansion -> unanswered"
+    assert by_name["Alice +20"].can_administer is False, "a reader holds it; it was handed to them"
+    assert by_name["Alice +1"].can_administer is True, "an administrator's own allowance for somebody else"
     # NOT False. The catalog's root reaches every signed-in user through a stamp rather than a role
     # edge, so "cannot change it" there would read as "it was given to me" and put the shared pool
     # in everybody's personal list.
     assert by_name["global"].can_administer is None
     # And it survives `to_wire`, or the box would answer the UI with the field missing.
-    assert by_name["Gadi +20"].to_wire()["can_administer"] is False
+    assert by_name["Alice +20"].to_wire()["can_administer"] is False
 
 
 async def test_the_listing_marks_the_callers_own_allowances_by_the_hubs_holder_edge(env, monkeypatch) -> None:
-    """Whose allowance a row is lives in a ``partof`` edge on the hub, which no listing serializes.
-    ``token_plan/allowances`` is the caller-scoped answer, and every row it names gets
-    ``holder_typeid`` = the signed-in hub user; every other row gets None. An admin's OWN allowance
-    under a team they administer is the case ``can_administer`` alone gets wrong -- it is theirs."""
+    """Whose allowance a row is lives in a ``partof`` edge the hub walks itself and answers as
+    ``expand.mine``, on the SAME expansion that carries ``allowed_actions``. So the box makes no
+    second read and joins nothing -- it copies the answer onto the row.
+
+    The row that matters is ``mine``: an admin's OWN allowance under a team they administer, which
+    ``can_administer`` alone gets exactly wrong. They may edit it, and it is still theirs."""
     import flow_sdk.cloud_client.transport.hub_http as hub_http
     from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints
 
     _login()
-    mine_id = "11111111-2222-4333-8444-555555555555"
-    theirs_id = "22222222-2222-4333-8444-555555555555"
-    mine = {"id": mine_id, "type": "llm_endpoint", "name": "mine", "expand": {"allowed_actions": ["read", "update"]}}
+    mine = {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "type": "llm_endpoint",
+        "name": "mine",
+        "expand": {"allowed_actions": ["read", "update"], "mine": True},
+    }
     theirs = {
-        "id": theirs_id,
+        "id": "22222222-2222-4333-8444-555555555555",
         "type": "llm_endpoint",
         "name": "theirs",
-        "expand": {"allowed_actions": ["read", "update"]},
+        "expand": {"allowed_actions": ["read", "update"], "mine": False},
     }
+    calls: list[tuple] = []
 
     async def _hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        calls.append((entity_type, action))
         if action is None:
             return {"data": [mine, theirs]}
-        if action == "allowances":
-            assert entity_type == "token_plan"
-            return {"allowances": [f"llm_endpoint-{mine_id}"]}  # what hub_get hands back, unwrapped
         return []
 
     monkeypatch.setattr(hub_http, "hub_get", _hub_get)
     by_name = {e.name: e for e in await fetch_hub_llm_endpoints()}
 
-    assert by_name["mine"].holder_typeid == "user-99999999-2222-4333-8444-555555555555"
+    assert by_name["mine"].is_mine is True
     assert by_name["mine"].can_administer is True, "an admin may edit their own allowance; it is still theirs"
-    assert by_name["theirs"].holder_typeid is None
-    assert by_name["mine"].to_wire()["holder_typeid"] == "user-99999999-2222-4333-8444-555555555555"
+    assert by_name["theirs"].is_mine is False
+    assert by_name["mine"].to_wire()["is_mine"] is True
+    # The point of the change: two reads, not three, and neither of them is token_plan.
+    assert calls == [("llm_endpoint", None), ("llm_endpoint", "catalog")], calls
 
 
 async def test_the_callers_own_allowance_survives_the_real_hub_envelope(env, monkeypatch) -> None:
     """The same promise as above, read through the REAL ``hub_get`` against a hub speaking HTTP.
 
-    ``hub_get`` strips the ``{"status", "data"}`` envelope before any caller sees the answer, so
-    ``token_plan/allowances`` arrives as a bare ``{"allowances": [...]}``. A reader that looks for
-    the envelope again finds nothing, every row loses its holder, and an admin -- who administers
-    every row -- is shown none of them on LLM Sources. The fake ``hub_get`` above answers the
-    wrapped shape the real one never returns, which is how that slipped through.
+    Kept pointed at a real socket after the answer moved onto the listing's own expansion, because
+    the lesson that earned this test still holds: the fake ``hub_get`` above returns whatever shape
+    the test author imagined, and the envelope the real one strips is exactly where a reader goes
+    wrong. If ``expand.mine`` ever stopped surviving the round trip, every row would lose its
+    attribution and an admin -- who administers every row -- would be shown none of them.
     """
     import json
     import threading
@@ -769,15 +770,24 @@ async def test_the_callers_own_allowance_survives_the_real_hub_envelope(env, mon
 
     mine_id = "11111111-2222-4333-8444-555555555555"
     theirs_id = "22222222-2222-4333-8444-555555555555"
-    admin = {"expand": {"allowed_actions": ["read", "update"]}}
     answers = {
         "/api/v1/graph/llm_endpoint": [
-            {"id": mine_id, "type": "llm_endpoint", "name": "mine", **admin},
-            {"id": theirs_id, "type": "llm_endpoint", "name": "theirs", **admin},
+            # Both rows are administered by the caller; only the first is THEIRS. That is the pair
+            # `can_administer` alone cannot tell apart, carried on one expansion.
+            {
+                "id": mine_id,
+                "type": "llm_endpoint",
+                "name": "mine",
+                "expand": {"allowed_actions": ["read", "update"], "mine": True},
+            },
+            {
+                "id": theirs_id,
+                "type": "llm_endpoint",
+                "name": "theirs",
+                "expand": {"allowed_actions": ["read", "update"], "mine": False},
+            },
         ],
         "/api/v1/graph/llm_endpoint/catalog": [],
-        # Byte-for-byte what app.flowpad.ai answered for this read.
-        "/api/v1/graph/token_plan/allowances": {"allowances": [f"llm_endpoint-{mine_id}"]},
     }
 
     class _Hub(BaseHTTPRequestHandler):
@@ -804,8 +814,8 @@ async def test_the_callers_own_allowance_survives_the_real_hub_envelope(env, mon
         hub.shutdown()
 
     assert set(by_name) == {"mine", "theirs"}, "the listing itself must come through"
-    assert by_name["mine"].holder_typeid == "user-99999999-2222-4333-8444-555555555555"
-    assert by_name["theirs"].holder_typeid is None
+    assert by_name["mine"].is_mine is True
+    assert by_name["theirs"].is_mine is False
 
 
 async def test_a_hub_that_sends_no_expansion_leaves_the_answer_unknown(env, monkeypatch) -> None:

@@ -174,8 +174,8 @@ def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
 def test_asset_hash_tracks_manifest_and_html_edits(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "hash")
     before = deck_asset_hash(FSRef(deck))
-    os.utime(deck / "deck.json", (before + 100, before + 100))
+    os.utime(deck / "deck.json", ns=(before + 100 * 10**9, before + 100 * 10**9))
     after = deck_asset_hash(FSRef(deck))
     assert after > before
-    os.utime(deck / "hash.html", (after + 100, after + 100))
+    os.utime(deck / "hash.html", ns=(after + 100 * 10**9, after + 100 * 10**9))
     assert deck_asset_hash(FSRef(deck)) > after

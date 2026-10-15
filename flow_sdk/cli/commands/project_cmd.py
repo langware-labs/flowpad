@@ -31,6 +31,7 @@ from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
     from flow_sdk.schema.data_spec.project_setup_spec import SetupRequirementSpec
 
 project_app = typer.Typer(
@@ -63,6 +64,21 @@ def _read(prompt: str, secret: bool) -> str:
     return (sys.stdin.readline() or "").rstrip("\r\n")
 
 
+def _read_items(items: "list[AskItemSpec]") -> dict:
+    """Everything a run needs, asked at once: one line per item. A confirm takes y; anything else
+    takes its value. Left empty, the item is declined."""
+    from flow_sdk.core.compute_op import ask  # noqa: PLC0415
+
+    def read(item: "AskItemSpec") -> Any:
+        must = " (required)" if item.required else ""
+        said = _read(f"{item.prompt}{must}" + (" [y/N]" if item.is_approval else ""), item.secret).strip()
+        if item.is_approval:
+            return {} if said.lower() in ("y", "yes") else None
+        return said or None
+
+    return ask.answer_items(items, read)
+
+
 async def _answer_questions(stop: asyncio.Event) -> None:
     """The terminal side of every ``ask`` step: take each open question, one at a time, and answer it.
 
@@ -77,6 +93,9 @@ async def _answer_questions(stop: asyncio.Event) -> None:
             if question.id in seen:
                 continue
             seen.add(question.id)
+            if question.items:
+                ask.answer(question.id, await asyncio.to_thread(_read_items, question.items))
+                continue
             offer = "\n(Leave it empty for AI Assist.)" if question.assist_agent else ""
             value: Any = (await asyncio.to_thread(_read, question.prompt + offer, question.secret)).strip()
             if not value and question.assist_agent:
@@ -120,7 +139,8 @@ def _state(req: "SetupRequirementSpec") -> str:
         return "ready"
     if req.is_oauth:
         return f"not connected ({req.note})" if req.note else "not connected"
-    names = ", ".join(v.env_var for v in req.missing)
+    ways = " or ".join(v.env_var for v in req.missing if v.is_one_of)
+    names = ", ".join([v.env_var for v in req.missing if not v.is_one_of] + ([ways] if ways else []))
     return f"missing {names}" if names else "missing"
 
 
@@ -301,3 +321,36 @@ def setup_project(
     code = asyncio.run(_run(project, dry_run=dry_run, ai=not no_ai, as_json=as_json, deployment_id=deployment or ""))
     if code:
         raise typer.Exit(code)
+
+
+@project_app.command("load")
+def load_project_cmd(
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+    asset: Annotated[str, typer.Option("--asset", help="The app to load, as a TypeId (micro_app-<uuid>).")] = "",
+    approve: Annotated[bool, typer.Option("--approve", help="Run owed setup, then load.")] = False,
+    wait: Annotated[bool, typer.Option("--wait", help="Follow a running load to its verdict.")] = False,
+) -> None:
+    """Load a project (or one of its apps) through the same gate as opening it, and print the verdict.
+
+    The verdict carries ``asset_folder`` — the app's own folder — so a caller never builds a backend URL
+    to find it. Exit 0 on ``ready``, NOT_YET otherwise."""
+    import time  # noqa: PLC0415
+
+    from flow_sdk.cli.commands._common import discover_port, get_graph_json, graph_url, ok, post_graph_json  # noqa: PLC0415
+    from flow_sdk.cli.commands.dep_cmd import _project, _refused  # noqa: PLC0415
+
+    port = discover_port(required=True)
+    pid = _project(port, project)
+    result = post_graph_json(graph_url(port, f"project/{pid}/load"), {"approved": approve, "asset": asset},
+                             on_error=_refused) or {}
+    while wait and result.get("state") == "running":
+        time.sleep(2)
+        state_url = graph_url(port, f"project/{pid}/load-state") + (f"?asset={asset}" if asset else "")
+        result = get_graph_json(state_url, on_error=_refused) or result
+    if asset and "-" in asset:
+        kind, _, uid = asset.partition("-")
+        row = get_graph_json(graph_url(port, f"{kind}/{uid}"), on_error=lambda *_: None) or {}
+        result["asset_folder"] = row.get("asset_ref")
+    if result.get("state") != "ready":
+        fail(int(ExitCode.NOT_YET), str(result.get("state") or "failed").upper(), result.get("detail") or "Not ready", result)
+    ok(result)

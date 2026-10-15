@@ -13,6 +13,15 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
   const hasUserInteracted = useRef(false);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
+  // Content landed below while the reader was scrolled up — drives the
+  // "new messages" pill. Cleared once they are back at the bottom.
+  const [hasNewContent, setHasNewContent] = useState(false);
+  const isAtBottomRef = useRef(true);
+  isAtBottomRef.current = isAtBottom;
+
+  useEffect(() => {
+    if (isAtBottom) setHasNewContent(false);
+  }, [isAtBottom]);
 
   const checkIsAtBottom = useCallback(
     (el: HTMLElement) => {
@@ -27,6 +36,9 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
       const el = scrollRef.current;
       if (!el) return;
       const targetScrollTop = el.scrollHeight - el.clientHeight;
+      // An explicit trip to the bottom re-arms following before the scroll event lands.
+      isAtBottomRef.current = true;
+      setIsAtBottom(true);
 
       // `scrollTo` is the smooth-animation path; assigning `scrollTop` is the
       // same destination without it. jsdom implements the property but not the
@@ -85,9 +97,12 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
 
     const currentHeight = el.scrollHeight;
     if (currentHeight !== lastContentHeight.current) {
+      const grew = currentHeight > lastContentHeight.current;
       lastContentHeight.current = currentHeight;
       if (!hasUserInteracted.current || isAtBottom) {
         requestAnimationFrame(() => scrollToBottom());
+      } else if (grew) {
+        setHasNewContent(true);
       }
     }
   }, [content, isAtBottom, scrollToBottom]);
@@ -103,6 +118,13 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
     return () => observer.disconnect();
   }, [isAtBottom, scrollToBottom]);
 
+  // New content arrived: follow it only if the reader is at the bottom; a reader
+  // scrolled up stays where they are and gets the "new messages" pill instead.
+  const follow = useCallback(() => {
+    if (!hasUserInteracted.current || isAtBottomRef.current) scrollToBottom();
+    else setHasNewContent(true);
+  }, [scrollToBottom]);
+
   const disableAutoScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -116,7 +138,9 @@ export function useAutoScroll({ offset = 20, smooth = false, content }: UseAutoS
   return {
     scrollRef,
     isAtBottom,
+    hasNewContent,
     scrollToBottom,
+    follow,
     disableAutoScroll,
   };
 }

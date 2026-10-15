@@ -151,6 +151,9 @@ class LocalOAuthProvider:
     #: Env var that overrides the client id, and the fallback baked in here.
     client_id_env: Optional[str] = None
     client_id_default: Optional[str] = None
+    #: Env var holding the client secret, for a provider whose token endpoint wants one even with PKCE
+    #: (Google's "Desktop app" clients). Unset or empty: the exchange sends no secret.
+    client_secret_env: Optional[str] = None
     #: Whether the authorize step sends a PKCE challenge.
     pkce: bool = False
     #: Optional first-party client supporting the registered sandbox callback.
@@ -274,7 +277,9 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         ),
         # Full Drive, asked for only while a Drive source on this machine writes back (not read-only).
         # A restricted scope: a person connecting only to read never consents to it.
-        optional_scopes=("https://www.googleapis.com/auth/drive",),
+        # Full mail access, asked for only while a declared credential offers a sign-in with this provider
+        # covering it as one of its ways (``wanted_scopes``).
+        optional_scopes=("https://www.googleapis.com/auth/drive", "https://mail.google.com/"),
         endpoints=OAuthEndpoints(
             authorize_url="https://accounts.google.com/o/oauth2/v2/auth",
             token_url="https://oauth2.googleapis.com/token",
@@ -287,6 +292,8 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
         # refreshed through the hub mirror.
         client_id_env="GOOGLE_CLIENT_ID",
         client_id_default=None,
+        # Google's token endpoint wants a Desktop client's secret alongside PKCE.
+        client_secret_env="GOOGLE_CLIENT_SECRET",
         # The hub's plugin keeps this name: the Google web client registers its
         # callback URL by it on every hub host.
         hub_name="googledrive",
@@ -561,6 +568,15 @@ def _client_id(provider: LocalOAuthProvider) -> Optional[str]:
 
     override = os.getenv(provider.client_id_env) if provider.client_id_env else None
     return override or provider.client_id_default
+
+
+def client_secret_for(name: str) -> Optional[str]:
+    """A provider's OAuth client secret from its env var, or None when it declares none or it is unset."""
+    import os  # noqa: PLC0415
+
+    provider = get_local_provider(name)
+    env = provider.client_secret_env if provider is not None else None
+    return (os.getenv(env) or None) if env else None
 
 
 def client_id_for(name: str) -> Optional[str]:

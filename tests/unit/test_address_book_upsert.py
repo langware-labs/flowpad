@@ -16,16 +16,16 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id
 async def test_upsert_by_email_creates_and_dedups_and_backfills():
     from flow_sdk.builtin.user import User
 
-    a = await User.upsert_contact(email="gadi@langware.ai")
-    assert a is not None and a.email == "gadi@langware.ai"
+    a = await User.upsert_contact(email="alice@example.com")
+    assert a is not None and a.email == "alice@example.com"
     assert is_valid_entity_id(a.id)  # local id is a minted v4/v5 UUID
 
     # Same email → same row, no duplicate; name backfilled.
-    b = await User.upsert_contact(email="gadi@langware.ai", name="Gadi Tunes")
+    b = await User.upsert_contact(email="alice@example.com", name="Alice Example")
     assert b.id == a.id
-    assert b.name == "Gadi Tunes"
+    assert b.name == "Alice Example"
 
-    everyone = await User.get_all({"email": "gadi@langware.ai"})
+    everyone = await User.get_all({"email": "alice@example.com"})
     assert len(everyone) == 1
 
 
@@ -67,11 +67,11 @@ async def test_upsert_matches_by_user_id_then_backfills_email():
 async def test_upsert_matches_participant_that_carries_local_id():
     from flow_sdk.builtin.user import User
 
-    seed = await User.upsert_contact(email="ziv@thinkz.ai")
+    seed = await User.upsert_contact(email="carol@example.com")
     # A local-origin participant carries the local entity id as its user_id.
-    same = await User.upsert_contact(user_id=seed.id, name="Ziv Lavy")
+    same = await User.upsert_contact(user_id=seed.id, name="Carol Example")
     assert same.id == seed.id
-    assert same.name == "Ziv Lavy"
+    assert same.name == "Carol Example"
 
 
 async def _mk_conv(conv_id: str, participants: list[dict]):
@@ -89,11 +89,11 @@ async def test_scan_address_book_learns_all_rosters():
     from flow_sdk.builtin.user import User
 
     await _mk_conv("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", [
-        {"email": "gadi@langware.ai", "name": "Gadi Tunes"},
-        {"user_id": "hub-nir", "name": "Nir Levy"},  # email-less
+        {"email": "alice@example.com", "name": "Alice Example"},
+        {"user_id": "hub-bob", "name": "Bob Example"},  # email-less
     ])
     await _mk_conv("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", [
-        {"user_id": "hub-ziv", "email": "ziv@thinkz.ai", "name": "Ziv Lavy"},
+        {"user_id": "hub-carol", "email": "carol@example.com", "name": "Carol Example"},
     ])
 
     # The session DB is not reset between tests (see the scoped test below), so an
@@ -103,13 +103,13 @@ async def test_scan_address_book_learns_all_rosters():
     result = await scan_address_book()
     assert result["scanned_conversations"] >= 2
 
-    assert await User.get_by_identity(email="gadi@langware.ai") is not None
-    assert await User.get_by_identity(user_id="hub-nir") is not None  # email-less learned
-    assert await User.get_by_identity(email="ziv@thinkz.ai") is not None
+    assert await User.get_by_identity(email="alice@example.com") is not None
+    assert await User.get_by_identity(user_id="hub-bob") is not None  # email-less learned
+    assert await User.get_by_identity(email="carol@example.com") is not None
 
     # Idempotent: a second scan creates no duplicates.
     await scan_address_book()
-    assert len(await User.get_all({"user_id": "hub-nir"})) == 1
+    assert len(await User.get_all({"user_id": "hub-bob"})) == 1
 
 
 @pytest.mark.asyncio
@@ -121,14 +121,14 @@ async def test_scoped_scan_returns_only_matching_conversations():
     # Unique identities: the session DB is not reset between tests, so scope by a
     # token no other test uses and assert on this test's two conversations.
     await _mk_conv("cccccccc-cccc-4ccc-8ccc-cccccccccccc", [
-        {"email": "scoped-gadi@langware.ai", "name": "Gadi"},
+        {"email": "scoped-alice@example.com", "name": "Alice"},
     ])
     await _mk_conv("dddddddd-dddd-4ddd-8ddd-dddddddddddd", [
-        {"user_id": "hub-ziv-scoped", "email": "ziv-scoped@thinkz.ai", "name": "Ziv"},
+        {"user_id": "hub-carol-scoped", "email": "carol-scoped@example.com", "name": "Carol"},
     ])
 
-    ziv = await User.upsert_contact(user_id="hub-ziv-scoped", email="ziv-scoped@thinkz.ai")
-    scoped = await scan_address_book(user_tokens=ziv.identity_tokens())
+    carol = await User.upsert_contact(user_id="hub-carol-scoped", email="carol-scoped@example.com")
+    scoped = await scan_address_book(user_tokens=carol.identity_tokens())
     ids = {c["id"] for c in scoped["conversations"]}
     assert "dddddddd-dddd-4ddd-8ddd-dddddddddddd" in ids
     assert "cccccccc-cccc-4ccc-8ccc-cccccccccccc" not in ids
@@ -137,12 +137,12 @@ async def test_scoped_scan_returns_only_matching_conversations():
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_upsert_normalizes_email_case_and_dedups():
-    """Mixed-case input (e.g. 'Tzahi@…') must store lowercase and dedup against
+    """Mixed-case input (e.g. 'Frank@…') must store lowercase and dedup against
     the lowercase row — the casing mismatch that made a hub invitation
     invisible to its recipient."""
     from flow_sdk.builtin.user import User, normalize_email
 
-    assert normalize_email("  Tzahi@Langware.AI ") == "tzahi@langware.ai"
+    assert normalize_email("  Frank@Example.COM ") == "frank@example.com"
     assert normalize_email(None) is None
     assert normalize_email("   ") is None
 
@@ -163,7 +163,7 @@ async def test_upsert_normalizes_email_case_and_dedups():
 async def test_invitation_recipient_email_normalized():
     from flow_sdk.builtin.invitation import Invitation
 
-    inv = Invitation(recipient_email=" Tzahi@Langware.AI ")
-    assert inv.recipient_email == "tzahi@langware.ai"
+    inv = Invitation(recipient_email=" Frank@Example.COM ")
+    assert inv.recipient_email == "frank@example.com"
     via_validate = Invitation.model_validate({"recipient_email": "UPPER@CASE.IO"})
     assert via_validate.recipient_email == "upper@case.io"

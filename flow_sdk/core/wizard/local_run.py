@@ -50,7 +50,7 @@ async def resolve_op(name: str) -> Any:
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
     spec = read_op(name)
-    return Resolved(spec, True) if spec is not None else None
+    return Resolved(spec, True, shipped_assets() / "compute_op" / name) if spec is not None else None
 
 
 async def resolve_wizard(name: str) -> Any:
@@ -99,16 +99,29 @@ def step_rows(result: ReturnedValue, prefix: str = "") -> list[dict]:
     return rows
 
 
+#: Why ``--yes`` left a question alone.
+NEEDS_A_PERSON = "it needs a person (--yes answers confirm questions only)"
+
+
 async def _answer_questions(stop: asyncio.Event, *, yes: bool, say: Callable[[str], None]) -> None:
     from flow_sdk.core.compute_op import ask  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec  # noqa: PLC0415
 
     while not stop.is_set():
         for question in ask.open_questions():
-            if yes and question.shape == "confirm":
+            confirm = question.shape == ConfirmSpec.spec_kind
+            if yes and question.items:
+                # Everything the run needs, asked at once: --yes approves each confirm in the list.
+                def approve(item: Any) -> Any:
+                    say(f"? {item.prompt} — " + ("yes (--yes)" if item.is_approval else f"not answered: {NEEDS_A_PERSON}"))
+                    return {} if item.is_approval else None
+
+                ask.answer(question.id, ask.answer_items(question.items, approve))
+            elif yes and confirm:
                 say(f"? {question.prompt} — yes (--yes)")
                 ask.answer(question.id, {})
             else:
-                why = "pass --yes to accept it" if question.shape == "confirm" else "it needs a person (--yes answers confirm questions only)"
+                why = "pass --yes to accept it" if confirm else NEEDS_A_PERSON
                 say(f"? {question.prompt} — not answered: {why}")
                 ask.cancel(question.id)
         await asyncio.sleep(0.05)

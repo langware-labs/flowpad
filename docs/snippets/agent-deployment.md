@@ -13,7 +13,7 @@ resolves the `local` one — the seam for choosing another is `deployment=`.
     Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
 
 A placement stores no kind: what it places is its PARENT (`element_type`), and what it serves is its
-endpoints' `subkind` (`admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
+endpoints' `subkind` (`system`, `admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
 is a `ComputeNode` (a box): this computer hosts many deployments, a cloud box one. `identity` says who
 the box logs in as for it: `agent`, `user` (its owner) or `none`.
 
@@ -21,7 +21,9 @@ A deployment is also where the agent ANSWERS. A running local deployment **is a 
 machine running the agent loop** (`python -m flow_sdk.builtin.agent_loop`, §7): plain SDK code in the
 same instance, pulling from the channels it answers and replying on them — its `chat` endpoint
 (`service-endpoints.md` §6) is one more channel. A source's `answer_place` names the deployment that
-answers it; a source that names none is the agent's local deployment's. Every turn goes through one
+answers it; with none set, each running deployment holding the source may answer (email also
+checks the agent's `email_place`). Incoming webhook routing is separate: see
+[channel webhook routing](channel-webhook-routing.md). Every turn goes through one
 turn engine (`flow_sdk/builtin/agent_serve.py`): one process per conversation, one turn at a time, a
 redelivered message answered from its record. The app only keeps those processes running.
 

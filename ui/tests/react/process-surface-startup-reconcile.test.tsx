@@ -8,6 +8,8 @@ const state = vi.hoisted(() => ({ mode: 'advanced', pty: true }));
 // ones, so each is drivable on its own.
 const ready = vi.hoisted(() => ({ value: true }));
 const busy = vi.hoisted(() => ({ value: false }));
+// A chat worker parked on background work: alive and idle, so NOT busy.
+const background = vi.hoisted(() => ({ value: false }));
 const switchMode = vi.hoisted(() =>
   vi.fn((mode: string) => {
     state.pty = mode === 'interactive';
@@ -38,9 +40,12 @@ vi.mock('@src/notifications/notify', () => ({
 }));
 
 import {
+  BACKGROUND_TASKS_RUNNING,
   resetSurfaceReconcileState,
   useProcessSurface,
+  useSurfaceSwitchWait,
 } from '@src/components/terminal/interactive-terminal/use-process-surface';
+import { notify } from '@src/notifications/notify';
 
 const process = {
   id: crypto.randomUUID(),
@@ -49,12 +54,19 @@ const process = {
     return !state.pty;
   },
   status: 'running',
+  get background_work() {
+    return background.value;
+  },
   switchMode,
   loadHistory: () => Promise.resolve(),
 };
 
+let lastWait: string | null = null;
+const waitOf = () => lastWait;
+
 function Surface({ canSwitch, marker }: { canSwitch: boolean; marker: string }) {
   useProcessSurface({ process: process as never, canSwitch });
+  lastWait = useSurfaceSwitchWait(process.id);
   return <div>{marker}</div>;
 }
 
@@ -74,6 +86,7 @@ describe('process surface reconciliation during panel startup', () => {
     state.pty = true;
     ready.value = true;
     busy.value = false;
+    background.value = false;
     switchMode.mockReset();
     switchMode.mockImplementation((mode: string) => {
       state.pty = mode === 'interactive';
@@ -105,12 +118,98 @@ describe('process surface reconciliation during panel startup', () => {
     expect(switchMode).toHaveBeenCalledWith('interactive');
   });
 
-  it('keeps first sight non-mutating when no mode transition occurred', async () => {
+  it('keeps first sight non-mutating when the transport already matches', async () => {
     state.mode = 'standard';
-    render(<Surface canSwitch marker="standard-first-sight" />);
+    state.pty = false;
+    render(<Surface canSwitch marker="standard-first-sight-headless" />);
     await act(async () => {});
 
     expect(switchMode).not.toHaveBeenCalled();
+  });
+
+  it('takes a PTY session first seen in chat off its PTY', async () => {
+    // Chat and the terminal are mutually exclusive. A PTY-backed session opened
+    // straight into chat (a reload, a `?viewMode=standard` link) used to keep
+    // its PTY, and a question it then asked waited in a terminal nobody saw.
+    state.mode = 'standard';
+    state.pty = true;
+    render(<Surface canSwitch marker="standard-first-sight-pty" />);
+    await act(async () => {});
+
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(switchMode).toHaveBeenCalledWith('cli');
+  });
+
+  it('waits for background work the server reports, then switches on the next idle edge', async () => {
+    // The turn has ended (`busy` false) but a background shell still runs in the
+    // PTY: `switch-mode` 409s rather than kill it. That is a wait, not an error,
+    // and the finished task's notification turn is what retries it.
+    state.mode = 'advanced';
+    const view = render(<Surface canSwitch marker="advanced" />);
+    await act(async () => {});
+
+    // The shape an HTTP 409 arrives in: axios's generic message, the server's
+    // reason in the response envelope.
+    switchMode.mockImplementationOnce(() =>
+      Promise.reject(
+        Object.assign(new Error('Request failed with status code 409'), {
+          response: { status: 409, data: { status: 'FAIL', message: BACKGROUND_TASKS_RUNNING } },
+        }),
+      ),
+    );
+    state.mode = 'standard';
+    view.rerender(<Surface canSwitch marker="standard" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(state.pty).toBe(true);
+    expect(waitOf()).toBe('background');
+    expect(notify.error).not.toHaveBeenCalled();
+
+    busy.value = true; // the task-notification wakes the agent…
+    view.rerender(<Surface canSwitch marker="standard-busy" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+
+    busy.value = false; // …and its turn's end retries the switch
+    view.rerender(<Surface canSwitch marker="standard-idle" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(2);
+    expect(switchMode).toHaveBeenLastCalledWith('cli');
+    expect(state.pty).toBe(false);
+    expect(waitOf()).toBe(null);
+  });
+
+  it('retries a switch to the terminal held back by a parked chat worker once its background work is gone', async () => {
+    // The worker is idle between turns, kept alive by work the agent left running — so it is not
+    // `busy`, and ending that work flips no busy edge. Without `background_work` as a retry trigger
+    // the switch the user confirmed ("Switch anyway") would wait forever.
+    state.mode = 'standard';
+    state.pty = false;
+    background.value = true;
+    const view = render(<Surface canSwitch marker="standard" />);
+    await act(async () => {});
+
+    switchMode.mockImplementationOnce(() =>
+      Promise.reject(
+        Object.assign(new Error('Request failed with status code 409'), {
+          response: { status: 409, data: { status: 'FAIL', message: BACKGROUND_TASKS_RUNNING } },
+        }),
+      ),
+    );
+    state.mode = 'advanced';
+    view.rerender(<Surface canSwitch marker="advanced" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(1);
+    expect(waitOf()).toBe('background');
+    expect(state.pty).toBe(false);
+
+    background.value = false; // the user ended the work; `busy` never moved
+    view.rerender(<Surface canSwitch marker="advanced-work-gone" />);
+    await act(async () => {});
+    expect(switchMode).toHaveBeenCalledTimes(2);
+    expect(switchMode).toHaveBeenLastCalledWith('interactive');
+    expect(state.pty).toBe(true);
+    expect(waitOf()).toBe(null);
   });
 
   it('gives a headless process a PTY when first seen in a terminal mode', async () => {

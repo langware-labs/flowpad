@@ -7,12 +7,14 @@ matches stored values across macOS, Linux, and Windows on the same host.
 
 from __future__ import annotations
 
+import functools
 import logging
 import ntpath
 import os
 import platform
 import tempfile
 import unicodedata
+import uuid
 from pathlib import Path, PureWindowsPath
 
 
@@ -76,6 +78,24 @@ def asset_ref_spellings(p: Path | str) -> list[str]:
     return out
 
 
+def source_gone(ref: Path | str) -> bool:
+    """A declared source that is deleted: absent, and not merely out of reach (see ``source_unreachable``)."""
+    return bool(ref) and not Path(ref).exists() and not source_unreachable(ref)
+
+
+def asset_refs_under(root: Path | str) -> list[str]:
+    """The SQL ``LIKE`` patterns that match an ``asset_ref`` stored under ``root`` — one per spelling a row
+    may carry (:func:`asset_ref_spellings`), each with ITS OWN separator. A mount is kept in POSIX form
+    while ``FSRef`` stores the resolved path, which on Windows is backslashed: a single ``<root>/%``
+    matches nothing there. A stopgap until ``asset_ref`` is stored in one canonical form (a migration)."""
+
+    def under(spelling: str) -> str:
+        sep = "\\" if "\\" in spelling else "/"
+        return spelling.rstrip("/\\") + sep + "%"
+
+    return list(dict.fromkeys(under(s) for s in asset_ref_spellings(root)))
+
+
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:
     """Return ``(flavour, canonical, root)`` without mangling Windows paths.
 
@@ -114,6 +134,32 @@ def _same_flavour_key(path: Path | str, flavour: str) -> str | None:
     return keyed[1]
 
 
+@functools.lru_cache(maxsize=512)
+def _resolved_root_key(root: str, flavour: str) -> str | None:
+    return _same_flavour_key(root, flavour)
+
+
+def _root_key(raw_root: Path | str, flavour: str) -> str | None:
+    """``_same_flavour_key`` for a policy ROOT (home, a workspace root, a temp root,
+    flow home, a records root), resolved once per distinct root instead of per call.
+
+    The policy compares every candidate against the same handful of roots, and
+    resolving each of them is most of what a call used to cost (seven of the eight
+    ``Path.resolve`` per ``is_protected_path``). The memo is keyed on the root's own
+    text — the value the settings, the workspace registry or the environment hands
+    over — so a changed input is a different key and can never read a stale answer.
+    ``~`` is expanded BEFORE keying, because its meaning follows ``$HOME``.
+
+    What the key cannot see is the filesystem under an unchanged root text: a
+    symlink on the way to a root that is re-pointed while the process runs keeps
+    its first resolution. Candidates are never memoized — only these roots.
+    """
+    raw = os.fspath(raw_root)
+    if raw.lstrip().startswith("~"):
+        raw = os.path.expanduser(raw.strip())
+    return _resolved_root_key(raw, flavour)
+
+
 def _same_or_under(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip("/") + "/")
 
@@ -125,7 +171,7 @@ def _temp_root_keys(flavour: str) -> frozenset[str]:
         os.environ.get("TMP", ""),
         os.environ.get("TMPDIR", ""),
     )
-    return frozenset(root for raw_root in raw_roots if raw_root and (root := _same_flavour_key(raw_root, flavour)))
+    return frozenset(root for raw_root in raw_roots if raw_root and (root := _root_key(raw_root, flavour)))
 
 
 def is_protected_path(path: Path | str | None) -> bool:
@@ -142,7 +188,12 @@ def is_protected_path(path: Path | str | None) -> bool:
     """
     if path is None:
         return True
-    keyed = _path_policy_key(path)
+    return _is_protected_keyed(path, _path_policy_key(path))
+
+
+def _is_protected_keyed(path: Path | str, keyed: tuple[str, str, str] | None) -> bool:
+    """``is_protected_path`` for a path whose policy key is already in hand, so a
+    caller that needs the key too (``is_valid_project_cwd``) resolves it once."""
     if keyed is None:
         return True
     # SDK-shipped system projects live inside the INSTALLED package
@@ -167,7 +218,7 @@ def is_protected_path(path: Path | str | None) -> bool:
         settings = None
 
     home = (
-        _same_flavour_key(settings.user_home, flavour)
+        _root_key(settings.user_home, flavour)
         if settings is not None and getattr(settings, "user_home", None)
         else None
     )
@@ -186,7 +237,7 @@ def is_protected_path(path: Path | str | None) -> bool:
     try:
         from flow_sdk.config import agent_workspace_root, extra_workspace_root_keys  # noqa: PLC0415
 
-        root = _same_flavour_key(agent_workspace_root(), flavour)
+        root = _root_key(agent_workspace_root(), flavour)
         extra = {key for key_flavour, key in extra_workspace_root_keys() if key_flavour == flavour}
     except Exception:
         root, extra = None, set()
@@ -209,7 +260,7 @@ def is_protected_path(path: Path | str | None) -> bool:
             if value:
                 internal_roots.append(value)
     for raw_root in internal_roots:
-        root = _same_flavour_key(raw_root, flavour)
+        root = _root_key(raw_root, flavour)
         if root and _same_or_under(candidate, root):
             return True
     if home:
@@ -235,13 +286,10 @@ def is_valid_project_cwd(
     Rejects every protected path plus temporary-directory descendants unless
     ``include_temp`` is explicitly requested by a diagnostic/test caller.
     """
-    if is_protected_path(path):
-        return False
     if path is None:
         return False
-
     keyed = _path_policy_key(path)
-    if keyed is None:
+    if keyed is None or _is_protected_keyed(path, keyed):
         return False
     flavour, candidate, _filesystem_root = keyed
 
@@ -376,3 +424,16 @@ def vfs_relative_path(abs_path: str) -> str:
         )
         return norm[2:]
     return norm.lstrip("/")
+
+
+def legacy_project_scope_id(path: str | Path) -> str | None:
+    """Existing path-derived record-scope alias; never a new Project entity id.
+
+    Discovery needs this compatibility value before a Project row exists, so
+    computing it must not import the application entity/database runtime.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    if not path or not is_valid_project_cwd(path, include_temp=True):
+        return None
+    return mint_uuid(f"project:{canonical_posix_path(path)}", namespace=uuid.NAMESPACE_DNS)

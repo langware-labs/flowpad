@@ -315,8 +315,8 @@ class Artifact(Entity):
         ``None`` when the folder declares none (or has no project to set it up in)."""
         from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
         from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
 
         folder = str(getattr(self, "path", "") or "").rstrip("/")
         if not folder or not project_id:
@@ -327,7 +327,8 @@ class Artifact(Entity):
         project = await Project.get_by_id(str(project_id)) if app is not None else None
         if project is None:
             return None
-        await start_setup(project, root=str(app.typeid))
+        # The one way an app comes up: validate → load → setup → fix.
+        await bring_up(project, asset=app)
         return _entity_payload(app)
 
 

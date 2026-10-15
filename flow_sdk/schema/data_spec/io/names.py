@@ -26,7 +26,10 @@ Stdlib only. The one registry call is lazy, the guard ``_kinds.py`` established.
 
 from __future__ import annotations
 
+import mimetypes
+import os
 import re
+from pathlib import Path
 from typing import Any
 
 #: An ordinal folder for a list element that carries no name. Four digits sorts
@@ -87,6 +90,40 @@ def field_file(field: str, ext: str) -> str:
     """A field kept beside the main document. The FIELD NAME is the file name —
     ``setup`` is ``setup.md``, and nothing else needs to be declared."""
     return f"{field}{ext if ext.startswith('.') else '.' + ext}"
+
+
+#: Where the standard table answers badly or not at all (``image/jpeg`` -> ``.jpe`` on some platforms).
+_EXT_OVERRIDES = {"image/jpeg": ".jpg", "text/plain": ".txt", "application/octet-stream": ".bin"}
+
+
+def ext_for_media(media_type: str) -> str:
+    """The file extension a bytes value of *media_type* is kept under (``.bin`` when unknown)."""
+    media_type = (media_type or "").split(";")[0].strip().lower()
+    return _EXT_OVERRIDES.get(media_type) or mimetypes.guess_extension(media_type) or ".bin"
+
+
+def media_for_ext(ext: str) -> str:
+    """The media type a file extension names (``application/octet-stream`` when unknown)."""
+    return mimetypes.guess_type(f"x{ext}")[0] or "application/octet-stream"
+
+
+def bytes_files(root: Any, field: str) -> list:
+    """The file(s) a bytes field is kept in beside the main document: ``<field>.<any ext>`` (the
+    extension follows the value's media type, so the shape does not fix it). One scan of the folder;
+    sorted, so a reader that finds two picks the same one every time."""
+    try:
+        with os.scandir(root) as entries:
+            return sorted(Path(e.path) for e in entries
+                          if e.is_file() and e.name.startswith(f"{field}.") and Path(e.name).stem == field)
+    except FileNotFoundError:
+        return []
+
+
+def drop_bytes_files(root: Any, field: str, keep: Any = None) -> None:
+    """Remove the files a bytes field left beside the document, except *keep* (the one just written)."""
+    for stale in bytes_files(root, field):
+        if stale != keep:
+            stale.unlink(missing_ok=True)
 
 
 def safe_component(value: str, *, what: str) -> str:

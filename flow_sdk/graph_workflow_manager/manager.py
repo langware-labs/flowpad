@@ -50,6 +50,7 @@ from flow_sdk.assets.types.graph_workflow_doc import (
 )
 from flow_sdk.builtin.graph_workflow import GraphWorkflow
 from flow_sdk.core.capabilities.models import now_iso
+from flow_sdk.core.compute.declared_value import MISSING
 from flow_sdk.graph_workflow_manager.envelope import EXTERNAL_SOURCE, RunEvent
 from flow_sdk.graph_workflow_manager.function_runner import record_emission
 from flow_sdk.graph_workflow_manager.journal import RunJournal
@@ -232,6 +233,17 @@ class InlineGraphWorkflowCtx:
         self.output_folder = output_folder
         self.flow_output_folder = run.record_dir / "execution" / "output"
         self.logs: list[str] = []
+
+    async def call(self, ref: str, *, input=MISSING, approved: bool = False):
+        """Await a canonical block TypeId; the author explicitly chooses any emitted event."""
+        from flow_sdk.builtin.compute_op import ComputeOp
+        from flow_sdk.graph_workflow_manager.function_runner import compute_op_id
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
+
+        op = await ComputeOp.get_by_id(compute_op_id(ref))
+        if op is None:
+            return ReturnedValue.not_found(f"No compute op {ref!r}")
+        return await op.call(input=input, approved=approved)
 
     def emit_flow_event(self, key: str, val: Any = None) -> None:
         data = val if isinstance(val, dict) else {"value": val}

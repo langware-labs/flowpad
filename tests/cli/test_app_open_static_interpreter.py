@@ -52,7 +52,7 @@ def test_static_start_cmd_serves_when_python3_is_not_on_path(tmp_path, monkeypat
     monkeypatch.setenv("PATH", str(safe_bin))
     assert shutil.which("python3") is None, "PATH must not resolve python3 for this repro"
 
-    port = app_cmd._find_free_port()
+    port = app_cmd._choose_static_port()
     start_cmd = candidates[0].start_cmd.format(port=port)
     pid, log_file = app_cmd._start_detached(start_cmd, cwd=app_dir, port=port, name="countdown")
 

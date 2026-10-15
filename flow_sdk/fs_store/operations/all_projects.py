@@ -162,6 +162,17 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
         yield from _iter_root_project_paths(workspace, include_temp)
 
 
+def iter_prod_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
+    """Yield prod's workspace folders (``~/Flowpad workspace``) on a non-prod instance,
+    so a test instance can pick the user's real projects too. Prod already scans it."""
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415 — call time, per instance
+
+    prod_root = get_instance_settings().user_home / "Flowpad workspace"
+    if prod_root in all_workspace_roots():
+        return
+    yield from _iter_root_project_paths(prod_root, include_temp)
+
+
 def _iter_root_project_paths(workspace: Path, include_temp: bool) -> Iterator[Path]:
     try:
         # list() forces eager evaluation: iterdir() is a lazy generator, so a
@@ -255,6 +266,7 @@ def scan_project_cwds(*, include_temp: bool = False) -> dict[str, tuple[str, ...
     _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
     _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
     _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+    _scan(iter_prod_workspace_project_paths(include_temp=include_temp), None)
     return {cwd: tuple(workers) for cwd, workers in found.items()}
 
 

@@ -364,7 +364,7 @@ def _scope_filter_keeps(
 class OwnerPreload:
     """What the store already knows about a set of types, read ONCE before a
     walk touches a path: the live row ids per type (skip-fresh's row check),
-    each id's stored path (dedup-on-adopt / same-path sweep), the stored
+    each id's stored path and scope (dedup / freshness), the stored
     occurrences the collision resolver re-validates, and the path→owner index
     that keeps a source whose capsule was wiped on its OWN row instead of
     minting a fork. Every consumer of the index pipeline — the walk and the
@@ -372,6 +372,7 @@ class OwnerPreload:
 
     ids: dict[str, set[str]] = field(default_factory=dict)
     paths: dict[str, dict[str, str]] = field(default_factory=dict)
+    scopes: dict[str, dict[str, tuple[str | None, str | None]]] = field(default_factory=dict)
     occurrences: StoredOccurrenceMap = field(default_factory=StoredOccurrenceMap)
     owners: PathOwnerIndex = field(default_factory=lambda: PathOwnerIndex({}))
 
@@ -390,6 +391,7 @@ async def preload_owners(driver: Any, type_names: "Collection[Any]") -> OwnerPre
             rows = await driver.list_entity_sources_by_type(str(rt))
             preload.ids[str(rt)] = set(rows.keys())
             preload.paths[str(rt)] = {rid: src[0] for rid, src in rows.items() if src and src[0]}
+            preload.scopes[str(rt)] = {rid: (src[1], src[2]) for rid, src in rows.items()}
             type_occurrences = stored_asset_occurrences(str(rt), rows)
             preload.occurrences.update(type_occurrences)
             preload.occurrences.synthetic_keys.update(getattr(type_occurrences, "synthetic_keys", ()))
@@ -521,7 +523,7 @@ def _source_gone_orphans(
     gone either — absence there is not deletion. Stat-per-candidate — callers
     run this off-loop via ``asyncio.to_thread``.
     """
-    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
 
     def _declared_source(eid: str) -> str:
         row = db_rows.get(eid)
@@ -532,10 +534,8 @@ def _source_gone_orphans(
     return {
         eid
         for eid in candidates
-        if (aref := _declared_source(eid))
-        and not Path(aref).exists()
-        # An unreachable root is not a deletion — see ``source_unreachable``.
-        and not source_unreachable(aref)
+        # An unreachable root is not a deletion — see ``source_gone``.
+        if source_gone(_declared_source(eid))
     }
 
 
@@ -731,10 +731,9 @@ class FSIndexer:
         from flow_sdk.db.drivers.sqlite.connection import writers_waiting, yield_to_waiting_writers
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-        # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
-        # sentinel (``index_required``). The per-record index loop makes ZERO
-        # DB reads — it never queries the store it produces. Orphan detection
-        # (post-loop) unions the record homes on disk
+        # Skip-fresh combines the on-disk ``.hash`` sentinel with preloaded
+        # row existence and ownership. The per-record loop makes no DB reads.
+        # Orphan detection (post-loop) unions the record homes on disk
         # (``_discover_records_dir_ids``) with the type's DB row ids (one lean
         # SELECT per type) so rows without a shadow dir are still sweepable.
 
@@ -1083,7 +1082,37 @@ class FSIndexer:
                     await progress.emit()
                     continue
 
-                if fresh and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
+                # Walk-time scope/project_id from the FSRef parent-chain.
+                # Loop-invariant — read once, stamp on each record.
+                ref_scope = ref.scope
+                ref_pid = ref.project_id
+                unowned = ref_pid is None and not requested_by_project
+                nested_owned = nested_mounts and ref_pid is not None
+                if project_mounts and (nested_owned or unowned) and str(ref_scope) != "system":
+                    # Association rule: deepest project wins. The walk
+                    # root's project may be an umbrella containing a
+                    # nested project — re-associate to the innermost
+                    # mount that contains this record's path. A root
+                    # with no project that reaches into one's folder
+                    # (a workspace project lives under the user home)
+                    # files the record under that project, as project
+                    # content — not as the user's.
+                    try:
+                        ref_pid = deepest_project_id_for_path(
+                            canonical_posix_path(str(ref._path)),
+                            project_mounts,
+                            default=ref_pid,
+                        )
+                    except OSError:
+                        pass
+                    if unowned and ref_pid is not None:
+                        ref_scope = "project"
+                stored_scope, stored_pid = preload.scopes.get(str(ref.record_type), {}).get(ref_id, (None, None))
+                ownership_matches = (ref_scope is None or str(ref_scope) == stored_scope) and (
+                    ref_pid is None or str(ref_pid) == stored_pid
+                )
+                # Content freshness cannot hide a changed filesystem owner.
+                if fresh and ownership_matches and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
                     acc["skipped"] += 1
                     acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     # seen_ids already holds ref_id (added above), so a fresh
@@ -1099,31 +1128,6 @@ class FSIndexer:
                         records = await from_disk(ref, ref_id)
                     else:
                         records = await asyncio.to_thread(from_disk, ref, ref_id)
-                    # Walk-time scope/project_id from the FSRef parent-chain.
-                    # Loop-invariant — read once, stamp on each record.
-                    ref_scope = ref.scope
-                    ref_pid = ref.project_id
-                    unowned = ref_pid is None and not requested_by_project
-                    nested_owned = nested_mounts and ref_pid is not None
-                    if project_mounts and (nested_owned or unowned) and str(ref_scope) != "system":
-                        # Association rule: deepest project wins. The walk
-                        # root's project may be an umbrella containing a
-                        # nested project — re-associate to the innermost
-                        # mount that contains this record's path. A root
-                        # with no project that reaches into one's folder
-                        # (a workspace project lives under the user home)
-                        # files the record under that project, as project
-                        # content — not as the user's.
-                        try:
-                            ref_pid = deepest_project_id_for_path(
-                                canonical_posix_path(str(ref._path)),
-                                project_mounts,
-                                default=ref_pid,
-                            )
-                        except OSError:
-                            pass
-                        if unowned and ref_pid is not None:
-                            ref_scope = "project"
                     # Enclosure-derived parenthood: a repo asset physically
                     # nested inside another repo asset's folder inherits it as
                     # its parent, so a child re-indexed purely from disk (e.g.

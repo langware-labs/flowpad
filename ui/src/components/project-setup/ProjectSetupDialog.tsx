@@ -1,17 +1,22 @@
 import { useCallback, useEffect, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  CredentialRequirement,
   CredentialsSubview,
   Layout,
+  missingNeeds,
   Project,
   recheckProjectReadiness,
+  requirementOf,
   setProjectReadiness,
   TypeId,
   type ProjectReadiness,
   type ProjectSetupRequirement,
   type ProjectSetupSkipScope,
+  type SetupNodeResult,
+  type SetupTreeResult,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Undo2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -21,10 +26,11 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { AskForm } from '@src/components/ask/AskForm';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/floating-chat-context';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
-import { SetupTreeView } from './SetupTreeView';
+import { countDrawn, SetupTreeView } from './SetupTreeView';
 import { useSetupRun } from './use-setup-run';
 
 /**
@@ -68,16 +74,19 @@ const namesItself = (req: ProjectSetupRequirement) => req.kind === 'dependency' 
 
 /**
  * What a row says beside its name: why it is not ready, else what the credential is needed for, else what is
- * missing.
+ * missing — an either-or group of values as "A or B".
  */
-function detailOf(req: ProjectSetupRequirement): string {
+function detailOf(req: ProjectSetupRequirement, or: string): string {
   if (namesItself(req)) return req.note || req.title;
   if (req.credential_kind === 'oauth') return req.note || req.needed_for || `connect ${req.title || req.name}`;
   return (
     req.needed_for ||
-    req.vars
-      .filter((v) => !v.present)
-      .map((v) => v.label || v.env_var)
+    [
+      ...missingNeeds(req.vars),
+      // What is listed but not needed (an optional value) stays listed, as before.
+      ...req.vars.filter((v) => !v.present && requirementOf(v) === CredentialRequirement.OPTIONAL).map((v) => [v]),
+    ]
+      .map((need) => need.map((v) => v.label || v.env_var).join(or))
       .join(', ')
   );
 }
@@ -135,6 +144,7 @@ export function ProjectSetupDialog({
   const [choosing, setChoosing] = useState<string | null>(null);
   const [selected, setSelected] = useState(NONE);
   const { navigation } = useDockNavigation();
+  const assistant = useOptionalFloatingChat();
 
   const load = useCallback(async () => {
     setReadiness(await Project.setupRequirements(projectId));
@@ -154,6 +164,14 @@ export function ProjectSetupDialog({
       await setup.start();
     } catch (e) {
       notify.error({ title: errorMessage(e, t`Could not start the setup`) });
+    }
+  };
+
+  const stop = async () => {
+    try {
+      await setup.stop?.();
+    } catch (e) {
+      notify.error({ title: errorMessage(e, t`Could not stop the setup`) });
     }
   };
 
@@ -205,13 +223,32 @@ export function ProjectSetupDialog({
     navigation.openDock(pointer);
   };
 
+  /** Hands the row to the assistant's chat, which grows out of the button; the dialog closes so the chat is in reach. */
+  const explain = (req: ProjectSetupRequirement, button: HTMLElement) => {
+    const rect = button.getBoundingClientRect();
+    onOpenChange(false);
+    assistant?.ask(
+      [
+        `Explain briefly the setup requirement "${req.title || req.name}" of the project "${projectName}":`,
+        'what it is, why the project needs it, and how I get it.',
+        `It is a ${req.kind}${req.typeid ? ` (${req.typeid})` : ''}.`,
+        req.needed_for && `Needed for: ${req.needed_for}`,
+        req.justification && `Declared reason: ${req.justification}`,
+        req.note && `Current state: ${req.note}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      { rect },
+    );
+  };
+
   const running = setup.running;
   const questionId = setup.questionId;
 
-  // What can be selected is what can be skipped: a row still to do, while no run is going.
-  const selectedReqs = running
-    ? []
-    : [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) => selected.has(rowKey(req)));
+  // What can be selected is what can be skipped: a row still to do — a run going too (the run skips it live).
+  const selectedReqs = [...(readiness?.to_do ?? []), ...(readiness?.optional ?? [])].filter((req) =>
+    selected.has(rowKey(req)),
+  );
   const selecting = selectedReqs.length > 0;
 
   const row = (req: ProjectSetupRequirement, skipped = false) => (
@@ -223,17 +260,18 @@ export function ProjectSetupDialog({
       busy={busy.has(rowKey(req))}
       choosing={choosing === rowKey(req)}
       selected={selected.has(rowKey(req))}
-      onSelect={skipped || running ? undefined : (on) => select(req, on)}
+      onSelect={skipped ? undefined : (on) => select(req, on)}
       onChoose={selecting ? undefined : (on) => setChoosing(on ? rowKey(req) : null)}
       onSkip={(scope) => void skip([req], scope)}
       onUndo={() => void unskip(req)}
       onOpen={() => openRow(req)}
+      onExplain={assistant ? (button) => explain(req, button) : undefined}
     />
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl" data-testid="project-setup-dialog">
+      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="project-setup-dialog">
         <DialogHeader>
           <DialogTitle>
             <Trans>Set up {projectName}</Trans>
@@ -307,13 +345,13 @@ export function ProjectSetupDialog({
           </ul>
         )}
 
-        {!readiness?.ready && !running && (
-          <div>
-            <Button data-testid="project-setup-start" disabled={!readiness} onClick={() => void start()}>
-              {setup.tree ? t`Continue` : t`Start`}
-            </Button>
-          </div>
-        )}
+        <SetupStatusLine
+          tree={setup.tree}
+          running={running}
+          canStart={!!readiness && !readiness.ready}
+          onStart={() => void start()}
+          onStop={setup.stop && (() => void stop())}
+        />
 
         {running && (
           <div className="border-t pt-3" data-testid="project-setup-running">
@@ -328,13 +366,88 @@ export function ProjectSetupDialog({
           </div>
         )}
 
-        {setup.tree && (
+        {/* The steps are for watching a run; while a question is open the question is the screen. */}
+        {setup.tree && !questionId && (
           <div className="border-t pt-3" data-testid="project-setup-steps">
             <SetupTreeView tree={setup.tree} hideRoot />
           </div>
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The node the run is on: the deepest one running. */
+function currentNode(node: SetupNodeResult | null | undefined): SetupNodeResult | null {
+  if (!node || node.state !== 'running') return null;
+  for (const child of node.children) {
+    const deeper = currentNode(child);
+    if (deeper) return deeper;
+  }
+  return node;
+}
+
+/** How many nodes under ``node`` did not finish (a shared node counts where it was set up). */
+function unfinishedUnder(node: SetupNodeResult): number {
+  return node.children.reduce(
+    (n, c) => n + (c.shared ? 0 : (c.state === 'failed' || c.state === 'blocked' ? 1 : 0) + unfinishedUnder(c)),
+    0,
+  );
+}
+
+/**
+ * The run in one line, with its one control: running — what it is on, n of m, Stop; not running — how the last
+ * run ended (stopped / failed), and Start, Continue or Retry.
+ */
+function SetupStatusLine({
+  tree,
+  running,
+  canStart,
+  onStart,
+  onStop,
+}: {
+  tree: SetupTreeResult | null;
+  running: boolean;
+  canStart: boolean;
+  onStart: () => void;
+  onStop?: () => void;
+}) {
+  const { t } = useLingui();
+  if (running) {
+    const now = currentNode(tree?.root);
+    // The same count as the list below it, which draws the tree without its root.
+    const drawn = countDrawn(tree?.root?.children ?? []);
+    return (
+      <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
+        <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+        <span className="min-w-0 flex-1 truncate">
+          {now && now.id !== tree?.root?.id ? t`Setting up ${now.label}` : t`Setting up…`}
+          {drawn.total ? <span className="text-muted-foreground">{` · ${drawn.done} / ${drawn.total}`}</span> : null}
+        </span>
+        {onStop && (
+          <Button variant="outline" size="sm" className="h-7 gap-1" data-testid="project-setup-stop" onClick={onStop}>
+            <Square className="size-3" />
+            <Trans>Stop</Trans>
+          </Button>
+        )}
+      </div>
+    );
+  }
+  if (!canStart) return null;
+  // How the last run ended decides both the words and the button.
+  const failed = tree?.state === 'failed' || tree?.state === 'blocked';
+  const unfinished = failed && tree?.root ? unfinishedUnder(tree.root) : 0;
+  return (
+    <div className="flex items-center gap-2 text-sm" data-testid="project-setup-status">
+      {tree && (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {tree.state === 'stopped' ? t`Stopped` : failed ? t`${unfinished} did not finish` : null}
+        </span>
+      )}
+      <Button data-testid="project-setup-start" onClick={onStart}>
+        {!tree ? t`Start` : failed ? t`Retry` : t`Continue`}
+      </Button>
+    </div>
   );
 }
 
@@ -433,6 +546,7 @@ function RequirementRow({
   onSkip,
   onUndo,
   onOpen,
+  onExplain,
 }: {
   req: ProjectSetupRequirement;
   skipped?: boolean;
@@ -445,6 +559,7 @@ function RequirementRow({
   onSkip?: (scope: ProjectSetupSkipScope) => void;
   onUndo?: () => void;
   onOpen: () => void;
+  onExplain?: (button: HTMLElement) => void;
 }) {
   const { t } = useLingui();
   const Icon = iconOf(req);
@@ -485,11 +600,25 @@ function RequirementRow({
               ? req.required
                 ? t`required — it will not work here until it is set up`
                 : t`optional — skipped here`
-              : detailOf(req)}
+              : detailOf(req, t` or `)}
           </span>
           {!skipped && <JustificationInfo req={req} />}
         </div>
         {busy && <Loader2 className="size-3 animate-spin" />}
+        {!busy && !choosing && onExplain && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            data-testid={`project-setup-explain-${req.name}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onExplain(event.currentTarget);
+            }}
+          >
+            <Trans>Explain</Trans>
+          </Button>
+        )}
         {!running && !busy && skipped && (
           <Button
             variant="ghost"
@@ -502,7 +631,7 @@ function RequirementRow({
             <Trans>Undo</Trans>
           </Button>
         )}
-        {!running && !busy && !skipped && !choosing && onChoose && (
+        {!busy && !skipped && !choosing && onChoose && (
           <Button
             variant="ghost"
             size="sm"

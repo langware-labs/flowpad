@@ -16,6 +16,8 @@ from typing import ClassVar, Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
+from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
+from flow_sdk.schema.data_spec.credential_status_spec import group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -35,6 +37,22 @@ def input_name(credential: str, env_var: str) -> str:
     return f"{credential}__{env_var}"
 
 
+#: The wizard value a ONE_OF choice is bound to (``input_name(credential, ONE_OF_INPUT)``): the answer
+#: ``<VAR>=<value>`` of the one member the person picked. Never a variable's own name.
+ONE_OF_INPUT = "__ONE_OF__"
+
+
+def one_of_answer(answer: str) -> tuple[str, Optional[str]]:
+    """A ONE_OF question's answer, parsed once: ``<VAR>=<value>`` (a value way) → ``(VAR, value)``; a bare
+    ``<VAR>`` (a way that holds no value — a sign-in through Flowpad) → ``(VAR, None)``; anything else (a question
+    that closed by itself answers ``{}``) → ``("", None)``."""
+    var, sep, value = str(answer or "").partition("=")
+    var = var.strip()
+    if sep:
+        return (var, value) if var else ("", None)
+    return (var, None) if is_valid_env_var(var) else ("", None)
+
+
 class SetupVarSpec(DataSpec):
     """One value a pack needs, as the person is asked for it."""
 
@@ -50,6 +68,18 @@ class SetupVarSpec(DataSpec):
     #: The value is a file's content (a key file) — asked with a file picker, kept as a file.
     file: bool = False
     present: bool = False
+    #: ``ONE_OF``: one way among the requirement's other ONE_OF values — asked as one choice.
+    required: Requirement = CredentialRequirement.MUST
+    kind: CredentialVarKind = CredentialVarKind.TEXT
+    #: cli: the command a person runs on this computer to sign in.
+    login: str = ""
+    #: oauth: the provider whose sign-in this way is, and the scopes its grant must cover.
+    provider: str = ""
+    scopes: list[str] = []
+
+    @property
+    def is_one_of(self) -> bool:
+        return self.required is CredentialRequirement.ONE_OF
 
 
 class SetupRequirementSpec(DataSpec):
@@ -76,6 +106,8 @@ class SetupRequirementSpec(DataSpec):
     scopes: list[str] = []
     #: pack: the values it needs in development.
     vars: list[SetupVarSpec] = []
+    #: pack: the ONE_OF way chosen here (``Credential.chosen``) — it alone settles the group.
+    setup_choice: str = ""
     #: pack: how an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI Assist.
     setup: str = ""
     #: pack: how long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
@@ -100,7 +132,10 @@ class SetupRequirementSpec(DataSpec):
 
     @property
     def missing(self) -> list[SetupVarSpec]:
-        return [v for v in self.vars if not v.present]
+        """What is still to provide: every absent value, and of a ONE_OF group every member while the group is
+        unsettled (any one settles it) — a way already there is still offered, so the person can pick it."""
+        held = group_held(self.vars, self.setup_choice)
+        return [v for v in self.vars if (not held if v.is_one_of else not v.present)]
 
     @property
     def is_oauth(self) -> bool:

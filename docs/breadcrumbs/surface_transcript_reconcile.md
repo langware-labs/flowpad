@@ -272,7 +272,7 @@ three that stay green are the first-sight rules, which the patch does not touch.
   (FLOWPAD-2117); until it lands, `→terminal` is unguarded on both sides by
   design, and the fixture says so.
 
-* **Reproduces 100% on prod** (v0.2.140, confirmed on unpatched `:9007`). It is
+* **Reproduces 100% on a stock release build**. It is
   not a dev-instance artifact and not timing-dependent.
 
 * **Asymmetric safety net.** `SimpleChatPane` mounts both `useObservedTurn` and

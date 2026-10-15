@@ -13,13 +13,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from flow_sdk import service_log
 from flow_sdk.actions import action
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.core.auth.custom import local_signin
 from flow_sdk.core.auth.models import SignupInfo
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBResetProfile, get_db_driver
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info, get_current_service_config
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -168,14 +168,14 @@ async def handle_request(
     # fallback for this branch.
     from flow_sdk.server.routes._hub_reflect import (
         is_git_backed_remote_fs,
-        proxy_git_backed_remote_fs,
+        proxy_to_hub,
     )
 
     entity_for_early_fs_proxy = kwargs.get("self")
     if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
         entity_for_early_fs_proxy = request_info.auth_result.target
     if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
-        return await proxy_git_backed_remote_fs(request)
+        return await proxy_to_hub(request)
 
     request_params = request_info.request_parameters
 
@@ -295,8 +295,12 @@ async def handle_request(
             # gates) into a silent fake success and drift local state from the
             # hub. Only transport failures (status_code == 0: DNS, refused,
             # timeout — i.e. offline) keep the degraded local fallback, and
-            # GETs always do (a stale local read beats an error).
-            if request_info.method.upper() != "GET" and e.status_code >= 400:
+            # GETs do too (a stale local read beats an error) — except a 403:
+            # the hub refusing THIS caller is the answer, not an outage, and a
+            # local read would either show what was refused or hide the refusal
+            # (People & teams turns it into the member's read-only card).
+            is_get = request_info.method.upper() == "GET"
+            if (not is_get and e.status_code >= 400) or (is_get and e.status_code == 403):
                 raise HTTPException(status_code=e.status_code, detail=e.reason)
             service_log.warn(
                 f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
@@ -466,6 +470,13 @@ async def catch_all(request: Request, response: Response, background_tasks: Back
     """
     Catch all paths and HTTP methods and process them with this function.
     """
+    # A type that exists only on the hub has nothing here to parse an action against, read or
+    # write — forward the request whole, before any local resolution (see ``hub_only_type``).
+    from flow_sdk.server.routes._hub_reflect import hub_only_type, proxy_hub_only
+
+    entity_type = hub_only_type(request.url.path) if request.method != "OPTIONS" else None
+    if entity_type is not None:
+        return await proxy_hub_only(request, entity_type)
     try:
         request_info = get_current_request_info()
         if request_info is not None:

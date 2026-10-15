@@ -65,7 +65,7 @@ export enum RecordType {
   DIRECTORY = 'directory',
   GITHUB_REPO = 'github_repo',
   TODO_FILE = 'todo_file',
-  WHITEBOARD = 'whiteboard',
+  CHART = 'chart',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet',
@@ -82,4 +82,6 @@ export enum RecordType {
   // A diagnosis someone else runs (`flow diagnose <id>`). A local row with no file -- the
   // request and its runs live on the hub; its editor reads them through the type's actions.
   DIAGNOSIS_REQUEST = 'diagnosis_request',
+  ASSET_SETUP = 'asset_setup',
+  COMPUTE_OP = 'compute_op',
 }

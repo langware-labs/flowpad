@@ -109,6 +109,16 @@ export interface MemberBudget {
   spent_tokens: number;
   /** May the caller change this person's allowance? The `update` question, asked of one allowance. */
   can_configure: boolean;
+  /**
+   * May the caller remove THIS person from the team? Per row, because the request it gates is
+   * judged per row: the hub applies the role ladder (a member at or above your own rank is
+   * untouchable) and the last-owner rule, neither of which is a fact about the team. Gating the
+   * button on the scope-wide `ScopeBudget.can_manage` ("may I rename the team") offered an admin a
+   * Remove beside a peer admin and earned a 403 on press.
+   *
+   * False on a row nobody holds yet — there is no membership to revoke.
+   */
+  can_remove: boolean;
 }
 
 /**

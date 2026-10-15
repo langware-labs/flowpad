@@ -14,7 +14,7 @@ import { DockPointerData } from '../models/DockPointer';
  *   <name>/vendor/reveal/         — vendored headless Reveal runtime
  *
  * The container is the entity; layouts are read on demand. `asset_ref` is the
- * folder path (mirrors WHITEBOARD/DATASET), so the DeckTemplateViewer reads
+ * folder path (mirrors CHART/DATASET), so the DeckTemplateViewer reads
  * `layouts/*.html` + `common/*.css` off it via FSRef.
  */
 @registerEntity

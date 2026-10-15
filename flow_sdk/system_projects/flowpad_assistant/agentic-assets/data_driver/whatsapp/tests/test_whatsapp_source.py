@@ -15,6 +15,7 @@ import uuid
 import pytest
 from pydantic import SecretStr
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItem
@@ -794,3 +795,130 @@ def test_a_new_app_subscription_asks_for_the_group_fields():
 
 def test_a_group_id_is_never_a_phone_number():
     assert module.is_group_id(GROUP) and not module.is_group_id("+972 50-123-4567") and not module.is_group_id("")
+
+
+async def test_signed_batch_routes_each_account_and_group_only_to_its_source(recorded):
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    first = await _saved(phone_number_id="batch-account-A")
+    group = await _saved(phone_number_id="batch-account-A", group="group-A")
+    second = await _saved(phone_number_id="batch-account-B")
+    payload = _webhook(_text("batch-1", "direct"), _text("batch-2", "group", group_id="group-A"), phone_number_id="batch-account-A")
+    payload["entry"] += _webhook(_text("batch-3", "other account"), phone_number_id="batch-account-B")["entry"]
+    response = await webhook_delivery("whatsapp", _Request(body=payload))
+    assert response.data["ingested"] == 3
+    assert {(r.external_id, r.data_source_id) for r in recorded} == {
+        ("batch-1", first.id), ("batch-2", group.id), ("batch-3", second.id),
+    }
+
+
+async def test_entire_batch_is_authenticated_before_any_target_ingests(recorded):
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    await _saved(phone_number_id="signed-first")
+    await _saved(phone_number_id="signed-second")
+    SECRETS["signed-second"] = {"access_token": "token", "app_secret": "another-app-secret"}
+    payload = _webhook(_text("batch-auth-1", "first"), phone_number_id="signed-first")
+    payload["entry"] += _webhook(_text("batch-auth-2", "second"), phone_number_id="signed-second")["entry"]
+    response = await webhook_delivery("whatsapp", _Request(body=payload))
+    assert response.status_code == 401
+    assert recorded == []
+
+
+async def test_direct_listener_honors_meta_handshake_and_raw_signature(recorded):
+    import httpx
+
+    from flow_sdk.server.webhook_listener import listener_app
+
+    source = await _saved(phone_number_id="listener-number", verify_token="listener-verify")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=listener_app()), base_url="http://listener.test") as client:
+        response = await client.get("/api/v1/data_source/webhook/whatsapp", params={
+            "hub.mode": "subscribe", "hub.verify_token": "listener-verify", "hub.challenge": "plain-challenge",
+        })
+        assert response.status_code == 200 and response.text == "plain-challenge"
+        raw = json.dumps(_webhook(_text("listener-msg", "hello"), phone_number_id="listener-number"), indent=3).encode()
+        response = await client.post("/api/v1/data_source/webhook/whatsapp", content=raw, headers={
+            "content-type": "application/json", "x-hub-signature-256": sign(raw),
+        })
+        assert response.status_code == 200 and response.json()["data"]["ingested"] == 1
+        assert recorded[0].data_source_id == source.id
+        for headers in ({}, {"x-hub-signature-256": "bad", "verified-by-hub": "true"}):
+            assert (await client.post("/api/v1/data_source/webhook/whatsapp", content=raw, headers=headers)).status_code == 401
+        assert len(recorded) == 1
+
+
+async def test_repeated_direct_delivery_uses_shared_ingestion_duplicate_gate():
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    source = await _saved(phone_number_id="duplicate-account")
+    request = _Request(body=_webhook(_text("duplicate-message", "hello twice"), phone_number_id="duplicate-account"))
+    first = await webhook_delivery("whatsapp", request)
+    second = await webhook_delivery("whatsapp", request)
+    assert first.data["created"] == 1 and second.data["created"] == 0
+    rows = await SourceItem.get_all({"data_source_id": str(source.id)})
+    assert [r.external_id for r in rows] == ["duplicate-message"]
+
+
+async def test_source_scoped_callback_selects_its_connection_and_handshake(recorded):
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery, webhook_handshake
+
+    older = await _saved(phone_number_id="shared-phone", verify_token="older-token")
+    from flow_sdk.fs_store.type_id import TypeId
+
+    selected = _source(phone_number_id="shared-phone", verify_token="selected-token")
+    selected.owner = TypeId(type="agent", id=mint_uuid())
+    await selected.save()
+    payload = _webhook(_text("selected-msg", "hello"), phone_number_id="shared-phone")
+    response = await webhook_delivery("whatsapp", _Request(query={"source_id": str(selected.id)}, body=payload))
+    assert response.data["ingested"] == 1 and recorded[0].data_source_id == selected.id
+    assert recorded[0].data_source_id != older.id
+    bad = await webhook_handshake("whatsapp", _Request(query={
+        "source_id": str(selected.id), "hub.mode": "subscribe", "hub.verify_token": "older-token", "hub.challenge": "c",
+    }))
+    assert bad.status_code == 403
+    good = await webhook_handshake("whatsapp", _Request(query={
+        "source_id": str(selected.id), "hub.mode": "subscribe", "hub.verify_token": "selected-token", "hub.challenge": "c",
+    }))
+    assert good.status_code == 200 and good.body == b"c"
+    missing = await webhook_delivery("whatsapp", _Request(query={"source_id": mint_uuid()}, body=payload))
+    assert missing.status_code == 404 and len(recorded) == 1
+    other = _webhook(_text("wrong-account-msg", "wrong"), phone_number_id="another-phone")
+    mismatch = await webhook_delivery("whatsapp", _Request(query={"source_id": str(selected.id)}, body=other))
+    assert mismatch.data["ingested"] == 0 and len(recorded) == 1
+
+
+async def test_scoped_account_callback_routes_groups_only_within_its_owner(recorded):
+    from flow_sdk.fs_store.type_id import TypeId
+    from flow_sdk.server.routes.data_source_webhook import webhook_delivery
+
+    owner = TypeId(type="agent", id=mint_uuid())
+    another_owner = TypeId(type="agent", id=mint_uuid())
+    account = _source(phone_number_id="scoped-group-number")
+    account.owner = owner
+    await account.save()
+    other_group = _source(phone_number_id="scoped-group-number", group="same-group")
+    other_group.owner = another_owner
+    await other_group.save()
+    group = _source(phone_number_id="scoped-group-number", group="same-group")
+    group.owner = owner
+    await group.save()
+    payload = _webhook(_text("scoped-group-message", "hello group", group_id="same-group"), phone_number_id="scoped-group-number")
+    result = await webhook_delivery("whatsapp", _Request(query={"source_id": str(account.id)}, body=payload))
+    assert result.data["ingested"] == 1
+    assert recorded[0].data_source_id == group.id != other_group.id
+
+
+# ── the hub's connection probe ───────────────────────────────────────────────
+
+
+async def test_the_hub_probe_sender_is_kept_verbatim_both_ways(serve):
+    probe = "probe-n0nce_1"
+    payload = _webhook({**_text("wamid.P", "ping"), "from": probe})
+    (item,) = _items(payload)
+    assert (item.author_external_id, item.thread_key) == (probe, probe)
+    graph = serve([(200, {"messages": [{"id": "wamid.OUT"}]})])
+    async with WhatsAppSource(_binding()) as source:
+        await source.reply(source.message_origin("wamid.P", probe), MessageData(text="pong"))
+    (body,) = _posts(graph)
+    assert (body["recipient_type"], body["to"]) == ("individual", probe)
+    assert digits("+972 50-123") == "97250123"

@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { WorkerModelTier, type ServiceEndpoint } from '@sdk';
+import { WorkerModelTier, type ServedApp } from '@sdk';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
 import type { WebappVerdict } from './classify';
@@ -19,7 +19,7 @@ export interface WebappFix {
 interface Options {
   verdict: WebappVerdict;
   /** The endpoint serving the broken app — what the agent restarts or repairs. */
-  endpoint: ServiceEndpoint | null;
+  endpoint: ServedApp | null;
   url: string;
   workdir?: string | null;
   /** Subject the run attaches to, so it survives a refresh and is reconnectable. */
@@ -59,8 +59,10 @@ export function useWebappFix({ verdict, endpoint, url, workdir, targetTypeId, on
         code: verdict.code,
         detail: verdict.detail,
         endpoint_id: endpoint?.id ?? null,
+        // The app's mount on that endpoint (its placement's audience proxy), when it is a route of one.
+        route: endpoint?.mount ?? null,
         // A dev server's port, for the agent to check and restart; a served folder has none.
-        port: endpoint?.backend.type === 'proxy' ? endpoint.backend.port : null,
+        port: endpoint?.backend?.type === 'proxy' ? endpoint.backend.port : null,
         url,
         workdir: workdir ?? null,
       },

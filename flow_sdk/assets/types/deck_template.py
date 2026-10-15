@@ -98,7 +98,7 @@ def extract_deck_template(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     return [rec]
 
 
-def deck_template_asset_hash(ref: FSRef) -> float:
+def deck_template_asset_hash(ref: FSRef) -> int:
     """mtime across the template's authored content.
 
     A folder's own mtime does not move when a child file's *content* is edited,
@@ -108,9 +108,9 @@ def deck_template_asset_hash(ref: FSRef) -> float:
     assumed not to happen. Mirrors ``dataset_asset_hash``.
     """
     base = ref._path
-    ts = 0.0
+    ts = 0
     try:
-        ts = max(ts, (base / MANIFEST).stat().st_mtime)
+        ts = max(ts, (base / MANIFEST).stat().st_mtime_ns)
     except OSError:
         pass
     for subdir in (LAYOUTS_DIR, COMMON_DIR):
@@ -119,18 +119,18 @@ def deck_template_asset_hash(ref: FSRef) -> float:
             continue
         for inner in inner_dir.rglob("*"):
             try:
-                ts = max(ts, inner.stat().st_mtime)
+                ts = max(ts, inner.stat().st_mtime_ns)
             except OSError:
                 pass
     media_dir = base / MEDIA_DIR
     if media_dir.is_dir():
         try:
-            ts = max(ts, media_dir.stat().st_mtime)
+            ts = max(ts, media_dir.stat().st_mtime_ns)
         except OSError:
             pass
         for inner in media_dir.iterdir():
             try:
-                ts = max(ts, inner.stat().st_mtime)
+                ts = max(ts, inner.stat().st_mtime_ns)
             except OSError:
                 pass
     return ts

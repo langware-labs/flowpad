@@ -261,7 +261,7 @@ environment.
 A data source names the variables it needs in its manifest:
 
 ```json
-{ "name": "gmail", "auth": { "env": ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] } }
+{ "name": "gmail", "auth": { "credential": "gmail", "vars": { "GMAIL_ADDRESS": "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD": "GMAIL_APP_PASSWORD" } } }
 ```
 
 ```python
@@ -289,9 +289,11 @@ What a source reads, per manifest `auth` shape (`ingest/credentials.resolve_cred
   bound (or default) store, else the named machine secret. Never the row's
   config — a config is value-free.
 
-* **`credential`** + **`vars`** — `{value key: env var}` of a named credential,
-  resolved where the deployment that answers the row keeps it. A setting that
-  differs per machine (a webhook URL) is one of these, not config.
+* **`credential`** + **`vars`** — `{value key: env var}` of a named credential: from
+  the bound store first, else where the deployment that answers the row keeps it. A
+  setting that differs per machine (a webhook URL) is one of these, not config. A
+  credential with a ONE_OF group also hands over which way is set up here
+  (`credentials.choice`) and, for a sign-in way, the grant's `token`.
 
 * **`connector`** — the bound connection's provider, else the manifest's
   ([§6](#6-connections--the-same-pattern-for-accounts)).

@@ -18,15 +18,17 @@ indexed.
 """
 
 import logging
-import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Optional, Union
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Union
 
 from pydantic import computed_field, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity, action
-from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
+from flow_sdk.core.compute.declared_value import MISSING, DeclaredShapeError
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.compute_op_spec import (
     AgentOp,
     AskOp,
@@ -35,6 +37,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     NavigateOp,
     OpSubkind,
     PromptOp,
+    PythonOp,
     Rung,
     exe_data_by_subkind,
 )
@@ -66,10 +69,12 @@ class ComputeOp(Entity):
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: navigate, cli, decision, prompt, agent or ask.")
-    exe_data: Union[NavigateOp, CliOp, DecisionOp, PromptOp, AgentOp, AskOp] = APIField(
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp] = APIField(
         default=None, description="The one call, shaped by the subkind."
     )
     output_spec_kind: Optional[str] = APIField(default=None, description="The kind this op returns.")
+    input: Optional[ShapeForm] = APIField(default=None, description="Declared input shape.")
+    output: Optional[ShapeForm] = APIField(default=None, description="Declared output shape.")
     completion_check: Optional[CliOp] = APIField(
         default=None, description="When this op is already done; absent means it always runs."
     )
@@ -104,6 +109,30 @@ class ComputeOp(Entity):
         from flow_sdk.builtin.shipped_lookup import by_name_preferring_this_install  # noqa: PLC0415
 
         return await by_name_preferring_this_install(cls, name)
+
+    @classmethod
+    async def resolve(cls, ref: str, *, project: str | None = None) -> Optional["ComputeOp"]:
+        """An exact TypeId or unique project-scoped name; never first-match routing."""
+        prefix = EntityType.COMPUTE_OP.value + "-"
+        if ref.startswith(prefix):
+            return await cls.get_by_id(ref[len(prefix):])
+        filters = {"name": ref}
+        if project:
+            filters["project_id"] = project.removeprefix(EntityType.PROJECT.value + "-")
+        rows = await cls.get_all(filters)
+        if len(rows) > 1:
+            raise DeclaredShapeError(f"Ambiguous compute op {ref!r}; choose its TypeId or project")
+        return rows[0] if rows else None
+
+    @computed_field
+    @property
+    def input_shape(self) -> Any:
+        return self.input
+
+    @computed_field
+    @property
+    def output_shape(self) -> Any:
+        return self.output if self.output is not None else self.output_spec_kind
 
     def spec(self) -> Optional["ComputeOpSpec"]:
         """The parsed document — disk is truth, through the generic entity-document
@@ -171,8 +200,12 @@ class ComputeOp(Entity):
         approved: bool = False,
         workdir: Optional[Path] = None,
         parent: "object | None" = None,
+        input: Any = MISSING,
+        invocation_id: str | None = None,
     ) -> "ReturnedValue":
-        """Reach the goal, or produce the value, or say what is missing. Never raises.
+        """Reach the goal, produce the value, or say what is missing.
+
+        Expected outcomes are returned; invalid input and execution errors raise.
 
         An op this instance does not ship, run without approval, answers
         ``REFUSED`` — refused, never blocked: a headless caller gets a legible
@@ -185,6 +218,7 @@ class ComputeOp(Entity):
         """
         from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.core.compute_op import run_op  # noqa: PLC0415
+        from flow_sdk.core.compute_op.context import CallContext  # noqa: PLC0415
         from flow_sdk.core.compute_op.runner import refused_for  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
 
@@ -193,6 +227,7 @@ class ComputeOp(Entity):
             return ReturnedValue.not_found(f"{self.name}: the document is missing or unreadable.")
         if not (approved or self.is_system()):
             return refused_for(spec)
+        correlation = invocation_id or str(mint_uuid())
 
         async def go(node) -> "ReturnedValue":
             node.label(spec.display_label)
@@ -202,15 +237,25 @@ class ComputeOp(Entity):
                 trusted=True,
                 workdir=workdir,
                 on_status=lambda text: node.current(text),
+                input=input,
+                context=CallContext(asset_folder=Path(self.asset_ref), workdir=workdir, project=self.project_id,
+                                    invocation_id=correlation, parent=node, shipped=self.is_system()),
             )
             node.current(answer.detail)
             return answer
 
         if parent is not None:
             return await go(parent)
-        address = f"compute_op/{self.name or self.id}-{uuid.uuid4().hex[:6]}"
+        address = f"compute_op/{self.name or self.id}-{correlation}"
         async with Activity.claim(address, subject_entity=str(self.typeid), queue=False) as root:
             return await go(root)
+
+    async def call(self, *, input: Any = MISSING, approved: bool = False, subject: str = "",
+                   workdir: Optional[Path] = None, parent: Any = None,
+                   invocation_id: str | None = None) -> "ReturnedValue":
+        """Call the same operation with a declared input; legacy run stays available."""
+        return await self.run(input=input, approved=approved, subject=subject, workdir=workdir,
+                              parent=parent, invocation_id=invocation_id)
 
     @action.get(action_name="check")
     async def check_action(self) -> ApiResponse:
@@ -219,10 +264,21 @@ class ComputeOp(Entity):
         return ApiSuccessResponse(data=(await self.check()).model_dump(mode="json"))
 
     @action.post(action_name="run")
-    async def run_action(self, approved: bool = False) -> ApiResponse:
+    async def run_action(self, approved: bool = False, input: Any = MISSING, answer_tagged: bool = False) -> ApiResponse:
         """``POST /compute_op/<id>/run`` — ask, act, prove.
 
         Every answer is a 200 carrying the ``ReturnedValue``, REFUSED included:
         the exit code is the answer, and a caller reads it from one place.
         """
-        return ApiSuccessResponse(data=(await self.run(approved=approved)).model_dump(mode="json"))
+        try:
+            answer = await self.run(approved=approved, input=input)
+        except DeclaredShapeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=422)
+        if answer_tagged or input is not MISSING or self.input is not None or self.output is not None or self.subkind is OpSubkind.PYTHON:
+            from pydantic import TypeAdapter  # noqa: PLC0415
+
+            from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.spec import Tagged  # noqa: PLC0415
+
+            return ApiSuccessResponse(data=TypeAdapter(Tagged[ReturnedValue]).dump_python(answer, mode="json"))
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))

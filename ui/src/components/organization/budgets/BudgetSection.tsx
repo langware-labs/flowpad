@@ -76,6 +76,8 @@ import { EditableTitle } from './EditableTitle';
 import { EndpointControls } from './EndpointControls';
 import { ShareOrgButton } from './OrgSharePanel';
 import { ShareProjectButton } from './ShareProjectPanel';
+import { renameEntity } from './rename-entity';
+import { useLiveBudget } from './use-live-budget';
 import { MoneyBox } from './MoneyBox';
 import { PayingProviderSetup } from './PayingProviderSetup';
 import {
@@ -86,10 +88,6 @@ import {
   useSetLifetimeCap,
   useTeamBudgets,
 } from './use-budgets';
-
-async function renameEntity(type: 'organization' | 'team', id: string, next: string): Promise<void> {
-  await dataManager.save(new TypeId(type, id), [], { name: next } as never);
-}
 
 /** Tokens spent, next to the dollar figure. NOT `Zap` — `TestEndpointButton` (right next to this
  *  on every one of these rows) already owns that glyph for "run a test call", so reusing it here
@@ -133,6 +131,8 @@ function statusOf(error: unknown): number | null {
 export function OrgUnit({ orgId, name, onDeleted }: { orgId: string; name?: string; onDeleted: () => void }) {
   const { t } = useLingui();
   const { data, isLoading, error, refetch } = useOrgBudgets(orgId);
+  const orgTypeId = useMemo(() => new TypeId('organization', orgId), [orgId]);
+  const liveOrg = useLiveBudget(data?.org, orgTypeId);
   const setCap = useSetLifetimeCap();
   const invalidate = useInvalidateBudgets();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -163,7 +163,7 @@ export function OrgUnit({ orgId, name, onDeleted }: { orgId: string; name?: stri
   // the query has already resolved, so nothing will ever arrive to end it. Say so instead.
   if (!data?.org) return <Unreadable onRetry={() => void refetch()} />;
 
-  const org = data.org;
+  const org = liveOrg ?? data.org;
   const over = org.limit_usd !== null && org.allocated_usd !== null && org.allocated_usd > org.limit_usd;
   // Adding a team is a scoped CREATE on the organization, which is its own policy answer -- not a
   // reading of the org's budget rights. It used to be gated on `can_allocate`, which was wrong in
@@ -193,8 +193,8 @@ export function OrgUnit({ orgId, name, onDeleted }: { orgId: string; name?: stri
           <EditableTitle
             name={org.name}
             onRename={async (next) => {
-              await renameEntity('organization', orgId, next);
-              await invalidate();
+              await renameEntity(orgTypeId, next);
+              void invalidate();
             }}
             onDelete={() => setConfirmDelete(true)}
             deleting={deleting}
@@ -425,11 +425,10 @@ function MemberOrgCard({ orgId, name }: { orgId: string; name?: string }) {
  * anyone to a budget they already hold. See `invite-to-team.ts`.
  */
 function MemberRow({
-  member,
+  member: memberRow,
   teamName,
   capPending,
   canInvite,
-  canManage,
   inviting,
   onInvite,
   onSetCap,
@@ -441,20 +440,19 @@ function MemberRow({
   capPending: boolean;
   /** Same gate as "Add people" — whoever runs this team is who brings people into it. */
   canInvite: boolean;
-  /** May the caller run this team's roster (`members` on the team)? Gates "Remove from team". */
-  canManage: boolean;
   inviting: boolean;
   onInvite: () => void;
   onSetCap: (usd: number | null) => void;
   onRemove: () => void;
 }) {
   const { t } = useLingui();
+  const member = useLiveBudget(memberRow) ?? memberRow;
   const invalidate = useInvalidateBudgets();
   const rename = useInlineRename(member.name, async (next) => {
     // `endpoint_id` is the PREFIXED typeid, which the single-argument `TypeId` parses — the same
     // form `setLifetimeCap` takes. Do not hand it to a two-argument `TypeId`.
-    await dataManager.save(new TypeId(member.endpoint_id), [], { name: next } as never);
-    await invalidate();
+    await renameEntity(new TypeId(member.endpoint_id), next);
+    void invalidate();
   });
 
   return (
@@ -529,8 +527,11 @@ function MemberRow({
           >
             <Pencil className="h-3.5 w-3.5" />
           </Button>
+          {/* Gated per row on `can_remove` (the role ladder plus the last-owner rule), not the
+              team-wide `can_manage` — that one answers "may I rename the team" and offered a Remove
+              beside a peer admin that earned a 403 on press. */}
           {member.user_id ? (
-            canManage && (
+            member.can_remove && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -626,7 +627,7 @@ function OrgPeopleSection({ orgId, people }: { orgId: string; people: readonly O
 }
 
 function TeamUnit({
-  team,
+  team: teamRow,
   onChanged,
 }: {
   team: ScopeBudget;
@@ -634,6 +635,8 @@ function TeamUnit({
   onChanged: () => void;
 }) {
   const { t } = useLingui();
+  const teamTypeId = useMemo(() => new TypeId('team', teamRow.id), [teamRow.id]);
+  const team = useLiveBudget(teamRow, teamTypeId) ?? teamRow;
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -720,7 +723,7 @@ function TeamUnit({
         <EditableTitle
           name={team.name}
           onRename={async (next) => {
-            await renameEntity('team', team.id, next);
+            await renameEntity(teamTypeId, next);
             onChanged();
           }}
           onDelete={() => setConfirmDelete(true)}
@@ -874,7 +877,6 @@ function TeamUnit({
                           teamName={team.name}
                           capPending={savingCap(setCap, member.endpoint_id)}
                           canInvite={team.can_allocate}
-                          canManage={team.can_manage}
                           inviting={!!member.email && invitingEmails.includes(member.email)}
                           onInvite={() => void sendInvites(member.email ? [member.email] : [])}
                           onSetCap={(usd) => setCap.mutate({ endpointId: member.endpoint_id, usd })}

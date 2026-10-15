@@ -18,6 +18,12 @@ describe('flowpad:navigate', () => {
     expect(guestNavigation({ type: 'flowpad:navigate', typeid: 'not a typeid' })).toBeNull();
   });
 
+  it('opens a source detail from a guest entity link', () => {
+    const id = '6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b';
+    const dock = guestNavigation({ type: 'flowpad:navigate', typeid: `data_source-${id}` });
+    expect(dock?.toUrl()).toBe(`/dock/data-sources/${id}`);
+  });
+
   it.each([
     ['another message type', { type: 'flowpad:theme', address: '/dock/home' }],
     ['a non-dock URL', { type: 'flowpad:navigate', address: 'https://evil.example/dock/home' }],

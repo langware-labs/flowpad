@@ -497,9 +497,8 @@ export class OAuthService {
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
 
-      // Both popup grants need the backend to finish the exchange/adoption.
-      // A loopback callback only captures the code; wait-callback exchanges it.
-      void this.drivePopupCallback(oauthFlow, String(raw.kind ?? ''));
+      // The hub omits kind for code grants; only loopback grants need wait-callback.
+      void this.drivePopupCallback(oauthFlow, String(raw.kind ?? 'code'));
 
       return oauthFlow;
     } catch (error) {

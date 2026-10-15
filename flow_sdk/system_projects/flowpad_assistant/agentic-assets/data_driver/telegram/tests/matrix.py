@@ -28,7 +28,7 @@ class Double:
     provider = "telegram"
 
     #: The stranger who writes in: a chat id.
-    sender = "665945020"
+    sender = "111222333"
 
     def __init__(self):
         self.bot = _Bot()

@@ -311,11 +311,11 @@ async def test_a_hub_funded_harness_still_reports_its_own_device_login(monkeypat
     assert capability is not None
 
     endpoint = LLMEndpoint.projection(
-        LLMEndpointKind.HUB, "llm_endpoint-test-budget", name="Gadi +20", provider="openrouter"
+        LLMEndpointKind.HUB, "llm_endpoint-test-budget", name="Alice +20", provider="openrouter"
     )
     verdict = LLMSource(
         endpoint_typeid=str(endpoint.typeid),
-        name="Gadi +20",
+        name="Alice +20",
         eligible=endpoint_eligible,
         reason="" if endpoint_eligible else "this budget is exhausted",
     )
@@ -332,7 +332,7 @@ async def test_a_hub_funded_harness_still_reports_its_own_device_login(monkeypat
             status=WorkerAuthStatus.LOGGED_IN,
             verified=False,
             message="claude CLI has stored credentials (not validated).",
-            identity="gadi@langware.ai",
+            identity="alice@example.com",
             plan="max",
         )
 

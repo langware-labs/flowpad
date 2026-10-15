@@ -92,7 +92,7 @@ def _legacy_sender_message(fm_id: str, conv_id: str) -> FlowMessage:
             # Makes the packer ship the per-message entry the row is born from.
             Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{fm_id}"),
         ],
-        sender_name="Shani Shuber",
+        sender_name="Erin Example",
         conversation_id=conv_id,
     )
     fm.id = fm_id
@@ -271,7 +271,7 @@ async def test_hub_sync_repairs_a_now_stamped_message(tmp_path, monkeypatch):
         "type": "flow_message",
         "text": _TEXT,
         "conversation_id": conv_id,
-        "sender_name": "Shani Shuber",
+        "sender_name": "Erin Example",
         "created_date": _SENT_AT.isoformat(),
         "updated_date": _SENT_AT.isoformat(),
     }

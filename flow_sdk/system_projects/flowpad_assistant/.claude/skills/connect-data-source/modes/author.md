@@ -12,9 +12,12 @@ id: 94e1bd96-adda-45d6-ac5e-0356fa4ca5b3
 > **4. Never destroy the user's data to fix a symptom.**
 > **5. Credentials and invites are the user's step** — name the exact click.
 
-Reached when no installed source can express what the user named. The output is
-ONE self-contained folder asset — everything the source needs lives in it, and
-nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
+First inspect installed and project drivers: can configuration select the requested
+resource, or can that driver be extended without duplicating its transport? One provider's
+related record endpoints normally belong to one configurable driver with several sources.
+For that case or a consolidation, read [the configurable-driver recipe](../references/configurable-drivers.md).
+Create a new driver only when none fits. Its output is ONE self-contained folder asset —
+everything the source needs lives in it, and nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
 
 `SC` means `python3 <this skill>/scripts/source_ctl.py`; `flow source …` is the CLI
 over the same backend actions.
@@ -24,7 +27,7 @@ over the same backend actions.
 ```
 <project>/agentic-assets/data_driver/<name>/
     data_driver.json          the manifest (DataDriver): presentation, kind, auth, the config form
-    source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
+    source.py                 exactly ONE concrete flow_sdk.sources.Source subclass — the registered source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
     tests/matrix.py           its Double (a loopback provider) and its case in the data source matrix
@@ -87,16 +90,42 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
     provider = "wiki"            # = the manifest's name
     Config = WikiConfig          # its fields = the manifest's config keys
     durable_cursor = False       # True only when the provider can resume from your cursor string
+    lists_everything = False     # True when a full listing is the WHOLE collection (a table, a CRM object): records gone
+                                 # outside are removed here -- an EMPTY listing too, so _scan must RAISE on an outage, never return []
+    page_size = 200              # the provider's own page: a traversal is ONE _scan, paged from it (MAX_PAGE_SIZE = 1000)
+    pages_per_pass = None        # 1 when the provider's rate cap allows one request per interval
 
     def query(self):             # the ONE stream this source reads, from its config
         return None              # or a DataQuery built from self.config
 
     async def _scan(self, query):
         token = self.credentials.value("api_token")
-        ...                      # list pages → [(key, raw), ...] sorted by key
+        ...                      # list pages → [(key, raw), ...] sorted by key; let http errors raise.
+                                 # NO ANSWER IS NOT "NO ROWS": a source that lists everything and returns []
+                                 # removes every stored record -- raise SourceUnavailable when the body is not a listing
 
     async def _lookup(self, key): ...
     def _item(self, key, raw) -> SourceItemSpec: ...
+
+    # A SYSTEM OF RECORD (a CRM, a tracker) also writes back -- implement all three (`Mutable`); the type
+    # `create` names (a RecordData subclass) is what `create_item` checks a new record against. A source then
+    # mirrors into a dataset (`mirror` in data_source.json) and the app's row writes reach the system
+    # through these (the data-management skill's `references/mirroring.md`; in a repo checkout also
+    # docs/data-management/mirroring-a-system-of-record.md)
+    async def create(self, data: WikiPageData) -> SourceItemSpec: ...
+    async def update(self, origin, changes: dict) -> SourceItemSpec: ...   # changes = the system's own field names
+    async def delete(self, origin) -> None: ...
+    # A write that takes SEVERAL calls (the record, then its links) answers the record it made even when a
+    # later call failed: `SourceItemSpec(origin, data, warnings=("2 links were not set: …",))` -- never an
+    # exception, which loses the record the system now has and makes the retry a duplicate. EVERY verb:
+    # an `update` that changed the record and then failed to set its links answers warnings too. The
+    # READ-BACK counts: when the write succeeded and re-reading the record fails (a rate limit), answer it
+    # from what the write itself returned, with a warning -- the record exists.
+    # NEVER INVENT A VALUE for a field the system owns (`stage or "prospect"`): record what it has, None
+    # when it has none -- an invented value is mirrored into a row as if the system had said it.
+
+    # A system that POSTS changes: take them, and a change outside lands at once instead of at the next poll
+    # (docs/data-management/data-sources.md, Webhooks): webhook_challenge / webhook_account / events_from_webhook (+ webhook_authentic).
 ```
 
 **Pick the family first — it is what the items ARE, and the loader refuses a class that extends

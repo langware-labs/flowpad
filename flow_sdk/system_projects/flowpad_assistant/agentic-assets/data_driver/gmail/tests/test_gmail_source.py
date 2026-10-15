@@ -1,12 +1,16 @@
 """The ``gmail`` data source over a fake IMAP + SMTP mailbox: mapping, the UID cursor, outbound
-MIME, reply routing and the targeted reply lookup — with the app password reaching the source only
-as a credential."""
+MIME, reply routing and the targeted reply lookup — with the way in (a Google sign-in's token, or an app
+password) reaching the source only as the ``gmail`` credential."""
 from __future__ import annotations
 
 import imaplib
 import json
+import os
 import smtplib
+from datetime import datetime, timezone
 from email.message import EmailMessage
+from email.parser import BytesParser
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -32,14 +36,16 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ADDRESS = "Captain@Gmail.com"
 PASSWORD = "app-pass"
+TOKEN = "ya29.google-token"
 ALL_MAIL = "[Gmail]/All Mail"
 
 
 def _raw(*, message_id="<incoming@gmail.test>", in_reply_to="<question@gmail.test>", sender="Sailor <sailor@example.com>",
-         to="captain@gmail.com", subject="Treasure", text="The treasure is under the mast.", files=()) -> bytes:
+         to="captain@gmail.com", subject="Treasure", text="The treasure is under the mast.", files=(),
+         date="Tue, 2 Sep 2025 12:00:00 +0000") -> bytes:
     message = EmailMessage()
     message["From"], message["To"], message["Subject"] = sender, to, subject
-    message["Date"] = "Tue, 2 Sep 2025 12:00:00 +0000"
+    message["Date"] = date
     if message_id:
         message["Message-ID"] = message_id
     if in_reply_to:
@@ -76,6 +82,10 @@ class _Gmail:
         return _Smtp(self)
 
 
+def _sent(raw: bytes) -> datetime:
+    return parsedate_to_datetime(BytesParser().parsebytes(raw, headersonly=True)["Date"])
+
+
 class _Imap:
     def __init__(self, gmail):
         self.g, self.box = gmail, None
@@ -83,6 +93,13 @@ class _Imap:
     def login(self, _address, password):
         if password != PASSWORD:
             raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials")
+        return "OK", []
+
+    def authenticate(self, mechanism, respond):
+        said = respond(b"").decode()
+        if mechanism != "XOAUTH2" or said != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
+            raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")
+        self.g.calls.append(("AUTHENTICATE", mechanism))
         return "OK", []
 
     def select(self, box, readonly=True):
@@ -105,6 +122,10 @@ class _Imap:
             elif criteria[0].startswith("UID "):
                 low = int(criteria[0][4:].split(":")[0])
                 uids = [e[0] for e in entries if e[0] >= low] or ([entries[-1][0]] if entries else [])
+            elif criteria[0] == "BEFORE":
+                # IMAP's BEFORE: a whole day, on the message's date, never a time of day.
+                day = datetime.strptime(criteria[1], "%d-%b-%Y").date()
+                uids = [e[0] for e in entries if _sent(e[2]).date() < day]
             elif criteria[0] == "X-GM-THRID":
                 uids = [e[0] for e in entries if e[1] == criteria[1]]
             else:
@@ -136,11 +157,33 @@ class _Smtp:
         if password != PASSWORD:
             raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
 
+    def ehlo(self):
+        return 250, b"AUTH XOAUTH2"
+
+    def auth(self, mechanism, respond, initial_response_ok=True):
+        if mechanism != "XOAUTH2" or respond() != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+        self.g.calls.append(("SMTP AUTH", mechanism))
+
     def send_message(self, message):
         parent = str(message.get("In-Reply-To") or "")
         thread = next((t for _, t, r in self.g.boxes[ALL_MAIL] if parent and f"Message-ID: {parent}".encode() in r), None)
         self.g.sent.append(message)
         self.g.deliver(message.as_bytes(), thread or str(9000 + self.g.next_uid), sent=True)
+
+
+@pytest.fixture(autouse=True)
+def credentials(monkeypatch):
+    """The ``gmail`` credential, resolved — read here from ``GMAIL_*`` variables a test sets (``GMAIL_CHOICE``
+    names the way, ``GMAIL_TOKEN`` is a Google sign-in's token). A test with a double patches over it."""
+
+    async def resolve(_row):
+        values = {k: SecretStr(v) for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if (v := os.environ.get(k))}
+        token = SecretStr(os.environ["GMAIL_TOKEN"]) if os.environ.get("GMAIL_TOKEN") else None
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values, token=token, choice=os.environ.get("GMAIL_CHOICE", ""))
+
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    monkeypatch.setattr(DataDriver.loaded("gmail"), "credentials_for", resolve)
 
 
 @pytest.fixture
@@ -163,7 +206,7 @@ def _view(prior=None, *, cursor=None, window_start=None):
 @pytest.mark.parametrize("check", checks_for(GmailSource), ids=str)
 async def test_conformance(check, gmail):
     for n in (1, 2, 3):
-        gmail.deliver(_raw(message_id=f"<m{n}@x>", in_reply_to=""), "9988")
+        gmail.deliver(_raw(message_id=f"<m{n}@x>", in_reply_to="", date=f"Tue, {n} Sep 2025 12:00:00 +0000"), "9988")
     gmail.deliver(_raw(message_id="<files@x>", in_reply_to="", files=(LOG, MAP)), "9989", sent=True)
     probe = GmailSource(_binding())
     await check.run(Subject(
@@ -192,13 +235,60 @@ async def _read(source, file) -> bytes:
         return b"".join([chunk async for chunk in chunks])
 
 
-def test_gmail_is_a_registered_message_source_with_env_only_auth():
+def test_gmail_is_a_registered_message_source_read_with_the_gmail_credential():
     manifest = json.loads(
         (Path(__file__).parents[1] / "data_driver.json").read_text()
     )
     driver = DataDriver.loaded("gmail")
     assert (driver.kind, driver.sends, driver.identity_config_key) == ("datasource.api.gmail", True, "address")
-    assert manifest["auth"]["env"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] and "app_password" not in manifest["config"]
+    assert manifest["auth"]["credential"] == "gmail" and "app_password" not in manifest["config"]
+    assert driver.has_setup  # a new source owes Setup: its verify logs in
+
+
+async def test_the_google_way_logs_in_with_xoauth2_for_imap_and_smtp(gmail, monkeypatch):
+    monkeypatch.delenv("GMAIL_APP_PASSWORD")
+    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_GOOGLE")
+    gmail.deliver(_raw(), "9988", uid=7)
+    result = await DataDriver.loaded("gmail").traverse(_row(), _view())
+    assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
+
+    await DataDriver.loaded("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Ahoy")
+    assert ("SMTP AUTH", "XOAUTH2") in gmail.calls and len(gmail.sent) == 1
+
+
+async def test_the_way_chosen_wins_over_a_value_that_is_also_there(gmail, monkeypatch):
+    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_APP_PASSWORD")
+    gmail.deliver(_raw(), "9988", uid=7)
+    await DataDriver.loaded("gmail").traverse(_row(), _view())
+    assert ("AUTHENTICATE", "XOAUTH2") not in gmail.calls
+
+
+@pytest.mark.parametrize("way", ["GMAIL_GOOGLE", "GMAIL_APP_PASSWORD"])
+async def test_verify_holds_with_either_way(gmail, monkeypatch, way):
+    if way == "GMAIL_GOOGLE":
+        monkeypatch.delenv("GMAIL_APP_PASSWORD")
+        monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", way)
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert verdict.ready and ADDRESS in verdict.detail
+
+
+async def test_verify_owes_setup_with_no_way_and_says_googles_refusal(gmail, monkeypatch):
+    monkeypatch.delenv("GMAIL_APP_PASSWORD")
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert not verdict.ready and verdict.detail == "Sign in with Google or add an app password"
+
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "wrong")
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert not verdict.ready and "Invalid credentials" in verdict.detail
 
 
 async def test_the_password_is_a_credential_with_googles_display_spacing_dropped(monkeypatch):
@@ -445,3 +535,41 @@ async def test_the_double_carries_files_both_ways(monkeypatch, tmp_path):
         await driver.send(_row(**double.config), thread_key="", to="sailor@example.com", text="The log.", in_reply_to=delivered["external_id"], files=(local_file(path),))
         (sent,) = double.sent()
         assert sent["thread"] == delivered["external_id"] and sent["files"] == [{"name": LOG[0], "media_type": LOG[1], "bytes": LOG[2]}]
+
+
+# ── reading backwards ────────────────────────────────────────────────────────
+def _dated(gmail, stamps):
+    """One INBOX message per stamp (in delivery order), each its own Message-ID."""
+    for n, stamp in enumerate(stamps):
+        gmail.deliver(_raw(message_id=f"<b{n}@x>", in_reply_to="", date=stamp), "77")
+
+
+async def test_a_backward_read_is_one_page_of_older_mail_newest_first(gmail):
+    _dated(gmail, [
+        "Mon, 1 Sep 2025 08:00:00 +0000", "Tue, 2 Sep 2025 08:00:00 +0000", "Tue, 2 Sep 2025 11:00:00 +0000",
+        "Tue, 2 Sep 2025 12:00:00 +0000",  # the bound itself: not older
+        "Tue, 2 Sep 2025 15:00:00 +0000", "Wed, 3 Sep 2025 09:00:00 +0000",
+    ])
+    bound = datetime(2025, 9, 2, 12, tzinfo=timezone.utc)
+    async with GmailSource(_binding()) as source:
+        page = await source.fetch(None, page_size=2, narrow={"before": bound})
+    assert ("SEARCH", None, "BEFORE", "03-Sep-2025") in gmail.calls
+    assert [item.data.sent_at for item in page.items] == [
+        datetime(2025, 9, 2, 11, tzinfo=timezone.utc), datetime(2025, 9, 2, 8, tzinfo=timezone.utc)]
+    assert page.next_cursor is None and page.resume_cursor is None
+
+
+async def test_a_backward_read_ignores_the_since_window_and_older_beyond_a_page(gmail):
+    _dated(gmail, [f"{d} Aug 2025 10:00:00 +0000" for d in ("Fri, 1", "Sat, 2", "Sun, 3")])
+    async with GmailSource(_binding()) as source:
+        page = await source.fetch(None, page_size=10, narrow={"before": datetime(2025, 9, 2, tzinfo=timezone.utc)})
+    assert [item.origin.key for item in page.items] == ["<b2@x>", "<b1@x>", "<b0@x>"]
+
+
+async def test_the_forward_read_is_unchanged_by_backward_paging(gmail):
+    _dated(gmail, ["Mon, 1 Sep 2025 08:00:00 +0000", "Tue, 2 Sep 2025 08:00:00 +0000"])
+    async with GmailSource(_binding()) as source:
+        page = await source.fetch(GmailSource.resume_at("44", 1))
+    assert [call for call in gmail.calls if call[0] == "SEARCH"] == [("SEARCH", None, "UID 2:*")]
+    assert [item.origin.key for item in page.items] == ["<b1@x>"]
+    assert page.resume_cursor == GmailSource.resume_at("44", 2)

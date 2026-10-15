@@ -8,7 +8,7 @@
  * whose Info "Worktree" row reads "enabled" and Command contains --worktree, and
  * which offers "Commit & Merge" in the session actions menu (gated on cliOptions.worktree).
  *
- * The default project workdir is /Users/shlom/Flowpad workspace/my_first_project.
+ * The default project workdir is /Users/alice/Flowpad workspace/my_first_project.
  * A new_terminal shell adopts that workdir (the loader ignores any ?cwd= param),
  * so to exercise both the enabled and disabled gates we control that dir's git
  * state in the test fixture and restore it afterwards (it is otherwise empty).

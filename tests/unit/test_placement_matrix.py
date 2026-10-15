@@ -182,7 +182,7 @@ GOLDEN = {
     "dataset": ("agentic-assets/dataset", AssetClass.REPO),
     "deck": ("agentic-assets/deck", AssetClass.REPO),
     "deck_template": ("agentic-assets/deck_template", AssetClass.REPO),
-    "whiteboard": ("agentic-assets/whiteboard", AssetClass.REPO),
+    "chart": ("agentic-assets/chart", AssetClass.REPO),
     "journey": ("agentic-assets/journey", AssetClass.REPO),
     "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
     "agent_trace": ("agentic-assets/agent_trace", AssetClass.REPO),
@@ -230,7 +230,7 @@ def test_no_squatting_in_harness_dot_dirs():
     """Every harness-prefixed type mounts a family its harness actually reads.
 
     The regression this locks out: flowpad quietly minting ``.claude/<whatever>``
-    for its own artifacts (whiteboards, journeys, transcripts, usage reports),
+    for its own artifacts (charts, journeys, transcripts, usage reports),
     which both misrepresents the file to anyone reading the repo and collides the
     day Claude Code claims the name.
     """

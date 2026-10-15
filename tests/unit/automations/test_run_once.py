@@ -111,3 +111,24 @@ async def test_refusals_say_what_to_fix(tmp_path):
         await run_once(rule(TriggerType.FSOP, watch_path=None))
     with pytest.raises(RunOnceRefused, match="no rule folder"):
         await run_once(rule(TriggerType.HOOK, path=None))
+
+
+@async_context
+async def test_the_run_a_test_started_is_one_call_away():
+    """``run_id`` names the run from the moment it starts: running while it works, then its history
+    row -- for a schedule too, whose row is written only at the end."""
+    trigger = rule(TriggerType.SCHEDULE, enabled=False, actions=_calls("test_automation_record_call"))
+    await trigger.save()
+    started = await run_once(trigger)
+    assert (await Trigger.run(started.run_id)).status == "running"
+    await settle()
+    done = await Trigger.run(started.run_id)
+    assert done.status == "succeeded" and done.is_test and done.trigger_id == trigger.id
+    assert await Trigger.run("no-such-run") is None
+
+    event = rule(TriggerType.TAG, enabled=False, actions=_calls("test_automation_boom"))
+    await event.save()
+    began = await run_once(event)
+    await settle()
+    failed = await Trigger.run(began.run_id)
+    assert failed.status == "failed" and "the agent is not set up" in failed.error

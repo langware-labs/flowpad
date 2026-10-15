@@ -453,7 +453,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
             "data_layout": "io_folder",
             "delimiter": ",",
         },
-        manifest_data={"owner": "eran@langware.ai"},
+        manifest_data={"owner": "dan@example.com"},
         examples={
             "0001": {
                 "input": "the input",
@@ -480,7 +480,7 @@ def test_comprehensive_all_fields(tmp_path: Path) -> None:
     assert loaded.delimiter == ","
     assert loaded.num_examples == 1
     assert loaded.kind_counts == {"eval": 1}
-    assert loaded.data == {"owner": "eran@langware.ai"}
+    assert loaded.data == {"owner": "dan@example.com"}
     assert loaded.created_at is None
     assert loaded.asset_ref == str(Path(ds).resolve())
 

@@ -41,7 +41,7 @@ export { ENDPOINT_TYPE, endpointIdFromTypeId, endpointTypeId } from './llm-endpo
  * **Hardcoded provider list, deliberately.** The hub's `LLMProvider` enum has
  * three members and no listing endpoint; a form needs a label, a default
  * `base_url` and a key placeholder per provider — none of which the hub ships.
- * Mirrors `flowpad/hub/core/llm/providers.py` dialect defaults.
+ * Mirrors `hub providers.py` dialect defaults.
  *
  * **Pure — no React, no SDK calls.** The traps (cycles, self-sourcing, a key
  * leaking into an entity payload) are all unit-testable without rendering.

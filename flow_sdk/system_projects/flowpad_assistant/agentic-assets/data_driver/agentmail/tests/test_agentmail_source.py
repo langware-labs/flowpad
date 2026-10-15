@@ -35,7 +35,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 INBOX = "me@agentmail.to"
 MSG = {"message_id": "<abc@email.amazonses.com>", "thread_id": "t-1", "timestamp": "2026-08-02T08:28:47.206Z",
-       "from": "Joe the FlowPad agent <joe@agentmail.to>", "to": ["eran@langware.ai"], "subject": "Round trip", "preview": "Hello there."}
+       "from": "Joe the FlowPad agent <joe@agentmail.to>", "to": ["alice@example.com"], "subject": "Round trip", "preview": "Hello there."}
 MAP = b"\x89PNG\r\n\x1a\n" + bytes(range(256))
 LOG = b"%PDF-1.4 the captain's log"
 #: A listed message with files, as AgentMail reports them: metadata only, the bytes behind a signed URL.
@@ -161,7 +161,7 @@ class TestMapping:
         assert (item.external_id, item.thread_key, item.kind) == ("<abc@email.amazonses.com>", "t-1", "content.message.email")
         assert item.author_display == "Joe the FlowPad agent <joe@agentmail.to>"
         assert item.author_external_id == "joe@agentmail.to", "the address is what `_sender_for` compares"
-        assert (item.name, item.body, item.recipients) == ("Round trip", "Hello there.", ["eran@langware.ai"])
+        assert (item.name, item.body, item.recipients) == ("Round trip", "Hello there.", ["alice@example.com"])
 
     async def test_listed_attachments_and_the_answered_message_map(self, mail):
         mail.messages = [WITH_FILES]
@@ -296,3 +296,35 @@ async def test_the_double_carries_files_both_ways(monkeypatch, tmp_path):
         await driver.send(row, thread_key="", to="sailor@example.com", text="The log.", in_reply_to=delivered["external_id"], files=(local_file(log),))
         (sent,) = double.sent()
         assert sent["thread"] == delivered["thread"] and sent["files"] == [{"name": "log.pdf", "media_type": "application/pdf", "bytes": LOG}]
+
+
+class TestReadingBackwards:
+    """``narrow={"before": t}``: one page of mail sent strictly before ``t``, newest first, trimmed,
+    walked across listing pages, with the forward cursor untouched."""
+
+    @staticmethod
+    def _seed(mail):
+        mail.messages = [{**MSG, "message_id": f"<m{n}@x>", "timestamp": f"2026-08-02T0{n}:00:00.000Z"} for n in (1, 3, 2, 4)]
+
+    async def test_only_older_newest_first_and_trimmed(self, mail):
+        from datetime import datetime  # noqa: PLC0415
+
+        self._seed(mail)
+        bound = datetime.fromisoformat("2026-08-02T04:00:00+00:00")
+        async with AgentMailSource(_binding(mail)) as source:
+            page = await source.fetch(None, page_size=10, narrow={"before": bound})
+            assert [i.origin.key for i in page.items] == ["<m3@x>", "<m2@x>", "<m1@x>"]
+            assert page.next_cursor is None and page.resume_cursor is None
+            trimmed = await source.fetch(None, page_size=2, narrow={"before": bound})
+            assert [i.origin.key for i in trimmed.items] == ["<m3@x>", "<m2@x>"]
+
+    async def test_the_forward_read_is_unchanged(self, mail):
+        from datetime import datetime  # noqa: PLC0415
+
+        self._seed(mail)
+        async with AgentMailSource(_binding(mail)) as source:
+            before = await source.fetch(None)
+            await source.fetch(None, narrow={"before": datetime.fromisoformat("2026-08-02T03:00:00+00:00")})
+            after = await source.fetch(None)
+        assert [i.origin.key for i in before.items] == [i.origin.key for i in after.items]
+        assert before.resume_cursor == after.resume_cursor

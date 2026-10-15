@@ -20,7 +20,7 @@
  * Opt-in (FLOWPAD_PERF_GATE=1): the numbers mean something only on a production
  * build (`vite build` + `vite preview`, see ../../../../.github/actions/e2e-tests).
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import {
   awaitSteerable,
   BACKEND,
@@ -342,7 +342,11 @@ test('warm tab switches: content visible within budget', async ({ page }) => {
   await awaitSteerable(page);
   // Visit each place once (cold), so every later visit is warm. The session is opened AS a terminal:
   // a session never inherits the mode on screen, and a bare address is the plain chat.
-  await navigateTo(page, `shell/agentic_process-${a.processId}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`);
+  await navigateTo(
+    page,
+    `shell/agentic_process-${a.processId}?viewMode=advanced`,
+    `/shell/agentic_process-${a.processId}`,
+  );
   await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
     timeout: 15_000,
   });
@@ -603,13 +607,28 @@ async function coldOpen(page: Page, w: World): Promise<{ ms: number; line: strin
   await page.goto('/dock/desktop?viewMode=advanced');
   await awaitSteerable(page);
   const before = switches(toplog).size;
-  await navigateTo(page, `shell/agentic_process-${w.processId}?viewMode=advanced`, `/shell/agentic_process-${w.processId}`);
+  await navigateTo(
+    page,
+    `shell/agentic_process-${w.processId}?viewMode=advanced`,
+    `/shell/agentic_process-${w.processId}`,
+  );
   const sw = await awaitSwitch(page, toplog, before, 'ready', 30_000);
   const line = toplog.find((l) => new RegExp(`\\bready sw=${sw.id} `).test(l)) ?? '';
   return { ms: sw.ready!, line: line.slice(line.indexOf('ready')) };
 }
 
 test('cold open of a terminal with a large recording: from its checkpoint, within budget', async ({ browser }) => {
+  // Its own session: an earlier spec opens `a` in Standard, which turns its terminal into a chat
+  // (chat and the terminal are mutually exclusive), so `a` has no PTY left to flood.
+  const w = await createWorld('perf-cold');
+  try {
+    await coldOpenOfLargeRecording(browser, w);
+  } finally {
+    await destroyWorld(w);
+  }
+});
+
+async function coldOpenOfLargeRecording(browser: Browser, a: World): Promise<void> {
   // A session whose recording is large: the worker floods its screen first.
   const flood = await fetch(`${BACKEND}/api/v1/graph/compute_node/%40local/terminal-command/input`, {
     method: 'POST',
@@ -657,4 +676,4 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
   } finally {
     await againPage.close();
   }
-});
+}

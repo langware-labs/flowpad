@@ -24,13 +24,15 @@ RunStatus = Literal["running", "launched", "succeeded", "failed", "skipped"]
 class RunOnceStarted(DataSpec):
     """What *Run once now* answers: the run began (or finished, for a quick rule).
 
-    ``event_id`` is the ``trigger.fired`` envelope the run's history row carries,
-    so the screen can follow it into Runs."""
+    ``run_id`` is the run's handle: ``Trigger.run(run_id)`` answers it while it is still running and
+    after. ``event_id`` is the ``trigger.fired`` envelope the run's history row carries."""
 
     model_config = ConfigDict(frozen=True)
     spec_kind: ClassVar[str] = "automation.run_once"
 
     trigger_id: str
+    #: None for a rule that ran to its end inside the call (a hook rule): ``detail`` is its answer.
+    run_id: Optional[str] = None
     event_id: Optional[str] = None
     #: True when the work continues in the background (most rules).
     background: bool = True

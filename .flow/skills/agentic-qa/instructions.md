@@ -24,6 +24,8 @@
 
 ## Testing Environment
 
+- Focused run 2026-10-11: fresh publisher FE5055/BE6055 and consumer FE5056/BE6056, distinct local test users, local hub8093, isolated headless Chromium on macOS. Source checkout had concurrent peer edits; source fingerprints are retained with evidence. Scenario failed exclusivity, authenticated update transport, and post-pull auto-launch checks.
+
 - Cycle 2026-08-22→26 (0.2.140-fixes, macOS 24.6, 14 cores): cycle-owned instances via
   `scripts/instance_ctl.sh` — qa-cycle (backend :6001/:6002, frontend :5002), qa-b/qa-c/qa-d for
   parallel 11b agents, dev-1/2/3 for hub tiers; final Phase 11 from a `git worktree`
@@ -1051,3 +1053,40 @@ where they execute. What is left here is this cycle's own evidence:
 - A leftover tab in the user's Chrome Canary debug browser (remote-debugging 9222) on an instance's port wins the backend's "active tab" pick and swallows control-plane navigations (navigation/ category landed on /dock/desktop). navigation/_world.ts now steers its own connection id.
 - The shared out-of-repo snapshot ~/Documents/dev/dataset/smart-navigator/map.json is ONE file for every checkout: a peer regenerating it from newer code turns tests/unit/test_navigation_map.py red in a frozen worktree. Point FLOW_NAVIGATOR_DATASET at a private copy regenerated from the worktree; never overwrite the shared file from a frozen tree.
 - Hub-bound specs (need a healthy hub login): conversation_view_three_spawn_branches, stream_inbox_automations, message_links, attached_channels, two_channels_one_stream_inbox, links_all_modes (conversation leg), channel_files_reactions, channel_matrix + channel_threads (also AGENT_MAILBOX_ENABLED), native_threads (also a second instance).
+
+### 2026-10-11 — Publisher/consumer auto-launch after hub-repo pull
+
+- Fresh instances targeted local hub explicitly; repository provider was `local` and its bare repository was verified on disk. The main checkout defaults to the production hub, so never inherit that default for this scenario.
+- Keep the instance launcher session alive with the browser runner: this execution harness reaped the detached children after the initial setup command exited. Separate headless Chromium contexts avoided the already-owned Playwright MCP profile.
+- Agent publication uses `POST /graph/agent/<id>/publish`; generic `set-published` refuses agents.
+- Consumer first auto-launch and live response passed. Enabling a second agent's auto-launch leaves the first enabled; explicitly disabling the first allowed the later checks to proceed.
+- The existing ten-minute remote-check interval was advanced with Playwright's virtual clock. Git fetch failed for missing hub authentication but returned stale `behind: 0`; the normal UI Pull failed for the same reason.
+- A diagnostic UI Pull succeeded with temporary repository authentication, restored immediately afterward. No second agent tab or auto-launch request followed; the original agent session remained usable. Disk flags were updated while entity rows stayed stale.
+- Evidence: `ui/tests/manual_regression/_results/autolaunch-20261011T125752Z/`. Product code was not changed for this test.
+
+### 2026-10-11 — Fixed publisher/consumer auto-launch regression
+
+- Fresh final run passed all six requested steps against the local hub with a verified local bare Git repository. Evidence: `ui/tests/manual_regression/_results/autolaunch-final-20261011T131900Z/`.
+- Authoring a second auto-launch selection now clears the first; imported legacy flags remain unchanged. Hub Git fetch/pull uses fresh scoped authentication through native process environments. A successful local Pull refreshes asset projections before the shared once-only auto-launch check.
+- Browser proof: normal update notice and UI Pull; second agent opens in a new active tab; the original first-agent tab remains and answers again. Both agents returned live identity responses. No manual auth, flag repair, reindex, or browser refresh was used.
+- Harness adaptations: separate Chromium contexts, API fixture/publication setup, received link handoff into the isolated consumer app, and virtual-clock advancement of the existing remote-check interval.
+
+### 2026-10-12 — Live WAHA source and burst test
+- waha-8, Chrome extension explicitly requested by user, linked real WhatsApp session. Two synthetic folder sources (catalog CSV and policies Markdown), ten questions including a four-message burst and live source updates: 10/10 exact-value checks passed, one outbound per inbound. Latency 7.39–33.54s, median 19.64s; one sender only, not a capacity benchmark.
+- Dependency name with spaces was accepted by write then rejected on manifest read; fixed canonical FlowDependency validation and covered project/asset writes.
+- Evidence: ui/tests/manual_regression/_results/waha-stress-20261012/. Fresh onboarding sender permissions remain a separate known gap.
+
+### 2026-10-12 — QEMU Windows consumer auto-launch test
+
+- Fresh Windows consumer used installed Flowpad0.2.209, dedicated USERPROFILE/FLOW_INSTANCE and Edge profile; existing desktop/VM preserved. Mac publisher and distinct local-hub accounts used. Built-in deepagents selected through supported capability API, funded by hub; no user credentials copied.
+- Result: publication/link delivery passed; first launch failed existing20s assertion, later steps blocked. Controlled diagnostic launch returned200 after96.081s and opened the project dock without an agent session. Guest checkout and first-agent source existed. Auto-index logs recorded105326ms and121102ms; exact slow/stalling cause remains unproven. No timeout increases/product changes.
+- Preflight must resolve hub storage from current OS temp directory and check browser port safety (5061 is blocked by Chromium). Guest Edge must start with normal user environment and its dedicated --user-data-dir; overriding USERPROFILE for Edge prevented its debug port from listening.
+- Evidence: ui/tests/manual_regression/_results/autolaunch-windows-20261012T190104Z/. Guest backend6061 exposed at16061, dedicated CDP9261 at19261; guest localhost8093 proxies host10.0.2.2:8093. Test resources removed after run; shared VM/app preserved.
+
+### 2026-10-15 — Spora fresh-instance opening regression
+
+- Isolated sporaqa-73 used frozen OSS source and a separate real Spora copy, coherent fixed-port remapping, installed dependencies reused, frontend dependencies APFS-cloned and its writable .next isolated. Original app/listeners untouched. Headless standalone Chromium was used because the Playwright MCP profile was already owned.
+- Candidate passed six actual opening cases (including10 sequential and10 concurrent requests) and safely blocked one stranger-held required port. Exact old direct Next command on an alternate page port FAILED: duplicate Next startup refused the existing app lock. Candidate reverted; current focused suite36 pass/2 fail. Do not present candidate results as the current tree's success.
+- Legacy fixtures need canonical physical paths and dedicated process groups (detached:true); app Stop terminates the service's process group. /tmp alias made Next serve404; a shared test process group killed the runner. Both were fixture errors, not green app verdicts.
+- Existing Google ADC read-only check passed with output suppressed. Initial fixture omitted credential definitions; local-emulator Admin UI was proven, normal Google setup gate was not. Restoring schema alone without indexing does not prove gate coverage.
+- CDP attributed CORS noise to app-display-viewer reloadIfAppChanged; app iframe nevertheless worked. Original fixed4400 remains held by another user checkout, never stopped. Evidence: ui/tests/manual_regression/_results/spora-20261015/report.html.

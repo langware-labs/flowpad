@@ -8,7 +8,7 @@
 const assert = require('assert');
 const path = require('path');
 const {
-  PYTHON_RUNTIME_MANIFEST, REQUIRED_IMPORTS, detectPolicyBlockInLog, createPolicyBlockProbe,
+  PYTHON_RUNTIME_MANIFEST, REQUIRED_IMPORTS, detectPolicyBlockInLog, policyBlockFromInstallError, isInterpreterModule, createPolicyBlockProbe,
   readRuntimeState, writeRuntimeState, runtimeStatePath, canAttemptRepair, recordAttempt, priorAttempt,
   performRuntimeRepair, describeRuntimeBlock,
 } = require('./runtime-repair');
@@ -23,11 +23,11 @@ const FIELD_LOG = [
   '2026-10-09T17:06:26.743Z [boot] t=0.0s phase=import modules=426 last=flow_sdk.boot_progress',
   'Traceback (most recent call last):',
   '  File "<frozen runpy>", line 198, in _run_module_as_main',
-  '  File "C:\\Users\\Nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\flow_sdk\\server\\run.py", line 46, in <module>',
+  '  File "C:\\Users\\User\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\flow_sdk\\server\\run.py", line 46, in <module>',
   '    import uvicorn',
-  '  File "C:\\Users\\Nava\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\uvicorn\\_subprocess.py", line 17, in <module>',
+  '  File "C:\\Users\\User\\AppData\\Roaming\\uv\\tools\\flowpad\\Lib\\site-packages\\uvicorn\\_subprocess.py", line 17, in <module>',
   '    multiprocessing.allow_connection_pickling()',
-  '  File "C:\\Users\\Nava\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py", line 22, in <module>',
+  '  File "C:\\Users\\User\\AppData\\Roaming\\uv\\python\\cpython-3.11.17-windows-x86_64-none\\Lib\\multiprocessing\\connection.py", line 22, in <module>',
   '    import _multiprocessing',
   'ImportError: DLL load failed while importing _multiprocessing: An Application Control policy has blocked this file.',
 ].join('\n');
@@ -50,6 +50,31 @@ ok(REQUIRED_IMPORTS.includes('_multiprocessing') && REQUIRED_IMPORTS.includes('_
   ok(m.file && m.file.endsWith('multiprocessing\\connection.py'), 'the frame that triggered the load is named');
   ok(m.traceback.startsWith('Traceback (most recent call last):') && m.traceback.endsWith('has blocked this file.'), 'the whole traceback is preserved');
   ok(m.line.includes('Application Control policy'), 'the offending line is kept verbatim');
+}
+// ── a block DURING the engine install (2026-10-12, Lenovo-pc, v0.2.53 first install) ──────────────────────
+{
+  const stderr = [
+    'error: Failed to build `pybars3==0.9.7`',
+    '  Caused by: Call to `setuptools.build_meta:__legacy__.get_requires_for_build_wheel` failed (exit code: 1)',
+    '  [stderr]',
+    '  Traceback (most recent call last):',
+    '    File "C:\\Users\\Lenovo-pc\\AppData\\Local\\uv\\cache\\builds-v0\\.tmpy13yVH\\Lib\\site-packages\\setuptools\\unicode_utils.py", line 2, in <module>',
+    '      import unicodedata',
+    '  ImportError: DLL load failed while importing unicodedata: An Application Control policy has blocked this file.',
+    '  hint: `pybars3` (v0.9.7) was included because `flowpad` (v0.2.209) depends on `pybars3>=0.9.7, <0.10.dev0`',
+  ].join('\n');
+  const err = Object.assign(new Error('Command failed: uv tool install flowpad --python 3.11 --force --exclude-newer 2026-10-12T07:39:52Z\n' + stderr), { stderr, code: 1 });
+  const m = policyBlockFromInstallError(err);
+  ok(m, 'a policy block in the output of a failed uv tool install is found');
+  eq(m.module, 'unicodedata', 'it names the blocked module');
+  ok(isInterpreterModule(m.module), 'unicodedata ships with the interpreter: the signed runtime fixes it, so Repair is offered');
+  ok(/uv tool install/.test(m.path), 'and says where the evidence came from');
+  ok(m.traceback.includes('unicode_utils.py'), 'the traceback is kept for the panel');
+  const spawn = policyBlockFromInstallError(Object.assign(new Error('x'), { stderr: 'error: Failed to spawn: `python.exe`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)' }));
+  ok(spawn && spawn.module === null, 'uv\'s own spawn failure counts too (the interpreter executable itself)');
+  eq(policyBlockFromInstallError(Object.assign(new Error('Command failed: uv tool install flowpad --exclude-newer 2026-10-12'), { stderr: 'error: Failed to download distributions: network unreachable' })), null, 'a network failure is not a policy block');
+  eq(policyBlockFromInstallError(Object.assign(new Error('No solution found when resolving dependencies'), { stderr: 'x' })), null, 'a resolution failure is not either');
+  eq([policyBlockFromInstallError(null), policyBlockFromInstallError(undefined), policyBlockFromInstallError({})], [null, null, null], 'no error, no block');
 }
 eq(detectPolicyBlockInLog('2026-10-09 [boot] phase=import\nStarting Flow server on http://127.0.0.1:9007\n'), null, 'a healthy log is not a block');
 eq(detectPolicyBlockInLog(''), null, 'empty log');
@@ -205,7 +230,8 @@ function harness(overrides = {}) {
     ...overrides,
   };
   const progress = [];
-  const run = (state = {}) => performRuntimeRepair({
+  const run = (state = {}, extra = {}) => performRuntimeRepair({
+    ...extra,
     io,
     paths: { runtimeDir: 'C:\\L\\Flowpad\\runtime', downloadsDir: 'C:\\L\\Flowpad\\runtime\\downloads' },
     versions: { appVersion: '0.2.52', engineVersion: '0.2.202' },

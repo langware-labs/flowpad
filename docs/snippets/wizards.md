@@ -7,7 +7,15 @@ A Wizard SEQUENCES calls. Each step names one thing — a ComputeOp or another
 wizard — and reads one answer back. Everything about HOW work is done lives in
 the op ([compute-ops](compute-ops.md)); what is left here is what only a
 sequence owns: order, `on_fail`, the values steps pass each other, and the one
-answer the run gives back ([call-returns](call-returns.md) §8).
+answer the run gives back ([FlowCall](call-returns.md) §8).
+
+For direct typed chaining, `chain` builds this same sequence. A step's
+`input_from` selects `$input` or a prior step ID; `input_value` is a separate
+literal, including explicit null. The two cannot be combined. `output_from`
+selects one step's final value; without it, legacy collected outputs remain.
+Required-value edges reject skips and absent outputs before the next step runs.
+Whole lists pass unchanged; per-item work uses explicit `map_calls`. The
+[FlowCall block recipe](flowcall-blocks.md) executes this path without a server.
 
 Every `python` fence on this page runs as written, by
 `tests/unit/test_wizards_snippets.py` — each `# expected` comment is an
@@ -24,8 +32,9 @@ Every fence below runs in one session, after this one — the names they use and
 import tempfile
 from pathlib import Path
 
+from flow_sdk.core.wizard.plan import plan_wizard
 from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
-from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskOp, CliOp, ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, WizardResult
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
 
@@ -231,6 +240,68 @@ ends. Neither is a crash: unbounded nesting would end in one, and a crash is not
 an answer.
 
 ---
+
+## 8. Everything a run needs is asked once, before it starts
+
+A step that needs a person calls an `ask` op. Left alone, each would be raised
+when the run reaches it — five questions, minutes apart. So before the first
+step the run is PLANNED: every `ask` whose goal does not hold yet is one *need*,
+and they are put to the person as ONE question — a list, each row saying what it
+is and what it is for. The run then takes each ask's answer from that list.
+
+```python
+ask_git = ComputeOpSpec(name="ask-git", subkind="ask", output_spec_kind="confirm",
+                        exe_data=AskOp(prompt="Install Git?", detail="Git is missing."),
+                        completion_check=CliOp(commands={"darwin": "test -f git.txt", "linux": "test -f git.txt"}))
+
+async def resolve(name):
+    return Resolved(ask_git, trusted=True)
+
+plan = await plan_wizard(
+    WizardSpec(name="tools", steps=[WizardStepSpec(id="git", ref="ask-git", required=False)]),
+    workdir=tmp, platform="darwin", resolve_op=resolve,
+)
+[need.path for need in plan.needs]   # ['git']
+plan.needs[0].prompt                 # 'Install Git?'
+plan.needs[0].required               # False
+```
+
+A plan is a look, not a run: it checks goals and does nothing else. A question
+is left where it is — asked in place, as before — when its answer only means
+something at its moment: a gate (`recheck` / `auto_continue`), one that shows a
+value an earlier step produces (`{{connect.link}}`), a typed answer nobody keeps
+(no `bind`, no wizard `output`), or one the list cannot draw whole (several
+fields, a file, a choice of ways, an AI Assist).
+
+`required` (default `true`) says what a "no" means. Declining a required
+question leaves the run unfinished: the step fails and `on_fail` decides what
+follows. With `required: false` a decline is an answer — that wizard stops there
+quietly, as `on_fail: stop` would, and its caller carries on.
+
+## 9. `exit_error` — one op, called when the run ends in error
+
+```python
+broken = ComputeOpSpec(name="broken", subkind="cli", exe_data=CliOp(commands={"darwin": "false", "linux": "false"}))
+note = ComputeOpSpec(name="note", subkind="cli", exe_data=CliOp(commands={
+    "darwin": 'echo "$FLOWPAD_WIZARD_INPUT_ERROR_STEP" > failed.txt',
+    "linux": 'echo "$FLOWPAD_WIZARD_INPUT_ERROR_STEP" > failed.txt'}))
+
+async def resolve(name):
+    return Resolved({"broken": broken, "note": note}[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="risky", exit_error="note", steps=[WizardStepSpec(id="try", ref="broken")]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                                   # False — the op reports the error; it does not repair it
+result.steps["exit_error"].ok               # True
+(tmp / "failed.txt").read_text().strip()    # 'try'
+```
+
+The op is told what went wrong — `error_step` and `error_detail`, as environment
+like any other value — and answers under the reserved step id `exit_error`. A
+person declining a required question is an error like any other. It never runs
+for a run that passed, or for one that only checked.
 
 ## What a step's `on_fail` decides
 

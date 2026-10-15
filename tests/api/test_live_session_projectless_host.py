@@ -51,7 +51,7 @@ async def _projectless_chat_with_a_pending_session() -> tuple[str, RemoteWorkerS
     it, with the guest's opening prompt queued while the session awaits approval."""
     conv_id = str(uuid.uuid4())
     await HubWsBridge()._handle_conversation_op(
-        "create", conv_id, {"title": "Nir Levy, Eran Shlomo", "initiated_by": "host-local", "participants": []}
+        "create", conv_id, {"title": "Bob Example, Dan Example", "initiated_by": "host-local", "participants": []}
     )
     conv = await Conversation.get_one({"id": conv_id})
     assert conv is not None and conv.project_id is None  # the real shape, not a hand-cleared field

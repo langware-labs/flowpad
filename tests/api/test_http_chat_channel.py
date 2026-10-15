@@ -20,7 +20,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 from flow_sdk.builtin.source_item import SourceItem
-from flow_sdk.server.service_proxy import CALLER_HEADER, sign_caller
+from flow_sdk.server.service_proxy import CALLER_HEADER, GATE_HEADER, sign_caller
 from tests.utils.mock_worker import MockDriver
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -98,8 +98,9 @@ async def test_a_conversation_belongs_to_its_caller(deployed, bootstrapped_clien
 
     _agent, deployment, chat = deployed
     monkeypatch.setattr(gate, "get_cookie_gate", lambda: GATE)
-    dana = {CALLER_HEADER: sign_caller("user-dana", GATE, now=int(time.time()))}
-    lee = {CALLER_HEADER: sign_caller("user-lee", GATE, now=int(time.time()))}
+    # The hub's hop: through the armed door with the secret, naming the caller it vouches for.
+    dana = {GATE_HEADER: GATE, CALLER_HEADER: sign_caller("user-dana", GATE, now=int(time.time()))}
+    lee = {GATE_HEADER: GATE, CALLER_HEADER: sign_caller("user-lee", GATE, now=int(time.time()))}
 
     first = (await bootstrapped_client.post(_url(chat, "v1/chat/completions"), json=_ask("mine"), headers=dana)).json()
     same_id = {"conversation_id": first["flowpad"]["conversation_id"]}

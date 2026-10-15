@@ -77,5 +77,7 @@ Say who will be able to reach the agent, get an explicit go, then:
   open.
 - Test on the channel itself with the user as the sender: one normal message, one the
   agent must refuse, one it should hand off. Only the user sends to real channels.
-- How deployments, placements and channel routing work, in code (in a Flowpad source
-  checkout only): `docs/snippets/agent-deployment.md`.
+- For SDK deployment and channel wiring, follow the
+  [Flow SDK channel documentation map](../../flowpad-assistance/sdk-channels.md).
+  It requires a source checkout and covers both incoming delivery and the deployment
+  selected to answer; these are separate settings.

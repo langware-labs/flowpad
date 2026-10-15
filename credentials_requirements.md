@@ -375,7 +375,7 @@ number, the OpenAI SIP project. Channels without an account stay out of D3 and a
 
 **D3-WAHA run (user, 2026-09-27).**
 - **Scope:** a local WAHA project → deployed to e2b through the standard UI → talked to on WhatsApp via the
-  "בין" contact (session `default`, eSIM 972557709288) → the box's UI watched while texting.
+  "דנה" contact (session `default`, eSIM 972500000000) → the box's UI watched while texting.
 - **Decided:**
   - pause prod's WAHA channel for the run and restore it after;
   - the personal number is the ONLY allowed sender, this run only, removed after;

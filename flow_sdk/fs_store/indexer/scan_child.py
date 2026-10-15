@@ -63,9 +63,8 @@ def _adopt_store_paths(request: dict) -> None:
 
 
 async def _run(request: dict) -> int:
-    from flow_sdk.fs_store.indexer.auto_index import ScanMode  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.builtin import build_default_indexer  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.index_function import IndexerOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.builtin import register_discovery_functions  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.ndjson_stream import (  # noqa: PLC0415
         candidates_with_parents,
         fsrefs_from_candidates,
@@ -92,15 +91,19 @@ async def _run(request: dict) -> int:
             except ValueError:
                 log.warning("unknown record type %r in request; ignoring", name)
 
-    roots = tuple(fsrefs_from_candidates(raw_roots)) if raw_roots is not None else None
-
     async def on_progress(table) -> None:
         _emit(table_to_payload(table))
 
-    # ScanMode.THREAD is passed EXPLICITLY, never defaulted. Taking the default
-    # would re-read the index_function preference, resolve SUBPROCESS again, and
-    # fork-bomb: every child would spawn its own child.
-    indexer = build_default_indexer(scan_mode=ScanMode.THREAD)
+    # This child never indexes records or selects another scan backend. Load
+    # the shared discovery graph without the parent's database/entity runtime.
+    if raw_roots is not None:
+        roots = fsrefs_from_candidates(raw_roots)
+    else:
+        from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
+
+        roots = default_roots()
+    indexer = FSIndexer(roots=roots)
+    register_discovery_functions(indexer)
 
     refs = await indexer.scan(
         IndexerOptions(

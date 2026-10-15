@@ -103,7 +103,7 @@ export function ShareSandboxDialog({
 
   const shareLink = sandbox ? sandboxShareLink(sandbox) : '';
   // A box nobody ever started. `isLaunched` reads `node_provider_id`, the same
-  // field the hub refuses `open-service` on, so this cannot disagree with the
+  // field the hub refuses `open/system` on, so this cannot disagree with the
   // answer the recipient will get.
   const neverLaunched = !!sandbox && !isLaunched(sandbox);
 

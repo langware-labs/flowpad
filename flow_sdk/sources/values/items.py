@@ -12,11 +12,12 @@ change detection is the application's, over what it observes.
 
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import AwareDatetime, Field
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.origin import CloudOrigin
 
@@ -94,14 +95,30 @@ class UserProfile(Payload):
 
 
 class SourceItemSpec(DataSpec):
-    """One resource as observed: its identity and its payload."""
+    """One resource as observed: its identity and its payload.
+
+    ``warnings`` is for the record a WRITE answers (``Mutable.create`` / ``update``) when the write
+    took several calls and a later one failed: the record exists, in the shape given, and a person
+    should know what was not set ("2 of 3 links were not made: …"). Never on a record read."""
 
     origin: CloudOrigin
     data: Tagged[DataSpec]
+    warnings: tuple[str, ...] = ()
 
 
 class FileItem(SourceItemSpec):
     data: Tagged[FileData]
+
+
+class MessageMarkSpec(DataSpec):
+    """What a message DID, beyond its words (a review that approved, a pull request merged) — drawn
+    as a chip before the text, tinted by ``tone``. ``key`` is what an action's ``done_mark`` matches."""
+
+    spec_kind: ClassVar[str] = "ingest.message_mark"
+
+    key: NonBlank
+    label: str
+    tone: Literal["positive", "negative", "neutral"] = "neutral"
 
 
 class MessageData(Payload):
@@ -122,6 +139,11 @@ class MessageData(Payload):
     #: Entities this message is about, as TypeId strings (``"task-<id>"``) — the projection puts them
     #: on the message as its shared context, so the conversation can show (and act on) them.
     refs: tuple[str, ...] = ()
+    #: This message ends its conversation (a pull request merged or closed, a ticket resolved): the
+    #: projection stamps ``Conversation.ended_at``; a later message that does not end it reopens it.
+    ends_conversation: bool = False
+    #: What the message did (approved, merged); None for a message that only says something.
+    mark: Optional[MessageMarkSpec] = None
 
 
 class EmailMessageData(MessageData):

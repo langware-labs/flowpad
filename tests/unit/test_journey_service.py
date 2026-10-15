@@ -388,12 +388,12 @@ async def test_24_project_scoped_auto_launch_excludes_unrelated_projects(
 
     project_a_root = tmp_path / "project-a"
     project_b_root = tmp_path / "project-b"
-    content_root = tmp_path / "cloudnsite-content"
+    content_root = tmp_path / "globex-content"
     project_a_root.mkdir()
     project_b_root.mkdir()
     content_root.mkdir()
-    cloudnsite = await _make_auto(
-        content_root / "agentic-assets" / "journey", "cloudnsite-onboarding", "cloud"
+    globex = await _make_auto(
+        content_root / "agentic-assets" / "journey", "globex-onboarding", "cloud"
     )
     unrelated = await _make_auto(
         project_b_root / "agentic-assets" / "journey", "other-onboarding", "other"
@@ -407,7 +407,7 @@ async def test_24_project_scoped_auto_launch_excludes_unrelated_projects(
 
     selected = await Journey.auto_launch_for(USER, project_id=project_a.id)
 
-    assert selected is not None and selected.journey_id == cloudnsite.id
+    assert selected is not None and selected.journey_id == globex.id
     assert await unrelated.progress(USER) is None
 
 

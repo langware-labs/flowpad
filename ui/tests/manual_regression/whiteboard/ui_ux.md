@@ -23,7 +23,7 @@ tags: [whiteboard, ui]
 ### U3: Save debounce — five rapid updates coalesce into one write
 * Open a whiteboard editor.
 * NOTE: the save goes through axios, which in the browser uses XMLHttpRequest (NOT window.fetch). Hook `XMLHttpRequest.prototype.open` BEFORE the page loads to count `board.json` POST requests — this is load-independent (no reliance on file mtime timing). Excalidraw fires a finite burst of mount-phase writes, so snapshot the count AFTER that settles.
-* Inject 5 separate canvas updates in rapid succession (each calls `__whiteboardOnChange`), spacing them well under the 750ms debounce window.
+* Inject 5 separate canvas updates in rapid succession (each calls `__chartOnChange`), spacing them well under the 750ms debounce window.
 * Wait past the debounce, then read the write count again.
 * The delta MUST equal 1 (a single debounced write coalescing all 5 updates). Two or more is a regression of the debounce.
 

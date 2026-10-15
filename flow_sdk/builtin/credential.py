@@ -16,14 +16,14 @@ value-free, structurally: every parse runs through ``assert_value_free``.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, FrozenSet, Optional
 
 from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
-from flow_sdk.core.setup.skip_mark import SetupSkippable
+from flow_sdk.core.setup.skip_mark import SetupSkippable, write_projection
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER, CredentialKind
 from flow_sdk.schema.data_spec.credential_spec import CURRENT_SCHEMA, CredentialVarSpec
@@ -49,8 +49,15 @@ class CredentialAmbiguous(NameAmbiguous):
     plural = "credentials"
 
 
+#: The way of a ONE_OF group a person set up here (``Credential.setup_choice``).
+CHOICE_FIELD = "setup_choice"
+
+
 class Credential(SetupSkippable, Entity):
     """The ROW; its shape on disk is ``CredentialSpec`` (``TypeInfo.asset_spec``)."""
+
+    projected_fields: ClassVar[FrozenSet[str]] = SetupSkippable.projected_fields | {CHOICE_FIELD}
+    projection_writer: ClassVar[str] = "core.setup.skip_mark.write_setup_skip / builtin.credential.write_setup_choice"
 
     type: str = APIField(default=EntityType.CREDENTIAL.value)
 
@@ -83,6 +90,10 @@ class Credential(SetupSkippable, Entity):
     #: Skipped in this project's setup on THIS machine (``SetupSkipSpec``). PRIVATE: a skip is a person's choice
     #: here, never part of the declaration — the file and a share never carry it.
     setup_skipped: Optional[SetupSkipSpec] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The ONE_OF member a person set up on THIS machine (a sign-in way or a value way): while it
+    #: names a declared member, that member alone decides the group, and it is the way a source is handed.
+    #: PRIVATE and row-only, like ``setup_skipped`` — the declaration offers the ways, the person picks here.
+    setup_choice: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
 
@@ -117,6 +128,22 @@ class Credential(SetupSkippable, Entity):
         """Every variable this credential is made of, in manifest order."""
         return list(self.vars or {})
 
+    def stored_var_names(self) -> list[str]:
+        """The variables a value is kept for — what a store holds and a process is handed. A ``cli``
+        variable is not one (its sign-in lives with the tool), nor an ``oauth`` one (its grant, with the connection)."""
+        return [name for name, var in (self.vars or {}).items() if var.holds_value]
+
+    def is_way(self, name: str) -> bool:
+        """``name`` is a declared member of this credential's ONE_OF group."""
+        var = (self.vars or {}).get(name or "")
+        return var is not None and var.is_one_of
+
+    @property
+    def chosen(self) -> str:
+        """``setup_choice`` while it names a declared ONE_OF member; ``""`` otherwise — a choice whose member the
+        declaration no longer offers counts as unset."""
+        return self.setup_choice if self.is_way(self.setup_choice) else ""
+
     def required_var_names(self) -> list[str]:
         """The variables that must have a value for the credential to be connected
         (a deployment may require more: ``Placement.required``)."""
@@ -125,7 +152,7 @@ class Credential(SetupSkippable, Entity):
     @property
     def credentials(self) -> SecretRequirements:
         """The names this credential needs a store to hold — the same accessor a data source has."""
-        return SecretRequirements(self.var_names())
+        return SecretRequirements(self.stored_var_names())
 
     async def secret_store(self, deployment: Optional["Deployment"] = None) -> "SecretStore":
         """The store ``deployment`` (default: this computer) keeps this credential's values in,
@@ -138,7 +165,7 @@ class Credential(SetupSkippable, Entity):
         if scope is None:
             raise LookupError(f"credential {self.name!r} is a template or its project is gone; it has no store")
         placement = await Placement.of(deployment)
-        refs = {ref.key: ref for ref in (secret_store_ref(self, scope, name, placement) for name in self.var_names())}
+        refs = {ref.key: ref for ref in (secret_store_ref(self, scope, name, placement) for name in self.stored_var_names())}
         if len(refs) != 1:
             raise LookupError(f"credential {self.name!r} keeps its variables in {len(refs)} stores here; ask per variable")
         return SecretStore.from_ref(next(iter(refs.values())))
@@ -160,3 +187,14 @@ class Credential(SetupSkippable, Entity):
             if matches:
                 return matches[0]
         raise CredentialNotFound(name)
+
+
+async def write_setup_choice(credential: Credential, member: str) -> Credential:
+    """Record ``member`` as the way ``credential``'s ONE_OF group is set up here (``""`` clears it) and save — the
+    only save that may change it. The ROW only, like ``write_setup_skip``: the file never carries a choice."""
+    member = str(member or "")
+    if member and not credential.is_way(member):
+        raise ValueError(f"{member!r} is not one of {credential.name!r}'s ways")
+    if member == (credential.setup_choice or ""):
+        return credential
+    return await write_projection(credential, CHOICE_FIELD, member)

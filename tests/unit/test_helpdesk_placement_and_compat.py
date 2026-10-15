@@ -186,16 +186,16 @@ async def test_project_adopted_helpdesk_routes_to_manifest_queue(tmp_path) -> No
     import json
 
     queue_id = "0f92d293-4535-5bd6-be4e-c1404b94f13b"
-    portal_root = tmp_path / "cloudnsite-support"
-    desk_dir = portal_root / "agentic-assets" / "helpdesk" / "cloudnsite"
+    portal_root = tmp_path / "globex-support"
+    desk_dir = portal_root / "agentic-assets" / "helpdesk" / "globex"
     desk_dir.mkdir(parents=True)
     (desk_dir / "helpdesk.json").write_text(
-        json.dumps({"display_name": "CloudNSite Support", "desk_project_id": queue_id}),
+        json.dumps({"display_name": "Globex Support", "desk_project_id": queue_id}),
         encoding="utf-8",
     )
-    portal = Project(name="cloudnsite-support", fs_storage_mount_path=str(portal_root))
+    portal = Project(name="globex-support", fs_storage_mount_path=str(portal_root))
     target = Project(name="customer", fs_storage_mount_path=str(tmp_path / "customer"))
-    desk = Helpdesk(name="CloudNSite Support", asset_ref=str(desk_dir))
+    desk = Helpdesk(name="Globex Support", asset_ref=str(desk_dir))
     await portal.save()
     await target.save()
     await desk.save()

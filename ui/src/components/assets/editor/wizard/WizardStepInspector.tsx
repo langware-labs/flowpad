@@ -24,7 +24,7 @@ function Stream({ label, text }: { label: string; text: string }) {
 
 /** One command, with both streams: the step's own call, or the completion
  *  check that decided its verdict. */
-function CommandRow({ role, run }: { role: 'call' | 'check'; run: CliResult }) {
+export function CommandRow({ role, run }: { role: 'call' | 'check'; run: CliResult }) {
   // The verdict is ON the answer; `isOk` is the one reader of it.
   const failed = !isOk(run);
   return (

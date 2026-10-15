@@ -27,3 +27,4 @@ export * from './InstancePreferences';
 export * from './hooksSnifferService';
 export * from './snifferManager';
 export * from './sniffer-hook';
+export * from './search-service';

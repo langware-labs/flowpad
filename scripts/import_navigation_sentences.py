@@ -44,7 +44,7 @@ ENDPOINT = {"typeid": "llm_endpoint-3d4e5f6a-7b8c-4d9e-8f0a-1b2c3d4e5f6a", "titl
 TRIGGER = {"typeid": "trigger-4e5f6a7b-8c9d-4e0f-9a1b-2c3d4e5f6a7b", "title": "nightly report"}
 ENTITIES = {  # entity:<type> targets → the one thing the sentence names
     "agentic_process": SESSION,
-    "project": {"typeid": "project-5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d", "title": "gtm-studio"},
+    "project": {"typeid": "project-5a6b7c8d-9e0f-4a1b-8c2d-3e4f5a6b7c8d", "title": "sales-desk"},
     "skill": {"typeid": "skill-2408c41c-b3a4-42fe-8868-243b2ff11aae", "title": "agent-builder"},
     "task": {"typeid": "task-8b3c4d5e-6f7a-4b2c-8d3e-4f5a6b7c8d9e", "title": "Zoom OAuth on dev"},
     "claude_md": {"typeid": "claude_md-9c4d5e6f-7a8b-4c3d-9e4f-5a6b7c8d9e0f", "title": "CLAUDE.md"},

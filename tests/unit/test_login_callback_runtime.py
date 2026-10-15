@@ -117,3 +117,15 @@ def test_no_runtime_param_leaves_the_instance_alone(client, valid_key, assign_sp
     _callback(client, **{"flowpad-api-key": "k", "next": "/"})
 
     assign_spy.assert_not_called()
+
+
+def test_a_key_the_hub_does_not_confirm_is_refused_and_the_reason_is_logged(client, caplog):
+    """A box whose hub is unreachable answers the hub 400 and nothing more: the box's log is the only
+    place the reason can be read."""
+    with patch(
+        "flow_sdk.cli.auth.hub_login.validate_api_key_async",
+        new=AsyncMock(side_effect=RuntimeError("hub answered 404")),
+    ):
+        response = client.get("/auth/login_callback", params={"flowpad-api-key": "fpk_test"})
+    assert response.status_code == 400
+    assert "login_callback failed: hub answered 404" in caplog.text

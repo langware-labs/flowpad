@@ -19,7 +19,7 @@ const { assetsFsFolderNode, fsFileViewerPointerForVfs, fsFolderRoot } =
   await import('@src/components/browseable-tree/adapters/fsFolderRoot');
 
 const CN = new TypeId('compute_node', '@local');
-const DIR = 'Users/gadi/ws/cyber-course-1';
+const DIR = 'Users/bob/ws/cyber-course-1';
 
 function fsItem(rel: string, isDir: boolean) {
   return { vfs_abs_path: `${CN.toString()}/${rel}`, name: rel.split('/').pop(), is_dir: isDir };

@@ -482,6 +482,13 @@ async def _keep_uploads(conversation_id: str, uploads: list) -> list[str]:
     return paths
 
 
+def channel_refusal(exc: Exception) -> ApiResponse:
+    """A channel's refusal as the person who clicked reads it: 404 when the message, conversation or
+    channel is gone (a provider's ``NotFound`` is one), 422 for everything the channel or its provider refused — never a 500, which
+    the client reports without the message."""
+    return ApiFailResponse(message=str(exc), status_code=404 if isinstance(exc, LookupError) else 422)
+
+
 @action.post(action_name="react", types=["flow_message"])
 async def flow_message_react() -> ApiResponse:
     """``POST /graph/flow_message/<id>/react`` ``{emoji, remove?}`` — put (or take back) our emoji on a
@@ -500,5 +507,26 @@ async def flow_message_react() -> ApiResponse:
     try:
         reactions = await (unreact(message_id, emoji) if remove else react(message_id, emoji))
     except (SourceError, ValueError, LookupError) as exc:
-        return ApiFailResponse(message=str(exc))
+        return channel_refusal(exc)
     return ApiSuccessResponse(data={"reactions": [r.model_dump(mode="json") for r in reactions]})
+
+
+@action.post(action_name="act", types=["conversation"])
+async def conversation_act() -> ApiResponse:
+    """``POST /graph/conversation/<id>/act`` ``{action, text?}`` — run one of the channel's actions
+    (``ChannelSpec.actions``) on the conversation. Synchronous, so the channel's refusal reaches the
+    person who clicked. Answers ``{ok, item_id}``: the record of the message the action wrote, if any."""
+    from flow_sdk.sources.errors import SourceError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.conversation_actions import act  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="act: target conversation typeid required")
+    body = await request_info.get_post_data() or {}
+    try:
+        item_id = await act(
+            request_info.target_entity_typeid.id, str(body.get("action") or "").strip(), str(body.get("text") or "")
+        )
+    except (SourceError, ValueError, LookupError) as exc:
+        return channel_refusal(exc)
+    return ApiSuccessResponse(data={"ok": True, "item_id": item_id})

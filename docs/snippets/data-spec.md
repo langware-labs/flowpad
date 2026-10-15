@@ -131,10 +131,16 @@ author must stay free to write it.
 
 ## 3. What a call returns
 
-One answer for every call — a caller reads it without knowing what it called.
+[FlowCall](call-returns.md) gives participating work calls one answer contract — a caller reads it without knowing what it called.
 Each kind of work answers with its own subclass (`CliResult`, `PromptResult`,
 `AskResult`, `WizardResult`); the whole contract, checked fence by fence, is
-[call-returns](call-returns.md).
+[FlowCall](call-returns.md).
+
+Block `input`/`output` declarations use this same authoring form: `["int"]`
+means one list whose every element is an integer, not automatic per-item
+execution. Named-schema elements may remain ValueRefs until explicitly
+resolved. Returned values preserve nested tags and distinguish absent output
+from explicit nullable output. See [typed blocks](flowcall-blocks.md).
 
 ```python
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue

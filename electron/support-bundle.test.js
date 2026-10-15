@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Tests for ./zip-writer.js and ./support-bundle.js — the "Share with us" bundle.
+ * Tests for ./zip-writer.js and ./support-bundle.js — the "Send Report" bundle.
  * Run: `node electron/support-bundle.test.js` (exits non-zero on failure).
  */
 
@@ -12,7 +12,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const { createZip, crc32 } = require('./zip-writer');
-const { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl, supportSubject } = require('./support-bundle');
+const { redact, newestFile, tailText, collectLogs, buildSupportZip } = require('./support-bundle');
 
 let passed = 0;
 const ok = (c, m) => { assert.ok(c, m); passed++; };
@@ -140,22 +140,5 @@ try {
   ok(files['info.txt'].includes('Bearer [REDACTED]') && !files['info.txt'].includes('abcdefghijklmnop123456'), 'the shown error is redacted too');
   ok(files['desktop-new.log'].includes('new desktop') && !files['desktop-new.log'].includes('abcdef123456'), 'log inside the zip is redacted');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
-
-// ── subject ─────────────────────────────────────────────────────────────────
-{
-  eq(supportSubject(new Date(2026, 8, 30, 12, 0)), 'Flowpad startup problem - 2026-09-30', 'fixed title + local date');
-  eq(supportSubject(new Date(2026, 0, 5, 23, 59)), 'Flowpad startup problem - 2026-01-05', 'month and day are zero-padded');
-  ok(/^Flowpad startup problem - \d{4}-\d{2}-\d{2}$/.test(supportSubject()), 'defaults to today');
-}
-
-// ── mailto ──────────────────────────────────────────────────────────────────
-{
-  const url = buildMailtoUrl({ to: 'diagnosis@langware.ai', subject: 'Flowpad – startup problem', body: 'line1\nline2 & more' });
-  ok(url.startsWith('mailto:diagnosis@langware.ai?subject=Flowpad%20%E2%80%93%20startup%20problem&body='), 'recipient and encoded subject');
-  ok(url.includes('line1%0Aline2%20%26%20more'), 'body is encoded');
-  const long = buildMailtoUrl({ to: 'a@b.c', subject: 's', body: 'x'.repeat(20000) });
-  ok(long.length <= 1800, `a huge body is trimmed to stay under the handler limit (${long.length})`);
-  ok(long.endsWith(encodeURIComponent('…')), 'a trimmed body ends with an ellipsis');
-}
 
 console.log(`support-bundle.test.js: ${passed} assertions passed`);

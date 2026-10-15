@@ -9,6 +9,8 @@ pinned by a test so it cannot drift silently.
 
 | Category | What it shows | Pinned by |
 | --- | --- | --- |
+| [FlowCall](call-returns.md) | shared call outcomes, typed returned values, and composition | `tests/unit/test_call_returns_snippets.py` |
+| [FlowCall blocks](flowcall-blocks.md) | real call.py entries, typed whole-list inputs and outputs, Wizard-backed chains and explicit per-item maps | `tests/unit/test_flowcall_blocks_snippets.py` |
 | [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
 | [Project git share](project-git-share.md) | let project members clone and push the project's private GitHub repo through the hub, by role; install/connect steps; stop sharing | `tests/unit/test_project_git_share_snippets.py` (runs every fence), `ui/tests/unit/project-git-share-snippet.test.ts` (the TS fence) |
@@ -31,6 +33,13 @@ pinned by a test so it cannot drift silently.
 | [Project dependencies](project-dependencies.md) | declare the folders a project expects in `flow.json` (git, hub project, local folder; required or optional), see what resolved, a process in one project reading a document from another, an agent from a dependency running in your project, share warnings, the same verbs in TypeScript, HTTP and `flow dep` | `tests/unit/test_project_dependencies_snippets.py` (runs every python fence), `ui/tests/unit/project-dependencies-snippet.test.ts` (the TS fence), `tests/unit/test_project_dependencies.py` (every case and corner) |
 | [Asset dependencies](asset-dependencies.md) | an asset names what it needs by id (`<type>-<uuid>` / `<kind>.id.<uuid>`) in its own `flow.json`; three layered folder sources where depending on the personal one brings team and company; a missing link named with the path it was needed on; where an id is looked up | `tests/unit/test_asset_dependencies_snippets.py` (runs every python fence), `tests/unit/test_asset_dependencies.py` (every case and corner) |
 | [Stream stream inbox automations](stream-inbox-automations.md) | when a message arrives · if a decision op says it is about X · then a wizard runs: the `trigger.json` with `if` and `then`, `Trigger.on_message`, the decision op asked without firing, the message state the decision and the agent share, the fire path and its rows, the agent step's input, a decision as a wizard step, the verbs the screens use, TypeScript | `tests/unit/test_stream_inbox_automations_snippets.py` (runs every Python fence), `tests/unit/automations/test_stream_inbox_gate.py` (the fire-path corners), `ui/tests/unit/stream-inbox-automations-snippet.test.ts` (the TS fence) |
+| [Scan and index](scan-and-index.md) | walk a tree the way the indexer does, scan a project (walk + asset discovery in one request), read documents, pull title and links, and the one switch between the Python and Rust backends | `tests/unit/test_scan_index_snippets.py` (runs every fence; the scan on both backends), `tests/unit/diskio/` (the conformance kit) |
+
+## Channel routing
+
+[Channel webhook routing](channel-webhook-routing.md) connects the official WhatsApp driver,
+hub account/user/group claims, source-ID delivery, deployment answering and diagnostics.
+Its group setup example is run by `tests/unit/test_agents_on_channels_snippets.py`.
 
 ## Conventions
 
@@ -45,7 +54,7 @@ pinned by a test so it cannot drift silently.
   first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
-  agent returns is a `PromptResult` (see [call-returns](call-returns.md)). They are frozen and refuse unknown keys. A
+  agent returns is a `PromptResult` (see [FlowCall](call-returns.md)). They are frozen and refuse unknown keys. A
   simple `MessageBlock` yields an ephemeral `MessageRequest`; the block owns
   its one-shot reply correlation.
 * **Read before you believe.** A verb returning does not mean rows landed.

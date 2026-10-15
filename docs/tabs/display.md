@@ -49,7 +49,7 @@ The agent's `flow show` targets accumulate on
 a JSON list — no new APIField, `context_data` is already persisted + broadcast.
 
 - Each entry is a resolved display **target** flattened, plus a server timestamp:
-  `{kind, typeid?, type?, id?, path?, endpoint_id?, shown_at}` (ISO 8601 UTC). Newest last.
+  `{kind, typeid?, type?, id?, path?, endpoint_id?, route?, shown_at}` (ISO 8601 UTC). Newest last.
 - `context_data["last_shown"]` mirrors the **newest target** (no `shown_at`) for
   back-compat readers (standard-mode viewer).
 - Capped at `DISPLAY_STACK_CAP = 50`; a **consecutive identical target** refreshes
@@ -167,14 +167,16 @@ from `last_shown` on every mount, which is what used to hide that race.
 
 ### Every app is an address
 
-There is no pane-pinned case left. A bare dev server is registered as a
-`ServiceEndpoint` the moment it is shown (`flow show webapp --port N`), so it is
-addressed like any app — `ViewType.APP`, `/dock/app/service_endpoint-<uuid>`. An app
+There is no pane-pinned case left. A bare dev server is registered as a route of
+its placement's `app` proxy the moment it is shown (`flow show webapp --port N`), so
+it is addressed like any app — `ViewType.APP`,
+`/dock/app/service_endpoint-<uuid>?route=port-N` (the proxy, and the mount on it;
+`route` is an option, so two servers of one placement re-point the same tab). An app
 built from source is addressed by its artifact, `/dock/app/artifact-<uuid>`, and a
 webapp asset by its definition, `/dock/app/micro_app-<uuid>`:
 
-* the **artifact** is the pointer, because `_app_payload` derives the endpoint shown
-  from the artifact's endpoints. A dev server that dies or a build that lands
+* the **artifact** is the pointer, because `_app_payload` derives the route shown
+  from the artifact's routes. A dev server that dies or a build that lands
   changes what you see without changing where you are; a port in the address would
   make a dead server the app's identity.
 * **`?runtime=dev|served`** is the user's PREFERENCE, not a fact —

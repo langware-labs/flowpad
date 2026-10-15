@@ -1,6 +1,6 @@
 /**
- * The ⚡ in the navigation bar: a place (the automations list), opened by URL alone, with a
- * counter of what started in the last hour — and no badge at zero.
+ * The ⚡ in the navigation bar: a place (the automations list), opened by URL alone, with
+ * no activity counter.
  */
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const openDock = vi.hoisted(() => vi.fn());
-const started = vi.hoisted(() => ({ current: 0 }));
 vi.mock('@src/navigation/use-history-nav', () => ({
   useHistoryNav: () => ({ canGoBack: false, canGoForward: false, goBack: vi.fn(), goForward: vi.fn(), reload: vi.fn() }),
 }));
@@ -30,18 +29,17 @@ vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () 
 vi.mock('@src/components/top-nav-bar/NewChatButton', () => ({ NewChatButton: () => null }));
 vi.mock('@src/components/top-nav-bar/RuntimeChip', () => ({ RuntimeChip: () => null }));
 vi.mock('@src/components/top-nav-bar/ProjectSetupButton', () => ({ ProjectSetupButton: () => null }));
+vi.mock('@src/components/top-nav-bar/AppButton', () => ({ AppButton: () => null }));
 vi.mock('@src/components/workspace/workspace-switcher', () => ({ NewWorkspaceDialogHost: () => null }));
 vi.mock('@src/hooks/use-workspaces', () => ({ useActiveWorkspace: () => ({ contains: () => true }) }));
 vi.mock('@src/tabs/use-tab-manager', () => ({ useLastKnownTab: () => null, useTabProjectBuckets: () => ({ buckets: [], globalTabCount: 0 }) }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() }, askNotification: vi.fn() }));
 vi.mock('@src/components/floating-chat/floating-chat-context', () => ({ useOptionalFloatingChat: () => null }));
-vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => started.current }));
 
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 beforeEach(() => {
-  started.current = 0;
   openDock.mockClear();
 });
 afterEach(cleanup);
@@ -54,13 +52,9 @@ describe('the automations button', () => {
     expect(openDock.mock.calls[0][0].toUrl('/')).toBe(DockPointer.forAutomations().toUrl('/'));
   });
 
-  it('shows no badge at zero, and the count otherwise', () => {
-    const first = render(<TooltipProvider><TopNavBar /></TooltipProvider>);
-    expect(screen.queryByTestId('top-nav-automations-badge')).toBeNull();
-    first.unmount();
-    started.current = 3;
+  it('shows the Automations label without a counter', () => {
     render(<TooltipProvider><TopNavBar /></TooltipProvider>);
-    expect(screen.getByTestId('top-nav-automations-badge').textContent).toBe('3');
-    expect(screen.getByTestId('top-nav-automations').getAttribute('aria-label')).toContain('3');
+    expect(screen.queryByTestId('top-nav-automations-badge')).toBeNull();
+    expect(screen.getByTestId('top-nav-automations').getAttribute('aria-label')).toBe('Automations');
   });
 });

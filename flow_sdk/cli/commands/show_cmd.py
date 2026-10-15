@@ -167,11 +167,15 @@ def show_webapp(
         int,
         typer.Option("--port", help="Port the dev server / app listens on (e.g. 3000)."),
     ],
+    admin: Annotated[
+        bool,
+        typer.Option("--admin", help="Serve it to the project's operators (its admin app), not its end users."),
+    ] = False,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
 ) -> None:
     if port <= 0 or port > 65535:
         _fail(EXIT_INVALID_ARG, "INVALID_PORT", f"Invalid port: {port}")
-    _post_show(process, {"port": port})
+    _post_show(process, {"port": port, **({"audience": "admin"} if admin else {})})
 
 
 @show_app.command(
