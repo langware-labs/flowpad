@@ -1458,6 +1458,10 @@ msgstr "~2 ثانية. يُستخدم للتحقق مما هو على القرص
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
 msgstr "🎉 لا توجد مشاكل — لا شيء يحتاج إلى انتباهك."
@@ -8617,6 +8621,7 @@ msgstr "التفاصيل"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Details"
 msgstr "التفاصيل"
@@ -10746,6 +10751,10 @@ msgstr ""
 msgid "Fetching"
 msgstr "يجلب"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Fetching older messages…"
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Fetching the desk and indexing it…"
 msgstr ""
@@ -11106,8 +11115,8 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "إصلاح الإعداد"
+#~ msgid "Fix the setup"
+#~ msgstr "إصلاح الإعداد"
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -15710,6 +15719,10 @@ msgstr ""
 msgid "New workspace…"
 msgstr ""
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Newer"
+msgstr ""
+
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
 msgstr ""
@@ -16377,6 +16390,10 @@ msgstr "لا توجد نماذج."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "بلا تضييق — كل ما تسمح به الجذور."
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "No older conversations"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -17473,6 +17490,10 @@ msgstr "إخطار الكيان (زيادة العداد)"
 msgid "Notify people about this push"
 msgstr "إخطار الأشخاص بهذا الإرسال"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Now"
+msgstr ""
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Now listening."
 msgstr "يستمع الآن."
@@ -17528,6 +17549,7 @@ msgid "OK"
 msgstr "موافق"
 
 #: src/components/chats-navigator/useChatHistory.ts
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Older"
 msgstr "أقدم"
 
@@ -20814,6 +20836,10 @@ msgstr "إزالة الصف"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
+msgstr ""
+
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
@@ -28885,7 +28911,6 @@ msgid "Why it ran"
 msgstr ""
 
 #: src/components/conversation/ConversationActions.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "لماذا؟"
 
