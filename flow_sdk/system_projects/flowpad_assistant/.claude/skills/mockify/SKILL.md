@@ -3,10 +3,9 @@ id: 098a70ff-0160-4950-aa04-b7e7d1990ea2
 name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
   that the user can walk and comment on — every screen in order, with a journey bar
-  (Restart, Back / Next, where the screen sits in the journey, all screens) and a
-  per-screen feedback box (text + image) whose comments are saved as typed rows and
+  and a per-screen feedback box (text + image) whose comments are saved as typed rows and
   sent back to this session in one Submit. The mock and its feedback are typed data
-  (kinds mockify.mock / mockify.feedback, built with the data-management skill). Two
+  (kinds mockify.mock / mockify.feedback). Two
   modes: real, the default (built from a running app''s own captured DOM and CSS,
   checked side by side so it looks exactly like the app), and fast (HTML in the
   product''s tokens, minutes — only for a product that does not run here, or when
