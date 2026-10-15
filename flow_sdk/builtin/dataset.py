@@ -209,7 +209,7 @@ class Dataset(Entity):
     created_at: Optional[datetime] = APIField(None)
 
     # Absolute path of the dataset folder on disk, stamped by the indexer /
-    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors WHITEBOARD.
+    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors CHART.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     @model_validator(mode="after")

@@ -278,7 +278,7 @@ export function buildDockPointer(
       return null;
     }
     default: {
-      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // Asset-editor types (markdown family, agent, skill, workflow, chart)
       // open by their TypeId — no asset_ref needed; the loader resolves the
       // entity. This is why the chip never has to defer on an unresolved path.
       const editor = editorForType(resolved.type);

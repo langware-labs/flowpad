@@ -126,9 +126,9 @@ except ImportError as e:
     print(f"[WARN] Failed to import Skill: {e}")
 
 try:
-    from flow_sdk.builtin.whiteboard import Whiteboard  # noqa: F401
+    from flow_sdk.builtin.chart import Chart  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Whiteboard: {e}")
+    print(f"[WARN] Failed to import Chart: {e}")
 
 try:
     from flow_sdk.builtin.deck_template import DeckTemplate  # noqa: F401

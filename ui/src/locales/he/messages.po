@@ -109,6 +109,10 @@ msgstr ""
 #~ msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 #~ msgstr ""
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "· click an element to pick it"
+msgstr "· לחצו על רכיב כדי לבחור אותו"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
 msgstr "· מקומי"
@@ -116,6 +120,10 @@ msgstr "· מקומי"
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
 msgstr "· בחר ענף"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "· picked"
+msgstr "· נבחר"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
@@ -318,6 +326,11 @@ msgstr "{0} — נפתח \"{fallbackName}\" במקומו."
 msgid "{0} · {1} · {2}ms"
 msgstr ""
 
+#. placeholder {0}: hot.info.from
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0} (self-call)"
+msgstr "{0} (קריאה עצמית)"
+
 #. placeholder {0}: saved.title
 #: src/components/credentials/CredentialQuickCreateDialog.tsx
 msgid "{0} added"
@@ -383,6 +396,16 @@ msgstr ""
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} changed"
 msgstr "{0} שונו"
+
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+msgstr "{0} הערות נשמרו כנשלחו — לתרשים אין סשן, ולכן דבר לא נשלח."
+
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "{0} comment(s) sent to the session that builds this chart."
+msgstr "{0} הערות נשלחו לסשן שבונה את התרשים הזה."
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -688,6 +711,12 @@ msgstr ""
 msgid "orphan_count"
 msgstr "ספירת יתומים"
 
+#. placeholder {0}: value.participants.length
+#. placeholder {1}: value.messages.length
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0} participants · {1} messages"
+msgstr "{0} משתתפים · {1} הודעות"
+
 #. placeholder {0}: (g.contacts ?? []).length
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{0} people"
@@ -827,6 +856,13 @@ msgstr ""
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: {1}"
 msgstr "{0}: {1}"
+
+#. placeholder {0}: value.title || t`Sequence chart`
+#. placeholder {1}: value.participants.length
+#. placeholder {2}: value.messages.length
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0}: {1} participants, {2} messages"
+msgstr "{0}: {1} משתתפים, {2} הודעות"
 
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
@@ -1340,6 +1376,10 @@ msgstr "/path/to/db"
 msgid "/run reclaimable "
 msgstr "/הרצה שניתן להחזיר "
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "#"
+msgstr "#"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "← Back"
 msgstr "← חזרה"
@@ -1456,6 +1496,10 @@ msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינ�
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
@@ -1628,6 +1672,10 @@ msgstr "התחברות ל-FlowPad שמורה, אבל ה-Hub עדיין לא אי
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A folder of related projects. New projects and clones are created inside it."
 msgstr ""
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "a freehand board to draw on"
+msgstr "לוח חופשי לציור"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
@@ -3044,6 +3092,10 @@ msgstr ""
 #~ msgid "Any detail that helps (optional)"
 #~ msgstr "כל פרט שיכול לעזור (אופציונלי)"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "any diagram written as mermaid text"
+msgstr "כל תרשים שנכתב כטקסט mermaid"
+
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
 msgstr ""
@@ -3611,6 +3663,10 @@ msgstr ""
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr ""
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Attach image"
+msgstr "צירוף תמונה"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
 msgstr "צירוף קבצים או נכסים נוספים"
@@ -3633,6 +3689,10 @@ msgstr ""
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr ""
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "attached image"
+msgstr "תמונה מצורפת"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
@@ -4425,12 +4485,12 @@ msgstr ""
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
@@ -4477,6 +4537,7 @@ msgstr ""
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
@@ -4713,6 +4774,29 @@ msgstr ""
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 msgid "Channels"
 msgstr ""
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/quick-create/registry.ts
+msgid "Chart"
+msgstr "תרשים"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "CHART"
+msgstr "תרשים"
+
+#: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Chart created"
+msgstr "התרשים נוצר"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Chart feedback"
+msgstr "משוב על התרשים"
+
+#: src/i18n/type-labels.ts
+msgid "Charts"
+msgstr "תרשימים"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
@@ -5230,6 +5314,10 @@ msgstr "סטטוס עובד CLI"
 msgid "Click a node to view its properties,<0/>edges, and neighbors."
 msgstr "לחץ על צומת לצפייה במאפייניו,<0/>הקשרים והשכנים שלו."
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Click any box or arrow in the chart to change what this comment is about."
+msgstr "לחצו על תיבה או חץ בתרשים כדי לשנות את נושא ההערה."
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Click Restart to spawn a fresh PTY."
 msgstr "לחצו \"הפעל מחדש\" כדי ליצור PTY חדש."
@@ -5332,6 +5420,7 @@ msgstr "מתבצע שכפול של המאגר ואינדוקס שלו."
 msgid "Cloning…"
 msgstr "משבוט…"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -5362,6 +5451,10 @@ msgstr "משבוט…"
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Close"
 msgstr "סגור"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Close (Esc)"
+msgstr "סגירה (Esc)"
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
@@ -6145,6 +6238,14 @@ msgstr "כותרת שיחה"
 msgid "Conversation unavailable"
 msgstr "השיחה אינה זמינה"
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Convert to Excalidraw"
+msgstr "המרה ל-Excalidraw"
+
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Converted to an Excalidraw board"
+msgstr "הומר ללוח Excalidraw"
+
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -6515,6 +6616,10 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Could not convert the chart"
+msgstr "לא ניתן היה להמיר את התרשים"
+
 #: src/components/links/link-handlers.ts
 msgid "Could not copy link"
 msgstr ""
@@ -6554,6 +6659,10 @@ msgstr ""
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not create the budget"
 msgstr ""
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Could not create the chart"
+msgstr "לא ניתן היה ליצור את התרשים"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
@@ -6785,6 +6894,10 @@ msgstr "לא הצליח לפתוח כישור"
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr ""
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Could not open the sub-flow"
+msgstr "לא ניתן היה לפתוח את תת-הזרימה"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
@@ -7493,6 +7606,7 @@ msgstr "מעבד:"
 #: src/components/organization/organization-page.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7549,12 +7663,16 @@ msgid "Create apps and tools by chatting with AI"
 msgstr "יצירת אפליקציות וכלים בשיחה עם AI"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+msgid "Create as Chart"
+msgstr "יצירה כתרשים"
+
+#: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create as Markdown"
 msgstr "יצירה כ-Markdown"
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Create as Whiteboard"
-msgstr "יצירה כ-Whiteboard"
+#~ msgid "Create as Whiteboard"
+#~ msgstr "יצירה כ-Whiteboard"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Create bookmark on the recipient's desktop"
@@ -8099,6 +8217,7 @@ msgstr "מחיקה"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -8617,6 +8736,7 @@ msgstr "פרטים"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -8742,6 +8862,10 @@ msgstr "אבחון לא נשמר — נסה שוב."
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnostic complete — no issue found."
 msgstr "אבחון הושלם — לא נמצאה בעיה."
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Diagram"
+msgstr "תרשים"
 
 #~ msgid "did not run"
 #~ msgstr ""
@@ -10261,11 +10385,11 @@ msgstr "ייצוא"
 msgid "Export / link"
 msgstr "ייצוא / קישור"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Export PNG"
 msgstr "ייצוא PNG"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Export SVG"
 msgstr "ייצוא SVG"
 
@@ -10722,6 +10846,21 @@ msgstr "הערה בהזנה"
 msgid "Feed Entry"
 msgstr "רשומה בפיד"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback"
+msgstr "משוב"
+
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: {0}"
+msgstr "המשוב כבוי: {0}"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+msgstr "המשוב כבוי: לפרויקט הזה אין מאגר נתונים למשוב על תרשימים (chartit.feedback)."
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Feeds"
 msgstr ""
@@ -10745,6 +10884,10 @@ msgstr ""
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
 msgstr "מביא"
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Fetching older messages…"
+msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Fetching the desk and indexing it…"
@@ -11106,8 +11249,8 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "תיקון ההגדרה"
+#~ msgid "Fix the setup"
+#~ msgstr "תיקון ההגדרה"
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -11358,6 +11501,10 @@ msgstr "פיצול סשן — כרטיסייה חדשה, אותה היסטורי
 msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Format"
+msgstr "תבנית"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -11412,6 +11559,7 @@ msgstr "JSON חופשי עבור מתגי תכונות ניסיוניות. JSON 
 msgid "from"
 msgstr "מאת"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
@@ -12555,7 +12703,7 @@ msgstr "התעלמות"
 msgid "Image"
 msgstr "תמונה"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Import"
 msgstr "ייבוא"
@@ -12564,8 +12712,8 @@ msgstr "ייבוא"
 msgid "Import Failed"
 msgstr "כישלון בייבוא"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Import mermaid → board"
 msgstr "ייבוא mermaid → ללוח"
 
@@ -14089,6 +14237,13 @@ msgstr ""
 msgid "Loading capabilities…"
 msgstr "טוען יכולות…"
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Loading chart…"
+msgstr "טוען תרשים…"
+
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "Loading chats…"
 msgstr "טוען צ'אטים…"
@@ -14296,8 +14451,8 @@ msgid "Loading transcript…"
 msgstr "טוען תמלול…"
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
-msgid "Loading whiteboard…"
-msgstr "טוען לוח לבן…"
+#~ msgid "Loading whiteboard…"
+#~ msgstr "טוען לוח לבן…"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Loading WorldView…"
@@ -14869,6 +15024,15 @@ msgstr ""
 #~ msgid "Merge conflicts"
 #~ msgstr "קונפליקטים בהיתוך"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Mermaid"
+msgstr "Mermaid"
+
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+msgid "Mermaid source"
+msgstr "קוד Mermaid"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
@@ -15273,6 +15437,7 @@ msgstr "לא זמין"
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -15499,6 +15664,10 @@ msgstr "תיקיית סימניות חדשה"
 msgid "New build"
 msgstr "בנייה חדשה"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "New chart"
+msgstr "תרשים חדש"
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
@@ -15710,6 +15879,10 @@ msgstr ""
 msgid "New workspace…"
 msgstr ""
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Newer"
+msgstr ""
+
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
 msgstr ""
@@ -15907,6 +16080,10 @@ msgstr ""
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr ""
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "No chart named “{ref}” in this project"
+msgstr "אין בפרויקט הזה תרשים בשם “{ref}”"
 
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "No chats yet"
@@ -16377,6 +16554,10 @@ msgstr "אין מודלים."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "No older conversations"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -17146,6 +17327,11 @@ msgstr "לא ניתן להפעיל כאן"
 msgid "Not saved"
 msgstr ""
 
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Not saved: {0}"
+msgstr "לא נשמר: {0}"
+
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17194,6 +17380,11 @@ msgstr "טרם התחיל"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not started yet — its terminal appears when the deployment first runs."
 msgstr ""
+
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Not submitted: {0}"
+msgstr "לא נשלח: {0}"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Not sure, so no"
@@ -17473,6 +17664,10 @@ msgstr "הודע לישות (הגדל מונה)"
 msgid "Notify people about this push"
 msgstr "להודיע לאנשים על הדחיפה הזו"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Now"
+msgstr ""
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Now listening."
 msgstr "מאזין עכשיו."
@@ -17528,6 +17723,7 @@ msgid "OK"
 msgstr "אישור"
 
 #: src/components/chats-navigator/useChatHistory.ts
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Older"
 msgstr "ישנים יותר"
 
@@ -17745,7 +17941,8 @@ msgstr "פתח"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
-#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: item.label
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
@@ -17795,6 +17992,10 @@ msgstr ""
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
 msgstr "פתח טרמינל של {workerName}"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Open ↗"
+msgstr "פתיחה ↗"
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Open a .flowmsg and install what it carries"
@@ -18808,6 +19009,10 @@ msgstr "חלק מהגדרה — צפייה בהתקדמות"
 msgid "Part of your app didn't load."
 msgstr "חלק מהאפליקציה שלך לא נטען."
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Participant · click to comment"
+msgstr "משתתף · לחצו כדי להגיב"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr "משתתפים"
@@ -18875,7 +19080,7 @@ msgstr ""
 msgid "Paste it again below."
 msgstr ""
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Paste Mermaid syntax to replace the current board."
 msgstr "יש להדביק תחביר Mermaid כדי להחליף את הלוח הנוכחי."
 
@@ -20812,6 +21017,14 @@ msgstr "הסרת שורה"
 msgid "Remove rule"
 msgstr ""
 
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
+msgstr ""
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Remove the image"
+msgstr "הסרת התמונה"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
 msgstr "הסרת הארגומנט הזה"
@@ -20967,6 +21180,10 @@ msgstr "החלפה"
 #: src/components/install/AddAssetDialog.tsx
 msgid "Replace existing"
 msgstr ""
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Replace image"
+msgstr "החלפת תמונה"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
@@ -22045,6 +22262,7 @@ msgstr "סנדבוקסים"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -22141,6 +22359,11 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Saved — Restart runs it"
 msgstr ""
+
+#. placeholder {0}: rows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Saved ({0})"
+msgstr "שמורים ({0})"
 
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
@@ -22989,6 +23212,14 @@ msgstr ""
 msgid "Seq #"
 msgstr "מס׳ סידורי"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Sequence"
+msgstr "רצף"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Sequence chart"
+msgstr "תרשים רצף"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Served"
 msgstr "פעיל"
@@ -23046,6 +23277,10 @@ msgstr "שיחה — {0}"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session {0} is not in Claude, Codex, or Copilot history."
 msgstr "סשן {0} אינו בהיסטוריית Claude, Codex, או Copilot."
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "session {session} not found"
+msgstr "הסשן {session} לא נמצא"
 
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -25034,6 +25269,11 @@ msgstr ""
 msgid "Submit"
 msgstr "שלחו"
 
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Submit ({0})"
+msgstr "שליחה ({0})"
+
 #: src/i18n/pref-labels.ts
 msgid "Subprocess"
 msgstr "תת־תהליך"
@@ -25255,6 +25495,10 @@ msgstr "כרטיסייה"
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Tab failed to open"
 msgstr "לא הצליח לפתוח את הכרטיסייה"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Table"
+msgstr "טבלה"
 
 #~ msgid "tag e.g. entity.created"
 #~ msgstr "תג, לדוגמה entity.created"
@@ -25763,12 +26007,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
+#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
+#~ msgstr "התיקון לא הצליח לתקן את ההגדרה. פתחו את התהליך כדי לראות מה נמצא."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "לא ניתן היה להפעיל את התיקון."
+msgid "The fixer could not repair this setup. The step above says what it found."
+msgstr ""
+
+#: src/components/project-setup/use-setup-fix.ts
+#~ msgid "The fixer could not start."
+#~ msgstr "לא ניתן היה להפעיל את התיקון."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
@@ -27036,6 +27284,7 @@ msgstr "כותרת"
 msgid "to"
 msgstr "אל"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
@@ -27733,6 +27982,10 @@ msgstr "עדכון זמין"
 msgid "Update channel for auto-updates"
 msgstr "ערוץ עדכון לעדכונים אוטומטיים"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Update CHART.md"
+msgstr "עדכון CHART.md"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
 msgid "Update failed"
@@ -28242,6 +28495,7 @@ msgid "Vibe agents"
 msgstr "סוכני Vibe"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -28652,6 +28906,10 @@ msgstr "על מה עבד"
 msgid "What Published does"
 msgstr ""
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "What should change? (paste an image here too)"
+msgstr "מה צריך להשתנות? (אפשר גם להדביק כאן תמונה)"
+
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "What should issue your LLM calls?"
 msgstr "מי צריך להנפיק את קריאות ה-LLM שלך?"
@@ -28837,17 +29095,25 @@ msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
-msgid "Whiteboard"
-msgstr "לוח"
+#~ msgid "Whiteboard"
+#~ msgstr "לוח"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Whiteboard (Excalidraw)"
+msgstr "לוח ציור (Excalidraw)"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/quick-create/registry.ts
-msgid "Whiteboard created"
-msgstr "Whiteboard נוצרה"
+#~ msgid "Whiteboard created"
+#~ msgstr "Whiteboard נוצרה"
 
 #: src/i18n/type-labels.ts
-msgid "Whiteboards"
-msgstr "לוחות ציור"
+#~ msgid "Whiteboards"
+#~ msgstr "לוחות ציור"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "who calls whom, step by step — with sub-flows and feedback"
+msgstr "מי קורא למי, צעד אחר צעד — עם תת-זרימות ומשוב"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
@@ -28863,6 +29129,10 @@ msgstr ""
 #: src/components/token-plan/MembersTable.tsx
 msgid "Who's spending"
 msgstr ""
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Whole chart"
+msgstr "כל התרשים"
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
@@ -28881,7 +29151,6 @@ msgid "Why it ran"
 msgstr ""
 
 #: src/components/conversation/ConversationActions.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "למה?"
 

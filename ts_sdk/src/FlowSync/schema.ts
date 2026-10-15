@@ -95,7 +95,7 @@ export interface TypeInfo {
    *   'repo' → `agentic-assets/<family>` (harness-less); 'internal' → bare at the
    *   scope root (project-only). Null for types with no on-disk layout.
    * - `harness` — only meaningful for `asset_class === 'harness'`.
-   * - `family` — the family segment, e.g. `skills`, `commands`, `whiteboard`.
+   * - `family` — the family segment, e.g. `skills`, `commands`, `chart`.
    */
   asset_class?: 'internal' | 'harness' | 'shared' | 'none' | 'repo' | null;
   harness?: string | null;

@@ -13,9 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { downloadFile, FSRef, type Whiteboard } from '@sdk';
+import { downloadFile, FSRef, type Chart } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { excalidrawToMermaid } from './excalidrawToMermaid';
+import { writeChartMermaid, autoNote, readFileAsDataUrl } from './chartDoc';
 
 type LoadedExcalidrawLib = {
   Excalidraw: React.ComponentType<ExcalidrawComponentProps>;
@@ -52,8 +53,7 @@ const ExcalidrawWithCustomMenu = lazy(() =>
 );
 
 const DEBOUNCE_MS = 750;
-const BEGIN_MARKER = '<!-- BEGIN whiteboard:auto -->';
-const END_MARKER = '<!-- END whiteboard:auto -->';
+const AUTO_NOTE = autoNote('board.json');
 
 interface ExcalidrawComponentProps {
   initialData?: unknown;
@@ -87,21 +87,23 @@ interface WrappedBoard {
   data: { elements?: unknown[]; appState?: unknown; files?: unknown };
 }
 
-interface WhiteboardAssetEditorProps {
-  /** FSRef to the whiteboard folder. */
+interface ExcalidrawChartViewProps {
+  /** FSRef to the chart folder. */
   fsRef: FSRef;
-  /** Pre-resolved whiteboard entity (passed by EntityResolutionGate). */
-  whiteboard?: Whiteboard;
+  /** Pre-resolved chart entity (passed by EntityResolutionGate). */
+  chart?: Chart;
+  /** Extra header actions from the format switch. */
+  actions?: React.ReactNode;
 }
 
 function ConnectingFallback() {
   return (
     <div
-      data-testid="whiteboard-loading"
+      data-testid="chart-loading"
       className="flex h-full items-center justify-center text-sm text-muted-foreground"
     >
       <RefreshCw className="me-2 h-4 w-4 animate-spin" />
-      <Trans>Loading whiteboard…</Trans>
+      <Trans>Loading chart…</Trans>
     </div>
   );
 }
@@ -120,17 +122,6 @@ function semanticBoardFingerprint(elements: unknown, files: unknown): string {
     elements: Array.isArray(elements) ? elements : [],
     files: files ?? {},
   });
-}
-
-function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
-  const block = '```mermaid\n' + mermaid + '```\n';
-  const wrapped = `${BEGIN_MARKER}\n${block}\n_Auto-generated from board.json — edits inside this block are overwritten on next save._\n${END_MARKER}`;
-  const re = /(<!-- BEGIN whiteboard:auto -->)[\s\S]*?(<!-- END whiteboard:auto -->)/;
-  if (re.test(currentDoc)) {
-    return currentDoc.replace(re, wrapped);
-  }
-  const trimmed = currentDoc.endsWith('\n') ? currentDoc : currentDoc + '\n';
-  return `${trimmed}\n${wrapped}\n`;
 }
 
 /**
@@ -157,14 +148,14 @@ function normalizeFreedraw(elements: unknown): void {
   }
 }
 
-export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
+export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartViewProps) {
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
-  const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
+  const docRef = useMemo(() => fsRef.child('CHART.md'), [fsRef]);
   const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
 
   const { folderName, dirPath } = useMemo(() => {
     const parts = (fsRef.path || '').split('/').filter(Boolean);
-    const tail = parts.pop() || 'whiteboard';
+    const tail = parts.pop() || 'chart';
     return {
       folderName: tail,
       dirPath: parts.length ? '/' + parts.join('/') : '',
@@ -264,14 +255,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       lastWrittenRef.current = serialized;
       await boardRef.write(serialized);
 
-      const mermaid = excalidrawToMermaid(data);
-      const document = await docRef.readDocument().catch(async (error: unknown) => {
-        if (!whiteboard || (error as { response?: { status?: number } })?.response?.status !== 404) throw error;
-        await docRef.ensureDocument(whiteboard.typeId, { name: whiteboard.name ?? '', description: whiteboard.description ?? '' });
-        return docRef.readDocument();
-      });
-      const nextBody = spliceMermaidBlock(document.body, mermaid);
-      await docRef.updateDocument({ expected_revision: document.revision, body: nextBody });
+      await writeChartMermaid(docRef, chart, excalidrawToMermaid(data), AUTO_NOTE);
 
       try {
         const lib = await loadExcalidrawLib();
@@ -290,7 +274,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         // Thumbnail is best-effort.
       }
     },
-    [boardRef, docRef, thumbRef, whiteboard],
+    [boardRef, docRef, thumbRef, chart],
   );
 
   const onChange = useCallback(
@@ -299,14 +283,14 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       const semanticFingerprint = semanticBoardFingerprint(els, files);
       if (semanticFingerprint !== lastSemanticRef.current) {
         lastSemanticRef.current = semanticFingerprint;
-        whiteboard?.markEdit();
+        chart?.markEdit();
       }
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         void persist(els, appState, files);
       }, DEBOUNCE_MS);
     },
-    [persist, whiteboard],
+    [persist, chart],
   );
 
   useEffect(() => {
@@ -320,8 +304,8 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
       apiRef.current = api;
       if (import.meta.env.DEV) {
         const w = window as unknown as Record<string, unknown>;
-        w.__whiteboardApi = api;
-        w.__whiteboardOnChange = onChange;
+        w.__chartApi = api;
+        w.__chartOnChange = onChange;
         void loadExcalidrawLib().then((lib) => {
           w.__excalidrawLib = lib;
         });
@@ -333,12 +317,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   const downloadBlob = useCallback(async (blob: Blob, filename: string) => {
     // Data URL (not blob:) — Chrome drops the download attr on blob: URLs
     // created after an await (gesture context is stale). Exports are small (~10KB).
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
-      reader.readAsDataURL(blob);
-    });
+    const dataUrl = await readFileAsDataUrl(blob);
     const a = document.createElement('a');
     a.href = dataUrl;
     a.download = filename;
@@ -350,7 +329,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   }, []);
 
   const baseFilename = useMemo(() => {
-    const name = (fsRef.path || 'whiteboard').split('/').filter(Boolean).pop() || 'whiteboard';
+    const name = (fsRef.path || 'chart').split('/').filter(Boolean).pop() || 'chart';
     return name.replace(/\.\w+$/, '');
   }, [fsRef]);
 
@@ -444,7 +423,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="whiteboard-editor">
+    <div className="flex h-full min-h-0 flex-col" data-testid="chart-excalidraw">
       <AssetEditorHeader
         fileName={folderName}
         dirPath={dirPath}
@@ -452,6 +431,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         onRevealInFinder={handleRevealInFinder}
         actions={
           <>
+            {actions}
             <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} data-testid="open-import-mermaid">
               <Trans>Import mermaid → board</Trans>
             </Button>
@@ -462,7 +442,7 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
               <Trans>Export SVG</Trans>
             </Button>
             {loadError && (
-              <span className="text-xs text-destructive" data-testid="whiteboard-error">
+              <span className="text-xs text-destructive" data-testid="chart-error">
                 {loadError}
               </span>
             )}
@@ -517,4 +497,4 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
   );
 }
 
-export default WhiteboardAssetEditor;
+export default ExcalidrawChartView;

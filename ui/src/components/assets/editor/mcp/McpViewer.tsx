@@ -107,7 +107,7 @@ function Field({
  *
  * `fsRef` is the FOLDER on both routing paths (`recordContentRef` normalizes the
  * typeid route), so the file is named here — the same move as DeckViewer and
- * WhiteboardAssetEditor.
+ * ExcalidrawChartView.
  *
  * Writes the file rather than saving the entity, matching AgentProfileEditor:
  * the editor owns the document, and an entity save would round-trip through the

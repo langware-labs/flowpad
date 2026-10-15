@@ -110,6 +110,10 @@ msgstr ".env.local is not ignored by git here, so a value written there would be
 #~ msgid ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 #~ msgstr ".env.local is not ignored by git in this project, so a value written there would be committable. Add it to .gitignore first."
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "· click an element to pick it"
+msgstr "· click an element to pick it"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· local"
 msgstr "· local"
@@ -117,6 +121,10 @@ msgstr "· local"
 #: src/components/git/BranchPicker.tsx
 msgid "· pick a branch"
 msgstr "· pick a branch"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "· picked"
+msgstr "· picked"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "· remote"
@@ -320,6 +328,11 @@ msgstr "{0} — opened \"{fallbackName}\" instead."
 msgid "{0} · {1} · {2}ms"
 msgstr "{0} · {1} · {2}ms"
 
+#. placeholder {0}: hot.info.from
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0} (self-call)"
+msgstr "{0} (self-call)"
+
 #. placeholder {0}: saved.title
 #: src/components/credentials/CredentialQuickCreateDialog.tsx
 msgid "{0} added"
@@ -386,6 +399,16 @@ msgstr "{0} caught · {1} passed over"
 #: src/components/entity-card/EntityCard.tsx
 msgid "{0} changed"
 msgstr "{0} changed"
+
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+msgstr "{0} comment(s) saved as submitted — the chart has no session, so nothing was sent."
+
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "{0} comment(s) sent to the session that builds this chart."
+msgstr "{0} comment(s) sent to the session that builds this chart."
 
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
@@ -691,6 +714,12 @@ msgstr "{0} of last {1} failed"
 msgid "orphan_count"
 msgstr "{0} orphan{1}"
 
+#. placeholder {0}: value.participants.length
+#. placeholder {1}: value.messages.length
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0} participants · {1} messages"
+msgstr "{0} participants · {1} messages"
+
 #. placeholder {0}: (g.contacts ?? []).length
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "{0} people"
@@ -830,6 +859,13 @@ msgstr "{0} will no longer be able to spend from {1}. Money already spent is not
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "{0}: {1}"
 msgstr "{0}: {1}"
+
+#. placeholder {0}: value.title || t`Sequence chart`
+#. placeholder {1}: value.participants.length
+#. placeholder {2}: value.messages.length
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "{0}: {1} participants, {2} messages"
+msgstr "{0}: {1} participants, {2} messages"
 
 #. placeholder {0}: m[1]
 #: src/components/assets/editor/wizard/wizard-texts.ts
@@ -1354,6 +1390,10 @@ msgstr "/path/to/db"
 msgid "/run reclaimable "
 msgstr "/run reclaimable "
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "#"
+msgstr "#"
+
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "← Back"
 msgstr "← Back"
@@ -1471,6 +1511,10 @@ msgstr "~2s. Use to check what's on disk without changing anything."
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
+
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr "✓ {label} · {when}"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
@@ -1643,6 +1687,10 @@ msgstr "A FlowPad login is stored but the hub has not confirmed it"
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A folder of related projects. New projects and clones are created inside it."
 msgstr "A folder of related projects. New projects and clones are created inside it."
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "a freehand board to draw on"
+msgstr "a freehand board to draw on"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
@@ -3078,6 +3126,10 @@ msgstr "Any channel"
 #~ msgid "Any detail that helps (optional)"
 #~ msgstr "Any detail that helps (optional)"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "any diagram written as mermaid text"
+msgstr "any diagram written as mermaid text"
+
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
 msgstr "Any result"
@@ -3647,6 +3699,10 @@ msgstr "Attach files or a screenshot (or paste one into the description)"
 msgid "Attach files or a screenshot (or paste one into the details)"
 msgstr "Attach files or a screenshot (or paste one into the details)"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Attach image"
+msgstr "Attach image"
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Attach more files or assets"
 msgstr "Attach more files or assets"
@@ -3670,6 +3726,10 @@ msgstr "Attached assets"
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Attached channels"
 msgstr "Attached channels"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "attached image"
+msgstr "attached image"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Attachment unavailable — no body was uploaded"
@@ -4465,12 +4525,12 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/ProjectDependencyDialog.tsx
 #: src/components/assets/ProjectPickerModal.tsx
@@ -4517,6 +4577,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitignoredNotice.tsx
@@ -4753,6 +4814,29 @@ msgstr "Channel details"
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 msgid "Channels"
 msgstr "Channels"
+
+#: src/components/asset-manager/EntityTypeBar.tsx
+#: src/components/quick-create/registry.ts
+msgid "Chart"
+msgstr "Chart"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "CHART"
+msgstr "CHART"
+
+#: src/components/assets/editor/WikiResolveView.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
+#: src/components/quick-create/registry.ts
+msgid "Chart created"
+msgstr "Chart created"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Chart feedback"
+msgstr "Chart feedback"
+
+#: src/i18n/type-labels.ts
+msgid "Charts"
+msgstr "Charts"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
@@ -5272,6 +5356,10 @@ msgstr "CLI worker status"
 msgid "Click a node to view its properties,<0/>edges, and neighbors."
 msgstr "Click a node to view its properties,<0/>edges, and neighbors."
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Click any box or arrow in the chart to change what this comment is about."
+msgstr "Click any box or arrow in the chart to change what this comment is about."
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Click Restart to spawn a fresh PTY."
 msgstr "Click Restart to spawn a fresh PTY."
@@ -5375,6 +5463,7 @@ msgstr "Cloning the repo and indexing it."
 msgid "Cloning…"
 msgstr "Cloning…"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -5405,6 +5494,10 @@ msgstr "Cloning…"
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Close"
 msgstr "Close"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Close (Esc)"
+msgstr "Close (Esc)"
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Close (Escape)"
@@ -6198,6 +6291,14 @@ msgstr "Conversation title"
 msgid "Conversation unavailable"
 msgstr "Conversation unavailable"
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Convert to Excalidraw"
+msgstr "Convert to Excalidraw"
+
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Converted to an Excalidraw board"
+msgstr "Converted to an Excalidraw board"
+
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -6572,6 +6673,10 @@ msgstr "Could not check sign-in"
 msgid "Could not connect to {displayName}."
 msgstr "Could not connect to {displayName}."
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+msgid "Could not convert the chart"
+msgstr "Could not convert the chart"
+
 #: src/components/links/link-handlers.ts
 msgid "Could not copy link"
 msgstr "Could not copy link"
@@ -6611,6 +6716,10 @@ msgstr "Could not create organization"
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not create the budget"
 msgstr "Could not create the budget"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Could not create the chart"
+msgstr "Could not create the chart"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
@@ -6843,6 +6952,10 @@ msgstr "Could not open skill"
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Could not open the sub-flow"
+msgstr "Could not open the sub-flow"
 
 #: src/components/workspace/workspace-switcher.tsx
 msgid "Could not open the workspace folder"
@@ -7556,6 +7669,7 @@ msgstr "CPU:"
 #: src/components/organization/organization-page.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7612,12 +7726,16 @@ msgid "Create apps and tools by chatting with AI"
 msgstr "Create apps and tools by chatting with AI"
 
 #: src/components/assets/editor/WikiResolveView.tsx
+msgid "Create as Chart"
+msgstr "Create as Chart"
+
+#: src/components/assets/editor/WikiResolveView.tsx
 msgid "Create as Markdown"
 msgstr "Create as Markdown"
 
 #: src/components/assets/editor/WikiResolveView.tsx
-msgid "Create as Whiteboard"
-msgstr "Create as Whiteboard"
+#~ msgid "Create as Whiteboard"
+#~ msgstr "Create as Whiteboard"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Create bookmark on the recipient's desktop"
@@ -8163,6 +8281,7 @@ msgstr "delete"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -8682,6 +8801,7 @@ msgstr "Detail"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Details"
 msgstr "Details"
@@ -8807,6 +8927,10 @@ msgstr "Diagnosis was not recorded — try again."
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Diagram"
+msgstr "Diagram"
 
 #: src/components/code-editor/SnippetView.tsx
 #~ msgid "did not run"
@@ -10342,11 +10466,11 @@ msgstr "Export"
 msgid "Export / link"
 msgstr "Export / link"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Export PNG"
 msgstr "Export PNG"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Export SVG"
 msgstr "Export SVG"
 
@@ -10807,6 +10931,21 @@ msgstr "Feed comment"
 msgid "Feed Entry"
 msgstr "Feed Entry"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback"
+msgstr "Feedback"
+
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: {0}"
+msgstr "Feedback is off: {0}"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+msgstr "Feedback is off: this project has no chart-feedback dataset (chartit.feedback)."
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Feeds"
 msgstr "Feeds"
@@ -10830,6 +10969,10 @@ msgstr "Fetched automatically wherever this project opens — Flowpad warns when
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Fetching"
 msgstr "Fetching"
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Fetching older messages…"
+msgstr "Fetching older messages…"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Fetching the desk and indexing it…"
@@ -11198,8 +11341,8 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "Fix the setup"
+#~ msgid "Fix the setup"
+#~ msgstr "Fix the setup"
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -11455,6 +11598,10 @@ msgstr "Fork session — new tab, same conversation history"
 msgid "Forking…"
 msgstr "Forking…"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Format"
+msgstr "Format"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -11514,6 +11661,7 @@ msgstr "Free-form JSON for experimental feature toggles. Invalid JSON is not sav
 msgid "from"
 msgstr "from"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
@@ -12665,7 +12813,7 @@ msgstr "Ignored"
 msgid "Image"
 msgstr "Image"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Import"
 msgstr "Import"
@@ -12674,8 +12822,8 @@ msgstr "Import"
 msgid "Import Failed"
 msgstr "Import Failed"
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Import mermaid → board"
 msgstr "Import mermaid → board"
 
@@ -14225,6 +14373,13 @@ msgstr "Loading budgets…"
 msgid "Loading capabilities…"
 msgstr "Loading capabilities…"
 
+#: src/components/assets/editor/chart/ChartAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Loading chart…"
+msgstr "Loading chart…"
+
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "Loading chats…"
 msgstr "Loading chats…"
@@ -14434,8 +14589,8 @@ msgid "Loading transcript…"
 msgstr "Loading transcript…"
 
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
-msgid "Loading whiteboard…"
-msgstr "Loading whiteboard…"
+#~ msgid "Loading whiteboard…"
+#~ msgstr "Loading whiteboard…"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Loading WorldView…"
@@ -15011,6 +15166,15 @@ msgstr "Merge conflict"
 #~ msgid "Merge conflicts"
 #~ msgstr "Merge conflicts"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Mermaid"
+msgstr "Mermaid"
+
+#: src/components/assets/editor/chart/MermaidChartView.tsx
+msgid "Mermaid source"
+msgstr "Mermaid source"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
@@ -15418,6 +15582,7 @@ msgstr "N/A"
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/EditableTitle.tsx
+#: src/components/quick-create/ChartCreateDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -15646,6 +15811,10 @@ msgstr "New bookmark folder"
 msgid "New build"
 msgstr "New build"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "New chart"
+msgstr "New chart"
+
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
@@ -15862,6 +16031,10 @@ msgstr "New workspace"
 msgid "New workspace…"
 msgstr "New workspace…"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Newer"
+msgstr "Newer"
+
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
 msgstr "Newest first"
@@ -16061,6 +16234,10 @@ msgstr "No channel is attached yet."
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "No channel reaches this Agent yet. Give it an email address to start."
 msgstr "No channel reaches this Agent yet. Give it an email address to start."
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "No chart named “{ref}” in this project"
+msgstr "No chart named “{ref}” in this project"
 
 #: src/components/chats-navigator/ChatsList.tsx
 msgid "No chats yet"
@@ -16534,6 +16711,10 @@ msgstr "No models."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "No older conversations"
+msgstr "No older conversations"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -17315,6 +17496,11 @@ msgstr "Not runnable here"
 msgid "Not saved"
 msgstr "Not saved"
 
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Not saved: {0}"
+msgstr "Not saved: {0}"
+
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17363,6 +17549,11 @@ msgstr "Not started"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Not started yet — its terminal appears when the deployment first runs."
 msgstr "Not started yet — its terminal appears when the deployment first runs."
+
+#. placeholder {0}: err instanceof Error ? err.message : String(err)
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Not submitted: {0}"
+msgstr "Not submitted: {0}"
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "Not sure, so no"
@@ -17644,6 +17835,10 @@ msgstr "Notify Entity (Increment Counter)"
 msgid "Notify people about this push"
 msgstr "Notify people about this push"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Now"
+msgstr "Now"
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Now listening."
 msgstr "Now listening."
@@ -17699,6 +17894,7 @@ msgid "OK"
 msgstr "OK"
 
 #: src/components/chats-navigator/useChatHistory.ts
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Older"
 msgstr "Older"
 
@@ -17920,7 +18116,8 @@ msgstr "Open"
 
 #. placeholder {0}: app.name
 #. placeholder {0}: file.path
-#. placeholder {0}: source.name || source.provider
+#. placeholder {0}: item.label
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/data-sources/DataSourceRow.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
@@ -17970,6 +18167,10 @@ msgstr "Open {vendorLabel} in an OS terminal here"
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Open {workerName} terminal"
 msgstr "Open {workerName} terminal"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Open ↗"
+msgstr "Open ↗"
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Open a .flowmsg and install what it carries"
@@ -18994,6 +19195,10 @@ msgstr "Part of a setup — see its progress"
 msgid "Part of your app didn't load."
 msgstr "Part of your app didn't load."
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Participant · click to comment"
+msgstr "Participant · click to comment"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Participants"
 msgstr "Participants"
@@ -19061,7 +19266,7 @@ msgstr "Paste into a terminal on a machine running Flowpad and signed in. Or use
 msgid "Paste it again below."
 msgstr "Paste it again below."
 
-#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+#: src/components/assets/editor/chart/ExcalidrawChartView.tsx
 msgid "Paste Mermaid syntax to replace the current board."
 msgstr "Paste Mermaid syntax to replace the current board."
 
@@ -21010,6 +21215,14 @@ msgstr "Remove row"
 msgid "Remove rule"
 msgstr "Remove rule"
 
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
+msgstr "Remove session from this message"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Remove the image"
+msgstr "Remove the image"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"
 msgstr "Remove this argument"
@@ -21166,6 +21379,10 @@ msgstr "Replace"
 #: src/components/install/AddAssetDialog.tsx
 msgid "Replace existing"
 msgstr "Replace existing"
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Replace image"
+msgstr "Replace image"
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Replace the stored key"
@@ -22255,6 +22472,7 @@ msgstr "Sandboxes"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestFields.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -22351,6 +22569,11 @@ msgstr "Saved — it will send after you sign in"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Saved — Restart runs it"
 msgstr "Saved — Restart runs it"
+
+#. placeholder {0}: rows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Saved ({0})"
+msgstr "Saved ({0})"
 
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
@@ -23206,6 +23429,14 @@ msgstr "Sent. Watch for it above."
 msgid "Seq #"
 msgstr "Seq #"
 
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Sequence"
+msgstr "Sequence"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Sequence chart"
+msgstr "Sequence chart"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "Served"
 msgstr "Served"
@@ -23263,6 +23494,10 @@ msgstr "Session — {0}"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session {0} is not in Claude, Codex, or Copilot history."
 msgstr "Session {0} is not in Claude, Codex, or Copilot history."
+
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "session {session} not found"
+msgstr "session {session} not found"
 
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -25266,6 +25501,11 @@ msgstr "Subject"
 msgid "Submit"
 msgstr "Submit"
 
+#. placeholder {0}: openRows.length
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "Submit ({0})"
+msgstr "Submit ({0})"
+
 #: src/i18n/pref-labels.ts
 msgid "Subprocess"
 msgstr "Subprocess"
@@ -25492,6 +25732,10 @@ msgstr "Tab"
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "Tab failed to open"
 msgstr "Tab failed to open"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Table"
+msgstr "Table"
 
 #: src/components/events/InjectorPanel.tsx
 #~ msgid "tag e.g. entity.created"
@@ -26003,12 +26247,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "The fixer could not repair this setup. Open the process to see what it found."
+#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
+#~ msgstr "The fixer could not repair this setup. Open the process to see what it found."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "The fixer could not start."
+msgid "The fixer could not repair this setup. The step above says what it found."
+msgstr "The fixer could not repair this setup. The step above says what it found."
+
+#: src/components/project-setup/use-setup-fix.ts
+#~ msgid "The fixer could not start."
+#~ msgstr "The fixer could not start."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
@@ -27289,6 +27537,7 @@ msgstr "Title"
 msgid "to"
 msgstr "to"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
@@ -27988,6 +28237,10 @@ msgstr "Update available"
 msgid "Update channel for auto-updates"
 msgstr "Update channel for auto-updates"
 
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Update CHART.md"
+msgstr "Update CHART.md"
+
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/AutomationsList.tsx
 msgid "Update failed"
@@ -28502,6 +28755,7 @@ msgid "Vibe agents"
 msgstr "Vibe agents"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/assets/editor/chart/SequenceChartView.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -28921,6 +29175,10 @@ msgstr "What it worked on"
 msgid "What Published does"
 msgstr "What Published does"
 
+#: src/components/assets/editor/chart/ChartFeedbackToolbar.tsx
+msgid "What should change? (paste an image here too)"
+msgstr "What should change? (paste an image here too)"
+
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "What should issue your LLM calls?"
 msgstr "What should issue your LLM calls?"
@@ -29107,17 +29365,25 @@ msgstr "Which project should it work on?"
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/quick-create/registry.ts
-msgid "Whiteboard"
-msgstr "Whiteboard"
+#~ msgid "Whiteboard"
+#~ msgstr "Whiteboard"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "Whiteboard (Excalidraw)"
+msgstr "Whiteboard (Excalidraw)"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 #: src/components/quick-create/registry.ts
-msgid "Whiteboard created"
-msgstr "Whiteboard created"
+#~ msgid "Whiteboard created"
+#~ msgstr "Whiteboard created"
 
 #: src/i18n/type-labels.ts
-msgid "Whiteboards"
-msgstr "Whiteboards"
+#~ msgid "Whiteboards"
+#~ msgstr "Whiteboards"
+
+#: src/components/quick-create/ChartCreateDialog.tsx
+msgid "who calls whom, step by step — with sub-flows and feedback"
+msgstr "who calls whom, step by step — with sub-flows and feedback"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Who may log in to this sandbox"
@@ -29133,6 +29399,10 @@ msgstr "Who was given how much, and by whom"
 #: src/components/token-plan/MembersTable.tsx
 msgid "Who's spending"
 msgstr "Who's spending"
+
+#: src/components/assets/editor/chart/SequenceChartView.tsx
+msgid "Whole chart"
+msgstr "Whole chart"
 
 #: src/components/explorer-view/ExplorerNavigator.tsx
 msgid "Whole computer"
@@ -29151,7 +29421,6 @@ msgid "Why it ran"
 msgstr "Why it ran"
 
 #: src/components/conversation/ConversationActions.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "Why?"
 
