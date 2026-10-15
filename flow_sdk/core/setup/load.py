@@ -11,7 +11,6 @@ import dataclasses
 import logging
 from typing import Any, Optional
 
-from flow_sdk.core.setup import fix
 from flow_sdk.core.setup.tree import SetupNode
 from flow_sdk.schema.data_spec.asset_setup_spec import LoadResult, LoadState, SetupState
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
@@ -39,13 +38,23 @@ class LoadTree:
     """The same dependency graph, with only operational wizards enabled.
 
     Keeping children is essential: project and app declarations live on child
-    nodes. Setup's prepare/run never leak into this phase.
+    nodes. Setup's prepare/run never leak into this phase. ``fix``: an op's agent
+    rung (the setup-fixer) and the rungs after it stay; a plain load never runs an
+    agent, only the load a setup run ends with does.
     """
 
-    def __init__(self, tree):
+    def __init__(self, tree, *, fix: bool = False):
         self.tree = tree
         self.root = tree.root
-        self.resolve_op = tree.resolve_op
+        self.fix = fix
+
+    async def resolve_op(self, name: str):
+        resolved = await self.tree.resolve_op(name)
+        rungs = list(getattr(resolved.spec, "attempts", None) or []) if resolved is not None else []
+        agent = next((at for at, rung in enumerate(rungs) if rung.subkind == "agent"), None)
+        if self.fix or agent is None:
+            return resolved
+        return dataclasses.replace(resolved, spec=resolved.spec.model_copy(update={"attempts": rungs[:agent]}))
 
     async def resolve_node(self, node_id: str) -> Optional[SetupNode]:
         node = await self.tree.resolve_node(node_id)
@@ -99,20 +108,16 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 ready = answer.ok and not unmet
                 if ready:
                     _REPAIRED.discard((pid, asset))
-                    fix.forget(pid, asset)
                 result = LoadResult(
                     state=LoadState.READY if ready else LoadState.FAILED, project_id=pid,
                     detail=answer.detail if ready else unmet or _leaf_failure(answer.root) or answer.detail,
                     run=setup_run_address(pid, root),
                     display=display, setup_available=not ready and (pid, asset) not in _REPAIRED, asset=asset or None,
                 )
-                if not ready and not result.setup_available:
-                    # Setup ran and still failed: the last step of the flow is the fixer, whoever asked.
-                    fix.start_fix(pid, result)
             except (Exception, asyncio.CancelledError) as exc:
                 result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc) or "Setup was cancelled", display=display)
             _keep(pid, asset, result)
-    return result.model_copy(update={"asset": asset or None, "fix": fix.fix_of(pid, asset)}) if result is not None else None
+    return result.model_copy(update={"asset": asset or None}) if result is not None else None
 
 
 def _configuration_failure(node, target: str = "") -> str:
@@ -197,16 +202,6 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
-    if approved and getattr(asset, "asset_ref", None):
-        # Setup is "make it work" — from the declaration as it is on disk now (a fixer just edited it).
-        from pathlib import Path  # noqa: PLC0415
-
-        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
-
-        declared = Path(asset.asset_ref) / "webapp.json"
-        if declared.is_file():
-            await reindex_paths([str(declared)], mint=False)
-            asset = await type(asset).get_by_id(asset.id) or asset
     valid = await validate(pid, target, display) if not approved and not ancestors else None
     if valid is not None:
         return valid
@@ -254,7 +249,6 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     not _unmet(running, target) if target else running.done == running.total)
                 if loaded and all(c.state is LoadState.READY for c in children):
                     _REPAIRED.discard((pid, target))
-                    fix.forget(pid, target)
                     result = LoadResult(state=LoadState.READY, project_id=pid)
                 else:
                     # The load failed and the person said go: setup first (it redoes only what its own
@@ -273,8 +267,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
-        kept = _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
-        return kept.model_copy(update={"fix": fix.fix_of(pid, target)})
+        return _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
 
 
 async def bring_up(project: Any, *, asset: Any = None, display: str = "", wait: bool = False) -> LoadResult:

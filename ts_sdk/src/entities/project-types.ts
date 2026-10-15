@@ -94,17 +94,6 @@ export interface ProjectLoadResult {
   tree?: SetupTreeResult | null;
   /** What a `running` load is doing: `load` only starts what is set up, `setup` sets up first. */
   phase?: 'load' | 'setup' | null;
-  /** A failed load's repair: the setup-fixer the backend launched on it, and its verdict. */
-  fix?: ProjectSetupFix | null;
-}
-
-/** Mirror of the backend `SetupFix`: the setup-fixer's run on a failed load. */
-export interface ProjectSetupFix {
-  state: 'running' | 'fixed' | 'not_fixed';
-  /** The fixer's process (`agentic_process-<uuid>`), once it exists. */
-  process: string | null;
-  summary: string;
-  user_action: string;
 }
 
 /** Where a declared dependency stands on THIS machine. */
