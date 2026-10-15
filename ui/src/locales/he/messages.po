@@ -1521,6 +1521,10 @@ msgstr "🤖 פרומפט"
 msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 פרומפט - בקש מ-AI (Claude Haiku)"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "$ per visitor"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "$/day"
 msgstr ""
@@ -1746,6 +1750,10 @@ msgstr ""
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr "שורש מדבר עם ספק באמצעות מפתח משלו."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "A sandbox of your own, ready in about a minute."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "A schedule needs a prompt"
@@ -3116,9 +3124,21 @@ msgstr ""
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "כל אחד עם גישה יכול לפתוח את {entityType} ישירות דרך הקישור למטה."
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Anyone with the launch link gets a sandbox of their own, up to ${capUsd} each."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Anyone with the launch link gets a sandbox of their own, using their own LLM access."
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "כל מי שיש לו הקישור יכול להצטרף כחבר. הקישור הועתק ללוח ההעתקים שלך — לא ניתן להציג אותו שוב."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can try this agent in a sandbox of their own — no sign-in needed."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Anyone with the link can view this agent — remove to make it private again"
@@ -5009,6 +5029,10 @@ msgstr "בחרו artifact לפתיחה"
 msgid "Choose an endpoint…"
 msgstr "בחר נקודת קצה…"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Choose an LLM source…"
+#~ msgstr ""
+
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
 msgstr "בחרו עובד אחר"
@@ -6792,6 +6816,10 @@ msgstr ""
 msgid "Could not launch the deployment"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Could not let visitors try this agent"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "Could not link asset to cloud"
 msgstr "לא ניתן לקשר את הנכס לענן"
@@ -6911,7 +6939,7 @@ msgstr "לא ניתן להשהות"
 msgid "Could not pause the cloud machine"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr ""
@@ -7300,6 +7328,10 @@ msgstr ""
 msgid "Could not stop the snippet"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Could not stop visitor trials"
+msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "לא ניתן היה להחליף מקור"
@@ -7533,6 +7565,7 @@ msgstr "הגדרת הפרויקט נכשלה"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't set up the sandbox."
 msgstr ""
 
@@ -7540,6 +7573,10 @@ msgstr ""
 #. placeholder {1}: f.message
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't share with {0}: {1}"
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't start a sandbox."
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -13884,6 +13921,14 @@ msgstr "לאפשר לסוכן להעריך את ההתקדמות ולהשלים 
 msgid "Let an agent follow the steps above and answer for you."
 msgstr "אפשר לסוכן לבצע את השלבים שלמעלה ולענות במקומך."
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Each visitor spends up to the cap, from an LLM endpoint you administer."
+#~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Fund them from an LLM endpoint you administer, up to a cap each, or let them bring their own LLM access."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Let anyone with the link view this agent — its files stay private"
 msgstr ""
@@ -16037,6 +16082,10 @@ msgstr "עדיין אין סימניות"
 msgid "no budget"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "No budget — visitors bring their own"
+msgstr ""
+
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/TokenPlanCard.tsx
 msgid "No budget set"
@@ -17746,6 +17795,10 @@ msgstr "פעיל"
 msgid "On"
 msgstr "פעיל"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "On — anyone with the launch link can try it"
+msgstr ""
+
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
 
@@ -17910,6 +17963,10 @@ msgstr "כאן מוצגים רק ערכי רתמה — יש להפעיל את \"
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Only people you share with can use this agent."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Only people you share with can view this agent."
@@ -18692,6 +18749,10 @@ msgstr "נפתחה השוואת הנכסים"
 msgid "Opened existing project"
 msgstr "פתח פרויקט קיים"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Opening {name}…"
+msgstr ""
+
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Opening app…"
 msgstr "Opening app…"
@@ -18715,6 +18776,10 @@ msgstr "Opening your agent…"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Opening your project…"
 msgstr "פתיחת הפרויקט שלך…"
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Opening your sandbox…"
+msgstr ""
 
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenRouter"
@@ -20177,7 +20242,7 @@ msgstr ""
 msgid "Public repos are already open to everyone."
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
 msgstr ""
@@ -20186,7 +20251,7 @@ msgstr ""
 msgid "Publish {name} to the cloud before inviting people — invitees get the project from there."
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 msgid "Publish failed."
 msgstr ""
 
@@ -20204,8 +20269,8 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 #~ msgid "published"
 #~ msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
@@ -23448,6 +23513,7 @@ msgstr "הגדר פרויקט"
 msgid "Set public"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
@@ -23802,8 +23868,8 @@ msgid "Shared with {0}"
 msgstr "משותף עם {0}"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-msgid "Sharing"
-msgstr ""
+#~ msgid "Sharing"
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -26089,6 +26155,8 @@ msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAut
 msgstr "ה-Hub מבצע את הקריאה הזו בעצמו, לאורך השרשרת של נקודת הקצה. התחברות OAuth של ספק או מפתח API שנשמר במחשב הזה לא משמשים לכך לעולם — בלי שורש שמחזיק מפתח הבדיקה נכשלת ולא עוברת לחלופה."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "The hub refused the change."
 msgstr ""
 
@@ -27680,6 +27748,7 @@ msgstr "משך תור"
 msgid "Turn failed"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
@@ -27974,6 +28043,7 @@ msgstr "עדכני"
 msgid "Up to date"
 msgstr "מעודכן"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
 msgstr "עדכן"
@@ -28641,6 +28711,10 @@ msgstr "px של תצוגה"
 msgid "viewport row"
 msgstr "שורת תצוגה"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Visibility Settings"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "visible"
 msgstr "נראה"
@@ -28648,6 +28722,26 @@ msgstr "נראה"
 #: src/i18n/type-labels.ts
 msgid "Visitor"
 msgstr "מבקר"
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor LLM source"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor trials"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor trials stopped"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitors can no longer start a sandbox of this agent."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitors can try this agent"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
@@ -29422,6 +29516,10 @@ msgstr "אתה"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "You administer no LLM endpoint to allocate from, so this agent spends your capped default."
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "You administer no LLM endpoint to fund visitors from."
+#~ msgstr ""
 
 #. placeholder {0}: person?.name || person?.email
 #. placeholder {1}: alreadyAsked.task.title
