@@ -828,7 +828,7 @@ export function StreamInboxView({
   // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
 
-  // Refresh = read every channel of this inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
+  // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
   // A channel waiting on setup or paused is not read; it says so on its own strip.
   const handleRefresh = useCallback(async () => {
     setFetching(true);

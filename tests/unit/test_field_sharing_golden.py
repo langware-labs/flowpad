@@ -298,7 +298,8 @@ def test_the_two_egress_seams_now_agree():
             # `reactions`: who reacted with what on a channel message, projected from the SourceItem.
             # `outbound` / `delivery_failure`: this machine's outbox — "I wrote this to send" and why
             # the hub does not have it yet. Facts about this machine's sending, nowhere else.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "outbound", "delivery_failure"],
+            # `mark`: what the channel message did (approved, merged), projected like `reactions`.
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "mark", "outbound", "delivery_failure"],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -317,7 +318,8 @@ def test_the_two_egress_seams_now_agree():
             # the LOCAL_ONLY assertion above, just not by the leak guard.
             # `origin` is a nested CloudOrigin model the filler leaves None —
             # the cloud record this message caches, absent on Flowpad-native ones.
-            # `delivery_failure` is a nested HubFailure, None until a send fails.
+            # `delivery_failure` is a nested HubFailure, None until a send fails; `mark` a nested
+            # MessageMarkSpec, None until the channel message is acted on.
             [
                 "attachment",
                 "body_status",
@@ -329,6 +331,7 @@ def test_the_two_egress_seams_now_agree():
                 "kind",
                 "last_active_at",
                 "last_edited_at",
+                "mark",
                 "origin",
                 "origin_local",
                 "private_context_entities_",
