@@ -58,13 +58,17 @@ class LoadTree:
         return dataclasses.replace(node, prepare=None, run=node.on_load, children=children, record=None)
 
 
-def forget(project_id: str) -> None:
-    """Drop the provider's last verdict: what it was checked against has changed (a setup run of the
+def forget(project_id: str, asset: str = "") -> None:
+    """Drop the provider's last verdicts: what they were checked against has changed (a setup run of the
     project ended, one of its sources changed status), and nothing refreshes a kept one. With none,
-    ``load_state`` answers None and the next Load checks again. A RUNNING verdict stays: ``load_state``
-    settles it from its run."""
+    ``load_state`` answers None and the next Load checks again. ``asset``: what the run was rooted at. An
+    app stands beside its siblings, so a run of one app outdates that app and the project's own verdict —
+    never another app's; a run of anything else (a service, a credential) may be what every app stands
+    on. A RUNNING verdict stays: ``load_state`` settles it from its run."""
     pid = str(project_id)
-    for key in [k for k, v in _RESULTS.items() if k[0] == pid and v.state is not LoadState.RUNNING]:
+    app_only = asset.startswith("micro_app-")
+    for key in [k for k, v in _RESULTS.items()
+                if k[0] == pid and (not app_only or k[1] in ("", asset)) and v.state is not LoadState.RUNNING]:
         del _RESULTS[key]
 
 
@@ -83,7 +87,8 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     task = _RUNS.get((pid, root))
     if task is not None:
         if not task.done():
-            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid, root), display=display)
+            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid, root), display=display,
+                                phase=result.phase if result is not None else None)
         elif result is not None and result.state is LoadState.RUNNING:
             try:
                 answer = task.result()
@@ -141,6 +146,29 @@ def _unmet(result, target: str) -> str:
     return _leaf_failure(node) or (f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up")
 
 
+async def validate(pid: str, target: str, display: str = "") -> Optional[LoadResult]:
+    """Phase one of an open: an app that answers where it runs opens as it is — no tree, no walk, no lock.
+    None: load it. A running app is shown whatever its setup says (that is the next load's business). A
+    display session needs this provider's READY for THAT display: its saved presentation is checked by a
+    load, never assumed."""
+    if not target.startswith("micro_app-"):
+        return None
+    kept = _RESULTS.get((pid, target))
+    if kept is not None and kept.state is not LoadState.READY:
+        return None
+    if display and (kept is None or kept.display != display):
+        return None
+    from flow_sdk.builtin.webapp_setup import answers_now  # noqa: PLC0415
+
+    try:
+        if not await answers_now(target):
+            return None
+    except Exception as exc:  # noqa: BLE001 — a failed check is a load, never an error
+        logger.debug("validate of %s failed: %s", target, exc)
+        return None
+    return kept or _keep(pid, target, LoadResult(state=LoadState.READY, project_id=pid, asset=target))
+
+
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
                        ancestors: tuple[str, ...] = (), display: str = "") -> LoadResult:
     """Check or start a provider's lifecycle; approval is explicit and never inferred from Add/Open.
@@ -164,6 +192,9 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
+    valid = await validate(pid, target, display) if not approved and not ancestors else None
+    if valid is not None:
+        return valid
     # Traverse before taking this provider's lock: opposite ends of a dependency
     # cycle may be loaded concurrently, and must never wait on each other's lock.
     try:
@@ -221,7 +252,8 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
                                             load_after=needs_setup, providers=providers,
                                             dependency_approval=approved, ancestors=(*ancestors, pid))
-                    result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run)
+                    result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run,
+                                        phase="setup" if needs_setup else "load")
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
@@ -236,4 +268,4 @@ async def load_asset(project: Any, asset: Any) -> LoadResult:
     return await load_project(project, asset=asset)
 
 
-__all__ = ["LoadTree", "forget", "load_asset", "load_project", "load_state"]
+__all__ = ["LoadTree", "forget", "load_asset", "load_project", "load_state", "validate"]

@@ -111,3 +111,32 @@ it('a gate for the project alone offers Set up instead of starting the whole set
   await waitFor(() => expect(load.mock.calls.at(-1)).toEqual([projectId, { approved: true }]));
   expect(useProjectLoadStore.getState().open).toBe(false);
 });
+
+it('an app that validates opens at once, never loads, and a re-open shows it on the first frame', async () => {
+  const asset = 'micro_app-11111111-1111-4111-8111-111111111111';
+  vi.spyOn(Project, 'loadState').mockResolvedValue(ready);
+  const validate = vi.spyOn(Project, 'validateLoad').mockResolvedValue({ ...ready, asset });
+  const load = vi.spyOn(Project, 'load').mockResolvedValue(ready);
+  const first = gate(asset);
+  expect(await screen.findByText('Service home')).toBeInTheDocument();
+  expect(load).not.toHaveBeenCalled();
+  first.unmount();
+  gate(asset);
+  // No await: the verdict this window already holds is rendered synchronously, checked behind it.
+  expect(screen.getByText('Service home')).toBeInTheDocument();
+  await waitFor(() => expect(validate).toHaveBeenCalledTimes(2));
+  expect(load).not.toHaveBeenCalled();
+});
+
+it('an app that does not validate is loaded, and a load-only run says Starting, not the setup tree', async () => {
+  const asset = 'micro_app-22222222-2222-4222-8222-222222222222';
+  const starting: ProjectLoadResult = { ...ready, state: 'running', run: 'run-1', phase: 'load' };
+  vi.spyOn(Project, 'validateLoad').mockResolvedValue(null);
+  vi.spyOn(Project, 'loadState').mockResolvedValue(starting);
+  vi.spyOn(Project, 'setupRun').mockResolvedValue({ tree: null } as never);
+  const load = vi.spyOn(Project, 'load').mockResolvedValue(starting);
+  gate(asset);
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  expect(await screen.findByText('Starting…')).toBeInTheDocument();
+  expect(screen.queryByText('Service home')).not.toBeInTheDocument();
+});

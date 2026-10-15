@@ -77,16 +77,16 @@ function servedBy(proxies: ServiceEndpoint[], field: 'artifact_id' | 'webapp_id'
  * never stored (`direct-url`: localhost on a desktop, the box's public host in a
  * sandbox). Re-resolved when the endpoint changes; '' until it answers.
  */
-function useDirectUrl(endpoint: ServedApp | null): string {
+function useDirectUrl(endpoint: ServedApp | null): { url: string; pending: boolean } {
   const port = endpoint?.backend?.type === 'proxy' ? endpoint.backend.port : null;
-  const { data } = useQuery({
+  const { data, isPending } = useQuery({
     // The port too: a restarted server keeps its mount and moves its address.
     queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url', endpoint?.mount ?? null, port],
     queryFn: () => endpoint!.directUrl().catch(() => ''),
     enabled: !!endpoint,
     staleTime: Infinity,
   });
-  return endpoint ? (data ?? '') : '';
+  return { url: endpoint ? (data ?? '') : '', pending: !!endpoint && isPending };
 }
 
 /**
@@ -184,7 +184,8 @@ export function useAppDisplay(
   const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const [devEndpoint, servedEndpoint] = useMemo(() => [devFound, servedFound], [held]);
-  const devUrl = useDirectUrl(devEndpoint);
+  // An address not answered yet is not an idle app: until it is, nothing is chosen (no setup gate).
+  const { url: devUrl, pending: devUrlPending } = useDirectUrl(devEndpoint);
   const servedUrl = servedEndpoint ? servedEndpoint.serviceUrl() : '';
 
   return useMemo(() => {
@@ -198,7 +199,7 @@ export function useAppDisplay(
     const runtime = requested && available.includes(requested) ? requested : (available[0] ?? null);
 
     return {
-      loading,
+      loading: loading || devUrlPending,
       runtime,
       available,
       src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devUrl : '', appQuery),
@@ -208,5 +209,5 @@ export function useAppDisplay(
       view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devUrl, devEndpoint, loading, override, preferred, servedEndpoint, servedUrl, theme, view]);
+  }, [appQuery, devUrl, devUrlPending, devEndpoint, loading, override, preferred, servedEndpoint, servedUrl, theme, view]);
 }
