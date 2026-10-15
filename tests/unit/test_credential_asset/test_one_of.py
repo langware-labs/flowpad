@@ -389,7 +389,7 @@ async def test_the_source_is_handed_the_chosen_way(project, templates, monkeypat
     assert google.value(ADDRESS) == "me@gmail.com", "a MUST value always rides along"
 
 
-async def test_a_connect_wants_an_open_or_chosen_sign_in_ways_scopes(project, templates, monkeypatch):
+async def test_a_connect_wants_every_declared_sign_in_ways_scopes(project, templates, monkeypatch):
     from flow_sdk.core.oauth.wanted_scopes import _credential_way_scopes
 
     _granted(monkeypatch)
@@ -398,4 +398,4 @@ async def test_a_connect_wants_an_open_or_chosen_sign_in_ways_scopes(project, te
     assert await _credential_way_scopes({"slack"}) == set()
 
     await credential_service.set_credential_by_name("mailbox", {}, project_id=str(project.id), choice=APP_PASSWORD)
-    assert await _credential_way_scopes({"google"}) == set(), "another way chosen: no consent to more"
+    assert await _credential_way_scopes({"google"}) == {MAIL}, "another way chosen: connecting is how a person switches"
