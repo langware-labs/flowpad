@@ -38,7 +38,8 @@ export function useSetupFix(
   // Fix it pressed: its run is followed through the screen's own verdict until that verdict settles.
   const [asked, setAsked] = useState(false);
   const [pending, setPending] = useState(false);
-  const failure = result?.detail || error || '';
+  // Only a failed verdict is a failure: a project that needs setup carries a `detail` too, and asks Set up.
+  const failure = (result?.state === 'failed' ? result.detail : '') || error || '';
   useEffect(() => {
     if (asked && !pending && result?.state === 'ready') setAsked(false);
   }, [asked, pending, result?.state]);
