@@ -240,9 +240,10 @@ async def test_a_web_app_home_with_no_endpoint_here_is_placed_when_it_opens(tmp_
     _declare(root, str(app.typeid))
 
     opened = await project.open_home_page()
-    assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "running"
-    # Opening an app sets up and starts THAT app: its own run, never the project's.
-    assert (await _RUNS[(str(project.id), str(app.typeid))]).ok
+    # A static app needs no setup step: the open's load places it and it is ready at once.
+    assert opened["asset"] == str(app.typeid) and opened["lifecycle"]["state"] == "ready"
+    # Opening an app never starts the project's own setup run.
+    assert (str(project.id), "") not in _RUNS
     assert load_state(str(project.id), asset=str(app.typeid)).state is LoadState.READY
     assert [(p.subkind, p.backend.type) for p in await webapp_routes(app.id)] == [("app", "static")]
 
