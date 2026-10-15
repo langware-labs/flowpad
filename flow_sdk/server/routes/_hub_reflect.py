@@ -24,7 +24,15 @@ from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.instance_settings.privacy_mode import is_local_mode
-from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put, hub_upload_entity_file
+from flow_sdk.utils.hub import (
+    HubError,
+    hub_delete,
+    hub_get,
+    hub_get_or_raise,
+    hub_post,
+    hub_put,
+    hub_upload_entity_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -288,11 +296,9 @@ async def reflect_to_hub(
     # sub-path (``members/link``) is a different hub endpoint with its own shape.
     is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
-        # hub_get returns None on transport/HTTP failure (does not raise);
-        # treat that as "fall through to local" via HubError.
-        if hub_resp is None:
-            raise HubError(0, "hub_get returned no data")
+        # Raises ``HubError`` carrying the hub's status, so the caller can tell a
+        # refusal (403 — the answer) from an outage (0 — fall through to local).
+        hub_resp = await hub_get_or_raise(et, hub_id, action=a.action_name, sub_path=sub_path)
     elif verb == "delete":
         # DELETE carries its selector in the body (e.g. members remove →
         # MembershipMethod {member_through, value}); hub_delete sends it as
@@ -387,6 +393,7 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 
 
 _MISSING = object()
+
 
 def _merge_skip_fields(entity: Entity) -> frozenset[str]:
     """Fields a bare entity PUT response must never overwrite: what the type
