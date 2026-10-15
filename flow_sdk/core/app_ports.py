@@ -242,6 +242,10 @@ def of_app(
     launched = [one for one in inside if launched_by(one, start_cmd)]
     if launched:
         return launched
+    # A listener no command of the app launched (an old page, one started by hand) is the app's FIRST
+    # process — its page — never a service beside it.
+    if next((command for command in siblings if command), start_cmd) != start_cmd:
+        return []
     others = [command for command in siblings if command and command != start_cmd]
     return [one for one in inside if not any(launched_by(one, command) for command in others)]
 
