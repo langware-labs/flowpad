@@ -12,6 +12,11 @@
 `DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. A dataset of a source's
 items with gold labels is `connect-data-source define`, not this mode.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## Gate 1 — the row kind exists
 
 `DM kind "--<ns>--.<kind>"` answers the fields. If not, run `modes/schema.md` first.

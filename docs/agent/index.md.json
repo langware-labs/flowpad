@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "1e25c64ab553ef41dfff99e39aeb89625b51196e27fc97ab7bd274905ef0db9e",
+  "inputs_hash": "90cc507a9cd10900845495e75df34aa84462873c127302b738f4386520801b57",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.",
@@ -14,9 +14,9 @@
       "name": "agentic_process_statuses.md",
       "rel_path": "agentic_process_statuses.md",
       "title": "AgenticProcess statuses — the canonical model",
-      "summary": "Canonical four-axis AgenticProcess status model: worker_status evidence, process status meaning, the busy boolean, os_status liveness, broadcast seams, and read-only frontend rules.",
-      "content_hash": "eb20dcdb5f6d3be952fce1d3318663c7520c94a9ce0e766544dc7b9ffa22ab5e",
-      "size_bytes": 11167
+      "summary": "Canonical AgenticProcess status axes, readiness, worker lifecycle, busy state, and frontend parity; distinguishes persisted intent, observed runtime, and operation outcomes.",
+      "content_hash": "cbe00270ece389867a8349a5208cdeb2773a19cd76682a7cda9d814be84ef817",
+      "size_bytes": 11891
     },
     {
       "name": "chief-of-staff.md",
@@ -30,9 +30,9 @@
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface — rendered demo",
-      "summary": "AgenticProcess interface cards covering Python methods, HTTP actions, TypeScript APIs, lifecycle state, and FlowCall answers.",
-      "content_hash": "33ddbc664b8425c8c21f942a6dda4b910e3f55aa1e212a205bc3fc20987b26e0",
-      "size_bytes": 28925
+      "summary": "Rendered interface tour covering the AgenticProcess Python entity, caller API, backend actions, and TypeScript SDK through executable interface cards.",
+      "content_hash": "f25999d95bc231d25fb3466361775e62aaff070952386e9fae7b2661a86316c4",
+      "size_bytes": 29091
     },
     {
       "name": "system-prompt-layers.md",
@@ -44,6 +44,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T06:44:32.777689+00:00",
+  "generated_at": "2026-10-15T08:55:59.530008+00:00",
   "latest_process_ref": ""
 }

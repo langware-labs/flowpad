@@ -179,6 +179,9 @@ export interface IConversation extends IEntity {
   /** How many messages wait for the local viewer (`stream_inbox.conversation_unread_count`),
    *  stamped beside `is_unread` by the same recompute. Render it; never recompute it. */
   unread_count?: number;
+  /** `Conversation.is_archived()` stored by the same recompute (auto-revive included), so a paged
+   *  stream inbox filters its views in the query. */
+  archived?: boolean;
 }
 
 /**
@@ -215,6 +218,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   owner?: string | null;
   is_unread?: boolean;
   unread_count?: number;
+  archived?: boolean;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -240,6 +244,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.owner = entity.owner ?? null;
     this.is_unread = entity.is_unread;
     this.unread_count = entity.unread_count;
+    this.archived = entity.archived;
   }
 
   /**

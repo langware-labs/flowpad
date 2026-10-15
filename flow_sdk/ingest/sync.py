@@ -144,6 +144,23 @@ async def _sync_source(source: DataSource, *, now: Optional[datetime] = None) ->
     return report
 
 
+async def read_older(source: DataSource, before: datetime, page_size: int) -> tuple[int, bool]:
+    """One page of ``source``'s messages older than ``before`` into the store — ``(how many arrived, exhausted)``.
+
+    The on-demand step back a paged list takes past its oldest held row; never a backfill. The row's cursor,
+    manifest and window are untouched (the forward sync owns them), and nothing is dropped. A source that
+    cannot read backwards answers ``(0, True)``: what is held is all there is."""
+    stype = await DataDriver.find(source.provider)
+    if stype is None or not stype.cls.pages_backward:
+        return 0, True
+    found = await stype.read_before(source, before, page_size)
+    # Only the placing shares the forward cycle's lock: the read touches no position, so a slow provider
+    # never holds up that source's sync.
+    async with keyed_loop_lock(_CYCLES, str(source.id)):
+        await _place(source, found)
+    return len(found.items), len(found.items) < page_size
+
+
 async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
     """Put a traversal's payload where the SOURCE says it goes; the report, if any.
 

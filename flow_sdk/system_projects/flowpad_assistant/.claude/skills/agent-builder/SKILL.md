@@ -42,6 +42,11 @@ steps; you write the files, open the right screen and test it with them.
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
 > the user's explicit go, after saying who will be reachable.
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract. Use an agent when model reasoning is needed; deterministic transforms need only a block. Existing typed Agent.launch remains supported.
+
 ## Your first reply
 
 For a new agent, your first reply is the interview in `modes/build.md` §1 and nothing

@@ -76,11 +76,11 @@ const NO_OFFERS: ChannelOffer[] = [];
  *  hands the rows to the line; an agent view calls it to ask "does this owner
  *  have any channel at all". */
 export function useAttachedChannels(owner: TypeId | null | undefined) {
-  const { specs, specFor } = useSourceSpecs();
+  const { specs, specFor, loading: specsLoading } = useSourceSpecs();
   // `localUser.id`, not `userTypeId`: that alias is the `@local` pointer, and rows
   // carry the user's real id.
   const { localUser } = useContext();
-  const { data: sources = EMPTY } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { data: sources = EMPTY, isLoading: sourcesLoading } = useEntitiesQuery<DataSource>(sourcesQuery);
   const ownerKey = owner?.toString() ?? '';
   const localKey = localUser?.id ? new TypeId(User.type, localUser.id).toString() : '';
   const rows = useMemo(
@@ -97,7 +97,8 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
     [specs, rows, ownerKey, forAgent],
   );
-  return { rows, specFor, offers };
+  // Until both lists land, `rows` is empty for want of data, not for want of channels.
+  return { rows, specFor, offers, loading: specsLoading || sourcesLoading };
 }
 
 type SpecFor = (provider: string) => DataDriver | undefined;

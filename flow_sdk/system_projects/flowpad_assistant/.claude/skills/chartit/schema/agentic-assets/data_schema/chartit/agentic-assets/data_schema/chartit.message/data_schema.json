@@ -1,0 +1,11 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id":    {"shape": "string", "description": "Unique id (m1, m2…): what feedback targets."},
+    "from":  {"shape": "string", "description": "The sending participant id."},
+    "to":    {"shape": "string", "description": "The receiving participant id; equal to from for a self-call."},
+    "label": {"shape": "string", "description": "The text on the arrow."},
+    "style": {"shape": "?string", "description": "solid (a call, default) or dashed (a reply)."},
+    "note":  {"shape": "?string", "description": "Shown on hover."}
+  }
+}
