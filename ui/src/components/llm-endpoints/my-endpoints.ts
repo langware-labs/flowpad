@@ -13,63 +13,43 @@
  * teams' pools, and every allowance they minted for somebody else. None of those is their
  * budget.
  *
- * So a row is kept when it is HELD by this person (`holder_typeid === user-<me>`, the hub's
- * `partof` edge from the allowance to the person, which the box reads through
- * `token_plan/allowances`; `hub_user_typeid` supplies the `me` half — the local user id is a
- * different id entirely and would match nothing), or, when that read was unavailable, when they
- * may only SPEND it. See `isAllocatedToUser`.
+ * So a row is kept when the hub says it is THIS person's: `is_mine`, which the hub answers from
+ * the `partof` edge between the allowance and the holder, in the same permission expansion the
+ * listing already asks for. The box compares nothing and joins nothing — it reads the answer.
  *
- * A group's pot is excluded by the first rule — it is `partof` the org or the team, not a
- * person — and the shared catalog root by the second, since nobody holds a role on it.
+ * A group's pot is excluded because it is `partof` the org or the team and not a person, and the
+ * shared catalog root because a catalog row carries no expansion to answer with.
  */
-import {
-  TypeId,
-  dataContext,
-  llmSourcesService,
-  statusService,
-  type LLMEndpointOffer,
-  type LLMFundingStatus,
-} from '@sdk';
+import { TypeId, dataContext, llmSourcesService, type LLMEndpointOffer, type LLMFundingStatus } from '@sdk';
 
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
-import { useStatusRecord } from '@src/components/status/use-status-record';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 import { ENDPOINT_TYPE, endpointIdFromTypeId } from './llm-endpoints-pointer';
 
 /**
- * True when this endpoint is the signed-in person's to SPEND.
+ * True when the hub says this endpoint is the signed-in person's to SPEND.
  *
- * 1. **It is held by them.** Every allowance a person holds — the hub's own default and one an
- *    admin added them to alike — is `partof` that person on the hub, and the box surfaces that
- *    edge as `holder_typeid: user-<them>`. This is the answer whenever the hub could be asked.
- * 2. **Fallback: they may only spend it.** When the allowances read was unavailable (an older
- *    hub, a failed call) `holder_typeid` is null on every row, and a row is theirs exactly when
- *    they may not change it: a reader spends, an administrator manages. It is only a fallback —
- *    it hides an admin's OWN allowance under a team they administer, which rule 1 keeps.
+ * One question, one answer, and deliberately no local reasoning: `is_mine` is decided on the hub,
+ * which is the only place that holds both the caller and the row's `partof` edge to its holder.
  *
- * `can_administer: null` (not held, or an older backend) is NOT "it was given to me": the catalog's
- * shared root reaches every signed-in user, and reading it as a gift would put the company pool in
- * everybody's personal list.
+ * `null` is UNANSWERED, never "no" — a catalog row (asked for without an expansion on purpose) or
+ * a hub too old to say. It is excluded here because an unanswered row is not provably anyone's,
+ * which is also what keeps the shared company root out of everybody's personal list.
+ *
+ * `can_administer` is NOT consulted, and the difference matters: it used to stand in for this
+ * question as "if you cannot change it, it must be yours", which is right for a member and exactly
+ * wrong for an admin — they CAN change their own allowance, so their own budget fell out of their
+ * own list.
  */
-export function isAllocatedToUser(offer: LLMEndpointOffer, hubUserTypeid: string | null | undefined): boolean {
-  const me = (hubUserTypeid ?? '').trim().toLowerCase();
-  if (!me) return false; // signed out: nothing is provably yours
-  // Both spellings of a typeid reach the client (`user-<id>` and `user:<id>`), and only the
-  // id half is the identity — comparing the raw strings would miss on the separator alone.
-  const idOf = (typeid: string) => typeid.trim().toLowerCase().replace(':', '-');
-  const holder = idOf(offer.holder_typeid ?? '');
-  if (holder) return holder === idOf(me);
-  return offer.can_administer === false;
+export function isAllocatedToUser(offer: LLMEndpointOffer): boolean {
+  return offer.is_mine === true;
 }
 
 /** The endpoints allocated to the signed-in person, by name. Pure — the unit of test. */
-export function myEndpoints(
-  status: LLMFundingStatus | null | undefined,
-  hubUserTypeid: string | null | undefined,
-): LLMEndpointOffer[] {
+export function myEndpoints(status: LLMFundingStatus | null | undefined): LLMEndpointOffer[] {
   return (status?.available ?? [])
-    .filter((offer) => isAllocatedToUser(offer, hubUserTypeid))
+    .filter((offer) => isAllocatedToUser(offer))
     .slice()
     .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
 }
@@ -81,11 +61,9 @@ export async function fetchMyEndpoints(): Promise<LLMEndpointOffer[]> {
     // entry and a second backend round-trip for the same `available` list the screen and the
     // footer chip already hold — undoing the sharing this function's own comment promises.
     // `available` itself is project-independent; the key just has to match.
-    const [funding, record] = await Promise.all([
-      llmSourcesService.status(dataContext.project?.id),
-      statusService.record(),
-    ]);
-    return myEndpoints(funding, record?.hub.user_typeid);
+    // One read now: the status record was only ever fetched here to supply the hub user id for
+    // the local comparison, and the hub answers `is_mine` itself.
+    return myEndpoints(await llmSourcesService.status(dataContext.project?.id));
   } catch {
     // A box that cannot answer has no endpoints to show; the row simply stays empty
     // rather than erroring the whole Assets tree.
@@ -97,8 +75,7 @@ export async function fetchMyEndpoints(): Promise<LLMEndpointOffer[]> {
  *  list and the detail cost one request between them — and can never disagree. */
 export function useMyEndpoints(): { endpoints: LLMEndpointOffer[]; isLoading: boolean } {
   const { status, isLoading } = useLlmSources();
-  const { status: record } = useStatusRecord();
-  return { endpoints: myEndpoints(status, record?.hub.user_typeid), isLoading };
+  return { endpoints: myEndpoints(status), isLoading };
 }
 
 /** One endpoint by bare uuid or typeid — the URL carries the typeid, the row's own id is

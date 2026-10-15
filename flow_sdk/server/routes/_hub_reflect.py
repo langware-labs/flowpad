@@ -17,14 +17,22 @@ import logging
 from typing import Any
 
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.instance_settings.privacy_mode import is_local_mode
-from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put, hub_upload_entity_file
+from flow_sdk.utils.hub import (
+    HubError,
+    hub_delete,
+    hub_get,
+    hub_get_or_raise,
+    hub_post,
+    hub_put,
+    hub_upload_entity_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -174,8 +182,45 @@ def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> b
     )
 
 
-async def proxy_git_backed_remote_fs(request: Request) -> Response:
-    """Forward one standard entity-VFS request to Hub with full HTTP fidelity."""
+_HUB_ONLY_OFFLINE = "{type} exists only on Flowpad Cloud; you're offline or signed out."
+
+
+def hub_only_type(path: str) -> str | None:
+    """The entity type a graph ``path`` addresses, when that type exists ONLY on the hub.
+
+    A ``_hub_only`` type (``LLMEndpoint``, ``AgentMailbox``) has no local row and no local
+    store: every read, write and action on it is the hub's. The per-entity reflection above
+    cannot serve it — it needs a local row to find before it forwards, so a list came back
+    empty, an id-less action (``catalog``) failed to parse, and every edit answered 404 —
+    so the router forwards the whole request instead (``proxy_hub_only``).
+    """
+    from flow_sdk.api.api_request import APIRequest  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    graph_prefix = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/"
+    if not path.startswith(graph_prefix):
+        return None
+    entity_type = path[len(graph_prefix) :].split("/", 1)[0]
+    cls = SchemaRegistry.get_entity_cls(entity_type) if entity_type else None
+    return entity_type if cls is not None and cls._hub_only else None
+
+
+async def proxy_hub_only(request: Request, entity_type: str) -> Response:
+    """Forward a request on a ``_hub_only`` type to the hub verbatim — or refuse it offline.
+
+    The hub answers with the caller's own credential, so what comes back is exactly what the
+    hub lets this user see or change; its status rides back unchanged, so a refused or failed
+    write reaches the caller as one. Offline or signed out there is nothing local to answer
+    from, so the request fails loudly (409) rather than with an empty list or a fake success.
+    """
+    if not is_logged_in() or is_local_mode():
+        detail = _HUB_ONLY_OFFLINE.format(type=entity_type)
+        return JSONResponse({"status": "FAIL", "message": detail, "data": None}, status_code=409)
+    return await proxy_to_hub(request)
+
+
+async def proxy_to_hub(request: Request) -> Response:
+    """Forward one standard graph request to Hub with full HTTP fidelity."""
 
     from flow_sdk.cloud_client import CloudProxy  # noqa: PLC0415
 
@@ -184,7 +229,7 @@ async def proxy_git_backed_remote_fs(request: Request) -> Response:
     except HubError as exc:
         # Missing Hub configuration/transport is a gateway failure. A concrete
         # Hub rejection keeps its status. Either way this remains a replacement
-        # response; callers never fall through to local asset storage.
+        # response; callers never fall through to local storage.
         status = exc.status_code if exc.status_code >= 400 else 502
         return Response(exc.reason.encode(), status_code=status, media_type="text/plain")
 
@@ -288,11 +333,9 @@ async def reflect_to_hub(
     # sub-path (``members/link``) is a different hub endpoint with its own shape.
     is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
-        # hub_get returns None on transport/HTTP failure (does not raise);
-        # treat that as "fall through to local" via HubError.
-        if hub_resp is None:
-            raise HubError(0, "hub_get returned no data")
+        # Raises ``HubError`` carrying the hub's status, so the caller can tell a
+        # refusal (403 — the answer) from an outage (0 — fall through to local).
+        hub_resp = await hub_get_or_raise(et, hub_id, action=a.action_name, sub_path=sub_path)
     elif verb == "delete":
         # DELETE carries its selector in the body (e.g. members remove →
         # MembershipMethod {member_through, value}); hub_delete sends it as
@@ -387,6 +430,7 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 
 
 _MISSING = object()
+
 
 def _merge_skip_fields(entity: Entity) -> frozenset[str]:
     """Fields a bare entity PUT response must never overwrite: what the type
