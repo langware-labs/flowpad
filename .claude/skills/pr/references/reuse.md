@@ -58,3 +58,54 @@ Finding format:
 
 Also flag the inverse: the diff **changes** a shared helper's behavior for one
 caller instead of adding a parameter or a driver trait (slick P6).
+
+## 4. Capability sweep — is there already a mechanism for this?
+
+Steps 1–3 catch a duplicated **function**. They miss a duplicated **path**: a
+new way to do something the system already has a channel for, built from
+fresh code inside existing functions, scripts or `.md` skills, so no new symbol
+gives it away. Example: a new way for users to talk to each other next to
+conversations, or a second token transport next to the existing gate.
+
+**List what the diff enables, not what it declares.** For each change, write
+one line: "now X can <verb> <thing> to/from Y" (a user messages a user, the
+backend pushes a change to the UI, the box proves who it is to the hub). The
+usual signals are a new route or WebSocket message type, a new table or file
+format, a new HTTP/subprocess/curl call, a new CLI command, or a new auth/header
+convention.
+
+**Ask who already moves this kind of thing from A to B.** Read
+`docs/glossary.md` and `docs/index.md` for the domain noun, then check first:
+
+| The diff now lets… | The existing mechanism |
+| --- | --- |
+| a user send something to another user | `Conversation.send` (`flow_sdk/builtin/conversation.py`), `flow conversation send`, channel sources (`flow_sdk/sources/flow_channel.py`) |
+| a user give another user access to an entity | `Entity.share()` (`flow_sdk/core/entity/entity_model.py`) |
+| one component signal another in-process | the tag bus: `publish(FlowEvent)` (`flow_sdk/tags/bus.py`) |
+| the backend push a change to the UI | `notify_updated()` → `DataOpMessage` (`flow_sdk/db/db_entity.py`) — slick anchors §1 |
+| something alert the user | `flow_sdk/notifications/`, the `Notification` entity |
+| the UI call the backend | `dataManager.callAction` / `ActionInfo` / `action.post/get` — slick anchors §4 |
+| the app call the hub | `hub_post` (`flow_sdk/cloud_client/transport/hub_http.py`) |
+| code use an external account's credentials | `token_for` (`flow_sdk/core/oauth/provider_registry.py`), `flow_sdk/secrets/` |
+| data come in from an external system | a data driver asset (`agentic-assets/data_driver/`) on `flow_sdk/sources/` |
+| a caller prove it may call the backend | the cookie gate (`flow_sdk/instance_settings/cookie_gate.py`) and its middleware |
+
+If the row isn't here, grep for the domain noun and the transport (`websocket`,
+`hub_post`, `curl`, `subprocess`) across `flow_sdk/`, `ts_sdk/src`, `ui/src`,
+`scripts/` and `.claude/skills/`. Then add the row here.
+
+**Judge.** It's a finding when the existing mechanism could carry the new
+need, by calling it as-is or by extending it (a new message kind, a new
+channel, a parameter), and the diff built a parallel path instead. It is NOT a
+finding when the PR or a comment explains why the existing mechanism can't
+carry it. Even then, check the reason is still true.
+
+**Severity.**
+- **Blocker:** the parallel path skips something the existing one enforces
+  (permissions, sharing scope, the gate, audit/history, delivery retries,
+  localization).
+- **Should fix:** otherwise.
+
+```
+<new file>:<line> — reuse:path — <what the new path does> parallels <existing mechanism> (<file>); <route it through | extend it with X> [skips: <what it bypasses>]
+```

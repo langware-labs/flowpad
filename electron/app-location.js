@@ -47,7 +47,7 @@ function shouldOfferMove({ platform, isPackaged, execPath, isInApplicationsFolde
  * @param {string} deps.execPath
  * @param {() => ({offeredFor?: string}|null)} deps.readState
  * @param {(state: object) => void} deps.writeState
- * @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} [deps.share]  "Share with us" on the failure dialog
+ * @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} [deps.share]  "Send Report" on the failure dialog
  * @param {{info: Function, warn: Function}} deps.log
  */
 async function offerMoveToApplications({ platform, app, dialog, execPath, readState, writeState, share = null, log }) {

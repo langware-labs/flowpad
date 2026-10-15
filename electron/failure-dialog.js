@@ -1,11 +1,12 @@
 'use strict';
 
 /**
- * One way to tell the user that something failed: a native dialog with "OK" and "Share with us".
+ * One way to tell the user that something failed: a native dialog with "OK" and "Send Report".
  *
  * Every failure the user can SEE should offer the same way to reach the team, so the logs that explain it do not
- * depend on the user knowing where they live. "Share with us" builds the support bundle and opens the mail client
- * (see support-bundle.js); nothing is sent until the user presses Send.
+ * depend on the user knowing where they live. "Send Report" builds the support bundle and uploads it to the
+ * team's intake (support-bundle.js + support-upload.js); a native dialog cannot hold a text input, so this
+ * surface always sends anonymously — the startup error panel is where an email can be attached.
  *
  * Dependencies are injected so this is unit-testable (main.js is not).
  */
@@ -18,7 +19,7 @@ const SHARE = 1;
 
 // A native alert cannot scroll: on macOS a long message grows the alert until its buttons are off the screen,
 // and the person cannot answer — or close — the one dialog that explains the failure. So the dialog shows a
-// bounded excerpt; the whole text still goes to "Share with us" and the logs.
+// bounded excerpt; the whole text still goes to "Send Report" and the logs.
 const MAX_DETAIL_CHARS = 1200;
 const MAX_DETAIL_LINES = 16;
 const HEAD_CHARS = 700; // an error opens with its cause (uv prints `error:` first) and ends with its context
@@ -30,7 +31,7 @@ function clampDetail(detail) {
   if (text.length <= MAX_DETAIL_CHARS && lines.length <= MAX_DETAIL_LINES) return text;
   const head = text.slice(0, HEAD_CHARS).split('\n').slice(0, MAX_DETAIL_LINES - 5).join('\n');
   const tail = text.slice(-(MAX_DETAIL_CHARS - HEAD_CHARS)).split('\n').slice(1).slice(-4).join('\n'); // slice(1): drop a cut-off first line
-  return `${head}\n…\n${tail}\n\n(The full text is in the logs, and “Share with us” sends all of it.)`;
+  return `${head}\n…\n${tail}\n\n(The full text is in the logs, and “Send Report” sends all of it.)`;
 }
 
 /**
@@ -47,7 +48,7 @@ function clampDetail(detail) {
  * @returns {Promise<'ok'|'shared'|'share-failed'>}
  */
 async function showFailureDialog({ dialog, parent, type = 'error', title, message, detail = '', share = null, log = null }) {
-  const buttons = share ? ['OK', 'Share with us'] : ['OK'];
+  const buttons = share ? ['OK', 'Send Report'] : ['OK'];
   let response = OK;
   try {
     ({ response } = await show(dialog, parent, {
@@ -61,20 +62,46 @@ async function showFailureDialog({ dialog, parent, type = 'error', title, messag
 
   // What the user saw is what the team needs to read: the headline plus the detail.
   const text = [message, detail].filter(Boolean).join('\n\n');
+  // Immediate feedback, NOT awaited: a native message box cannot be closed from code,
+  // so a "please wait" box that the upload dismisses is impossible — instead this one
+  // is dismissable by the user while the upload runs beside it. On a slow network the
+  // screen is never silent between the click and the result dialog.
+  show(dialog, parent, {
+    type: 'info',
+    title: 'Sending report',
+    message: 'Uploading your logs to the Flowpad team…',
+    detail: 'This can take a moment. You will get a confirmation with a reference ID when it is done.',
+    buttons: ['OK'],
+    defaultId: OK,
+  }).catch(() => { /* feedback only; the upload below is what matters */ });
   let result;
   try {
     result = await share(text);
   } catch (err) {
     result = { ok: false, error: err && err.message };
   }
-  if (result && result.ok) return 'shared';
+  if (result && result.ok) {
+    // The upload is silent, so say out loud that it worked — and give the reference
+    // the user can quote to the team.
+    try {
+      await show(dialog, parent, {
+        type: 'info',
+        title: 'Logs sent',
+        message: 'Your logs were sent to the Flowpad team.',
+        detail: result.submissionId ? `Reference ID: ${result.submissionId}` : '',
+        buttons: ['OK'],
+        defaultId: OK,
+      });
+    } catch { /* the upload still happened */ }
+    return 'shared';
+  }
 
   if (log) log.warn(`[failure-dialog] share failed: ${result && result.error}`);
   try {
     await show(dialog, parent, {
       type: 'warning',
-      title: 'Could not prepare the logs',
-      message: 'Flowpad could not prepare the logs to share.',
+      title: 'Could not send the logs',
+      message: 'Flowpad could not upload the logs to the team.',
       detail: `${(result && result.error) || 'Unknown error'}\n\nThe logs are in your .flow folder (logs). You can attach the newest files to an email to diagnosis@langware.ai.`,
       buttons: ['OK'],
       defaultId: OK,
