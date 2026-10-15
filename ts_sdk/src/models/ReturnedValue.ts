@@ -27,11 +27,15 @@ export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
 export const isOk = (answer: Pick<ReturnedValue, 'exit_code'> | null | undefined): boolean =>
   answer?.exit_code === ExitCode.OK || answer?.exit_code === ExitCode.NOT_APPLICABLE;
 
-export interface ReturnedValue {
-  /** On a NESTED answer: `compute.returned`, `compute.returned.cli`, `.prompt`, `.ask`, `.wizard`. */
+export interface ReturnedValue<T = unknown> {
+  /** Answer kind on nested values and typed calls; older action roots may omit it. */
   spec_kind?: string;
   exit_code: ExitCode;
-  value?: unknown;
+  value?: T | null;
+  /** Explicit output presence. Legacy null without this field is ambiguous. */
+  value_present?: boolean | null;
+  /** Correlation for this invocation and its child observations; not an idempotency key. */
+  invocation_id?: string | null;
   /** One sentence for a person. */
   detail?: string;
   /** False when nothing executed: the goal already held, or it never started,
@@ -42,11 +46,25 @@ export interface ReturnedValue {
   /** Something else holds the slot this call needs — a wizard's lock, a turn
    *  in flight. The one NOT_YET worth retrying later; never-started is not busy. */
   busy?: boolean;
+  /** The callee gave its OWN account (an agent's receipt). With NOT_YET it tells "ran and says it
+   *  could not" (true) from "the run itself broke" (false) — never read off the sentence. */
+  reported?: boolean;
   duration_s?: number;
   /** Typed id of what ran it: `agentic_process-<id>` or `shell-<id>`. */
   executor?: string | null;
   /** The last completion-check run — the verdict's evidence. */
   check?: CliResult | null;
+}
+
+export interface ItemAnswer {
+  index: number;
+  key?: string | null;
+  answer: ReturnedValue;
+}
+
+export interface CollectionResult<T = unknown> extends ReturnedValue<T[]> {
+  /** Reached items in input order; failed batches never compact successful values. */
+  items: ItemAnswer[];
 }
 
 export interface CliResult extends ReturnedValue {
@@ -61,15 +79,25 @@ export interface CliResult extends ReturnedValue {
 export interface PromptResult extends ReturnedValue {
   /** The full reply, beside the declared `value`. */
   text?: string;
+  /** Files produced by a declared-output run, or selected for a channel reply. */
+  files?: string[];
 }
 
 export interface AskResult extends ReturnedValue {
   cancelled?: boolean;
 }
 
+/** Showing a place: delivery and usability are separate facts. */
+export interface NavigateResult extends ReturnedValue {
+  pointer?: string;
+  connection_id?: string | null;
+  delivered?: boolean;
+  verdict?: string | null;
+}
+
 export interface WizardResult extends ReturnedValue {
   /** Each step's own answer, by step id. A step never reached is absent. */
-  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & WizardResult & DecisionVerdict>>;
+  steps?: Record<string, ReturnedValue & Partial<CliResult & PromptResult & AskResult & NavigateResult & WizardResult & DecisionVerdict>>;
   /** The step whose `on_fail: stop` ended the run early; empty when none did. */
   stopped_at?: string;
 }
@@ -100,7 +128,12 @@ export const ANSWER_KIND = {
   ask: 'compute.returned.ask',
   wizard: 'compute.returned.wizard',
   decision: 'compute.returned.decision',
+  navigate: 'compute.returned.navigate',
+  collection: 'compute.returned.collection',
 } as const;
+
+export const isNavigateResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is NavigateResult =>
+  answer?.spec_kind === ANSWER_KIND.navigate;
 
 /** Is this answer a process record? Read from its kind — not inferred from
  *  whichever field happens to be present (`command` is empty on a record that

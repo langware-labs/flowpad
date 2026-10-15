@@ -1,5 +1,5 @@
 /**
- * LLMEndpoint — a hub entity (`flowpad/hub/builtin/llm_endpoint.py`) that is
+ * LLMEndpoint — a hub entity (`hub llm_endpoint.py`) that is
  * either a ROOT (talks to a provider with its own credential) or a CHAIN (fed
  * from other endpoints, in fallback order, narrowing what passes through).
  *
@@ -102,7 +102,7 @@ export class LLMEndpoint extends APIEntity<LLMEndpoint> implements ILLMEndpoint 
   member_default_limits: LLMEndpointLimits = { ...DEFAULT_LLM_LIMITS };
   /** Whose pot / whose allowance this is lives in the hub's `partof` EDGES (pool → org/team,
    *  allowance → user), never in a field; the budgets screens read it through the hub's rows
-   *  (`MemberBudget.user_id`) and the box through `LLMEndpointOffer.holder_typeid`. */
+   *  (`MemberBudget.user_id`) and the box through `LLMEndpointOffer.is_mine`. */
   /** `""` or `****abcd`; read-only, written by the hub's credential action. */
   credential_hint: string = '';
   /**

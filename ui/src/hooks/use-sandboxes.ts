@@ -32,13 +32,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  * Creating, launching and opening are THREE separate operations:
  *   createSandbox: save (workspace-scoped). Nothing is provisioned.
  *   launchSandbox: ops/setup → ops/workspace-ready → project setup
- *   openSandbox:   navigate to open-service/workspace
+ *   openSandbox:   navigate to open/system
  *
  * The create/launch split is the reason a box can exist without costing
  * anything: `ops/setup` is what boots a billable VM, so a create that runs it
  * charges for a machine the user may not open today. A created-but-unlaunched
  * node has no `node_provider_id`, which is the SAME thing the hub tests for —
- * `open-service` answers "this machine has not been set up yet" for exactly this
+ * `open` answers "this machine has not been set up yet" for exactly this
  * node — so the two ends agree on what an unlaunched box is without a second
  * marker to keep in sync.
  *
@@ -59,11 +59,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  * op live in the hub, not the local desktop backend.
  */
 
-/** The hub's name for the workspace app. The client names a SERVICE and never a
- *  port — the hub resolves it through the box's endpoints. This is the only way
- *  anything here opens a box.
+/** The hub's name for the box's own UI: its `system` DOOR. The client names a door and
+ *  never a port — the hub resolves the placement's row for it, asks the policy whether
+ *  THIS caller may enter, and hands the browser a ticket. This is the only way anything
+ *  here opens a box.
  *  Wire contract — pinned hub-side by `unit/test_open_service_route_contract.py`. */
-export const WORKSPACE_SERVICE = 'workspace';
+export const WORKSPACE_SERVICE = 'system';
 // `WORKSPACE_FLAVOR` is imported from the SDK: this hook WRITES the marker at
 // create time and `ComputeNode.isSandbox` READS it, so a local copy would let the
 // writer and the reader drift apart silently.
@@ -198,17 +199,17 @@ function hubEntityJson(node: ComputeNode, patch: Record<string, unknown> = {}): 
 }
 
 /**
- * The absolute URL that opens a sandbox's workspace app.
+ * The absolute URL that opens a sandbox's workspace app: `compute_node/<id>/open/system`.
  *
- * The hub owns readiness and authorization: it resumes a paused box, waits for
- * the workspace to answer, and only then redirects. The client names the
- * SERVICE and never a port.
+ * The hub owns readiness and authorization: it admits the caller, resumes a paused box,
+ * waits for the workspace to answer, and only then redirects with a ticket. The client
+ * names the DOOR and never a port.
  *
  * Exported so the wire-contract test asserts against the URL production
  * actually navigates to, rather than re-deriving one from copied literals.
  */
 export function workspaceServiceUrl(nodeId: string, next?: string): string {
-  const info = new ActionInfo('open-service', ComputeNode.type, nodeId, 'GET');
+  const info = new ActionInfo('open', ComputeNode.type, nodeId, 'GET');
   info.subpath = WORKSPACE_SERVICE;
   // `next`: the app path the box opens on once it is up — a launch's `action=launch` link.
   // The hub accepts only a same-origin path and carries it through its sign-in gate.
@@ -262,6 +263,48 @@ export async function setAutoLogin(node: ComputeNode, value: boolean): Promise<b
   info.bodyParameters = { auto_login: value };
   const res = await dataManager.callAction<Record<string, unknown>, { auto_login: boolean } | undefined>(info);
   return res?.auto_login ?? value;
+}
+
+/** Who may sign a box in from a browser. Per box; the hub's `login-access` action. */
+export interface LoginAccess {
+  allowLogin: boolean;
+  roles: string[];
+}
+
+/** The roles that mean anything on a machine, highest first (the hub's `LOGIN_ROLE_CHOICES`). */
+export const LOGIN_ROLE_CHOICES = ['owner', 'full-access', 'admin', 'editor', 'reader'] as const;
+
+/** What the hub gives a new box: admin and everything above it. */
+export const DEFAULT_LOGIN_ACCESS: LoginAccess = { allowLogin: true, roles: ['owner', 'full-access', 'admin'] };
+
+/** A box's current login access, the hub default where it has never been set. */
+export function loginAccessOf(node: ComputeNode): LoginAccess {
+  return {
+    allowLogin: node.allow_login ?? DEFAULT_LOGIN_ACCESS.allowLogin,
+    roles: node.login_roles ?? DEFAULT_LOGIN_ACCESS.roles,
+  };
+}
+
+/**
+ * Set who may sign a box in from a browser.
+ *
+ * Its own owner-only action, like `setAutoLogin` and for the same reason: on the
+ * PUT path a shared admin could widen who gets into the box's admin channel.
+ */
+export async function setLoginAccess(node: ComputeNode, access: LoginAccess): Promise<LoginAccess> {
+  const info = new ActionInfo('login-access', ComputeNode.type, node.id, 'POST');
+  info.hubReflect = true; // the node is hub-owned
+  info.bodyParameters = { allow_login: access.allowLogin, login_roles: access.roles };
+  const res = await dataManager.callAction<
+    Record<string, unknown>,
+    { allow_login: boolean; login_roles: string[] } | undefined
+  >(info);
+  return res ? { allowLogin: res.allow_login, roles: res.login_roles } : access;
+}
+
+function isDefaultLoginAccess(access: LoginAccess): boolean {
+  const { allowLogin, roles } = DEFAULT_LOGIN_ACCESS;
+  return access.allowLogin === allowLogin && [...access.roles].sort().join() === [...roles].sort().join();
 }
 
 /**
@@ -553,7 +596,10 @@ export function useSandboxes() {
    * Rejects on failure; the step rows carry the detail.
    */
   const launchSandbox = useCallback(
-    async (node: ComputeNode, opts?: { sandboxProject?: SandboxSetup; autoLogin?: boolean }) => {
+    async (
+      node: ComputeNode,
+      opts?: { sandboxProject?: SandboxSetup; autoLogin?: boolean; loginAccess?: LoginAccess },
+    ) => {
       // Same guard as create, and for a stronger reason: a second `ops/setup` on
       // one node overwrites `node_provider_id` and orphans the first VM.
       if (launchingRef.current) return null;
@@ -581,6 +627,10 @@ export function useSandboxes() {
           // Only when turning it OFF: `true` is the hub's default for a fresh
           // node, so asking for it again is a round trip that changes nothing.
           if (opts?.autoLogin === false) await setAutoLogin(node, false);
+          // Same rule: the hub default needs no round trip.
+          if (opts?.loginAccess && !isDefaultLoginAccess(opts.loginAccess)) {
+            await setLoginAccess(node, opts.loginAccess);
+          }
           return providerId;
         });
 

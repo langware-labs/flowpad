@@ -3,7 +3,7 @@ id: 5204aeda-dfc7-43bb-a689-300e6795263c
 name: building-deliverables
 description: Routes a build request to the right Flowpad skill and says how to present
   the result — web apps, slide decks, standalone HTML pages, static sites, images,
-  skills, agents (agent-builder), subagents, whiteboards, docs, runnable code snippets and URL-to-markdown captures. Use whenever the
+  skills, agents (agent-builder), subagents, charts and whiteboards (chartit), docs, runnable code snippets and URL-to-markdown captures. Use whenever the
   user asks to build, create, make, generate, scaffold or prototype something, when
   they ask to test what was built, or when they want an existing app opened or a
   command run in their visible terminal. NOT for showing or navigating to a
@@ -16,6 +16,11 @@ description: Routes a build request to the right Flowpad skill and says how to p
 Pick the row that matches the request and follow it. Do not hand-write what a skill
 already owns. After every deliverable, present it with `flow show` (see the
 `flowpad-navigation` skill for the full show/navigate rule).
+
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
 
 ## Routing
 
@@ -41,6 +46,15 @@ which proves every change in a throwaway probe project before it touches theirs.
 **web-app-builder** skill (copy its template as-is, run its setup as-is). When the dev
 server is up: `flow show webapp --port <port>` — the port the dev server actually
 reported, never an assumed one.
+
+**Mock of a user journey / UX flow** ("mock this flow", "show me the UX", "prototype the
+journey", "clickable mock" — screens to react to before anything is built) → the **mockify**
+skill. It owns the journey bar, the fast and real (captured from the running app) modes, and
+the browser check before showing it.
+
+**Interactive chart with a feedback toolbar** ("chart this flow", a sequence / network flow
+diagram, "a chart I can comment on" — a chart the user steers by leaving comments on it) → the
+**chartit** skill. It owns the chart kinds, the renderer per chart type and the feedback toolbar.
 
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**
@@ -128,15 +142,9 @@ resolves the entity for you; no indexing step).
 which is **agent-builder**'s) → write `.claude/agents/<name>.md` (frontmatter: name,
 description, tools), then `flow show file <abs-path>`.
 
-**Whiteboard / board / diagram** → a folder `.claude/whiteboards/<name>/` in the project
-containing:
-- `WHITE_BOARD.md` — YAML frontmatter with `name:` (no `id` needed) + a one-line
-  description body.
-- `board.json` — a plain Excalidraw scene: `{"elements": [...], "appState": {}}` with
-  `rectangle`/`ellipse`/`diamond`/`arrow`/`text` elements (each needs `id`, `type`, `x`,
-  `y`, `width`, `height`; text needs `text` + `fontSize`). Lay items out on a grid,
-  don't overlap.
-Then `flow show file <abs-path-to-WHITE_BOARD.md>`.
+**Chart / whiteboard / board / diagram / sequence or network flow / mermaid** → the **chartit**
+skill. Every chart is one Chart entity (`agentic-assets/chart/<name>/`, `format`: sequence, excalidraw
+or mermaid), opened in Flowpad's chart editor with a feedback toolbar.
 
 **Doc / plan / report** → write the markdown, then `flow show file <abs-path>`.
 

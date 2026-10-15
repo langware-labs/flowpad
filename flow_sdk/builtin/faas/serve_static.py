@@ -12,6 +12,7 @@ import hashlib
 import mimetypes
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import anyio
 from fastapi import HTTPException
@@ -130,6 +131,25 @@ def _etag(file_path: Path) -> str:
     return hashlib.md5(f"{stat.st_mtime_ns}-{stat.st_size}".encode()).hexdigest()
 
 
+def content_version(root: Path) -> str:
+    """One validator for a whole served folder (paths + mtime + size of every file).
+
+    Stamped into the app's HTML, so a host showing the app can tell its files
+    changed since the frame loaded — an edit to one script included — and reload.
+    A built folder is usually gitignored, so only the hardcoded denylist prunes."""
+    from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
+
+    digest = hashlib.md5()
+    for _folder, _dirs, files in gitignore_walk(root, gitignore=False):
+        for path in files:
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            digest.update(f"{path.relative_to(root)}:{stat.st_mtime_ns}:{stat.st_size};".encode())
+    return digest.hexdigest()
+
+
 async def _file_iterator(file_path: Path):
     async with await anyio.open_file(str(file_path), "rb") as f:
         while True:
@@ -226,10 +246,16 @@ async def serve_app_bytes(
         async with await anyio.open_file(str(requested_file), "r", encoding="utf-8") as f:
             html = await f.read()
         if base_url:
-            html = inject_base_tag(html, base_url)
+            # Fragment links resolve against <base>, not the document URL.
+            # Keep the app's launch context on hash navigation; relative assets
+            # still resolve against the same root without inheriting its query.
+            base = urlsplit(base_url)
+            html = inject_base_tag(html, base._replace(query=request.url.query).geturl())
         # The document carries the same policy as its assets; without a header a
         # browser caches it heuristically and a cross-origin iframe never refetches.
         html = inject_process_id(inject_api_origin(html), process_id)
+        version = await anyio.to_thread.run_sync(content_version, root_path)
+        html += f"\n<!-- flowpad-content-version: {version} -->\n"
         return HTMLResponse(content=html, headers={"Cache-Control": cache_control})
 
     etag = _etag(requested_file)

@@ -1,4 +1,5 @@
-import { automationLineage } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { automationLineage, automationState } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { openableValue } from './ConversationAutomationChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MessageLifecycle, type Lifecycle } from './message-lifecycle';
 import type { TaskPeople } from './task-it';
@@ -45,6 +46,7 @@ import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
+import { MessageSessionChip } from './MessageSessionChip';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
@@ -69,6 +71,8 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import type { WorkerType } from './conversation-session-constants';
+import { PromptCallCard } from './PromptCallCard';
+import type { ProcessCall, ReturnedValue } from '@sdk';
 
 /** Single Download affordance for a message whose body bundle hasn't been
  *  pulled yet. One click materializes every attachment (files + entities) —
@@ -219,6 +223,8 @@ interface FlowMessageBubbleProps {
   onAutomate?: (fm: FlowMessage) => void;
   /** The session an automation started on this message (`useMessageAutomationSessions`). */
   automationSession?: AgenticProcess | null;
+  /** The session started by hand from this message's ⋮ menu (`useMessageSessions`). */
+  session?: AgenticProcess | null;
   /** Where this message, come in on a channel, is on its way to an answer (`message-lifecycle`). */
   lifecycle?: Lifecycle | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
@@ -233,6 +239,11 @@ interface FlowMessageBubbleProps {
   taskPeople?: TaskPeople;
   /** Start a worker pinned to a message (its ⋮ menu). Omitted → no worker bar (drafts). */
   onLaunchWorker?: (messageId: string, worker: WorkerType) => void;
+  /** A prompt call riding this message (parsed once by the parent): its answer once the receiver
+   *  replied, and whether it is running on this machine right now. */
+  promptCall?: { call: ProcessCall; answer: ReturnedValue | null; running: boolean } | null;
+  /** The conversation's other participant — the machine a prompt call I send runs on. */
+  callPeerName?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -262,11 +273,14 @@ export function FlowMessageBubble({
   onTaskIt,
   taskPeople,
   onLaunchWorker,
+  promptCall = null,
+  callPeerName = null,
   showEmailHeaders = false,
   channelTraits = null,
   lifecycle = null,
   onAutomate,
   automationSession = null,
+  session = null,
   quoted = null,
   onReply,
 }: FlowMessageBubbleProps) {
@@ -720,6 +734,15 @@ export function FlowMessageBubble({
     : [];
   const footer = (
     <>
+      {promptCall && (
+        <PromptCallCard
+          {...promptCall}
+          messageId={messageId}
+          conversationId={fm.conversation_id ?? ''}
+          role={isCurrentUser ? 'sender' : 'recipient'}
+          otherName={(isCurrentUser ? callPeerName : fm.sender_name) || t`the other participant`}
+        />
+      )}
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
         <p
@@ -732,6 +755,9 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
+      {session && fm.conversation_id && (
+        <MessageSessionChip session={session} messageId={messageId} conversationId={fm.conversation_id} />
+      )}
     </>
   );
 
@@ -798,8 +824,9 @@ export function FlowMessageBubble({
           automationSession
             ? {
                 name: automationSession.name || automationLineage(automationSession)?.name || t`Automation`,
-                status: String(automationSession.status ?? ''),
+                state: automationState(automationSession),
                 onOpen: () => navigation.openDock(DockPointer.forProcessRuns({ run: automationSession.id })),
+                value: openableValue(automationSession, navigation),
               }
             : undefined
         }

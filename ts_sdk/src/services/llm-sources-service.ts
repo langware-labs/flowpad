@@ -52,15 +52,16 @@ export interface LLMEndpointOffer {
   filters: LLMEndpointFilters;
   /** THE budget: the ceilings on this endpoint. `null` = unlimited, `0` = nothing. */
   limits: LLMEndpointLimits;
-  /** The hub user this allowance belongs to (`user-<uuid>`, the spelling `hub_user_typeid`
-   *  uses) — the hub's `partof` edge to the person, read through `token_plan/allowances`. Null
-   *  for a pool, a root, a share, or when that read failed; then `can_administer` is the fallback. */
-  holder_typeid: string | null;
+  /** Is this budget THIS person's own to spend, rather than one they merely administer? The
+   *  hub's own answer, off the same permission expansion as `can_administer` — one read, not
+   *  two. A boolean because the only thing the hub can tell a caller about itself is yes or no.
+   *  `null` = unanswered (a catalog row, an older hub), which is NOT "no". */
+  is_mine: boolean | null;
   /** May this person CHANGE this budget (the hub's own `update` permission)? Three states:
-   *  `true` they administer it, `false` they hold it and may only spend it — which is what a
-   *  beneficiary is, since `allocate` grants `reader` and stamps no principal — and `null` when
-   *  they hold no role on it at all (the catalog's shared root), or the hub answered no
-   *  expansion. Unknown is never "it was given to me". */
+   *  `true` they administer it, `false` they may only spend it — which is NOT the same as
+   *  owning it, since a share is spend-only too — and `null` when they hold no role on it at
+   *  all (the catalog's shared root), or the hub answered no expansion. Whose a budget is has
+   *  its own answer, `is_mine`. */
   can_administer: boolean | null;
 }
 

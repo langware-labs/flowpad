@@ -15,6 +15,11 @@ folder is the name. The schema is
 `AgentSpec` in `flow_sdk/schema/data_spec/agent_spec.py` — read it when a field
 below is not enough.
 
+
+## FlowCall integration
+
+For callable work, distinguish the agent definition from the reusable FlowCall block and its ReturnedValue answer. Use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) to connect declared input/output and composition; retain the agent’s existing prompt, deployment and permission rules.
+
 ## Fields
 
 "Enforced" means the launch actually applies it. A **declared** field is saved and

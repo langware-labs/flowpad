@@ -37,7 +37,7 @@ SAMPLE_ASSET_NAMES: dict[str, tuple[str, ...]] = {
     "task": ("audit-dependencies", "cut-release", "harden-error-paths", "raise-coverage", "trim-cold-start"),
     "plan": ("auth-rework", "cache-layer", "observability", "search-rollout"),
     "claude_rules": ("commit-style", "no-secrets-in-logs", "test-first"),
-    "whiteboard": ("request-lifecycle", "service-map"),
+    "chart": ("request-lifecycle", "service-map"),
 }
 
 AUTHORED_ASSETS: dict[str, int] = {t: len(names) for t, names in SAMPLE_ASSET_NAMES.items()}
@@ -54,7 +54,7 @@ SAMPLE_REPO_NAME = "sample-context-git"
 
 README = """# sample-context-git
 
-A sample **context folder** for [Flowpad](https://github.com/serans1/flowpad) — a
+A sample **context folder** for [Flowpad](https://github.com/octocat/flowpad) — a
 git repository you can attach to any project to lend it a ready-made set of
 assets.
 
@@ -89,7 +89,7 @@ Flowpad project uses:
 .claude/agents/<name>.md            sub-agents
 .claude/plans/<name>.md             plans
 .claude/rules/<name>.md             rules
-.claude/whiteboards/<name>/         whiteboards (WHITE_BOARD.md + board.json)
+agentic-assets/chart/<name>/      charts (CHART.md + board.json)
 agentic-assets/task/<name>/task.md  tasks
 docs/<name>.md                      documents
 ```
@@ -132,7 +132,7 @@ def readme_text() -> str:
         "task": "tasks",
         "plan": "plans",
         "claude_rules": "rules",
-        "whiteboard": "whiteboards",
+        "chart": "charts",
     }
     rows = "\n".join(
         f"| {labels.get(t, t)} | {n} |" for t, n in sorted(SAMPLE_CONTEXT_ASSETS.items(), key=lambda kv: -kv[1])

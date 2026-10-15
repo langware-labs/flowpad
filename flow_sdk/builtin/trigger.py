@@ -254,6 +254,16 @@ class DispatchOutcome:
         return found.outline() if found is not None else None
 
 
+def _failure_of(result: Any) -> str:
+    """Why an action's answer is a FAILED run, or ``""``. Not reaching the goal is a failure; being
+    refused here, busy, or not for this machine is not (a schedule on a switched-off place stays quiet)."""
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue  # noqa: PLC0415
+
+    if not isinstance(result, ReturnedValue) or result.ok or result.busy or result.exit_code == ExitCode.REFUSED:
+        return ""
+    return result.detail or f"ended {result.exit_code.name.lower()}"
+
+
 async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Optional[dict[str, Any]] = None,
                               scope_key: str = "") -> DispatchOutcome:
     """Action dispatch on any trigger fire — THE shared loop for every trigger
@@ -280,8 +290,7 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
         try:
             result = await run_then(trigger, inputs=dict(inputs or {}), scope_key=scope_key)
             results.append(result)
-            if not result.ok:
-                error = result.detail or "the wizard did not finish"
+            error = _failure_of(result)                    # a wizard whose slot is held is busy, not failed
         except Exception as exc:  # noqa: BLE001 — the fire's row must still be written
             logger.exception("Trigger %s: the then wizard raised", trigger.name)
             error = f"then: {exc}"
@@ -292,6 +301,15 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
                 stage="action", error=error, action_type="then", project_id=trigger.project_id,
             )
         return DispatchOutcome(results, errors, int((time.monotonic() - started) * 1000))
+    def failed(action: Any, error: str) -> None:
+        """One failed action, reported the three ways -- whether its handler raised or ANSWERED a failure."""
+        errors.append(f"{action.action_type}: {error}")
+        emit_trigger_failed(
+            trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
+            stage="action", error=error, action_type=str(action.action_type),
+            project_id=trigger.project_id,
+        )
+
     for action in trigger.actions:
         try:
             handler = get_action_handler(action.action_type)
@@ -300,16 +318,16 @@ async def run_trigger_actions(trigger: "Trigger", changes: list, *, inputs: Opti
                                trigger.name, action.action_type)
                 errors.append(f"No handler for action {action.action_type}")
                 continue
-            results.append(await handler.execute(trigger, action=action, changes=changes))
+            result = await handler.execute(trigger, action=action, changes=changes)
+            results.append(result)
+            failure = _failure_of(result)
+            if failure:   # a script that exited non-zero, was stopped at its budget, or is not on disk
+                logger.warning("Trigger %s: action %s failed: %s", trigger.name, action.action_type, failure)
+                failed(action, failure)
         except Exception as exc:
             logger.exception("Trigger %s: action %s raised during dispatch",
                              trigger.name, action.action_type)
-            errors.append(f"{action.action_type}: {exc}")
-            emit_trigger_failed(
-                trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
-                stage="action", error=str(exc), action_type=str(action.action_type),
-                project_id=trigger.project_id,
-            )
+            failed(action, str(exc))
     return DispatchOutcome(results, errors, int((time.monotonic() - started) * 1000))
 
 
@@ -355,7 +373,8 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         logger.error(f"Schedule trigger fire error for {trigger_id}: {e}")
 
 
-async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_test: bool) -> None:
+async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_test: bool,
+                            run_id: Optional[str] = None) -> None:
     """The work of one schedule fire, and its log row.
 
     Dispatches via the action handler registry (same path as FSOp's ``_fire``
@@ -404,6 +423,7 @@ async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_te
             errors.append(f"Could not start the agent: {e}")
 
     _append_trigger_log_entry(entity.name, {
+        **({"id": run_id} if run_id else {}),
         "hook_event": "schedule_fire",
         "trigger": True,
         "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
@@ -418,6 +438,7 @@ async def run_schedule_fire(entity: "Trigger", event_id: Optional[str], *, is_te
         "error": "; ".join(errors) or None,
         "duration_ms": outcome.duration_ms,
         "spec_hash": spec_hash(entity),
+        "wizard": outcome.wizard,
     })
     logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
 
@@ -478,7 +499,7 @@ class Trigger(Entity):
     expr: Optional[str] = APIField(None, description="Cron/interval/date expression (schedule triggers only)")
     sched_trigger_type: Optional[str] = APIField(None, description="APScheduler type: cron, interval, date")
     timezone: Optional[str] = APIField(None, description="IANA zone the schedule is read in (schedule triggers only). Empty = machine local.")
-    runs_on: Optional[str] = APIField(None, description="Deployment id of the place this schedule runs on; only that place's machine arms it. Empty = every machine (legacy).")
+    runs_on: Optional[str] = APIField(None, description="Deployment id of the place this rule runs on (any kind); only that place's machine arms it. Empty = every machine that indexes it.")
     next_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Next scheduled run (schedule triggers only)")
     last_run: Optional[datetime] = APIField(None, persist=Persist.TRUE, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
@@ -1309,19 +1330,41 @@ class Trigger(Entity):
             runs = [r for r in runs if r.status == status]
         return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in runs])
 
-    @core_action.get(action_name="run")
-    async def run_action(cls, request: Request) -> ApiResponse:
-        """GET /api/v1/graph/trigger/run?id=<log row id> — one run, with its agent run's outcome."""
+    @classmethod
+    async def run(cls, run_id: str) -> Optional["AutomationRun"]:
+        """One run by its id (``RunOnceStarted.run_id``, or a row of ``runs``), with its agent run's
+        outcome. A test run whose history row is not written yet answers ``status: "running"``; None
+        when the id names nothing."""
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        from flow_sdk.automations.run_once import running  # noqa: PLC0415
         from flow_sdk.automations.runs import fold, join_processes  # noqa: PLC0415
         from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.automation_spec import AutomationRun  # noqa: PLC0415
+
+        if not run_id:
+            return None
+        # A test run still in flight is answered from memory: the history is not read (a schedule's row
+        # is not even written until the run ends), so following a run costs nothing while it works.
+        trigger_id = running(run_id)
+        if trigger_id is not None:
+            return AutomationRun(id=run_id, trigger_id=trigger_id, ts=datetime.now(timezone.utc).isoformat(),
+                                 status="running", is_test=True)
+        for found in fold(discover(None, limit=5000)):
+            if found.id == run_id:
+                (joined,) = await join_processes([found])
+                return joined
+        return None
+
+    @core_action.get(action_name="run")
+    async def run_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/run?id=<run id> — one run, with its agent run's outcome."""
 
         params = get_current_request_info().request_parameters or {}
-        run_id = str(params.get("id") or "")
-        for run in fold(discover(None, limit=5000)):
-            if run.id == run_id:
-                (joined,) = await join_processes([run])
-                return ApiSuccessResponse(data=joined.model_dump(mode="json"))
-        return ApiFailResponse(message="That run is no longer in the history.", status_code=404)
+        run = await cls.run(str(params.get("id") or ""))
+        if run is None:
+            return ApiFailResponse(message="That run is no longer in the history.", status_code=404)
+        return ApiSuccessResponse(data=run.model_dump(mode="json"))
 
     @core_action.get(action_name="discover")
     async def discover_action(cls, request: Request) -> ApiResponse:

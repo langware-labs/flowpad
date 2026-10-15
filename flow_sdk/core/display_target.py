@@ -151,37 +151,43 @@ async def resolve_display_target(
 
 
 def endpoint_target(endpoint, *, name: str | None = None) -> dict:
-    """An APP payload for the endpoint that serves it — the one address a display loads.
+    """An APP payload for what serves it — the one address a display loads.
 
-    ``runtime`` says how: ``dev`` is a server on a port (loaded at its own
-    origin, ``direct-url``), ``served`` is a folder we serve (``service``).
+    *endpoint* is a ``webapp_placement.Placed`` (an app's route on its placement's audience proxy:
+    the address is the proxy AND the ``route``) or a ``ServiceEndpoint`` of its own. ``runtime``
+    says how: ``dev`` is a server on a port (loaded at its own origin, ``direct-url``), ``served``
+    is a folder we serve (``service``).
     """
-    return {
+    payload = {
         "kind": DisplayTargetKind.APP,
         "typeid": f"service_endpoint-{endpoint.id}",
         "endpoint_id": endpoint.id,
         "name": name or endpoint.name,
         "runtime": "dev" if endpoint.backend.type == "proxy" else "served",
     }
+    mount = getattr(endpoint, "mount", None)
+    if mount is not None:
+        payload["route"] = mount
+    return payload
 
 
 async def _app_payload(artifact_id: str) -> dict:
     """Resolve an app by its Artifact — the source plane — plus what serves it.
 
-    An app is reachable two ways: a dev server on a port (a ``proxy`` endpoint)
-    or its built output served by us (a ``static`` endpoint). Both, either, or
+    An app is reachable two ways: a dev server on a port (a ``proxy`` route)
+    or its built output served by us (a ``static`` route). Both, either, or
     neither may exist at any moment, and which one is live changes without the
-    app changing. So the address is the artifact id, and the endpoint shown is
+    app changing. So the address is the artifact id, and the route shown is
     *derived* here — the dev server when there is one — rather than baked into
     the pin: that is what stops a stale port from becoming the identity of an app.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.webapp_placement import artifact_endpoints  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import artifact_routes  # noqa: PLC0415
 
     if not is_valid_entity_id(artifact_id):
         raise InvalidDisplayTarget(f"Invalid artifact_id: {artifact_id!r}")
 
-    artifact, endpoints = await asyncio.gather(Artifact.get_by_id(artifact_id), artifact_endpoints(artifact_id))
+    artifact, endpoints = await asyncio.gather(Artifact.get_by_id(artifact_id), artifact_routes(artifact_id))
     if artifact is None:
         raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")
 
@@ -204,7 +210,7 @@ async def _app_payload(artifact_id: str) -> dict:
 async def _asset_app_payload(micro_app) -> dict:
     """An app addressed by its DEFINITION — a webapp asset on disk.
 
-    Shown through the ``static`` endpoint indexing gave it; one that is missing
+    Shown through the ``static`` route indexing gave it; one that is missing
     (an asset indexed before its project existed) is placed now. The frontend
     reads the ``typeid`` as the address, which is also what gives the app a
     breadcrumb — its row has a parent, an endpoint names a placement. Showing
@@ -212,7 +218,7 @@ async def _asset_app_payload(micro_app) -> dict:
     """
     from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
 
-    endpoint, load_run = await show_webapp_locally(micro_app)
+    endpoint, lifecycle = await show_webapp_locally(micro_app)
     name = micro_app.title or micro_app.name
     payload = endpoint_target(endpoint, name=name) if endpoint is not None else {"kind": DisplayTargetKind.APP}
     return {
@@ -221,7 +227,8 @@ async def _asset_app_payload(micro_app) -> dict:
         "micro_app_id": micro_app.id,
         "name": name,
         "runtime": "served" if endpoint is not None else "unbuilt",
-        "load_run": load_run,
+        "load_run": lifecycle.run,
+        "lifecycle": lifecycle.model_dump(mode="json"),
     }
 
 
@@ -229,7 +236,7 @@ def _asset_lookup_paths(resolved: str) -> list[str]:
     """Paths to try against ``asset_ref``, in order.
 
     Folder-asset awareness: a folder-layout entity's ``asset_ref`` is its
-    FOLDER, so showing the main file (``SKILL.md`` / ``WHITE_BOARD.md`` / …)
+    FOLDER, so showing the main file (``SKILL.md`` / ``CHART.md`` / …)
     must also try the parent directory. The registry says which names are a
     folder type's main document (``SchemaRegistry.main_file_owners``).
     """

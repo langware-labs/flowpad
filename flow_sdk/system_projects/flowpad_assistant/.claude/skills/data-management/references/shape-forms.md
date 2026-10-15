@@ -1,3 +1,6 @@
+---
+id: 38359999-e3b6-4625-a53e-4a54c28215e7
+---
 # Shape forms — the one grammar
 
 A schema's fields, an agent's `input`/`output` and a dataset's slots are all written
@@ -18,6 +21,14 @@ in this grammar. It is the ONLY copy in the assistant's skills; the others link 
 - `["int", "int"]` is an ERROR (a list carries one element shape).
 - `?`, `enum:` and `{"*": …}` are input-side: a schema read back from code renders
   without them, a `data_schema` folder keeps what its author wrote.
+- `enum:` is for the fields that are YOURS. A field an outside system owns (`owned_by`) is an open
+  `"?string"` whose description names the values you know: a closed set there turns the system's
+  next value into a problem row on every sync (the mirror keeps the record, but hides it from `rows()`).
+
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
 
 ## Kind names and namespaces
 
@@ -96,6 +107,50 @@ A record may declare that two link paths name the same row wherever both ends ar
   several rules may share a left path), reports rows that
   break them in `problems`, and refuses a write to a row that would break a rule of a row that
   reaches it (`would break <kind> <key>`) — so every writer keeps them, Claude included.
+
+A second rule is over the rows of ONE dataset — no two share a value:
+
+```json
+"rules": [
+  {"unique": ["crm_id"], "description": "one row per CRM record"},
+  {"unique": ["region", "code"]}
+]
+```
+
+- `unique` names the record's own single-valued fields (several: the COMBINATION is unique). A row
+  that leaves any of them empty is not judged — an optional natural key stays optional.
+- Every write is refused while another row holds the value (`code: "unique"`, naming that row);
+  two rows of one `put_many` / `sync` cannot take the same value either; a row a `sync` prunes
+  frees its value in that same call. A duplicate that reached the disk anyway (a hand edit, a
+  `git pull`) is in `problems` — the first row by key keeps the value.
+- Declare the natural key of anything mirrored from outside (`crm_id`), and never write "find the
+  row with this id" as a uniqueness check of your own.
+
+## Fields an outside system owns — `owned_by`
+
+```json
+"stage": {"shape": "?string", "description": "The deal's stage, as the CRM has it: open, won or lost today.", "owned_by": "crm"}
+```
+
+The value is a COPY of an outside system's — so its shape is open (`?string`, not `enum:`): the
+system, not this schema, decides what the next value is. Only a writer that says it writes as that owner sets or
+changes it — `put / put_many / sync / append(..., by="crm")`, TypeScript `{by: "crm"}`, `DM … --by crm`
+— anyone else is refused (`code: "owned"`, with `owned_by` in the detail), and a new row may leave
+an owned field empty but not fill it. `kindForm(kind).fields[name].owned_by` tells an app to show the
+field read-only. It is a guard between cooperating writers (the app, a sync, Claude), not a
+permission: a writer that claims `by` is believed.
+
+## Fields shared by several kinds — `include`
+
+```json
+{"type": "data_schema", "include": ["crm.synced"], "fields": {"name": {"shape": "string", "description": "…"}}}
+```
+
+The record has the included records' fields, rules and owners as if written here — define
+`crm_id` / `updated` / `owner` once (`crm.synced`) and include it in every mirrored kind. A field
+named on both sides is refused (an include never overrides); includes nest; a kind cannot include
+itself. `DM kind` shows the whole record. After changing an included schema, `flow schema apply` its
+whole group, so the kinds that include it are rebuilt.
 
 ## Checking one value
 

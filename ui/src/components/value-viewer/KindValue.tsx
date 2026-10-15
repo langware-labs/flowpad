@@ -9,10 +9,21 @@ export function KindValue({ kind, value, testId }: { kind: string; value: unknow
   const ctx = useMemo(() => createViewerContext(), []);
   const content = useMemo(() => JSON.stringify(value), [value]);
   useEffect(() => {
-    if (!host.current) return;
+    const el = host.current;
+    if (!el) return;
+    // The render is async: draw into a fresh slot and show it only if this run is still the current
+    // one — a second run (a re-render, StrictMode's double effect) must replace the view, not add to it.
+    let current = true;
+    const slot = document.createElement('div');
     void ctx
-      .render(host.current, { kind, value: JSON.parse(content) })
+      .render(slot, { kind, value: JSON.parse(content) })
+      .then(() => {
+        if (current) el.replaceChildren(slot);
+      })
       .catch((err: unknown) => console.error('[kind-value] cannot show', kind, err));
+    return () => {
+      current = false;
+    };
   }, [ctx, kind, content]);
   return <div ref={host} data-testid={testId} />;
 }

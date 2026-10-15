@@ -101,7 +101,7 @@ def test_should_reflect_false_when_logged_out(logged_out):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
-    """GET action: hub_get is called with the right path; response replaces local members."""
+    """GET action: the hub is read at the right path; response replaces local members."""
     import flow_sdk.server.routes._hub_reflect as mod
 
     captured = {}
@@ -139,7 +139,7 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
         captured["saved"] = True
         return None
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", fake_hub_get)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("get",))
@@ -157,21 +157,22 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_reflect_to_hub_raises_huberror_when_hub_get_returns_none(monkeypatch):
-    """``hub_get`` returns None on transport/HTTP failure — dispatcher must
-    surface this as HubError so the caller falls through to the local handler."""
+async def test_reflect_to_hub_get_keeps_the_hubs_status(monkeypatch):
+    """A failed reflected GET raises HubError carrying the hub's OWN status — a
+    refusal (403) and an outage (0) must stay distinguishable to the caller."""
     import flow_sdk.server.routes._hub_reflect as mod
 
-    async def fake_hub_get(*args, **kwargs):
-        return None
+    async def refused(*args, **kwargs):
+        raise HubError(403, "not an admin here")
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", refused)
 
     a = _make_action(methods=("get",))
     e = _make_entity(remote=True)
 
-    with pytest.raises(HubError):
+    with pytest.raises(HubError) as raised:
         await mod.reflect_to_hub(a, e, {}, "get")
+    assert raised.value.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -186,7 +187,7 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
     a roster GET reflects as a hub DELETE with an empty body → hub 400 → toast.
 
     Here the matched Action declares ``methods=["delete"]`` (simulating the
-    overwrite) but the incoming request method is GET: reflect MUST call hub_get
+    overwrite) but the incoming request method is GET: reflect MUST read the hub
     and MUST NOT call hub_delete.
     """
     import flow_sdk.server.routes._hub_reflect as mod
@@ -204,7 +205,7 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
     async def fake_save(self_=None, **kwargs):
         return None
 
-    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_get_or_raise", fake_hub_get)
     monkeypatch.setattr(mod, "hub_delete", fake_hub_delete)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
@@ -731,8 +732,8 @@ async def test_mirror_learns_a_changed_roster_into_the_address_book(monkeypatch)
 
     monkeypatch.setattr(fma, "_learn_address_book", fake_learn)
     monkeypatch.setattr(Conversation, "save", fake_save)
-    roster = [{"user_id": "u-nir", "name": "Nir", "email": "nir@example.com", "role": "member"}]
-    e = _make_entity(remote=True, members=[{"user_id": "u-nir", "name": "Nir"}])
+    roster = [{"user_id": "u-bob", "name": "Bob", "email": "bob@example.com", "role": "member"}]
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob", "name": "Bob"}])
 
     await mirror_hub_response_into_local(e, "members", roster)
     assert learned == [roster]
@@ -754,9 +755,15 @@ async def test_an_update_of_only_local_fields_stays_local_and_never_asks_the_hub
 
     monkeypatch.setattr(mod, "hub_put", refuse)
     project = Project(id=str(uuid.uuid4()), name="shared with me", remote=True)
-    update = Action(action_name="update", function_name="update", handler=lambda self: None, methods=["put"], types=["all"])
+    update = Action(
+        action_name="update", function_name="update", handler=lambda self: None, methods=["put"], types=["all"]
+    )
 
-    body = {**project.model_dump(mode="json"), "fetched_at": "2026-10-11T00:00:00Z", "updated_date": "2026-10-11T00:00:00Z"}
+    body = {
+        **project.model_dump(mode="json"),
+        "fetched_at": "2026-10-11T00:00:00Z",
+        "updated_date": "2026-10-11T00:00:00Z",
+    }
     assert await mod.reflect_to_hub(update, project, body, "PUT") is mod.REFLECT_CONTINUE_LOCAL
 
     # A field the hub does hold still goes there.

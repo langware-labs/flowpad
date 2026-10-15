@@ -33,7 +33,9 @@ from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.urls.service_urls import urls_service
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
+from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import LM_SECRET_PREFIX
+from flow_sdk.schema.data_spec.spec import DataSpec
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.client import LLMClient, ProbeResult
@@ -133,6 +135,15 @@ def hub_invoke_path(typeid: Any) -> str:
     return urls_service.api.build_entity_path(typeid, None, "invoke")
 
 
+class LLMEndpointConfig(DataSpec):
+    """What a caller may set on a local key endpoint through :meth:`LLMEndpoint.by_provider`."""
+
+    #: Slugs to change, by tier (``sm`` / ``md`` / ``lg`` / ``embedding``). Merged over the row's
+    #: own, so naming one tier leaves the others alone.
+    models: dict[str, str] | None = None
+    base_url: str | None = None
+
+
 class LLMEndpoint(Entity):
     # No local rows: instances are transient projections of hub state (see the module docstring).
     _api_visible: ClassVar[bool] = False
@@ -153,12 +164,15 @@ class LLMEndpoint(Entity):
     member_default_limits: LLMLimits = APIField(default_factory=LLMLimits)
     #: ``****last4`` of the provider key, when this endpoint is a root. Never the key itself.
     credential_hint: str = APIField(default="")
-    #: The hub user this allowance is ``partof`` -- ``user-<uuid>``, in the spelling
-    #: ``hub_user_typeid`` uses -- or ``None`` for a pool, a root, a share, or when the hub could
-    #: not be asked. Filled by ``fetch_hub_llm_endpoints`` from the caller-scoped
-    #: ``token_plan/allowances`` read (the hub serializes no such field: whose allowance a row is
-    #: lives in an edge). Runtime-only, never a row: a hub endpoint is never stored on a box.
-    holder_typeid: str | None = APIField(default=None, persist=Persist.FALSE)
+    #: Is this budget THIS BOX'S USER'S OWN to spend, as opposed to one they merely administer?
+    #: The hub's own answer, off the ``expand.mine`` half of the permission expansion the listing
+    #: already asks for -- so it is one read with ``can_administer`` and not a second.
+    #:
+    #: A boolean and not a typeid, because the only answer the hub can give a caller about itself is
+    #: yes or no: a field shaped like "whose is it" would invite a comparison against somebody
+    #: else's id that can never be true. ``None`` means unanswered (a catalog row, an older hub),
+    #: which is not "no". Runtime-only, never a row: a hub endpoint is never stored on a box.
+    is_mine: bool | None = APIField(default=None, persist=Persist.FALSE)
 
     #: Which of the three funding kinds this is. Defaults to HUB so every existing projection
     #: keeps its meaning; ``fetch_hub_llm_endpoints`` forces it, and the before-validator below
@@ -180,10 +194,9 @@ class LLMEndpoint(Entity):
     #:
     #: * ``True``  -- they administer it. On an admin's box this is every allowance they minted for
     #:   somebody else, which is exactly what must not read as their own wallet.
-    #: * ``False`` -- they hold it and may only spend it. That is what a beneficiary is: ``allocate``
-    #:   grants them ``reader`` (``_BENEFICIARY_ROLE``). ``holder_typeid`` says the same thing from
-    #:   the hub's ``partof`` edge; this flag is the fallback when that read is unavailable, and the
-    #:   only signal for a share (which has no holder edge).
+    #: * ``False`` -- they may only spend it. NOT the same as "it is theirs": a share is also
+    #:   spend-only, and an admin's own allowance is theirs while answering ``True`` here. Whose a
+    #:   budget is has its own answer, ``is_mine``, off the same expansion.
     #: * ``None``  -- not held at all. The catalog's global root reaches every signed-in user
     #:   without a role edge, and answering ``False`` for it would turn the shared pool into
     #:   everybody's personal budget.
@@ -258,7 +271,7 @@ class LLMEndpoint(Entity):
             "limits",
             "member_default_limits",
             "credential_hint",
-            "holder_typeid",
+            "is_mine",
             # Listed explicitly: ``invocable`` is Persist.FALSE, and a picker that cannot see it
             # would offer the user a device endpoint the backend can never call.
             "kind",
@@ -499,6 +512,37 @@ class LLMEndpoint(Entity):
             return existing
         endpoint = cls(provider=provider, kind=LLMEndpointKind.API_KEY, secret_name=name)
         await endpoint.save()
+        return endpoint
+
+    @classmethod
+    async def by_provider(
+        cls,
+        provider: LMApiProvider | str,
+        key: str | None = None,
+        config: LLMEndpointConfig | None = None,
+    ) -> "LLMEndpoint":
+        """The local row for a provider's key -- storing *key* first when one is given.
+
+        The one call that turns "I have a provider key" into something a process can be pinned
+        to (``llm_endpoint_typeid``). With no *key* the provider's key must already be stored:
+        the environment is not adopted, because a worker spawn resolves its credential with
+        ``allow_environment=False`` and a row backed only by a variable would fund nothing.
+        """
+        from flow_sdk.cli.auth.lm_api_keys import set_lm_api  # noqa: PLC0415
+        from flow_sdk.external_apis.llm.errors import LLMNoCredential  # noqa: PLC0415
+
+        provider = LMApiProvider(provider)
+        if provider is LMApiProvider.FLOWPAD:
+            raise ValueError("flowpad is bound by the hub login; it has no local key endpoint")
+        if key:
+            set_lm_api(key, provider)
+        elif not cls.key_projection(provider.value).resolve_api_key(allow_environment=False):
+            raise LLMNoCredential(f"no {provider.value} key is stored on this machine; pass key=")
+        endpoint = await cls.ensure_for_secret(provider.value)
+        if config is not None:
+            endpoint.models = {**endpoint.models, **(config.models or {})}
+            endpoint.base_url = config.base_url or endpoint.base_url
+            await endpoint.save()
         return endpoint
 
     @classmethod

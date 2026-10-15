@@ -166,3 +166,16 @@ async def run_probe(provider: str, token: str) -> ProbeResult:
         identity=_first_text(body, probe.identity_fields),
         account_key=account_key_from(provider, body),
     )
+
+
+async def connection_answer(provider: str) -> dict[str, Any]:
+    """Whether ``provider``'s sign-in works for what runs HERE: the token the poller will use (``token_for`` —
+    the request's user, else this machine's local user, else the hub), probed for real. ``{"ok": False, "code":
+    "missing_token"}`` when there is none. One answer for a source's Verify and its setup step, so the two can
+    never disagree; a background run with no request user asks the same chain the poll does."""
+    from flow_sdk.core.oauth.provider_registry import token_for  # noqa: PLC0415
+
+    token = await token_for(provider)
+    if not token:
+        return ProbeResult(ok=False, detail="No token stored for this provider", code="missing_token").as_data()
+    return (await run_probe(provider, token)).as_data()

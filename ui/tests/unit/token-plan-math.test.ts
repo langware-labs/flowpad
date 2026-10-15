@@ -106,7 +106,7 @@ describe('capsMessage / windows / labels', () => {
   });
 
   it('labels scopes: me is "Me", others by name', () => {
-    expect(render(scopeLabel({ kind: 'me', name: 'Eran' }) as never)).toBe('Me');
+    expect(render(scopeLabel({ kind: 'me', name: 'Alice' }) as never)).toBe('Me');
     expect(scopeLabel({ kind: 'team', name: 'Team A' })).toBe('Team A');
     expect(render(scopeLabel({ kind: 'org', name: '' }) as never)).toBe('Organization');
   });

@@ -31,10 +31,11 @@ import flow_sdk.builtin.skill  # noqa: F401
 import flow_sdk.builtin.source_change  # noqa: F401
 import flow_sdk.builtin.source_item  # noqa: F401
 import flow_sdk.builtin.spreadsheet  # noqa: F401
+import flow_sdk.builtin.store_session  # noqa: F401
 import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.trigger  # noqa: F401  — a trigger.json asset; unbound, /graph/trigger/* 422s in a fresh process
-import flow_sdk.builtin.whiteboard  # noqa: F401
+import flow_sdk.builtin.chart  # noqa: F401
 import flow_sdk.builtin.wizard  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_md  # noqa: F401

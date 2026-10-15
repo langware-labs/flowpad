@@ -29,8 +29,11 @@ class DataSchema(Entity):
     examples: Optional[dict[str, ShapeForm]] = APIField(
         default=None, description="A dataset's example slots -> shapes."
     )
+    include: Optional[list[str]] = APIField(
+        default=None, description="A record's included record kinds: their fields and rules are this one's too."
+    )
     rules: Optional[list[DataSchemaRule]] = APIField(
-        default=None, description="A record's rules across rows: two link paths that must name the same row."
+        default=None, description="A record's rules across rows: two link paths that must name the same row, or fields no two rows share."
     )
     ns: Optional[str] = APIField(
         default=None, description="The ontology namespace, when it differs from the project's."

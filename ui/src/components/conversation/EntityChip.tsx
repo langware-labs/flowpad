@@ -2,13 +2,14 @@ import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
-import { APIEntity, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
+import { DataSource, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
 /**
  * Minimal shape we need to render an entity as a clickable label. Covers the
@@ -58,6 +59,9 @@ interface EntityChipProps {
    * navigation. Distinct from `muted`, which is inert.
    */
   staged?: boolean;
+  /** The loaded entity row. Transcripts open by file location, so their
+   *  pointer needs fields (`asset_ref`, `received`) a bare TypeId lacks. */
+  row?: object | null;
 }
 
 /**
@@ -160,6 +164,7 @@ export function EntityChip({
   size = 'chip',
   muted = false,
   staged = false,
+  row,
 }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
@@ -187,10 +192,10 @@ export function EntityChip({
       // A staged chip never dock-navigates: its entity has no local row yet.
       if (staged) return;
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
+      const pointer = buildDockPointer({ ...row, ...resolved }, inside);
       if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [muted, staged, onClick, resolved, inside, navigation, projectId]);
+  }, [muted, staged, onClick, resolved, inside, navigation, projectId, row]);
 
   const baseLayout =
     size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
@@ -244,12 +249,16 @@ export function buildDockPointer(
       // Entity type is `flowpad_diagnosis` but the view type is `diagnosis`, so the
       // generic fallback can't resolve it — map explicitly to the diagnosis viewer.
       return DockPointer.forDiagnosis(resolved.id);
+    case DataSource.type:
+      return DockPointer.forDataSources({ section: 'source', id: resolved.id, tab: null });
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
     case 'claude_session':
     case 'codex_session':
-    case 'copilot_session': {
-      const worker = workerFromSessionType(resolved.type) as 'claude' | 'codex' | 'copilot';
+    case 'copilot_session':
+    case 'opencode_session':
+    case 'deepagents_session': {
+      const worker = workerFromSessionType(resolved.type) as SessionWorker;
       // Transcripts are the ONLY type addressed by location rather than by
       // TypeId (they have no asset-editor entry — they open through the lens,
       // which takes a worker + a file). So unlike every other case here, a bare
@@ -269,7 +278,7 @@ export function buildDockPointer(
       return null;
     }
     default: {
-      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // Asset-editor types (markdown family, agent, skill, workflow, chart)
       // open by their TypeId — no asset_ref needed; the loader resolves the
       // entity. This is why the chip never has to defer on an unresolved path.
       const editor = editorForType(resolved.type);
@@ -316,7 +325,6 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
   // Generic context chips can point at any entity type; the SDK hook's recursive
   // entity generic has no concrete type here.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, notFound } = useEntity<AnyEntity>(typeId);
   // ``notFound`` is a terminal 404 — the target has no local row (e.g. a
   // dangling/unmaterialized context reference). Render a muted, non-navigable
@@ -326,6 +334,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      row={data}
       inside={inside}
       onClick={onClick}
       projectId={projectId}

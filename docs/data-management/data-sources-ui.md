@@ -86,3 +86,18 @@ Two axes, shown together because they disagree in the interesting cases:
 - `unresolved` (`status === 'new'`, never polled) and `held` (a file changed on both sides) show an amber note with the next step: **Verify** and **Pull** respectively.
 - The card icon is the spec's `channel_icon_names[channel]`, else the spec's `icon_name` (both via `lucideByName`), else `iconForType(DataSource.type)` from the registry. The view header and the `ViewType` tab chip use the registry glyph (`Antenna`, matching the backend `TypeInfo.icon`).
 - Every verb reports through `notify` toasts; a not-ready `verify()` is an info toast, not an error.
+
+## Channels still to connect
+
+A message channel has three states on the stream inbox's channel line (errors aside), and only two of them are a source's:
+
+| State | What it is | How the mark draws it | Pressing it |
+|---|---|---|---|
+| not set up | a driver that declares `featured`, with no source of it for this owner | greyed glyph, no ring, a `+` badge | opens the add dialog on that channel |
+| set up, disabled | a source with `status: disabled` | dashed ring, greyed glyph | filters the list |
+| enabled | a source with `status: active` | solid ring, green dot | filters the list |
+
+- "Not set up" is the ABSENCE of a source, never a placeholder row: `channelOffers(specs, rows, forAgent)` (`ui/src/components/data-sources/use-source-specs.ts`) derives it from the installed drivers.
+- A driver opts in with `"featured": true` in its `data_driver.json` (`DataDriverSpec.featured`); any member of a group declares it for the group, which is offered as one choice. No provider is named in the UI.
+- The offers fold away once the owner has a source of ANY featured channel, whatever its status — from then on the `+` button is the way to more.
+- The same offers are the empty list's call to action (`ConnectChannelPrompt`). Both open `DataSourceDialog` with `initial`, which lands where pressing that provider's tile would.

@@ -17,7 +17,7 @@ from flow_sdk.core.webpage_status import check_webpage_status, frame_block_reaso
 from tests.unit._ingest_helpers import local_http_server
 
 APP = "http://localhost:9007"
-SITE = "https://github.com/langware-labs/flowpad-hub/pull/1138"
+SITE = "https://github.com/acme/hub/pull/1138"
 
 
 # --- header rules -----------------------------------------------------------
@@ -78,7 +78,12 @@ _ROUTES: dict[str, tuple[int, dict[str, str]]] = {
 }
 
 
-def _respond(path, _headers):
+def _respond(path, asked):
+    if path == "/spa/tasks":
+        # a single-page app's server: its shell (and its refusal) for a page request, a bare 404 otherwise
+        wants_page = "text/html" in (asked.get("Accept") or "")
+        return (200, b"<html></html>", {"Content-Type": "text/html", "X-Frame-Options": "SAMEORIGIN"}) if wants_page \
+            else (404, b"", {})
     status, headers = _ROUTES.get(path, (404, {}))
     return status, b"<html><body>hi</body></html>", {"Content-Type": "text/html", **headers}
 
@@ -110,6 +115,14 @@ def test_block_is_found_on_an_error_page(site):
     status = _check(f"{site}/deny-404")
     assert status.http_status == 404
     assert status.frame_blocked is True
+
+
+def test_the_page_is_asked_for_as_a_browser_asks(site):
+    """The Twenty CRM case: its server answers a page request with the app shell and its framing
+    headers, and anything else with a 404 that carries none -- so the fetch asks for a page."""
+    status = _check(f"{site}/spa/tasks")
+    assert status.http_status == 200
+    assert status.frame_blocked is True and status.frame_block_reason == "x-frame-options: SAMEORIGIN"
 
 
 def test_block_is_read_from_the_final_response(site):

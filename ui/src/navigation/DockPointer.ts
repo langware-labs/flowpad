@@ -4,6 +4,7 @@ import {
   Agent,
   AgenticProcess,
   ClaudeSession,
+  FlowpadDiagnosis,
   CredentialsSubview,
   GraphWorkflow,
   Layout,
@@ -59,6 +60,7 @@ import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/G
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
 import { schemaTreePointer } from '@src/components/schema-tree/schema-tree-pointer';
+import type { WorkerType } from '@src/hooks/use-transcript';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -273,6 +275,14 @@ function embedHostInProjectPointer(pointer: string | undefined, hostProcessId: s
 export const LANG_PARAM = 'lang';
 
 /**
+ * URL query-param key paging a conversation list backwards: the `updated_date` (ISO) the page
+ * shows conversations OLDER than. Absent = now — the latest page, live. Rides in `options`, so it
+ * is reload- and back-safe and never opens a tab. Pairs with `DockPointer.pageBefore` /
+ * `withPageBefore()`; the stream inbox reads it to build its page query.
+ */
+export const PAGE_BEFORE_PARAM = 'before';
+
+/**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
  * default; when set, the guided journey tray is shown for that journey and the
  * orchestrator drives its current step. Like the other option params it rides in
@@ -306,6 +316,7 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
  * written into context. Not the Vibe workspace `host` (`HOST_PARAM`).
  */
 export const WORKSPACE_PARAM = 'workspace';
+export const WORKSPACE_ENTRY_PARAM = 'workspaceEntry';
 
 /**
  * URL query-param key naming the capability the user was reaching for when they
@@ -684,6 +695,16 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock pointed at a translated body, or back to the original with null. */
   withLang(lang: string | null): DockPointer {
     return this.withOption(LANG_PARAM, lang);
+  }
+
+  /** The `updated_date` a paged list shows rows older than, or null for now (the latest page). */
+  get pageBefore(): string | null {
+    return this.options?.[PAGE_BEFORE_PARAM] ?? null;
+  }
+
+  /** Clone this dock paged back to rows older than `before`, or back to now with null. */
+  withPageBefore(before: string | null): DockPointer {
+    return this.withOption(PAGE_BEFORE_PARAM, before);
   }
 
   /**
@@ -2173,7 +2194,7 @@ export class DockPointer implements IDockPointer {
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex' | 'copilot' | 'opencode' | 'workflow',
+    workerType: WorkerType,
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
@@ -2307,6 +2328,11 @@ export class DockPointer implements IDockPointer {
     if (this.isActiveDisplay && this.hostProcessId) {
       return `${pagePrefix}${ACTIVE_DISPLAY_HASH_NS}|${this.hostProcessId}`;
     }
+    // A dependency home is one tab per provider/consumer pair. Its runtime options
+    // remain presentation-only, but two consumers must never configure one another.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return `${pagePrefix}dependency-home|${this.options.providerProject}|${this.options.consumerProject}`;
+    }
     // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
     // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
     // into ONE tab. Identity = the scope filter (global when unset), NOT the
@@ -2415,6 +2441,16 @@ export class DockPointer implements IDockPointer {
         options: { [ACTIVE_DISPLAY_PARAM]: '1' },
         tabHash: this.tabHash,
         workspaceContent: true,
+      });
+    }
+    // Dependency homes retain their execution provider and consuming-project context
+    // in storage, so the backend and a reopened chip share the URL's pair identity.
+    if (this.options?.providerProject && this.options?.consumerProject) {
+      return JSON.stringify({
+        viewType: this.viewType,
+        pointer: this.pointer ?? '',
+        options: this.options,
+        tabHash: this.tabHash,
       });
     }
     // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
@@ -2545,6 +2581,12 @@ export class DockPointer implements IDockPointer {
     // title (host/guest) and the loader its project.
     if (this.viewType === ViewType.LIVE_SESSION) {
       return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
+    }
+    // Same again for a diagnosis: the viewType string ('diagnosis') is not the
+    // entity type ('flowpad_diagnosis'), so the fallback named a target that
+    // does not exist and the tab had no entity to title or describe.
+    if (this.viewType === ViewType.DIAGNOSIS) {
+      return DockPointer.tryTypeId(FlowpadDiagnosis.type, pointer);
     }
     // A helpdesk dock targets the portal PROJECT it renders. Same reason as
     // live_session above: the viewType string ('helpdesk') is not an entity

@@ -38,9 +38,10 @@ from __future__ import annotations
 from enum import IntEnum
 from typing import Annotated, Any, ClassVar, Optional
 
-from pydantic import BeforeValidator, WrapSerializer
+from pydantic import BeforeValidator, WrapSerializer, model_serializer
 from typing_extensions import Self
 
+from flow_sdk.schema.data_spec._missing import MISSING
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged, _by_kind, _with_kind
 
 
@@ -51,17 +52,27 @@ def _value_by_kind(value: Any) -> Any:
     A kind nobody registered stays a dict: an unreadable value must not make the
     whole answer (a ``run.json``) unreadable.
     """
-    if isinstance(value, dict) and "spec_kind" in value:
-        try:
-            return _by_kind(value)
-        except ValueError:
-            return value
+    if isinstance(value, list):
+        return [_value_by_kind(item) for item in value]
+    if isinstance(value, dict):
+        if "spec_kind" in value:
+            try:
+                return _by_kind(value)
+            except ValueError:
+                pass
+        return {key: _value_by_kind(item) for key, item in value.items()}
     return value
 
 
 def _value_with_kind(value: Any, handler: Any, info: Any) -> Any:
     """Tag a DataSpec value with its kind on the way out; anything else as usual."""
-    return _with_kind(value, info) if isinstance(value, DataSpec) else handler(value)
+    if isinstance(value, DataSpec):
+        return _with_kind(value, info)
+    if isinstance(value, list):
+        return [_value_with_kind(item, handler, info) for item in value]
+    if isinstance(value, dict):
+        return {key: _value_with_kind(item, handler, info) for key, item in value.items()}
+    return handler(value)
 
 
 #: A value that comes back as the class it went out as. Without it a DataSpec
@@ -117,6 +128,9 @@ class ReturnedValue(DataSpec):
     #: What the call produced, validated against the callee's ``output_spec_kind``.
     #: A DataSpec value round-trips as its own class (``TaggedValue``).
     value: TaggedValue = None
+    #: Explicit presence for typed calls. None preserves ambiguous legacy nulls.
+    value_present: Optional[bool] = None
+    invocation_id: Optional[str] = None
     #: One sentence for a person. Never a code, never a stack, never a paragraph.
     detail: str = ""
     #: Did anything actually execute? ``False`` means nothing did: the goal
@@ -139,6 +153,11 @@ class ReturnedValue(DataSpec):
     #: from ``ran`` sent a wizard that called itself — and a box with no agent
     #: harness — to 409 as if they were merely busy.
     busy: bool = False
+    #: The callee gave its OWN account of the outcome (an agent's receipt). With NOT_YET it tells
+    #: the two failures apart: reported -> the callee ran and says it could not do it (``detail`` is
+    #: its reason); not reported -> the run itself broke (``detail`` is ours). A FIELD, like ``ran``,
+    #: so nobody tells them apart by reading the sentence.
+    reported: bool = False
     duration_s: float = 0.0
     #: The typed id of what ran it — ``agentic_process-<id>`` or ``shell-<id>``.
     #: ``None`` for a plain subprocess, or when nothing ran. A STRING, because a
@@ -147,6 +166,20 @@ class ReturnedValue(DataSpec):
     executor: Optional[str] = None
     #: The LAST completion-check run — the verdict's evidence.
     check: Optional[Tagged["CliResult"]] = None
+
+    @model_serializer(mode="wrap")
+    def _legacy_wire(self, handler):
+        result = handler(self)
+        if self.value_present is None:
+            result.pop("value_present", None)
+        if self.invocation_id is None:
+            result.pop("invocation_id", None)
+        return result
+
+    @property
+    def has_value(self) -> bool:
+        """Whether a consumable value was explicitly produced (including null)."""
+        return self.value_present if self.value_present is not None else self.value is not None
 
     @property
     def ok(self) -> bool:
@@ -191,8 +224,13 @@ class ReturnedValue(DataSpec):
         return self
 
     @classmethod
-    def satisfied(cls, detail: str = "", value: Any = None, *, ran: bool = True, **fields: Any) -> "Self":
-        return cls(exit_code=ExitCode.OK, detail=detail, value=value, ran=ran, **fields)
+    def satisfied(cls, detail: str = "", value: Any = MISSING, *, ran: bool = True, **fields: Any) -> "Self":
+        # Non-null legacy values already express presence; only explicit null needs a new fact.
+        if value is None:
+            fields.setdefault("value_present", True)
+        if value is not MISSING:
+            fields["value"] = value
+        return cls(exit_code=ExitCode.OK, detail=detail, ran=ran, **fields)
 
     @classmethod
     def not_yet(cls, detail: str = "", **fields: Any) -> "Self":
@@ -219,6 +257,27 @@ class ReturnedValue(DataSpec):
         """Not approved to run here. Refusing is not failing, and it never
         waits — a caller that can ask turns this into a question."""
         return cls(exit_code=ExitCode.REFUSED, detail=detail, **{"ran": False, **fields})
+
+
+class ItemAnswer(DataSpec):
+    """One reached item in an explicit map call; index preserves input identity."""
+
+    spec_kind: ClassVar[str] = "compute.returned.item"
+    index: int
+    key: Optional[str] = None
+    answer: Tagged[ReturnedValue]
+
+
+class CollectionResult(ReturnedValue):
+    """A batch's aggregate outcome and every reached item's own answer."""
+
+    spec_kind: ClassVar[str] = "compute.returned.collection"
+    items: list[ItemAnswer] = []
+
+    def trimmed(self, limit: int = OUTPUT_CAP) -> "Self":
+        return super().trimmed(limit).model_copy(update={
+            "items": [item.model_copy(update={"answer": item.answer.trimmed(limit)}) for item in self.items],
+        })
 
 
 class CliResult(ReturnedValue):

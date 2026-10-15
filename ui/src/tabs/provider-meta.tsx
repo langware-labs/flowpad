@@ -1,5 +1,7 @@
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
+import { useLingui } from '@lingui/react/macro';
+import { CopyButton } from '@src/components/ui/copy-button';
 /**
  * Terminal provider presentation — the vendor chip glyph/label table and the
  * lazy process tooltip. Lives in its own module (not the controller) because both
@@ -14,10 +16,11 @@ import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
-import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
+import { TabTooltipName, useInTabTip } from '@src/components/tabs/TabTooltipName';
 import { AgentCardBody } from '@src/components/agents/AgentIntroCard';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 
 import React, { useMemo } from 'react';
 
@@ -85,16 +88,29 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
 );
 
 /** A path on one line — clipped, always left-to-right (a session's directory, a document's file). */
-export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => (
-  <p
-    className={`truncate font-mono text-[10px] text-muted-foreground ${className ?? ''}`}
-    dir="ltr"
-    title={workdir}
-    data-testid="tab-workdir"
-  >
-    {workdir}
-  </p>
-);
+export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({ workdir, className }) => {
+  const { t } = useLingui();
+  return (
+    <div className={`flex items-center gap-1 ${className ?? ''}`}>
+      <p
+        className="min-w-0 truncate font-mono text-[10px] text-muted-foreground"
+        dir="ltr"
+        title={workdir}
+        data-testid="tab-workdir"
+      >
+        {workdir}
+      </p>
+      <CopyButton
+        value={workdir}
+        title={t`Copy path`}
+        testId="tab-workdir-copy"
+        stopPropagation
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        copiedIconClassName="text-emerald-500"
+      />
+    </div>
+  );
+};
 
 const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({
   process,
@@ -156,12 +172,30 @@ export const ProcessTabCard: React.FC<{
   statusReason?: string;
 }> = ({ processId, fallbackName, statusReason }) => {
   const isAdvanced = useIsAdvanced();
+  const inTabTip = useInTabTip();
   const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
   const agent = useLaunchingAgent(process?.deployment_id);
   const details = process && isAdvanced ? <ProcessInfoTooltip process={process} statusReason={statusReason} /> : null;
 
   if (!agent) {
     if (details) return <div className="p-2.5">{details}</div>;
+    // A plain session, outside advanced mode: what it is doing and where.
+    if (process) {
+      return (
+        <div className="min-w-[220px] max-w-[320px] space-y-1 p-2.5" data-testid="tab-session-card">
+          <TabTooltipName name={resolveProcessDisplayName(process) || fallbackName} />
+          {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+          <p className="text-[11px] text-muted-foreground">
+            {process.worker_type && <span>{workerLabel(process.worker_type)} · </span>}
+            <span className="capitalize">{getDisplayStatus(process) ?? ProcessStatus.NEW}</span>
+            <span> · {formatTimeAgoShort(process.updated_date)}</span>
+          </p>
+          {process.workdir && <WorkdirLine workdir={process.workdir} />}
+        </div>
+      );
+    }
+    // Nothing but the name yet, and a tab tip's header already shows it.
+    if (inTabTip && !statusReason) return null;
     return (
       <div className="space-y-1 px-3 py-1.5">
         <TabTooltipName name={fallbackName} className="font-normal" />

@@ -37,3 +37,29 @@ export const useIncomingProjectStore = create<IncomingProjectState>((set) => ({
   pendingProject: null,
   setPendingProject: (params) => set({ pendingProject: params }),
 }));
+
+const DECLINED_KEY = 'flowpad:shared-project-setup-declined';
+
+function declinedIds(): string[] {
+  try {
+    const ids: unknown = JSON.parse(window.localStorage.getItem(DECLINED_KEY) || '[]');
+    return Array.isArray(ids) ? ids.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The person ticked "Don't ask me again" on this project's set-up: it is not offered on its
+ *  own any more. Their own click (the footer's "Set up") still opens it. */
+export function isSetupDeclined(projectId: string | undefined): boolean {
+  return !!projectId && declinedIds().includes(projectId);
+}
+
+export function declineSetup(projectId: string): void {
+  if (isSetupDeclined(projectId)) return;
+  try {
+    window.localStorage.setItem(DECLINED_KEY, JSON.stringify([...declinedIds(), projectId]));
+  } catch {
+    /* storage unavailable — the offer comes back next time, nothing worse */
+  }
+}

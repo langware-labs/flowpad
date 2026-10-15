@@ -5,10 +5,10 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "66d174046c25a9d45d4254c2a9409446319aeb0e123d522860b680960dfb5162",
+  "inputs_hash": "0ad9b12a82be0665c07c1bac44cbba40e578cae1189f7f59fcac403c72670203",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, evals, records, search and the SQLite layer underneath.",
+  "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
   "files": [
     {
       "name": "asset-capsules.md",
@@ -38,33 +38,33 @@
       "name": "data-source-asset.md",
       "rel_path": "data-source-asset.md",
       "title": "Data source assets",
-      "summary": "Layout and conventions of data driver and data source asset folders: manifest, source.py, helper modules, tests, and the DataSourceSpec file authored per configured source.",
-      "content_hash": "eed8f13f5c3c9bcb2b3ed34f754536aa3fb20e3e5fd87e2175f9bb6d57f10dc9",
-      "size_bytes": 19247
+      "summary": "Data driver and source asset folders: manifest, source.py, webhooks; an authored source settles to setup if its driver has verify(), else active, new until loaded.",
+      "content_hash": "594932f4eaceebb1cfd96eb39d49b4c0fa277069054bbb3013f20e5e2201dcb6",
+      "size_bytes": 22372
     },
     {
       "name": "data-sources-ui.md",
       "rel_path": "data-sources-ui.md",
       "title": "Data Sources UI (Frontend)",
-      "summary": "Frontend reference for the Data Sources screen: its components, add/edit/pause/replay/delete actions, and per-source health display",
-      "content_hash": "e3fb2d7f5dff20fb5d57d985f91af1c203736ed200919451515b727ed943c1ae",
-      "size_bytes": 6356
+      "summary": "Data Sources UI components, entity actions, URL-first navigation, health rendering, setup verification, and channels awaiting connection.",
+      "content_hash": "284384749a41493142034b82591bff48d508c0f2fc82d24a24170b68fcd6654d",
+      "size_bytes": 8446
     },
     {
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "How a DataSource ingests one external stream (driver, config, cursor, origin) into SourceItem records, from connecting to curating into a dataset.",
-      "content_hash": "d8c0e58bcba60163462a58b19ab9ae0171baec9c54d7cecb03880f285cc7ee4a",
-      "size_bytes": 33174
+      "summary": "DataSource lifecycle, source contracts, polling health, account identity, change envelopes, driver registration, and curated Dataset integration.",
+      "content_hash": "be649976bd165baa774719220eae5a5ab87dcf9100402855a9b304c2d90e5167",
+      "size_bytes": 35091
     },
     {
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec — schemas as Pydantic, the schema as the layout",
-      "summary": "DataSpec, the Pydantic base class for every schema: kinds versus schemas versus values, frozen extra-forbid behavior, and compiling runtime-arriving schemas into subclasses.",
-      "content_hash": "5edde292bf982d1f3541ecfee5aeed6798ef73f1b986857ad3c1d794ed449291",
-      "size_bytes": 21606
+      "summary": "DataSpec schemas, runtime schema compilation, typed dataset values, filesystem layouts, TypeInfo integration, and folder-defined schemas.",
+      "content_hash": "a518afdb1884c735ce9b6589fbf072e573c1659e605ec018337347442e462f05",
+      "size_bytes": 24435
     },
     {
       "name": "database.md",
@@ -78,9 +78,33 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Authoring guide to dataset folder layout on disk: dataset.json manifest, csv versus io_folder layouts, example normalization, and the metadata plus data JSON convention.",
-      "content_hash": "5555ea3969563d5d01a3430a46b7bc96d6bfd065feba6c7ecf4f07e75b6238b8",
-      "size_bytes": 20823
+      "summary": "Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows with eight row verbs, queries, counts, source curation, mirroring, editors and the schema tree.",
+      "content_hash": "ac9dc8e08576d10d6355f3fbedc333b99d9f8dfcc22a0ffc6624702319f1b54d",
+      "size_bytes": 36966
+    },
+    {
+      "name": "diskio-benchmarks.md",
+      "rel_path": "diskio-benchmarks.md",
+      "title": "diskio — measured results",
+      "summary": "Measured diskio performance comparing baseline, Python, and Rust implementations, with correctness checks and shadow-folder migration results.",
+      "content_hash": "d1296288cefde310b5004fa55d7c4a72a7ca9e5670c56323feba877a40c8de2c",
+      "size_bytes": 6500
+    },
+    {
+      "name": "diskio-design-benchmarks.md",
+      "rel_path": "diskio-design-benchmarks.md",
+      "title": "Benchmark results (FIXED unless a benchmark is rerun)",
+      "summary": "Design benchmarks comparing thirteen filesystem and parsing operations across Python and Rust, including parity, timings, and implementation recommendations.",
+      "content_hash": "e1d635e727ee132586c2a1e886457eaa8429f8587e1aef591c67353808d0cf03",
+      "size_bytes": 26938
+    },
+    {
+      "name": "diskio.md",
+      "rel_path": "diskio.md",
+      "title": "Interface proposal — v6 — FINAL (iteration 6)",
+      "summary": "Disk-I/O kernel contracts, Python and Rust backends, scanning hierarchy, shared value and transport rules, conformance, and implementation scope.",
+      "content_hash": "e606ef3bdb773468f0e8051b4df9e4092a815882ea29b530faf77ad34b023d85",
+      "size_bytes": 108550
     },
     {
       "name": "entity-index-sync.md",
@@ -94,41 +118,41 @@
       "name": "evals.md",
       "rel_path": "evals.md",
       "title": "Evals — a dataset's own eval, standard results, one report",
-      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run result kinds, verdicts, metrics, slices and the standard report",
-      "content_hash": "2c9b2a20ff27192738c4230ae03bfd349beeb15a1af6fe3ab3886b88ec1f5aed",
-      "size_bytes": 3283
+      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run kinds, verdicts, versioned values, the runner and its report, and the SmartNavigator eval.",
+      "content_hash": "e4a9e9c3f15b3557dfc61fe4b3a322b90ccb6b9754c41d14ab2fa3547bd71ac9",
+      "size_bytes": 3919
     },
     {
       "name": "folder-layout.md",
       "rel_path": "folder-layout.md",
       "title": "On-Disk Folder Layout",
-      "summary": "The on-disk layout of flow-cli: the per-instance ~/.flow home, records and records_data roots, shadow folder naming, RecordType constants and the source-file check.",
-      "content_hash": "d29f3075eeda0ec419dd9d5bc054764c5cdf34cc8ca9d1b13881cc7ab0197c11",
-      "size_bytes": 30913
+      "summary": "Per-instance Flowpad storage layout, records, provider directories, type-to-folder mapping, source extractors, and configuration-file security rules.",
+      "content_hash": "7c3b80719f97488aaa333768e601bec3cc10f6d89cac16d68ad4e40e1cbf6302",
+      "size_bytes": 30939
     },
     {
       "name": "fs_find.md",
       "rel_path": "fs_find.md",
       "title": "Filesystem Discovery Benchmark",
-      "summary": "Cross-platform benchmark of four recursive file-discovery methods, answering whether an OS-native index beats a Python walker and where the crossover lies.",
-      "content_hash": "fcd821d861bf42a8ad6fc1f8aaa5a59afcf2706f2177c57c8bcf26ecd2577640",
-      "size_bytes": 10536
+      "summary": "Cross-platform filesystem discovery benchmarks comparing Python walkers, native walkers, and OS indexes, including bootstrap latency findings and scale-dependent tradeoffs.",
+      "content_hash": "87ba14b4ca32f069ba97bbd9e18df978bcf112a2f278cfeceaaa91ca1ea944a5",
+      "size_bytes": 10481
     },
     {
       "name": "gitignore-walk.md",
       "rel_path": "gitignore-walk.md",
       "title": "Gitignore-Aware Filesystem Walk",
-      "summary": "The shared gitignore_walk() directory traversal: pre-order scandir DFS, symlink and unreadable-directory handling, and the single skip policy for gitignore and denylist.",
-      "content_hash": "246e2cbf4dd0e6afae3e1a66ef5be3d8ab6fe6de8d8ae1d817d89ac3bcc57dfc",
-      "size_bytes": 9504
+      "summary": "Shared gitignore-aware discovery walk, traversal and skip policies, backend selection, indexer options, and consumers.",
+      "content_hash": "b0ce2481bdd053bac106a80d46c2bda6fb8b67c78b4f1cdc97d4847bfea3de7f",
+      "size_bytes": 10221
     },
     {
       "name": "invalidation.md",
       "rel_path": "invalidation.md",
       "title": "Content Invalidation (file change → reindex → refresh)",
-      "summary": "The invalidation loop that turns an out-of-band file write into fresh UI content: the re-index trigger and the file-body re-read at the two outer edges.",
-      "content_hash": "71de6e8fa1a36f132fd4e2fd036ea8134bf6a116060a98e280f65840959de8a8",
-      "size_bytes": 10885
+      "summary": "File-change invalidation through reindexing, entity notifications, and frontend content refresh, including triggers, change tokens, and failure modes.",
+      "content_hash": "19fd73314d0d42e1031f41b15729cff631f4aa8350e6a89ef7611ca39ba29faa",
+      "size_bytes": 11098
     },
     {
       "name": "items_origins.md",
@@ -171,6 +195,14 @@
       "size_bytes": 4438
     },
     {
+      "name": "mirroring-a-system-of-record.md",
+      "rel_path": "mirroring-a-system-of-record.md",
+      "title": "Mirroring a system of record",
+      "summary": "How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.",
+      "content_hash": "b735c957d279b36d0a2d0ddc1f303bb0f3282b097410317b8621e07a6b014e34",
+      "size_bytes": 13092
+    },
+    {
       "name": "record-model.md",
       "rel_path": "record-model.md",
       "title": "Record Model",
@@ -190,9 +222,9 @@
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "Disk-to-index discovery in flow_sdk: the FSIndexer DFS walker, per-type slots, explicit-only indexing, session lookup, RecordQuery filtering and error records",
-      "content_hash": "14d20b5874ac8abc2538f412ef6425e4e4be112a54848625b208252caa25b5e3",
-      "size_bytes": 39764
+      "summary": "Filesystem record discovery through FSIndexer, per-type parsing and freshness, session lookup, filtering, explicit indexing, HTTP endpoints, and performance.",
+      "content_hash": "3e69db4bcdebda1fe52297a30202e81206bd9465774f2d1f78038385775424e1",
+      "size_bytes": 40490
     },
     {
       "name": "schema-registry.md",
@@ -236,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:50:02Z",
+  "generated_at": "2026-10-15T08:55:59.822110+00:00",
   "latest_process_ref": ""
 }

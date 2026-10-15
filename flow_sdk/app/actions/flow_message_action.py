@@ -2349,6 +2349,72 @@ async def stream_inbox_search() -> ApiResponse:
         return ApiFailResponse(message=f"Search failed: {str(e)}")
 
 
+async def load_older(*, before: datetime, page_size: int, agent_id: Optional[str] = None, source_id: Optional[str] = None) -> dict:
+    """Ask a stream inbox's sources for their page of messages older than ``before`` — the step a paged
+    list takes past its oldest held row. ``source_id`` asks that one source; ``agent_id`` the Agent's
+    (its resolved scope); else the local user's. Only a source that reads backwards is asked.
+    ``exhausted``: no source has anything older to give."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.ingest.sync import read_older  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import default_owner, owner_of  # noqa: PLC0415
+
+    if source_id:
+        rows = [row for row in [await DataSource.get_by_id(source_id)] if row is not None]
+    elif scope := await _optional_agent_stream_inbox_scope(agent_id):
+        rows = [row for sid in sorted(scope.source_ids) if (row := await DataSource.get_by_id(sid)) is not None]
+    else:
+        mine = str(await default_owner() or "")
+        rows = [
+            row for row in await DataSource.get_all({"status": SourceStatus.ACTIVE.value}) or []
+            if str(await owner_of(row) or "") == mine
+        ]
+    backward = {}
+    for provider in {row.provider for row in rows}:
+        driver = await DataDriver.find(provider)
+        backward[provider] = driver is not None and driver.cls.pages_backward
+    sources = [row for row in rows if backward[row.provider]]
+    answers = await asyncio.gather(*(read_older(row, before, page_size) for row in sources), return_exceptions=True)
+    fetched, exhausted = 0, True
+    for row, answer in zip(sources, answers):
+        if isinstance(answer, BaseException):
+            # A source that failed may still hold older messages: never report the list as exhausted for it.
+            logger.warning("[stream-inbox] load-older %s failed: %s", row.id, answer)
+            exhausted = False
+            continue
+        fetched += answer[0]
+        exhausted = exhausted and answer[1]
+    if fetched:
+        stream_inbox.touch("stream-inbox-load-older")
+    return {"fetched": fetched, "exhausted": exhausted}
+
+
+@action.post(action_name="stream-inbox-load-older", types=None)
+async def stream_inbox_load_older() -> ApiResponse:
+    """One page older than ``before`` from the stream inbox's sources. Body: ``{"before": "<iso>",
+    "agent_id"?: "<id>", "source_id"?: "<id>", "page_size"?: n}`` → ``{"fetched": n, "exhausted": bool}``."""
+    from flow_sdk.sources.values.page import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE  # noqa: PLC0415
+
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        before = iso_to_utc(body.get("before")) if body.get("before") else None
+        if before is None:
+            return ApiFailResponse(message="'before' (an ISO time) is required", status_code=400)
+        page_size = min(max(int(body.get("page_size") or DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
+        return ApiSuccessResponse(data=await load_older(
+            before=before, page_size=page_size, agent_id=body.get("agent_id") or None,
+            source_id=body.get("source_id") or None,
+        ))
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
+    except Exception as e:
+        logger.error("[flow_message_action] stream-inbox-load-older error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Load older failed: {str(e)}")
+
+
 @action.post(action_name="stream-inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
 async def stream_inbox_update() -> ApiResponse:
     """Update is_read / is_archived on a single FlowMessage."""
@@ -4326,8 +4392,8 @@ async def _prune_expired_invitations() -> None:
 
     The hub keeps expired Invitation rows as an audit trail but no longer
     returns them from ``pending``, so nothing ever updates the local mirror
-    again — without this prune a dead invitation sits in the stream inbox forever
-    (the v0.2.9x "10 phantom Organization invitations" incident). Only
+    again — without this prune a dead invitation sits in the stream inbox
+    forever. Only
     ``remote`` (hub-mirrored) rows are touched: the hub's audit copy stays;
     accepted rows are memberships now and are never invitations to prune.
     """
@@ -4471,16 +4537,15 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         #   302 — post-accept landing redirect: ``Location`` points at
         #         ``/flow_message/<id>`` or ``/conversation/<id>``. The hub
         #         became browser-friendly and redirects the user to the
-        #         unlocked entity after a successful accept. Verified on
-        #         2026-05-28 with a real invitation against app.flowpad.ai.
+        #         unlocked entity after a successful accept.
         #   409 — already accepted (recipient clicked the email link first).
         #         No usable body, but server-side state is what we want and
         #         local cleanup still has work to do (mark accepted, sync).
         #
         # A 302 from this endpoint ALWAYS means the hub bounced us to
         # ``/login.html`` because the request was unauthenticated — the
-        # accept did NOT execute. Probed against app.flowpad.ai on
-        # 2026-05-28: 302 → ``/login.html?target_path=...`` for both
+        # accept did NOT execute. The hub answers
+        # 302 → ``/login.html?target_path=...`` for both
         # missing and invalid Authorization headers. Earlier this code
         # accepted 302 as success and ran local cleanup, which wrote
         # ``accepted=True`` locally for an invitation the hub never
@@ -4491,7 +4556,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 location = resp.headers.get("location") or resp.headers.get("Location") or ""
                 low = location.lower()
                 # A redirect to a login page IS the unauthenticated bounce
-                # (e.g. app.flowpad.ai → /login.html). The accept did NOT run.
+                # (e.g. ``/login.html``). The accept did NOT run.
                 if "login" in low:
                     return ApiFailResponse(
                         message=(

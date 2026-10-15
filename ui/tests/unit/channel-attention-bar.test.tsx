@@ -46,6 +46,16 @@ describe('attentionReason', () => {
       { health: 'ok', error_code: 'write_back_held', error_detail: 'notes.md' },
       { kind: 'held', text: 'notes.md' },
     ],
+    [
+      'mirror failed',
+      { health: 'ok', error_code: 'mirror_failed', error_detail: "mirrors into 'ghosts', which its project does not hold" },
+      { kind: 'mirror', text: "mirrors into 'ghosts', which its project does not hold" },
+    ],
+    [
+      'mirror misfit',
+      { health: 'ok', error_code: 'mirror_misfit', error_detail: '1 record(s) did not fit the row kind: t-2' },
+      { kind: 'mirror', text: '1 record(s) did not fit the row kind: t-2' },
+    ],
     ['retrying', { health: 'transient_error', error_detail: 'IMAP: timed out' }, { kind: 'retrying', text: 'IMAP: timed out' }],
     ['listening', {}, null],
   ])('%s: names the kind and speaks the source’s own words', (_name, fields, want) => {

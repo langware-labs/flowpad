@@ -799,6 +799,7 @@ class ScanActionsMixin:
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
+            process.enable_pending_question_hook()
             # Stamp provenance links before save so they ride the same write.
             # Invalid / unparseable typeids are skipped — a bad provenance hint
             # must never block a launch.
@@ -1338,7 +1339,8 @@ class ScanActionsMixin:
             from flow_sdk.builtin.worker_history import get_worker_session_name
 
             session_name = await get_worker_session_name(
-                worker_type, session_id,
+                worker_type,
+                session_id,
                 jsonl_path=Path(transcript_path) if transcript_path else None,
                 prompt_fallback=True,
             )

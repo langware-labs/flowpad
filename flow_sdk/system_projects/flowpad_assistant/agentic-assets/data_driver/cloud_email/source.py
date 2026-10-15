@@ -26,8 +26,9 @@ so ``files`` takes nothing and an inbound attachment keeps its name, type and si
 """
 from __future__ import annotations
 
+import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
 
 from flow_sdk.sources.base import positive_int
@@ -63,6 +64,8 @@ CHANNEL = "email"
 PAGE_LIMIT = 25
 #: How far back an exclusive ``after`` is nudged, so the boundary second is never eaten.
 BOUNDARY_NUDGE_SECONDS = 1
+#: Messages one backward read fetches in full at once.
+OLDER_CONCURRENCY = 6
 _MARK = "mark:"
 #: Why an inbound attachment has no bytes on this machine.
 NO_ATTACHMENT_BYTES = "the hub mailbox does not serve attachment bytes yet"
@@ -121,6 +124,9 @@ class CloudEmailSource(EmailAddressing, MessageSource):
     identity_config_key = "agent_id"
     #: Mailbox-grade while watched.
     attention_poll_seconds = 5
+    #: ``narrow={"before": t}`` reads one page of the mailbox older than ``t`` — the hub's own
+    #: ``before`` filter with its default newest-first order.
+    pages_backward = True
 
     def __init__(self, binding: SourceBinding, mailbox: Optional[MailboxTransport] = None) -> None:
         super().__init__(binding)
@@ -183,6 +189,8 @@ class CloudEmailSource(EmailAddressing, MessageSource):
         if query.conversation is not None:
             raise Unsupported("a hub mailbox is listed whole; it does not read one thread")
         limit = min(self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE), 100)
+        if query.before is not None:
+            return await self._older(query.before, limit)
         mark = _Mark.decode(cursor, floor=query.since.isoformat() if query.since and cursor is None else "")
         # Deliberately no `labels` filter: our own sent copies come back through this very listing,
         # and filtering to `received` would make every reply vanish from its own thread. The nudged
@@ -216,6 +224,34 @@ class CloudEmailSource(EmailAddressing, MessageSource):
             next_cursor=token if more else None,
             resume_cursor=token or (cursor if isinstance(cursor, str) and cursor.startswith(_MARK) else None),
         )
+
+    async def _older(self, before: datetime, limit: int) -> ChangePage:
+        """One page of messages sent strictly before ``before``, newest first. The hub's ``before`` is
+        asked for and the bound re-checked here, so a provider that reads it inclusively or by
+        string order cannot leak the boundary. Neither reads nor moves the forward cursor."""
+        bound = before.astimezone(timezone.utc)
+        stamp = bound.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        listing = await self.mailbox.list_messages(self.agent_id, limit=str(limit), before=stamp)
+        rows = [(when, m) for m in listing.get("messages") or [] if (when := _when(m.get("timestamp"))) and when < bound]
+        rows.sort(key=lambda pair: pair[0], reverse=True)
+        wanted = [(m, str(m.get("message_id") or "")) for _, m in rows[:limit]]
+        wanted = [(m, message_id) for m, message_id in wanted if message_id]
+        gate = asyncio.Semaphore(OLDER_CONCURRENCY)
+
+        async def read(message_id: str) -> Any:
+            async with gate:
+                try:
+                    return await self.mailbox.get_message(self.agent_id, message_id)
+                except SourceError as error:
+                    return error
+
+        fulls = await asyncio.gather(*(read(message_id) for _, message_id in wanted))
+        items: list[MessageItem] = []
+        for (message, _), full in zip(wanted, fulls):
+            if isinstance(full, SourceError):
+                break  # history is a best-effort page: what was read before the first failure, newest first
+            items.append(self._item(full or message))
+        return ChangePage(items=tuple(items))
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None

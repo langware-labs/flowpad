@@ -15,6 +15,11 @@ and Drive are the same shape with a different prompt.
 `modes/connect.md` still drives the gates, and `scripts/source_ctl.py` still
 creates the row. Load this file for what is true here and nowhere else.
 
+
+## FlowCall integration
+
+For finite processing of a source page, use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md). Keep paging, cursors, source sessions and provider effects in their existing owners; a successful admission or empty page is not proof that a full source sync completed.
+
 ## 1. The sync result reports nothing, and that is success
 
 ```python

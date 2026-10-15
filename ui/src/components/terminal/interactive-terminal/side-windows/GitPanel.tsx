@@ -1,8 +1,10 @@
 import { i18n } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
-import { GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { AgenticProcess, GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
+  ArrowLeft,
   Check,
   Copy,
   Eye,
@@ -28,6 +30,9 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 import type { MessageDescriptor } from '@lingui/core';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import type { WorkerType } from '@src/components/workers/worker-types';
+import { notify } from '@src/notifications';
 
 interface GitPanelProps {
   computeNodeId: string;
@@ -115,7 +120,7 @@ const UNDO_VARIANTS: Record<
 type BucketKey = 'new' | 'changed' | 'removed';
 
 function bucketOf(status: string): BucketKey {
-  if (status === '?') return 'new';
+  if (status === '?' || status === 'A') return 'new';
   if (status === 'D') return 'removed';
   return 'changed';
 }
@@ -126,13 +131,15 @@ const BUCKETS: { key: BucketKey; label: MessageDescriptor; icon: LucideIcon; ton
   { key: 'removed', label: msg`Removed`, icon: FileMinus, tone: 'border-red-500/40 bg-red-500/10 text-red-500' },
 ];
 
-function actionsFor(file: GitStatusFile, mode: GitMode): GitAction[] {
+function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAction[] {
   const view: GitAction = {
     key: 'diff',
     label: t`View`,
     tooltip: t`View the changes in this file`,
     icon: Eye,
   };
+
+  if (readOnly) return [view];
 
   // The state-aware "undo" action — same backend op (discard-file), but its
   // label/tooltip/icon read differently per status so it always says what it
@@ -233,11 +240,51 @@ const HeaderChip: React.FC<{ title?: string; testId?: string; className?: string
 );
 
 // ---------------------------------------------------------------------------
+// Review in a worker — the message menu's launch bar, with a git-review prompt.
+// A commit hash reviews that commit; none reviews the uncommitted changes.
+// ---------------------------------------------------------------------------
+
+function reviewPrompt(commit?: string): string {
+  return commit
+    ? `Review the changes in commit ${commit} (git show ${commit}).`
+    : 'Review the uncommitted changes in this repo, staged and unstaged (git diff HEAD).';
+}
+
+const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix: string }> = ({
+  workdir,
+  commit,
+  testIdPrefix,
+}) => {
+  const launch = useCallback(
+    async (workerType: WorkerType) => {
+      try {
+        await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+      } catch (err) {
+        console.error('[GitPanel] review launch failed', err);
+        notify.error({ title: t`Failed to start session` });
+      }
+    },
+    [workdir, commit],
+  );
+  return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
+};
+
+// ---------------------------------------------------------------------------
 // ↑N badge — click to list the commits it counts (hash + one-liner). Loaded on
 // open, so the 5s status poll never pays for a `git log`.
 // ---------------------------------------------------------------------------
 
-const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number }> = ({ git, ahead }) => {
+const UnpushedCommitsBadge: React.FC<{
+  git: GitWorkdir;
+  workdir: string;
+  ahead: number;
+  onSelect: (commit: GitRevision) => void;
+}> = ({
+  git,
+  workdir,
+  ahead,
+  onSelect,
+}) => {
   const [commits, setCommits] = useState<GitRevision[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -282,10 +329,17 @@ const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number }> = ({ gi
               <li
                 key={c.hash}
                 title={`${c.author} · ${new Date(c.date).toLocaleString()}`}
-                className="flex min-w-0 items-baseline gap-2 px-3 py-1 text-xs"
+                className="flex items-center gap-1 pe-2"
               >
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.hash.slice(0, 7)}</span>
-                <span className="truncate">{c.message}</span>
+                <button
+                  type="button"
+                  onClick={() => onSelect(c)}
+                  className="flex w-full min-w-0 items-baseline gap-2 px-3 py-1 text-start text-xs hover:bg-muted focus-visible:bg-muted"
+                >
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.hash.slice(0, 7)}</span>
+                  <span className="truncate">{c.message}</span>
+                </button>
+                <ReviewInWorker workdir={workdir} commit={c.hash} testIdPrefix={`git-review-${c.hash.slice(0, 7)}`} />
               </li>
             ))}
           </ul>
@@ -302,7 +356,39 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<GitStatusFile | null>(null);
+  const { currentDock, navigation } = useDockNavigation();
+  // One URL option carries the repo, commit and file together, so Back restores
+  // the exact review and selecting another commit cannot retain a stale file.
+  const review = useMemo(() => {
+    try {
+      const value = JSON.parse(currentDock?.options?.gitReview ?? 'null');
+      return value?.workdir === workdir && value?.node === computeNodeId ? value : null;
+    } catch {
+      return null;
+    }
+  }, [currentDock?.options?.gitReview, workdir, computeNodeId]);
+  const revision = typeof review?.revision === 'string' ? review.revision : undefined;
+  const selectedFile =
+    typeof review?.file?.path === 'string' && typeof review?.file?.status === 'string'
+      ? (review.file as Pick<GitStatusFile, 'path' | 'status'>)
+      : null;
+  const openReview = useCallback(
+    (commit?: string, file?: Pick<GitStatusFile, 'path' | 'status'>) => {
+      navigation.setOption(
+        'gitReview',
+        commit || file ? JSON.stringify({ workdir, node: computeNodeId, revision: commit, file }) : null,
+      );
+    },
+    [navigation, workdir, computeNodeId],
+  );
+  const selectFile = useCallback(
+    (file: GitStatusFile) => openReview(revision, { path: file.path, status: file.status }),
+    [openReview, revision],
+  );
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const requestRef = useRef(0);
+  const [settingUpstream, setSettingUpstream] = useState(false);
+  const [upstreamError, setUpstreamError] = useState<string | null>(null);
   const [mode, setMode] = useState<GitMode>('standard');
   // Row currently awaiting destructive confirmation, keyed by `${path}::${key}`.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
@@ -317,16 +403,21 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
 
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
+    const request = ++requestRef.current;
     try {
-      const result = await git.getStatus({ lineCounts: true });
-      if (mountedRef.current) {
+      const result = await git.getStatus({ lineCounts: true, ...(revision ? { revision } : {}) });
+      if (mountedRef.current && request === requestRef.current) {
+        setFetchError(null);
         setData(result ?? null);
         setLoading(false);
       }
-    } catch {
-      if (mountedRef.current) setLoading(false);
+    } catch (error) {
+      if (mountedRef.current && request === requestRef.current) {
+        setFetchError(String(error));
+        setLoading(false);
+      }
     }
-  }, [computeNodeId, workdir, git]);
+  }, [computeNodeId, workdir, git, revision]);
 
   const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => {
     void fetchStatus();
@@ -364,7 +455,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const handleAction = useCallback(
     (file: GitStatusFile, action: GitAction) => {
       if (action.key === 'diff') {
-        setSelectedFile(file);
+        selectFile(file);
         return;
       }
       if (action.key === 'copyPath') {
@@ -379,21 +470,25 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
       }
       void runFileOp(file, action.subpath);
     },
-    [runFileOp],
+    [runFileOp, selectFile],
   );
 
   useEffect(() => {
     mountedRef.current = true;
     setLoading(true);
+    setData(null);
+    setFetchError(null);
     void fetchStatus();
-    const interval = setInterval(() => {
-      void fetchStatus();
-    }, 5000);
+    const interval = revision
+      ? undefined
+      : setInterval(() => {
+          void fetchStatus();
+        }, 5000);
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
     };
-  }, [fetchStatus]);
+  }, [fetchStatus, revision]);
 
   const handleGitInit = useCallback(async () => {
     if (!workdir) return;
@@ -419,7 +514,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const renderFileRow = (f: GitStatusFile, i: number) => {
     const name = basename(f.path);
     const dir = dirname(f.path);
-    const actions = actionsFor(f, mode);
+    const actions = actionsFor(f, mode, !!revision);
     const confirming = actions.find((a) => confirmingKey === `${f.path}::${a.key}`);
     const busy = busyPath === f.path;
     const err = rowError?.path === f.path ? rowError.message : null;
@@ -428,7 +523,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
         <div className="flex w-full items-center gap-2 px-2 py-1">
           <button
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-start"
-            onClick={() => setSelectedFile(f)}
+            onClick={() => selectFile(f)}
           >
             <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>{f.status}</span>
             <div className="min-w-0 flex-1 truncate">
@@ -515,124 +610,179 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b px-3 py-2">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate text-sm font-medium">
-                {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
-              </span>
-              {data && !data.error && data.branch && (
-                <CopyButton
-                  value={data.branch}
-                  title={t`Copy branch name`}
-                  testId="git-panel-copy-branch"
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                  copiedIconClassName="text-green-500"
-                />
-              )}
-              {data && !data.error && data.branch && !data.upstream && (
-                <HeaderChip
-                  title={data.remoteUrl ? t`Not on the remote yet — Push publishes this branch` : t`No remote configured`}
-                  testId="git-panel-no-upstream"
-                >
-                  <Trans>No remote branch</Trans>
-                </HeaderChip>
-              )}
-              {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
-                <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
-                  <Trans>Up to date</Trans>
-                </HeaderChip>
-              )}
-              {data && !data.error && data.ahead > 0 && <UnpushedCommitsBadge git={git} ahead={data.ahead} />}
-              {data && !data.error && data.behind > 0 && (
-                <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
-              )}
+        {revision && (
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <Button variant="ghost" size="sm" onClick={() => openReview()} className="h-6 gap-1 px-1.5 text-xs">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <Trans>Working tree</Trans>
+            </Button>
+            <span className="text-xs font-medium">
+              <Trans>Commit</Trans> <span className="font-mono">{revision.slice(0, 7)}</span>
+            </span>
+            <div className="ms-auto">
+              <ReviewInWorker workdir={workdir} commit={revision} testIdPrefix="git-review-commit" />
             </div>
-            {data && !data.error && data.remoteUrl && (
-              <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
-                {data.remoteWebUrl ? (
-                  <button
-                    type="button"
-                    onClick={() => openExternal(data.remoteWebUrl!)}
-                    title={t`Open in browser`}
-                    data-testid="git-panel-open-remote"
-                    className="truncate hover:text-foreground hover:underline"
-                  >
-                    {data.remoteUrl}
-                  </button>
-                ) : (
-                  <span className="truncate" data-testid="git-panel-remote">
-                    {data.remoteUrl}
+          </div>
+        )}
+        {/* Header */}
+        {!revision && (
+          <div className="flex items-center justify-between border-b px-3 py-2">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <span className="truncate text-sm font-medium">
+                  {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
+                </span>
+                {data && !data.error && data.branch && (
+                  <CopyButton
+                    value={data.branch}
+                    title={t`Copy branch name`}
+                    testId="git-panel-copy-branch"
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
+                    copiedIconClassName="text-green-500"
+                  />
+                )}
+                {data && !data.error && data.branch && !data.upstream && (
+                  <>
+                    <HeaderChip
+                      title={data.upstreamCandidate ? t`Track ${data.upstreamCandidate}` : t`No upstream configured`}
+                      testId="git-panel-no-upstream"
+                    >
+                      <Trans>No upstream configured</Trans>
+                    </HeaderChip>
+                    {data.upstreamCandidate && (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="h-5 px-1 text-xs"
+                        data-testid="git-panel-set-upstream"
+                        disabled={settingUpstream}
+                        onClick={async () => {
+                          setSettingUpstream(true);
+                          setUpstreamError(null);
+                          try {
+                            const result = await git.setUpstream(data.branch!);
+                            if (result.error) setUpstreamError(result.error);
+                            else {
+                              await fetchStatus();
+                              onPushed?.();
+                            }
+                          } catch (error) {
+                            setUpstreamError(String(error));
+                          } finally {
+                            setSettingUpstream(false);
+                          }
+                        }}
+                      >
+                        <Trans>Set it</Trans>
+                      </Button>
+                    )}
+                  </>
+                )}
+                {upstreamError && (
+                  <span role="alert" className="text-xs text-destructive">
+                    {upstreamError}
                   </span>
                 )}
-                <CopyButton
-                  value={data.remoteUrl}
-                  title={t`Copy remote URL`}
-                  testId="git-panel-copy-remote"
-                  className="shrink-0 hover:text-foreground"
-                  iconClassName="h-2.5 w-2.5"
-                  copiedIconClassName="text-green-500"
-                />
+                {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
+                  <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
+                    <Trans>Up to date</Trans>
+                  </HeaderChip>
+                )}
+                {data && !data.error && data.ahead > 0 && (
+                  <UnpushedCommitsBadge git={git} workdir={workdir} ahead={data.ahead} onSelect={(commit) => openReview(commit.hash)} />
+                )}
+                {data && !data.error && data.behind > 0 && (
+                  <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
+                )}
               </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            {!data?.error && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setMode((m) => (m === 'standard' ? 'advanced' : 'standard'))}
-                    className="h-6 px-1.5 text-[10px] capitalize"
-                    data-testid="git-panel-mode"
-                  >
-                    {mode}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  <span className="font-medium">
-                    {mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}
-                  </span>
-                  <span className="block text-muted-foreground">
-                    {mode === 'standard' ? (
-                      <Trans>Simple actions — click to show all git operations</Trans>
-                    ) : (
-                      <Trans>All git operations — click for simplified actions</Trans>
-                    )}
-                  </span>
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {!data?.error && (
+              {data && !data.error && data.remoteUrl && (
+                <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
+                  {data.remoteWebUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => openExternal(data.remoteWebUrl!)}
+                      title={t`Open in browser`}
+                      data-testid="git-panel-open-remote"
+                      className="truncate hover:text-foreground hover:underline"
+                    >
+                      {data.remoteUrl}
+                    </button>
+                  ) : (
+                    <span className="truncate" data-testid="git-panel-remote">
+                      {data.remoteUrl}
+                    </span>
+                  )}
+                  <CopyButton
+                    value={data.remoteUrl}
+                    title={t`Copy remote URL`}
+                    testId="git-panel-copy-remote"
+                    className="shrink-0 hover:text-foreground"
+                    iconClassName="h-2.5 w-2.5"
+                    copiedIconClassName="text-green-500"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              {!data?.error && (data?.files?.length ?? 0) > 0 && (
+                <ReviewInWorker workdir={workdir} testIdPrefix="git-review-changes" />
+              )}
+              {!data?.error && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setMode((m) => (m === 'standard' ? 'advanced' : 'standard'))}
+                      className="h-6 px-1.5 text-[10px] capitalize"
+                      data-testid="git-panel-mode"
+                    >
+                      {mode}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    <span className="font-medium">
+                      {mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}
+                    </span>
+                    <span className="block text-muted-foreground">
+                      {mode === 'standard' ? (
+                        <Trans>Simple actions — click to show all git operations</Trans>
+                      ) : (
+                        <Trans>All git operations — click for simplified actions</Trans>
+                      )}
+                    </span>
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {!data?.error && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void push()}
+                  disabled={pushing}
+                  className="h-6 gap-1 px-1.5 text-[10px]"
+                  title="git push"
+                  data-testid="git-panel-push"
+                >
+                  <GitPushIcon busy={pushing} />
+                  <Trans>Push</Trans>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => void push()}
-                disabled={pushing}
-                className="h-6 gap-1 px-1.5 text-[10px]"
-                title="git push"
-                data-testid="git-panel-push"
+                onClick={() => {
+                  setLoading(true);
+                  void fetchStatus();
+                }}
+                className="h-6 w-6 p-0"
               >
-                <GitPushIcon busy={pushing} />
-                <Trans>Push</Trans>
+                <RefreshCw className="h-3.5 w-3.5" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setLoading(true);
-                void fetchStatus();
-              }}
-              className="h-6 w-6 p-0"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-            </Button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Summary chips — new / changed / removed, at a glance */}
         {data && !data.error && (
@@ -682,7 +832,11 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-1">
-          {loading && !data ? (
+          {fetchError ? (
+            <p role="alert" className="p-3 text-xs text-destructive">
+              {fetchError}
+            </p>
+          ) : loading && !data ? (
             <div className="flex flex-col gap-1.5 p-2">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-7 animate-pulse rounded bg-muted" />
@@ -734,8 +888,9 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
             workdir={workdir}
             filepath={selectedFile.path}
             status={selectedFile.status}
+            revision={revision}
             open={!!selectedFile}
-            onClose={() => setSelectedFile(null)}
+            onClose={() => openReview(revision)}
           />
         )}
       </div>

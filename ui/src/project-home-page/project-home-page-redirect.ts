@@ -9,6 +9,7 @@ import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
 import { lastVibeChatQuery, pickLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
+import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM } from './dependency-home';
 import { HOME_PAGE_OPEN, HOME_PAGE_PARAM, rememberProjectHomePage } from './home-page-state';
 
 /** Registration IS the switch: `false` takes the resolver out of the chain entirely. */
@@ -54,9 +55,19 @@ async function mintHomeChat(agentTypeId: string, projectId: string): Promise<str
  */
 export async function homePageDock(data: ProjectHomePage, projectId: string): Promise<DockPointer | null> {
   if (!data.asset || !data.type) return null;
-  if (data.type === Agent.type) return agentHomePageDock(data.asset, projectId);
+  if (data.type === Agent.type) {
+    // Never launch an agent while its provider is still waiting for setup approval.
+    if (data.lifecycle && data.lifecycle.state !== 'ready') {
+      return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type })
+        ?.withScopeFilter(projectScope(projectId))
+        .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle.project_id)
+        .withOption(HOME_AGENT_PARAM, data.asset) ?? null;
+    }
+    return agentHomePageDock(data.asset, projectId);
+  }
   if (isAppType(data.type)) {
-    return DockPointer.forAppEntity(new TypeId(data.asset)).withScopeFilter(projectScope(projectId));
+    return DockPointer.forAppEntity(new TypeId(data.asset)).withScopeFilter(projectScope(projectId))
+      .withOption(PROVIDER_PROJECT_PARAM, data.lifecycle?.project_id || projectId);
   }
   return dockForDisplayTarget({ kind: 'entity', typeid: data.asset, type: data.type });
 }

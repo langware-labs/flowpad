@@ -1,5 +1,5 @@
 /**
- * The schema tree's pointer: the selection inside ONE project, as a path. The project is the
+ * The schema tree's pointer: the selection, as a path of kinds. The project is the
  * address's scope (`?scope-mode=project&scope-activeProjectId=<id>`), like every project screen.
  *
  *   /dock/schema-tree                          the project
@@ -7,7 +7,7 @@
  *   /dock/schema-tree/<kind>/<kind>…           a schema reached through the ones that use it
  *   /dock/schema-tree/source:<id>              one of the project's data sources
  *
- * A kind is spelled in full (`--gtm_studio--.gtm.icp`): its characters need no escaping.
+ * A kind is spelled in full (`--sales_desk--.crm.lead`): its characters need no escaping.
  * No React here: the parser is shared by the view and the address bar.
  */
 export const SOURCE_SEGMENT = 'source:';

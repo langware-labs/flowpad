@@ -216,6 +216,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_context_folder_worker",
         "test_artifact_real_worker",
         "test_call_returns_live",
+        "test_parked_worker_messages",
         # Not a CLI test: reads the real ``~/.flow/instances/*`` rig (ports,
         # pids) of two running instances, which the sandbox HOME hides.
         "test_ws_reconnect_message_catchup",
@@ -224,7 +225,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 
 @pytest.fixture(autouse=True)
-async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver):
+async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver):  # noqa: F811 — the fixture is imported below
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
@@ -421,7 +422,8 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
         # ``agents_on_mock_worker`` boots the same server with every agent turn on MockDriver.
         command = (
             [sys.executable, str(Path(__file__).resolve().parents[1] / "e2e" / "mock_worker_backend.py")]
-            if os.environ.get(_MOCK_WORKER_BACKEND) else [sys.executable, "-m", "flow_sdk.server.run"]
+            if os.environ.get(_MOCK_WORKER_BACKEND)
+            else [sys.executable, "-m", "flow_sdk.server.run"]
         )
         proc = subprocess.Popen(command, env=env, stdout=sink, stderr=sink)
 
@@ -554,7 +556,10 @@ def _openrouter_key() -> str:
     import re
 
     key = os.environ.get("OPENROUTER_API_KEY", "")
-    for env_file in (Path(__file__).resolve().parents[2] / ".env.local", Path(os.environ.get("FLOWPAD_MAIN_CHECKOUT", "")) / ".env.local"):
+    for env_file in (
+        Path(__file__).resolve().parents[2] / ".env.local",
+        Path(os.environ.get("FLOWPAD_MAIN_CHECKOUT", "")) / ".env.local",
+    ):
         if not key and env_file.is_file():
             match = re.search(r"^OPENROUTER_API_KEY=(.+)$", env_file.read_text(), re.M)
             key = match.group(1).strip().strip("'\"") if match else ""

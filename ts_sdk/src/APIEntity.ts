@@ -54,6 +54,20 @@ export interface EntityMember {
   [key: string]: unknown;
 }
 
+/**
+ * The hub's roster keys (``user_email`` / ``user_name`` / ``user_picture``) in the client form.
+ * The local server does this in ``_normalize_hub_response``, but a hub-only frontend reads the hub
+ * directly and skips it — so an invited user with no name rendered as "unknown".
+ */
+export function normalizeMember(m: EntityMember): EntityMember {
+  return {
+    ...m,
+    email: m.email ?? (m.user_email as string | null | undefined) ?? null,
+    name: m.name ?? (m.user_name as string | null | undefined) ?? null,
+    picture: m.picture ?? m.user_picture ?? null,
+  };
+}
+
 /** Why a copy exists on disk, as classified by the backend path rules. */
 export type AssetOccurrenceOrigin = 'installed_package' | 'dependency' | 'local';
 
@@ -1069,7 +1083,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const res = await dataManager.callAction<undefined, EntityMember[]>(info);
     // Defensive: the hub utils coerce empty lists to {} upstream
     // (`resp.json().get('data') or {}`); treat any non-array as "no members".
-    this._membersCache = Array.isArray(res) ? res : [];
+    this._membersCache = (Array.isArray(res) ? res : []).map(normalizeMember);
     return this._membersCache;
   }
 

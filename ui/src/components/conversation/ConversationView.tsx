@@ -1,5 +1,5 @@
 import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
-import { useMessageAutomationSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -23,6 +23,7 @@ import {
   RemoteWorkerSession,
   Task,
   toplog,
+  dataContext,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -41,6 +42,7 @@ import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { MessageComposer } from './MessageComposer';
+import { ConversationActions, ConversationEndedLine } from './ConversationActions';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -53,6 +55,7 @@ import {
   shouldShowSoloSendNotice,
   type ConversationItem,
 } from './conversation-items';
+import { indexCalls, runningProcessCalls } from './process-call';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -303,7 +306,11 @@ export function ConversationView({
   });
   const launchWorkerOnMessage = useCallback(
     (messageId: string, worker: WorkerType) =>
-      launchWorker(worker, () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId))),
+      launchWorker(
+        worker,
+        () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+        messageId,
+      ),
     [launchWorker, conversationTypeId],
   );
 
@@ -354,7 +361,7 @@ export function ConversationView({
   const handledKeys = useHandledKeys(answered ? conversation?.channel_source_id : null);
   // The sessions automations started on this conversation's messages (one live query): the chip on each
   // message, and the lifecycle line's handling / didn't-finish states.
-  const automationSessions = useMessageAutomationSessions(conversationId);
+  const { automation: automationSessions, manual: manualSessions } = useMessageSessions(conversationId);
   const lifecycles = useMemo(() => {
     // A channel nobody here answers still shows the way of a message an automation's agent took.
     if (!answered && automationSessions.size === 0) return null;
@@ -488,22 +495,47 @@ export function ConversationView({
   // messages collapse onto the message that opened the session (the anchor);
   // follow-ups, replies and lifecycle lines are hidden from the thread and
   // live in the session view.
+  // A prompt call's answer is a message of its own on the wire, but it reads as the call's status:
+  // it renders on the call's card, never as a bubble.
+  const calls = useMemo(() => indexCalls(messagesById.values()), [messagesById]);
+  // Calls running on this machine, asked once per conversation — and only while a call is still
+  // unanswered — so a card mounting mid-run says "working…".
+  const [runningCalls, setRunningCalls] = useState<ReadonlySet<string>>(() => new Set());
+  const askRunning = calls.unanswered;
+  useEffect(() => {
+    if (!askRunning) return;
+    let live = true;
+    void runningProcessCalls(conversationId)
+      .then((ids) => live && setRunningCalls(new Set(ids)))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [conversationId, askRunning]);
+  const promptCallFor = (id: string) => {
+    const call = calls.callByMessage.get(id);
+    if (!call) return null;
+    return { call, answer: calls.answerByCall.get(call.call_id) ?? null, running: runningCalls.has(call.call_id) };
+  };
   const groupedItems = useMemo(() => {
     const getFm = (id: string) => messagesById.get(id) ?? null;
+    const feed = orderedItems.filter(
+      (it) => !(it.kind === ConversationItemKind.POINTER && calls.answerMessageIds.has(it.messageId)),
+    );
     if (threadId) {
-      const inThread = orderedItems.filter((it) => itemThreadId(it, getFm) === threadId);
+      const inThread = feed.filter((it) => itemThreadId(it, getFm) === threadId);
       return anchorSessionItems(inThread, getFm, sessionAnchors);
     }
     const threaded: ConversationItem[] = [];
     const plain: ConversationItem[] = [];
-    for (const item of orderedItems) {
+    for (const item of feed) {
       (itemThreadId(item, getFm) ? threaded : plain).push(item);
     }
     return [
       ...groupThreadItems(threaded, getFm, threadCounts),
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
-  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
+  }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors, calls]);
 
   // Each live session's messages, in feed order: its card offers Retry on a failed prompt
   // (nothing answered it since) and names the prompt the host is working on.
@@ -554,6 +586,9 @@ export function ConversationView({
     if (item.kind === ConversationItemKind.POINTER) {
       const id = item.messageId;
       const fm = messagesById.get(id) ?? null;
+      // The pointer list lands before the message window: until the window
+      // arrives every bubble would fetch itself and flash "Loading message…".
+      if (!fm && !messagesLoaded && !messagesError) return null;
       if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
         return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
       }
@@ -589,12 +624,15 @@ export function ConversationView({
           lifecycle={lifecycles?.get(id) ?? null}
           onAutomate={conversation?.channel_source_id ? handleAutomate : undefined}
           automationSession={automationSessions.get(id) ?? null}
+          session={manualSessions.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={taskOfMessage(id) ?? threadTask}
           onTaskIt={handleTaskIt}
           taskPeople={taskPeople}
           onLaunchWorker={launchWorkerOnMessage}
+          promptCall={promptCallFor(id)}
+          callPeerName={otherParticipant?.name ?? otherParticipant?.email ?? null}
         />
       );
     }
@@ -739,7 +777,10 @@ export function ConversationView({
   // inside FlowMessageBubble — this only supplies the owner half of the gate.
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
-  const taskPeople = useMemo(() => ({ members: participants ?? [], me: myEmail, cloudUserId }), [participants, myEmail, cloudUserId]);
+  const taskPeople = useMemo(
+    () => ({ members: participants ?? [], me: myEmail, cloudUserId }),
+    [participants, myEmail, cloudUserId],
+  );
   // Owner = either created_by matches (recipient side, where the hub stamped the
   // cloud-user id) OR the local user holds role "owner" in the participant
   // roster (creator side, where created_by is the local user id). The roster is
@@ -904,6 +945,15 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       {approveSessionPicker}
+      {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
+      {conversation && (
+        <ConversationActions
+          conversation={conversation}
+          messages={conversationMessages}
+          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          onDone={() => void handleRefresh()}
+        />
+      )}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
@@ -1051,29 +1101,33 @@ export function ConversationView({
           {notSent.text ? ` “${notSent.text}”` : ''} — {notSent.reason}
         </p>
       )}
-      <MessageComposer
-        conversationId={conversationId}
-        onSent={() => void refetch()}
-        // A source-backed conversation replies into its channel, not the hub.
-        channel={channel}
-        onChannelSent={(text) => {
-          setNotSent(null);
-          setSendingText(text);
-        }}
-        placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
-        agentId={agentId ?? undefined}
-        sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
-        onStartLiveSession={() => void startLiveSession()}
-        channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-        replyTo={
-          replyTo
-            ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
-            : null
-        }
-        onClearReply={() => setReplyTo(null)}
-        threadTarget={threadTarget}
-        onTaskIt={handleTaskIt}
-      />
+      <ConversationEndedLine endedAt={conversation?.ended_at} />
+      {/* Held until the message window lands: on an empty feed it would sit at the top for a frame, then jump. */}
+      {(messagesLoaded || !!messagesError) && (
+        <MessageComposer
+          conversationId={conversationId}
+          onSent={() => void refetch()}
+          // A source-backed conversation replies into its channel, not the hub.
+          channel={channel}
+          onChannelSent={(text) => {
+            setNotSent(null);
+            setSendingText(text);
+          }}
+          placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
+          agentId={agentId ?? undefined}
+          sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+          onStartLiveSession={() => void startLiveSession()}
+          channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+          replyTo={
+            replyTo
+              ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes }
+              : null
+          }
+          onClearReply={() => setReplyTo(null)}
+          threadTarget={threadTarget}
+          onTaskIt={handleTaskIt}
+        />
+      )}
     </div>
   );
 }

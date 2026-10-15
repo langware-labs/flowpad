@@ -30,6 +30,7 @@ from flow_sdk.sources.values.items import (
     UserProfile,
 )
 from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.page import DataPage
 from flow_sdk.sources.values.query import DataQuery, MessageQuery
 
 
@@ -132,6 +133,7 @@ class MemoryMessages(MessageSource, MemoryStore):
     files = FileSupport(kinds=frozenset(FileKind), per_message=1, caption_max=1024)
     quotes = True
     reactions_per_actor = 1
+    pages_backward = True
     #: The emoji this channel can show — a stand-in for a provider's list.
     allowed_emoji: ClassVar[frozenset[str]] = frozenset({"👍", "👀", "✅", "❤️", "🔥", "🎉", "🙏", "😂"})
 
@@ -152,7 +154,24 @@ class MemoryMessages(MessageSource, MemoryStore):
             return True
         if query.conversation is not None and query.conversation != data.conversation:
             return False
+        if query.before is not None and (data.sent_at is None or data.sent_at >= query.before):
+            return False
         return query.since is None or (data.sent_at is not None and data.sent_at >= query.since)
+
+    async def fetch(self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None) -> DataPage:
+        """A ``before`` read is one page of the newest messages older than the bound — what a provider's
+        history call answers; every other read is the store's key-ordered listing."""
+        if not narrow or narrow.get("before") is None:
+            return await super().fetch(cursor, page_size=page_size, narrow=narrow)
+        self._require_open()
+        query = (self.query() or MessageQuery()).model_copy(update=dict(narrow))
+        limit = self.effective_page_size if page_size is None else page_size
+        older = sorted(
+            ((key, data) for key, data in self._records.items() if self._matches(query, data)),
+            key=lambda entry: entry[1].sent_at,
+            reverse=True,
+        )
+        return DataPage(items=tuple(self._item(key, data) for key, data in older[:limit]))
 
     def _store(self, data: DataSpec, key: Optional[str] = None) -> MessageItem:
         assert isinstance(data, MessageData)

@@ -34,6 +34,7 @@ registration in ``flow_sdk/schema/type_info/dataset_type_info.py``.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Optional
@@ -42,6 +43,7 @@ from pydantic import ValidationError, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity, action
+from flow_sdk.datasets.projection import ROW_KEY, delete_through, is_link, write_through
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.request_context.json_body import current_user_id, read_json_body
 from flow_sdk.request_context.methods import get_current_request_info
@@ -60,15 +62,26 @@ from flow_sdk.schema.data_spec.dataset_spec import (  # noqa: F401 — enums re-
 # Owned here (the model module) so writers (GraphWorkflowManager's born-compatible
 # example stamps) and the indexer's reader agree by construction.
 from flow_sdk.schema.data_spec.layout import EXAMPLE_META  # noqa: F401 — re-exported
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 
 #: What `examples` holds: paths, folders and cells — never file CONTENTS.
 ARTIFACT_ROW = DEFAULT_DATASET_SPEC.example_type()
 # The manifest — also the repo walker's marker for "this folder is a dataset".
 MANIFEST = "dataset.json"
 
+logger = logging.getLogger(__name__)
+# One write at a time per dataset while it goes out to the system that owns it (``Dataset._writing``).
+_WRITING = new_registry()
+
+
+def _pairs(rows: Any) -> list[tuple[Optional[str], dict]]:
+    """Rows as ``(key, row)`` for the write-through -- the key None for a row not named yet; a value
+    that is not a list of rows gives none (the write itself then says what is wrong with it)."""
+    return [(r.get("key") if isinstance(r, dict) else None, r) for r in rows] if isinstance(rows, list) else []
+
 
 # Re-exported: the enums live with the value models.
-__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "DataLayoutEnum", "ExampleKind", "ExampleSpec", "EXAMPLE_META", "MANIFEST"]
+__all__ = ["ConflictError", "Dataset", "DatasetManifestSpec", "LinkError", "RowRefused", "DataLayoutEnum", "ExampleKind", "ExampleSpec", "EXAMPLE_META", "MANIFEST"]
 
 
 #: A field that holds a DATASET shape — ``DatasetSpec.parse`` reads the keyword
@@ -106,6 +119,12 @@ class LinkError(ValueError):
         super().__init__("; ".join(self.errors))
 
 
+#: The name for what ``LinkError`` has grown into: any refusal of a row that is not "changed since"
+#: -- a reference that names nothing, a rule, a ``unique`` value, an ``owned`` field, a shape
+#: (in a batch). Read ``details[].code``; catch either name.
+RowRefused = LinkError
+
+
 class ConflictError(ValueError):
     """``put / delete_row / rename_row(expected=...)``: the row changed since the version the caller
     read (``code`` ``"conflict"``), or is gone since (``"gone"``)."""
@@ -122,6 +141,23 @@ def _put_details(exc: ValidationError, row: Any, dataset: "Dataset") -> list[dic
     from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
     return shape_details(exc) + (dataset._raw_link_details(row) if dataset.asset_ref else [])
+
+
+def _misfit(exc: ValidationError, row: Any, dataset: "Dataset", message: str) -> ApiFailResponse:
+    """A row refused for its SHAPE, answered like every other refusal: ``errors`` as lines and
+    ``details`` as ``{path, code, message}`` (the row's broken references in the same answer)."""
+    from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
+
+    details = _put_details(exc, row, dataset)
+    return ApiFailResponse(message=message, status_code=400, data={"errors": detail_lines(details), "details": details})
+
+
+def _written(data: dict, warnings: list[dict]) -> ApiSuccessResponse:
+    """A row write's answer. ``warnings`` (a record the outside system made but not all of) ride
+    INSIDE ``data`` as well as on the envelope: the SDK hands a caller ``data`` alone."""
+    if warnings:
+        return ApiSuccessResponse(data={**data, "warnings": warnings}, warnings=warnings)
+    return ApiSuccessResponse(data=data)
 
 
 def _refused(exc: "LinkError | ConflictError", status_code: int) -> ApiFailResponse:
@@ -173,7 +209,7 @@ class Dataset(Entity):
     created_at: Optional[datetime] = APIField(None)
 
     # Absolute path of the dataset folder on disk, stamped by the indexer /
-    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors WHITEBOARD.
+    # ``Entity.from_fs_ref``. A plain string, not an FSRef. Mirrors CHART.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     @model_validator(mode="after")
@@ -309,16 +345,28 @@ class Dataset(Entity):
         # A NAMED shape has a document name of its own; an inline one (``{"sentiment": "string"}``)
         # would get a hash-named file, so it keeps the shape-agnostic ``label.json``.
         named = bool(getattr(shape, "spec_kind", ""))
-        dataset_layout_for(self.data_layout).annotate(
-            self._folder(), example_id, payload, dataset_id=self.id, by=by,
-            main=_main_document(shape) if named else ANNOTATION_FILE,
-        )
+        with self._lock():   # a row write like any other: one at a time, and said
+            written = dataset_layout_for(self.data_layout).annotate(
+                self._folder(), example_id, payload, dataset_id=self.id, by=by,
+                main=_main_document(shape) if named else ANNOTATION_FILE,
+            )
+        self._tell("put", [self._key_of(written, example_id)])
 
     def set_data(self, example_id: str, data: dict) -> None:
         """Replace one example's free ``data`` (a suite tag, a note) -- its inputs and golds untouched."""
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
-        dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
+        with self._lock():
+            written = dataset_layout_for(self.data_layout).set_data(self._folder(), example_id, dict(data), dataset_id=self.id)
+        self._tell("put", [self._key_of(written, example_id)])
+
+    def _key_of(self, written: Any, given: str) -> str:
+        """The key of the row a layout write touched: the row folder its answer (a path) lies in."""
+        examples = (self._folder() / "examples").resolve()
+        try:
+            return Path(written).resolve().relative_to(examples).parts[0]
+        except (TypeError, ValueError, IndexError):
+            return given
 
     @property
     def row_type(self) -> Any:
@@ -480,6 +528,52 @@ class Dataset(Entity):
                     todo.append(row_ref)
         return out
 
+    def _unique_index(self, skip: Any = ()) -> Any:
+        """Who holds which value of this dataset's ``unique`` rules (``rules.UniqueIndex``), from the
+        rows as they are -- a row that no longer fits counts by its stored input -- or None when the
+        row kind declares none (then no row is read). ``skip``: keys left out (rows about to go)."""
+        from flow_sdk.datasets.rules import UniqueIndex, unique_rules  # noqa: PLC0415
+
+        rules = unique_rules(self.row_type.input_type())
+        if not rules:
+            return None
+        index, (rows, broken) = UniqueIndex(rules), self.read_lenient()
+        held = [(row.key, row.input) for row in rows] + [(key, raw) for key, raw in broken if isinstance(raw, dict)]
+        for key, value in sorted(held, key=lambda pair: pair[0]):
+            if key not in skip:
+                index.take(key, value)
+        return index
+
+    def _unique_details(self, key: str, example: Any, seen: dict) -> list[dict]:
+        """The ``unique`` rules the row ``key`` (as ``example``) breaks against the other rows -- and
+        against the rows already checked in this call (``seen``), which it then joins."""
+        if "unique" not in seen:
+            seen["unique"] = self._unique_index(seen.get("unique_skip", ()))
+        if seen["unique"] is None:
+            return []
+        return [{**d, "path": f"input.{d['path']}"} for d in seen["unique"].take(key, example.input)]
+
+    @staticmethod
+    def _owned_details(example: Any, before: Any, by: Optional[str]) -> list[dict]:
+        """The fields an outside system owns (``owned_by`` in the schema) that this write would set or
+        change without being that owner (``by``). ``before`` is the row's input as it is (a value, or
+        the stored dict of a row that no longer fits), None for a new row -- which may leave an owned
+        field empty, never fill it."""
+        owned = getattr(type(example.input), "__owned__", None) or {}
+        if not owned:
+            return []
+        now = example.input.model_dump(mode="json")
+        was = before if isinstance(before, dict) else before.model_dump(mode="json") if before is not None else {}
+        out = []
+        for name, owner in owned.items():
+            if owner == by or now.get(name) == was.get(name):
+                continue
+            if before is None and now.get(name) in (None, "", [], {}):
+                continue
+            out.append({"path": f"input.{name}", "code": "owned", "owned_by": owner,
+                        "message": f"{name} is owned by {owner}: only a writer that writes as {owner!r} (by={owner!r}) sets it"})
+        return out
+
     def _row_in(self, raw: Any, n: int, *, keyed: bool = False, cache: Optional[dict] = None) -> Any:
         """One incoming row as the declared row type -- ``ValueError`` for a malformed row,
         ``ValidationError`` for one that does not fit the shape."""
@@ -494,38 +588,76 @@ class Dataset(Entity):
             raise LinkError(broken)
         return example
 
-    async def append(self, rows: list[dict]) -> list[str]:
+    async def append(self, rows: list[dict], *, by: Optional[str] = None) -> list[str]:
         """Typed rows in -- ``{input, context?, ground_truth?, output?, kind?, data?, key?}`` each,
         checked against the declared row shape BEFORE anything is written (one bad row writes nothing).
 
         The counterpart of ``promote`` for a dataset whose input is not a source item: a request, a
         prompt, anything the dataset's own spec defines. A row with a ``key`` lands in
         ``examples/<key>/`` (refused when the key is taken); the others are numbered. Returns the new
-        example ids."""
+        example ids. A new row of a mirrored kind is made in the outside system first (see ``put``)."""
+        return (await self._append_through(rows, by=by))[0]
+
+    async def _append_through(self, rows: list[dict], *, by: Optional[str] = None,
+                              served: bool = False) -> tuple[list[str], list[dict]]:
+        """``append`` and what the outside system could not set: ``(ids, warnings)``."""
+        ids, _, warnings = await self._write_through(_pairs(rows), by, None, served, lambda: self._append_here(rows, by))
+        return ids, warnings
+
+    def _append_here(self, rows: list[dict], by: Optional[str]) -> list[str]:
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
         with self._lock():
-            examples = [(self._row_in(raw, n, keyed=True), None) for n, raw in enumerate(rows, 1)]
+            examples, seen, refused = [], {"links": {}}, []
+            for n, raw in enumerate(rows, 1):
+                example = self._row_in(raw, n, keyed=True, cache=seen["links"])
+                named = raw.get("key") or f"(row {n})"   # a numbered row has no key yet: named by its place
+                refused += [{**d, "path": f"{named}.{d['path']}" if len(rows) > 1 else d["path"]}
+                            for d in self._owned_details(example, None, by) + self._unique_details(named, example, seen)]
+                examples.append((example, None))
+            if refused:
+                raise LinkError(refused)
             keys = [raw.get("key") for raw in rows]
             ids = dataset_layout_for(self.data_layout).append_many(
                 self._folder(), examples, dataset_id=self.id, keys=keys)
         self._tell("put", [key or rid for key, rid in zip(keys, ids)])   # a numbered row is named by its id
         return ids
 
-    def check(self, row: dict) -> list[str]:
+    def check(self, row: dict, *, by: Optional[str] = None) -> list[str]:
         """What is wrong with ``row`` as one row of this dataset -- ``[]`` when it fits. Writes nothing."""
         from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
 
-        return detail_lines(self.check_details(row))
+        return detail_lines(self.check_details(row, by=by))
 
-    def check_details(self, row: dict, *, cache: Optional[dict] = None) -> list[dict]:
+    def check_row(self, row: dict, *, by: Optional[str] = None) -> dict:
+        """Would this row fit? ``{ok, errors, details}`` -- what the TypeScript ``check`` and the
+        ``check-row`` action answer (``check`` is its ``errors`` alone). Writes nothing."""
+        from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
+
+        details = self.check_details(row, by=by)
+        return {"ok": not details, "errors": detail_lines(details), "details": details}
+
+    def check_details(self, row: dict, *, cache: Optional[dict] = None, by: Optional[str] = None) -> list[dict]:
         """``check`` as ``[{path, code, message}]``: ``code`` is ``shape:<pydantic type>``,
-        ``dangling_ref``, ``inline_row`` or ``rule``. A row whose shape fails still has its links
-        checked in the same answer (rules need a row that fits, so they come once it does). ``cache``
-        keeps the linked rows read across calls -- a caller checking many rows in one pass (a sync)
-        passes one dict, so each linked row is read once."""
+        ``dangling_ref``, ``inline_row``, ``rule``, ``unique`` (another row holds the value) or
+        ``owned`` (a field an outside system owns, changed by a writer that is not it -- ``by`` says
+        who is asking). A row that carries its ``key`` is checked as a ``put`` of that row would be
+        (against the row it replaces); one without, as a new row. A row whose shape fails still has
+        its links checked in the same answer (rules need a row that fits, so they come once it does).
+        ``cache`` keeps the linked rows read across calls -- a caller checking many rows in one pass
+        (a sync) passes one dict, so each linked row is read once."""
         try:
-            self._row_in(row, 1, keyed=True, cache=cache)
+            key = row.get("key") if isinstance(row, dict) and isinstance(row.get("key"), str) and row.get("key") else None
+            if key:
+                # a row that names its key is judged exactly as `put(key, row)` would judge it: merged
+                # with the slots it leaves out, against the row it replaces, and against the rules of
+                # the rows that reach it -- nothing is written
+                self._row_in(row, 1, keyed=True, cache=cache)      # its own shape first: named as given
+                self._prepare_put(key, {k: v for k, v in row.items() if k != "key"}, None,
+                                  {"by": by, "links": cache if cache is not None else {}})
+                return []
+            example = self._row_in(row, 1, keyed=True, cache=cache)
+            return self._owned_details(example, None, by) + self._unique_details("(this row)", example, {})
         except ValidationError as exc:
             from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
@@ -534,10 +666,9 @@ class Dataset(Entity):
             return list(exc.details)
         except ValueError as exc:
             return [{"path": "", "code": "row", "message": str(exc)}]
-        return []
 
-    #: The tag every row write emits (``docs/flow-events.md``): the target is the dataset, the data
-    #: says which keys moved -- never their values. Forwarded to the app (``tags/ws_forward``).
+    #: The tag every row write emits (``docs/flow-events.md``): the target is the dataset, the scope its
+    #: row kind (``kind:<kind>``), the data says which keys moved -- never their values. Forwarded to the app (``tags/ws_forward``).
     ROWS_CHANGED: ClassVar[str] = "dataset.rows.changed"
     #: How many keys one event names; a larger write says ``count`` and the listener re-reads.
     ROWS_CHANGED_KEYS: ClassVar[int] = 100
@@ -546,6 +677,14 @@ class Dataset(Entity):
         keys = list(keys)
         return {"op": op, "keys": keys[: self.ROWS_CHANGED_KEYS], "count": len(keys)}
 
+    def rows_version(self) -> str:
+        """The rows as a whole, as one version (``layout.rows_version``): rides on every
+        ``dataset.rows.changed`` and on ``rows()``, and ``GET rows-version`` answers it alone, so a
+        listener whose socket was down learns whether anything moved without reading a row."""
+        from flow_sdk.schema.data_spec.layout import rows_version  # noqa: PLC0415
+
+        return rows_version(self.asset_ref) if self.asset_ref else ""
+
     def emit_rows_changed(self, op: str, keys: list[str]) -> None:
         """Say on THIS process's bus that rows changed (``op``: ``put`` / ``delete`` / ``rename`` /
         ``sync``). What the server does; a writer outside it calls ``announce``."""
@@ -553,7 +692,12 @@ class Dataset(Entity):
         from flow_sdk.tags.envelope import target_of  # noqa: PLC0415
 
         if keys and self.id:
-            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id), self._rows_event(op, keys))
+            # The scope names the row KIND, so a rule checked into a project can say which rows it is
+            # about (`"scope": ["kind:<kind>"]`): the dataset's id is this machine's, the kind is not.
+            kind = self.row_kind
+            emit_tag(self.ROWS_CHANGED, target_of("dataset", self.id),
+                     {**self._rows_event(op, keys), "version": self.rows_version()},
+                     {"scope": [target_of("kind", kind)]} if kind else None)
 
     def announce(self, op: str, keys: list[str]) -> bool:
         """Tell the running Flowpad that rows changed, from a process that is not the server (a sync
@@ -563,14 +707,10 @@ class Dataset(Entity):
         if not keys or not self.id:
             return False
         try:
-            from flow_sdk.cli.commands._common import discover_port, local_request  # noqa: PLC0415
+            from flow_sdk import local_client  # noqa: PLC0415
 
-            port = discover_port(required=False)
-            if port is None:
-                return False
-            resp = local_request("POST", f"http://127.0.0.1:{port}/api/v1/graph/dataset/{self.id}/rows-changed",
-                                 json=self._rows_event(op, keys), timeout=5)
-            return resp.status_code < 400
+            local_client.graph_post(f"dataset/{self.id}/rows-changed", self._rows_event(op, keys), timeout=5)
+            return True
         except Exception:  # noqa: BLE001 -- telling is never a reason for a write to fail
             return False
 
@@ -598,7 +738,7 @@ class Dataset(Entity):
         old_dir = layout.example_dir(folder, check_key(key), dataset_id=self.id)
         merged: dict[str, Any] = {}
         metadata: dict[str, Any] = {}
-        old = None
+        old = stored = None
         if old_dir is None and expected is not None:
             raise ConflictError(f"row {key!r} is gone since version {expected}", "gone")
         if old_dir is not None:
@@ -612,6 +752,7 @@ class Dataset(Entity):
                 old = layout.read_typed(old_dir, row_type, dataset_id=self.id, shape=seen["shape"])
             except ValidationError:
                 old = None   # a row that no longer fits is being repaired: keep only its metadata
+                stored = _raw_input(seen["shape"], old_dir)
             if old is not None:
                 for slot in self._SLOT_NAMES:
                     value = getattr(old, slot)
@@ -619,6 +760,10 @@ class Dataset(Entity):
                         merged[slot] = value
         merged.update(row)
         example = self._row_in(merged, 1, cache=seen.setdefault("links", {}))
+        before = old.input if old is not None else stored if isinstance(stored, dict) else None
+        refused = self._owned_details(example, before, seen.get("by")) + self._unique_details(key, example, seen)
+        if refused:
+            raise LinkError(refused)
         if old_dir is not None and self.row_kind and self.asset_ref:
             # an edit to a row others reach must not break THEIR rules (a use case moved to
             # another persona under a deal that names the first persona's ICP)
@@ -633,16 +778,70 @@ class Dataset(Entity):
             example = example.model_copy(update={"metadata": {**metadata, **example.metadata}})
         return example, old
 
-    async def put(self, key: str, row: dict, *, expected: Optional[str] = None) -> str:
+    async def put(self, key: str, row: dict, *, expected: Optional[str] = None, by: Optional[str] = None) -> str:
         """Write the row ``key`` -- create it, or replace the one there. Validated BEFORE anything is
         written, references included. Slots the row leaves out (``ground_truth``, ``output``,
         ``context``) and the example's metadata (kind, annotations, source) are kept from the row it
         replaces, so editing an input never drops its gold. ``expected`` is the ``version`` the
-        caller read: a row that changed since is ``ConflictError``, nothing written. Returns the id."""
+        caller read: a row that changed since is ``ConflictError``, nothing written. ``by`` names
+        the outside system this writer writes for (``"crm"``): only it sets a field the schema marks
+        ``owned_by`` that system -- anyone else changing one is refused (``LinkError``, code
+        ``owned``). A ``unique`` rule another row already satisfies with the same value refuses the
+        write too (code ``unique``). Returns the id.
+
+        In a dataset a data source mirrors, a change to a field that source's system owns is SENT TO
+        THAT SYSTEM FIRST, through the source's driver, and the row is then written as the system
+        answered (the app's own fields as given) -- one way in, for the row actions and for this call
+        alike. Refusals: ``not_writable`` (the map cannot write that field), ``source_refused`` (the
+        system said no), ``unlinked``, ``misfit``. Only the server reaches a driver: in any other
+        process (a script) the change is refused ``owned`` -- send it with the ``put-row`` action."""
+        return (await self._put_through(key, row, expected=expected, by=by))[0]
+
+    async def _outside_first(self, rows: list[tuple[Optional[str], dict]], by: Optional[str],
+                             expected: Optional[dict], served: bool) -> Optional[tuple]:
+        """``projection.write_through`` for a write made in the server (``served``: a row action; or
+        this process IS the server), else None -- nothing but the server holds a source's driver."""
+        from flow_sdk.tags import ws_forward  # noqa: PLC0415
+
+        if not served and not ws_forward.forwarding_started():
+            return None
+        through = await write_through(self, rows, by, expected)
+        if through is not None and through[2] and not served:   # a row action answers them; a call has no answer for them
+            logger.warning("dataset %s: %s", self.name, "; ".join(w["message"] for w in through[2]))
+        return through
+
+    def _writing(self) -> asyncio.Lock:
+        """Held while a write goes out to the system that owns the rows: the version a writer read is
+        checked, sent out and written here as one step, so a second writer from that version is refused
+        instead of landing over the first, out there and here in a different order. Per process: only
+        the server holds a driver (``_outside_first``)."""
+        return keyed_loop_lock(_WRITING, str(self._folder()))
+
+    async def _write_through(self, pairs: list[tuple[Optional[str], dict]], by: Optional[str], expected: Optional[dict],
+                             served: bool, here: Any) -> tuple[list[str], list[Optional[str]], list[dict]]:
+        """THE row write: ``pairs`` are ``(key, row)`` -- a key of None for a row not named yet. What an
+        outside system owns goes to it first (``_outside_first``) and the rows are then written as it
+        answered, under the keys its mirror gives them; when nothing of the kind applies, ``here()``
+        writes them as given. → ``(ids, the keys written, warnings)``."""
+        async with self._writing():
+            through = await self._outside_first(pairs, by, expected, served) if pairs else None
+            if through is None:
+                return here(), [key for key, _ in pairs], []
+            sent, as_, warnings = through
+            return self._put_many_here([{**row, "key": key} for key, row in sent], None, as_), [key for key, _ in sent], warnings
+
+    async def _put_through(self, key: str, row: dict, *, expected: Optional[str] = None, by: Optional[str] = None,
+                           served: bool = False) -> tuple[str, str, list[dict]]:
+        """``put`` and what the outside system could not set: ``(id, the key written, warnings)``."""
+        ids, keys, warnings = await self._write_through([(key, row)], by, {key: expected}, served,
+                                                        lambda: [self._put_here(key, row, expected, by)])
+        return ids[0], keys[0], warnings
+
+    def _put_here(self, key: str, row: dict, expected: Optional[str], by: Optional[str]) -> str:
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
         with self._lock():
-            example, _ = self._prepare_put(key, row, expected, {})
+            example, _ = self._prepare_put(key, row, expected, {"by": by})
             rid = FolderLayout().put_example(self._folder(), key, example, dataset_id=self.id)
         self._tell("put", [key])
         return rid
@@ -661,50 +860,66 @@ class Dataset(Entity):
             out.append((raw["key"], {k: v for k, v in raw.items() if k != "key"}))
         return out
 
-    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict) -> list[tuple[str, Any, Any]]:
-        """Every row of a batch checked (``_prepare_put``) -- ``[(key, example, old)]``, or ONE error
-        naming every row that does not fit, by key: ``ConflictError`` first (the caller must re-read),
-        else ``LinkError`` carrying every row's details (shape, links, rules) under ``<key>.``."""
+    def _prepare_many(self, rows: list[tuple[str, dict]], expected: dict, seen: dict, *,
+                      lenient: bool = False) -> tuple[list, list[dict]]:
+        """Every row of a batch checked (``_prepare_put``): ``(ready, misfit)`` -- ``[(key, example,
+        old)]`` for the rows that fit, and ``[{key, row, details}]`` for each that does not (its
+        shape, links, rules; the details' paths are the row's own, ``input.x``). Unless ``lenient``,
+        one row that does not fit is ONE ``LinkError`` naming every such row under ``<key>.``;
+        lenient (a mirror) still refuses an ``owned`` detail -- the writer's mistake, not a value.
+        ``ConflictError`` is raised at once (the caller must re-read); so is a malformed row (not an
+        object, unknown keys)."""
         from flow_sdk.datasets.links import shape_details  # noqa: PLC0415
 
-        ready, conflicts, details = [], [], []
+        ready, conflicts, misfit = [], [], []
         for key, row in rows:
             try:
                 example, old = self._prepare_put(key, row, expected.get(key), seen)
             except ConflictError as exc:
                 conflicts.append(str(exc))
             except ValidationError as exc:
-                details += [{**d, "path": f"{key}.{d['path']}".rstrip(".")}
-                            for d in shape_details(exc) + (self._raw_link_details(row, seen.get("links")) if self.asset_ref else [])]
+                misfit.append({"key": key, "row": row, "details": shape_details(exc)
+                               + (self._raw_link_details(row, seen.get("links")) if self.asset_ref else [])})
             except LinkError as exc:
-                details += [{**d, "path": f"{key}.{d['path']}".rstrip(".")} for d in exc.details]
+                misfit.append({"key": key, "row": row, "details": list(exc.details)})
             except ValueError as exc:
-                details.append({"path": key, "code": "row", "message": str(exc)})
+                raise LinkError([{"path": key, "code": "row", "message": str(exc)}]) from exc
             else:
                 ready.append((key, example, old))
         if conflicts:
             raise ConflictError("; ".join(conflicts))
-        if details:
-            raise LinkError(details)
-        return ready
+        if misfit and (not lenient or any(d.get("code") == "owned" for m in misfit for d in m["details"])):
+            raise LinkError([{**d, "path": f"{m['key']}.{d['path']}".rstrip(".")} for m in misfit for d in m["details"]])
+        return ready, misfit
 
-    async def put_many(self, rows: list[dict], *, expected: Optional[dict[str, str]] = None) -> list[str]:
+    async def put_many(self, rows: list[dict], *, expected: Optional[dict[str, str]] = None,
+                       by: Optional[str] = None) -> list[str]:
         """Write several rows as ONE step -- ``[{key, input, ...}]``, each created or replaced like
         ``put`` -- all of them, or none: every row is checked first, and one that does not fit
         (``LinkError``, its details under ``<key>.<path>``) or changed since the version in
         ``expected`` (``{key: version}``; ``ConflictError``) writes nothing. Each row is checked
         against the rows as they are BEFORE the call. The lock is taken once and what the checks
-        read (linked rows, the rows that reach this dataset) is read once. Returns the ids, in order."""
+        read (linked rows, the rows that reach this dataset) is read once. Returns the ids, in order.
+        Changes to fields an outside system owns go to it first (see ``put``)."""
+        return (await self._put_many_through(rows, expected=expected, by=by))[0]
+
+    async def _put_many_through(self, rows: list[dict], *, expected: Optional[dict[str, str]] = None,
+                                by: Optional[str] = None, served: bool = False) -> tuple[list[str], list[str], list[dict]]:
+        """``put_many`` and what the outside system could not set: ``(ids, the keys written, warnings)``."""
+        return await self._write_through(_pairs(rows), by, expected, served, lambda: self._put_many_here(rows, expected, by))
+
+    def _put_many_here(self, rows: list[dict], expected: Optional[dict[str, str]], by: Optional[str]) -> list[str]:
         from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
         keyed, layout, folder = self._keyed(rows), FolderLayout(), self._folder()
         with self._lock():
-            ready = self._prepare_many(keyed, expected or {}, {})
+            ready, _ = self._prepare_many(keyed, expected or {}, {"by": by})
             ids = [layout.put_example(folder, key, example, dataset_id=self.id) for key, example, _ in ready]
         self._tell("put", [key for key, _ in keyed])
         return ids
 
-    async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None) -> dict:
+    async def sync(self, rows: list[dict], *, prune: bool = True, match: Any = None, by: Optional[str] = None,
+                   lenient: bool = False) -> dict:
         """Make the dataset hold exactly ``rows`` (``[{key, input, ...}]``) -- what a mirror of an
         outside system calls each run. A key that is new is created, one whose value changed is
         replaced, one that reads the same is left untouched (its version does not move), and -- with
@@ -713,15 +928,38 @@ class Dataset(Entity):
         the rows it matches, so a writer that owns one slice of a dataset never removes another's.
 
         One step, all or nothing: every row is checked first (as ``put_many``), every removal too (as
-        ``delete_rows``: a row still referenced refuses the whole sync). Returns
-        ``{created, updated, unchanged, deleted}``, each a list of keys."""
+        ``delete_rows``: a row still referenced refuses the whole sync). ``by`` is the outside system
+        this sync writes for (see ``put``): what lets it set the fields that system owns. Returns
+        ``{created, updated, unchanged, deleted}``, each a list of keys.
+
+        ``lenient`` is for a MIRROR of an outside system, whose values are not this writer's to fix:
+        a row whose value does not fit the row kind (a shape the schema does not allow, a link that
+        does not hold) is kept as it came -- a PROBLEM row, read by ``rows_and_problems`` with its
+        input intact, invisible to ``rows`` -- and named in the answer's ``misfit`` (``[{key,
+        details}]``), while every other row is written. A misfit still listed is never pruned. A row
+        that is no longer listed but that another row still references is KEPT (it would leave that
+        reference dangling) and named in ``referenced`` (``[{key, details}]``, code ``referenced``),
+        while the rest is written and pruned; it goes on the sweep after the reference does. A row
+        refused as ``owned`` (a field this writer may not set) still refuses the whole sync: that is
+        the caller's mistake, not the outside system's value."""
         from flow_sdk.datasets.query import expression, matches  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _ReadShape  # noqa: PLC0415
 
         keyed, layout, folder, node = self._keyed(rows), FolderLayout(), self._folder(), expression(match)
         with self._lock():
-            ready = self._prepare_many(keyed, {}, {})
-            out: dict[str, list[str]] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
+            gone = []
+            if prune:
+                listed = {key for key, _ in keyed}
+                kept, problems = self.rows_and_problems()
+                here = [(r.key, self._row_out(r)) for r in kept] + [(p["key"], {"key": p["key"], "id": p["id"], "input": p["input"]}) for p in problems]
+                gone = [key for key, shown in here if key not in listed and matches(node, shown)]
+            # a mirror keeps a row that is gone outside while something here still references it
+            used = self._still_used(gone) if lenient and gone else {}
+            gone = [key for key in gone if key not in used]
+            # the rows about to go no longer hold their unique values: a new row may take one over
+            seen = {"by": by, "unique_skip": set(gone)}
+            ready, misfit = self._prepare_many(keyed, {}, seen, lenient=lenient)
+            out: dict[str, Any] = {"created": [], "updated": [], "unchanged": [], "deleted": []}
             write = []
             for key, example, old in ready:
                 same = old is not None and all(
@@ -729,17 +967,20 @@ class Dataset(Entity):
                 out["unchanged" if same else "created" if layout.example_dir(folder, key, dataset_id=self.id) is None else "updated"].append(key)
                 if not same:
                     write.append((key, example))
-            gone = []
-            if prune:
-                listed = {key for key, _ in keyed}
-                kept, problems = self.rows_and_problems()
-                here = [(r.key, self._row_out(r)) for r in kept] + [(p["key"], {"key": p["key"], "id": p["id"], "input": p["input"]}) for p in problems]
-                gone = [key for key, shown in here if key not in listed and matches(node, shown)]
+            if not lenient:   # a lenient sync has already set aside every row still referenced (`used`)
                 self._check_delete(gone, {})
             for key, example in write:
                 layout.put_example(folder, key, example, dataset_id=self.id)
+            if misfit:
+                main = (seen.get("shape") or _ReadShape.of(self._typed_rows_or_raise())).mains["input"]
+                for m in misfit:
+                    layout.put_problem_example(folder, m["key"], m["row"].get("input") or {}, dataset_id=self.id, main_document=main)
+                out["misfit"] = [{"key": m["key"], "details": m["details"]} for m in misfit]
+            if used:
+                out["referenced"] = [{"key": key, "details": [{"path": "", "code": "referenced", "message": why}]}
+                                     for key, why in used.items()]
             out["deleted"] = [layout.delete_example(folder, key, dataset_id=self.id) for key in gone]
-        self._tell("sync", out["created"] + out["updated"] + out["deleted"])   # nothing moved: nothing said
+        self._tell("sync", out["created"] + out["updated"] + out["deleted"] + [m["key"] for m in misfit])   # nothing moved: nothing said
         return out
 
     def delete_row(self, key_or_id: str, *, expected: Optional[str] = None) -> str:
@@ -748,11 +989,144 @@ class Dataset(Entity):
         ``ConflictError`` when ``expected`` (the version read) is not the row's version any more."""
         return self.delete_rows([key_or_id], expected=None if expected is None else {key_or_id: expected})[0]
 
+    async def mirror(self, items: Any, map: dict, *, by: Optional[str] = None, prune: bool = True,   # noqa: A002 -- the word
+                     match: Any = None) -> dict:
+        """Make this dataset the typed MIRROR of a data source: each of the source's items becomes one
+        row of this dataset's kind, and the dataset is made to hold exactly those (``sync``: created /
+        updated / unchanged / deleted; rows are YOUR model -- kinds, links, ``rules``). The outside
+        system's values are not ours to fix: a record whose value does not fit the row kind is kept as
+        a PROBLEM row (``rows_and_problems``), named in the answer's ``misfit`` (``[{key, details}]``),
+        and every other record is still mirrored (``sync(lenient=True)``).
+
+        ``items`` is a ``DataSource`` (in the server: its records are read) or the items themselves, a
+        list of dicts (a script: ``local_client.graph_get("source_item", {...})``). ``map`` says how an
+        item becomes a row, in the path grammar -- ``{"key": "external_id", "input": {"name": "name",
+        "stage": "data.stage", "crm_id": "external_id"}}``: each value is a PATH into the item
+        (``{"value": x}`` is a constant; a nested object maps field by field; a path through ``*``
+        gives a list). ``{"link": <kind>, "by": <field>, "path": <path>}`` makes the outside system's
+        id at ``path`` a LINK: the row of ``kind`` whose ``by`` -- a ``unique`` field of that kind --
+        holds it (one reference, or a list through ``*``); an id no row holds is left out and named
+        in the answer's ``unlinked`` (``[{key, field, value}]``). The mirror owns the
+        fields the map names and no others: a field the app keeps on a mirrored row stays as it is.
+        An item whose ``key`` path is empty is skipped; a key is made a row key (lowercased, other
+        characters ``-``).
+        ``by`` names the outside system these rows are written as (the owner of the schema's
+        ``owned_by`` fields); it defaults to the source's provider. ``match`` narrows what ``prune``
+        may remove, as in ``sync``."""
+        import re  # noqa: PLC0415
+
+        from flow_sdk.datasets.query import Many, field_of  # noqa: PLC0415
+        from flow_sdk.datasets.rules import unique_rules  # noqa: PLC0415
+
+        if not isinstance(map, dict) or not isinstance(map.get("key"), str) or not isinstance(map.get("input"), dict):
+            raise ValueError('map: {"key": <path>, "input": {<field>: <path>}} is required')
+        provider = None
+        if not isinstance(items, list):
+            from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+            provider = getattr(items, "provider", None) or None
+            found = await SourceItem.get_all({"data_source_id": str(items.id)}) or []
+            items = [item.model_dump(mode="json") for item in found]
+
+        targets: dict[tuple[str, str], dict[str, str]] = {}
+        unlinked: list[dict] = []
+
+        def linked_by(kind: str, by: str) -> dict[str, str]:
+            """``{<by> value: reference}`` over every row of ``kind`` -- read once per mirror."""
+            if (kind, by) not in targets:
+                found = Dataset.for_kind(kind, self._owner())
+                if not found:
+                    raise ValueError(f"map: no dataset holds {kind} rows to link to")
+                index: dict[str, str] = {}
+                for dataset in found:
+                    by_key = by == ROW_KEY   # the row's own key names one row by definition: no rule needed
+                    if not by_key and [by] not in [list(rule.unique) for rule in unique_rules(dataset.row_type.input_type())]:
+                        raise ValueError(f"map: {by} is not a unique field of {kind}, so it cannot name one row")
+                    for row in dataset.read_lenient()[0]:
+                        held = row.key if by_key else getattr(row.input, by, None)
+                        if held not in (None, ""):
+                            index[str(held)] = dataset.ref_of(row.id)
+                targets[(kind, by)] = index
+            return targets[(kind, by)]
+
+        def shaped(spec: Any, item: dict, key: str, where: str) -> Any:
+            if isinstance(spec, str):
+                found = field_of(item, spec)
+                return list(found) if isinstance(found, Many) else found
+            if isinstance(spec, dict) and set(spec) == {"value"}:
+                return spec["value"]
+            if is_link(spec):
+                index, found = linked_by(str(spec["link"]), str(spec["by"])), field_of(item, spec["path"])
+                ids = [found] if not isinstance(found, Many) else list(found)
+                refs = []
+                for outside in (str(v) for v in ids if v not in (None, "")):
+                    if outside in index:
+                        refs.append(index[outside])
+                    else:
+                        unlinked.append({"key": key, "field": where, "value": outside})
+                return refs if isinstance(found, Many) else (refs[0] if refs else None)
+            if isinstance(spec, dict):
+                made = {name: shaped(inner, item, key, f"{where}.{name}" if where else name) for name, inner in spec.items()}
+                return {name: value for name, value in made.items() if value is not None}
+            if isinstance(spec, list):
+                return [value for value in (shaped(inner, item, key, where) for inner in spec) if value is not None]
+            raise ValueError(f"map: a path, {{\"value\": x}}, {{\"link\", \"by\", \"path\"}}, an object or a list is required, not {spec!r}")
+
+        # The mirror owns the fields its map names and no others: what the app keeps on a mirrored
+        # row (its notes, its tags) stays, whatever the source did to the rest.
+        kept, problems = self.rows_and_problems()
+        held = {row.key: row.input.model_dump(mode="json", exclude_none=True) for row in kept}
+        held.update({p["key"]: p["input"] for p in problems if isinstance(p.get("input"), dict)})
+        # A field the kind REQUIRES that neither the map nor the row supplies -- the app's own list or
+        # map (a deal's objections, its stage dates) -- starts EMPTY on a row the mirror makes: a
+        # required list with nothing in it is `[]`, not absent, or every new record would be a misfit.
+        empties = self._empty_required(self.row_type.input_type())
+        # A row is found by its NATURAL key -- the field the map's key path is mapped to (``crm_id``) --
+        # never by its row key alone: a row made before the mirror (keyed as its author liked) or
+        # renamed since keeps its key, its id and every link to it. A record no row holds gets a key
+        # made from its id.
+        key_field_ = next((name for name, path in map["input"].items() if path == map["key"]), None)
+        keyed_by_natural = {str(fields[key_field_]): key for key, fields in held.items()
+                            if key_field_ and fields.get(key_field_) not in (None, "")} if key_field_ else {}
+        rows, taken = [], set()
+        for item in items:
+            named = field_of(item, map["key"])
+            if named in (None, ""):
+                continue
+            key = keyed_by_natural.get(str(named)) or re.sub(r"[^a-z0-9_-]+", "-", str(named).lower()).strip("-")
+            if not key or key in taken:
+                raise ValueError(f"mirror: two items map to the row key {key!r} (from {named!r})" if key else f"mirror: {named!r} gives no row key")
+            taken.add(key)
+            own = {name: value for name, value in held.get(key, {}).items() if name not in map["input"]}
+            rows.append({"key": key, "input": {**empties, **own, **shaped(map["input"], item, key, "")}})
+        done = await self.sync(rows, prune=prune, match=match, by=by or provider, lenient=True)
+        return {**done, "unlinked": unlinked} if unlinked else done
+
+    @staticmethod
+    def _empty_required(input_type: Any) -> dict[str, Any]:
+        """``{field: [] | {}}`` for every REQUIRED list or map field of ``input_type``: the empty value a
+        writer that does not know the field (a mirror) gives it, so the row fits."""
+        from typing import get_origin  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.io.placement import unwrap  # noqa: PLC0415
+
+        out: dict[str, Any] = {}
+        for name, field in input_type.model_fields.items():
+            if not field.is_required():
+                continue
+            core = unwrap(field.annotation)
+            origin = get_origin(core) or core
+            if origin in (list, tuple, set, frozenset):
+                out[name] = []
+            elif origin is dict or (isinstance(origin, type) and hasattr(origin, "model_fields")
+                                   and all(not f.is_required() for f in origin.model_fields.values())):
+                out[name] = {}
+        return out
+
     def _check_delete(self, keys: list[str], expected: dict[str, str]) -> list[Path]:
         """The row folders ``keys`` (keys or ids) name, once every one of them may go -- else the
         error ``delete_rows`` documents. Nothing is removed. Called under the row lock."""
-        from flow_sdk.datasets.links import link_index, linkers_of, referrers  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.layout import FolderLayout, row_id, row_version  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import FolderLayout, row_version  # noqa: PLC0415
 
         layout, folder = FolderLayout(), self._folder()
         found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
@@ -763,19 +1137,37 @@ class Dataset(Entity):
         stale = [ex_dir.name for given, ex_dir in found.items() if given in expected and row_version(ex_dir) != expected[given]]
         if stale:
             raise ConflictError(f"row {', '.join(repr(k) for k in stale)} changed since the version read")
-        if self.row_kind and dirs:
-            going = {ex_dir.name for ex_dir in dirs}
-            index = link_index(self._owner(), read=lambda f: Dataset.at(f).read_lenient(),
-                               only=linkers_of(self.row_kind, self._owner()))
-            held = []
-            for ex_dir in dirs if index else []:
-                users = [f"{kind} {key}" for at, kind, key in referrers(self.ref_of(row_id(ex_dir, self.id)), self._owner(), read=None, index=index)
-                         if not (at == folder and key in going)]
-                if users:
-                    held.append({"path": ex_dir.name if len(dirs) > 1 else "", "code": "referenced", "message": f"used by {', '.join(users)}"})
-            if held:
-                raise LinkError(held)
+        held = self._referenced(dirs, self._users(dirs), {ex_dir.name for ex_dir in dirs})
+        if held:
+            raise LinkError([{"path": key if len(dirs) > 1 else "", "code": "referenced", "message": why}
+                             for key, why in held.items()])
         return dirs
+
+    def _referenced(self, dirs: list[Path], users: list[list[dict]], going: set[str]) -> dict[str, str]:
+        """``{key: "used by ..."}`` for each of ``dirs`` a row still references. Rows of this dataset
+        that are ``going`` in the same step do not hold each other back."""
+        folder, held = self._folder(), {}
+        for ex_dir, by in zip(dirs, users):
+            still = [f"{u['kind']} {u['key']}" for u in by if not (u["folder"] == folder and u["key"] in going)]
+            if still:
+                held[ex_dir.name] = f"used by {', '.join(still)}"
+        return held
+
+    def _still_used(self, keys: list[str]) -> dict[str, str]:
+        """Of the rows ``keys`` a lenient sync would remove, the ones something still references
+        (``{key: "used by ..."}``) -- and so the ones it keeps. A row kept keeps what IT references in
+        turn, so this narrows the going set until it stops changing."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+
+        layout, folder = FolderLayout(), self._folder()
+        dirs = [ex_dir for ex_dir in (layout.example_dir(folder, key, dataset_id=self.id) for key in keys) if ex_dir is not None]
+        users, going, held = self._users(dirs), {ex_dir.name for ex_dir in dirs}, {}
+        while True:
+            more = self._referenced([d for d in dirs if d.name in going], [u for d, u in zip(dirs, users) if d.name in going], going)
+            if not more:
+                return held
+            held.update(more)
+            going -= set(more)
 
     def delete_rows(self, keys: list[str], *, expected: Optional[dict[str, str]] = None) -> list[str]:
         """Remove several rows as ONE step -- all of them, or none. Returns their keys. Everything is
@@ -862,30 +1254,189 @@ class Dataset(Entity):
             problems.append({"example_id": rid, "id": rid, "ref": self.ref_of(rid), "key": ex_dir.name,
                              "error": errors[0], "errors": errors, "details": details,
                              "version": row_version(ex_dir), "input": raw})
+        # ``unique`` rules: of the rows that share a value, the first by key keeps it; the others are
+        # problems naming it (a hand edit or a ``git pull`` can bring a duplicate no write would allow)
+        from flow_sdk.datasets.rules import UniqueIndex, unique_rules  # noqa: PLC0415
+
+        rules = unique_rules(row_type.input_type())
+        if rules:
+            index, kept = UniqueIndex(rules), []
+            for row in sorted(rows, key=lambda r: r.key):
+                details = [{**d, "path": f"input.{d['path']}"} for d in index.take(row.key, row.input)]
+                if not details:
+                    kept.append(row)
+                    continue
+                errors = detail_lines(details)
+                problems.append({"example_id": row.id, "id": row.id, "ref": self.ref_of(row.id), "key": row.key,
+                                 "error": errors[0], "errors": errors, "details": details,
+                                 "version": row.version, "input": row.input.model_dump(mode="json")})
+            rows = kept
         return rows, problems
 
-    def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None,
-              offset: Optional[int] = None) -> dict:
+    def _linked(self, records: Optional[dict] = None) -> Any:
+        """Reads the rows links name, for one call: ``linked(ref) -> {dataset_id, key, row} | None`` --
+        the ``/refs/<ref>`` answer. Each dataset a link leads into is read ONCE, on first use.
+        ``records`` are RECORDS the caller already read, by reference (``{ref: record as a dict}``): a
+        link to one is followed into it, its fields read as a row's ``input``."""
+        from flow_sdk.datasets.links import find_row  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
+
+        owner, cache, folders = self._owner(), {}, {}
+
+        def linked(ref: str) -> Optional[dict]:
+            if records and ref in records:
+                rid = parse_ref(ref)[1]  # type: ignore[index]
+                return {"record": records[ref], "row": {"key": rid, "id": rid, "ref": ref, "input": records[ref]}}
+            found = find_row(ref, owner, cache=cache)
+            if found is None:
+                return None
+            folder, key = found
+            if folder not in folders:
+                dataset = self if folder == self._folder() else Dataset.at(folder)
+                folders[folder] = (dataset.id, {r.key: dataset._row_out(r) for r in dataset.read_lenient()[0]})
+            dataset_id, rows = folders[folder]
+            return {"dataset_id": dataset_id, "key": key, "row": rows[key]} if key in rows else None
+
+        return linked
+
+    def _answered(self, match: Any, records: Optional[dict]) -> Any:
+        """``match`` with its sub-queries answered (``query.with_subqueries``): each asks this dataset,
+        or the one dataset of the kind it names, for the values a path takes in the rows that match."""
+        from flow_sdk.datasets.query import Many, expression, field_of, with_subqueries  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.declared import kind_in  # noqa: PLC0415
+
+        def values(path: str, sub: Any, of: Optional[str]) -> list:
+            source = self
+            if of:
+                found = Dataset.for_kind(kind_in(self._owner(), of) or of, self._owner())
+                if len(found) != 1:
+                    raise ValueError(f"sub-query: expected one dataset of {of!r}, found {len(found)}")
+                source = found[0]
+            linked = source._linked(records)
+            follow = lambda ref: (linked(ref) or {}).get("row")   # noqa: E731
+            seen: dict = {}
+            for row in source.query(sub, records=records)["rows"]:
+                held = field_of(row, path, follow)
+                for value in (held if isinstance(held, Many) else [held]):
+                    if value is not None:
+                        seen.setdefault(repr(value), value)
+            return list(seen.values())
+
+        return with_subqueries(expression(match), values)
+
+    def query(self, match: Any = None, *, order_by: Any = None, limit: Optional[int] = None, offset: Optional[int] = None,
+              q: Optional[str] = None, expand: Optional[list[str]] = None, records: Optional[dict] = None) -> dict:
         """SOME of the rows: ``{rows, total, problems}``. ``match`` is an expression (``{op, operands}``)
-        or a plain ``{field: value}`` map over a row as the API hands it out -- a field is a path:
-        ``key``, ``input.stage``, ``input.stage_dates.won`` (``flow_sdk.datasets.query``); ``order_by``
-        is ``{path: "asc"|"desc"}`` (or a list of them); ``limit`` / ``offset`` page the result.
+        or a plain ``{path: value}`` map over a row as the API hands it out. A path is written as a
+        schema's rules write theirs, with the slot spelled out (``flow_sdk.datasets.query``): ``key``,
+        ``input.stage``, ``input.stage_dates.won``, ``input.tags.*`` (any element), and
+        ``input.persona.icp`` -- a path FOLLOWS a link into the linked row (``input.persona.key`` is
+        that row's key). ``q`` keeps the rows whose text holds every word of it. ``order_by`` is
+        ``{path: "asc"|"desc"}`` (or a list of them); ``limit`` / ``offset`` page the result.
+
         ``rows`` are dicts (``key``, ``id``, ``ref``, ``version`` and the slots' values), ``total`` is
         how many matched before paging, and ``problems`` is EVERY row that does not fit -- a filter
-        never hides a broken row."""
-        from flow_sdk.datasets.query import select  # noqa: PLC0415
+        never hides a broken row. ``expand`` names link paths (``["input.persona"]``): the rows they
+        lead to come back beside, once each, as ``linked: {<ref>: {dataset_id, key, row}}`` -- the
+        rows themselves keep their references, so one can be put back as it was read.
 
+        A JOIN on a value that is not a link is a sub-query in ``$IN`` / ``$NIN``: ``{"op": "$IN",
+        "operands": ["input.email", {"op": "$PROP", "operands": ["input.email", {"input.metric":
+        "em_reply"}]}]}`` -- the rows whose email is among the emails of the rows that match (a third
+        operand names another kind's rows). ``records`` (``{ref: record}``) are records the caller
+        already read: a path then continues into a linked record (``input.email.author_display``) --
+        the ``rows`` action reads them itself; a script passes what ``local_client`` gave it."""
+        from flow_sdk.datasets.query import Many, field_of, select  # noqa: PLC0415
+
+        match = self._answered(match, records)
         rows, problems = self.rows_and_problems()
-        page, total = select((self._row_out(r) for r in rows), match=match, order_by=order_by, limit=limit, offset=offset)
-        return {"rows": page, "total": total, "problems": problems}
+        linked = self._linked(records)
+        follow = lambda ref: (linked(ref) or {}).get("row")   # noqa: E731
+        page, total = select((self._row_out(r) for r in rows), match=match, order_by=order_by, limit=limit,
+                             offset=offset, q=q, follow=follow)
+        out = {"rows": page, "total": total, "problems": problems}
+        if expand:
+            if not isinstance(expand, list) or not all(isinstance(p, str) and p for p in expand):
+                raise ValueError("expand: a list of link paths is required")
+            out["linked"] = {}
+            for row in page:
+                for path in expand:
+                    held = field_of(row, path, follow)
+                    for ref in (held if isinstance(held, (Many, list)) else [held]):
+                        if isinstance(ref, str) and ref not in out["linked"]:
+                            found = linked(ref)
+                            if found is not None and "record" in found:      # a record the caller read
+                                from flow_sdk.datasets.links import record_type_of  # noqa: PLC0415
+                                from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
 
-    def count(self, match: Any = None, *, group_by: Optional[list[str]] = None) -> dict:
-        """How many rows match: ``{total, groups}`` -- with ``group_by`` (field paths, as in
-        ``query``) also how many per distinct combination, ``[{by: {path: value}, count}]``, largest
-        first. Rows that do not fit their shape are not counted (``rows_and_problems`` names them)."""
+                                kind, rid = parse_ref(ref)  # type: ignore[misc]
+                                out["linked"][ref] = {"type": record_type_of(kind), "id": rid, "record": found["record"]}
+                            elif found is not None:
+                                out["linked"][ref] = found
+        return out
+
+    def rows(self, match: Any = None, **asked: Any) -> dict:
+        """THE read: ``{rows, total, problems}`` -- every row, or those ``match`` selects. The name the
+        TypeScript client, the ``rows`` action and ``dm_ctl ds-rows`` use; ``query`` is the same call.
+        (``read_rows`` / ``rows_and_problems`` hand back typed values for code that scores or syncs.)"""
+        return self.query(match, **asked)
+
+    def count(self, match: Any = None, *, group_by: Optional[list[str]] = None, metrics: Optional[dict[str, str]] = None,
+              order_by: Any = None, week_start: str = "monday", q: Optional[str] = None, records: Optional[dict] = None) -> dict:
+        """How many rows match -- the SAME ``match`` and ``q`` as ``query``, so a number and the list
+        behind it are one question: ``{total, groups}``. ``group_by`` gives the count per distinct
+        combination, ``[{by: {<entry>: value}, count}]``; an entry is a path (links followed, as in
+        ``query``) or a date BUCKET ``<day|week|month|quarter>:<path>`` keyed ``2026-09-13`` (the
+        week's first day; ``week_start`` ``"monday"`` or ``"sunday"``), ``2026-09``, ``2026-Q3``.
+        ``metrics`` names further measures ``{name: "<distinct|min|max|sum>:<path>"}``, answered
+        overall and per group. ``order_by`` orders the groups (by an entry, ``count`` or a metric's
+        name); otherwise largest first. Rows that do not fit their shape are not counted
+        (``rows_and_problems`` names them)."""
         from flow_sdk.datasets.query import count  # noqa: PLC0415
 
-        return count((self._row_out(r) for r in self.rows_and_problems()[0]), match=match, group_by=group_by)
+        linked = self._linked(records)
+        match = self._answered(match, records)
+        return count((self._row_out(r) for r in self.rows_and_problems()[0]), match=match, group_by=group_by,
+                     metrics=metrics, order_by=order_by, week_start=week_start, q=q,
+                     follow=lambda ref: (linked(ref) or {}).get("row"))
+
+    def used_by(self, keys: Optional[list[str]] = None) -> dict[str, list[dict]]:
+        """Who links to each row: ``{key: [{dataset_id, kind, key}]}`` for ``keys`` (keys or ids; every
+        row when left out) -- ``[]`` for a row nothing links to. What a delete is refused for ("used
+        by ..."), asked ahead of time; and its opposite, the rows nothing uses. Reads only the datasets
+        whose schema can reach this kind (``links.linkers_of``), once."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs  # noqa: PLC0415
+
+        self._typed_rows_or_raise()
+        layout, folder = FolderLayout(), self._folder()
+        if keys is None:
+            dirs = list(_example_dirs(folder))
+        else:
+            found = {given: layout.example_dir(folder, given, dataset_id=self.id) for given in dict.fromkeys(keys)}
+            missing = [given for given, ex_dir in found.items() if ex_dir is None]
+            if missing:
+                raise LookupError(f"no example {', '.join(missing)} in {folder}")
+            dirs = list({ex_dir.name: ex_dir for ex_dir in found.values()}.values())
+        return {ex_dir.name: [{k: v for k, v in u.items() if k != "folder"} for u in users]
+                for ex_dir, users in zip(dirs, self._users(dirs))}
+
+    def _users(self, dirs: list[Path]) -> list[list[dict]]:
+        """For each row folder, the rows that hold a reference to it (``used_by``'s entries, plus the
+        referring dataset's ``folder`` for a caller that sets some aside)."""
+        from flow_sdk.datasets.links import link_index, linkers_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.layout import row_id  # noqa: PLC0415
+
+        if not self.row_kind or not dirs:
+            return [[] for _ in dirs]
+        datasets: dict = {}
+
+        def read(at: Path) -> tuple[list, list]:
+            datasets[at] = Dataset.at(at)
+            return datasets[at].read_lenient()
+
+        index = link_index(self._owner(), read=read, only=linkers_of(self.row_kind, self._owner()))
+        return [[{"dataset_id": datasets[at].id, "kind": kind, "key": key, "folder": at}
+                 for at, kind, key, _ in index.get(self.ref_of(row_id(ex_dir, self.id)), [])] for ex_dir in dirs]
 
     def read_rows(self) -> list:
         """Every row read as the declared shape (raises on a row that does not fit -- ``validate_rows``
@@ -933,30 +1484,38 @@ class Dataset(Entity):
     @staticmethod
     def _query_params() -> dict:
         """The read parameters of the request: ``filter`` (JSON or a map: ``match``, ``order_by``,
-        ``limit``, ``offset`` -- or the match itself), top-level ``limit`` / ``offset`` / ``order_by``
-        (the filter's win), and ``group_by`` (a list, or names separated by commas)."""
+        ``limit``, ``offset``, ``expand`` -- or the match itself), the same names top-level (the
+        filter's win), and beside them ``q``, ``group_by`` / ``expand`` (a list, or names separated by
+        commas), ``metrics`` (JSON ``{name: "<op>:<path>"}``) and ``week_start``."""
         import json  # noqa: PLC0415
 
         params = get_current_request_info().request_parameters or {}
-        raw = params.get("filter") or {}
-        if isinstance(raw, str):
-            raw = json.loads(raw)
+
+        def listed(value: Any) -> Optional[list]:
+            if isinstance(value, str):
+                value = json.loads(value) if value.lstrip().startswith("[") else [v.strip() for v in value.split(",") if v.strip()]
+            return value or None
+
+        def obj(value: Any, name: str) -> Any:
+            value = json.loads(value) if isinstance(value, str) and value.strip() else value
+            if value not in (None, "") and not isinstance(value, (dict, list)):
+                raise ValueError(f"{name}: an object is required")
+            return value or None
+
+        raw = obj(params.get("filter"), "filter") or {}
         if not isinstance(raw, dict):
             raise ValueError("filter: an object is required")
-        if not ({"match", "order_by", "limit", "offset"} & set(raw)):
+        if not ({"match", "order_by", "limit", "offset", "expand"} & set(raw)):
             raw = {"match": raw} if raw else {}
-        out = {"match": raw.get("match"), "order_by": raw.get("order_by") or params.get("order_by")}
-        if isinstance(out["order_by"], str):
-            out["order_by"] = json.loads(out["order_by"])
+        out = {"match": raw.get("match"), "order_by": obj(raw.get("order_by") or params.get("order_by"), "order_by"),
+               "expand": listed(raw.get("expand") or params.get("expand")), "q": params.get("q") or None,
+               "group_by": listed(params.get("group_by")), "metrics": obj(params.get("metrics"), "metrics"),
+               "week_start": params.get("week_start") or "monday"}
         for name in ("limit", "offset"):
             value = raw.get(name, params.get(name))
             out[name] = None if value in (None, "") else int(value)
             if out[name] is not None and out[name] < 0:
                 raise ValueError(f"{name}: a number from 0 is required")
-        group_by = params.get("group_by")
-        if isinstance(group_by, str):
-            group_by = json.loads(group_by) if group_by.lstrip().startswith("[") else [g.strip() for g in group_by.split(",") if g.strip()]
-        out["group_by"] = group_by or None
         return out
 
     @action.get(action_name="rows")
@@ -967,10 +1526,54 @@ class Dataset(Entity):
         ordered and paged (``Dataset.query``); ``total`` counts the matches before paging."""
         try:
             asked = self._query_params()
-            found = self.query(asked["match"], order_by=asked["order_by"], limit=asked["limit"], offset=asked["offset"])
+            found = self.query(asked["match"], order_by=asked["order_by"], limit=asked["limit"], offset=asked["offset"],
+                               q=asked["q"], expand=asked["expand"], records=await self._records_asked(asked))
         except ValueError as exc:   # the dataset declares no typed rows, or the filter does not read
             return ApiFailResponse(message=str(exc), status_code=400)
+        found["version"] = self.rows_version()
         return ApiSuccessResponse(data=found)
+
+    @action.get(action_name="rows-version")
+    async def rows_version_action(self):
+        """``{"version"}`` -- ``rows_version``, off the loop: every reconnecting listener asks."""
+        return ApiSuccessResponse(data={"version": await asyncio.to_thread(self.rows_version)})
+
+    async def _records_asked(self, asked: dict) -> dict:
+        """The RECORDS the question's paths lead to (a row's ``ingest.source_item`` link, followed or
+        expanded), read from the instance's store: ``{ref: record}`` for ``query`` / ``count``. Asked
+        only when a path could reach one; a script reads them through ``flow_sdk.local_client``."""
+        from flow_sdk.datasets.links import record_type_of  # noqa: PLC0415
+        from flow_sdk.datasets.query import asked_paths, field_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.value_ref import parse_ref  # noqa: PLC0415
+
+        paths = asked_paths(asked["match"], asked["order_by"] if not asked.get("group_by") else None,
+                            asked.get("group_by"), asked.get("metrics"), asked.get("expand"))
+        if not paths:
+            return {}
+        cache: dict = {}
+        wanted: dict[str, str] = {}
+        linked = self._linked()
+
+        def follow(ref: str) -> Optional[dict]:
+            record_type = record_type_of(parse_ref(ref)[0], cache)  # type: ignore[index]
+            if record_type:
+                wanted[ref] = f"{record_type}-{parse_ref(ref)[1]}"  # type: ignore[index]
+                return None
+            return (linked(ref) or {}).get("row")
+
+        for row in self.rows_and_problems()[0]:
+            shown = self._row_out(row)
+            for path in paths:
+                held = field_of(shown, path, follow)          # walking is what finds the links
+                for ref in (held if isinstance(held, list) else [held]):
+                    if isinstance(ref, str) and parse_ref(ref) is not None:
+                        follow(ref)                               # ... a link the path ENDS on, too (expand)
+        records = {}
+        for ref, typeid in wanted.items():
+            record = await Entity.get_by_typeid(typeid)
+            if record is not None:
+                records[ref] = record.model_dump(mode="json")
+        return records
 
     @action.get(action_name="count")
     async def count_action(self):
@@ -978,9 +1581,27 @@ class Dataset(Entity):
         value of ``?group_by=`` (field paths, comma-separated): ``[{by, count}]``."""
         try:
             asked = self._query_params()
-            return ApiSuccessResponse(data=self.count(asked["match"], group_by=asked["group_by"]))
+            return ApiSuccessResponse(data=self.count(asked["match"], group_by=asked["group_by"], metrics=asked["metrics"],
+                                                      order_by=asked["order_by"], week_start=asked["week_start"], q=asked["q"],
+                                                      records=await self._records_asked(asked)))
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
+
+    @action.get(action_name="used-by")
+    async def used_by_action(self):
+        """``GET used-by[?keys=a,b]`` → ``{used_by: {key: [{dataset_id, kind, key}]}}``: who links to each
+        row (every row when ``keys`` is left out); ``[]`` for a row nothing links to. 404 a key that is no row."""
+        params = get_current_request_info().request_parameters or {}
+        keys = params.get("keys")
+        if isinstance(keys, str):
+            keys = [k.strip() for k in keys.split(",") if k.strip()]
+        try:
+            users = self.used_by(keys or None)
+        except LookupError as exc:
+            return ApiFailResponse(message=str(exc), status_code=404)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"used_by": users})
 
     @action.post(action_name="score")
     async def score_action(self):
@@ -1001,16 +1622,15 @@ class Dataset(Entity):
         if not isinstance(rows, list) or not rows:
             return ApiFailResponse(message="rows: a non-empty list is required", status_code=400)
         try:
-            ids = await self.append(rows)
+            ids, warnings = await self._append_through(rows, by=body.get("by"), served=True)
         except ValidationError as exc:
-            return ApiFailResponse(message="a row does not match the dataset's shape", status_code=400,
-                                   data={"errors": exc.errors(include_url=False)})
+            return _misfit(exc, None, self, "a row does not match the dataset's shape")
         except LinkError as exc:
             return _refused(exc, 400)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_ids": ids, "num_examples": fresh.num_examples})
+        return _written({"ids": ids, "example_ids": ids, "num_examples": fresh.num_examples}, warnings)
 
     async def _row_body(self, *required: str) -> "dict | ApiFailResponse":
         body = await read_json_body(get_current_request_info())
@@ -1029,10 +1649,10 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            eid = await self.put(body["key"], body["row"], expected=body.get("expected"))
+            eid, key, warnings = await self._put_through(body["key"], body["row"], expected=body.get("expected"),
+                                                         by=body.get("by"), served=True)
         except ValidationError as exc:
-            return ApiFailResponse(message="the row does not match the dataset's shape", status_code=400,
-                                   data={"errors": exc.errors(include_url=False), "details": _put_details(exc, body["row"], self)})
+            return _misfit(exc, body["row"], self, "the row does not match the dataset's shape")
         except ConflictError as exc:
             return _refused(exc, 409)
         except LinkError as exc:
@@ -1040,7 +1660,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_id": eid, "key": body["key"], "num_examples": fresh.num_examples})
+        return _written({"id": eid, "example_id": eid, "key": key, "num_examples": fresh.num_examples}, warnings)
 
     @action.post(action_name="delete-row")
     async def delete_row_action(self):
@@ -1049,7 +1669,9 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            key = self.delete_row(body["key"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, [body["key"]], {body["key"]: body["expected"]} if body.get("expected") else None)
+                key = gone[0] if gone is not None else self.delete_row(body["key"], expected=body.get("expected"))
         except LookupError as exc:
             return ApiFailResponse(message=str(exc), status_code=404)
         except ConflictError as exc:
@@ -1082,11 +1704,13 @@ class Dataset(Entity):
         body = await self._row_body("rows")
         if isinstance(body, ApiFailResponse):
             return body
-        ids = await self._bulk(lambda: self.put_many(body["rows"], expected=body.get("expected")))
-        if isinstance(ids, ApiFailResponse):
-            return ids
+        done = await self._bulk(lambda: self._put_many_through(body["rows"], expected=body.get("expected"),
+                                                               by=body.get("by"), served=True))
+        if isinstance(done, ApiFailResponse):
+            return done
+        ids, keys, warnings = done
         fresh = await self.refresh_counts()
-        return ApiSuccessResponse(data={"example_ids": ids, "keys": [r["key"] for r in body["rows"]], "num_examples": fresh.num_examples})
+        return _written({"ids": ids, "example_ids": ids, "keys": keys, "num_examples": fresh.num_examples}, warnings)
 
     @action.post(action_name="delete-rows")
     async def delete_rows_action(self):
@@ -1099,7 +1723,9 @@ class Dataset(Entity):
             return ApiFailResponse(message="keys: a list of row keys is required", status_code=400)
 
         async def remove() -> list[str]:
-            return self.delete_rows(body["keys"], expected=body.get("expected"))
+            async with self._writing():
+                gone = await delete_through(self, body["keys"], body.get("expected"))
+                return gone if gone is not None else self.delete_rows(body["keys"], expected=body.get("expected"))
         keys = await self._bulk(remove)
         if isinstance(keys, ApiFailResponse):
             return keys
@@ -1115,7 +1741,25 @@ class Dataset(Entity):
             return body
         if not isinstance(body.get("rows"), list):
             return ApiFailResponse(message="rows: a list is required", status_code=400)
-        done = await self._bulk(lambda: self.sync(body["rows"], prune=body.get("prune", True), match=body.get("match")))
+        done = await self._bulk(lambda: self.sync(body["rows"], prune=body.get("prune", True), match=body.get("match"), by=body.get("by")))
+        if isinstance(done, ApiFailResponse):
+            return done
+        fresh = await self.refresh_counts()
+        return ApiSuccessResponse(data={**done, "num_examples": fresh.num_examples})
+
+    @action.post(action_name="mirror")
+    async def mirror_action(self):
+        """``{"source_id", "map", "by"?, "prune"?, "match"?}`` → ``{created, updated, unchanged, deleted,
+        num_examples}``: this dataset made the typed mirror of that data source's items (``Dataset.mirror``)."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        body = await self._row_body("source_id", "map")
+        if isinstance(body, ApiFailResponse):
+            return body
+        source = await DataSource.get_by_id(str(body["source_id"]))
+        if source is None:
+            return ApiFailResponse(message=f"no data source {body['source_id']!r}", status_code=404)
+        done = await self._bulk(lambda: self.mirror(source, body["map"], by=body.get("by"), prune=body.get("prune", True), match=body.get("match")))
         if isinstance(done, ApiFailResponse):
             return done
         fresh = await self.refresh_counts()
@@ -1166,12 +1810,9 @@ class Dataset(Entity):
         if isinstance(body, ApiFailResponse):
             return body
         try:
-            details = self.check_details(body["row"])
+            return ApiSuccessResponse(data=self.check_row(body["row"], by=body.get("by")))
         except ValueError as exc:   # the dataset itself cannot take typed rows
             return ApiFailResponse(message=str(exc), status_code=400)
-        from flow_sdk.datasets.links import detail_lines  # noqa: PLC0415
-
-        return ApiSuccessResponse(data={"ok": not details, "errors": detail_lines(details), "details": details})
 
     @action.get(action_name="example")
     async def example_action(self):
@@ -1185,8 +1826,7 @@ class Dataset(Entity):
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
         except ValidationError as exc:
-            return ApiFailResponse(message="the example does not match the dataset's shape", status_code=422,
-                                   data={"errors": exc.errors(include_url=False)})
+            return _misfit(exc, None, self, "the row does not match the dataset's shape")   # 400, as every misfit
         if found is None:
             return ApiFailResponse(message=f"no example {example_id}", status_code=404)
         return ApiSuccessResponse(data=found)

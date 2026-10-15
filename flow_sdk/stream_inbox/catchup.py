@@ -75,12 +75,12 @@ async def run_hub_catchup(reason: str) -> None:
         len(dispatched),
     )
 
-    # Teams have the same live-only hole: one created while we were away never
-    # reaches the share pickers, which read local rows only.
-    from flow_sdk.app.actions.membership_sync import sync_remote_teams  # noqa: PLC0415
+    # Organizations and teams have the same live-only hole: one created while we were
+    # away never reaches the surfaces that read local rows only.
+    from flow_sdk.app.actions.membership_sync import sync_remote_memberships  # noqa: PLC0415
 
-    teams = await sync_remote_teams(local_user.typeid)
-    logger.info("[stream-inbox] catch-up (%s): mirrored %d team(s)", reason, teams)
+    mirrored = await sync_remote_memberships(local_user.typeid)
+    logger.info("[stream-inbox] catch-up (%s): mirrored %d organization(s)/team(s)", reason, mirrored)
 
 
 async def flush_pending_outbox(reason: str) -> None:

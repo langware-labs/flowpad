@@ -35,7 +35,6 @@ import {
   TypeId,
 } from '@sdk';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
-import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import { sessionOpenViewMode, ViewMode } from '@src/contexts/view-mode-context';
@@ -156,8 +155,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
 // ── cleanup UI dispatch ─────────────────────────────────────────────────────
 
 /**
- * Render the cleanup outcome to the user. Single cleanup → toast. Two or more
- * → counter modal. Empty → no UI.
+ * Tell the user what was cleaned up — always a notification, never a dialog.
+ * One cleanup speaks for itself; several share one notification that lists
+ * each session and why it could not be restored.
  */
 function handleCleanups(cleaned: CleanupRecord[]): void {
   if (cleaned.length === 0) return;
@@ -166,7 +166,12 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
     notify.error({ title: c.title, message: c.description });
     return;
   }
-  showCleanupModal({ count: cleaned.length });
+  const count = cleaned.length;
+  const details = cleaned.map((c) => `• ${c.description ? `${c.title}: ${c.description}` : c.title}`);
+  notify.error({
+    title: t`Cleaned invalid sessions`,
+    message: [t`We skipped ${count} sessions that couldn't be restored.`, ...details].join('\n'),
+  });
 }
 
 function loadedToPointer(loaded: LoadedNext): string {
@@ -232,8 +237,8 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
  * The dock's scope filter (what the Chats navigator reads to list history) must
  * be a PROJECTION of that same id — not the project that happened to be ambient
  * when the scope was seeded at click (`openDock`, NavigationActions). When they
- * diverge (open an oss chat while sapora-streams was active → URL carries
- * sapora's scope), `replace()` the URL onto the same pointer carrying the
+ * diverge (open an oss chat while acme-streams was active → URL carries
+ * acme's scope), `replace()` the URL onto the same pointer carrying the
  * process's own project scope. This runs at LOAD, so it also corrects deep
  * links / hard refresh / back-forward, not just the click path. A genuinely
  * projectless target actively removes any seeded project scope so its tab and

@@ -23,7 +23,7 @@ def test_the_whatsapp_test_agent_declares_its_israeli_number():
     register_all()
     record = read_asset_data(FIXTURE, SchemaRegistry.get("agent"))
     phone = Agent.model_validate({"name": "whatsapp-e2e", "phone": record.phone}).phone
-    assert (phone.digits, phone.e164) == ("972557709288", "+972557709288")
+    assert (phone.digits, phone.e164) == ("972500000000", "+972500000000")
 
 
 def test_a_local_number_is_stored_canonical(tmp_path):
@@ -32,14 +32,14 @@ def test_a_local_number_is_stored_canonical(tmp_path):
     folder.mkdir(parents=True)
     (folder / "agent.json").write_text(json.dumps({
         "type": "agent", "id": "0b7b4a7e-3c1d-4d2e-9f6a-1b2c3d4e5f60", "name": "caller",
-        "phone": {"country_code": "+972", "number": "055-770-9288"},
+        "phone": {"country_code": "+972", "number": "050-000-0000"},
     }))
     (folder / "system_prompt.md").write_text("hi\n")
     info = SchemaRegistry.get("agent")
     record = read_asset_data(folder, info)
     agent = Agent.model_validate({"id": record.id, "name": "caller", "phone": record.phone})
     rendered = json.loads(render_entity_json(agent, info))
-    assert rendered["phone"] == {"country_code": "972", "number": "557709288"}
+    assert rendered["phone"] == {"country_code": "972", "number": "500000000"}
 
 
 def test_a_malformed_number_is_refused():

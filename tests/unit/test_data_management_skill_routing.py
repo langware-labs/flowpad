@@ -23,7 +23,8 @@ IGNORED_DIRS = {".flow", "__pycache__"}
 
 
 def _routed_paths(text: str) -> set[str]:
-    return set(re.findall(r"(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
+    # A path into ANOTHER skill (`../other-skill/references/x.md`) is not one of this skill's files.
+    return set(re.findall(r"(?<![/\w])(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
 
 
 def _authored_files() -> list[Path]:
@@ -120,7 +121,7 @@ def _probe(tmp_path, ns="dmprobeabc"):
 
 def test_probe_copy_drops_entity_ids_so_the_probe_never_takes_over_real_rows(tmp_path):
     """A copied asset that kept its id re-pointed the REAL asset's index row at the probe on apply,
-    and probe-drop then deleted it (found by a fresh review on GTM Studio)."""
+    and probe-drop then deleted it (found by a fresh review on Sales Desk)."""
     import json
     from types import SimpleNamespace
 
@@ -235,3 +236,44 @@ def test_dm_ctl_deletes_one_row_or_several_in_one_step(monkeypatch, capsys):
     capsys.readouterr()
     assert dm_ctl.main(["ds-delete", "leads", "a", "b", "--expected", "v1"]) == 1   # one version cannot vouch for two rows
     assert "--expected takes one key" in capsys.readouterr().out
+
+
+def test_dm_ctl_says_who_a_write_is_for(monkeypatch):
+    row = '{"input": {"name": "A"}}'
+    assert _dm_calls(monkeypatch, ["ds-put", "leads", "a", row, "--by", "crm"])[0][2] == {"key": "a", "row": {"input": {"name": "A"}}, "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-put-many", "leads", '[{"key": "a", "input": {}}]', "--by", "crm"])[0][2]["by"] == "crm"
+    assert _dm_calls(monkeypatch, ["ds-sync", "leads", "[]", "--by", "crm"])[0][2] == {"rows": [], "prune": True, "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-append", "leads", row, "--by", "crm"])[0][2] == {"rows": [{"input": {"name": "A"}}], "by": "crm"}
+    assert _dm_calls(monkeypatch, ["ds-check", "leads", row, "--by", "crm"])[0][2] == {"row": {"input": {"name": "A"}}, "by": "crm"}
+    assert "by" not in _dm_calls(monkeypatch, ["ds-put", "leads", "a", row])[0][2]         # an app's own edit names no owner
+
+
+def test_dm_ctl_asks_more_of_rows_and_count(monkeypatch):
+    import json
+    from urllib.parse import parse_qs, urlsplit
+
+    ((_, path, _),) = _dm_calls(monkeypatch, ["ds-rows", "deals", "--match", '{"input.persona.icp.key": "fintech"}',
+                                              "--expand", "input.persona, input.messages.*", "--q", "pricing objection"])
+    query = parse_qs(urlsplit(path).query)
+    assert json.loads(query["filter"][0]) == {"match": {"input.persona.icp.key": "fintech"}, "expand": ["input.persona", "input.messages.*"]}
+    assert query["q"] == ["pricing objection"]
+
+    ((_, path, _),) = _dm_calls(monkeypatch, ["ds-count", "outreach", "--match", '{"input.metric": "em_reply"}',
+                                              "--group-by", "week:input.day", "--metrics", '{"people": "distinct:input.email"}',
+                                              "--order", '{"week:input.day": "asc"}', "--week-start", "sunday"])
+    query = parse_qs(urlsplit(path).query)
+    assert urlsplit(path).path == "/graph/dataset/ds1/count"
+    assert json.loads(query["filter"][0]) == {"match": {"input.metric": "em_reply"}}          # the order is of the groups: beside it
+    assert query["group_by"] == ["week:input.day"] and json.loads(query["metrics"][0]) == {"people": "distinct:input.email"}
+    assert json.loads(query["order_by"][0]) == {"week:input.day": "asc"} and query["week_start"] == ["sunday"]
+
+
+def test_dm_ctl_asks_who_uses_rows(monkeypatch):
+    assert _dm_calls(monkeypatch, ["ds-used-by", "companies", "acme", "bolt"]) == [("GET", "/graph/dataset/ds1/used-by?keys=acme%2Cbolt", None)]
+    assert _dm_calls(monkeypatch, ["ds-used-by", "companies"]) == [("GET", "/graph/dataset/ds1/used-by", None)]
+
+
+def test_dm_ctl_mirrors_a_data_source(monkeypatch):
+    mapping = '{"key": "external_id", "input": {"name": "name"}}'
+    assert _dm_calls(monkeypatch, ["ds-mirror", "deals", "src-1", mapping, "--by", "crm", "--no-prune"]) == [
+        ("POST", "/graph/dataset/ds1/mirror", {"source_id": "src-1", "map": {"key": "external_id", "input": {"name": "name"}}, "prune": False, "by": "crm"})]

@@ -16,12 +16,18 @@ from flow_sdk.server.service_proxy import (
     CALLER_HEADER,
     CALLER_MAX_AGE,
     GATE_HEADER,
+    GRANT_MAX_AGE,
+    TICKET_MAX_AGE,
     USER_HEADER,
+    VISITOR,
+    Grant,
     inbound_headers,
     outbound_headers,
     sign_caller,
+    sign_grant,
     upstream_path,
     verify_caller,
+    verify_grant,
 )
 
 SECRET = "gate-secret-123"
@@ -124,6 +130,49 @@ def test_only_the_service_route_is_raw():
     assert not is_raw_body_path("/api/v1/graph/service_endpoint/abc/direct-url")
     assert not is_raw_body_path("/api/v1/graph/service_endpoint/abc/services")
     assert not is_raw_body_path("/api/v1/graph/project/abc/service")
+
+
+# ── the grant — one admission, the same bytes on both tiers ─────────────────
+
+ENDPOINT = str(uuid.uuid4())
+
+
+def test_a_grant_vector_is_the_caller_codec_over_a_three_part_subject():
+    """``v1.<caller>|<audience>|<endpoint>.<ts>.<hmac>`` — a ticket the hub mints is verified here."""
+    grant = Grant(CALLER, "admin", ENDPOINT)
+    message = f"v1.{CALLER}|admin|{ENDPOINT}.{NOW}"
+    minted = f"{message}.{hmac.new(SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()}"
+    assert sign_grant(grant, SECRET, now=NOW) == minted
+    assert verify_grant(minted, SECRET, now=NOW, max_age=TICKET_MAX_AGE) == grant
+
+
+def test_a_grant_opens_exactly_what_it_names():
+    signed = sign_grant(Grant(CALLER, "app", ENDPOINT), SECRET, now=NOW)
+    assert verify_grant(signed, SECRET, now=NOW, max_age=GRANT_MAX_AGE) == Grant(CALLER, "app", ENDPOINT)
+    assert verify_grant(signed.replace("|app|", "|admin|"), SECRET, now=NOW, max_age=GRANT_MAX_AGE) is None
+    assert verify_grant(signed.replace(ENDPOINT, str(uuid.uuid4())), SECRET, now=NOW, max_age=GRANT_MAX_AGE) is None
+    assert verify_grant(signed, "other", now=NOW, max_age=GRANT_MAX_AGE) is None
+    assert verify_grant(signed, SECRET, now=NOW + GRANT_MAX_AGE + 1, max_age=GRANT_MAX_AGE) is None
+    assert verify_grant(signed, None, now=NOW, max_age=GRANT_MAX_AGE) is None
+
+
+def test_a_visitor_grant_is_an_ordinary_grant():
+    signed = sign_grant(Grant(VISITOR, "app", ENDPOINT), SECRET, now=NOW)
+    assert verify_grant(signed, SECRET, now=NOW, max_age=GRANT_MAX_AGE).caller == VISITOR
+
+
+@pytest.mark.parametrize(
+    "grant",
+    [
+        Grant("user-x", "system", "not-an-id"),
+        Grant("user-x", "other", ENDPOINT),
+        Grant("has|pipe", "app", ENDPOINT),
+        Grant("", "app", ENDPOINT),
+    ],
+)
+def test_a_grant_that_cannot_round_trip_is_refused_at_signing(grant):
+    with pytest.raises(ValueError):
+        sign_grant(grant, SECRET, now=NOW)
 
 
 # ── the public base: where the BROWSER is, for a static app's <base href> ───

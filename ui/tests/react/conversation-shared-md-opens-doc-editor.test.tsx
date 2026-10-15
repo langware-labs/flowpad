@@ -31,7 +31,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { AttachmentRow } from '@src/components/conversation/ConversationContextPanel';
 import '@src/i18n-init'; // activates the default locale on the shared i18n
 
-const MD_LOCAL_PATH = '/tmp/flowmsg_unpack_x/data/ziv-shared-note.md';
+const MD_LOCAL_PATH = '/tmp/flowmsg_unpack_x/data/erin-shared-note.md';
 
 function LocationProbe() {
   const location = useLocation();
@@ -41,7 +41,7 @@ function LocationProbe() {
 function mdAttachment(): Attachment {
   return {
     attachment_type: AttachmentType.FILE,
-    data: 'data/ziv-shared-note.md',
+    data: 'data/erin-shared-note.md',
     local_path: MD_LOCAL_PATH,
   };
 }

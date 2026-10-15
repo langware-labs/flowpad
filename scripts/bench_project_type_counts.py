@@ -45,7 +45,7 @@ CREATE INDEX ix_entities_type ON entities(type);
 """
 
 TYPES = ["markdown", "skill", "agent", "workflow", "command", "prompt", "plan",
-         "whiteboard", "conversation", "claude_session", "todo", "hook", "plugin",
+         "chart", "conversation", "claude_session", "todo", "hook", "plugin",
          "claude_md", "agent_trace"]
 
 

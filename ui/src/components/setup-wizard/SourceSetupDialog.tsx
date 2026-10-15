@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { DataSource } from '@sdk';
-import { Loader2 } from 'lucide-react';
+import { type DataSource, type SetupNeed, type SetupNodeResult, type SetupTreeResult } from '@sdk';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { errorMessage } from '@src/lib/error-message';
+import { useProviderSignIn } from '@src/components/oauth/use-provider-sign-in';
 import { Button } from '@src/components/ui/button';
 import { Dialog } from '@src/components/ui/dialog';
 import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
@@ -41,7 +42,43 @@ export function SourceSetupDialogRoot() {
   return payload && <SourceSetupDialog source={payload.source} onClose={() => setOpen(false)} />;
 }
 
-function SourceSetupPanel({ source, onDone }: { source: DataSource; onDone: () => void }) {
+/** The first sign-in the tree is stuck on — a `connection:<provider>` node not set up — or null. */
+export function pendingConnection(
+  tree: SetupTreeResult | null,
+  needs: SetupNeed[] = [],
+): { provider: string; title: string } | null {
+  const walk = (node: SetupNodeResult | null): SetupNodeResult | null => {
+    if (!node) return null;
+    for (const child of node.children) {
+      const found = walk(child);
+      if (found) return found;
+    }
+    return node.id.startsWith('connection:') && node.state !== 'done' && node.state !== 'skipped' ? node : null;
+  };
+  const node = walk(tree?.root ?? null);
+  if (!node) return null;
+  const provider = node.id.slice('connection:'.length);
+  // The source names the sign-in it waits on (`setup_needs`); the node's label is only the fallback.
+  const title = needs.find((n) => n.name === provider)?.title || node.label.replace(/ sign-in$/, '') || provider;
+  return { provider, title };
+}
+
+/**
+ * Set up one source in place: a question it is waiting on (a sign-in, or a value) drawn first, then its tree.
+ * `lead`: say what the person is looking at — the add dialog's "X is added. It needs one thing from you…".
+ */
+export function SourceSetupPanel({
+  source,
+  onDone,
+  lead = false,
+  onListening,
+}: {
+  source: DataSource;
+  onDone: () => void;
+  lead?: boolean;
+  /** Told when the run this screen watched ends with everything set up — the host's footer turns to Done. */
+  onListening?: (listening: boolean) => void;
+}) {
   const { t } = useLingui();
   const setup = useSourceSetupRun(source);
   const { start, running, tree } = setup;
@@ -64,15 +101,76 @@ function SourceSetupPanel({ source, onDone }: { source: DataSource; onDone: () =
   }, []);
 
   // Close on the end of a run this screen watched — never on the tree an earlier run left behind.
+  // In the add dialog (`lead`) it stays open on "listening" — the person presses Done.
   useEffect(() => {
     if (running) followed.current = true;
-    else if (followed.current && tree?.state === 'done') onDone();
-  }, [running, tree, onDone]);
+    else if (followed.current && tree?.state === 'done' && !lead) onDone();
+  }, [running, tree, onDone, lead]);
 
   const stopped = !running && !setup.starting && tree !== null && tree.state !== 'done';
+  // A sign-in the run stopped on: the person signs in HERE, in their browser; the run only checked it.
+  const signIn = !running && !setup.starting ? pendingConnection(tree, source.setup_needs) : null;
+  const name = source.name || source.provider;
+  // The grant landed (code flow, device flow, or a grant the hub already held): set up again — the
+  // connection now checks out and the walk goes on to the source's own Verify.
+  const { connecting, signIn: connect } = useProviderSignIn(signIn?.provider ?? '', {
+    onGranted: begin,
+    onError: (e) => setRefused(errorMessage(e, t`Could not start the ${signIn?.title ?? ''} sign-in.`)),
+    listen: !!signIn,
+  });
+  const done = !running && tree?.state === 'done';
+  useEffect(() => onListening?.(done), [done, onListening]);
 
   return (
     <div className="flex flex-col gap-4" data-testid="source-setup-panel">
+      {lead && !done && (
+        <p className="text-sm text-foreground" data-testid="source-setup-lead">
+          {signIn ? (
+            <Trans>
+              {name} is added. It needs <span className="font-medium">one thing from you</span> before it can
+              bring messages in.
+            </Trans>
+          ) : (
+            <Trans>{name} is added. Setting it up…</Trans>
+          )}
+        </p>
+      )}
+      {lead && done && (
+        <div
+          className="flex items-center gap-2 rounded border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-foreground"
+          data-testid="source-setup-listening"
+        >
+          <CheckCircle2 className="size-4 text-emerald-600" />
+          <Trans>{name} is listening.</Trans>
+        </div>
+      )}
+      {signIn && (
+        <div className="rounded border p-3" data-testid="source-setup-sign-in">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <h1 className="text-base font-medium">
+                <Trans>Sign in to {signIn.title}</Trans>
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                <Trans>
+                  So {name} can read your {signIn.title} messages and send your replies as you. You stay signed in.
+                </Trans>
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={() => void connect()} disabled={connecting} data-testid="source-setup-connect">
+                <Trans>Connect {signIn.title}</Trans>
+              </Button>
+              {connecting && (
+                <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="size-4 animate-spin" />
+                  <Trans>Waiting for you to approve on {signIn.title}…</Trans>
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {(running || setup.starting) && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="source-setup-running">
           <Loader2 className="size-4 animate-spin" />
@@ -92,8 +190,8 @@ function SourceSetupPanel({ source, onDone }: { source: DataSource; onDone: () =
           <AskForm questionId={setup.questionId} showOp={false} onSettled={setup.settleQuestion} />
         </div>
       )}
-      <SetupTreeView tree={tree} />
-      {(stopped || refused) && (
+      <SetupTreeView tree={tree} waiting={signIn ? `connection:${signIn.provider}` : ''} />
+      {(stopped || refused) && !signIn && (
         <div>
           <Button data-testid="source-setup-retry" onClick={begin}>
             <Trans>Set up again</Trans>

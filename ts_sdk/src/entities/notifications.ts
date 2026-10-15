@@ -4,6 +4,9 @@ import { ActionInfo } from '../models/ActionInfo';
 export interface SendReplyExtras {
   /** Inline prompt text to attach as a PROMPT attachment. */
   promptText?: string;
+  /** A one-shot prompt for the receiver to approve and run once: rides the message as a
+   *  `process_call-<id>` value (never a Prompt entity); the receiver answers with a status. */
+  callPrompt?: string;
   /** Files to attach as PROMPT attachments (each stored under prompt/<filename>). */
   promptFiles?: File[];
   /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
@@ -80,6 +83,7 @@ export async function sendReply(
     const form = new FormData();
     form.append('message', message);
     if (extras?.promptText) form.append('prompt_text', extras.promptText);
+    if (extras?.callPrompt) form.append('call_prompt', extras.callPrompt);
     for (const file of files ?? []) {
       form.append('files', file, file.name);
     }
@@ -107,6 +111,7 @@ export async function sendReply(
   } else {
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
+    if (extras?.callPrompt) body.call_prompt = extras.callPrompt;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;

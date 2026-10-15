@@ -70,8 +70,18 @@ class Source:
     page_size: ClassVar[int] = DEFAULT_PAGE_SIZE
     #: The source hands back a ``resume_cursor`` the application may persist across sessions.
     durable_cursor: ClassVar[bool] = False
+    #: The source reads BACKWARDS on demand: its query takes a ``before`` narrow and answers the page just
+    #: older than it, newest first — what a list paged past its oldest held row asks for. One page per ask (the
+    #: next ask moves ``before`` to the oldest it got; ``next_cursor`` may be None), never a backfill, and it never
+    #: moves the forward cursor. Undeclared, a ``before`` narrow is ``Unsupported``.
+    pages_backward: ClassVar[bool] = False
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
+    #: A pass read from the start to the end lists the WHOLE collection (a table, a CRM object): a
+    #: record it no longer lists is GONE in the outside system, and the application drops its copy.
+    #: False for a source that lists a window (a feed's recent entries, a mailbox since last week),
+    #: where absence proves nothing.
+    lists_everything: ClassVar[bool] = False
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
     #: allows one request per interval declares 1.
     pages_per_pass: ClassVar[Optional[int]] = None
@@ -124,6 +134,8 @@ class Source:
         query = self.query()
         if not narrow:
             return query
+        if "before" in narrow and not type(self).pages_backward:
+            raise Unsupported(f"{type(self).__name__} cannot read backwards")
         if query is None:
             raise ValueError(f"{type(self).__name__} lists without a query; nothing to narrow")
         unknown = sorted(set(narrow) - set(type(query).model_fields))
@@ -283,6 +295,12 @@ class CollectionSource(Source, ABC):
 
     supported_queries: ClassVar[tuple[type[DataQuery], ...]] = ()
     page_type: ClassVar[type[DataPage]] = DataPage
+    #: The listing the current traversal pages: ``(session, query token, entries)``; None between sessions.
+    _listing: Optional[tuple[object, str, Sequence[tuple[str, Any]]]] = None
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        self._listing = None        # a listing is a session's: never pinned past it
+        await super().__aexit__(exc_type, exc, traceback)
 
     async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
         self._require_open()
@@ -297,13 +315,21 @@ class CollectionSource(Source, ABC):
         page_size: Optional[int] = None,
         narrow: Optional[Mapping[str, Any]] = None,
     ) -> DataPage:
-        self._require_open()
+        """One page. A fetch with no cursor SCANS the collection; a fetch that continues a cursor pages
+        the scan that cursor came from (kept for the session, per query) -- one listing per traversal,
+        whatever the page size, and every page of it from one consistent snapshot. A new traversal
+        (no cursor), a new session or another query scans again."""
+        session = self._require_open()
         query = self.effective_query(narrow)
         self._check_query(query)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
         token = _paging.query_token(query)
         after = None if cursor is None else _paging.decode(cursor, token)
-        entries, last = _paging.slice_after(await self._scan(query), after, limit)
+        listing = self._listing
+        if after is None or listing is None or listing[0] is not session or listing[1] != token:
+            listing = (session, token, await self._scan(query))
+            self._listing = listing
+        entries, last = _paging.slice_after(listing[2], after, limit)
         return self.page_type(
             items=tuple(self._item(key, raw) for key, raw in entries),
             next_cursor=None if last is None else _paging.encode(last, token),

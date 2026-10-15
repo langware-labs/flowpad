@@ -46,7 +46,7 @@ def read_trigger_result(trigger_dir: Path) -> "tuple[Optional[TriggerSpec], str]
         return None, f"{TRIGGER_JSON} is not valid JSON: {exc}"
 
 
-def trigger_asset_hash(ref: FSRef) -> float:
+def trigger_asset_hash(ref: FSRef) -> int:
     """Freshness is the mtime of ``trigger.json``, and only that file.
 
     A trigger folder carries an identity capsule beside its document, and a
@@ -73,6 +73,7 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
         "fire_once": spec.fire_once,
         "max_fires_per_minute": spec.max_fires_per_minute,
         "confirm": spec.confirm or None,
+        "runs_on": spec.place or None,
     }
 
     if spec.tag is not None:
@@ -88,7 +89,6 @@ def row_fields(spec: TriggerSpec, *, parent_type_id: str = "") -> dict:
             sched_trigger_type=spec.schedule.every,
             expr=spec.schedule.expr,
             timezone=spec.schedule.timezone or None,
-            runs_on=spec.schedule.runs_on or None,
             instruction=spec.schedule.instruction or None,
             workdir=spec.schedule.workdir or None,
         )

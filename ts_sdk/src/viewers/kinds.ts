@@ -43,8 +43,8 @@ export async function checkKind(
   });
 }
 
-/** The full name of the kind a schema of the project defines as `name` (`gtm.icp` →
- *  `--gtm_studio--.gtm.icp`) — 404 (thrown) when it defines none. */
+/** The full name of the kind a schema of the project defines as `name` (`crm.lead` →
+ *  `--sales_desk--.crm.lead`) — 404 (thrown) when it defines none. */
 export async function resolveKind(name: string, projectId: string): Promise<string> {
   const { kind } = await apiClient.get<{ kind: string }>(`/api/v1/kinds/${encodeURIComponent(name)}/resolve`, {
     params: { project: projectId },
@@ -52,10 +52,10 @@ export async function resolveKind(name: string, projectId: string): Promise<stri
   return kind;
 }
 
-/** Every schema the project defines, as one tree: each kind with its fields, the kinds they name
+/** Every schema the project defines, as one tree: each with its fields, the kinds they name
  *  (linked, or held inside the row) and the dataset that keeps its rows — 404 (thrown) for an
  *  unknown project. */
-export function projectKinds(projectId: string): Promise<SchemaTree> {
+export function projectSchemas(projectId: string): Promise<SchemaTree> {
   return apiClient.get<SchemaTree>('/api/v1/kinds', { params: { project: projectId } });
 }
 

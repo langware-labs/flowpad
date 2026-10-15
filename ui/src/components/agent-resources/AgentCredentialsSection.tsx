@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
-import { dataContext, credentialsService, type Credential } from '@sdk';
+import { dataContext, credentialsService, missingNeeds, type Credential } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { AddConnectionDialog } from '@src/components/connections-manager/add-connection-dialog';
 import { buildCredentialRows, type CredentialRow } from '@src/components/credentials-view/credential-rows';
@@ -28,7 +28,8 @@ export function useCredentialState() {
       ? t`overridden by the project's`
       : row.state === 'connected'
         ? t`set`
-        : t`${row.missing.length} missing`;
+        : // An unsatisfied either-or group is ONE thing missing, however many members it has.
+          t`${missingNeeds(row.vars).length} missing`;
 }
 
 /**

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
@@ -158,6 +159,14 @@ def get_current_sod_store():
         return test_sod_override
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     return get_instance_settings().sod
+
+
+def request_fields(body: Any) -> dict:
+    """An action's fields from a JSON body, or from the ``request`` field of a multipart one (with files)."""
+    if not isinstance(body, dict):
+        return {}
+    raw = body.get("request")
+    return json.loads(raw) if isinstance(raw, str) else (raw if isinstance(raw, dict) else body)
 
 
 def get_current_request_info():

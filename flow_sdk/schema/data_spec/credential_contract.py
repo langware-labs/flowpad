@@ -64,12 +64,15 @@ class CredentialRequirement(StrEnum):
     """How much a project needs one variable — a credential var's ``required``.
 
     ``MUST``: the app does not work without it. ``OPTIONAL``: it turns a feature,
-    an integration or a deployment on. Compare against a member, never truthiness —
-    ``"OPTIONAL"`` is a non-empty string.
+    an integration or a deployment on. ``ONE_OF``: one way among the credential's
+    other ``ONE_OF`` variables — together they are one group, and any one of them
+    present is enough. Compare against a member, never truthiness — ``"OPTIONAL"``
+    is a non-empty string.
     """
 
     MUST = "MUST"
     OPTIONAL = "OPTIONAL"
+    ONE_OF = "ONE_OF"
 
 
 def as_requirement(value: Any) -> Any:
@@ -105,11 +108,18 @@ class CredentialVarKind(StrEnum):
     ``text``: the value itself (an API key, a URL). ``file``: a file's content (a
     service-account key JSON) — kept as a file on this machine, and the variable
     holds that file's path, which is what tools like ``GOOGLE_APPLICATION_CREDENTIALS``
-    expect.
+    expect. ``cli``: no value at all — a sign-in a command-line tool holds for itself
+    (``gcloud auth application-default login``). Nothing is stored and nothing is
+    injected; the variable declares the ``login`` a person runs and the ``check``
+    that says whether it is there. ``oauth``: no value either — a grant from ``provider``
+    covering ``scopes``, given in a browser and held by the connection (``token_for``).
+    Both are ways of a ONE_OF group: the alternative to typing a value.
     """
 
     TEXT = "text"
     FILE = "file"
+    CLI = "cli"
+    OAUTH = "oauth"
 
 
 #: A var's ``required`` field: the enum, reading a pre-enum bool on the way in.

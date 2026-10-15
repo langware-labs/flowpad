@@ -31,6 +31,20 @@ class FrontMatterFsRef(FSRef):
 
         return read_document(self._path).body.strip()
 
+    def read_frontmatter_and_body(self) -> tuple[dict, str]:
+        """``(frontmatter, stripped body)`` from ONE read and parse of the file.
+
+        What ``read_frontmatter()`` then ``read_body()`` answer, for a caller that
+        needs both — each of those opens and parses the file again. An unreadable
+        or undecodable file raises, as ``read_body`` does.
+        """
+        if not self._path.exists():
+            return {}, ""
+        from flow_sdk.assets.document import read_document
+
+        document = read_document(self._path)
+        return document.fields, document.body.strip()
+
     def write_frontmatter(self, fields: dict) -> None:
         """Merge fields into the existing frontmatter, preserving the body."""
         if self.read_only:

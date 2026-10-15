@@ -5,8 +5,8 @@
  *
  * Live repro: dock URL points at AgenticProcess `de2d24af` (project_id =
  * `dd682350…` = the oss checkout) yet carries `scope-activeProjectId=72fac107…`
- * (= sapora-streams, ambient at click). The Chats navigator reads
- * `currentDock.scopeFilter`, so it lists sapora-streams' chats while an oss chat
+ * (= acme-streams, ambient at click). The Chats navigator reads
+ * `currentDock.scopeFilter`, so it lists acme-streams' chats while an oss chat
  * is open.
  *
  * Invariant (user-stated): the opened entity's `project_id` wins over all — it is
@@ -31,7 +31,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Two distinct, valid entity ids (UUID v4 — the dock-URL codec validates
 // `activeProjectId` on decode and drops anything that isn't v4/v5).
-const AMBIENT_PROJECT_A = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'; // sapora-streams analog (active at click → seeded on URL)
+const AMBIENT_PROJECT_A = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'; // acme-streams analog (active at click → seeded on URL)
 const PROCESS_PROJECT_B = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'; // the opened chat's own project (oss analog)
 const PROCESS_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 

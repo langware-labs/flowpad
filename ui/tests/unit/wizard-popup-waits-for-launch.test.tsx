@@ -39,7 +39,7 @@ afterEach(() => {
 
 describe('WizardPopupRoot', () => {
   it('holds a popup opened during a launch, and shows it once the launch is done', () => {
-    openLaunch({ target: { projectId: 'spora' } });
+    openLaunch({ target: { projectId: 'acme' } });
     openWizardPopup(WIZARD);
 
     render(

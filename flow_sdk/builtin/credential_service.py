@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
+from flow_sdk.builtin.credential import write_setup_choice
 from flow_sdk.builtin.credential_files import credential_file, remove_credential_files, write_credential_file
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
@@ -122,6 +123,9 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
+    signed_in = sorted(name for name, v in values.items() if not spec.vars[name].holds_value and v not in (None, ""))
+    if signed_in:
+        raise CredentialError(f"{', '.join(signed_in)} is a sign-in, not a value: nothing is stored for it")
     if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     # A file var's content, read now: the pattern is checked against it, not against an ``@path``.
@@ -197,6 +201,7 @@ async def save_credential(
     deployment_id: Optional[str] = None,
     store: Optional[str] = None,
     require_setup: bool = True,
+    auto_declare: bool = False,
 ) -> "Credential":
     """Create a credential in a scope, or update one; then write any values where ``deployment_id``
     (default: this computer) keeps them. ``store`` (``env`` / ``vault``) first makes that deployment
@@ -221,6 +226,10 @@ async def save_credential(
         manifest_in["name"] = existing.name
     else:
         target_scope, project = await _new_scope(str(scope or "").strip(), project_id)
+
+    if auto_declare:
+        manifest_in, existing = await _auto_declaration(manifest_in, target_scope, project)
+        require_setup = False
 
     try:
         parsed = CredentialSpec.model_validate({**manifest_in, "schema": CURRENT_SCHEMA})
@@ -271,6 +280,48 @@ async def save_credential(
     await _write_values(spec, target_scope, dict(values or {}), await Placement.of(deployment))
     await spec.save()
     return spec
+
+
+async def _auto_declaration(manifest: dict, scope: CredentialScope, project: Optional["Project"]):
+    """Match exact variable names, never guess a provider from a prefix or a secret value."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+
+    variables = dict(manifest.get("vars") or {})
+    if len(variables) != 1:
+        raise CredentialError("auto setup expects one variable at a time")
+    key = next(iter(variables))
+    name = str(manifest.get("name") or "").strip()
+    owned = [spec for spec, location in await credentials_in_scope(project) if location.key == scope.key]
+    matches = [spec for spec in owned if key in spec.vars]
+    if name and matches and any(spec.name != name for spec in matches):
+        raise CredentialError(f"{key} already belongs to {matches[0].name}")
+    if not matches and name:
+        matches = [spec for spec in owned if spec.name == name]
+    if len(matches) > 1:
+        raise CredentialError(f"More than one credential declares {key}; edit its credential directly")
+    existing = matches[0] if matches else None
+    template = None
+    if existing is None:
+        templates = await shipped_templates()
+        matches = [spec for spec in templates if spec.name == name] if name else [
+            spec for spec in templates if key in spec.vars
+        ]
+        if len(matches) > 1:
+            raise CredentialError(f"More than one credential matches {key}; enter a credential name")
+        template = matches[0] if matches else None
+    target_name = name or (str(template.name) if template is not None else key.lower().replace("_", "-").strip("-"))
+    if existing is None:
+        existing = next((spec for spec in owned if spec.name == target_name), None)
+    source = existing or template
+    if source is not None and source.kind != CredentialKind.ENV:
+        raise CredentialError("Choose a credential that stores environment variables")
+    resolved = _manifest_of(source) if source is not None else {
+        "name": target_name, "vars": {},
+    }
+    current = resolved["vars"].get(key)
+    base = current.model_dump(mode="json") if current is not None else {}
+    resolved["vars"] = {**resolved["vars"], key: {**base, **variables[key]}}
+    return resolved, existing
 
 
 async def set_credential_values(
@@ -326,16 +377,52 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 
 async def set_credential_by_name(
-    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None
+    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None,
+    choice: str = "",
 ) -> "Credential":
-    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed."""
+    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``choice`` names
+    the ONE_OF way set up here when it holds no value (a sign-in through Flowpad); a value given for exactly one
+    way chooses that way by itself."""
     project = await get_project(project_id)
     if project_id and project is None:
         raise CredentialError("project not found")
-    if not any(str(v or "") for v in (values or {}).values()):
+    has_values = any(str(v or "") for v in (values or {}).values())
+    if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    return await set_credential_values(str(spec.typeid), values, deployment_id)
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
+    ways = [var for var, value in (values or {}).items() if str(value or "") and spec.is_way(var)]
+    if way := choice or (ways[0] if len(ways) == 1 else ""):
+        try:
+            await write_setup_choice(spec, way)
+        except ValueError as e:
+            raise CredentialError(str(e)) from e
+    await _reverify_waiting_sources(spec.name, project)
+    return stored
+
+
+async def _reverify_waiting_sources(name: str, project: Any) -> None:
+    """The project's sources still in setup that read credential ``name`` check again now: setting the credential
+    is what they waited on, and nothing else re-checks a source in setup (the poller runs active ones only)."""
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+
+    for source in await DataSource.get_all({"status": SourceStatus.SETUP.value}):
+        auth = source._auth()
+        if getattr(auth, "credential", "") != name or (project is not None and str(source.project_id) != str(project.id)):
+            continue
+        try:
+            await source.verify()
+        except Exception:  # noqa: BLE001 — storing the value succeeded; a failed re-check leaves the source as it was
+            logger.warning("credential %s: could not re-check source %s", name, source.id, exc_info=True)
+
+
+def shipped_provider_title(provider: str) -> str:
+    """A provider's display name from the registry this build ships, in-process; ``""`` when it ships none —
+    the synchronous half of ``_provider_title``, for a caller that cannot await (a computed field)."""
+    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
+
+    known = get_local_provider(provider)
+    return known.display_name if known is not None and known.display_name else ""
 
 
 async def _provider_title(provider: str) -> str:
@@ -345,11 +432,8 @@ async def _provider_title(provider: str) -> str:
     defines asks the connection service — which borrows a running backend or STARTS one, far
     too much for a title when the registry already knows it.
     """
-    from flow_sdk.core.oauth.provider_registry import get_local_provider  # noqa: PLC0415
-
-    known = get_local_provider(provider)
-    if known is not None and known.display_name:
-        return known.display_name
+    if known := shipped_provider_title(provider):
+        return known
     try:
         from flow_sdk.core.connections.specs import resolve_connection_spec  # noqa: PLC0415
 

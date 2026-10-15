@@ -35,6 +35,9 @@ class ResolvedSecrets(DataSpec):
     expires_at: Optional[AwareDatetime] = None
     #: Named values for the ``env`` and ``secrets`` shapes.
     values: dict[str, SecretStr] = {}
+    #: A declared credential with a ONE_OF group: the way it is set up by (a member's name — the thing a source
+    #: branches on), ``token`` holding the grant when that way is a sign-in. ``""``: no group, or none set up.
+    choice: str = ""
 
     def wire(self) -> dict:
         """The revealed form, for the one hop into a source host."""
@@ -45,6 +48,7 @@ class ResolvedSecrets(DataSpec):
             "identity": self.identity,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
             "values": {k: v.get_secret_value() for k, v in self.values.items()},
+            "choice": self.choice,
         }
 
     def value(self, name: str) -> str:

@@ -9,28 +9,36 @@
  */
 import { i18n, type MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
-import type { DataSource } from '@sdk';
+import type { DataSource, SetupNeed } from '@sdk';
 
 /** unresolved / setup / parked / paused are never polled until a person acts — the four reasons
- *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; retrying is the
- *  scheduler's own backoff after a transient failure, shown so an empty channel explains itself. */
-export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'retrying';
+ *  `DataSource.poll_refusal` gives; held keeps polling but a file waits on a person; mirror keeps
+ *  polling but the dataset it mirrors into is not current (the sweep failed, or records did not fit);
+ *  retrying is the scheduler's own backoff after a transient failure, shown so an empty channel
+ *  explains itself. */
+export type AttentionKind = 'unresolved' | 'setup' | 'parked' | 'paused' | 'held' | 'mirror' | 'retrying';
 
 export interface AttentionReason {
   kind: AttentionKind;
   /** The source's own words, or empty when it has none. */
   text: string;
+  /** A source in setup that waits on a sign-in: which one. It names the strip ("Needs GitHub sign-in"). */
+  need?: SetupNeed;
 }
 
 export function attentionReason(source: DataSource): AttentionReason | null {
   if (source.isUnresolved) return { kind: 'unresolved', text: '' };
-  if (source.needsSetup) return { kind: 'setup', text: source.setup_detail || '' };
+  if (source.needsSetup) {
+    const need = (source.setup_needs ?? []).find((n) => n.kind === 'connection');
+    return { kind: 'setup', text: source.setup_detail || '', ...(need ? { need } : {}) };
+  }
   if (source.isParked) {
     const code = (source.error_code || '').replace(/_/g, ' ');
     return { kind: 'parked', text: [code, source.error_detail || ''].filter(Boolean).join(': ') };
   }
   if (source.isPaused) return { kind: 'paused', text: '' };
   if (source.isHeld) return { kind: 'held', text: source.error_detail || '' };
+  if (source.isMirrorBroken) return { kind: 'mirror', text: source.error_detail || '' };
   if (source.isRetrying) return { kind: 'retrying', text: source.error_detail || '' };
   return null;
 }
@@ -89,6 +97,13 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
     fallback: msg`A file changed both here and remotely, so write-back wrote neither.`,
     next: msg`Make the two the same — edit either one — then Pull, or wait for the next sync.`,
   },
+  mirror: {
+    mark: 'parked',
+    verb: 'pull',
+    headline: msg`Mirror needs attention`,
+    fallback: msg`The dataset this source mirrors into could not be made current.`,
+    next: msg`Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync.`,
+  },
   retrying: {
     mark: 'on',
     verb: 'pull',
@@ -97,10 +112,29 @@ export const ATTENTION: Record<AttentionKind, AttentionFacts> = {
   },
 };
 
-/** The first line a surface shows: the kind's one name when it has one, else what is wrong. */
+/** What a source waiting on a sign-in is called: its provider's name, else the provider id. */
+const needTitle = (need: SetupNeed): string => need.title || need.name || '';
+
+/** The first line a surface shows: the sign-in it waits on, the kind's one name when it has one, else what
+ *  is wrong. */
 export const attentionHeadline = (reason: AttentionReason): string => {
+  if (reason.need) {
+    const title = needTitle(reason.need);
+    return reason.need.state === 'needs_reauth'
+      ? i18n._(msg`${title} sign-in needs renewing`)
+      : i18n._(msg`Needs ${title} sign-in`);
+  }
   const { headline } = ATTENTION[reason.kind];
   return headline ? i18n._(headline) : attentionText(reason);
+};
+
+/** What to do next: for a sign-in, the one sentence that says what nothing-arrives means; else the kind's. */
+export const attentionNext = (reason: AttentionReason): string => {
+  if (reason.need) {
+    const title = needTitle(reason.need);
+    return i18n._(msg`Nothing arrives until ${title} is connected. Press Setup — it takes a minute.`);
+  }
+  return i18n._(ATTENTION[reason.kind].next);
 };
 
 /** The verbs a surface offers for a source, the recovering one first; none when it listens. */

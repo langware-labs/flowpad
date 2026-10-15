@@ -100,7 +100,7 @@ EXPECTED = {
     "SPEC": "spec",
     "PROMPT": "prompt",
     "CONVERSATION": "conversation",
-    "WHITEBOARD": "whiteboard",
+    "CHART": "chart",
     "DATASET": "dataset",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",
@@ -158,6 +158,8 @@ EXPECTED = {
     "SKILLIT_SESSION": "skillit_session",
     "SKILLIT_CONFIG": "skillit_config",
     "COPILOT_SESSION": "copilot_session",
+    "OPENCODE_SESSION": "opencode_session",
+    "DEEPAGENTS_SESSION": "deepagents_session",
     "FLOWPAD_DIAGNOSIS": "flowpad_diagnosis",
     "DIAGNOSIS_REQUEST": "diagnosis_request",
     # Tab entity system + AgentTrace — additive members; the commits that added

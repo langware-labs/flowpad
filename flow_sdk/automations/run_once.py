@@ -30,18 +30,24 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-#: Test runs in flight — held so the loop cannot collect a task mid-run.
-_inflight: set["asyncio.Task[Any]"] = set()
+#: Test runs in flight, each with ``(run id, trigger id)`` — held so the loop cannot collect a task
+#: mid-run, and so a run whose history row is written only at its end can be answered as "running".
+_inflight: dict["asyncio.Task[Any]", tuple[str, str]] = {}
 
 
 class RunOnceRefused(ValueError):
     """The rule cannot be run as configured — the message says what to fix."""
 
 
-def _spawn(coro: Any, name: str) -> None:
-    task = asyncio.get_running_loop().create_task(coro, name=name)
-    _inflight.add(task)
-    task.add_done_callback(_inflight.discard)
+def _spawn(coro: Any, run_id: str, trigger_id: str) -> None:
+    task = asyncio.get_running_loop().create_task(coro, name=f"trigger-test:{trigger_id}")
+    _inflight[task] = (run_id, trigger_id)
+    task.add_done_callback(lambda done: _inflight.pop(done, None))
+
+
+def running(run_id: str) -> Optional[str]:
+    """The trigger id of a test run still in flight, else None."""
+    return next((trigger_id for held, trigger_id in _inflight.values() if held == run_id), None)
 
 
 def sample_tag(pattern: str) -> str:
@@ -94,8 +100,11 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
     ``message_id`` runs a stream inbox rule on that message (its real envelope)."""
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired  # noqa: PLC0415
 
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
     kind = TriggerType(str(trigger.trigger_type))
     tid = trigger.id or ""
+    run_id = str(mint_uuid())   # the history row's id, known before the work starts
     if message_id and kind == TriggerType.TAG:
         event = await subject_event(trigger, message_id)
 
@@ -112,8 +121,8 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
             cause=envelope,
             is_test=True,
         )
-        _spawn(run_tag_test(trigger, envelope, event_id), f"trigger-test:{tid}")
-        return RunOnceStarted(trigger_id=tid, event_id=event_id,
+        _spawn(run_tag_test(trigger, envelope, event_id, run_id=run_id), run_id, tid)
+        return RunOnceStarted(trigger_id=tid, run_id=run_id, event_id=event_id,
                               detail={"tag": envelope.tag, "target": envelope.target})
 
     if kind == TriggerType.FSOP:
@@ -124,9 +133,9 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
         from flow_sdk.builtin.change_event import ChangeEvent  # noqa: PLC0415
         from flow_sdk.server.fsop_watcher import _fire  # noqa: PLC0415
 
-        _spawn(_fire(trigger, [ChangeEvent(path=Path(trigger.watch_path), change_type="test")], is_test=True),
-               f"trigger-test:{tid}")
-        return RunOnceStarted(trigger_id=tid, detail={"path": trigger.watch_path})
+        _spawn(_fire(trigger, [ChangeEvent(path=Path(trigger.watch_path), change_type="test")], is_test=True,
+                     run_id=run_id), run_id, tid)
+        return RunOnceStarted(trigger_id=tid, run_id=run_id, detail={"path": trigger.watch_path})
 
     if kind == TriggerType.SCHEDULE:
         from flow_sdk.builtin.trigger import run_schedule_fire  # noqa: PLC0415
@@ -139,8 +148,8 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None, *
             project_id=trigger.project_id,
             is_test=True,
         )
-        _spawn(run_schedule_fire(trigger, event_id, is_test=True), f"trigger-test:{tid}")
-        return RunOnceStarted(trigger_id=tid, event_id=event_id)
+        _spawn(run_schedule_fire(trigger, event_id, is_test=True, run_id=run_id), run_id, tid)
+        return RunOnceStarted(trigger_id=tid, run_id=run_id, event_id=event_id)
 
     # HOOK: a rule folder runs its own trigger.py against a sample prompt event.
     return await _run_hook_rule_once(trigger)

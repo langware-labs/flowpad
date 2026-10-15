@@ -1,4 +1,5 @@
-import type { ServiceEndpoint } from '@sdk';
+import type { ServedApp } from '@sdk';
+import { webappAsset } from '@src/components/project-setup/use-project-load';
 import PersistentIframe, { type PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -7,13 +8,12 @@ import { WebDebugComponent } from './WebDebugComponent';
 import { WebappErrorBanner } from './WebappErrorBanner';
 import { useWebappDiagnostics } from './useWebappDiagnostics';
 import { useWebappFix } from './useWebappFix';
-import { WebappSetupOverlay } from './WebappSetupOverlay';
-import { useSetupRun } from '@src/components/project-setup/use-setup-run';
+import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 
 export interface WebappDisplayProps {
   /** The endpoint serving what the frame shows — the probe asks it what is wrong,
    *  and the repair run is pointed at it. */
-  endpoint: ServiceEndpoint | null;
+  endpoint: ServedApp | null;
   /** The URL the frame loads: the endpoint's direct address or its service path. */
   src: string;
   testId?: string;
@@ -41,9 +41,8 @@ export interface WebappDisplayProps {
  *   ok       → get out of the way
  *
  * An app that is simply not running yet is not broken: a project's web app is a node of the project's
- * setup tree, so a display that finds it down runs THAT setup first (what it needs, then install →
- * build → start) and shows "Setting things up" with the live tree. Only an app its setup could not bring
- * up goes to the debug panel and the repair agent.
+ * setup tree. A display that finds it down invokes the same Load gate as Open: operational work runs,
+ * missing installation asks for approval, and failures remain actionable in the gate.
  */
 export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayProps>(function WebappDisplay(
   { endpoint, src, testId, cacheKey = 0, workdir, targetTypeId },
@@ -82,11 +81,10 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   }, [diagnostics.refresh]);
 
   // The app's own node of its project's setup tree — run once when the display finds the app down.
-  const setupRoot = endpoint?.webapp_id ? `micro_app-${endpoint.webapp_id}` : '';
+  const setupRoot = webappAsset(endpoint?.webapp_id);
   const setupProject = setupRoot ? (endpoint?.project_id ?? '') : '';
   const needsSetup = !!setupProject && verdict.severity === 'fatal' && verdict.code === 'not_running';
-  const setup = useSetupRun(setupProject, setupRoot, refreshAll, { autoStart: needsSetup });
-  const settingUp = setup.running || setup.starting;
+
 
   useImperativeHandle(
     ref,
@@ -103,16 +101,28 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
   // (and noisy on apps that log a benign console error every load).
   useEffect(() => {
     if (verdict.severity !== 'fatal') return;
-    if (settingUp || fix.running || fix.autoAttempted) return;
+    if (needsSetup || fix.running || fix.autoAttempted) return;
     fix.start();
-  }, [verdict.severity, settingUp, fix.running, fix.autoAttempted, fix.start]);
+  }, [verdict.severity, needsSetup, fix.running, fix.autoAttempted, fix.start]);
+
+  // Every fatal branch unmounts the frame, so what it parked is the broken page. Coming back from one
+  // must load the app again even when the port never went away (a 500, a crash on start, a repair) —
+  // unless the port did go away and come back, which `reloadNonce` has already counted.
+  const [recoveries, setRecoveries] = useState(0);
+  const fatalAt = useRef<number | null>(null);
+  useEffect(() => {
+    if (verdict.severity === 'fatal') {
+      fatalAt.current ??= diagnostics.reloadNonce;
+      return;
+    }
+    if (fatalAt.current === diagnostics.reloadNonce) setRecoveries((n) => n + 1);
+    fatalAt.current = null;
+  }, [verdict.severity, diagnostics.reloadNonce]);
 
   const showBanner = verdict.severity === 'degraded' && dismissedBanner !== verdict.code;
 
-  if (settingUp) {
-    return (
-      <WebappSetupOverlay tree={setup.tree} questionId={setup.questionId} onQuestionSettled={setup.settleQuestion} />
-    );
+  if (needsSetup) {
+    return <ProjectLoadGate projectId={setupProject} asset={setupRoot}><RefreshLoadedApp refresh={refreshAll} /></ProjectLoadGate>;
   }
 
   if (verdict.severity === 'fatal') {
@@ -158,9 +168,15 @@ export const WebappDisplay = forwardRef<PersistentIframeHandle, WebappDisplayPro
           // The registry parks a dead frame rather than destroying it, so an app
           // that recovers would otherwise re-reveal Chrome's error page. The
           // reload nonce advances on every down→up edge to force a real reload.
-          cacheKey={cacheKey + diagnostics.reloadNonce}
+          cacheKey={cacheKey + diagnostics.reloadNonce + recoveries}
         />
       </div>
     </div>
   );
 });
+
+/** Refresh diagnostics once the provider Load has completed, without starting installation behind approval. */
+function RefreshLoadedApp({ refresh }: { refresh: () => void }) {
+  useEffect(refresh, [refresh]);
+  return <p role="status" className="p-8 text-sm text-muted-foreground"><Trans>Checking the app…</Trans></p>;
+}

@@ -19,10 +19,20 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
-from flow_sdk.core.compute_op.ask import AssistRefused, ask_person, assist, open_questions, pending, serve_here
+from flow_sdk.core.compute_op.ask import (
+    AssistRefused,
+    ask_person,
+    assist,
+    held_items,
+    open_questions,
+    pending,
+    seen,
+    serve_here,
+)
 from flow_sdk.core.compute_op.ask import answer as deliver_answer
 from flow_sdk.core.compute_op.ask import cancel as decline
 from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
 
 router = APIRouter(prefix="/api/v1/ask")
 
@@ -67,6 +77,10 @@ class AskRequest(BaseModel):
     file: bool = False
     #: Closes by itself when its goal holds: the window offers no Send.
     auto: bool = False
+    #: Several ways to answer, of which the person picks one (``AskOp.choices``).
+    choices: list[AskChoiceSpec] = []
+    #: Several questions asked as one (``Question.items``).
+    items: list[AskItemSpec] = []
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
@@ -95,6 +109,8 @@ async def ask_for_another_process(body: AskRequest):
         secret=body.secret,
         file=body.file,
         auto=body.auto,
+        choices=body.choices,
+        items=body.items,
         wizard_id=body.wizard_id,
         guide=body.guide,
         assist_agent=body.assist_agent,
@@ -133,7 +149,12 @@ async def answer_question(question_id: str, body: AnswerRequest):
         return _fail("that question is no longer waiting", 404)
 
     value: Optional[Any] = body.value
-    if question.shape is not None:
+    if question.items:
+        try:
+            value = held_items(question.items, value)
+        except DeclaredShapeError as mismatch:
+            return _fail(str(mismatch), 422)
+    elif question.shape is not None:
         try:
             value = to_declared(value, question.shape)
         except DeclaredShapeError as mismatch:
@@ -152,6 +173,14 @@ async def cancel_question(question_id: str):
     if not decline(question_id):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/seen")
+async def question_seen(question_id: str):
+    """A screen is showing the question: it waits as long as someone has it open (``ask.seen``)."""
+    if not seen(question_id):
+        return _fail("that question is no longer waiting", 404)
+    return ApiSuccessResponse(data={"seen": question_id})
 
 
 @router.post("/{question_id}/assist")

@@ -10,6 +10,8 @@ Real request middleware + graph dispatcher; the hub hop and the clone are stubbe
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -39,8 +41,8 @@ def calls(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_checked_out_project_passes_through(tmp_path, monkeypatch, calls):
-    project = await Project(name=str(tmp_path / "spora")).save()
-    (tmp_path / "spora").mkdir(exist_ok=True)
+    project = await Project(name=str(tmp_path / "acme")).save()
+    (tmp_path / "acme").mkdir(exist_ok=True)
 
     async def _hydrate(cls, *_a, **_k):
         calls["hydrate"].append(True)
@@ -167,7 +169,7 @@ async def test_a_launch_waits_its_turn_behind_an_index_already_running(tmp_path,
 
     async def _ensure(project_id, someone_typeid=None):
         order.append("ensure")
-        return Project(id=project_id, name="spora")
+        return Project(id=project_id, name="acme")
 
     monkeypatch.setattr(launch_action.ComputeNode, "get_local", classmethod(_get_local))
     monkeypatch.setattr(launch_action, "ensure_launched_project", _ensure)
@@ -176,3 +178,54 @@ async def test_a_launch_waits_its_turn_behind_an_index_already_running(tmp_path,
 
     assert resp.status_code == 200, resp.text
     assert order == ["turn taken", "ensure", "turn released"]
+
+
+@pytest.mark.asyncio
+async def test_a_launched_projects_assets_are_the_projects_own(tmp_path, monkeypatch):
+    """The checkout is the project's OWN folder: what it declares is project content. Indexed as the
+    user's, its credentials vanished from the project's setup (nothing asked, nothing injected)."""
+    import json
+
+    from flow_sdk.builtin import project_setup
+    from flow_sdk.builtin.credential_status import credentials_status
+
+    root = tmp_path / "acme"
+    pack = root / "agentic-assets" / "credential" / "google-cloud"
+    pack.mkdir(parents=True)
+    (pack / "credential.json").write_text(json.dumps({"name": "google-cloud", "schema": 2, "vars": {"GCP_KEY": {}}}))
+    (pack / "setup.md").write_text("Create a key.")
+    project = await Project(name=f"launched-{uuid4().hex[:8]}", fs_storage_mount_path=str(root)).save()
+
+    resp = await _call_local("POST", f"project/{project.id}/launch-ensure", json={})
+
+    assert resp.status_code == 200, resp.text
+    rows = [r for r in (await credentials_status(project)).credentials if r.name == "google-cloud"]
+    assert [(r.scope, r.project_id) for r in rows] == [("project", str(project.id))]
+    readiness = await project_setup.readiness_of(project)
+    assert [r.name for r in readiness.to_do] == ["google-cloud"]
+
+
+@pytest.mark.asyncio
+async def test_a_machine_without_git_gets_it_before_the_clone(monkeypatch, calls):
+    """A fresh Windows machine has no git: the launch installs it (the shipped git-on-path op) and then
+    clones, instead of failing with "install it from Flowpad's setup"."""
+    import flow_sdk.app.actions.launch_action as launch
+    from flow_sdk.core.wizard.runner import Resolved
+
+    pid = str(uuid4())
+
+    async def _hydrate(cls, project_id, someone_typeid=None):
+        return Project(id=project_id, name=f"launched-{pid[:8]}")
+
+    run_op = AsyncMock(return_value=SimpleNamespace(detail="installed"))
+    monkeypatch.setattr(Project, "hydrate_from_hub", classmethod(_hydrate))
+    monkeypatch.setattr(launch.sys, "platform", "win32")
+    monkeypatch.setattr(launch.shutil, "which", lambda _name: None)
+    monkeypatch.setattr("flow_sdk.core.wizard.execute._resolve_op",
+                        AsyncMock(return_value=Resolved(SimpleNamespace(name="git-on-path"), True)))
+    monkeypatch.setattr("flow_sdk.core.compute_op.runner.run_op", run_op)
+
+    resp = await _call_local("POST", f"project/{pid}/launch-ensure", json={})
+
+    assert resp.status_code == 200, resp.text
+    assert run_op.await_args.args[0].name == "git-on-path" and calls["setup"] == [pid]

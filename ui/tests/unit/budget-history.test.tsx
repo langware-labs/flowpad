@@ -30,12 +30,12 @@ const row = (over: Record<string, unknown> = {}) => ({
   event: 'allocated',
   ts: 1_788_000_000,
   endpoint_typeid: EP(2),
-  endpoint_name: 'ishay@langware.ai default',
+  endpoint_name: 'bob@example.com default',
   source_typeid: EP(1),
   beneficiary_typeid: `user-${UUID(3)}`,
-  beneficiary_name: 'Ishay Sela',
+  beneficiary_name: 'Bob Example',
   actor_typeid: `user-${UUID(3)}`,
-  actor_name: 'Ishay Sela',
+  actor_name: 'Bob Example',
   limits_before: null,
   limits_after: { cost_usd_total: 3 },
   member_default_limits_before: null,
@@ -68,8 +68,8 @@ describe('BudgetHistoryDialog', () => {
     await waitFor(() => expect(screen.getByTestId(`budget-history-row-${UUID(9)}`)).toBeTruthy());
     const text = screen.getByTestId(`budget-history-row-${UUID(9)}`).textContent ?? '';
     expect(text).toContain('given');
-    expect(text).toContain('ishay@langware.ai default');
-    expect(text).toContain('Ishay Sela');
+    expect(text).toContain('bob@example.com default');
+    expect(text).toContain('Bob Example');
     expect(text).toContain('$3.00');
   });
 

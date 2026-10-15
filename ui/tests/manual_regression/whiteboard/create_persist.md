@@ -37,14 +37,14 @@ tags: [whiteboard, create, persistence]
 * In the editor tab, run via `browser_evaluate`:
   ```js
   const lib = window.__excalidrawLib;
-  const api = window.__whiteboardApi;
+  const api = window.__chartApi;
   const els = lib.convertToExcalidrawElements([
     { type: 'rectangle', id: 'R1', x: 50, y: 50, width: 140, height: 60, label: { text: 'A' } },
     { type: 'rectangle', id: 'R2', x: 280, y: 50, width: 140, height: 60, label: { text: 'B' } },
     { type: 'arrow', x: 190, y: 80, width: 90, height: 0, points: [[0,0],[90,0]], start: { id: 'R1' }, end: { id: 'R2' } },
   ]);
   api.updateScene({ elements: els });
-  window.__whiteboardOnChange(els, api.getAppState(), api.getFiles());
+  window.__chartOnChange(els, api.getAppState(), api.getFiles());
   ```
 * Wait 1500ms past debounce.
 * Validate `<folder>/board.json` mtime updated AND parses as JSON with `kind: "excalidraw"` and `data.elements.length >= 2`.
@@ -53,7 +53,7 @@ tags: [whiteboard, create, persistence]
 ### C5: Reload preserves content
 * Navigate away (`${APP_URL}/`), then back to the editor URL.
 * Wait up to 5s for the editor + canvas to remount.
-* `window.__whiteboardApi.getSceneElements().length` >= 2 (the rectangles + arrow from C4).
+* `window.__chartApi.getSceneElements().length` >= 2 (the rectangles + arrow from C4).
 * No React error boundary visible (the `appState.collaborators` Map regression would surface here).
 
 ## Pass criteria

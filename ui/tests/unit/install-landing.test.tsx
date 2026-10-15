@@ -100,7 +100,7 @@ vi.mock('@src/components/git/CreatePrivateRepoForm', async () => {
 import InstallLanding from '@src/pages/entry/InstallLanding';
 
 const INSTALL_QUERY =
-  '?content_repo=https%3A%2F%2Fgithub.com%2Fcloudnsite%2Fcustomer-support.git&content_branch=main&name=CloudNSite+agents';
+  '?content_repo=https%3A%2F%2Fgithub.com%2Fglobex%2Fcustomer-support.git&content_branch=main&name=Globex+agents';
 
 describe('/install landing', () => {
   beforeEach(() => {
@@ -115,7 +115,7 @@ describe('/install landing', () => {
     const user = userEvent.setup();
     render(<InstallLanding />);
 
-    expect(screen.getByText('Where do you want to install CloudNSite agents?')).toBeTruthy();
+    expect(screen.getByText('Where do you want to install Globex agents?')).toBeTruthy();
     expect(mocks.allowedRoles).toEqual(['admin', 'write']);
     expect(screen.getByText(/default branch is not changed/i)).toBeTruthy();
     await user.click(screen.getByTestId('choose-existing-repo'));
@@ -129,8 +129,8 @@ describe('/install landing', () => {
         name: 'website',
         gitOrigin: { ...existingRepo.git_origin, branch: 'develop' },
         install: {
-          name: 'CloudNSite agents',
-          content_repo: 'https://github.com/cloudnsite/customer-support.git',
+          name: 'Globex agents',
+          content_repo: 'https://github.com/globex/customer-support.git',
           content_branch: 'main',
           scope: 'shared',
           review_branch: 'flowpad/install-cloudnsite-agents',

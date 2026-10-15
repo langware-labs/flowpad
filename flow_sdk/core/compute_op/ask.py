@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.schema.data_spec.compute_op_spec import AskChoiceSpec, AskItemSpec
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult
 
 
@@ -70,6 +71,12 @@ class Question:
     file: bool = False
     #: The question closes by itself when its goal holds (an ``auto_continue`` op): nothing to Send.
     auto: bool = False
+    #: Several ways to answer, of which the person picks one (``AskOp.choices``).
+    choices: "list[AskChoiceSpec]" = field(default_factory=list)
+    #: SEVERAL questions asked as one — everything a wizard run needs, put to the person before it
+    #: starts. The answer is then ``{item path: its value}``, and an item left out is declined.
+    #: Empty: an ordinary question.
+    items: "list[AskItemSpec]" = field(default_factory=list)
     #: The Wizard entity this question is a step of, when it is one — its
     #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
     #: one thread back from a settled question to the run that is still going:
@@ -114,6 +121,8 @@ class Question:
             "secret": self.secret,
             "file": self.file,
             "auto": self.auto,
+            "choices": [choice.model_dump(mode="json") for choice in self.choices],
+            "items": [item.model_dump(mode="json") for item in self.items],
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
@@ -189,6 +198,8 @@ def open_question(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: "Optional[list[AskItemSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -212,6 +223,8 @@ def open_question(
         secret=secret,
         file=file,
         auto=auto,
+        choices=list(choices or []),
+        items=list(items or []),
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
@@ -223,6 +236,36 @@ def open_question(
     )
     _PENDING[question.id] = question
     return question
+
+
+def answer_items(items: "list[AskItemSpec]", decide: "Callable[[AskItemSpec], Any]") -> dict:
+    """A list question's answer, built one item at a time: ``decide(item)`` gives the item's value,
+    or ``None`` to decline it (it is then left out). The one spelling of that answer for every
+    answerer that is not the form."""
+    given = {item.path: decide(item) for item in items}
+    return {path: value for path, value in given.items() if value is not None}
+
+
+def held_items(items: "list[AskItemSpec]", value: Any) -> dict:
+    """A list question's answer, each given value held to ITS item's kind — or ``DeclaredShapeError``.
+    An item left out is declined, which is an answer; a key that names no item is a mistake."""
+    from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared  # noqa: PLC0415
+
+    if not isinstance(value, dict):
+        raise DeclaredShapeError("the answer to a list of questions is an object: {item path: its value}")
+    by_path = {item.path: item for item in items}
+    held: dict = {}
+    for path, given in value.items():
+        item = by_path.get(path)
+        if item is None:
+            raise DeclaredShapeError(f"{path!r} is not one of the questions asked")
+        if item.kind:
+            try:
+                given = to_declared(given, item.kind)
+            except DeclaredShapeError as mismatch:
+                raise DeclaredShapeError(f"{item.prompt or path}: {mismatch}") from mismatch
+        held[path] = given
+    return held
 
 
 def pending(question_id: str) -> Optional[Question]:
@@ -263,6 +306,23 @@ def answer(question_id: str, value: Any) -> bool:
 def cancel(question_id: str) -> bool:
     """Decline to answer. The op hears "no value", not "something broke"."""
     return _settle(question_id, lambda future: future.set_exception(Cancelled()))
+
+
+#: How long a question stays asked after a screen last said it is showing it (``seen``). A person who has
+#: the question open is given as long as they keep it open; one who walked away is given this long.
+SEEN_SECONDS = 60.0
+
+
+def seen(question_id: str) -> bool:
+    """A screen is showing this question: it keeps waiting at least ``SEEN_SECONDS`` from now. While the
+    question stays on screen (the screen says so every ~20 s) it has no deadline; once nobody shows it,
+    the op's own deadline — or this one — ends it. False when nothing is waiting under that id."""
+    question = _PENDING.get(question_id)
+    if question is None:
+        return False
+    if question.deadline is not None:
+        question.deadline = max(question.deadline, asyncio.get_running_loop().time() + SEEN_SECONDS)
+    return True
 
 
 def forget(question_id: str) -> None:
@@ -341,6 +401,8 @@ async def ask_person(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: "Optional[list[AskItemSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -369,6 +431,8 @@ async def ask_person(
         secret=secret,
         file=file,
         auto=auto,
+        choices=choices,
+        items=items,
         wizard_id=wizard_id,
         guide=guide,
         assist_agent=assist_agent,
@@ -432,6 +496,8 @@ async def ask_through_backend(
     secret: bool = False,
     file: bool = False,
     auto: bool = False,
+    choices: "Optional[list[AskChoiceSpec]]" = None,
+    items: "Optional[list[AskItemSpec]]" = None,
     wizard_id: str = "",
     guide: str = "",
     assist_agent: str = "",
@@ -462,6 +528,8 @@ async def ask_through_backend(
         "secret": secret,
         "file": file,
         "auto": auto,
+        "choices": [choice.model_dump(mode="json") for choice in choices or []],
+        "items": [item.model_dump(mode="json") for item in items or []],
         "wizard_id": wizard_id,
         "guide": guide,
         "assist_agent": assist_agent,

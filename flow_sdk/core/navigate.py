@@ -27,7 +27,7 @@ import binascii
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from flow_sdk.schema.data_spec.dock_pointer_spec import PROJECT_VFS, DockPointerSpec, tab_pointer_json
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, NavigateResult
@@ -96,6 +96,41 @@ def _is_loopback(url: str) -> bool:
     return host in _LOOPBACK_HOSTS or host.endswith(".localhost")
 
 
+def _local_port(url: str) -> Optional[int]:
+    """The port of an address on this machine, else None."""
+    if not _is_loopback(url):
+        return None
+    try:
+        return urlsplit(url).port
+    except ValueError:
+        return None
+
+
+async def start_app_at(url: str, project_id: Optional[str]) -> Optional[tuple[ExitCode, Optional[str], str]]:
+    """Start the app of ``project_id`` that DECLARES the port of a dead address on this machine. None
+    when none does.
+
+    An agent that opens ``http://localhost:3300`` (an ``auto_open``) names a port, not an app; the
+    declaration (``serving.ports``) is what ties the two. For a caller that can wait for a server to
+    warm up — a probe only asks."""
+    from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
+
+    port = _local_port(url)
+    app = await webapp_setup.app_declaring(port, project_id) if port else None
+    project = await Project.get_by_id(str(app.project_id)) if app is not None and app.project_id else None
+    if app is None or project is None:
+        return None
+    # The one way an app comes up: validate → load → setup → fix.
+    loaded = await bring_up(project, asset=app, wait=True)
+    if loaded.state is LoadState.FAILED:
+        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) did not come up: {loaded.detail}"
+    logger.info("navigate: started %s for %s", app.name, url)
+    return ExitCode.OK, "ok", ""
+
+
 async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     """``(exit_code, verdict, detail)`` for a web page shown in the display.
 
@@ -123,17 +158,17 @@ async def probe_web_url(url: str) -> tuple[ExitCode, Optional[str], str]:
     return ExitCode.OK, "ok", ""
 
 
-async def _probe_endpoint(endpoint_id: str) -> tuple[ExitCode, Optional[str], str]:
+async def _probe_endpoint(endpoint_id: str, route: Optional[str] = None) -> tuple[ExitCode, Optional[str], str]:
     """A service endpoint, probed where it runs — the same loopback request its
-    ``probe`` action makes."""
+    ``probe`` action makes. On an audience proxy, ``route`` names the app whose process is asked."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
     from flow_sdk.core.webapp_probe import probe_webapp  # noqa: PLC0415
 
     endpoint = await ServiceEndpoint.get_by_id(endpoint_id)
     if endpoint is None:
         return ExitCode.NOT_FOUND, "not_found", f"No service endpoint {endpoint_id}."
-    backend = endpoint.backend
-    if getattr(backend, "type", None) != "proxy" or endpoint.remote:
+    backend = endpoint.proxy_of(route)
+    if backend is None or endpoint.remote:
         return ExitCode.OK, None, ""  # nothing on this machine to probe
     health = "/" + str(backend.health or "/").lstrip("/")
     found = await probe_webapp(f"http://127.0.0.1:{backend.port}{health}", backend.port)
@@ -156,7 +191,9 @@ async def probe_target(view_type: str, pointer: str, path: Optional[Path]) -> tu
     if url is not None:
         return await probe_web_url(url)
     if view_type == "app" and pointer.startswith("service_endpoint-"):
-        return await _probe_endpoint(pointer.split("-", 1)[1].split("/", 1)[0])
+        address, _, query = pointer.partition("?")
+        route = parse_qs(query, keep_blank_values=True).get("route", [None])[0]
+        return await _probe_endpoint(address.split("-", 1)[1].split("/", 1)[0], route)
     return ExitCode.OK, None, ""  # a screen or an entity view: resolving it was the check
 
 
@@ -320,7 +357,7 @@ async def probe_display_target(target: dict[str, Any]) -> tuple[ExitCode, Option
     if kind == DisplayTargetKind.VFS and target.get("path"):
         return await probe_target("", "", Path(str(target["path"])))
     if kind == DisplayTargetKind.APP and str(target.get("typeid") or "").startswith("service_endpoint-"):
-        return await _probe_endpoint(str(target["typeid"]).split("-", 1)[1])
+        return await _probe_endpoint(str(target["typeid"]).split("-", 1)[1], target.get("route"))
     if kind == DisplayTargetKind.DOCK:
         return await probe_target(str(target.get("view_type") or ""), str(target.get("pointer") or ""), None)
     return ExitCode.OK, None, ""  # an entity: resolving it was the check

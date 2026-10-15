@@ -34,15 +34,29 @@ const NOT_READY: ProjectReadiness = {
       can_skip_always: true,
       why_not_always: '',
       vars: [
-        { env_var: 'GOOGLE_APPLICATION_CREDENTIALS', label: 'Service account key', hint: '', help_url: '', pattern: '', secret: true, file: true, present: false },
+        {
+          env_var: 'GOOGLE_APPLICATION_CREDENTIALS',
+          label: 'Service account key',
+          hint: '',
+          help_url: '',
+          pattern: '',
+          secret: true,
+          file: true,
+          present: false,
+        },
       ],
     },
   ],
   gaps: [],
 };
 const QUESTION = {
-  id: 'q1', op: 'ask-google-cloud', prompt: 'Google Cloud: Service account key', fields: 'string',
-  secret: true, file: true, run: RUN,
+  id: 'q1',
+  op: 'ask-google-cloud',
+  prompt: 'Google Cloud: Service account key',
+  fields: 'string',
+  secret: true,
+  file: true,
+  run: RUN,
 };
 
 afterEach(() => {
@@ -57,8 +71,15 @@ afterEach(() => {
 async function open(readiness: ProjectReadiness, onOpenChange = vi.fn()) {
   vi.spyOn(Project, 'setupRequirements').mockResolvedValue(readiness);
   vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
-  render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={onOpenChange} />);
-  await screen.findByTestId('project-setup-requirements');
+  render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={onOpenChange} />);
+  // Until ``readiness`` has been drawn, not until the dialog is up: the Required list is there (empty)
+  // before the requirements arrive, so waiting for it alone returns ahead of the data on a slow render.
+  await waitFor(() => {
+    if (readiness.ready) expect(screen.getByTestId('project-setup-ready')).toBeInTheDocument();
+    else expect(screen.getByTestId('project-setup-requirements').children).toHaveLength(readiness.to_do.length);
+    if (readiness.optional?.length) expect(screen.getByTestId('project-setup-optional')).toBeInTheDocument();
+    if (readiness.skipped?.length) expect(screen.getByTestId('project-setup-skipped')).toBeInTheDocument();
+  });
   return onOpenChange;
 }
 
@@ -79,7 +100,7 @@ describe('ProjectSetupDialog', () => {
       path === '/api/v1/ask' ? { questions: [{ id: 'q1', run: RUN }] } : path === '/api/v1/ask/q1' ? QUESTION : null,
     );
 
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
 
     expect(await screen.findByTestId('project-setup-req-google-cloud')).toHaveTextContent('Service account key');
     await act(async () => fireEvent.click(screen.getByTestId('project-setup-start')));
@@ -91,19 +112,20 @@ describe('ProjectSetupDialog', () => {
   it('says so when there is nothing to set up', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ ...NOT_READY, ready: true, to_do: [] });
 
-    render(<ProjectSetupDialog projectId="p1" projectName="spora" open onOpenChange={() => undefined} />);
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
 
     expect(await screen.findByTestId('project-setup-ready')).toBeInTheDocument();
     expect(screen.queryByTestId('project-setup-start')).toBeNull();
   });
 });
 
-
 describe('ProjectSetupDialog — skipping', () => {
   it('Skip opens Locally | Always | Cancel; Locally marks it here and the dialog takes the readiness that follows', async () => {
     await open(NOT_READY);
     const after: ProjectReadiness = {
-      ...NOT_READY, ready: true, to_do: [],
+      ...NOT_READY,
+      ready: true,
+      to_do: [],
       skipped: [req({ skipped: { at: 1, by: 'u1', note: '' } })],
     };
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue(after);
@@ -119,8 +141,11 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(h.openDock).not.toHaveBeenCalled(); // a button in the row is not the row's link
   });
 
-  it('Always is offered only for the project\'s own asset, and says why not', async () => {
-    await open({ ...NOT_READY, to_do: [req({ can_skip_always: false, why_not_always: 'needed by drive — remove it first' })] });
+  it("Always is offered only for the project's own asset, and says why not", async () => {
+    await open({
+      ...NOT_READY,
+      to_do: [req({ can_skip_always: false, why_not_always: 'needed by drive — remove it first' })],
+    });
     fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
 
     expect(screen.getByTestId('project-setup-skip-always-google-cloud')).toBeDisabled();
@@ -144,8 +169,13 @@ describe('ProjectSetupDialog — skipping', () => {
     expect(skip).not.toHaveBeenCalled();
   });
 
-  it('checking rows hides each row\'s Skip and shows one bar that skips them all, then selects none', async () => {
-    const mapbox = req({ name: 'mapbox', title: 'Mapbox', typeid: 'credential-7f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f', required: false });
+  it("checking rows hides each row's Skip and shows one bar that skips them all, then selects none", async () => {
+    const mapbox = req({
+      name: 'mapbox',
+      title: 'Mapbox',
+      typeid: 'credential-7f1c2d3e-4a5b-4c6d-8e9f-0a1b2c3d4e5f',
+      required: false,
+    });
     await open({ ...NOT_READY, optional: [mapbox] });
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue({ ...NOT_READY, optional: [mapbox] });
     expect(screen.queryByTestId('project-setup-selection-bar')).toBeNull();
@@ -187,6 +217,68 @@ describe('ProjectSetupDialog — skipping', () => {
 });
 
 describe('ProjectSetupDialog — a credential says what it is needed for', () => {
+  it('names an either-or group of missing values as "A or B", the rest by commas', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            {
+              ...key,
+              env_var: 'GCP_PROJECT',
+              label: 'Project',
+              file: false,
+              required: 'MUST',
+              kind: 'text',
+              login: '',
+            },
+            { ...key, required: 'ONE_OF', kind: 'file', login: '' },
+            {
+              ...key,
+              env_var: 'GCLOUD_ADC',
+              label: 'gcloud sign-in',
+              file: false,
+              required: 'ONE_OF',
+              kind: 'cli',
+              login: 'gcloud auth application-default login',
+            },
+          ],
+        }),
+      ],
+    });
+    expect(screen.getByTestId('project-setup-req-google-cloud')).toHaveTextContent(
+      'Project, Service account key or gcloud sign-in',
+    );
+  });
+
+  it('a group with one member present is not missing', async () => {
+    const [key] = NOT_READY.to_do[0].vars;
+    await open({
+      ...NOT_READY,
+      to_do: [
+        req({
+          vars: [
+            { ...key, env_var: 'GCP_PROJECT', label: 'Project', file: false, required: 'MUST' },
+            { ...key, required: 'ONE_OF' },
+            {
+              ...key,
+              env_var: 'GCLOUD_ADC',
+              label: 'gcloud sign-in',
+              file: false,
+              required: 'ONE_OF',
+              kind: 'cli',
+              present: true,
+            },
+          ],
+        }),
+      ],
+    });
+    const row = screen.getByTestId('project-setup-req-google-cloud');
+    expect(row).toHaveTextContent('Project');
+    expect(row).not.toHaveTextContent('Service account key');
+  });
+
   it('shows needed_for beside the name, in place of the missing values', async () => {
     await open({ ...NOT_READY, to_do: [req({ needed_for: 'Reads the files in your bucket.' })] });
     const row = screen.getByTestId('project-setup-req-google-cloud');
@@ -201,7 +293,12 @@ describe('ProjectSetupDialog — a credential says what it is needed for', () =>
 
     const onOpenChange = await open({
       ...NOT_READY,
-      to_do: [req({ needed_for: 'Reads the files in your bucket.', justification: 'The sync job lists the bucket every hour.' })],
+      to_do: [
+        req({
+          needed_for: 'Reads the files in your bucket.',
+          justification: 'The sync job lists the bucket every hour.',
+        }),
+      ],
     });
     fireEvent.click(screen.getByTestId('project-setup-why-google-cloud'));
     expect(await screen.findByTestId('project-setup-why-text-google-cloud')).toHaveTextContent(
@@ -231,10 +328,71 @@ describe('ProjectSetupDialog — a row opens its page with it selected', () => {
   it('points each kind at its own page', () => {
     const SOURCE = 'data_source-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d';
     const APP = 'micro_app-8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e';
-    expect(pointerForRequirement(req({ credential_kind: 'oauth' }), 'p1')?.pointer).toBe(`connections/p1/${GCP_TYPEID}`);
-    expect(pointerForRequirement(req({ kind: 'source', typeid: SOURCE }), 'p1')?.pointer).toBe(SOURCE.slice('data_source-'.length));
+    expect(pointerForRequirement(req({ credential_kind: 'oauth' }), 'p1')?.pointer).toBe(
+      `connections/p1/${GCP_TYPEID}`,
+    );
+    expect(pointerForRequirement(req({ kind: 'source', typeid: SOURCE }), 'p1')?.pointer).toBe(
+      SOURCE.slice('data_source-'.length),
+    );
     const app = pointerForRequirement(req({ kind: 'webapp', typeid: APP }), 'p1');
     expect([app?.viewType, app?.pointer]).toEqual(['app', APP]);
     expect(pointerForRequirement(req({ kind: 'dependency' }), 'p1')?.viewType).toBe('project');
+  });
+});
+
+describe('ProjectSetupDialog — controlling a run', () => {
+  const node = (id: string, state: string, children: unknown[] = []) => ({
+    id,
+    label: id.toUpperCase(),
+    level: 0,
+    state,
+    detail: '',
+    prepare: null,
+    run: null,
+    children,
+    shared: false,
+  });
+  const tree = (state: string, child: string) =>
+    ({
+      state,
+      detail: '',
+      root: node('project-p1', state, [node('credential:gmail', child)]),
+      total: 2,
+      done: 0,
+    }) as never;
+
+  it('while running: one status line with what it is on and Stop; rows can still be skipped', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue(NOT_READY);
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: true, tree: tree('running', 'running') });
+    h.get.mockResolvedValue(null);
+    const stop = vi.spyOn(Project, 'stopSetup').mockResolvedValue(true);
+
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
+
+    const status = await screen.findByTestId('project-setup-status');
+    await waitFor(() => expect(status).toHaveTextContent('Setting up CREDENTIAL:GMAIL'));
+    // The same count as the list under it: the one row drawn, not the run's two nodes (the root is hidden).
+    expect(status).toHaveTextContent('· 0 / 1');
+    expect(screen.getByTestId('setup-tree-progress')).toHaveTextContent('0 of 1 set up');
+    expect(screen.getByTestId('project-setup-skip-google-cloud')).toBeInTheDocument();
+    expect(screen.getByTestId('project-setup-select-google-cloud')).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-stop')));
+    expect(stop).toHaveBeenCalledWith('p1', '');
+  });
+
+  it('after a run that failed a step: says so and offers Retry; a stopped run offers Continue', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue(NOT_READY);
+    const run = vi
+      .spyOn(Project, 'setupRun')
+      .mockResolvedValue({ run: RUN, running: false, tree: tree('failed', 'failed') });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId('project-setup-start')).toHaveTextContent('Retry'));
+    expect(screen.getByTestId('project-setup-status')).toHaveTextContent('1 did not finish');
+    cleanup();
+
+    run.mockResolvedValue({ run: RUN, running: false, tree: tree('stopped', 'stopped') });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
+    await waitFor(() => expect(screen.getByTestId('project-setup-status')).toHaveTextContent('Stopped'));
+    expect(screen.getByTestId('project-setup-start')).toHaveTextContent('Continue');
   });
 });

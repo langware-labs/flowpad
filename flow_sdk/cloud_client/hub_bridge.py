@@ -39,7 +39,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
         "subagent",
         "markdown",
         "spec",
-        "whiteboard",
+        "chart",
         "project",
     }
 )
@@ -47,7 +47,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / whiteboard).
+    asset entity (skill / agent / markdown / spec / chart).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a
@@ -112,6 +112,11 @@ def _attachment_only_body(payload: dict) -> str:
         if not isinstance(a, dict) or a.get("attachment_type") != "type_id":
             continue
         entity_type = str(a.get("data") or "").split("-", 1)[0]
+        # A prompt call and its answer are values, not things sent: say what happened.
+        if entity_type == "process_call":
+            return "Sent you a prompt to run"
+        if entity_type == "returned_value":
+            return "Ran your prompt"
         if entity_type and entity_type not in ("conversation", "flow_message"):
             return f"Sent you: {entity_type}"
     filename = (payload.get("attachment_filename") or "").strip()
@@ -690,6 +695,13 @@ class HubWsBridge:
                     # Republish the unread projection now that the row + pointer
                     # projection have settled (never on the intermediate CREATE).
                     stream_inbox.touch("inbound-message")
+
+                    # Announce it to message automations — after the row landed, so the
+                    # rule's subject reads it. Our own echoes are refused by the subject.
+                    if not _is_session_traffic(payload):
+                        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag
+
+                        emit_conversation_message_tag(fm_id, conversation_id)
 
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is

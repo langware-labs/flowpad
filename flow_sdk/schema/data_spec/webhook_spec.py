@@ -1,13 +1,13 @@
-"""Push webhooks: what a data driver declares, and what a cloud deployment asks the hub for.
+"""Driver webhook declarations and generic direct/hub delivery contracts.
 
-A driver that takes provider pushes (``events_from_webhook``) is reached at ``/api/v1/data_source/webhook/<name>``
-on the machine that holds the source. Locally the provider is pointed there by hand (Part A: the driver's
-per-machine URL variable). A cloud deployment instead gets a hub webhook — a stable public URL the hub relays to
-whichever machine serves the deployment now — and that URL becomes the same variable, placed on the machine.
+Signed provider requests enter the driver's fixed route on the node. Direct setup
+uses a separate narrow listener; hub deployments relay to the authenticated node.
+Both paths use the driver's URL variable and the shared ingestion pipeline.
 """
 from __future__ import annotations
 
-from typing import ClassVar
+from enum import Enum
+from typing import Any, ClassVar
 
 from pydantic import ConfigDict, Field
 
@@ -46,4 +46,17 @@ class DeploymentWebhookSpec(DataSpec):
     required_headers: list[str] = Field(default_factory=list)
 
 
-__all__ = ["WEBHOOK_ROUTE", "DeploymentWebhookSpec", "DriverWebhookSpec"]
+__all__ = ["WEBHOOK_ROUTE", "DeploymentWebhookSpec", "DriverWebhookSpec", "WebhookDelivery", "WebhookTargetSpec"]
+
+
+class WebhookDelivery(str, Enum):
+    HUB = "hub"
+    DIRECT = "direct"
+
+
+class WebhookTargetSpec(DataSpec):
+    """An account/part and its payload, routed only after authentication of the original batch."""
+
+    account: str
+    part: str = ""
+    payload: dict[str, Any]

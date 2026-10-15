@@ -15,14 +15,21 @@ import { IEntity, EntityMerge } from '../IEntity';
 /**
  * How much a project needs one variable (`flow_sdk` `CredentialRequirement`).
  * `MUST`: the app does not work without it. `OPTIONAL`: it turns a feature, an
- * integration or a deployment on.
+ * integration or a deployment on. `ONE_OF`: every `ONE_OF` variable of one
+ * credential forms an either-or group, and one member is enough.
  */
-export const CredentialRequirement = { MUST: 'MUST', OPTIONAL: 'OPTIONAL' } as const;
+export const CredentialRequirement = { MUST: 'MUST', OPTIONAL: 'OPTIONAL', ONE_OF: 'ONE_OF' } as const;
 export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof CredentialRequirement];
 
-/** What a variable's value IS: the value (`text`), or a file's content kept as a file (`file`) — the
- *  variable then holds the file's path. */
-export type CredentialVarKind = 'text' | 'file';
+/** What a variable's value IS: the value (`text`), a file's content kept as a file (`file`) — the
+ *  variable then holds the file's path — or nothing stored at all (`cli`): a command-line tool
+ *  holds the sign-in, and the variable only says how to sign in and how to check. */
+export type CredentialVarKind = 'text' | 'file' | 'cli' | 'oauth';
+
+/** A command per platform (`darwin` / `linux` / `win32`) — a `cli` variable's `login` and `check`. */
+export interface CredentialVarCommand {
+  commands: Record<string, string>;
+}
 
 /** One environment variable a credential is made of, as the manifest declares it. */
 export interface CredentialVar {
@@ -43,21 +50,53 @@ export interface CredentialVar {
   help_url?: string;
   /** Backend default is `text`. */
   kind?: CredentialVarKind;
+  /** `cli` only: what the person runs to sign in, and the command whose exit 0 means signed in. */
+  login?: CredentialVarCommand | null;
+  check?: CredentialVarCommand | null;
 }
+
+type Weighed = { required?: CredentialRequirement | boolean };
 
 /**
  * `required` defaults `MUST` and `secret` defaults TRUE on the backend, and a
  * manifest that accepts the default sends NOTHING. Reading `v.secret` directly
  * would treat the common case as `false` — the unsafe direction for a secret;
  * reading `v.required` for truth would treat `'OPTIONAL'` (a non-empty string) as
- * required.
+ * required. `ONE_OF` is neither: it is needed only as a group — see `missingNeeds`.
  */
-export function requirementOf(v: { required?: CredentialRequirement | boolean } | undefined): CredentialRequirement {
+export function requirementOf(v: Weighed | undefined): CredentialRequirement {
   const r = v?.required;
-  return r === false || r === CredentialRequirement.OPTIONAL ? CredentialRequirement.OPTIONAL : CredentialRequirement.MUST;
+  if (r === false) return CredentialRequirement.OPTIONAL;
+  return r === CredentialRequirement.OPTIONAL || r === CredentialRequirement.ONE_OF ? r : CredentialRequirement.MUST;
 }
-export function isRequired(v: { required?: CredentialRequirement | boolean } | undefined): boolean {
+/** Needed by itself. A `ONE_OF` variable is not: its group is. */
+export function isRequired(v: Weighed | undefined): boolean {
   return requirementOf(v) === CredentialRequirement.MUST;
+}
+
+/** A store keeps a value for it — not a sign-in (`cli`) or a grant (`oauth`), which live elsewhere. */
+export function holdsValue(v: { kind?: string }): boolean {
+  return v.kind !== 'cli' && v.kind !== 'oauth';
+}
+
+/** The either-or group: every `ONE_OF` variable of one credential. */
+export function oneOfGroup<T extends Weighed>(vars: readonly T[]): T[] {
+  return vars.filter((v) => requirementOf(v) === CredentialRequirement.ONE_OF);
+}
+/** One member of the group is present — or there is no group to satisfy. Once a way is chosen on this machine
+ *  (`choice`: the status row's `setup_choice`, which the backend already checked names a member), that member alone. */
+export function groupSatisfied(vars: readonly (Weighed & { present: boolean; env_var?: string })[], choice = ''): boolean {
+  const group = oneOfGroup(vars);
+  return group.length === 0 || group.some((v) => v.present && (!choice || v.env_var === choice));
+}
+/**
+ * What is still needed, one entry per need: each absent `MUST` variable by itself, then the group
+ * — ALL its members, of which one is enough — when none is present. Its length is how many things
+ * are missing; an entry of several reads "A or B".
+ */
+export function missingNeeds<T extends Weighed & { present: boolean }>(vars: readonly T[]): T[][] {
+  const needs = vars.filter((v) => isRequired(v) && !v.present).map((v) => [v]);
+  return groupSatisfied(vars) ? needs : [...needs, oneOfGroup(vars)];
 }
 export function isSecret(v: CredentialVar | undefined): boolean {
   return v?.secret !== false;
@@ -121,7 +160,7 @@ export class Credential extends APIEntity<Credential> implements ICredential {
     return Object.keys(this.vars ?? {});
   }
 
-  /** The variables that must be satisfied for the credential to be usable. */
+  /** The variables needed by themselves; a `ONE_OF` group is weighed with `missingNeeds`. */
   get requiredVarNames(): string[] {
     return Object.entries(this.vars ?? {})
       .filter(([, v]) => isRequired(v))

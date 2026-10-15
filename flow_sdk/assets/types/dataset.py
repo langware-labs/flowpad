@@ -33,21 +33,21 @@ def derive_dataset(data: dict, root: Path, header_raw: dict) -> None:
     )
 
 
-def dataset_asset_hash(ref: FSRef) -> float:
+def dataset_asset_hash(ref: FSRef) -> int:
     """mtime across the dataset's inner content files.
 
     The base implementation hashes the folder's own mtime, which does NOT update
     when a child file's *content* is edited. Datasets are folder-based, so this
     stats the manifest + the layout-specific data (``data.csv`` and the
     ``examples/`` tree) instead — otherwise edits to ``data.csv`` would never
-    re-index. Mirrors ``whiteboard_asset_hash``.
+    re-index. Mirrors ``chart_asset_hash``.
     """
     base = ref._path
-    ts = 0.0
+    ts = 0
     # Manifest + CSV are exact, single-file signals.
     for child in (base / MANIFEST, base / CSV_FILE):
         try:
-            ts = max(ts, child.stat().st_mtime)
+            ts = max(ts, child.stat().st_mtime_ns)
         except OSError:
             pass
     # IO_FOLDER content lives in nested files; a folder's own mtime doesn't move
@@ -56,7 +56,7 @@ def dataset_asset_hash(ref: FSRef) -> float:
     if examples_dir.is_dir():
         for inner in examples_dir.rglob("*"):
             try:
-                ts = max(ts, inner.stat().st_mtime)
+                ts = max(ts, inner.stat().st_mtime_ns)
             except OSError:
                 pass
     return ts

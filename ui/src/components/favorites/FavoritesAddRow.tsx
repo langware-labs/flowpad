@@ -21,7 +21,7 @@ import { useState, type ReactNode } from 'react';
  *    refuses folders). Named INLINE, not in a modal — the menu is a fast
  *    surface; a full dialog is too heavy for a one-word name.
  *  - Asset — any registered asset, via the same picker used elsewhere. Files
- *    that are assets (markdown, whiteboards, decks…) are reachable here.
+ *    that are assets (markdown, charts, decks…) are reachable here.
  *  - Current — bookmarks whatever is open: an entity-backed view by its typeid,
  *    anything else (web app, shell, lens) by its dock pointer (restored with
  *    openDock). Only disabled on a full-bleed surface (Home) with no tab.

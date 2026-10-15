@@ -122,13 +122,13 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
         config={"channel": {"id": "C0123456789", "name": "test"}},  # no agent_id key
         owner=TypeId(type="agent", id=agent_id),
         status=SourceStatus.ACTIVE.value,
-        allowed_senders=["U0BP53L7Z5G"],
+        allowed_senders=["U0123456780"],
     )
 
     mailbox = AgentMailbox.from_source(source)  # must not raise
 
     assert mailbox.agent_typeid == TypeId(type="agent", id=agent_id)
-    assert mailbox.allowed("U0BP53L7Z5G") is True
+    assert mailbox.allowed("U0123456780") is True
 
 
 async def test_a_disabled_mailbox_overrides_the_list():
@@ -221,3 +221,10 @@ async def _refused(agent, source, item) -> bool:
     engine = TurnEngine(agent, None)
     engine.process_for = no_process
     return await answer(engine, item, source=source) is False
+
+
+async def test_own_outgoing_does_not_run_with_public_access(mail_db):
+    agent = await _agent("ada-public-self-loop")
+    source = await _source(agent.id, [])
+    source.open_to_all = True
+    assert await _refused(agent, source, _item(source.id, MAILBOX))

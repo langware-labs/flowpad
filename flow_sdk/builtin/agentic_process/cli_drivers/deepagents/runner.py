@@ -395,7 +395,7 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
     return 1 if is_error else 0
 
 
-#: The hub's own wording (`flowpad-hub`'s gateway) when a model is rejected by an endpoint's
+#: The hub gateway's own wording when a model is rejected by an endpoint's
 #: (or one of its ancestors') ``models_allow``/``models_deny`` — never a code, so this is the
 #: only thing a caller can match on. See ``_fallback_model``.
 _MODEL_NOT_ALLOWED_MARKER = "not allowed by endpoint"

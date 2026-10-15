@@ -15,7 +15,7 @@ its project's local placement, and removing the folder takes that endpoint with
 it (``orphan_cascade_fn``).
 """
 from flow_sdk.assets.identity import derived_identity
-from flow_sdk.assets.types.webapp import derive_webapp
+from flow_sdk.assets.types.webapp import derive_webapp, webapp_asset_hash
 from flow_sdk.fs_store.operations.webapp_placement import place_indexed_webapp, unplace_webapp
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
@@ -33,13 +33,15 @@ MICRO_APP = TypeInfo(
     family="webapp",
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
+    # The manifest, not the folder: an in-place edit of `webapp.json` must re-index.
+    asset_hash_fn=webapp_asset_hash,
     fts_content=("name", "title", "description"),
     index_fields=["name", "kind", "edits"],
     post_sync_fn=place_indexed_webapp,
     orphan_cascade_fn=unplace_webapp,
     # DERIVED, not a capsule: `webapp.json` deliberately carries no id, so the
-    # id falls out of the path — a shipped editor then has the SAME id on every
-    # machine, which is what makes a `/dock/app/micro_app-<uuid>` link portable.
-    # A capsule would also make a shared app arrive carrying the sender's id.
+    # id falls out of the local path. Clones at different paths have different
+    # ids; portable project homes reference ./agentic-assets/webapp/<name> and
+    # resolve through the registry. A capsule would carry the sender's id.
     identity_carrier=derived_identity(),
 )

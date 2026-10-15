@@ -1,5 +1,7 @@
 import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import {
+  AssetSetup,
+  ComputeOp,
   Agent,
   SubAgent,
   AgentTrace,
@@ -19,7 +21,7 @@ import {
   TypeId,
   UsageReport,
   VFSPath,
-  Whiteboard,
+  Chart,
   Wizard,
   type AnyEntity,
 } from '@sdk';
@@ -64,10 +66,12 @@ import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WizardViewer } from './wizard/WizardViewer';
+import { AssetSetupViewer } from './asset-setup/AssetSetupViewer';
+import { ComputeOpViewer } from './compute-op/ComputeOpViewer';
 import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
 import { DiagnosisRequestView } from './diagnosis-request/DiagnosisRequestView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
-import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
+import { ChartAssetEditor } from './chart/ChartAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
@@ -411,17 +415,17 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           }
         />
       );
-    case AssetEditor.WHITEBOARD:
+    case AssetEditor.CHART:
       return (
-        <EntityResolutionGate<Whiteboard>
-          type={Whiteboard.type}
+        <EntityResolutionGate<Chart>
+          type={Chart.type}
           fsRef={fsRef}
           renderDocument={renderDocument}
-          typeLabel="whiteboard"
-          resolvedEntity={typeIdEntity as Whiteboard | undefined}
-          render={(whiteboard) => (
-            <AssetCollisionShell entity={whiteboard}>
-              <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />
+          typeLabel="chart"
+          resolvedEntity={typeIdEntity as Chart | undefined}
+          render={(chart) => (
+            <AssetCollisionShell entity={chart}>
+              <ChartAssetEditor fsRef={fsRef} chart={chart} />
             </AssetCollisionShell>
           )}
         />
@@ -479,6 +483,26 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           typeLabel="wizard"
           resolvedEntity={typeIdEntity as Wizard | undefined}
           render={(wizard) => <WizardViewer fsRef={fsRef} wizard={wizard} />}
+        />
+      );
+    case AssetEditor.ASSET_SETUP:
+      return (
+        <EntityResolutionGate<AssetSetup>
+          type={AssetSetup.type}
+          fsRef={fsRef}
+          typeLabel="setup"
+          resolvedEntity={typeIdEntity as AssetSetup | undefined}
+          render={(setup) => <AssetSetupViewer fsRef={fsRef} setup={setup} />}
+        />
+      );
+    case AssetEditor.COMPUTE_OP:
+      return (
+        <EntityResolutionGate<ComputeOp>
+          type={ComputeOp.type}
+          fsRef={fsRef}
+          typeLabel="compute op"
+          resolvedEntity={typeIdEntity as ComputeOp | undefined}
+          render={(op) => <ComputeOpViewer fsRef={fsRef} op={op} />}
         />
       );
     case AssetEditor.MCP:
