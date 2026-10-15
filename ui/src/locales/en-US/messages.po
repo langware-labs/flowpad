@@ -15739,8 +15739,8 @@ msgid "Needed for:"
 msgstr "Needed for:"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#~ msgid "Needed to run {projectName} on this computer."
-#~ msgstr "Needed to run {projectName} on this computer."
+msgid "Needed to run {projectName} on this computer."
+msgstr "Needed to run {projectName} on this computer."
 
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -18474,6 +18474,7 @@ msgid "Open help desk"
 msgstr "Open help desk"
 
 #: src/components/links/LinkMenu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in"
 msgstr "Open in"
 
@@ -18525,6 +18526,7 @@ msgstr "Open in Files"
 
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in Finder/Explorer"
 msgstr "Open in Finder/Explorer"
 
@@ -18535,6 +18537,10 @@ msgstr "Open in Flowpad"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "Open in FlowPad"
+
+#: src/tabs/doc-tab-card.tsx
+msgid "Open in Flowpad browser"
+msgstr "Open in Flowpad browser"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
@@ -18556,6 +18562,7 @@ msgstr "Open in Skills tab"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in terminal"
 msgstr "Open in terminal"
 
@@ -19016,6 +19023,7 @@ msgstr "optional"
 
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr "Optional"
@@ -20240,8 +20248,8 @@ msgid "Project Required"
 msgstr "Project Required"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#~ msgid "Project requirements"
-#~ msgstr "Project requirements"
+msgid "Project requirements"
+msgstr "Project requirements"
 
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
@@ -21715,6 +21723,7 @@ msgstr "required"
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/credentials/VariableDetails.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr "Required"
@@ -23789,6 +23798,7 @@ msgstr "Set public"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23799,8 +23809,8 @@ msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Set up {projectName}"
-msgstr "Set up {projectName}"
+#~ msgid "Set up {projectName}"
+#~ msgstr "Set up {projectName}"
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #~ msgid "Set up {title}"
@@ -28615,8 +28625,8 @@ msgid "Used by"
 msgstr "Used by"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#~ msgid "Used by: {usedBy}"
-#~ msgstr "Used by: {usedBy}"
+msgid "Used by: {usedBy}"
+msgstr "Used by: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
@@ -29385,8 +29395,8 @@ msgid "What this project has published, and what it could."
 msgstr "What this project has published, and what it could."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
-msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "What this source places in the project is added to .gitignore — it may be private."
