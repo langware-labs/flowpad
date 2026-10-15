@@ -65,13 +65,17 @@ class CredentialVarSpec(DataSpec):
     account_key: bool = False
     #: Masks the input. Defaults TRUE — the safe direction to be wrong in.
     secret: bool = True
-    #: ``text`` (the value), ``file`` (a file's content, kept as a file; the variable holds its path) or
-    #: ``cli`` (a sign-in a command-line tool holds: no value, ``login`` and ``check`` instead).
+    #: ``text`` (the value), ``file`` (a file's content, kept as a file; the variable holds its path),
+    #: ``cli`` (a sign-in a command-line tool holds: no value, ``login`` and ``check`` instead) or
+    #: ``oauth`` (a grant from ``provider`` covering ``scopes``: no value, the connection holds it).
     kind: CredentialVarKind = CredentialVarKind.TEXT
     #: cli: the command a person runs to sign in, per OS.
     login: Optional[CliOp] = None
     #: cli: the command that exits 0 when the sign-in is there, per OS.
     check: Optional[CliOp] = None
+    #: oauth: the connection provider the grant is from, and the scopes it must cover.
+    provider: str = ""
+    scopes: list[str] = Field(default_factory=list)
     #: Where to get this particular value.
     help_url: str = ""
 
@@ -88,6 +92,15 @@ class CredentialVarSpec(DataSpec):
         return self.kind is CredentialVarKind.CLI
 
     @property
+    def is_oauth(self) -> bool:
+        return self.kind is CredentialVarKind.OAUTH
+
+    @property
+    def holds_value(self) -> bool:
+        """A store keeps a value for it — not a sign-in (``cli``) or a grant (``oauth``), which live elsewhere."""
+        return not (self.is_cli or self.is_oauth)
+
+    @property
     def login_command(self) -> str:
         """cli: the sign-in command for this machine's OS; empty when there is none."""
         return (self.login.command_for() or "") if self.login is not None else ""
@@ -98,7 +111,18 @@ class CredentialVarSpec(DataSpec):
             raise ValueError("a cli variable declares its login and its check")
         if not self.is_cli and (self.login is not None or self.check is not None):
             raise ValueError("login and check belong to a cli variable (kind: cli)")
+        if self.is_oauth and not self.provider:
+            raise ValueError("an oauth variable names its provider")
+        if not self.is_oauth and (self.provider or self.scopes):
+            raise ValueError("provider and scopes belong to an oauth variable (kind: oauth)")
+        if self.is_oauth and not self.is_one_of:
+            raise ValueError("an oauth variable is one way of a ONE_OF group (required: ONE_OF)")
         return self
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_name(cls, value: str) -> str:
+        return str(value or "").strip().lower()
 
 
 class CredentialSpec(DataSpec):
@@ -211,7 +235,7 @@ class CredentialSpec(DataSpec):
                 raise ValueError("provider and scopes belong to an oauth credential (kind: oauth)")
             if len([v for v in self.vars.values() if v.is_one_of]) == 1:
                 raise ValueError("ONE_OF is a choice: a credential declares at least two ONE_OF variables, or none")
-            if self.lm_provider and any(v.is_one_of or v.is_cli for v in self.vars.values()):
+            if self.lm_provider and any(v.is_one_of or not v.holds_value for v in self.vars.values()):
                 raise ValueError("an lm_provider credential is one stored key (no ONE_OF, no cli variable)")
         return self
 

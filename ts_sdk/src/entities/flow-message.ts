@@ -253,6 +253,16 @@ export interface IFlowMessage extends IEntity {
   source_item_id?: string | null;
   /** Who reacted with what on a channel message — projection-owned. */
   reactions?: IMessageReaction[];
+  /** What the channel message did (approved, merged) — projection-owned; null when it only says something. */
+  mark?: IMessageMark | null;
+}
+
+/** What a channel message did, drawn as a chip before its text — mirrors `MessageMarkSpec`
+ *  (flow_sdk/sources/values/items.py). `key` is what an action's `done_mark` matches. */
+export interface IMessageMark {
+  key: string;
+  label: string;
+  tone?: 'positive' | 'negative' | 'neutral';
 }
 
 /** One person's emoji on a channel message — mirrors `MessageReaction`
@@ -309,6 +319,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   thread_root_id?: string | null;
   source_item_id?: string | null;
   reactions?: IMessageReaction[];
+  mark?: IMessageMark | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -348,6 +359,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.thread_root_id = entity.thread_root_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
     this.reactions = entity.reactions ?? [];
+    this.mark = entity.mark ?? null;
   }
 
   /**

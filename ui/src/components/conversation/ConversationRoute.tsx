@@ -19,6 +19,7 @@ import { Button } from '@src/components/ui/button';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
 import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
+import { ConversationAutomationChip } from './ConversationAutomationChip';
 import { ChannelParticipants } from './ChannelParticipants';
 import {
   applyProjectToConversation,
@@ -278,6 +279,7 @@ export function ConversationRoute() {
         {cloudUser && conversation && (
           <ConversationHeaderSession conversation={conversation} task={task} />
         )}
+        {conversation?.id && <ConversationAutomationChip conversationId={String(conversation.id)} />}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
         {/* A channel's people are on the channel — no roster to fetch, nobody to invite. */}
         {conversation?.isChannel ? (

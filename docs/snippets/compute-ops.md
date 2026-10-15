@@ -7,8 +7,9 @@ A ComputeOp is ONE call of one subkind — a shell one-liner (`cli`), a closed
 question to the Decision API (`decision`, [decisions](decisions.md) §9), a model
 (`prompt`), an agent with tools (`agent`), or a person (`ask`). It declares the
 kind it RETURNS, and it knows when it is already done — so running it twice does
-the work once. Every op answers with a `ReturnedValue`; the shapes, and every
-decision behind them, are on [call-returns](call-returns.md).
+the work once. Every op participates in **FlowCall** and answers with a
+`ReturnedValue`; the shapes and their rationale are in the
+[FlowCall contract](call-returns.md).
 
 Every fence on this page is pinned. The `jsonc` documents are validated against
 the real spec by `tests/unit/test_compute_ops_snippets.py`; the Python is the
@@ -147,7 +148,7 @@ A caller can still continue an agent by hand: its answer names its process in
 `executor`, and `run_op(spec, …, executor=answer.executor)`
 (`flow_sdk/core/compute_op/runner.py`) runs the next op in that SAME session —
 the entity's `ComputeOp.run()` takes no `executor`. See
-[call-returns](call-returns.md) for the worked example.
+[FlowCall](call-returns.md) for the worked example.
 
 **Two ops sharing one check still work as a fallback in a wizard** — a wizard
 counts goals, not attempts, so a step that missed and a later step that reached

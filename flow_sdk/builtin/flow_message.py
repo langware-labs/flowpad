@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
@@ -621,6 +621,9 @@ class FlowMessage(Entity):
     # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
     # never blanks it, and never sent where the hub would drop it.
     reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
+    # like ``envelope``: re-derived here, so a hub refresh never blanks it.
+    mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

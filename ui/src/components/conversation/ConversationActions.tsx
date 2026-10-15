@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { Conversation } from '@sdk/entities/conversation';
+import type { FlowMessage } from '@sdk/entities/flow-message';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import type { IActionSpec } from '@sdk/models/ChannelSpec';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Button } from '@src/components/ui/button';
@@ -15,12 +17,36 @@ type Pending = { action: IActionSpec; mode: 'confirm' | 'text' };
 const offered = (action: IActionSpec, ended: boolean) =>
   (action.when ?? 'open') === 'any' || (action.when ?? 'open') === (ended ? 'ended' : 'open');
 
+const sentAt = (m: FlowMessage) => new Date(m.sent_at ?? m.created_date ?? 0).getTime();
+
+/** The newest message this machine wrote in the conversation — what an action's `done_mark` reads. */
+function newestOurs(messages: ReadonlyArray<FlowMessage>, selfIds: ReadonlyArray<string | null | undefined>) {
+  let newest: FlowMessage | null = null;
+  for (const m of messages) {
+    if (authoredBy(senderOf(m), selfIds) && (!newest || sentAt(m) > sentAt(newest))) newest = m;
+  }
+  return newest;
+}
+
 /**
  * The channel's verbs on the whole conversation (`channel_spec.actions`), rendered by trait only —
  * the channel says what it offers and does it. Each action says whether it belongs to an open or an
- * ended conversation. A refusal shows the channel's own words in place.
+ * ended conversation. A refusal shows the channel's own words in place. An action whose `done_mark`
+ * is the mark on the newest message we sent ("approved") is drawn done instead of as a button.
  */
-export function ConversationActions({ conversation, onDone }: { conversation: Conversation; onDone?: () => void }) {
+export function ConversationActions({
+  conversation,
+  messages = [],
+  selfIds = [],
+  onDone,
+}: {
+  conversation: Conversation;
+  /** The conversation's messages, as the view already holds them. */
+  messages?: ReadonlyArray<FlowMessage>;
+  /** The signed-in account's ids (cloud + local user). */
+  selfIds?: ReadonlyArray<string | null | undefined>;
+  onDone?: () => void;
+}) {
   const { t } = useLingui();
   const [busy, setBusy] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -29,6 +55,7 @@ export function ConversationActions({ conversation, onDone }: { conversation: Co
   const ended = !!conversation.ended_at;
   const actions = (conversation.channel_spec?.actions ?? []).filter((a) => offered(a, ended));
   if (actions.length === 0) return null;
+  const ours = newestOurs(messages, selfIds);
 
   const run = async (action: IActionSpec, words = '') => {
     setBusy(action.id);
@@ -54,6 +81,22 @@ export function ConversationActions({ conversation, onDone }: { conversation: Co
     <div className="flex w-full flex-col items-end gap-1">
       <div className="flex items-center gap-1">
         {actions.map((action) => {
+          if (action.done_mark && ours?.mark?.key === action.done_mark) {
+            const when = formatTimeAgo(ours.sent_at ?? ours.created_date ?? '') ?? '';
+            const label = ours.mark.label;
+            return (
+              <span
+                key={action.id}
+                aria-disabled="true"
+                data-testid={`conversation-action-done-${action.id}`}
+                className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-muted/50 px-2 text-[11px] text-muted-foreground"
+              >
+                <Trans>
+                  ✓ {label} · {when}
+                </Trans>
+              </span>
+            );
+          }
           const Icon = lucideByName(action.icon_name);
           return (
             <Button

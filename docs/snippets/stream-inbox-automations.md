@@ -112,7 +112,7 @@ verdict = await rule.decide_on(text="Attached is the invoice for September.")   
 ```
 
 `decide_op` answers a `DecisionVerdict` (`compute.returned.decision`), like every op answers
-a `ReturnedValue`; it records nothing and runs nothing — this is the fast test under the
+a FlowCall answer (`ReturnedValue`); it records nothing and runs nothing — this is the fast test under the
 sentence and the try list over recent messages. A `DecisionError` is `met=False` with
 `unavailable` naming the closed reason. `rule.decide_on` takes `text=` or `message_id=`.
 

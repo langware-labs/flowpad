@@ -2,10 +2,10 @@
   "schema_version": 1,
   "typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "5e5890ee98d330bb56de2d02aa323db34079406bf4d03f2ae6023730c614ac5c",
+  "inputs_hash": "544367037482cd95696a1ca9e50a3934f40e7591ad72074747dac5277f1f76dd",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -22,9 +22,9 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess — interface",
-      "summary": "Interface reference for the AgenticProcess entity: Python object, HTTP action endpoints and the frontend TypeScript class",
-      "content_hash": "4442992f392e2895277c4c341fb919a52c7b142f3da69848db01fe8dea369936",
-      "size_bytes": 61282
+      "summary": "AgenticProcess interface reference covering Python methods, FlowCall run results, HTTP actions, TypeScript APIs, lifecycle, and transport state.",
+      "content_hash": "23e256a5a58d3a2adf4b62bf75e056f7382a76d60e8661bb5fb30d99bbb7f947",
+      "size_bytes": 61278
     },
     {
       "name": "cli-drivers.md",
@@ -46,9 +46,9 @@
       "name": "flows.md",
       "rel_path": "flows.md",
       "title": "Agentic-process flows (test-derived)",
-      "summary": "End-to-end agentic-process flows reconstructed from reference tests, naming the TS SDK call, graph action and Python method at every step, plus pty_mode routing.",
-      "content_hash": "be8e003de4a48cd757f2af761536c3ca0d2ab041486001a031c7a3ca292c0245",
-      "size_bytes": 33543
+      "summary": "Test-derived agentic-process flows across SDK, HTTP, Python, PTY, streaming, restart, recovery, queues, forks, and shell tabs.",
+      "content_hash": "793567709a6774c254a986a6eb808da775e9a016b59523cb51a715d823884763",
+      "size_bytes": 33523
     },
     {
       "name": "pty-layer.md",
@@ -70,9 +70,9 @@
       "name": "shell.md",
       "rel_path": "shell.md",
       "title": "Shell — interface",
-      "summary": "Interface reference for the Shell entity, the database metadata layer of a PTY terminal session, covering its persisted fields, TypeId format and API.",
-      "content_hash": "be403c36f33c1d49a825723f2041017d0d519ba1bc70f2abbd81dd34966fe623",
-      "size_bytes": 19693
+      "summary": "Shell interface reference covering PTY metadata, lifecycle, HTTP actions, TypeScript methods, and FlowCall command results.",
+      "content_hash": "970bf382995ceddcae5a5123f0525729cbb34651384e6d1a9cea904fbcb32796",
+      "size_bytes": 19689
     },
     {
       "name": "status-model.md",
@@ -92,6 +92,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-15T06:45:37.382254+00:00",
   "latest_process_ref": ""
 }

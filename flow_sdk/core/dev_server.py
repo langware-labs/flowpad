@@ -57,7 +57,10 @@ def loopback_status(url: str, timeout: float) -> Optional[int]:
 
 
 def loopback_answers(port: int, path: str = "/", *, timeout: float, healthy=lambda status: True) -> bool:
-    """Something answers HTTP at ``path`` on ``port`` on either loopback, and ``healthy(status)`` holds."""
+    """Something answers HTTP at ``path`` on ``port`` on either loopback, and ``healthy(status)`` holds.
+    A port the socket table lists as closed is not asked (see ``port_open``)."""
+    if _listed(int(port)) is False:
+        return False
     for url in loopback_urls(port, path):
         status = loopback_status(url, timeout)
         if status is not None:
@@ -65,10 +68,35 @@ def loopback_answers(port: int, path: str = "/", *, timeout: float, healthy=lamb
     return False
 
 
+#: A listener on any of these takes connections to a loopback.
+_LOCAL_BINDS = {*LOOPBACKS, "0.0.0.0", "::"}
+
+
+def _listed(port: int) -> Optional[bool]:
+    """Whether the system's socket table lists a listener on ``port`` at a loopback or every address;
+    None where this user cannot read the whole table (macOS)."""
+    import psutil  # noqa: PLC0415
+
+    try:
+        table = psutil.net_connections(kind="tcp")
+    except (psutil.Error, OSError):
+        return None
+    return any(
+        one.status == psutil.CONN_LISTEN and one.laddr and one.laddr.port == port and one.laddr.ip in _LOCAL_BINDS
+        for one in table
+    )
+
+
 def port_open(port: int) -> bool:
+    """Something listens on ``port`` at a loopback. The socket table is asked first: on Windows a connect
+    to a closed port is not refused but retried until its timeout, and one such connect was seen never to
+    return at all. Where the table cannot be read, a connect is the probe (refused at once there)."""
+    port = int(port)
+    if (listed := _listed(port)) is not None:
+        return listed
     for host in LOOPBACKS:
         try:
-            with socket.create_connection((host, int(port)), timeout=0.5):
+            with socket.create_connection((host, port), timeout=0.5):
                 return True
         except OSError:
             continue

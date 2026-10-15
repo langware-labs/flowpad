@@ -26,7 +26,7 @@ Two shapes live here:
 
 from __future__ import annotations
 
-from typing import ClassVar, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import ConfigDict
 
@@ -186,3 +186,5 @@ class LoadResult(DataSpec):
     #: What the check found, for a load that stopped at SETUP_REQUIRED: the tree as it stands, so the
     #: question "set up?" can show what setting up means before anything runs.
     tree: Optional[SetupTreeResult] = None
+    #: What a RUNNING load is doing: ``load`` only starts what is set up, ``setup`` sets up first.
+    phase: Optional[Literal["load", "setup"]] = None

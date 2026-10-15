@@ -8,6 +8,27 @@ Written once so it isn't re-litigated. The axis that matters here is **who owns 
 concept**: some of our entities *mirror a provider's* on-disk format, and some are ours.
 Names should make that obvious.
 
+## FlowCall — the call-and-result mechanism
+
+**FlowCall** is Flowpad’s own contract for invoking work, receiving a structured outcome and value, and composing that result into further work.
+It names one mechanism implemented by cooperating parts, not a class, entity,
+or universal request object. The contract is specified in
+[FlowCall — calls, outcomes, and returned values](snippets/call-returns.md).
+
+| Term | Role in FlowCall |
+|---|---|
+| `ComputeOp` | A configurable unit of work, with its execution specification and optional completion check |
+| `ReturnedValue` | The common answer; specialized results extend it |
+| `ExitCode` | The shared outcome vocabulary for Python, TypeScript, and the CLI |
+| `Wizard` | Composition of calls, binding returned values into later inputs |
+| `ProcessCall` | A message-carried call correlated with its returned answer |
+
+Say **FlowCall** for the mechanism, **a call** for one invocation, **answer** for
+its `ReturnedValue`, and **value** for `answer.value`. Preserve the code names.
+FlowCall does not mean every SDK method, HTTP response, or event. Transport
+success and the operation's outcome are separate; acceptance and completion
+are separate outcomes too.
+
 ## Cross-walk
 
 | Flowpad | Claude Code | OpenClaw |
@@ -17,7 +38,7 @@ Names should make that obvious.
 | `SubAgent` + `AgentOptions` together | — | **`agent`** |
 | `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
 | `AgenticProcess` (one run) | session | session |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` / `OpencodeSession` / `DeepagentsSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
 | `Mcp` + `McpServer` + `Command` | **tool** | **tool** |
 | `DynamicWorkflow` + `WorkflowRun` | workflow (script) | — |
@@ -64,8 +85,8 @@ configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.
 …); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
 reads `MCP_SERVER`; attaching writes `MCP`.
 
-**We have nine `*SESSION` types** where the ecosystem has one: `claude_session`,
-`codex_session`, `copilot_session`, `skillit_session`, `remote_worker_session`,
+**We have eleven `*SESSION` types** where the ecosystem has one: `claude_session`,
+`codex_session`, `copilot_session`, `opencode_session`, `deepagents_session`, `skillit_session`, `remote_worker_session`,
 `active_session`, `active_sessions`, `session_analysis`, `session_classification`. Ours are
 provider *transcripts*; the thing that actually runs is `AgenticProcess`.
 
@@ -77,7 +98,7 @@ Keep these apart when naming anything new:
 |---|---|
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess`; `OpencodeSession` / `DeepagentsSession` (FlowPad's own transcript of a store-backed worker, snapshotted when shared) |
 | `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
@@ -161,7 +182,8 @@ Four words were used for neighbours. Say which:
 - **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with
   `GRAPH_CONTEXT`, `ui/src/components/graph-view/`, the entity graph, and the hub org
   graph. Bare `Workflow*` collides with the two Claude Code mirrors.
-- **`Flow` is still ambiguous** and should not be used for anything new. It survives in
+- **`FlowCall` is the explicit compound for the call-and-result mechanism above.**
+  Bare **`Flow` is still ambiguous** and should not be used for anything new. It survives in
   `FlowMessage` (a chat message), `FlowEvent` (the bus envelope), `FlowFile`,
   `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/` — all unrelated to workflows.
   Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
@@ -449,3 +471,22 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 | **setup tree** | `core/setup` (`setup_tree`, `execute_setup`, `derive.ProjectTree`) | Ours. A project comes up LEAF FIRST: every asset that needs setting up is a node, the project the root; per node its `prepare` wizard on the way down, its children one at a time, its `run` wizard on the way up. A failed child leaves its parent `blocked` (siblings still run); a node two parents share runs once; a cycle is refused before anything runs. `POST project/<id>/setup {root?}`, `flow project setup`, a web app found down, a received declared app — all run it. Not the `artifact-setup` agent (a free agent that works out how a received app runs); that is only the fallback for an app that declares nothing. |
 | **AssetSetup** | `AssetSetupSpec` (`asset.setup`), `builtin/asset_setup.py`, `agentic-assets/asset_setup/<name>/asset_setup.json` | Ours. A DECLARED node of the setup tree — what a derivation cannot know (a source's container): `prepare` / `run` / `on_load` wizard names (`on_load` runs when the asset is SHOWN — `core/setup/load.load_asset`; never asks), extra `children`, `inputs`. Attaches to its `subject`, else the asset folder holding it (a driver's → every source of that driver). The run's answer is a `SetupTreeResult` of `SetupNodeResult`s, recorded per root beside a wizard's `run.json`. |
 
+
+## Parked worker (2026-10-14)
+
+A headless (`claude -p`) worker normally lives for one turn. When the agent leaves
+background work running (a dev server, a deploy watcher) the CLI stays alive for it, and
+between turns the worker is **parked**: alive and idle, registered but *not a turn* —
+`busy` is false, a message the user sends is written to the SAME process, and
+`background_work` tells the UI why a not-busy process still holds a worker.
+
+* **parked worker** — ours (`ClaudeCLIStreamWorker.parked`, `prompt_worker_parked`).
+  Not a provider concept: Claude Code's own words are "background session" and
+  "supervisor", which flowpad does not use, and its work cannot move between processes.
+* **`background_work`** — the entity field that says a parked worker exists.
+  **`stop-background`** ends it (and the work with it).
+* **`WorkerTurns`** (`worker_turns.py`) — the turns of one worker that outlives them: when
+  each begins and ends, and who listens to it.
+* **Not** the PTY layer's *parked connection id* (`detached_connections`, the "parked-id
+  reaper" in `pty-layer.md`): that is a WebSocket subscription kept for a reconnect, on a
+  PTY. Say "parked worker" or "parked connection", never bare "parked".

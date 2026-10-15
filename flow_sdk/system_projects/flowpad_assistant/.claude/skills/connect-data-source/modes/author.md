@@ -12,9 +12,12 @@ id: 94e1bd96-adda-45d6-ac5e-0356fa4ca5b3
 > **4. Never destroy the user's data to fix a symptom.**
 > **5. Credentials and invites are the user's step** — name the exact click.
 
-Reached when no installed source can express what the user named. The output is
-ONE self-contained folder asset — everything the source needs lives in it, and
-nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
+First inspect installed and project drivers: can configuration select the requested
+resource, or can that driver be extended without duplicating its transport? One provider's
+related record endpoints normally belong to one configurable driver with several sources.
+For that case or a consolidation, read [the configurable-driver recipe](../references/configurable-drivers.md).
+Create a new driver only when none fits. Its output is ONE self-contained folder asset —
+everything the source needs lives in it, and nothing is edited in `flow_sdk`, `ts_sdk` or `ui`.
 
 `SC` means `python3 <this skill>/scripts/source_ctl.py`; `flow source …` is the CLI
 over the same backend actions.
@@ -24,7 +27,7 @@ over the same backend actions.
 ```
 <project>/agentic-assets/data_driver/<name>/
     data_driver.json          the manifest (DataDriver): presentation, kind, auth, the config form
-    source.py                 exactly ONE flow_sdk.sources.Source subclass — the source
+    source.py                 exactly ONE concrete flow_sdk.sources.Source subclass — the registered source
     transport.py …            optional helper modules, imported relatively (`from .transport import …`)
     tests/test_<name>_source.py   the conformance kit + wire cases against a loopback double
     tests/matrix.py           its Double (a loopback provider) and its case in the data source matrix

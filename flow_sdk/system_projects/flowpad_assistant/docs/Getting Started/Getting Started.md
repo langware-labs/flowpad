@@ -11,6 +11,7 @@ of them is one click from here.
 
 ## What's inside
 
+- [[FlowCall]] — how work calls return outcomes and values, and compose with later work.
 - [[Welcome]] — the welcome page that the home-view bookmark opens.
 - [[Data privacy modes]] — the footer switch that decides whether anything can
   reach Flowpad cloud, and what each mode actually blocks.

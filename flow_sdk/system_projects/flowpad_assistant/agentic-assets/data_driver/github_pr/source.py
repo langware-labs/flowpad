@@ -56,7 +56,7 @@ from flow_sdk.sources.errors import (
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.memory import check_outgoing
 from flow_sdk.sources.protocols import Verdict
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import MessageData, MessageItem, MessageMarkSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -84,6 +84,20 @@ SIGN_IN = "GitHub sign-in is missing or expired"
 
 _PR = re.compile(r"^[^/#\s]+/[^/#\s]+#\d+$")
 _MESSAGE = re.compile(r"^(comment|review-comment|review|event|commit|check)-[\w.-]+$")
+#: What a review or an ending DID, drawn as a chip before its line; a commenting review has none.
+_MARKS = {
+    "APPROVED": MessageMarkSpec(key="approved", label="Approved", tone="positive"),
+    "CHANGES_REQUESTED": MessageMarkSpec(key="changes_requested", label="Changes requested", tone="negative"),
+    "DISMISSED": MessageMarkSpec(key="dismissed", label="Dismissed", tone="neutral"),
+    "merged": MessageMarkSpec(key="merged", label="Merged", tone="positive"),
+    "closed": MessageMarkSpec(key="closed", label="Closed", tone="neutral"),
+}
+
+
+def _review_mark(state: Any) -> Optional[MessageMarkSpec]:
+    return _MARKS.get(str(state or "").upper())
+
+
 #: Timeline events that are messages; the rest (labels, mentions, renames) are bookkeeping.
 _EVENTS = frozenset({"assigned", "unassigned", "committed", "head_ref_force_pushed", "merged", "closed", "reopened"})
 #: What a PR's state says when it left the search without a timeline event to show for it.
@@ -133,8 +147,8 @@ class GithubPrSource(MessageSource):
     #: A reply lands in the PR (or the review thread); it never quotes.
     quotes = False
     actions: ClassVar[tuple[ActionSpec, ...]] = (
-        ActionSpec(id="approve", label="Approve", icon_name="CheckCircle"),
-        ActionSpec(id="request_changes", label="Request changes", icon_name="CircleAlert", needs_text=True),
+        ActionSpec(id="approve", label="Approve", icon_name="CheckCircle", done_mark="approved"),
+        ActionSpec(id="request_changes", label="Request changes", icon_name="CircleAlert", needs_text=True, done_mark="changes_requested"),
         ActionSpec(id="merge", label="Merge", icon_name="GitMerge", confirm="Merge this pull request into its base?", destructive=True),
         ActionSpec(id="close", label="Close", icon_name="Archive", confirm="Close this pull request?", destructive=True),
     )
@@ -276,7 +290,7 @@ class GithubPrSource(MessageSource):
         state = "merged" if head.get("merged") or head.get("merged_at") else str(head.get("state") or "open")
         line = {"merged": "merged", "closed": "closed", "open": "You are no longer on this pull request"}.get(state, state)
         when = head.get("merged_at") or head.get("closed_at") or head.get("updated_at")
-        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True)]
+        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True, mark=_MARKS.get(state))]
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
@@ -326,7 +340,7 @@ class GithubPrSource(MessageSource):
             if state == "PENDING" or (state == "COMMENTED" and not str(r.get("body") or "").strip()):
                 continue
             who = _login(r.get("user"))
-            add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r)
+            add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r, mark=_review_mark(state))
         self._events(timeline, add, pr, head)
 
         sha = str((head.get("head") or {}).get("sha") or "")
@@ -341,11 +355,14 @@ class GithubPrSource(MessageSource):
         return out
 
     def _adder(self, out: list[MessageItem], key: str, title: Optional[str]):
-        """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False)`` appending
-        one message of PR ``key`` to ``out``."""
+        """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False, mark=None)``
+        appending one message of PR ``key`` to ``out``."""
 
-        def add(kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *, ends: bool = False) -> None:
-            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends))
+        def add(
+            kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *,
+            ends: bool = False, mark: Optional[MessageMarkSpec] = None,
+        ) -> None:
+            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark))
 
         return add
 
@@ -401,7 +418,7 @@ class GithubPrSource(MessageSource):
             line = f"{kind} by {who}" if who else kind
         else:
             line = kind
-        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e, ends=self._ends(e))
+        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e, ends=self._ends(e), mark=_MARKS.get(kind))
 
     def _profile(self, login: str) -> UserProfile:
         return UserProfile(origin=self.origin(login), name=login)
@@ -479,7 +496,7 @@ class GithubPrSource(MessageSource):
         if suffix != "/reviews" or not isinstance(body, dict) or not body.get("id"):
             return None
         who = _login(body.get("user"))
-        return self._item(f"review-{body['id']}", pr, str(body.get("body") or "") or _review_line(who, body.get("state")), who, body.get("submitted_at"), body.get("html_url"), raw=body)
+        return self._item(f"review-{body['id']}", pr, str(body.get("body") or "") or _review_line(who, body.get("state")), who, body.get("submitted_at"), body.get("html_url"), raw=body, mark=_review_mark(body.get("state")))
 
     async def _act(self, method: str, path: str, payload: dict, origin: CloudOrigin) -> Any:
         response = await self._request(method, path, json=payload, origin=origin, ok_statuses=(405, 409, 422))
@@ -504,6 +521,7 @@ class GithubPrSource(MessageSource):
     def _item(
         self, key: str, pr: str, text: Optional[str], sender: str, when: Any, url: Any, *,
         raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None, ends: bool = False,
+        mark: Optional[MessageMarkSpec] = None,
     ) -> MessageItem:
         """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share."""
         data = GithubPrMessageData(
@@ -515,6 +533,7 @@ class GithubPrSource(MessageSource):
             in_reply_to=self.origin(in_reply_to, pr) if in_reply_to else None,
             raw=raw,
             ends_conversation=ends,
+            mark=mark,
         )
         origin = self.origin(key, pr)
         return MessageItem(origin=origin.model_copy(update={"url": str(url)}) if url else origin, data=data)

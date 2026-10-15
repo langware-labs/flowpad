@@ -1145,6 +1145,14 @@ export class Project extends APIEntity<Project> {
     return result;
   }
 
+  /** Phase one of an open: the app's last READY verdict, only while it still answers where it runs —
+   *  else null (load it). Never starts anything. */
+  static async validateLoad(projectId: string, asset: string, display = ''): Promise<ProjectLoadResult | null> {
+    const actionInfo = new ActionInfo('load-state', Project.type, projectId, 'GET');
+    actionInfo.queryParameters = { asset, validate: 'true', ...(display ? { display } : {}) };
+    return (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
+  }
+
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),
    *  or nulls when it names nothing of this project's. Static for the loaders,
    *  which hold only the project id. */
