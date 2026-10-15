@@ -6489,18 +6489,32 @@ msgstr "Copy members' clone URL"
 msgid "Copy name"
 msgstr "Copy name"
 
-#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/pages/flow-page/display-history-button.tsx
-#: src/tabs/provider-meta.tsx
 msgid "Copy path"
 msgstr "Copy path"
 
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Copy path of {name}"
 msgstr "Copy path of {name}"
+
+#. placeholder {0}: file.path
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy path: {0}"
+msgstr "Copy path: {0}"
+
+#: src/components/spec-editor/SpecEditor.tsx
+#: src/pages/flow-page/display-history-button.tsx
+msgid "Copy path: {filePath}"
+msgstr "Copy path: {filePath}"
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+msgid "Copy path: {path}"
+msgstr "Copy path: {path}"
+
+#: src/tabs/provider-meta.tsx
+msgid "Copy path: {workdir}"
+msgstr "Copy path: {workdir}"
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -6536,8 +6550,8 @@ msgstr "Copy the terminal command: {0}"
 #~ msgstr "Copy the terminal command: flow asset install {0}"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Copy this file's path to the clipboard"
-msgstr "Copy this file's path to the clipboard"
+#~ msgid "Copy this file's path to the clipboard"
+#~ msgstr "Copy this file's path to the clipboard"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
