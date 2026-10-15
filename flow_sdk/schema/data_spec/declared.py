@@ -453,7 +453,8 @@ def load_root(root: Path) -> dict[Path, str]:
 def register_folder(folder: Path) -> str:
     """Register one data schema folder (indexing calls this); its error, or ``""``.
 
-    The definitions of its tree not read yet are pended first, so a definition indexed before
+    Definitions not built yet are pended first (name resolution may have only read them),
+    so a definition indexed before
     the kinds it names still resolves them.
     """
     folder = Path(folder)
@@ -463,7 +464,7 @@ def register_folder(folder: Path) -> str:
             if parent.name == AGENTIC_ASSETS_DIR:
                 top = parent.parent
         for other in data_schema_folders(top):
-            if other != folder and other not in _READ:
+            if other != folder and other not in _BUILT:
                 _pend(other)
         _settle(folder, _pend(folder))
         return _ERRORS.get(folder, "")
