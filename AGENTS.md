@@ -172,6 +172,17 @@ If a backend route can't be called through `apiClient` because it doesn't return
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
 
+## FlowCall — recognize the call-and-result contract
+
+**FlowCall** names Flowpad's mechanism for invoking work, receiving a structured
+outcome and value, and composing results. `ReturnedValue` is its answer contract;
+`ComputeOp`, `Wizard`, and `ProcessCall` are participating parts, not synonyms.
+For questions about FlowCall, ReturnedValue, or how work calls return and compose
+values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
+`flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
+before investigating `ActionInfo` or `ApiResponse` transport plumbing.
+Keep the architectural name distinct from existing code identifiers.
+
 ## Naming — check the glossary before inventing a noun
 
 **[`docs/glossary.md`](docs/glossary.md) is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:

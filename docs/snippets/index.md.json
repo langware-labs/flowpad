@@ -2,21 +2,21 @@
   "schema_version": 1,
   "typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2",
+  "inputs_hash": "ee7ec3a7701a274df9c6226d75c8babf94d69db4c0b6b1b86d781c6259f715d1",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.",
+  "self_summary": "Runnable SDK examples with validating tests: FlowCall outcomes and returned values, ComputeOps, wizards, schemas, agents, channels, data sources, datasets, credentials, dependencies, deployment, activity, scanning, and RAG.",
   "files": [
     {
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Snippets — the dev onboarding shelf",
-      "summary": "Index of the runnable SDK snippet shelf for developer onboarding, listing each category, what it shows, the test pinning it, and shelf conventions.",
-      "content_hash": "ff242906bcea714e850b61cc7efc21b1f8230e72d5c75693a78a8a944ad08b87",
-      "size_bytes": 9714
+      "summary": "SDK snippet shelf mapping capabilities, including FlowCall, to runnable documentation and their validating tests.",
+      "content_hash": "fc1bcb22582ea35a16893da202475e01e03f58cfe7018cd3fa688d16e065565b",
+      "size_bytes": 10213
     },
     {
       "name": "activity.md",
@@ -69,10 +69,10 @@
     {
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
-      "title": "Call → ExitCode → Return",
-      "summary": "Runnable snippets showing how every call, from ComputeOps and wizards to agent turns, returns one ReturnedValue subclass with an exit code, plus timeout rules.",
-      "content_hash": "f11d5087e159de9317e723e1b9e6cbc66a58f04554cba6dff3e71c62588479ce",
-      "size_bytes": 23816
+      "title": "FlowCall — calls, outcomes, and returned values",
+      "summary": "FlowCall contract: invoking work, ReturnedValue answers, ExitCode outcomes, typed outputs, checks, timeouts, serialization, and composition through tested examples.",
+      "content_hash": "04515783c5b22a87a2398fe7426e39f8186dc2b37a12e7fba667728e0aac27bc",
+      "size_bytes": 25192
     },
     {
       "name": "channel-webhook-routing.md",
@@ -86,9 +86,9 @@
       "name": "compute-ops.md",
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
-      "summary": "ComputeOp snippets: idempotent single-call ops of subkind cli, decision, prompt, agent or ask, with completion checks, attempts ladders and typed return values.",
-      "content_hash": "bc68130c454602c5308aa41dfe54051b891bb17f28a31b32c1d6c68efb46977f",
-      "size_bytes": 8389
+      "summary": "ComputeOp FlowCall examples for typed outputs, completion checks, asking people, attempts ladders, cancellation, and execution results.",
+      "content_hash": "251a597ab6ddbe6d063ecadf9bf09f5871bdf1af35f8245f03ab0cdcdad6983e",
+      "size_bytes": 8414
     },
     {
       "name": "connections.md",
@@ -110,9 +110,9 @@
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec",
-      "summary": "Tested snippets teaching DataSpec schemas and values: declaring classes, authoring forms and parse, spec_kind registration, ReturnedValue, save/load folders, Text and Binary file fields, identity carriers.",
-      "content_hash": "13b5ced05bb9e0adf1b3bb2ef47ef992441a2c717b527d5bb607a6301be09da8",
-      "size_bytes": 14116
+      "summary": "DataSpec examples for schemas, runtime forms, registered kinds, FlowCall answers, file-backed values, persistence, and identity.",
+      "content_hash": "bfb1071989d163037db05f056989f468db0296c19166d8502a2c2fef26ffb6e6",
+      "size_bytes": 14165
     },
     {
       "name": "datasets.md",
@@ -190,9 +190,9 @@
       "name": "project-dependencies.md",
       "rel_path": "project-dependencies.md",
       "title": "Project dependencies — snippets",
-      "summary": "Snippets for declaring project dependencies in flow.json: git, hub and local folder sources, resolution states, provider load lifecycle, cross-project processes and agents, and CLI verbs.",
-      "content_hash": "d936e7e0a8ad9c380574a4536cf239e4f567b41cbc2590324d16faad63a13b08",
-      "size_bytes": 8638
+      "summary": "Project dependency declarations, resolution, shared context, cross-project documents and agents, sharing, and equivalent CLI operations.",
+      "content_hash": "e10fddbe362665223035f830fb3f5fd2314d96deb217156d96681aafbe3ab52f",
+      "size_bytes": 8611
     },
     {
       "name": "project-git-share.md",
@@ -211,47 +211,55 @@
       "size_bytes": 7470
     },
     {
+      "name": "scan-and-index.md",
+      "rel_path": "scan-and-index.md",
+      "title": "Scan and index — snippets",
+      "summary": "Runnable diskio examples for tree walking, asset scanning, document reading, link extraction, and Python or Rust backend selection.",
+      "content_hash": "695e924ac9b976c7021b8d55044888649805e8d3a8011dc1facc107761352f56",
+      "size_bytes": 4025
+    },
+    {
       "name": "secret-stores.md",
       "rel_path": "secret-stores.md",
       "title": "Secret stores",
-      "summary": "SecretStore snippets: load, save and validate_keys across env_file, vault and GCP stores, credential and data source bindings, connections with scopes, and flow project setup.",
-      "content_hash": "8eea37c9fe6b214a5b432d3f7bbf28f59a72ac92345abdbdde511dd045c7a7a8",
-      "size_bytes": 28027
+      "summary": "Secret-store examples for credentials, environment variables, source access, account connections, deployment binding, validation, and project setup.",
+      "content_hash": "ce7322435c7cb31e7ffae2d2414195417addc9a3dcc39118134903db7144241e",
+      "size_bytes": 28262
     },
     {
       "name": "service-endpoints.md",
       "rel_path": "service-endpoints.md",
       "title": "Service endpoints — snippets",
-      "summary": "Snippets on Deployment placements and their ServiceEndpoint children: subkinds, audience proxies with web app routes, cloud box grants, an agent's chat channel, and health checks.",
-      "content_hash": "d84e9e0228817ddf5d4c9523bdcfb6f6106dd85f2cad329685600adec57bbe3f",
-      "size_bytes": 16721
+      "summary": "ServiceEndpoint examples covering deployment services, routing, web apps, cloud addressing, agent chat, and health checks.",
+      "content_hash": "ce6d93e0082a66e04b7668f4cab9dcd70613a8fb8edbfa38e0a9e1a77d6a8fea",
+      "size_bytes": 18022
     },
     {
       "name": "stream-inbox-automations.md",
       "rel_path": "stream-inbox-automations.md",
       "title": "Stream stream inbox automations — snippets",
-      "summary": "Stream inbox automation snippets: a TAG Trigger on projected messages whose if is a decision-op gate and whose then runs a wizard or agent.",
-      "content_hash": "c0ee1e569ce69770d95d70f0973c2395c4331213067181bcc578e598380b000b",
-      "size_bytes": 15935
+      "summary": "Stream inbox automation examples combining Trigger policies, decision gates, wizard execution, FlowCall answers, agent inputs, and TypeScript operations.",
+      "content_hash": "90ea192c01d9e7a76f2ece816ddb72d2cb2380fe7c16a3592ffc06e4159c9bc3",
+      "size_bytes": 16024
     },
     {
       "name": "wizards.md",
       "rel_path": "wizards.md",
       "title": "Wizards — a sequence of calls, and what travels between them",
-      "summary": "Runnable snippets on wizards that sequence ComputeOp steps: order, on_fail, values bound between steps, when conditions, declared output, upfront ask planning, exit_error and shared shell.",
-      "content_hash": "f770e4c4f2932356b9229e348e230cabcdfb0b229411daa647349a72b94349b6",
-      "size_bytes": 14529
+      "summary": "Wizard FlowCall composition examples covering ordered steps, bound values, fallback, conditions, failure policies, declared outputs, and shared shells.",
+      "content_hash": "579938127abfda9cd091a7896b82b69336e915809f12d3bba63f4e5f22aa5674",
+      "size_bytes": 14525
     },
     {
       "name": "workflows.md",
       "rel_path": "workflows.md",
       "title": "Workflows — snippets",
-      "summary": "Workflow snippets for the flow_sdk.blocks plain-Python surface: a mail concierge loop with StreamInbox, agents, resumable position and replies.",
-      "content_hash": "f5257d96c1bacd18ced3586c633a724b1e20213b5a119a7e10388b865fe16747",
-      "size_bytes": 12767
+      "summary": "Plain-Python workflow examples composing channel messages, agents, FlowCall results, streams, and transient message blocks.",
+      "content_hash": "4031482cb1d58e4861b676fb1014a30a1eb1fb00592f0ce9a266948f7cf2df41",
+      "size_bytes": 12763
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T11:16:14Z",
+  "generated_at": "2026-10-15T06:45:37.533497+00:00",
   "latest_process_ref": ""
 }

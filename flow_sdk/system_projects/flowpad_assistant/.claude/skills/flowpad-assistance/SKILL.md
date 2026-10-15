@@ -8,7 +8,7 @@ description: >-
   restarts the calling agentic-process; reads messages the user received ("X sent me
   a message") and sends messages with attachments into a conversation. Use for "the current X" / "this X", "create a task / skill / agent",
   "find or look up X", "restart this session", "what did X send me", or "send X to my
-  conversation with Y", and finding Flow SDK guidance for channel webhooks and deployment routing.
+  conversation with Y", and finding Flow SDK guidance for FlowCall (calls, outcomes, returned values, and composition), channel webhooks and deployment routing.
   NOT for showing or opening something in the UI (flowpad-navigation), building a
   web app (web-app-builder), a slide deck (decker), building an agent
   (agent-builder), or data schemas, datasets and their rows (data-management).
@@ -110,6 +110,14 @@ Each value is a TypeId string (`<type>-<id>`) or `null` if not set. The exit cod
 | "active entity" / "what I'm focused on" | `CurrentActiveEntityTypeId` |
 
 If the matched key is `null`, tell the user that nothing is set for that scope — do not guess or fall back to a different entity.
+
+## FlowCall guidance
+
+For **FlowCall**, **ReturnedValue**, or how work calls return values and compose,
+read the [shipped FlowCall guide](../../../docs/Getting%20Started/FlowCall.md).
+It explains the mechanism without a development checkout and points to the
+canonical source docs when a checkout is available. This is documentation
+lookup, not permission to execute an operation.
 
 ## Flow SDK channel and webhook guidance
 

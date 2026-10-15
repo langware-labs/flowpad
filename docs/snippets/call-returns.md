@@ -1,11 +1,26 @@
 ---
 id: 26f5399a-af9d-4b55-8b64-3b1166ac11b1
 ---
-# Call → ExitCode → Return
+# FlowCall — calls, outcomes, and returned values
 
-One answer for every call in the system. A ComputeOp, a wizard, a shell command,
-an agent turn and a person's reply all come back as a `ReturnedValue` — or the
-subclass their kind of work carries.
+**FlowCall is Flowpad’s contract for invoking work, receiving a structured outcome and value, and composing that result into further work.**
+
+A ComputeOp, a wizard, a shell command, an agent run and a person's reply
+participate through a common `ReturnedValue` contract, or the subclass their
+kind of work carries. FlowCall names the mechanism, not a new class or entity.
+See the [glossary](../glossary.md#flowcall--the-call-and-result-mechanism) for the vocabulary.
+
+The mechanism joins execution (`ComputeOp` and the runners), the answer
+(`ReturnedValue` and `ExitCode`), declared-output validation, tagged serialization,
+and composition (Python callers and wizards). `ProcessCall` carries a call through
+a message and correlates its answer. REST and CLI adapters expose those parts;
+`ApiResponse` is the transport envelope, not the FlowCall answer.
+
+The scope is participating work calls, not every SDK method. HTTP success says
+the request was handled; read the answer for the work's outcome. `send_turn()`
+answers whether a turn was **accepted**, while `run()` waits for its result.
+Expected unsuccessful outcomes are returned; only bad input and broken systems
+raise, unless the caller opts into `raise_for_status()`.
 
 **Every fence on this page is checked.** `tests/unit/test_call_returns_snippets.py`
 runs every `python` fence as written; a line ending `# <expected>` is asserted
@@ -43,8 +58,10 @@ tmp = Path(tempfile.mkdtemp())       # the folder the ops below work in
 
 ## 1. A ComputeOp is one call
 
-An op is ONE call of one subkind. It is not a ladder: a fallback — "try the
-command, then the agent" — is two ops and a caller, in Python or a wizard.
+An op describes one goal or value-producing call and its primary subkind.
+Its optional `attempts` are further rungs tried against the same completion
+check. Separate goals or explicit composition belong in Python or a wizard;
+see [ComputeOps](compute-ops.md) for the attempts contract.
 
 Following [the ontology](../ontology.md): the type is `compute_op`, `subkind`
 is a closed enum, and each subkind's structure is its own DataSpec, the kind

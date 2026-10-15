@@ -2,10 +2,10 @@
   "schema_version": 1,
   "typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "breadcrumbs",
   "folder_name": "breadcrumbs",
-  "inputs_hash": "84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36",
+  "inputs_hash": "b68b48e13aa101fdc26a981fa855f513bc1cf7c67962da2c840ddcb5423c120a",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
@@ -54,9 +54,9 @@
       "name": "dev_port_picking.md",
       "rel_path": "dev_port_picking.md",
       "title": "Dev port picking for agent-started servers",
-      "summary": "Agent-started dev servers must ask for a port via flow app free-dev-port rather than typing one; the probe, the band, and why no lease exists.",
-      "content_hash": "56512264e13928825a3676b1d04507dc7de25e3d6366ec839c20316e2f82b09f",
-      "size_bytes": 3494
+      "summary": "Dev-server port selection rules, listener probes, Windows binding behavior, and the absence of a reservation lease.",
+      "content_hash": "814f074dfb31ce3d3fd71670fec8b410210fdbedc47039ef9a91ddf2805b684e",
+      "size_bytes": 4034
     },
     {
       "name": "harness_login_state.md",
@@ -126,9 +126,9 @@
       "name": "sandbox_browser_url.md",
       "rel_path": "sandbox_browser_url.md",
       "title": "Sandbox preview urls: browser vs server",
-      "summary": "Sandbox preview URLs in a cloud box: loopback for server-side callers, the audience door for the browser, and why E2B_SANDBOX_ID is never the sandbox-id source.",
-      "content_hash": "8309d79c964c5282be90ea893992ce80b8768df91d18b61a42dd6806d7a0422c",
-      "size_bytes": 6325
+      "summary": "Sandbox preview URL rules distinguishing server loopback from browser-reachable proxy addresses and identifying the sandbox without E2B_SANDBOX_ID.",
+      "content_hash": "400975251238f6b695ce381b84b753ca9644d65deead799d501897d09ebb3d00",
+      "size_bytes": 6308
     },
     {
       "name": "served_html_encoding.md",
@@ -142,9 +142,9 @@
       "name": "surface_transcript_reconcile.md",
       "rel_path": "surface_transcript_reconcile.md",
       "title": "Surface change must reconcile the transcript",
-      "summary": "A surface change owes both transport and transcript: leaving the terminal must unlatch pty_mode, and history must be force-reloaded, gate mirroring the server per route.",
-      "content_hash": "e85b3e438186e5d2eb11ec63d359d430b2c5a130165b451de24d05d1cbc927da",
-      "size_bytes": 14763
+      "summary": "Session surface changes require transport switching and transcript reconciliation in both directions, with startup guards and regression evidence.",
+      "content_hash": "ca4ed021dfc0453af8b56582d69102833232e387b67706def1f3657f01665b04",
+      "size_bytes": 14737
     },
     {
       "name": "terminal_bidi.md",
@@ -180,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-15T06:44:32.910001+00:00",
   "latest_process_ref": ""
 }
