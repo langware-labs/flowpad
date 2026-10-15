@@ -24931,6 +24931,7 @@ msgid "Starting your sandbox…"
 msgstr "Starting your sandbox…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "Starting…"
