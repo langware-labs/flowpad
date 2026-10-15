@@ -620,6 +620,11 @@ msgstr "{0} missing"
 msgid "{0} msgs"
 msgstr "{0} msgs"
 
+#. placeholder {0}: report.created
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} new"
+msgstr "{0} new"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "{0} not tested"
@@ -708,6 +713,11 @@ msgstr "{0} records"
 msgid "records_on_disk"
 msgstr "{0} records on disk"
 
+#. placeholder {0}: report.removed
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} removed"
+msgstr "{0} removed"
+
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/connections-manager.tsx
@@ -782,6 +792,11 @@ msgstr "{0} types"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} types · {1}"
+
+#. placeholder {0}: report.updated
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} updated"
+msgstr "{0} updated"
 
 #. placeholder {0}: d.title
 #: src/components/credentials/CredentialDialog.tsx
@@ -4500,6 +4515,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4806,6 +4822,7 @@ msgid "Check failed"
 msgstr "Check failed"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "Check for new messages"
 
@@ -4817,6 +4834,10 @@ msgstr "Check the address, or try opening it in your browser."
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Checked for new messages"
+msgstr "Checked for new messages"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
@@ -6840,10 +6861,9 @@ msgstr "Could not pause the cloud machine"
 msgid "Could not publish"
 msgstr "Could not publish"
 
-#. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/source-parts.tsx
-msgid "Could not pull {0}"
-msgstr "Could not pull {0}"
+#~ msgid "Could not pull {0}"
+#~ msgstr "Could not pull {0}"
 
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #~ msgid "Could not reach support"
@@ -10800,8 +10820,8 @@ msgid "Fetch missing"
 msgstr "Fetch missing"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Fetch new messages from hub"
-msgstr "Fetch new messages from hub"
+#~ msgid "Fetch new messages from hub"
+#~ msgstr "Fetch new messages from hub"
 
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
@@ -11158,6 +11178,7 @@ msgstr "Fix"
 msgid "Fix All"
 msgstr "Fix All"
 
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebappErrorBanner.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fix it"
@@ -11176,6 +11197,10 @@ msgstr "Fix the configuration — credentials or settings — then press Verify 
 msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 
+#: src/components/project-setup/use-setup-fix.ts
+msgid "Fix the setup"
+msgstr "Fix the setup"
+
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "Fix the web app"
@@ -11187,6 +11212,10 @@ msgstr "Fix…"
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
+
+#: src/components/project-setup/SetupFailureActions.tsx
+msgid "Fixing the setup…"
+msgstr "Fixing the setup…"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -17162,6 +17191,10 @@ msgstr "Not done."
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Not fetched"
+msgstr "Not fetched"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "not fired yet"
@@ -18291,6 +18324,7 @@ msgstr "Open Plan"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/notifications/NotificationProcessLine.tsx
 #: src/notifications/NotificationProcessLine.tsx
 msgid "Open process"
@@ -24520,6 +24554,10 @@ msgstr "SOCKS Proxy Port"
 msgid "Some assets could not be read."
 msgstr "Some assets could not be read."
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Some channels could not be checked"
+msgstr "Some channels could not be checked"
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
 msgstr "Some contexts could not be deleted"
@@ -24931,6 +24969,7 @@ msgid "Starting your sandbox…"
 msgstr "Starting your sandbox…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "Starting…"
@@ -25963,6 +26002,14 @@ msgstr "The file may have been deleted, moved, or doesn't match the {typeLabel} 
 msgid "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
 msgstr "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
 
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "The fixer could not repair this setup. Open the process to see what it found."
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not start."
+msgstr "The fixer could not start."
+
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
 msgstr "The Flowpad Assistant's assets"
@@ -26240,8 +26287,16 @@ msgid "The skill matches HEAD."
 msgstr "The skill matches HEAD."
 
 #: src/components/data-sources/source-parts.tsx
-msgid "The source was not queued."
-msgstr "The source was not queued."
+msgid "The source could not be pulled"
+msgstr "The source could not be pulled"
+
+#: src/components/data-sources/source-parts.tsx
+msgid "The source did not answer"
+msgstr "The source did not answer"
+
+#: src/components/data-sources/source-parts.tsx
+#~ msgid "The source was not queued."
+#~ msgstr "The source was not queued."
 
 #: src/components/data-sources/use-source-delete.ts
 msgid "The source was not removed."
@@ -27568,8 +27623,7 @@ msgstr "Triggers"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/project-setup/ProjectLoadDialog.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -27914,6 +27968,7 @@ msgstr "up to date"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/data-sources/source-parts.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
 msgstr "Up to date"
@@ -29096,6 +29151,7 @@ msgid "Why it ran"
 msgstr "Why it ran"
 
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "Why?"
 
@@ -29686,19 +29742,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "Fix the setup"
-
-#: src/components/project-setup/SetupFailureActions.tsx
-msgid "Fixing the setup…"
-msgstr "Fixing the setup…"
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "The fixer could not repair this setup. Open the process to see what it found."
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "The fixer could not start."

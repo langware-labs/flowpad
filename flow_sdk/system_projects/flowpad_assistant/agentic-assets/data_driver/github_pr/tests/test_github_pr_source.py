@@ -426,6 +426,7 @@ async def test_merged_closed_and_unassigned_you_end_the_conversation_and_reopene
     ]
     items, _, _ = await _all(_source(github.base))
     got = {i.origin.key: (i.data.text, i.data.ends_conversation) for i in items}
+    assert by_key_mark(items) == {"event-81": "closed", "event-82": None, "event-84": None}
     assert got == {
         "event-81": ("closed by dana", True),
         "event-82": ("reopened", False),
@@ -455,7 +456,7 @@ async def test_a_pr_gone_without_a_timeline_event_ends_on_its_state(github):
     gh.end(PR, "closed", event=False)
     items, _, _ = await _all(_source(github.base), cursor=resume)
     (ended,) = [i for i in items if i.data.ends_conversation]
-    assert ended.origin.key == f"ended-{PR}-closed" and ended.data.text == "closed"
+    assert ended.origin.key == f"ended-{PR}-closed" and ended.data.text == "closed" and ended.data.mark.key == "closed"
 
 
 async def test_seen_is_capped_and_the_cursor_stays_bounded(github, monkeypatch):
@@ -492,6 +493,9 @@ async def test_approve_and_request_changes_come_back_keyed_as_the_review(github)
     keys = {i.origin.key for i in items}
     assert approved.origin.key in keys and asked.origin.key in keys and approved.origin.key.startswith("review-")
     assert approved.data.text == f"{ME} approved" and asked.data.text == "rename it"
+    assert (approved.data.mark.key, asked.data.mark.key) == ("approved", "changes_requested"), "the echo carries the read's mark"
+    done = {a.id: a.done_mark for a in GithubPrSource.actions}
+    assert (done["approve"], done["request_changes"], done["merge"]) == ("approved", "changes_requested", "")
 
 
 async def test_merge_and_close_hit_github_and_leave_the_event_to_the_poll(github):
@@ -564,6 +568,25 @@ async def test_an_empty_commented_review_is_noise_and_a_worded_one_is_not(github
     assert "review-61" not in texts and texts["review-62"] == "a few notes" and texts["review-63"] == "dana requested changes"
 
 
+async def test_a_review_is_marked_by_its_state_and_a_comment_is_not(github):
+    gh = github.gh
+    pr = gh.pr(PR)
+    pr["reviews"] += [
+        {"id": 64, "user": {"login": "dana"}, "state": "APPROVED", "body": "ship it", "submitted_at": gh.tick()},
+        {"id": 65, "user": {"login": "dana"}, "state": "CHANGES_REQUESTED", "body": "", "submitted_at": gh.tick()},
+        {"id": 66, "user": {"login": "dana"}, "state": "DISMISSED", "body": "", "submitted_at": gh.tick()},
+        {"id": 67, "user": {"login": "dana"}, "state": "COMMENTED", "body": "a few notes", "submitted_at": gh.tick()},
+    ]
+    items, _, _ = await _all(_source(github.base))
+    marks = {i.origin.key: (i.data.mark.key, i.data.mark.label, i.data.mark.tone) if i.data.mark else None for i in items}
+    assert marks == {
+        "review-64": ("approved", "Approved", "positive"),
+        "review-65": ("changes_requested", "Changes requested", "negative"),
+        "review-66": ("dismissed", "Dismissed", "neutral"),
+        "review-67": None,
+    }
+
+
 async def test_ci_is_sent_by_the_check_app_else_ci(github):
     gh = github.gh
     gh.pr("octo/app#1")["checks"] += [{"id": 1, "status": "completed", "conclusion": "success", "completed_at": gh.tick(), "app": {"name": "GitHub Actions"}}]
@@ -613,4 +636,8 @@ async def test_a_merged_pr_that_left_the_search_ends_as_merged(github):
     _, resume, _ = await _all(_source(github.base))
     gh.end(PR, "merged")
     items, _, _ = await _all(_source(github.base), cursor=resume)
-    assert [i.data.text for i in items if i.data.ends_conversation] == [f"merged by {ME}"]
+    assert [(i.data.text, i.data.mark.label, i.data.mark.tone) for i in items if i.data.ends_conversation] == [(f"merged by {ME}", "Merged", "positive")]
+
+
+def by_key_mark(items):
+    return {i.origin.key: i.data.mark.key if i.data.mark else None for i in items}

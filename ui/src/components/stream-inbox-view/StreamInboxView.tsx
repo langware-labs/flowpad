@@ -17,6 +17,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
+import { pullNow } from '@src/components/data-sources/source-parts';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
 import {
@@ -250,7 +251,14 @@ export function ConversationListRow({
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
-  const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
+  const { data: resolvedLatest } = useEntity<FlowMessage>(latestTypeId);
+  // A row IS its conversation; its preview loading never hides it. When a new message moves the
+  // latest pointer, the row keeps the message it last showed until the new one resolves — only a
+  // row that has never shown one waits hidden (`inLoadingState`).
+  const shownLatest = useRef<{ convId: string; message: FlowMessage } | null>(null);
+  if (resolvedLatest) shownLatest.current = { convId: conv.id ?? '', message: resolvedLatest };
+  const latestMessage =
+    resolvedLatest ?? (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
 
   const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
   const invitationId = invitationTypeId?.id ?? null;
@@ -820,15 +828,26 @@ export function StreamInboxView({
   // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
 
+  // Refresh = read every channel of this inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
+  // A channel waiting on setup or paused is not read; it says so on its own strip.
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
+      const runnable = ownerChannels.filter((source) => source.status === 'active' || source.status === 'new');
+      const answers = await Promise.all(
+        runnable.map(async (source) => ({ name: source.name || source.provider, ...(await pullNow(source)) })),
+      );
       await fetchConversations(agentId);
       void refetch();
+      if (answers.length) {
+        const line = answers.map((a) => `${a.name}: ${a.text}`).join(' · ');
+        if (answers.every((a) => a.ok)) notify.success({ title: t`Checked for new messages`, message: line });
+        else notify.error({ title: t`Some channels could not be checked`, message: line });
+      }
     } finally {
       setFetching(false);
     }
-  }, [agentId, refetch]);
+  }, [agentId, refetch, ownerChannels, t]);
 
   const handleArchive = useCallback(
     async (convId: string) => {
@@ -1358,7 +1377,7 @@ export function StreamInboxView({
                   className="h-7 w-7"
                   onClick={() => void handleRefresh()}
                   disabled={fetching}
-                  title={t`Fetch new messages from hub`}
+                  title={t`Check for new messages`}
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 </Button>

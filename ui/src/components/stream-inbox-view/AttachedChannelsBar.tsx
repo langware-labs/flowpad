@@ -6,7 +6,9 @@
  * glyph draws): several sources of one kind share a mark that carries their
  * count, and hovering it lists just those sources with their switches.
  * Clicking a mark FILTERS the list to that kind; while a filter is on, the
- * two controls give way to one × that shows everything again.
+ * "+" turns into a high-contrast × in the same place that shows everything
+ * again. Nothing else on the line moves or disappears: the line keeps its
+ * width, so the marks a person is pointing at stay where they are.
  *
  * At rest the line carries two controls — plus a call control for each channel that takes calls
  * (`CallControls`, from the driver's `calls`): + adds a source owned by this owner,
@@ -91,7 +93,10 @@ export function useAttachedChannels(owner: TypeId | null | undefined) {
     [sources, specFor, ownerKey, localKey],
   );
   const forAgent = owner?.type === Agent.type;
-  const offers = useMemo(() => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS), [specs, rows, ownerKey, forAgent]);
+  const offers = useMemo(
+    () => (ownerKey ? channelOffers(specs, rows, forAgent) : NO_OFFERS),
+    [specs, rows, ownerKey, forAgent],
+  );
   return { rows, specFor, offers };
 }
 
@@ -142,7 +147,15 @@ interface Props {
   className?: string;
 }
 
-export function AttachedChannelsBar({ owner, rows, specFor, offers = NO_OFFERS, selected, onSelectedChange, className }: Props) {
+export function AttachedChannelsBar({
+  owner,
+  rows,
+  specFor,
+  offers = NO_OFFERS,
+  selected,
+  onSelectedChange,
+  className,
+}: Props) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   // The add dialog, and the channel it opens on when an offer was pressed.
@@ -178,11 +191,16 @@ export function AttachedChannelsBar({ owner, rows, specFor, offers = NO_OFFERS, 
           onDelete={setDeleting}
         />
       ))}
+      {offers.map((offer) => (
+        <ChannelOfferMark key={offer.key} offer={offer} onConnect={() => setAdding({ initial: offer.spec })} />
+      ))}
+      <CallControls rows={rows} specFor={specFor} />
       {filtering ? (
+        // Same size and place as the "+", so the line does not shift: only the glyph and its contrast change.
         <Button
           variant="ghost"
           size="icon"
-          className={CONTROL}
+          className={cn(CONTROL, 'bg-foreground text-background hover:bg-foreground/85 hover:text-background')}
           onClick={() => onSelectedChange(new Set())}
           aria-label={t`Show all channels`}
           data-testid="attached-channels-clear"
@@ -190,57 +208,51 @@ export function AttachedChannelsBar({ owner, rows, specFor, offers = NO_OFFERS, 
           <X />
         </Button>
       ) : (
-        <>
-          {offers.map((offer) => (
-            <ChannelOfferMark key={offer.key} offer={offer} onConnect={() => setAdding({ initial: offer.spec })} />
-          ))}
-          <CallControls rows={rows} specFor={specFor} />
+        <Button
+          variant="ghost"
+          size="icon"
+          className={CONTROL}
+          onClick={() => setAdding({})}
+          aria-label={t`Add a source`}
+          data-testid="attached-channels-add"
+        >
+          <Plus />
+        </Button>
+      )}
+      <Popover>
+        <PopoverTrigger asChild>
           <Button
             variant="ghost"
             size="icon"
             className={CONTROL}
-            onClick={() => setAdding({})}
-            aria-label={t`Add a source`}
-            data-testid="attached-channels-add"
+            aria-label={t`Channel details`}
+            data-testid="attached-channels-details"
           >
-            <Plus />
+            <SlidersHorizontal />
           </Button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={CONTROL}
-                aria-label={t`Channel details`}
-                data-testid="attached-channels-details"
+        </PopoverTrigger>
+        {/* `onFocusOutside` is refused: flipping a switch disables it while it
+              saves, focus falls to the body, and Radix would read that as
+              "clicked elsewhere" and close the list mid-action. */}
+        <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
+          <ChannelList
+            title={t`Channels`}
+            sources={rows}
+            specFor={specFor}
+            onDelete={setDeleting}
+            footer={
+              <button
+                type="button"
+                className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
+                onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
+                data-testid="attached-channels-see-all"
               >
-                <SlidersHorizontal />
-              </Button>
-            </PopoverTrigger>
-            {/* `onFocusOutside` is refused: flipping a switch disables it while it
-                saves, focus falls to the body, and Radix would read that as
-                "clicked elsewhere" and close the list mid-action. */}
-            <PopoverContent align="end" className="w-72 p-0" onFocusOutside={(e) => e.preventDefault()}>
-              <ChannelList
-                title={t`Channels`}
-                sources={rows}
-                specFor={specFor}
-                onDelete={setDeleting}
-                footer={
-                  <button
-                    type="button"
-                    className="w-full border-t border-border/60 px-3 py-2 text-start text-xs text-primary hover:bg-accent"
-                    onClick={() => navigation.openTab(ViewType.DATA_SOURCES)}
-                    data-testid="attached-channels-see-all"
-                  >
-                    {t`See all sources`}
-                  </button>
-                }
-              />
-            </PopoverContent>
-          </Popover>
-        </>
-      )}
+                {t`See all sources`}
+              </button>
+            }
+          />
+        </PopoverContent>
+      </Popover>
       {adding && <AddChannelDialog owner={owner} initial={adding.initial} onClose={() => setAdding(null)} />}
       <ConfirmDialog
         open={!!deleting}
@@ -328,12 +340,13 @@ function ChannelMark({
         >
           {/* The badge sits top-right here: bottom-right is the listening dot's. */}
           <IconWithBadge Base={Base} Badge={Badge} className="size-[17px]" badgeClassName="-top-1 bottom-auto" />
-          {state === 'on' && attention === 0 && (
-            <span className={cn(MARK_BADGE, 'size-2.5 bg-emerald-500')} />
-          )}
+          {state === 'on' && attention === 0 && <span className={cn(MARK_BADGE, 'size-2.5 bg-emerald-500')} />}
           {attention > 0 && (
             <span
-              className={cn(MARK_BADGE, 'grid size-3.5 place-items-center bg-amber-500 text-[9px] font-bold leading-none text-white')}
+              className={cn(
+                MARK_BADGE,
+                'grid size-3.5 place-items-center bg-amber-500 text-[9px] font-bold leading-none text-white',
+              )}
               data-testid="attached-channel-attention"
             >
               !

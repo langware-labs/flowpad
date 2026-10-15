@@ -540,6 +540,11 @@ def _envelope_of(item, source):
     )
 
 
+def _mark_of(item, source):
+    """What a message-shaped payload says it did (``MessageData.mark``), or None."""
+    return getattr(_payload_of(item, source), "mark", None)
+
+
 async def _thread_of(message):
     """The thread a placed message is in, or None (not placed, or placed before threads)."""
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
@@ -649,6 +654,9 @@ async def _place_message(
         if existing_fm.envelope != envelope:
             existing_fm.envelope = envelope
             dirty = True
+        if existing_fm.mark != (mark := _mark_of(item, source)):
+            existing_fm.mark = mark
+            dirty = True
         # Files and reactions are projection-owned: a row placed before either arrived heals here.
         have = [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]
         files = _message_files(item, fm_id, have=have)
@@ -695,6 +703,7 @@ async def _place_message(
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
         "envelope": envelope.model_dump(mode="json") if envelope else None,
+        "mark": m.model_dump(mode="json") if (m := _mark_of(item, source)) else None,
         "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
         "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
     }
