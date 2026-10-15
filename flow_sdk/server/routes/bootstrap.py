@@ -2388,6 +2388,7 @@ async def initialize_bootstrap() -> BootstrapInfo:
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
 
         settings = get_instance_settings()
+        await icon_registry.sync_indexed()  # icon pack ASSETS of every scope, not just the shipped ones
         _bootstrap_cache = BootstrapInfo(
             info_available=True,
             types=build_all_type_payloads(),
