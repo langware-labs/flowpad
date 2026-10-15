@@ -61,7 +61,12 @@ async def _app(webapp_id: str):
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
     bare = webapp_id.split("-", 1)[1] if webapp_id.startswith("micro_app-") else webapp_id
-    return await WebApp.get_by_id(bare)
+    app = await WebApp.get_by_id(bare)
+    # As ``webapp.json`` declares it NOW (the setup-fixer may just have changed it): re-parsed only when
+    # the file changed (``webapp_asset_hash``).
+    if app is not None and await app.check_and_refresh_record():
+        app = await WebApp.get_by_id(bare) or app
+    return app
 
 
 def _proxy(app) -> Optional[Any]:

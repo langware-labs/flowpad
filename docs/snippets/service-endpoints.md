@@ -175,8 +175,10 @@ two facts and nothing saved:
 A service starts before the page, and the page is told its port in `FLOWPAD_APP_PORT_<NAME>`.
 `flow app ports` lists declared and live ports; `flow app stop <app>` acts on whatever runs.
 `flow app open|restart <app>` bring the app up the one way every caller does — validate → load →
-setup → fix (`bring_up`, `flow_sdk/core/setup/load.py`): a busy non-required port moves, and a setup
-that still fails gets the setup-fixer, whose verdict rides the load (`LoadResult.fix`).
+setup → fix (`bring_up`, `flow_sdk/core/setup/load.py`): a busy non-required port moves. Fix is a step
+of the setup run, not a separate launch: each web-app step's `attempts` end in the setup-fixer agent,
+then the step again, and the step's own check is the proof (`core/setup/derive.py`). A plain load
+never runs it (`LoadTree` strips `attempts`); only the setup run keeps it.
 A dead `http://localhost:<port>` whose port an app of the agent's project declares starts that app
 when the agent's `auto_open` navigates to it.
 

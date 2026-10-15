@@ -220,14 +220,13 @@ def _start_declared(request: str) -> int | None:
     name = request if request in names else (names[0] if not request and len(names) == 1 else None)
     if name is None:
         return None
-    row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
-    load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
-    if load.get("state") == "failed" and load.get("setup_available"):
-        # The load failed: setup is the next step — once; a setup that still fails goes to the fixer.
+    load: dict = {"setup_available": True}
+    # A failed load goes on to setup, once (``bring_up`` reads the failure); the setup-fixer is a step of it.
+    while load.get("state") != "ready" and load.get("setup_available"):
         row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
         load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
     if load.get("state") != "ready":
-        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", _not_up(name, load))
+        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", f"{name}: {load.get('detail') or load.get('state') or 'failed'}")
     page = next((r for r in _project_action("app-ports").get("ports") or []
                  if r["app"] == name and r["process"] == "page"), None)
     port = (page or {}).get("port") or (page or {}).get("declared")
@@ -235,30 +234,14 @@ def _start_declared(request: str) -> int | None:
 
 
 def _follow(load: dict, asset: str) -> dict:
-    """Follow a load to its verdict, as ``flow project load --wait`` does: while it runs, and while the
-    fixer works on its failure."""
+    """Follow a load to its verdict, as ``flow project load --wait`` does — a setup run and its fixer
+    included: the fixer is a step of that run."""
     import time  # noqa: PLC0415
 
-    def going(result: dict) -> bool:
-        return result.get("state") == "running" or (
-            result.get("state") == "failed" and (result.get("fix") or {}).get("state") == "running")
-
-    while going(load):
+    while load.get("state") == "running":
         time.sleep(2)
         load = _project_action(f"load-state?asset={asset}") or load
     return load
-
-
-def _not_up(name: str, load: dict) -> str:
-    fix = load.get("fix") or {}
-    lines = [f"{name}: {load.get('detail') or str(load.get('state') or 'failed')}"]
-    if fix.get("summary"):
-        lines.append(f"Fix: {fix['summary']}")
-    if fix.get("user_action"):
-        lines.append(fix["user_action"])
-    if fix.get("process"):
-        lines.append(f"Fixer: {fix['process']}")
-    return "\n".join(lines)
 
 
 @app_app.command("ports", help="The port each app of this project declares, and where it runs now.")

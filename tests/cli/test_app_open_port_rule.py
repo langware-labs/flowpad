@@ -84,10 +84,11 @@ def test_a_listener_in_this_process_is_another_program_too(tmp_path):
 READY = {"state": "ready", "asset": "micro_app-1"}
 
 
-def _project(monkeypatch, *, apps: list[str], load: dict | None = None, later: list[dict] | None = None,
+def _project(monkeypatch, *, apps: list[str], load: dict | list | None = None, later: list[dict] | None = None,
              in_project: bool = True) -> list:
     calls: list = []
     polls = list(later or [])
+    starts = list(load) if isinstance(load, list) else [load or READY]
     monkeypatch.setattr(app_cmd, "_project_action_url", lambda action, required=True: f"project/p/{action}" if in_project else None)
     monkeypatch.setattr("time.sleep", lambda _s: None)
 
@@ -98,7 +99,8 @@ def _project(monkeypatch, *, apps: list[str], load: dict | None = None, later: l
                               for app in apps for process in ("page", "api")]}
         if name.startswith("load-state"):
             return polls.pop(0)
-        return {"apps": [{"app": apps[0], "asset": "micro_app-1", "ok": True, "load": load or READY}]}
+        return {"apps": [{"app": apps[0], "asset": "micro_app-1", "ok": True,
+                          "load": starts.pop(0) if len(starts) > 1 else starts[0]}]}
 
     monkeypatch.setattr(app_cmd, "_project_action", action)
     return calls
@@ -112,10 +114,13 @@ def test_open_brings_the_projects_declared_app_up_through_the_backend(monkeypatc
     assert ("app-start", {"app": "shop"}) in calls
 
 
-def test_open_follows_a_running_load_and_the_fixer_to_the_verdict(monkeypatch):
-    fixing = {"state": "failed", "detail": "port 3390 busy", "fix": {"state": "running"}}
-    _project(monkeypatch, apps=["shop"], load={"state": "running"}, later=[fixing, {"state": "running"}, READY])
+def test_a_failed_load_goes_on_to_setup_once_and_follows_it_to_the_verdict(monkeypatch):
+    """The setup run is where the setup-fixer works: a step of it, so following the run follows the fix."""
+    failed = {"state": "failed", "detail": "port 3390 busy", "setup_available": True}
+    calls = _project(monkeypatch, apps=["shop"], load=[{"state": "running"}, {"state": "running"}],
+                     later=[failed, {"state": "running"}, READY])
     assert app_cmd._start_declared("shop") == 3390
+    assert [name for name, _ in calls].count("app-start") == 2
 
 
 def test_open_with_no_name_takes_the_projects_only_app(monkeypatch):
@@ -132,17 +137,16 @@ def test_open_outside_a_project_or_for_another_app_keeps_its_own_discovery(monke
     assert app_cmd._start_declared("dashboard") is None
 
 
-def test_a_declared_app_that_does_not_come_up_says_why_and_what_the_fixer_found(monkeypatch, capsys):
-    failed = {"state": "failed", "detail": "port 3390 is held by another program: java (pid 9)",
-              "fix": {"state": "not_fixed", "summary": "java is another project's server",
-                      "user_action": "Stop the other project's app.", "process": "agentic_process-1"}}
+def test_a_declared_app_that_does_not_come_up_says_why_in_the_steps_own_words(monkeypatch, capsys):
+    failed = {"state": "failed", "detail": "port 3390 is held by another program: java (pid 9) "
+                                           "(after the agent attempt: Stop the other project's app.)"}
     _project(monkeypatch, apps=["shop"], load=failed)
     with pytest.raises((SystemExit, click.exceptions.Exit)):
         app_cmd._start_declared("shop")
     said = capsys.readouterr()
     out = said.out + said.err
     assert "held by another program: java (pid 9)" in out
-    assert "Stop the other project's app." in out and "agentic_process-1" in out
+    assert "Stop the other project's app." in out
 
 
 def test_a_port_the_backend_placed_is_shown_not_the_apis_from_the_same_folder(tmp_path, serve):

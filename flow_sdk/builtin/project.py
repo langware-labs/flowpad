@@ -933,25 +933,6 @@ class Project(SetupSkippable, Entity):
             results.append(row)
         return ApiSuccessResponse(data={"apps": results})
 
-    @action.post(action_name="setup-fix")
-    async def setup_fix_action(self, asset: str = "", stop: bool = False) -> "ApiResponse":
-        """`POST /project/<id>/setup-fix {asset?, stop?}` — Fix it: run the setup-fixer on this load's
-        failure (the one the backend launches by itself, launched again), or stop it. Answers the load."""
-        from flow_sdk.core.setup import fix  # noqa: PLC0415
-        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
-        from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
-
-        pid = str(self.id)
-        if stop:
-            await fix.stop_fix(pid, asset)
-        else:
-            failed = load_state(pid, asset=asset)
-            if failed is None or failed.state is not LoadState.FAILED:
-                return ApiFailResponse(message="There is no failed load here to fix", status_code=400)
-            fix.start_fix(pid, failed, again=True)
-        current = load_state(pid, asset=asset)
-        return ApiSuccessResponse(data=current.model_dump(mode="json") if current is not None else None)
-
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
         """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.

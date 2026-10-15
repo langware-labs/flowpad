@@ -15,7 +15,7 @@ its project's local placement, and removing the folder takes that endpoint with
 it (``orphan_cascade_fn``).
 """
 from flow_sdk.assets.identity import derived_identity
-from flow_sdk.assets.types.webapp import derive_webapp
+from flow_sdk.assets.types.webapp import derive_webapp, webapp_asset_hash
 from flow_sdk.fs_store.operations.webapp_placement import place_indexed_webapp, unplace_webapp
 from flow_sdk.fs_store.schema_registry import TypeInfo
 from flow_sdk.schema.data_spec.webapp_spec import WebappManifestSpec
@@ -33,6 +33,8 @@ MICRO_APP = TypeInfo(
     family="webapp",
     asset_spec=WebappManifestSpec,
     derive_fields_fn=derive_webapp,
+    # The manifest, not the folder: an in-place edit of `webapp.json` must re-index.
+    asset_hash_fn=webapp_asset_hash,
     fts_content=("name", "title", "description"),
     index_fields=["name", "kind", "edits"],
     post_sync_fn=place_indexed_webapp,

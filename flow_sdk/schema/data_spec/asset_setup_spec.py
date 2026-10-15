@@ -170,19 +170,6 @@ class SetupTreeResult(DataSpec):
 SetupNodeResult.model_rebuild()
 
 
-class SetupFix(DataSpec):
-    """The setup-fixer's run on a load whose setup failed: launched by the backend, once per failure."""
-
-    spec_kind: ClassVar[str] = "project.setup_fix"
-    state: Literal["running", "fixed", "not_fixed"]
-    #: The fixer's process (``agentic_process-<uuid>``), once it exists.
-    process: Optional[str] = None
-    #: One line: what was wrong and what the fixer did.
-    summary: str = ""
-    #: ``not_fixed``: what the person must do, in plain words.
-    user_action: str = ""
-
-
 class LoadResult(DataSpec):
     """A provider project's local lifecycle, independent of the project using it."""
 
@@ -201,5 +188,3 @@ class LoadResult(DataSpec):
     tree: Optional[SetupTreeResult] = None
     #: What a RUNNING load is doing: ``load`` only starts what is set up, ``setup`` sets up first.
     phase: Optional[Literal["load", "setup"]] = None
-    #: A FAILED load's repair: the setup-fixer launched on it, and its verdict.
-    fix: Optional[SetupFix] = None
