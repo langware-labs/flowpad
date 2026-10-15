@@ -32,6 +32,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from flow_sdk.core.compute.declared_value import MISSING
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
@@ -43,6 +44,21 @@ if TYPE_CHECKING:  # pragma: no cover
 logger = logging.getLogger(__name__)
 
 RESULT_MARKER = "__FLOW_FUNCTION_RESULT__:"
+
+
+def compute_op_id(ref: str) -> str:
+    """Graph calls use explicit entity identity; discovery resolves names before this edge."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.fs_store.type_id import TypeId
+    from flow_sdk.schema.types import EntityType
+
+    try:
+        target = TypeId(str(ref))
+        if target.type == EntityType.COMPUTE_OP and is_valid_entity_id(target.id):
+            return target.id
+    except (TypeError, ValueError):
+        pass
+    raise ValueError("graph context.call requires a compute_op TypeId")
 
 
 def record_emission(output_folder: "Path | None", event: str, data: dict) -> None:
@@ -171,6 +187,21 @@ class GraphWorkflowCtx:
         self.input_folder = Path(folders["input"]) if folders.get("input") else None
         self.output_folder = Path(folders["output"]) if folders.get("output") else None
         self.flow_output_folder = Path(folders["flow_output"]) if folders.get("flow_output") else None
+
+    async def call(self, ref: str, *, input: Any = MISSING, approved: bool = False):
+        """Await a block through this worker's pinned, authenticated instance; never open its DB."""
+        from pydantic import TypeAdapter
+
+        from flow_sdk import local_client
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue, TaggedValue
+        from flow_sdk.schema.data_spec.spec import Tagged
+
+        target = compute_op_id(ref)
+        body = {"approved": approved, "answer_tagged": True}
+        if input is not MISSING:
+            body["input"] = TypeAdapter(TaggedValue).dump_python(input, mode="json")
+        payload = await asyncio.to_thread(local_client.graph_post, f"compute_op/{target}/run", body)
+        return TypeAdapter(Tagged[ReturnedValue]).validate_python(payload)
 
     def post(self, path: str, body: dict, *, timeout: int = 60) -> dict:
         """POST to this instance's REST API — the sanctioned subprocess→backend

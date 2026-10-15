@@ -33,13 +33,13 @@ from __future__ import annotations
 
 from typing import ClassVar, Optional, Union
 
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec._types import NonBlank
 from flow_sdk.schema.data_spec.compute_op_spec import AskItemSpec
-from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
+from flow_sdk.schema.data_spec.returned_value_spec import TaggedValue, WizardResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: What a step does when its action fails.
@@ -96,6 +96,11 @@ class WizardStepSpec(DataSpec):
     #: be spliced into a string the injection guard that keeps them out of the
     #: command line is gone.
     args: dict[str, str] = {}
+    #: Typed input: ``$input`` is this wizard's input; otherwise a prior step id.
+    #: Unlike legacy args, this is never interpreted as a literal fallback.
+    input_from: Optional[str] = None
+    #: A literal typed input, including explicit null. Omitted literals stay omitted on disk.
+    input_value: TaggedValue = None
     #: Put what this call RETURNED into scope under this name, for later steps
     #: and for this wizard's own output. Empty ⇒ the value is reported and
     #: dropped: a step that returns something nobody named is not an error,
@@ -114,9 +119,19 @@ class WizardStepSpec(DataSpec):
 
     @model_validator(mode="after")
     def _legal(self) -> "WizardStepSpec":
+        if self.input_from is not None and "input_value" in self.model_fields_set:
+            raise ValueError(f"step {self.id!r}: use input_from or input_value, not both")
         if self.on_fail not in ON_FAIL_VALUES:
             raise ValueError(f"step {self.id!r}: on_fail must be one of {ON_FAIL_VALUES}, got {self.on_fail!r}")
         return self
+
+    @model_serializer(mode="wrap")
+    def _authored_input(self, handler):
+        data = handler(self)
+        for key in ("input_value", "input_from"):
+            if key not in self.model_fields_set:
+                data.pop(key, None)
+        return data
 
     @property
     def display_label(self) -> str:
@@ -171,6 +186,8 @@ class WizardSpec(DataSpec):
     agent: str = ""
     #: The shape this wizard RETURNS, in the authoring form.
     output: Optional[ShapeForm] = None
+    #: Opt-in value composition: return this step's value rather than the legacy step-value map.
+    output_from: Optional[str] = None
     #: A ComputeOp called ONCE when the run ends in error — a step failed, a goal stayed unmet, a
     #: person declined a required question, a callee was refused. It is told what went wrong
     #: (``error_step`` / ``error_detail`` in its scope) and answers under the step id
@@ -181,6 +198,13 @@ class WizardSpec(DataSpec):
     @property
     def display_label(self) -> str:
         return self.label or self.name or "wizard"
+
+    @model_serializer(mode="wrap")
+    def _authored_output(self, handler):
+        data = handler(self)
+        if "output_from" not in self.model_fields_set:
+            data.pop("output_from", None)
+        return data
 
     @model_validator(mode="after")
     def _conversational_or_stepped(self) -> "WizardSpec":
@@ -203,6 +227,18 @@ class WizardSpec(DataSpec):
                 f"wizard {self.name!r}: {EXIT_ERROR_STEP!r} is the id the exit_error op answers under, "
                 "so no step may take it"
             )
+        typed = self.output_from is not None or any(
+            step.input_from is not None or "input_value" in step.model_fields_set for step in self.steps
+        )
+        reached = set()
+        for step in self.steps:
+            if typed and (step.id in reached or step.id == "$input"):
+                raise ValueError(f"wizard {self.name!r}: duplicate or reserved step id {step.id!r}")
+            if step.input_from is not None and step.input_from != "$input" and step.input_from not in reached:
+                raise ValueError(f"step {step.id!r}: input_from must name a prior step or '$input'")
+            reached.add(step.id)
+        if self.output_from is not None and self.output_from not in reached:
+            raise ValueError(f"wizard {self.name!r}: output_from must name a step")
         return self
 
 

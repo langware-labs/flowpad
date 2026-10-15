@@ -18,6 +18,11 @@ Building the app itself (scaffold, page, styles) is `web-app-builder` / `html-bu
 this mode is its data layer. The schemas and datasets come from `modes/schema.md` and
 `modes/dataset.md` first.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## The calls
 
 A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:

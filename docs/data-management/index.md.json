@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "6eccfa9bae206736a30b89cf9232f2ddf2fc05791296da4b0f92afd257fbcfd3",
+  "inputs_hash": "0ad9b12a82be0665c07c1bac44cbba40e578cae1189f7f59fcac403c72670203",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
@@ -54,9 +54,9 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources",
-      "summary": "DataSource ingestion reference: poller and sync pipeline, driver families and traits, status and health, reflect modes, origin identity, change envelope, adding a source.",
-      "content_hash": "0347d613c4a6f58ad719522530aa3d444b8f5c539bb9a69e4560f1d3d5fdf286",
-      "size_bytes": 34686
+      "summary": "DataSource lifecycle, source contracts, polling health, account identity, change envelopes, driver registration, and curated Dataset integration.",
+      "content_hash": "be649976bd165baa774719220eae5a5ab87dcf9100402855a9b304c2d90e5167",
+      "size_bytes": 35091
     },
     {
       "name": "data-spec.md",
@@ -268,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T06:44:33.040803+00:00",
+  "generated_at": "2026-10-15T08:55:59.822110+00:00",
   "latest_process_ref": ""
 }

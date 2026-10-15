@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "544367037482cd95696a1ca9e50a3934f40e7591ad72074747dac5277f1f76dd",
+  "inputs_hash": "148df96da87fd48e3398513decc845796183e0d8350a721ffef2697d4af6b64f",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -22,17 +22,17 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess — interface",
-      "summary": "AgenticProcess interface reference covering Python methods, FlowCall run results, HTTP actions, TypeScript APIs, lifecycle, and transport state.",
-      "content_hash": "23e256a5a58d3a2adf4b62bf75e056f7382a76d60e8661bb5fb30d99bbb7f947",
-      "size_bytes": 61278
+      "summary": "Complete AgenticProcess Python, backend action, and TypeScript interface reference, with transport, visibility, lifecycle, and execution flows.",
+      "content_hash": "8d635ec6c542dfac3416d80c0c5591d72363a27d673c833f7ed4281cdf6e5037",
+      "size_bytes": 62468
     },
     {
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers — interface",
-      "summary": "CLI driver layer interface: WorkerDriver protocol, AgentOptions argv builder, capability matrix for Claude, Codex, Copilot and OpenCode, API-key auth, and wiring a new vendor.",
-      "content_hash": "499d95beb7329f7096d8967af2c321b0cb0d0845fff6e519f11441e378684891",
-      "size_bytes": 39300
+      "summary": "WorkerDriver protocol, vendor implementations, naming traits, launch modes, session access, cancellation, and integration flows for agent CLI drivers.",
+      "content_hash": "bab73c53b2de2a687b0a9ab1c4d9b3b6372663594c5bc82dd664696816129aec",
+      "size_bytes": 40376
     },
     {
       "name": "compute-node.md",
@@ -92,6 +92,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T06:45:37.382254+00:00",
+  "generated_at": "2026-10-15T08:55:59.960001+00:00",
   "latest_process_ref": ""
 }

@@ -41,6 +41,11 @@ Typed data in Flowpad is three words, never mixed up:
 > **5. Schemas apply live:** `flow schema apply <folder>`. Never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
+
 ## Modes (from the skill arg)
 
 The FIRST token, if it is exactly `schema`, `dataset`, `app`, `migrate` or `review`, selects

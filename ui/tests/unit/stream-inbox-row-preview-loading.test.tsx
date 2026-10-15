@@ -38,8 +38,6 @@ describe('ConversationListRow while a newer latest message loads', () => {
 
     const props = {
       isFocused: false,
-      viewMode: 'all' as const,
-      searchActive: false,
       onArchive: vi.fn(),
       onUnarchive: vi.fn(),
       onToggleRead: vi.fn(),

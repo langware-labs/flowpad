@@ -81,6 +81,8 @@ VALID: dict[str, dict] = {
         "subkind": "cli",
         "exe_data": {"commands": {"linux": "true"}},
         "output_spec_kind": "string",
+        # a declared `output` must agree with `output_spec_kind`: one shape, said twice at most
+        "output": "string",
         "status_check": None,
     },
     # a source has ONE credential lifetime, not four at once; `reflect` is closed;

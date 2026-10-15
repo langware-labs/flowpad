@@ -93,8 +93,13 @@ await process.prompt("Open https://example.com and tell me the page title.")
 - `prompt` — a model call
 - `agent` — an agent turn
 - `ask` — a user input request
+- `python` — a typed `call.py` function, including whole-list processing
 
-DataSpec in, ReturnedValue out: its `value` is the DataSpec the run produced, so it can be the next step's input.
+Typed input in, ReturnedValue out: its `value` can be a DataSpec value, primitive,
+record or list held to the declared output. A required-value chain consumes
+only OK with a present value; admission and skipped operations are not completed
+data. [FlowCall blocks](../snippets/flowcall-blocks.md) shows the executable
+`call.py` convention, whole-list processing and Wizard-backed chaining.
 
 Chart: IN CVSpec (`flow.DataSpec`: cv.docx | pdf | md) -> CV reviewer (`flow.AgenticProcess`, prompt: “Review and improve the CV, save it with _reviewed”) -> OUT cv_reviewed (`flow.ReturnedValue`, itself a `flow.DataSpec`; exit_code = OK, value = the reviewed CVSpec, text = the agent's message) -> value can be chained next: the next step takes input=cv_reviewed.value.
 
@@ -612,9 +617,14 @@ answer = await llm.create_completion("You answer in one word.", "Capital of Fran
 
 ## Chapter 4: Orchestration is Python
 
-`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
+`flow.ComputeOp` · `flow.ReturnedValue` — FlowCall gives participating work calls
+a shared answer contract. A Python block exposes `call(input, *, context)` in
+its asset's `call.py`; its manifest declares input/output schemas. `chain`
+uses Wizard for ordered value composition, while `map_calls` explicitly calls
+once per item and retains partial outcomes. Ordinary control flow can remain Python.
 
-Chart: Check (`flow.ComputeOp`) -> Run (`flow.ComputeOp`) -> Re-check (`flow.ComputeOp`) -> Answer (`flow.ReturnedValue`)
+Chart: Validate input → optional check → call → validate output → ReturnedValue.
+A pure transformation needs no completion check, agent or persisted run entity.
 
 ### Control flow is Python
 

@@ -99,8 +99,6 @@ function renderRow(conv: Conversation, onVisibilityChange = vi.fn()) {
       <ConversationListRow
         conv={conv}
         isFocused={false}
-        viewMode="all"
-        searchActive={false}
         onArchive={vi.fn()}
         onUnarchive={vi.fn()}
         onToggleRead={vi.fn()}

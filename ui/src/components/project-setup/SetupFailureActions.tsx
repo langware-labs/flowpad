@@ -1,6 +1,7 @@
-import { useState } from 'react';
-import { Trans } from '@lingui/react/macro';
-import { Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useWatch } from '@sdk/react/hooks';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -20,12 +21,16 @@ export function SetupFailureActions({
   /** Leave the failure as it is (close the dialog). Without one, Cancel only stops a running fix. */
   onCancel?: () => void;
 }) {
+  const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [why, setWhy] = useState(false);
   const { state, process } = fix;
   const running = state.phase === 'running';
   const openProcess = () => process && navigation.openDock(DockPointer.forProcessRuns({ run: process.id }));
   const cancel = running ? fix.cancel : onCancel;
+  // The one-liner rides the process stream, which reaches this page only while it is watched.
+  const processTypeId = useMemo(() => process?.typeId ?? null, [process]);
+  useWatch(processTypeId, running);
   // The one-liner: what the fixer last said, else what it is doing now.
   const progress = useProcessProgressInfo(running ? process : null, running);
   return (
@@ -47,9 +52,16 @@ export function SetupFailureActions({
               state.userAction
             )}
           </p>
-          <div className="flex gap-3">
-            <button type="button" className="text-muted-foreground hover:underline" onClick={() => setWhy(!why)}>
-              <Trans>Why?</Trans>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => setWhy(!why)}
+              aria-expanded={why}
+              aria-label={t`Details`}
+              data-testid="setup-fix-expand"
+            >
+              {why ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
             </button>
             {process && (
               <button type="button" className="text-muted-foreground hover:underline" onClick={openProcess}>

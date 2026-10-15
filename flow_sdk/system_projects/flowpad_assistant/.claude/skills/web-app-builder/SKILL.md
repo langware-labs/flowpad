@@ -34,6 +34,11 @@ allowed-tools:
 
 # Web App Builder
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract. In the Flowpad SDK template, invoke `ComputeOp.call` through its existing entity action. Keep generic standalone-app API guidance separate.
+
 ## FIRST: which template? (decide before writing anything)
 
 Two templates ship with this skill. Pick by **whose data the app manages** — not
@@ -168,7 +173,8 @@ Next.js route handlers under `app/api/` take precedence over the proxy.
 
 ```bash
 flow app ports                 # each process: the port it declares, where it runs now, its state
-flow app restart <app name>    # stop it and start it again (backend first, then the frontend)
+flow app open <app name>       # bring it up the one way: validate → load → setup → fix, then show it
+flow app restart <app name>    # stop it and bring it up again the same way
 flow app stop <app name>       # stop it, whoever started it
 flow app ports --bare <app name>        # the frontend's port, for $(...)
 flow app ports --bare <app name>/api    # the backend's

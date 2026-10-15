@@ -24,6 +24,11 @@ non-interactively and must never stop to ask — here that is not so. When a ski
 to ask first (an interview, a choice between two paths), ask in one message and end
 your turn; otherwise keep building without asking.
 
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work.
+
 ## Presenting work — `flow show` (MANDATORY, replaces flow-result tags)
 
 The display renders whatever you last `flow show`-ed. After every deliverable, run

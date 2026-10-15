@@ -8,6 +8,9 @@ export function readFlowAnswer(value: unknown): ReturnedValue {
     throw new Error('Invalid FlowCall answer: expected an object');
   }
   const answer = value as Record<string, unknown>;
+  if (answer.value_present != null && typeof answer.value_present !== 'boolean') {
+    throw new Error('Invalid FlowCall answer: value_present must be boolean or null');
+  }
   if (typeof answer.exit_code !== 'number' || !codes.has(answer.exit_code)) {
     throw new Error('Invalid FlowCall answer: unknown or missing exit_code');
   }
@@ -23,6 +26,9 @@ export function readFlowAnswer(value: unknown): ReturnedValue {
   }
   if (answer.executor != null && typeof answer.executor !== 'string') {
     throw new Error('Invalid FlowCall answer: executor must be a string or null');
+  }
+  if (answer.invocation_id != null && typeof answer.invocation_id !== 'string') {
+    throw new Error('Invalid FlowCall answer: invocation_id must be a string or null');
   }
   if (answer.duration_s !== undefined && (typeof answer.duration_s !== 'number' || !Number.isFinite(answer.duration_s))) {
     throw new Error('Invalid FlowCall answer: duration_s must be finite');

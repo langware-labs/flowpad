@@ -307,6 +307,7 @@ async def project_source_item(
     recount: bool = True,
     announce: bool = True,
     known_unplaced: bool = False,
+    item_changed: bool = False,
 ) -> Optional[tuple[str, str]]:
     """Project one SourceItem into its conversation.
 
@@ -319,6 +320,11 @@ async def project_source_item(
     ``recount=False`` defers the thread recount to the caller. A sweep sets it:
     recounting per item is quadratic in thread depth, because each recount
     reloads the whole thread.
+
+    ``item_changed=True`` says the item itself was edited since it was placed (an
+    ``.updated`` tag). The row's body is hydrated from the item at read time, so no
+    stored field changes — the projection pushes the re-read row itself, or an open
+    conversation keeps the old text until a reload.
 
     ``announce=False`` suppresses the projected tag. A sweep sets it when the
     batch itself would be a storm, for the reason `IngestMode` encodes one layer
@@ -412,13 +418,13 @@ async def project_source_item(
                 return await _place_message(
                     item, source, channel, subject, key, thread, thread_id,
                     conversation_id, sender, sender_name, None,
-                    notify=notify, recount=recount, announce=announce,
+                    notify=notify, recount=recount, announce=announce, item_changed=False,
                 )
     # Already placed: idempotent re-projection, no lock needed.
     return await _place_message(
         item, source, channel, subject, key, thread, thread_id,
         conversation_id, sender, sender_name, existing_fm,
-        notify=notify, recount=recount, announce=announce,
+        notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
 
 
@@ -602,7 +608,7 @@ def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
     conversation_id, sender, sender_name, existing_fm,
-    *, notify, recount, announce,
+    *, notify, recount, announce, item_changed,
 ):
     """Write the message row + pointers for one resolved message.
 
@@ -624,11 +630,11 @@ async def _place_message(
     # the announcement lands exactly once without either lane knowing who won.
     first_placement = existing_fm is None
     envelope = _envelope_of(item, source)
+    dirty = False
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
         have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
-        dirty = False
         if want is not None and have != want:
             existing_fm.sent_at = want
             dirty = True
@@ -732,6 +738,12 @@ async def _place_message(
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
+    if notify and not first_placement and (dirty or item_changed):
+        # `materialize_flow_message` leaves an existing local row untouched and
+        # silent, and the heal above saved silently: push the re-read (hydrated) row.
+        fresh = await FlowMessage.get_one({"id": fm_id})
+        if fresh is not None:
+            await fresh.notify_updated()
     if first_placement and item.external_id:
         await _heal_replies_to(item, fm_id, notify=notify)
     if recount:
@@ -1194,7 +1206,7 @@ async def _on_item(event) -> None:
         # answered. The ingest lane draws the same line one level down, where
         # `emit_item_tag` returns early on `unchanged`.
         first_placement = event.tag.rsplit(".", 1)[-1] == "created"
-        await project_source_item(item, announce=first_placement)
+        await project_source_item(item, announce=first_placement, item_changed=not first_placement)
         _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
         logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
