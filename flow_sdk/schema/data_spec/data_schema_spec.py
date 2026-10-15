@@ -137,7 +137,7 @@ class DataSchemaDocSpec(AssetDocumentSpec):
                 raise ValueError('a dataset data schema names its "input" slot')
             extra = set(self.rows) - set(DATASET_SLOTS)
             if extra:
-                raise ValueError(f"unknown example slots {sorted(extra)}; a slot is one of {DATASET_SLOTS}")
+                raise ValueError(f"unknown row slots {sorted(extra)}; a slot is one of {DATASET_SLOTS}")
         return self
 
     @property
