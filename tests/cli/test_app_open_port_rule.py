@@ -76,3 +76,59 @@ def test_a_listener_in_this_process_is_another_program_too(tmp_path):
             app_cmd._where(held.getsockname()[1], tmp_path, START, "shop")
     finally:
         held.close()
+
+
+# ── the project's own app is started by the backend, by the one rule ─────────────────────────────
+
+
+def _project(monkeypatch, *, apps: list[str], started: dict | None = None, in_project: bool = True) -> list:
+    calls: list = []
+    monkeypatch.setattr(app_cmd, "_project_action_url", lambda action, required=True: f"project/p/{action}" if in_project else None)
+
+    def action(name, body=None):
+        calls.append((name, body))
+        if name == "app-ports":
+            return {"ports": [{"app": app, "process": process} for app in apps for process in ("page", "api")]}
+        return {"apps": [started or {"app": apps[0], "ok": True, "port": "3390"}]}
+
+    monkeypatch.setattr(app_cmd, "_project_action", action)
+    return calls
+
+
+def test_open_starts_the_projects_declared_app_through_the_backend_on_its_port(monkeypatch):
+    """``flow app open`` used to scan the folder and start its own server on a picked 80xx port, beside
+    the page and API the app's ``webapp.json`` declares."""
+    calls = _project(monkeypatch, apps=["shop"])
+    assert app_cmd._start_declared("shop") == 3390
+    assert calls[-1] == ("app-start", {"app": "shop"})
+
+
+def test_open_with_no_name_takes_the_projects_only_app(monkeypatch):
+    _project(monkeypatch, apps=["shop"])
+    assert app_cmd._start_declared("") == 3390
+    _project(monkeypatch, apps=["shop", "admin"])
+    assert app_cmd._start_declared("") is None, "two apps and no name: nothing is guessed"
+
+
+def test_open_outside_a_project_or_for_another_app_keeps_its_own_discovery(monkeypatch):
+    _project(monkeypatch, apps=["shop"], in_project=False)
+    assert app_cmd._start_declared("shop") is None
+    _project(monkeypatch, apps=["shop"])
+    assert app_cmd._start_declared("dashboard") is None
+
+
+def test_a_declared_app_that_cannot_start_is_an_error_that_says_why(monkeypatch, capsys):
+    _project(monkeypatch, apps=["shop"], started={"app": "shop", "ok": False, "detail": "port 3390 is held by another program: java (pid 9)"})
+    with pytest.raises((SystemExit, click.exceptions.Exit)):
+        app_cmd._start_declared("shop")
+    said = capsys.readouterr()
+    assert "held by another program: java (pid 9)" in said.out + said.err
+
+
+def test_a_port_the_backend_placed_is_shown_not_the_apis_from_the_same_folder(tmp_path, serve):
+    """The page and its API serve from one folder: a folder search found the API and showed it as the
+    app. The port the backend started the page on is the answer."""
+    api, page = app_ports.free_port(), app_ports.free_port()
+    serve(tmp_path, api)
+    assert app_cmd._where(page, tmp_path, START, "shop", placed=True) == (page, True)
+    assert app_cmd._where(page, tmp_path, START, "shop")[0] == api, "without it, the API is taken for the page"
