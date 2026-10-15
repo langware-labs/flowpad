@@ -971,6 +971,8 @@ async def ensure_tab_created(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
+    # Explicit project dock URLs also own their presentation project: showing a
+    # file from another project must not move its tab out of the caller's strip.
     # A SCOPE-KEYED row is the exception: its project is its scope, never its
     # target's (``_pointer_scope_project``), so the target derivation below must
     # not run for one. Stamping it at rest — not only on the read path — is what
@@ -979,6 +981,8 @@ async def ensure_tab_created(
     scope_keyed, scope_project = _pointer_scope_project(pointer)
     if scope_keyed:
         project_id = scope_project
+    elif pointer_project := await _project_from_pointer(pointer):
+        project_id = pointer_project
     elif (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
@@ -1249,12 +1253,12 @@ async def show_placement(process_id: str) -> dict[str, Any]:
     background agent). The decision used to be the frontend's, read from the one
     app-wide view mode, which two sessions shown two ways cannot share.
 
-    ``project_id`` is the showing process's own project: the tab minted for a
-    file no project owns belongs to it. Resolved here, server-side, like the
-    chip's project on every other tab — never from a client's tab snapshot.
+    ``project_id`` comes from the calling tab, falling back to the process's
+    project when no tab is open. A shown file keeps this presentation project
+    even when the file itself belongs to another project.
     """
     tab = await process_tab(process_id)
-    project_id = await _project_of_target("agentic_process", process_id)
+    project_id = tab.project_id if tab is not None else await _project_of_target("agentic_process", process_id)
     if tab is None:
         return {"tab_id": None, "host": False, "project_id": project_id}
     return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer), "project_id": project_id}
@@ -1298,8 +1302,10 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
     """
     changed = 0
     for tab in await _tabs_for_target(target_type, target_id):
-        if tab.project_id != project_id:
-            tab.project_id = project_id
+        presentation_project = await _project_from_pointer(tab.pointer)
+        resolved_project = presentation_project or project_id
+        if tab.project_id != resolved_project:
+            tab.project_id = resolved_project
             await tab.save()
             changed += 1
     if changed:
@@ -1514,13 +1520,10 @@ async def _resolve_tab_projects(tabs: list[Tab]) -> None:
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Resolution order: for a SCOPE-KEYED row the scope itself (see
-    ``_pointer_scope_project``) — the one case that also CORRECTS a non-null
-    stamp, because a row the client reuses without re-minting (``materializeTab``
-    short-circuits) never reaches ``ensure_tab``'s matching arm; otherwise the
-    target entity's own project (authoritative — includes
-    the claude-session on-disk recovery), else the project a project-scoped dock
-    URL itself declares (``/dock/project/<id>/...``)."""
+    Explicit presentation wins: scope-keyed rows use their scope; project dock
+    URLs use their named project, including when an old stamp names the target's
+    project. Other rows retain their stamp or resolve it from the target.
+    """
     for tab in tabs:
         # Overrides, not just fills: the stamp it replaces was derived from a
         # target this row no longer shows.
@@ -1528,13 +1531,15 @@ async def _resolve_tab_projects(tabs: list[Tab]) -> None:
         if scope_keyed:
             tab.project_id = scope_project
             continue
+        pointer_project = await _project_from_pointer(tab.pointer)
+        if pointer_project:
+            tab.project_id = pointer_project
+            continue
         if tab.project_id:
             continue
         resolved: str | None = None
         if tab.target_type and tab.target_id:
             resolved = await _project_of_target(tab.target_type, tab.target_id)
-        if not resolved:
-            resolved = await _project_from_pointer(tab.pointer)
         if not resolved:
             continue
         tab.project_id = resolved
@@ -1634,7 +1639,7 @@ async def _http_new_tab(
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
     updated project-filtered list, and ``created`` — whether this call minted the
     row, which the client's view-mode memory policy keys ``TabCreate`` on."""
-    _tab, created = await ensure_tab_created(
+    tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1646,7 +1651,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id, created=created)
+    return await _list_response(tab.project_id, created=created)
 
 
 _action_registry.register(
