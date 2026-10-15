@@ -250,6 +250,9 @@ Do not invent a TypeId and do not ask the user — that is what those actions ar
 
 ## Exit codes
 
+Showing a place participates in **FlowCall**: `NavigateResult` is the specialized
+`ReturnedValue` answer. Read its outcome separately from whether it was delivered.
+
 `flow show` and `flow navigate` print one JSON line to stdout — the answer, with
 `exit_code`, `verdict` and `detail` — and exit with that `exit_code`:
 

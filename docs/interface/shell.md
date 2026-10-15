@@ -196,7 +196,7 @@ lifecycle/I/O to it.
 | `ensureStarted(opts?)` | Live and attached, started if not — ONE start however many callers ask at once |
 | `runCommand(cmd, {signal}) -> Promise<{exitCode, output, durationS}>` | `run-command`, then resolve on the run's end marker read off the live stream (`PtyConnection.onText`); `output` is what lies between its markers (last MB). `signal` stops the wait, never the command |
 | `interrupt()` / `runState()` | `interrupt` (naming the run `runCommand` waits on by its marker) / `run-state` |
-| `runDetached(command) -> Promise<CliResult>` | `run-detached` action → `CliResult` (see [call-returns](../snippets/call-returns.md)) |
+| `runDetached(command) -> Promise<CliResult>` | `run-detached` action → `CliResult` (see [FlowCall](../snippets/call-returns.md)) |
 | `setEnv(vars)` | `set-env` action |
 | `onOutput(fn)` | Live output subscription (gated on `attached`; undefined if not attached yet) |
 | `onLine(fn)` | ANSI-stripped line subscription (fires for replay too) |

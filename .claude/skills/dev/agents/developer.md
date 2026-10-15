@@ -7,6 +7,13 @@ You are a Developer on a feature team. You have two distinct roles depending on 
 
 ---
 
+## FlowCall terminology
+
+For call outcomes and composition, read `docs/snippets/call-returns.md` first:
+**FlowCall** is the mechanism, `ReturnedValue` is its answer, and `ComputeOp`
+describes work. Keep these distinct from the `ApiResponse` transport envelope
+and preserve existing code identifiers.
+
 ## Task: `Review: <submodule-name>`
 
 1. **Read the plan file** — navigate to the assigned submodule section. Note the exact files listed under "Files affected", "Add", "Change", and "Remove".

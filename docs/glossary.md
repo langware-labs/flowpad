@@ -8,6 +8,27 @@ Written once so it isn't re-litigated. The axis that matters here is **who owns 
 concept**: some of our entities *mirror a provider's* on-disk format, and some are ours.
 Names should make that obvious.
 
+## FlowCall — the call-and-result mechanism
+
+**FlowCall** is Flowpad’s own contract for invoking work, receiving a structured outcome and value, and composing that result into further work.
+It names one mechanism implemented by cooperating parts, not a class, entity,
+or universal request object. The contract is specified in
+[FlowCall — calls, outcomes, and returned values](snippets/call-returns.md).
+
+| Term | Role in FlowCall |
+|---|---|
+| `ComputeOp` | A configurable unit of work, with its execution specification and optional completion check |
+| `ReturnedValue` | The common answer; specialized results extend it |
+| `ExitCode` | The shared outcome vocabulary for Python, TypeScript, and the CLI |
+| `Wizard` | Composition of calls, binding returned values into later inputs |
+| `ProcessCall` | A message-carried call correlated with its returned answer |
+
+Say **FlowCall** for the mechanism, **a call** for one invocation, **answer** for
+its `ReturnedValue`, and **value** for `answer.value`. Preserve the code names.
+FlowCall does not mean every SDK method, HTTP response, or event. Transport
+success and the operation's outcome are separate; acceptance and completion
+are separate outcomes too.
+
 ## Cross-walk
 
 | Flowpad | Claude Code | OpenClaw |
@@ -161,7 +182,8 @@ Four words were used for neighbours. Say which:
 - **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with
   `GRAPH_CONTEXT`, `ui/src/components/graph-view/`, the entity graph, and the hub org
   graph. Bare `Workflow*` collides with the two Claude Code mirrors.
-- **`Flow` is still ambiguous** and should not be used for anything new. It survives in
+- **`FlowCall` is the explicit compound for the call-and-result mechanism above.**
+  Bare **`Flow` is still ambiguous** and should not be used for anything new. It survives in
   `FlowMessage` (a chat message), `FlowEvent` (the bus envelope), `FlowFile`,
   `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/` — all unrelated to workflows.
   Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is

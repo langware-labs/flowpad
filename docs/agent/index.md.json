@@ -2,13 +2,13 @@
   "schema_version": 1,
   "typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "docs",
+  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "eaac3c54e7c1e3330bb372a97c6042ecb4044320f85e6234a88b56e0d3b412df",
+  "inputs_hash": "1e25c64ab553ef41dfff99e39aeb89625b51196e27fc97ab7bd274905ef0db9e",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), the one composer that layers a worker's system prompt, and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
+  "self_summary": "The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.",
   "files": [
     {
       "name": "agentic_process_statuses.md",
@@ -30,9 +30,9 @@
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface — rendered demo",
-      "summary": "Rendered interface-card tour of the AgenticProcess entity: persisted fields, all 42 backend actions, and the public TypeScript SDK surface.",
-      "content_hash": "5580baddf83846712ace157c87e0e5135eca3d064d30dbe62aaf610806f506ea",
-      "size_bytes": 29252
+      "summary": "AgenticProcess interface cards covering Python methods, HTTP actions, TypeScript APIs, lifecycle state, and FlowCall answers.",
+      "content_hash": "33ddbc664b8425c8c21f942a6dda4b910e3f55aa1e212a205bc3fc20987b26e0",
+      "size_bytes": 28925
     },
     {
       "name": "system-prompt-layers.md",
@@ -44,6 +44,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-13T10:49:35Z",
+  "generated_at": "2026-10-15T06:44:32.777689+00:00",
   "latest_process_ref": ""
 }
