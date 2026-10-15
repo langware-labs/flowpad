@@ -184,7 +184,7 @@ function actionsFor(file: GitStatusFile, mode: GitMode, readOnly = false): GitAc
   const copyPath: GitAction = {
     key: 'copyPath',
     label: t`Copy path`,
-    tooltip: t`Copy this file's path to the clipboard`,
+    tooltip: t`Copy path: ${file.path}`,
     icon: Copy,
   };
   return [view, stageAction, undo, copyPath];
