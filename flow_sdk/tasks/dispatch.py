@@ -159,21 +159,22 @@ async def _run_for(task, name: str, spec):
         "target_typeid_str": await thread_session(task),
     }
     staff = await _staff_agent(agent, name)
+    if staff is not None and staff.system_prompt:
+        prompt = ""  # the staff agent's own system prompt stands in for the .md file's
+    context_data = {"task_id": task.id, "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
+                    "launched_by_agent": getattr(agent, "name", "") or ""}
     if staff is not None:
         # The staff member is a Flowpad agent of the creator's project: it runs as itself — its worker,
         # options, system prompt and MCP servers — through no placement (``create_agentic_process_from_agent``).
         from flow_sdk.builtin.agent_run import create_agentic_process_from_agent  # noqa: PLC0415
 
-        instructions = ownership if staff.system_prompt else "\n\n".join(p for p in (prompt, ownership) if p)
-        process = await create_agentic_process_from_agent(staff, "", **run, context_data={
-            "task_id": task.id, "instructions": instructions, "launched_by_agent": getattr(agent, "name", "") or ""})
+        process = await create_agentic_process_from_agent(staff, "", **run, context_data=context_data)
     else:
         process = AgenticProcess(
             **run,
             worker_type=worker_type_value(agent.worker_type) if agent is not None else None,
             cli_config=agent.to_agent_options().to_json() if agent is not None else {},
-            context_data={"task_id": task.id, "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
-                          "launched_by_agent": getattr(agent, "name", "") or ""},
+            context_data=context_data,
         )
     # A task run never runs staff of its own, and always has the task-management skill.
     process.cli_config = {k: v for k, v in (process.cli_config or {}).items() if k != "agents_json"}
