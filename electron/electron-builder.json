@@ -21,6 +21,7 @@
     "startup-watchdog.js",
     "zip-writer.js",
     "support-bundle.js",
+    "support-upload.js",
     "log-redact.js",
     "app-location.js",
     "update-plan.js",

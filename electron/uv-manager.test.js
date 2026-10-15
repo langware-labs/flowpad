@@ -1399,7 +1399,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
         });
         eq(resU, false, 'unrecovered upgrade reports failure');
         const failure = shown.find((o) => o.title === 'Update failed');
-        ok(failure && failure.buttons.includes('Share with us'), 'the Update failed dialog offers Share with us');
+        ok(failure && failure.buttons.includes('Send Report'), 'the Update failed dialog offers Send Report');
         ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
         eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
       }
@@ -1745,6 +1745,30 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(seen.length, before, 'no install ran after a failed set-aside');
     await m._rollbackEngine();
     eq(seen.length, before, 'the rollback after a failed set-aside runs no uv command: the engine in place is still the previous one');
+    // A repair after a BLOCKED FIRST install: there was no engine, so there is nothing to put back. The rollback must
+    // not try to reinstall one on the blocked interpreter (it would fail the same way and hide the real cause).
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.rmSync(venv, { recursive: true, force: true });
+    m._setAsidePreRepairVenv = UvManager.prototype._setAsidePreRepairVenv;
+    m.getInstalledVersionSync = () => null;
+    const beforeFirst = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe'); // the install itself works on the signed runtime, then something later fails
+    fs.rmSync(venv, { recursive: true, force: true });  // (the half-built environment)
+    await m._rollbackEngine();
+    eq(seen.length, beforeFirst + 1, 'first install: the repair\'s install ran once, and the rollback ran NO uv command (no engine to restore)');
+    // A block during --compile-bytecode comes AFTER the venv was populated: `_version.py` is readable, so the venv looks like an
+    // engine. The app knows it was the first install (markFirstInstallBlocked): nothing to restore, nothing reinstalled.
+    fs.rmSync(venv, { recursive: true, force: true });
+    fs.rmSync(`${venv}.pre-repair`, { recursive: true, force: true });
+    fs.mkdirSync(venv, { recursive: true });
+    fs.writeFileSync(path.join(venv, 'HALF'), '');
+    m.getInstalledVersionSync = () => '0.2.209'; // readable, although it is a half-built first install
+    m.markFirstInstallBlocked();
+    const beforeHalf = seen.length;
+    await m._installEngineOn('C:\\p\\python.exe');
+    await m._rollbackEngine();
+    eq(seen.length, beforeHalf + 1, 'first install blocked during bytecode compilation: no rollback command, even though the venv looked like an engine');
+    ok(!fs.existsSync(path.join(venv, 'HALF')), 'and the half-built environment was not put back');
     fs.rmSync(tmp, { recursive: true, force: true });
   }
   {
@@ -1764,6 +1788,80 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m._removePath(f);
     ok(!fs.existsSync(f), '_removePath removes a file');
     m._removePath(f); // absent: no error
+  }
+
+  {
+    // ── probeManagedInterpreter: does the interpreter uv will use even RUN? (first install, Windows) ──
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+    const { policyBlockFromInstallError } = require('./runtime-repair');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'));
+    const py = path.join(tmp, 'python.exe'); fs.writeFileSync(py, '');
+    const mk = (over = {}) => {
+      const m = new UvManager(silentLog);
+      m._isWin = true;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m.calls = [];
+      m._uv = async (args) => { m.calls.push(args.join(' ')); if (args[1] === 'find') return { stdout: py, stderr: '' }; return { stdout: '', stderr: '' }; };
+      m._execFile = async () => ({ stdout: '', stderr: '' });
+      return Object.assign(m, over);
+    };
+    {
+      const m = mk({ _isWin: false });
+      eq(await m.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: off Windows there is nothing to probe');
+      eq(m.calls.length, 0, 'and no uv command ran');
+    }
+    {
+      const m = mk({ _pythonPinForUpgrade: async () => 'C:\\Flowpad\\runtime\\python-3.11.9\\python.exe' });
+      const r = await m.probeManagedInterpreter();
+      ok(r.skipped && /repaired runtime/.test(r.why) && m.calls.length === 0, 'preflight: a repaired runtime as the pin is not the managed interpreter: skipped');
+    }
+    {
+      const m = mk();
+      const r = await m.probeManagedInterpreter();
+      eq([r.ok, r.python], [true, py], 'preflight: an interpreter that runs passes, and its path is reported');
+      eq(m.calls, ['python install 3.11 --no-bin', 'python find 3.11 --managed-python'], 'it installs the managed Python without bin shims (they collide with the user\'s own) and locates it');
+    }
+    {
+      let ran = null;
+      const m = mk({ _execFile: async (exe, args) => { ran = [exe, args]; return { stdout: '', stderr: '' }; } });
+      await m.probeManagedInterpreter();
+      eq(ran, [py, ['-I', '-c', 'pass']], 'the interpreter is run once, isolated, doing nothing');
+    }
+    {
+      // Blocked, as Node reports a refused executable: the error the install would have raised, for the one detector.
+      for (const refusal of [{ code: 'UNKNOWN', message: 'spawn UNKNOWN' }, { code: 4551, message: 'x', stderr: 'An Application Control policy has blocked this file.' }]) {
+        const m = mk({ _execFile: async () => { throw Object.assign(new Error(refusal.message), refusal); } });
+        let err = null;
+        try { await m.probeManagedInterpreter(); } catch (e) { err = e; }
+        ok(err && err.preflight && err.code === 2, `preflight: a blocked interpreter (${refusal.code}) throws`);
+        const found = policyBlockFromInstallError(err);
+        ok(found && /os error 4551/.test(found.line) && /uv tool install/.test(found.path), 'and the one detector reads it as a policy block of the install');
+      }
+    }
+    {
+      // `uv python find` is the step that queries the interpreter: under a policy that refuses the whole interpreter it is the one that fails.
+      const m = mk({ _uv: async (args) => { if (args[1] === 'find') throw Object.assign(new Error('Command failed: uv python find 3.11 --managed-python\nerror: Failed to query Python interpreter\n  cause: An Application Control policy has blocked this file. (os error 4551)'), { stderr: 'error: Failed to query Python interpreter at `C:\\u\\python.exe`\n  cause: An Application Control policy has blocked this file. (os error 4551)' }); return { stdout: '', stderr: '' }; } });
+      let err = null;
+      try { await m.probeManagedInterpreter(); } catch (e) { err = e; }
+      ok(err && err.preflight && policyBlockFromInstallError(err), 'preflight: a policy block reported by `uv python find` is the verdict, not a skip');
+    }
+    {
+      // Not a verdict: the real install decides.
+      const timeout = mk({ _execFile: async () => { throw Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' }); } });
+      eq(await timeout.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: a timeout is inconclusive, not a block');
+      const offline = mk({ _uv: async (args) => { throw Object.assign(new Error('Command failed: uv python install\nerror: network unreachable'), { stderr: 'network unreachable' }); } });
+      eq(await offline.probeManagedInterpreter(), { ok: true, skipped: true }, 'preflight: uv cannot fetch Python (offline): skipped, the install reports it');
+    }
+    {
+      // An old uv without --no-bin: the same install without the flag.
+      const m = mk({ _uv: async function (args) { this.calls.push(args.join(' ')); if (args.includes('--no-bin')) throw Object.assign(new Error('x'), { stderr: "error: unexpected argument '--no-bin' found" }); return { stdout: args[1] === 'find' ? py : '', stderr: '' }; } });
+      m.calls = [];
+      const r = await m.probeManagedInterpreter();
+      ok(r.ok && !r.skipped && m.calls.includes('python install 3.11'), 'preflight: an old uv without --no-bin falls back to the plain install');
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

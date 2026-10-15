@@ -23,11 +23,17 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # Every Linux job here shares ONE cache key (platform + lockfile), so on a run
+    # where the key is new they all miss and every post step then races to save it
+    # — one wins, the rest warn "Unable to reserve cache". Saving is therefore the
+    # unit tier's first shard's job alone (the same elect-one pattern as pip-audit
+    # below); everyone else only restores.
     - name: Set up uv + Python 3.11
       uses: astral-sh/setup-uv@v10.0.1
       with:
         python-version: '3.11'
         enable-cache: true
+        save-cache: ${{ inputs.tier == 'unit' && inputs.shard == '1' }}
 
     # setup-uv registers GitHub's Python problem matcher, which promotes any
     # traceback-shaped log line to an error annotation — including the benign

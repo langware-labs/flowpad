@@ -144,8 +144,11 @@ async def test_full_turn_yields_correct_flowdata_sequence(tmp_path: Path, monkey
     assert types.index(FlowElementType.RESULT) < types.index(FlowElementType.END)
 
 
-def test_terminal_chat_and_result_wait_for_subprocess_settlement_boundary():
-    """Claude stdout assistant precedes its JSONL append; EOF is durable."""
+def test_terminal_chat_and_result_release_at_the_turns_result():
+    """Claude stdout assistant precedes its JSONL append, so the answer is held —
+    but only until ``result``, which Claude prints after the row lands. Holding
+    to process exit would strand it for as long as the turn's background work
+    runs, since the CLI stays alive for that and then answers again."""
     gate = _TranscriptDurabilityGate()
     terminal_frames = convert_event(ASSISTANT_TEXT)
 
@@ -155,10 +158,30 @@ def test_terminal_chat_and_result_wait_for_subprocess_settlement_boundary():
     assert gate.feed({"type": "rate_limit_event"}, rate_limit) == []
 
     result_frames = convert_event(RESULT_SUCCESS)
-    assert gate.feed(RESULT_SUCCESS, result_frames) == []
-    drained = gate.drain()
-    assert drained == terminal_frames + rate_limit + result_frames
+    released = gate.feed(RESULT_SUCCESS, result_frames)
+    assert released == terminal_frames + rate_limit + result_frames
     assert gate.drain() == []
+
+
+def test_a_second_turns_answer_streams_after_the_first_ones_result():
+    """Background work the agent launched keeps ``claude -p`` alive past the
+    turn; when it ends the CLI reports the outcome in another turn. That report
+    is the whole point of backgrounding, so it must reach the chat as its own
+    answer — not be swallowed into the first turn's batch."""
+    gate = _TranscriptDurabilityGate()
+
+    first = convert_event(ASSISTANT_TEXT)
+    gate.feed(ASSISTANT_TEXT, first)
+    first_result = convert_event(RESULT_SUCCESS)
+    assert gate.feed(RESULT_SUCCESS, first_result) == first + first_result
+
+    notification = convert_event({"type": "system", "subtype": "task_notification", "task_id": "b1"})
+    assert gate.feed({"type": "system", "subtype": "task_notification"}, notification) == notification
+
+    second = convert_event(ASSISTANT_TEXT)
+    assert gate.feed(ASSISTANT_TEXT, second) == []  # held as its own turn's candidate
+    second_result = convert_event(RESULT_SUCCESS)
+    assert gate.feed(RESULT_SUCCESS, second_result) == second + second_result
 
 
 def test_non_end_turn_terminal_reason_waits_for_settlement_boundary():
@@ -199,8 +222,8 @@ def test_per_block_narration_released_on_continuation():
     assert gate.feed(USER_TOOL_RESULT, tool_result_frames) == tool_result_frames
     final_frames = convert_event(ASSISTANT_TEXT)
     assert gate.feed(ASSISTANT_TEXT, final_frames) == []  # real final answer held
-    assert gate.feed(RESULT_SUCCESS, result_frames) == []  # result locks the hold
-    assert gate.drain() == final_frames + result_frames
+    assert gate.feed(RESULT_SUCCESS, result_frames) == final_frames + result_frames  # released at result
+    assert gate.drain() == []
 
 
 def test_tool_use_narration_stays_live_and_in_event_order():

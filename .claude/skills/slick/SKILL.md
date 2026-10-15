@@ -209,6 +209,13 @@ new ActionInfo('prompt', AgenticProcess.type, id, 'POST')   // ts_sdk
 * Generic behavior goes on the **base** **`Entity`** with `types="all"`; the named
   type is the first consumer, not the scope.
 
+* **An action holds no logic.** The `@action` method is the HTTP edge: read the
+  body, turn it into a typed value (a schema/model whose validators do the
+  checking — a `ValidationError` becomes the 400), call ONE method on the entity
+  that does the work, and return its result. No validation, normalization,
+  branching or persistence in the action body — those live in the model and the
+  entity method, where a test or another caller can reach them without HTTP.
+
 * **Don't add a parallel action when an existing one can branch.** One action
   that routes internally beats two near-identical actions and the SDK method
   each would need.
