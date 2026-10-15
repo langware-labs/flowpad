@@ -66,10 +66,13 @@ class _FakeGithub:
 
     def pr(self, key: str, title: str = "Fix the thing", assignee: str = ME) -> dict:
         repo, n = key.split("#")
-        entry = self.prs.setdefault(key, {
-            "repo": repo, "number": int(n), "title": title, "assignee": assignee, "updated_at": self.tick(),
+        if key in self.prs:
+            return self.prs[key]
+        created = self.tick()
+        entry = self.prs[key] = {
+            "repo": repo, "number": int(n), "title": title, "assignee": assignee, "created_at": created, "updated_at": created,
             "sha": f"sha{n}", "state": "open", "merged": False, "author": "dana", "mergeable": True, "comments": [], "review_comments": [], "reviews": [], "timeline": [], "checks": [],
-        })
+        }
         return entry
 
     def comment(self, key: str, body: str, *, user: str) -> dict:
@@ -176,10 +179,11 @@ class _FakeGithub:
         terms = params.get("q", "").split()
         repos = [t[5:] for t in terms if t.startswith("repo:")]
         since = next((t[len("updated:>="):] for t in terms if t.startswith("updated:>=")), None)
+        created_before = next((t[len("created:<"):] for t in terms if t.startswith("created:<")), None)
         who = "review" if "review-requested:@me" in terms else "assignee"
         rows = [p for p in self.prs.values() if p["state"] == "open" and (not repos or p["repo"] in repos) and (since is None or p["updated_at"] >= since)
-                and (who == "review" or p["assignee"] == self.me)]
-        rows.sort(key=lambda p: (p["updated_at"], p["repo"], p["number"]))
+                and (created_before is None or p["created_at"] < created_before) and (who == "review" or p["assignee"] == self.me)]
+        rows.sort(key=lambda p: (p["updated_at"], p["repo"], p["number"]), reverse=params.get("order") == "desc")
         per, page = int(params.get("per_page") or 30), int(params.get("page") or 1)
         chunk = rows[(page - 1) * per: page * per]
         return self._json({"total_count": len(rows), "items": [{
@@ -302,6 +306,43 @@ async def test_the_resume_cursor_narrows_to_updated_since_the_mark(github):
     assert f"updated:>={mark}" in search and "assignee:@me" in search
     assert {i.data.conversation.key for i in items} == {PR, "octo/app#8"}, "the mark is inclusive: PR seen again, new PR read"
     assert again != resume
+
+
+async def test_a_backward_read_lists_only_what_is_older_newest_first(github):
+    gh = github.gh
+    for n in range(1, 4):
+        gh.comment(PR, f"c{n}", user="dana")
+    gh.comment("octo/app#8", "other old", user="lee")
+    bound_comment = gh.comment(PR, "c4", user="dana")
+    gh.comment("octo/app#8", "other new", user="lee")
+    gh.pr("octo/app#9")
+    gh.comment("octo/app#9", "created after", user="lee")
+    bound = datetime.strptime(bound_comment["created_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    gh.calls.clear()
+    async with _source(github.base) as s:
+        page = await s.fetch(None, page_size=3, narrow={"before": bound})
+    search = next(p for m, p in gh.calls if p.startswith("/search/issues"))
+    assert f"created:<{bound_comment['created_at']}" in search and "order=desc" in search and "per_page=3" in search
+    assert not any("octo/app/issues/9" in p or "octo/app/pulls/9" in p for _, p in gh.calls), "a PR created after the bound is never read"
+    assert [i.data.text for i in page.items] == ["other old", "c3", "c2"]
+    assert all(i.data.sent_at < bound for i in page.items)
+    assert page.next_cursor is None and page.resume_cursor is None
+
+
+async def test_a_backward_read_leaves_the_forward_read_alone(github):
+    gh = github.gh
+    for n in range(1, 4):
+        gh.comment(PR, f"c{n}", user="dana")
+    forward, resume, _ = await _all(_source(github.base))
+    newest = max(i.data.sent_at for i in forward)
+    async with _source(github.base) as s:
+        await s.fetch(None, page_size=2, narrow={"before": newest})
+    again, resume_again, _ = await _all(_source(github.base))
+    assert [i.origin for i in again] == [i.origin for i in forward]
+    assert [i.data.text for i in forward] == ["c1", "c2", "c3"]
+    gh.calls.clear()
+    await _all(_source(github.base), cursor=resume)
+    assert not any("created:<" in p for _, p in gh.calls), "the forward search never carries the backward bound"
 
 
 async def test_repos_and_the_review_filter_shape_the_search(github):

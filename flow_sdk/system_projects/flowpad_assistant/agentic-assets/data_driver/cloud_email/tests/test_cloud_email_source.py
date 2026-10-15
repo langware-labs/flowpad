@@ -50,16 +50,20 @@ def _at(stamp: str) -> datetime:
 
 
 class _Mailbox:
-    """The mailbox a source is handed: an ascending listing with an exclusive ``after``, hydration
-    per id, send and reply. Records every call."""
+    """The mailbox a source is handed: a listing with an exclusive ``after`` and ``before``, newest
+    first unless ``ascending``, hydration per id, send and reply. Records every call."""
 
     def __init__(self, messages=None, *, fail_hydration=False):
         self.messages, self.calls, self.fail_hydration, self.sent = list(messages or []), [], fail_hydration, 0
 
     async def list_messages(self, agent_id, **filters):
         self.calls.append(("list", agent_id, filters))
-        after = filters.get("after")
-        rows = sorted((m for m in self.messages if not after or _at(m["timestamp"]) > _at(after)), key=lambda m: m["timestamp"])
+        after, before = filters.get("after"), filters.get("before")
+        rows = sorted(
+            (m for m in self.messages
+             if (not after or _at(m["timestamp"]) > _at(after)) and (not before or _at(m["timestamp"]) < _at(before))),
+            key=lambda m: m["timestamp"], reverse=filters.get("ascending") != "true",
+        )
         return {"messages": rows[: int(filters.get("limit") or 25)], "count": len(rows)}
 
     async def get_message(self, agent_id, message_id):
@@ -238,6 +242,42 @@ class TestCursor:
         mailbox.messages = []
         result = await DataDriver.loaded("cloud_email").traverse(_row(), _view())
         assert result.items == [] and result.unchanged is True
+
+
+class TestBackward:
+    @staticmethod
+    def _dated(*seconds):
+        return _Mailbox([{**LIST_ITEM, "message_id": f"<h{n}@x>", "timestamp": f"2026-08-04T08:00:0{n}.000Z"} for n in seconds])
+
+    async def test_it_lists_one_page_older_than_the_bound_newest_first(self):
+        fake = self._dated(1, 2, 3, 4, 5)
+        source = CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=fake)
+        async with source:
+            page = await source.fetch(None, page_size=2, narrow={"before": _at("2026-08-04T08:00:04.000Z")})
+        assert [i.origin.key for i in page.items] == ["<h3@x>", "<h2@x>"]
+        assert page.next_cursor is None and page.resume_cursor is None
+        filters = fake.calls[0][2]
+        assert filters["before"] == "2026-08-04T08:00:04.000Z" and "after" not in filters and "ascending" not in filters
+
+    async def test_a_hub_that_reads_before_inclusively_cannot_leak_the_bound(self):
+        fake = self._dated(1, 2)
+
+        async def inclusive(agent_id, **filters):
+            fake.calls.append(("list", agent_id, filters))
+            return {"messages": sorted(fake.messages, key=lambda m: m["timestamp"], reverse=True)}
+
+        fake.list_messages = inclusive
+        source = CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=fake)
+        async with source:
+            page = await source.fetch(None, narrow={"before": _at("2026-08-04T08:00:02.000Z")})
+        assert [i.origin.key for i in page.items] == ["<h1@x>"]
+
+    async def test_it_ignores_since_and_never_reads_the_forward_cursor(self):
+        fake = self._dated(1, 2)
+        source = CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=fake)
+        async with source:
+            page = await source.fetch(None, narrow={"before": _at("2026-08-04T08:00:09.000Z"), "since": _at("2026-08-04T08:00:02.000Z")})
+        assert [i.origin.key for i in page.items] == ["<h2@x>", "<h1@x>"]
 
 
 class TestTheAppMailbox:

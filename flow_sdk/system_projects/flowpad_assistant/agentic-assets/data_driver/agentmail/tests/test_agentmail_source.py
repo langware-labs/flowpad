@@ -296,3 +296,35 @@ async def test_the_double_carries_files_both_ways(monkeypatch, tmp_path):
         await driver.send(row, thread_key="", to="sailor@example.com", text="The log.", in_reply_to=delivered["external_id"], files=(local_file(log),))
         (sent,) = double.sent()
         assert sent["thread"] == delivered["thread"] and sent["files"] == [{"name": "log.pdf", "media_type": "application/pdf", "bytes": LOG}]
+
+
+class TestReadingBackwards:
+    """``narrow={"before": t}``: one page of mail sent strictly before ``t``, newest first, trimmed,
+    walked across listing pages, with the forward cursor untouched."""
+
+    @staticmethod
+    def _seed(mail):
+        mail.messages = [{**MSG, "message_id": f"<m{n}@x>", "timestamp": f"2026-08-02T0{n}:00:00.000Z"} for n in (1, 3, 2, 4)]
+
+    async def test_only_older_newest_first_and_trimmed(self, mail):
+        from datetime import datetime  # noqa: PLC0415
+
+        self._seed(mail)
+        bound = datetime.fromisoformat("2026-08-02T04:00:00+00:00")
+        async with AgentMailSource(_binding(mail)) as source:
+            page = await source.fetch(None, page_size=10, narrow={"before": bound})
+            assert [i.origin.key for i in page.items] == ["<m3@x>", "<m2@x>", "<m1@x>"]
+            assert page.next_cursor is None and page.resume_cursor is None
+            trimmed = await source.fetch(None, page_size=2, narrow={"before": bound})
+            assert [i.origin.key for i in trimmed.items] == ["<m3@x>", "<m2@x>"]
+
+    async def test_the_forward_read_is_unchanged(self, mail):
+        from datetime import datetime  # noqa: PLC0415
+
+        self._seed(mail)
+        async with AgentMailSource(_binding(mail)) as source:
+            before = await source.fetch(None)
+            await source.fetch(None, narrow={"before": datetime.fromisoformat("2026-08-02T03:00:00+00:00")})
+            after = await source.fetch(None)
+        assert [i.origin.key for i in before.items] == [i.origin.key for i in after.items]
+        assert before.resume_cursor == after.resume_cursor

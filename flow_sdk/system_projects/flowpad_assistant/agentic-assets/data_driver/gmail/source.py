@@ -26,7 +26,7 @@ import re
 import smtplib
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
@@ -68,6 +68,7 @@ PAGE_LIMIT = 50
 
 _RESUME = "uid:"
 _FULL = "(UID X-GM-THRID RFC822)"
+_DATED = "(UID BODY.PEEK[HEADER.FIELDS (DATE)])"
 _ROUTING = "(UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO REPLY-TO SUBJECT)])"
 _UID_RE = re.compile(rb"\bUID\s+(\d+)\b", re.IGNORECASE)
 _THREAD_RE = re.compile(rb"\bX-GM-THRID\s+(\d+)\b", re.IGNORECASE)
@@ -115,6 +116,7 @@ class GmailSource(EmailAddressing, MessageSource):
     durable_cursor = True
     page_size = PAGE_LIMIT
     pages_per_pass = 1
+    pages_backward = True
     identity_config_key = "address"
     #: Gmail's own ceiling is 25 MB a message, attachments together.
     files = FileSupport(kinds=frozenset(FileKind), per_message=50, max_message_bytes=25_000_000)
@@ -179,6 +181,10 @@ class GmailSource(EmailAddressing, MessageSource):
         if query.conversation is not None:
             raise Unsupported("Gmail lists the inbox; it does not read one thread")
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query.before is not None:
+            # One page of history, newest first: no cursor read or written, no `since` window.
+            snapshot = await self._imap(list_before, self._mailbox(), query.before, limit)
+            return ChangePage(items=tuple(self._item(snapshot.uid_validity, message) for message in snapshot.messages))
         validity, floor = _decode(cursor)
         since = query.since if cursor is None else None
         snapshot = await self._imap(list_inbox, self._mailbox(), validity, floor, since, limit)
@@ -530,6 +536,33 @@ def _find_reply_messages(client: imaplib.IMAP4, message_id: str) -> tuple[Fetche
     wanted = str(message_id or "").strip().casefold()
     matches = [fetched.uid for fetched in headers if wanted in _in_reply_to_ids(fetched.raw)]
     return _fetch_messages(client, matches[-1:])
+
+
+def list_before(mailbox: Mailbox, before: datetime, limit: int) -> Snapshot:
+    """The newest ``limit`` INBOX messages sent strictly before ``before``, newest first. IMAP's
+    ``BEFORE`` is day-granular, so the server narrows to the day after the bound and the exact cut
+    is made here on each message's Date header, walking down from the highest UID."""
+    client, uid_validity = open_inbox(mailbox)
+    try:
+        bound = before.astimezone(timezone.utc)
+        day_after = (bound + timedelta(days=1)).strftime("%d-%b-%Y")
+        status, data = client.uid("SEARCH", None, "BEFORE", day_after)
+        _require_ok(status, "search INBOX")
+        uids = sorted(set(_uids(data)), reverse=True)
+        chosen: list[tuple[datetime, int]] = []
+        step = max(limit * 2, 20)
+        for start in range(0, len(uids), step):
+            for header in _fetch_message_parts(client, uids[start:start + step], _DATED):
+                sent = message_date(BytesParser(policy=policy.default).parsebytes(header.raw, headersonly=True))
+                if sent is not None and sent < bound:
+                    chosen.append((sent, header.uid))
+            if len(chosen) >= limit:
+                break
+        chosen = sorted(chosen, reverse=True)[:limit]
+        by_uid = {message.uid: message for message in _fetch_messages(client, [uid for _, uid in chosen])}
+        return Snapshot(uid_validity, tuple(by_uid[uid] for _, uid in chosen))
+    finally:
+        close_inbox(client)
 
 
 def _fetch_messages(client: imaplib.IMAP4, uids: list[int]) -> tuple[FetchedMessage, ...]:
