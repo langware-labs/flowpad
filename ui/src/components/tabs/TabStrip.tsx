@@ -85,6 +85,9 @@ export interface TabStripItem {
   isDisabled?: boolean;
   hasError?: boolean;
   statusReason?: string;
+  /** Set on a GUEST tab — its content belongs to another project than the tab.
+   *  The chip gets a green underline and this line in its tip. */
+  guestNote?: string;
   /** Rename capability — present iff the tab has a target entity (Part 3 §3). */
   renameable?: boolean;
   /** What this chip DISPLAYS while standing in for something else — the ancestor
@@ -576,6 +579,13 @@ export const TabStrip: React.FC<TabStripProps> = ({
         )}
 
         {!isEditing && renderButtonOverlay(key, isActive, isDisabled, closable, showPopout)}
+        {item.guestNote && (
+          <span
+            aria-hidden
+            data-testid="tab-guest-underline"
+            className="pointer-events-none absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-emerald-500"
+          />
+        )}
       </div>
     );
 
@@ -614,6 +624,11 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 {displayTitle && (
                   <div className="px-3 py-1.5">
                     <TabTooltipName name={displayTitle} className={tipBody ? undefined : 'font-normal'} />
+                    {item.guestNote && (
+                      <p className="text-[11px] text-emerald-500" data-testid="tab-guest-note">
+                        {item.guestNote}
+                      </p>
+                    )}
                   </div>
                 )}
                 {/* A body may turn out empty once it has loaded: no divider then. */}

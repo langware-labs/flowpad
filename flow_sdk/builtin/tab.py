@@ -328,6 +328,9 @@ class Tab(Entity):
     status: str | None = APIField(default=None, persist=Persist.FALSE)
     is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
     target_remote: bool = NoDBAPIField(default=False)
+    # The CONTENT target's own project. Differs from ``project_id`` on a guest
+    # tab — an asset of another project shown inside this one.
+    target_project_id: str | None = NoDBAPIField(default=None)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -1433,11 +1436,11 @@ async def _load_remote_targets(
     return by_type_id
 
 
-def _populate_tab_target_remote(
+def _populate_tab_target_fields(
     tabs: list[Tab],
     target_map: "dict[tuple[str, str], object]",
 ) -> None:
-    """Populate API-only target cloud state without persisting Tab rows."""
+    """Populate the API-only target fields (cloud state, content project) without persisting Tab rows."""
     for tab in tabs:
         target = (
             target_map.get((tab.target_type, str(tab.target_id)))
@@ -1445,6 +1448,11 @@ def _populate_tab_target_remote(
             else None
         )
         tab.target_remote = bool(getattr(target, "remote", False))
+        tab.target_project_id = (
+            getattr(target, "project_id", None)
+            if tab.target_type not in _DB_BACKED_TARGET_TYPES
+            else None
+        )
 
 
 async def _project_from_pointer(pointer: str | None) -> str | None:
@@ -1561,7 +1569,7 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     result = [by_id[tab_id] for tab_id in filtered]
     await _populate_tab_statuses(result, target_map)
     remote_target_map = await _load_remote_targets(result, target_map)
-    _populate_tab_target_remote(result, remote_target_map)
+    _populate_tab_target_fields(result, remote_target_map)
     return result
 
 
@@ -1584,6 +1592,7 @@ def _serialize_row(tab: Tab) -> dict:
         "status": tab.status,
         "is_disabled": tab.is_disabled,
         "target_remote": bool(tab.target_remote),
+        "target_project_id": tab.target_project_id,
     }
 
 
@@ -1693,7 +1702,7 @@ async def _http_list_all(cls):
     await _resolve_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
     remote_target_map = await _load_remote_targets(tabs, target_map)
-    _populate_tab_target_remote(tabs, remote_target_map)
+    _populate_tab_target_fields(tabs, remote_target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
