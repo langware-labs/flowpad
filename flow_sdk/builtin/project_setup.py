@@ -534,7 +534,8 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
-                    operational = LoadTree(tree)
+                    # The load a setup run ends with keeps the fixer: this run is the person's "make it work".
+                    operational = LoadTree(tree, fix=True)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,

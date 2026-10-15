@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useNavigate } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
-import { AgenticProcess, Project, type ProjectLoadResult, type ProjectSetupFix } from '@sdk';
+import { Project, type ProjectLoadResult } from '@sdk';
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { useProjectLoadStore } from '@src/components/project-setup/project-load-store';
 
-vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => undefined }));
+vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => {} }));
 vi.mock('@src/hooks/use-process-progress-info', () => ({
   useProcessProgressInfo: () => ({ statusMessage: 'Killing the process on port 4400', activityLabel: null, elapsedTime: '12s' }),
 }));
@@ -150,11 +150,6 @@ function failedForGood() {
   return final;
 }
 
-/** What the backend answers once the setup-fixer it launched is at ``fix``. */
-function fixAt(final: ProjectLoadResult, fix: Partial<ProjectSetupFix>): ProjectLoadResult {
-  return { ...final, fix: { state: 'running', process: 'agentic_process-p1', summary: '', user_action: '', ...fix } };
-}
-
 it('a failed setup offers Fix it first, Cancel beside it, and Try again only as a small link', async () => {
   const final = failedForGood();
   vi.spyOn(Project, 'load').mockResolvedValue(final);
@@ -164,49 +159,36 @@ it('a failed setup offers Fix it first, Cancel beside it, and Try again only as 
   expect(screen.getByRole('button', { name: 'Try again' }).className).toContain('text-muted-foreground');
 });
 
-it('Fix it asks the backend for the setup-fixer, follows it, and a fixed setup is loaded again', async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+it('Fix it runs setup again — the setup-fixer is a step of that run — and shows it under way', async () => {
   const final = failedForGood();
-  const load = vi.spyOn(Project, 'load').mockResolvedValue(final);
-  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
-  const fix = vi.spyOn(Project, 'setupFix').mockResolvedValue(fixAt(final, {}));
+  let settle: (r: ProjectLoadResult) => void = () => {};
+  const load = vi.spyOn(Project, 'load').mockResolvedValueOnce(final);
   gate();
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  load.mockReturnValueOnce(new Promise((r) => (settle = r)));
   await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
-  expect(fix).toHaveBeenCalledWith(projectId, '');
+  expect(load).toHaveBeenLastCalledWith(projectId, { approved: true });
   expect(screen.getByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
-  const before = load.mock.calls.length;
-  vi.spyOn(Project, 'loadState').mockResolvedValue(fixAt(final, { state: 'fixed', summary: 'Freed port 4400' }));
-  await vi.advanceTimersByTimeAsync(2000);
-  expect(await screen.findByText('Freed port 4400')).toBeInTheDocument();
-  await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(before));
-  vi.useRealTimers();
+  settle(final);
 });
 
-it('a fix that could not be made says what the person must do, and loads nothing', async () => {
+it('a setup run that still fails says so, with the step in its own words', async () => {
   const final = failedForGood();
-  const load = vi.spyOn(Project, 'load').mockResolvedValue(final);
-  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
-  vi.spyOn(Project, 'setupFix').mockResolvedValue(
-    fixAt(final, { state: 'not_fixed', summary: 'Needs a key', user_action: 'Add RIG_API_KEY to the project' }),
-  );
+  // Each answer is a new verdict, as the backend sends one.
+  vi.spyOn(Project, 'load').mockImplementation(() => Promise.resolve({ ...final }));
   gate();
-  await waitFor(() => expect(load).toHaveBeenCalled());
-  const before = load.mock.calls.length;
   await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
-  expect(await screen.findByText('Add RIG_API_KEY to the project')).toBeInTheDocument();
-  expect(await screen.findByRole('button', { name: 'Open process' })).toBeInTheDocument();
-  expect(load).toHaveBeenCalledTimes(before);
+  expect(await screen.findByText(/The fixer could not repair this setup/)).toBeInTheDocument();
 });
 
-it('the fixer the backend launched by itself shows, and Cancel stops it', async () => {
+it('Cancel stops the setup run the fix is', async () => {
   const final = failedForGood();
-  vi.spyOn(Project, 'load').mockResolvedValue(fixAt(final, {}));
-  vi.spyOn(Project, 'loadState').mockResolvedValue(fixAt(final, {}));
-  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
-  const fix = vi.spyOn(Project, 'setupFix').mockResolvedValue(final);
+  const load = vi.spyOn(Project, 'load').mockResolvedValueOnce(final);
+  load.mockReturnValue(new Promise(() => {}));
+  const stop = vi.spyOn(Project, 'stopSetup').mockResolvedValue(true);
   gate();
-  expect(await screen.findByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
+  await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  expect(fix).toHaveBeenCalledWith(projectId, '', true);
+  expect(stop).toHaveBeenCalledWith(projectId, '');
   expect(screen.queryByTestId('setup-fix-line')).not.toBeInTheDocument();
 });

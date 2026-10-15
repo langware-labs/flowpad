@@ -1,5 +1,6 @@
 import {
   Agent,
+  Chart,
   Credential,
   DiagnosisRequest,
   credentialsService,
@@ -14,10 +15,10 @@ import {
   Skill,
   Task,
   TypeId,
-  Whiteboard,
 } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import { McpCreateDialog } from './McpCreateDialog';
+import { ChartCreateDialog } from './ChartCreateDialog';
 import { DiagnosisRequestCreateDialog } from '@src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog';
 import { openRequest } from '@src/components/assets/editor/diagnosis-request/diagnosis-request-api';
 import { CredentialQuickCreateDialog } from '@src/components/credentials/CredentialQuickCreateDialog';
@@ -205,17 +206,19 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     },
   },
   {
-    type: 'whiteboard',
+    type: Chart.type,
     group: 'write',
-    label: msg`Whiteboard`,
-    wikiword: 'Whiteboard assets',
+    label: msg`Chart`,
+    wikiword: 'Charts',
+    // The plain name-only "+" (AssetsPage) makes a sequence chart; the dialog asks which format.
     create: async ({ project, name, destination }) => {
-      const saved = await Whiteboard.createInProject(project, name, destination);
+      const saved = await Chart.createInProject(project, name, 'sequence', destination);
       return {
-        pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
-        toastTitle: msg`Whiteboard created`,
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor(Chart.type, saved.asset_ref) : undefined,
+        toastTitle: msg`Chart created`,
       };
     },
+    Dialog: ChartCreateDialog,
   },
   {
     type: 'mcp',

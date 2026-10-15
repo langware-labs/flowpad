@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
-import { AgenticProcess, Project, type ProjectLoadResult, type ProjectSetupFix } from '@sdk';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Project, type AgenticProcess, type ProjectLoadResult } from '@sdk';
+import { useCallback, useEffect, useState } from 'react';
 
 type SetupFixState =
   | { phase: 'idle' }
@@ -8,92 +8,61 @@ type SetupFixState =
   | { phase: 'fixed'; process: AgenticProcess | null; summary: string }
   | { phase: 'not_fixed'; process: AgenticProcess | null; summary: string; userAction: string };
 
-/** How often a running fix is asked for its verdict. */
-const POLL_MS = 2000;
-
 export type SetupFix = ReturnType<typeof useSetupFix>;
 
-function stateOf(fix: ProjectSetupFix | null, process: AgenticProcess | null): SetupFixState {
-  if (!fix) return { phase: 'idle' };
-  if (fix.state === 'running') return { phase: 'running', process };
-  if (fix.state === 'fixed') return { phase: 'fixed', process, summary: fix.summary };
+function stateOf(asked: boolean, running: boolean, failure: string): SetupFixState {
+  if (!asked) return { phase: 'idle' };
+  if (running) return { phase: 'running', process: null };
   return {
     phase: 'not_fixed',
-    process,
-    summary: fix.summary,
-    userAction: fix.user_action || t`The fixer could not repair this setup. Open the process to see what it found.`,
+    process: null,
+    summary: failure,
+    userAction: t`The fixer could not repair this setup. The step above says what it found.`,
   };
 }
 
 /**
- * "Fix it" for a failed setup — the last step of validate → load → setup → fix. The BACKEND launches the
- * setup-fixer on a load whose setup failed (whoever asked for the load) and carries its verdict on the
- * load's answer (`result.fix`); this screen only shows it, asks for it again, or stops it. A fix that
- * worked is loaded again by the backend; the screen reloads to follow it.
+ * "Fix it" for a failed setup — the last step of validate → load → setup → fix. The fixer is not
+ * launched here: it is a step of the setup run itself (the setup-fixer rung of each web-app step,
+ * `core/setup/derive.py`), so Fix it runs setup again, and Cancel stops that run. What the screen shows
+ * is the run's own verdict: the failing step in its own words, the fixer's account included.
  */
 export function useSetupFix(
   projectId: string,
   result: ProjectLoadResult | null | undefined,
   error: string | null,
-  /** Load again: what a fix earns, and what Try again does. */
-  reload: () => void,
+  /** Load again — `true` approves setup, which is what Fix it is. */
+  load: (approved?: boolean) => Promise<unknown>,
 ) {
   const asset = result?.asset ?? '';
-  const [fix, setFix] = useState<ProjectSetupFix | null>(result?.fix ?? null);
-  const [process, setProcess] = useState<AgenticProcess | null>(null);
-  const fixed = useRef(reload);
-  fixed.current = reload;
-  useEffect(() => setFix(result?.fix ?? null), [result]);
-
-  const processId = fix?.process?.replace(/^agentic_process-/, '') ?? null;
-  useEffect(() => {
-    if (!processId) return setProcess(null);
-    let live = true;
-    void AgenticProcess.getById(processId)
-      .then((p) => live && setProcess(p ?? null))
-      .catch(() => {});
-    return () => {
-      live = false;
-    };
-  }, [processId]);
-
-  // A running fix is followed to its verdict; one that worked loads again.
-  useEffect(() => {
-    if (fix?.state !== 'running') return;
-    const timer = setInterval(() => {
-      void Project.loadState(projectId, asset).then((now) => {
-        const next = now?.fix ?? null;
-        setFix(next);
-        if (next?.state === 'fixed') fixed.current();
-      });
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [fix?.state, projectId, asset]);
-
-  const start = useCallback(async () => {
-    try {
-      const now = await Project.setupFix(projectId, asset);
-      setFix(now?.fix ?? null);
-    } catch (err) {
-      setFix({
-        state: 'not_fixed',
-        process: null,
-        summary: err instanceof Error ? err.message : String(err),
-        user_action: t`The fixer could not start.`,
-      });
-    }
-  }, [projectId, asset]);
-
-  const cancel = useCallback(() => {
-    void Project.setupFix(projectId, asset, true).catch(() => {});
-    setFix(null);
-  }, [projectId, asset]);
-
-  const retry = useCallback(() => fixed.current(), []);
-  const state = stateOf(fix, process);
+  // Fix it pressed: its run is followed through the screen's own verdict until that verdict settles.
+  const [asked, setAsked] = useState(false);
+  const [pending, setPending] = useState(false);
   // Only a failed verdict is a failure: a project that needs setup carries a `detail` too, and asks Set up.
   const failure = (result?.state === 'failed' ? result.detail : '') || error || '';
-  /** Whether the screen shows the failure block: a failure to fix, or a fix to report. */
+  useEffect(() => {
+    if (asked && !pending && result?.state === 'ready') setAsked(false);
+  }, [asked, pending, result?.state]);
+
+  const start = useCallback(async () => {
+    setAsked(true);
+    setPending(true);
+    try {
+      await load(true);
+    } finally {
+      setPending(false);
+    }
+  }, [load]);
+
+  const cancel = useCallback(() => {
+    void Project.stopSetup(projectId, asset).catch(() => {});
+    setAsked(false);
+  }, [projectId, asset]);
+
+  const retry = useCallback(() => void load(), [load]);
+  const state = stateOf(asked, pending || result?.state === 'running', failure);
+  /** Whether the screen shows the failure block: a failure to fix, or a fix under way. */
   const show = !!failure || state.phase !== 'idle';
-  return { state, process, failure, show, start, cancel, retry };
+  // The fixer runs as a step of the setup run, so there is no process of its own to follow here.
+  return { state, process: null as AgenticProcess | null, failure, show, start, cancel, retry };
 }

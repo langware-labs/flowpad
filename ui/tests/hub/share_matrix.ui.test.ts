@@ -9,16 +9,16 @@
  *   4. reply    — receiver replies in the composer; sender sees it arrive
  *
  * Entry points: asset-page share (workflow — the MarkdownEditor share button
- * every md-backed editor inherits; whiteboard — the AssetEditorHeader button)
+ * every md-backed editor inherits; chart — the AssetEditorHeader button)
  * and message forward. Assets are seeded via each instance's SDK realm; every
  * share/open/reply interaction is driven through the real browser (Playwright,
  * headless Chromium).
  *
  * All scenarios drive the full four-step loop. A/B step 3 (open the shared
  * asset) exercises the receiver body-bundle path: the matrix originally found
- * that shared workflow/whiteboard entities never materialized on the receiver
+ * that shared workflow/chart entities never materialized on the receiver
  * (their bytes weren't packed, and their ids weren't carried) — now fixed in
- * `flow_message_bundle.py` (workflow/whiteboard added to `_FS_ROOTED_TYPES` +
+ * `flow_message_bundle.py` (workflow/chart added to `_FS_ROOTED_TYPES` +
  * sender id injected into the main doc's frontmatter so the receiver
  * materializes the SAME entity). Forward (C) needs no body bundle.
  *
@@ -125,7 +125,7 @@ beforeAll(async () => {
     .locator('[data-testid="dynamic-workflow-editor"]')
     .waitFor({ timeout: 60_000 })
     .catch(() => undefined);
-  const warmWb2 = await dev2.sdk.Whiteboard.create(ownedTestEntityName('whiteboard'));
+  const warmWb2 = await dev2.sdk.Chart.create(ownedTestEntityName('chart'), 'excalidraw');
   const warmWbRef = (warmWb2 as { asset_ref?: string }).asset_ref;
   if (warmWbRef) {
     const { promises: nodeFs } = await import('node:fs');
@@ -134,13 +134,13 @@ beforeAll(async () => {
       `${warmWbRef}/board.json`,
       JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
     );
-    await nodeFs.writeFile(`${warmWbRef}/WHITE_BOARD.md`, '# warm whiteboard\n');
+    await nodeFs.writeFile(`${warmWbRef}/CHART.md`, '# warm chart\n');
   }
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}?viewMode=advanced`, {
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/chart/typeid/chart-${warmWb2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   await p2.page
-    .locator('[data-testid="whiteboard-editor"]')
+    .locator('[data-testid="chart-excalidraw"]')
     .waitFor({ timeout: 60_000 })
     .catch(() => undefined);
 }, 120_000);
@@ -202,7 +202,7 @@ afterAll(async () => {
       }
     }
 
-    const SWEEP = ['skill', 'agent', 'workflow', 'dynamic_workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    const SWEEP = ['skill', 'agent', 'workflow', 'dynamic_workflow', 'chart', 'markdown', 'spec', 'prompt'];
     for (const inst of [dev1, dev2]) {
       for (const type of SWEEP) {
         const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`)
@@ -404,7 +404,7 @@ describe('A. asset-page share: workflow', () => {
 
   // Receiver materialization: the body bundle downloads, unpacks, and
   // materializes the shared workflow under the SAME id (the packer now adds
-  // workflow/whiteboard to `_FS_ROOTED_TYPES` and injects the sender id into
+  // workflow/chart to `_FS_ROOTED_TYPES` and injects the sender id into
   // the asset's main doc — see flow_message_bundle.py). The chip then resolves
   // and opens the editor with a clean console.
   it('A3 open — dev-2 opens the shared workflow with a clean console', async () => {
@@ -425,19 +425,19 @@ describe('A. asset-page share: workflow', () => {
   });
 });
 
-// ─── Scenario B: asset-page share — whiteboard (AssetEditorHeader button) ────
+// ─── Scenario B: asset-page share — chart (AssetEditorHeader button) ────
 
-describe('B. asset-page share: whiteboard', () => {
+describe('B. asset-page share: chart', () => {
   let wbId: string;
   let convId: string;
   const replyText = `wb-reply-${ts}`;
-  const wbName = ownedTestEntityName('whiteboard');
+  const wbName = ownedTestEntityName('chart');
   const convTitle = ownedTestEntityName('conv');
 
-  it('B1 share — dev-1 shares from the whiteboard editor UI', async () => {
-    const wb = await dev1.sdk.Whiteboard.create(wbName);
+  it('B1 share — dev-1 shares from the chart editor UI', async () => {
+    const wb = await dev1.sdk.Chart.create(wbName, 'excalidraw');
     wbId = wb.id!;
-    // Whiteboard files materialize lazily on first editor persist; a fresh
+    // Chart files materialize lazily on first editor persist; a fresh
     // entity has an empty folder and the board.json read never settles. Seed
     // the minimal board files the way the editor's first save would (the
     // instances run on this host, and asset_ref is a real local path).
@@ -449,19 +449,19 @@ describe('B. asset-page share: whiteboard', () => {
         `${assetRef}/board.json`,
         JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
       );
-      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
+      await nodeFs.writeFile(`${assetRef}/CHART.md`, `# ${wbName}\n`);
     }
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}?viewMode=advanced`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/chart/typeid/chart-${wbId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
     // Wait for the editor to finish mounting (board.json read settles) before
     // the share click — clicking mid-mount is what intermittently dropped the
     // share dispatch.
-    await p1.page.getByTestId('whiteboard-editor').waitFor({ timeout: 25_000 });
+    await p1.page.getByTestId('chart-excalidraw').waitFor({ timeout: 25_000 });
     await p1.page.getByTestId('entity-actions-share').click({ timeout: 25_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
-      note: `here is a whiteboard ${ts}`,
+      note: `here is a chart ${ts}`,
       title: convTitle,
     });
     convId = await conversationIdByTitle(dev1, convTitle);
@@ -472,10 +472,10 @@ describe('B. asset-page share: whiteboard', () => {
     await openAssignedConversationInUI(p2, convId);
   });
 
-  // Receiver materializes the shared whiteboard under the same id (see A3) —
-  // its folder rides the bundle and the id is injected into WHITE_BOARD.md.
-  it('B3 open — dev-2 opens the shared whiteboard with a clean console', async () => {
-    await downloadAndOpenAssetClean(p2, convId, `entity-chip-whiteboard-${wbId}`, '[data-testid="whiteboard-editor"]');
+  // Receiver materializes the shared chart under the same id (see A3) —
+  // its folder rides the bundle and the id is injected into CHART.md.
+  it('B3 open — dev-2 opens the shared chart with a clean console', async () => {
+    await downloadAndOpenAssetClean(p2, convId, `entity-chip-chart-${wbId}`, '[data-testid="chart-excalidraw"]');
   });
 
   it('B4 reply — dev-2 replies; dev-1 sees it arrive', async () => {

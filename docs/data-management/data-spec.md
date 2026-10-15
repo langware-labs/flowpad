@@ -271,7 +271,7 @@ header and a counter is written only once it moved.
 `manifest_layout="entity"` is the default home for a native folder asset's fields: ONE JSON
 document named after the type, shaped like the record shadow `metadata.json`, rendered and read
 in one place (`render_entity_json` / `read_entity_json`, `flow_sdk/assets/serialization.py`).
-Agent is the first type on it; task, spec, prompt and whiteboard are next.
+Agent is the first type on it; task, spec, prompt and chart are next.
 
 ```
 agentic-assets/agent/whatsapp-e2e/

@@ -34,7 +34,7 @@ INDEXED_TYPES = {
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
+    "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
@@ -42,7 +42,7 @@ FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
     "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
-    "whiteboard", "wizard",
+    "chart", "wizard",
 )
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
@@ -50,7 +50,7 @@ FOLDER_PORTABLE = (
 FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
-FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
+FOLDER_MARKDOWN = ("skill", "task", "chart")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 #: Entity documents (``<type>.json``): the id is the document root's ``"id"``

@@ -7,7 +7,7 @@
     "agent",
     "skill",
     "task",
-    "whiteboard",
+    "chart",
     "deck_template",
     "deck",
     "spreadsheet",
@@ -55,8 +55,8 @@
     "task": [
       "task"
     ],
-    "whiteboard": [
-      "whiteboard"
+    "chart": [
+      "chart"
     ],
     "deck_template": [
       "deck_template"
@@ -124,7 +124,7 @@
     "agent": "agent",
     "skill": "skill",
     "task": "task",
-    "whiteboard": "whiteboard",
+    "chart": "chart",
     "deck_template": "deck_template",
     "deck": "deck",
     "spreadsheet": "spreadsheet",

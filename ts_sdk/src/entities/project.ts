@@ -1145,16 +1145,6 @@ export class Project extends APIEntity<Project> {
     return result;
   }
 
-  /** Fix it: run the setup-fixer on this load's failure again (the backend launches it once by itself),
-   *  or stop it. Answers the load, its `fix` included. */
-  static async setupFix(projectId: string, asset = '', stop = false): Promise<ProjectLoadResult | null> {
-    const actionInfo = new ActionInfo('setup-fix', Project.type, projectId, 'POST');
-    actionInfo.bodyParameters = { asset, stop };
-    const result = (await dataManager.callAction<typeof actionInfo.bodyParameters, ProjectLoadResult>(actionInfo)) ?? null;
-    notifyProjectLoad(result);
-    return result;
-  }
-
   /** Phase one of an open: the app's last READY verdict, only while it still answers where it runs —
    *  else null (load it). Never starts anything. */
   static async validateLoad(projectId: string, asset: string, display = ''): Promise<ProjectLoadResult | null> {

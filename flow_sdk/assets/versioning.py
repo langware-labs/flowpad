@@ -86,7 +86,7 @@ def version_document(text: str, base: str) -> str:
 
 def _versionable_folder_types() -> list:
     """``asset_scope``'s folder-backed types narrowed to those whose main file can
-    CARRY the frontmatter ``version:`` this module writes — skill, task, whiteboard.
+    CARRY the frontmatter ``version:`` this module writes — skill, task, chart.
     The test is the type's ``identity_carrier``: ``Frontmatter`` already means
     "my id lives in this document's header", the gate the identity seam uses too.
     Which folders are assets is shape (there); which may be STAMPED is policy (here).

@@ -67,16 +67,26 @@ def scaffold_mcp(path: Path, spec: McpSpec, typeid: TypeId) -> None:
         _missing_file(AssetDir(path), spec.entrypoint, SERVER_TEMPLATE.format(name=spec.name))
 
 
-def render_whiteboard_document(spec, info) -> str:
+def render_chart_document(spec, info) -> str:
     from flow_sdk.assets.frontmatter import _render_frontmatter
-    from flow_sdk.assets.types.whiteboard_spec import WhiteboardSpec
+    from flow_sdk.assets.types.chart_spec import ChartSpec
 
-    document = WhiteboardSpec.model_validate(spec.model_dump(include={"name", "description"}))
-    return _render_frontmatter(document.model_dump()) + "\n\n"
+    document = ChartSpec.model_validate(spec.model_dump(include={"name", "description", "format"}))
+    text = _render_frontmatter(document.model_dump(exclude_none=True)) + "\n\n"
+    if document.format == "mermaid":
+        # A mermaid chart's source IS the fenced block in CHART.md.
+        text += "```mermaid\nflowchart TD\n```\n"
+    return text
 
 
-def scaffold_whiteboard(path: Path, spec, typeid: TypeId) -> None:
-    """Repair only the absent main document; authored board data always wins."""
-    from flow_sdk.assets.types.whiteboard import WHITE_BOARD_MD
+def scaffold_chart(path: Path, spec, typeid: TypeId) -> None:
+    """Repair only the absent files; authored chart data always wins."""
+    from flow_sdk.assets.types.chart import BOARD_JSON, CHART_JSON, CHART_MD
 
-    _missing_file(AssetDir(path), WHITE_BOARD_MD, render_whiteboard_document(spec, None))
+    directory = AssetDir(path)
+    _missing_file(directory, CHART_MD, render_chart_document(spec, None))
+    fmt = spec.format
+    if fmt == "sequence":
+        _missing_file(directory, CHART_JSON, '{"participants": [], "messages": []}\n')
+    elif fmt == "excalidraw":
+        _missing_file(directory, BOARD_JSON, '{"kind": "excalidraw", "version": 1, "data": {"elements": []}}\n')

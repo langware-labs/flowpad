@@ -38,12 +38,29 @@ logger = logging.getLogger(__name__)
 PROJECT = "project"
 
 
-def _op(name: str, label: str, step: str, *, kind: str = "webapp_step") -> ComputeOpSpec:
+#: The agent that repairs a web app's setup step when the step itself fails (``agentic-assets/agent/setup-fixer``).
+FIXER_AGENT = "setup-fixer"
+
+
+def _op(name: str, label: str, step: str, *, kind: str = "webapp_step", fixer: str = "") -> ComputeOpSpec:
     """An in-process step of the run's web app (``webapp_step``) or source (``source_step``): the call is the
-    step, the check is the same step in check mode."""
+    step, the check is the same step in check mode. ``fixer``: the prompt of the step's last resort — while
+    its check still fails, the setup-fixer repairs what the step stands on, then the step runs again; the
+    check is the proof. A load never runs it (``LoadTree`` strips it): only a setup run fixes."""
+    attempts = [
+        {"subkind": "agent", "exe_data": {"agent": FIXER_AGENT, "prompt": fixer}},
+        {"subkind": "cli", "exe_data": {kind: step}},
+    ] if fixer else []
     return ComputeOpSpec.model_validate({
         "name": name, "label": label, "subkind": "cli", "exe_data": {kind: step}, "completion_check": {kind: step},
+        "attempts": attempts,
     })
+
+
+def _fixer_prompt(project_id: str, app) -> str:
+    return (f"Use the setup-fixer skill. The step above of web app {app.name} ({app.typeid}, folder "
+            f"{app.asset_ref}) in project {project_id} failed. Repair what it stands on; the step runs again "
+            "after you and its own check is the proof.")
 
 
 def _holder(asset_ref: str) -> str:
@@ -250,7 +267,8 @@ class ProjectTree:
             return node_id
         steps = []
         for step, what in (("install", "Install"), ("build", "Build"), ("start", "Start"), ("present", "Verify display")):
-            op = _op(f"{node_id}:{step}", f"{what} {label}", step)
+            op = _op(f"{node_id}:{step}", f"{what} {label}", step,
+                     fixer=_fixer_prompt(self.pid, app) if step != "present" else "")
             self.ops[op.name] = op
             steps.append({"id": step, "label": what, "kind": "compute", "ref": op.name})
         setup = WizardSpec.model_validate({"name": node_id, "label": f"Set up {label}", "steps": steps[:2]})

@@ -21,7 +21,7 @@ import {
   TypeId,
   UsageReport,
   VFSPath,
-  Whiteboard,
+  Chart,
   Wizard,
   type AnyEntity,
 } from '@sdk';
@@ -71,7 +71,7 @@ import { ComputeOpViewer } from './compute-op/ComputeOpViewer';
 import { LlmEndpointAssetView } from './llm-endpoint/LlmEndpointAssetView';
 import { DiagnosisRequestView } from './diagnosis-request/DiagnosisRequestView';
 import { McpViewer } from '@src/components/assets/editor/mcp/McpViewer';
-import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
+import { ChartAssetEditor } from './chart/ChartAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
@@ -415,17 +415,17 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           }
         />
       );
-    case AssetEditor.WHITEBOARD:
+    case AssetEditor.CHART:
       return (
-        <EntityResolutionGate<Whiteboard>
-          type={Whiteboard.type}
+        <EntityResolutionGate<Chart>
+          type={Chart.type}
           fsRef={fsRef}
           renderDocument={renderDocument}
-          typeLabel="whiteboard"
-          resolvedEntity={typeIdEntity as Whiteboard | undefined}
-          render={(whiteboard) => (
-            <AssetCollisionShell entity={whiteboard}>
-              <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />
+          typeLabel="chart"
+          resolvedEntity={typeIdEntity as Chart | undefined}
+          render={(chart) => (
+            <AssetCollisionShell entity={chart}>
+              <ChartAssetEditor fsRef={fsRef} chart={chart} />
             </AssetCollisionShell>
           )}
         />

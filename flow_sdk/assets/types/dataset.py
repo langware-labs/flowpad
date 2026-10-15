@@ -40,7 +40,7 @@ def dataset_asset_hash(ref: FSRef) -> int:
     when a child file's *content* is edited. Datasets are folder-based, so this
     stats the manifest + the layout-specific data (``data.csv`` and the
     ``examples/`` tree) instead — otherwise edits to ``data.csv`` would never
-    re-index. Mirrors ``whiteboard_asset_hash``.
+    re-index. Mirrors ``chart_asset_hash``.
     """
     base = ref._path
     ts = 0
