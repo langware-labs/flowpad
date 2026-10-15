@@ -103,7 +103,7 @@ const HOSTS: Record<string, string | null> = {
   'new-project-from-git': null,
   'add-dependency': null,
   ...Object.fromEntries(
-    ['agent', 'skill', 'subagent', 'dynamic-workflow', 'task', 'markdown', 'whiteboard', 'mcp', 'credential', 'modal'].map(
+    ['agent', 'skill', 'subagent', 'dynamic-workflow', 'task', 'markdown', 'chart', 'mcp', 'credential', 'modal'].map(
       (t) => [`quick-create-${t}`, null],
     ),
   ),

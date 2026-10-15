@@ -1,0 +1,37 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id (m1, m2\u2026): what feedback targets."
+    },
+    "from": {
+      "shape": "string",
+      "description": "The sending participant id."
+    },
+    "to": {
+      "shape": "string",
+      "description": "The receiving participant id; equal to from for a self-call."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The text on the arrow; for a sub-flow block, the sub-flow's name."
+    },
+    "style": {
+      "shape": "?string",
+      "description": "solid (a call, default) or dashed (a reply)."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    },
+    "ref": {
+      "shape": "?string",
+      "description": "A sub-flow block: the key of another chart in the charts dataset. Drawn as a block spanning from..to with an open icon; click it to open that chart."
+    },
+    "returns": {
+      "shape": "?string",
+      "description": "A sub-flow block's output, drawn as a dashed arrow from `to` back into `from` right after the block."
+    }
+  }
+}

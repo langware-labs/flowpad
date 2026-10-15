@@ -1,11 +1,11 @@
 /**
- * WhiteboardAssetEditor — RTL coverage.
+ * ExcalidrawChartView — RTL coverage.
  *
  * Asserts:
  *   1. Lazy Suspense mounts → Excalidraw appears after promise resolution.
  *   2. onChange → debounced 750ms → exactly one PUT to board.json with the
  *      wrapped {kind:"excalidraw",version:1,data:...} payload.
- *   3. WHITE_BOARD.md document patch splices the mermaid block between the auto-markers
+ *   3. CHART.md document patch splices the mermaid block between the auto-markers
  *      AND preserves prose written outside the markers.
  *   4. thumbnail.svg PUT fires after board.json.
  *   5. "Import mermaid → board" dialog flow: opens, accepts text, calls
@@ -113,7 +113,7 @@ vi.mock('@excalidraw/mermaid-to-excalidraw', () => ({
 
 // ── Mock the mermaid serializer (we just need a stable token in output) ─────
 vi.mock(
-  '@src/components/assets/editor/whiteboard/excalidrawToMermaid',
+  '@src/components/assets/editor/chart/excalidrawToMermaid',
   () => ({
     excalidrawToMermaid: (_d: unknown) => 'flowchart TD\n  N1[Stub]\n',
   }),
@@ -122,12 +122,12 @@ vi.mock(
 // Now import the editor — its lazy(() => import('@excalidraw/excalidraw'))
 // resolves via the mock above.
 // eslint-disable-next-line import/first
-import { WhiteboardAssetEditor } from '@src/components/assets/editor/whiteboard/WhiteboardAssetEditor';
+import { ExcalidrawChartView } from '@src/components/assets/editor/chart/ExcalidrawChartView';
 
-function renderEditor(fsRef: import('@sdk').FSRef, whiteboard?: import('@sdk').Whiteboard) {
+function renderEditor(fsRef: import('@sdk').FSRef, chart?: import('@sdk').Chart) {
   return render(
     <MemoryRouter>
-      <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />
+      <ExcalidrawChartView fsRef={fsRef} chart={chart} />
     </MemoryRouter>,
   );
 }
@@ -159,7 +159,7 @@ function makeFsRef(name: string, files: Record<string, string>, writeLog: Array<
           return { body: files[full], fields: { name: 't' }, revision: files[full] };
         },
         async write(body: string): Promise<void> {
-          expect(childName).not.toBe('WHITE_BOARD.md');
+          expect(childName).not.toBe('CHART.md');
           files[full] = body;
           writeLog.push({ path: full, body });
         },
@@ -177,7 +177,7 @@ const INITIAL_BOARD = JSON.stringify({
   data: { elements: [], appState: {}, files: {} },
 });
 
-describe('WhiteboardAssetEditor', () => {
+describe('ExcalidrawChartView', () => {
   let writeLog: Array<{ path: string; body: string }>;
   let files: Record<string, string>;
 
@@ -199,7 +199,7 @@ describe('WhiteboardAssetEditor', () => {
 
     renderEditor(fsRef);
 
-    await waitFor(() => expect(screen.queryByTestId('whiteboard-editor')).not.toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('chart-excalidraw')).not.toBeNull());
     await waitFor(() => expect(screen.queryByTestId('trigger-change')).not.toBeNull());
     expect(writeLog).toHaveLength(0);
   });
@@ -209,7 +209,7 @@ describe('WhiteboardAssetEditor', () => {
     const fsRef = makeFsRef('root', files, writeLog);
     const markEdit = vi.fn();
 
-    renderEditor(fsRef, { markEdit } as unknown as import('@sdk').Whiteboard);
+    renderEditor(fsRef, { markEdit } as unknown as import('@sdk').Chart);
 
     await screen.findByTestId('excalidraw-stub');
     await userEvent.click(screen.getByTestId('trigger-viewport-change'));
@@ -232,7 +232,7 @@ describe('WhiteboardAssetEditor', () => {
 
     renderEditor(fsRef);
 
-    await screen.findByTestId('whiteboard-editor');
+    await screen.findByTestId('chart-excalidraw');
     await waitFor(() =>
       expect(screen.getByTestId('current-elements').textContent).toContain('plain-1'),
     );
@@ -241,8 +241,8 @@ describe('WhiteboardAssetEditor', () => {
 
   it('debounces onChange → board and thumbnail writes plus one revision-checked document patch', async () => {
     files['root/board.json'] = INITIAL_BOARD;
-    files['root/WHITE_BOARD.md'] =
-      '# t\n\n<!-- BEGIN whiteboard:auto -->\n```mermaid\nold\n```\n<!-- END whiteboard:auto -->\n\n## Human notes\n\nKept verbatim with [[a link]].\n';
+    files['root/CHART.md'] =
+      '# t\n\n<!-- BEGIN chart:auto -->\n```mermaid\nold\n```\n<!-- END chart:auto -->\n\n## Human notes\n\nKept verbatim with [[a link]].\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -263,7 +263,7 @@ describe('WhiteboardAssetEditor', () => {
       expect(writeLog.filter((w) => w.path === 'root/board.json')).toHaveLength(1),
     );
     await waitFor(() =>
-      expect(writeLog.filter((w) => w.path === 'root/WHITE_BOARD.md')).toHaveLength(1),
+      expect(writeLog.filter((w) => w.path === 'root/CHART.md')).toHaveLength(1),
     );
     await waitFor(() =>
       expect(writeLog.filter((w) => w.path === 'root/thumbnail.svg')).toHaveLength(1),
@@ -275,9 +275,10 @@ describe('WhiteboardAssetEditor', () => {
     expect(parsed.version).toBe(1);
     expect(parsed.data.elements).toEqual([{ id: 'r1', type: 'rectangle' }]);
 
-    const docWrite = writeLog.find((w) => w.path === 'root/WHITE_BOARD.md')!;
-    expect(docWrite.body).toMatch(/<!-- BEGIN whiteboard:auto -->/);
-    expect(docWrite.body).toMatch(/<!-- END whiteboard:auto -->/);
+    const docWrite = writeLog.find((w) => w.path === 'root/CHART.md')!;
+    // The old block is replaced in place, not appended beside.
+    expect(docWrite.body.match(/<!-- BEGIN chart:auto -->/g)).toHaveLength(1);
+    expect(docWrite.body).not.toMatch(/\nold\n/);
     expect(docWrite.body).toMatch(/N1\[Stub\]/);
     // Human content outside the markers MUST survive.
     expect(docWrite.body).toMatch(/## Human notes/);
@@ -286,9 +287,9 @@ describe('WhiteboardAssetEditor', () => {
     expect(docWrite.body).not.toMatch(/```mermaid\s*\nold/);
   });
 
-  it('appends the mermaid block when WHITE_BOARD.md has no markers yet', async () => {
+  it('appends the mermaid block when CHART.md has no markers yet', async () => {
     files['root/board.json'] = INITIAL_BOARD;
-    files['root/WHITE_BOARD.md'] = '# t\n\nNo markers here.\n';
+    files['root/CHART.md'] = '# t\n\nNo markers here.\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
@@ -303,16 +304,16 @@ describe('WhiteboardAssetEditor', () => {
     });
 
     await waitFor(() =>
-      expect(writeLog.filter((w) => w.path === 'root/WHITE_BOARD.md')).toHaveLength(1),
+      expect(writeLog.filter((w) => w.path === 'root/CHART.md')).toHaveLength(1),
     );
-    const docWrite = writeLog.find((w) => w.path === 'root/WHITE_BOARD.md')!;
+    const docWrite = writeLog.find((w) => w.path === 'root/CHART.md')!;
     expect(docWrite.body).toMatch(/No markers here\./); // preserved
-    expect(docWrite.body).toMatch(/<!-- BEGIN whiteboard:auto -->[\s\S]*N1\[Stub\][\s\S]*<!-- END whiteboard:auto -->/);
+    expect(docWrite.body).toMatch(/<!-- BEGIN chart:auto -->[\s\S]*N1\[Stub\][\s\S]*<!-- END chart:auto -->/);
   });
 
   it('Import mermaid dialog → parseMermaidToExcalidraw → save', async () => {
     files['root/board.json'] = INITIAL_BOARD;
-    files['root/WHITE_BOARD.md'] = '# t\n';
+    files['root/CHART.md'] = '# t\n';
     const fsRef = makeFsRef('root', files, writeLog);
 
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });

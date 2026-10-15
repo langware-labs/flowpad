@@ -1,7 +1,7 @@
 /**
  * Pure-function Excalidraw → Mermaid serializer (TypeScript port).
  *
- * Paired with `flow_sdk/fs_records/_whiteboard_mermaid.py`. Both
+ * Paired with `flow_sdk/assets/types/chart_mermaid.py`. Both
  * implementations MUST produce byte-identical output for any given input —
  * the shared corpus under `tests/fixtures/mermaid_corpus/` enforces that
  * invariant. If you edit the algorithm here, edit the Python side too.

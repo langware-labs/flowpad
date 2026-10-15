@@ -3,7 +3,7 @@ id: 5204aeda-dfc7-43bb-a689-300e6795263c
 name: building-deliverables
 description: Routes a build request to the right Flowpad skill and says how to present
   the result — web apps, slide decks, standalone HTML pages, static sites, images,
-  skills, agents (agent-builder), subagents, whiteboards, docs, runnable code snippets and URL-to-markdown captures. Use whenever the
+  skills, agents (agent-builder), subagents, charts and whiteboards (chartit), docs, runnable code snippets and URL-to-markdown captures. Use whenever the
   user asks to build, create, make, generate, scaffold or prototype something, when
   they ask to test what was built, or when they want an existing app opened or a
   command run in their visible terminal. NOT for showing or navigating to a
@@ -138,15 +138,9 @@ resolves the entity for you; no indexing step).
 which is **agent-builder**'s) → write `.claude/agents/<name>.md` (frontmatter: name,
 description, tools), then `flow show file <abs-path>`.
 
-**Whiteboard / board / diagram** → a folder `.claude/whiteboards/<name>/` in the project
-containing:
-- `WHITE_BOARD.md` — YAML frontmatter with `name:` (no `id` needed) + a one-line
-  description body.
-- `board.json` — a plain Excalidraw scene: `{"elements": [...], "appState": {}}` with
-  `rectangle`/`ellipse`/`diamond`/`arrow`/`text` elements (each needs `id`, `type`, `x`,
-  `y`, `width`, `height`; text needs `text` + `fontSize`). Lay items out on a grid,
-  don't overlap.
-Then `flow show file <abs-path-to-WHITE_BOARD.md>`.
+**Chart / whiteboard / board / diagram / sequence or network flow / mermaid** → the **chartit**
+skill. Every chart is one Chart entity (`agentic-assets/chart/<name>/`, `format`: sequence, excalidraw
+or mermaid), opened in Flowpad's chart editor with a feedback toolbar.
 
 **Doc / plan / report** → write the markdown, then `flow show file <abs-path>`.
 

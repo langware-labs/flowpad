@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 /**
- * Whiteboard golden-path smoke spec.
+ * Chart golden-path smoke spec.
  *
  * Scope deliberately matches the existing trace-gutter.spec.ts idiom:
  * a thin "did the wiring make it in?" check, not a full scenario suite.
@@ -11,17 +11,17 @@ import { test, expect } from '@playwright/test';
  *
  * What this spec covers:
  *   1. The app loads and exposes the quick-create surface.
- *   2. The Whiteboard type is registered in the quick-create registry
+ *   2. The Chart type is registered in the quick-create registry
  *      (proves Track C wiring is live).
- *   3. Navigating to a whiteboard editor route mounts the editor shell.
+ *   3. Navigating to a chart editor route mounts the editor shell.
  *
  * Prerequisites: a dev server is running at http://localhost:4097
  * (`uv run -m flow_sdk.server.run` + `cd ui && npm run dev`). The spec
  * does NOT manage server lifecycle.
  */
 
-test.describe('Whiteboard editor', () => {
-  test('whiteboard type registered in quick-create', async ({ page }) => {
+test.describe('Chart editor', () => {
+  test('chart type registered in quick-create', async ({ page }) => {
     await page.goto('http://localhost:4097');
 
     // Wait for the app shell to settle — same heuristic trace-gutter uses.
@@ -33,24 +33,24 @@ test.describe('Whiteboard editor', () => {
     const isMac = process.platform === 'darwin';
     await page.keyboard.press(isMac ? 'Meta+K' : 'Control+K');
 
-    // Either a dialog labelled "Whiteboard" should appear, or a button.
+    // Either a dialog labelled "Chart" should appear, or a button.
     // We assert the label is reachable, not that we click through to create.
-    const whiteboardOption = page.getByText(/whiteboard/i).first();
-    await expect(whiteboardOption).toBeVisible({ timeout: 5_000 });
+    const chartOption = page.getByText(/chart/i).first();
+    await expect(chartOption).toBeVisible({ timeout: 5_000 });
   });
 
-  test('whiteboard editor route mounts the editor shell', async ({ page }) => {
+  test('chart editor route mounts the editor shell', async ({ page }) => {
     // Navigate directly to a non-existent board path. Even when the entity
-    // doesn't resolve, the AssetEditorRouter case for whiteboard should
+    // doesn't resolve, the AssetEditorRouter case for chart should
     // render the EntityResolutionGate fallback ("missing asset" card),
     // which proves the route is wired.
-    await page.goto('http://localhost:4097/dock/editor/whiteboard/none/none.fake/');
+    await page.goto('http://localhost:4097/dock/editor/chart/none/none.fake/');
     await page.waitForLoadState('networkidle', { timeout: 15_000 });
 
     // We accept either the missing-asset card OR the editor shell — both
-    // prove the WHITEBOARD case in AssetEditorRouter is reachable.
+    // prove the CHART case in AssetEditorRouter is reachable.
     const missingOrEditor = page
-      .locator('[data-testid="whiteboard-editor"], [data-testid="missing-asset-card"]')
+      .locator('[data-testid="chart-editor"], [data-testid="missing-asset-card"]')
       .first();
     const visible = await missingOrEditor.count();
     expect(visible).toBeGreaterThanOrEqual(0);
