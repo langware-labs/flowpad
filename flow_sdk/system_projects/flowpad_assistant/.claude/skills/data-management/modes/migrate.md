@@ -16,6 +16,11 @@ build after that reads only `data_schema`; a `data_spec` folder is reported by t
 asset scan and registers NOTHING — every dataset over those kinds then refuses its
 rows. There is no automatic migration; this mode is it.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## Gate 1 — find everything
 
 ```bash

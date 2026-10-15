@@ -28,6 +28,11 @@ layered on top: where does this go, what's the seam, how do I prove it.
 `references/anchors.md` is the concrete file/symbol index for every pattern
 below — open it when you need the exact path or class to model after.
 
+
+## FlowCall blocks
+
+When implementing calls or processing blocks, use the existing ComputeOp/Wizard seams and [FlowCall contract](../../../docs/snippets/call-returns.md). Test input validation before effects, declared output presence, whole-list versus item-map behavior, and approval before importing call.py. Keep public schemas independently discoverable. Update affected instructions, examples and indexes with the implementation.
+
 ## FlowCall vocabulary
 
 For call outcomes, returned values, and composition, use **FlowCall** for the

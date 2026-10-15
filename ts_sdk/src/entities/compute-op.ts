@@ -7,12 +7,20 @@ import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { CliResult, ReturnedValue } from '../models/ReturnedValue';
 
+/** The backend ShapeForm grammar: kind, record fields, or one list element shape. */
+export type ShapeForm = string | { [field: string]: ShapeForm } | [ShapeForm];
+
 export interface IComputeOp extends IEntity {
   name?: string;
   label?: string;
   description?: string;
   subkind?: string;
   shipped?: boolean;
+  input?: ShapeForm | null;
+  output?: ShapeForm | null;
+  output_spec_kind?: string | null;
+  input_shape?: ShapeForm | null;
+  output_shape?: ShapeForm | null;
 }
 
 export interface ComputeOp extends EntityMerge<IComputeOp> {}
@@ -27,6 +35,11 @@ export class ComputeOp extends APIEntity<ComputeOp> implements IComputeOp {
   subkind: string = '';
   /** Ships with Flowpad: its commands are ours and run unprompted. */
   shipped: boolean = false;
+  input?: ShapeForm | null;
+  output?: ShapeForm | null;
+  output_spec_kind?: string | null;
+  input_shape?: ShapeForm | null;
+  output_shape?: ShapeForm | null;
 
   /** Re-apply the payload: class-field initializers run after `super(json)`. */
   constructor(json: IComputeOp | undefined = undefined) {
@@ -45,5 +58,13 @@ export class ComputeOp extends APIEntity<ComputeOp> implements IComputeOp {
     const action = new ActionInfo('run', ComputeOp.type, this.id, 'POST');
     action.bodyParameters = { approved };
     return dataManager.callFlowAction(action);
+  }
+
+  /** Invoke a typed block. Schemas on the backend validate input and output;
+   * T describes the expected output to the caller, not runtime validation. */
+  async call<T = unknown>(input?: unknown, options: { approved?: boolean } = {}): Promise<ReturnedValue<T>> {
+    const action = new ActionInfo('run', ComputeOp.type, this.id, 'POST');
+    action.bodyParameters = { approved: options.approved ?? false, answer_tagged: true, ...(input === undefined ? {} : { input }) };
+    return dataManager.callFlowAction<ReturnedValue<T>>(action);
   }
 }

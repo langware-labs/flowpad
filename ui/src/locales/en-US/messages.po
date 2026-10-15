@@ -8686,6 +8686,7 @@ msgstr "Detail"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Details"
 msgstr "Details"
@@ -10835,6 +10836,10 @@ msgstr "Fetched automatically wherever this project opens — Flowpad warns when
 msgid "Fetching"
 msgstr "Fetching"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Fetching older messages…"
+msgstr "Fetching older messages…"
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Fetching the desk and indexing it…"
 msgstr "Fetching the desk and indexing it…"
@@ -11202,8 +11207,8 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "Fix the setup"
+#~ msgid "Fix the setup"
+#~ msgstr "Fix the setup"
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -15870,6 +15875,10 @@ msgstr "New workspace"
 msgid "New workspace…"
 msgstr "New workspace…"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Newer"
+msgstr "Newer"
+
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
 msgstr "Newest first"
@@ -16542,6 +16551,10 @@ msgstr "No models."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "No older conversations"
+msgstr "No older conversations"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -17652,6 +17665,10 @@ msgstr "Notify Entity (Increment Counter)"
 msgid "Notify people about this push"
 msgstr "Notify people about this push"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Now"
+msgstr "Now"
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Now listening."
 msgstr "Now listening."
@@ -17707,6 +17724,7 @@ msgid "OK"
 msgstr "OK"
 
 #: src/components/chats-navigator/useChatHistory.ts
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Older"
 msgstr "Older"
 
@@ -29163,7 +29181,6 @@ msgid "Why it ran"
 msgstr "Why it ran"
 
 #: src/components/conversation/ConversationActions.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "Why?"
 

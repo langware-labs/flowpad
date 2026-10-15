@@ -1,0 +1,11 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "chart":      {"shape": "chartit.chart", "description": "The chart the comment is on (a link to its row)."},
+    "target":     {"shape": "?string", "description": "The element it is about: a participant or message id; absent = the whole chart."},
+    "text":       {"shape": "string", "description": "The comment."},
+    "screenshot": {"shape": "?binary", "description": "An image the reviewer attached or pasted."},
+    "status":     {"shape": "enum:open|submitted|addressed", "description": "open: saved, not sent; submitted: sent to the building session; addressed: the chart was revised for it."},
+    "created":    {"shape": "string", "description": "When it was written (ISO 8601)."}
+  }
+}

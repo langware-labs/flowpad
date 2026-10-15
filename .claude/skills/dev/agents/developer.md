@@ -83,6 +83,7 @@ This task is part of the Implementation job (job type ii).
 
 4. **Implement** the changes defined in your submodule's API contracts:
    - Follow exact signatures — parameter names, types, return types
+   - For FlowCall blocks, use ComputeOp's declared shapes and call.py variant, ReturnedValue presence, and Wizard-backed composition. Prove invalid input has no effects and missing/skipped output cannot feed a required-value step. Keep schema discovery independent of call-module execution.
    - Follow existing file structure and naming conventions
    - An entity `@action` holds no logic: parse the body into a typed model (its validators do the checking), call one entity method that does the work, return the result — see the `slick` skill, principle 4
    - Do not touch files outside your submodule's "Files affected" list

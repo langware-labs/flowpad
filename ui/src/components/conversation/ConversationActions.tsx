@@ -19,11 +19,12 @@ const offered = (action: IActionSpec, ended: boolean) =>
 
 const sentAt = (m: FlowMessage) => new Date(m.sent_at ?? m.created_date ?? 0).getTime();
 
-/** The newest message this machine wrote in the conversation — what an action's `done_mark` reads. */
+/** The newest MARKED message this account wrote — what an action's `done_mark` reads. A plain comment
+ * or an assignment after an approval does not take the approval back, so unmarked messages are skipped. */
 function newestOurs(messages: ReadonlyArray<FlowMessage>, selfIds: ReadonlyArray<string | null | undefined>) {
   let newest: FlowMessage | null = null;
   for (const m of messages) {
-    if (authoredBy(senderOf(m), selfIds) && (!newest || sentAt(m) > sentAt(newest))) newest = m;
+    if (m.mark && authoredBy(senderOf(m), selfIds) && (!newest || sentAt(m) > sentAt(newest))) newest = m;
   }
   return newest;
 }
