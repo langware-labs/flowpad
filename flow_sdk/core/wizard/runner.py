@@ -29,11 +29,12 @@ from __future__ import annotations
 
 import logging
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
-from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.core.compute.declared_value import MISSING, DeclaredShapeError, to_declared
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.shared_shell import shell_for
 from flow_sdk.core.compute_op.runner import Launch, Shell, run_op
@@ -72,6 +73,8 @@ class Resolved:
 
     spec: Any
     trusted: bool = False
+    asset_folder: Optional[Path] = None
+    project: Optional[str] = None
 
 
 def _allowed(found: Resolved, approved: bool) -> bool:
@@ -108,6 +111,9 @@ class _Run:
 
     spec: WizardSpec
     values: dict
+    input: Any
+    context: Any
+    invocation_id: str
     workdir: Path
     platform: str
     subject_entity: Optional[str]
@@ -170,6 +176,8 @@ async def run_wizard(
     trusted: bool = False,
     workdir: Optional[Path] = None,
     inputs: Optional[dict] = None,
+    input: Any = MISSING,
+    context: Any = None,
     shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
     resolve_op: Optional[OpResolver] = None,
@@ -213,12 +221,15 @@ async def run_wizard(
         from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
         platform = platform or sys.platform
-        workdir = Path(workdir) if workdir else Path.cwd()
+        workdir = Path(workdir or getattr(context, "workdir", None) or Path.cwd())
         workdir.mkdir(parents=True, exist_ok=True)
 
         run = _Run(
             spec=spec,
             values=dict(inputs or {}),
+            input=input,
+            context=context,
+            invocation_id=getattr(context, "invocation_id", None) or str(mint_uuid()),
             workdir=workdir,
             platform=platform,
             subject_entity=subject_entity,
@@ -406,6 +417,12 @@ def _answer(run: _Run, make: Callable[..., WizardResult], detail: str, **fields:
     then hit an untrusted callee did NOT do nothing, and a reader told
     ``ran=False`` reads it as skipped.
     """
+    if run.spec.output_from is not None:
+        selected = run.steps.get(run.spec.output_from)
+        present = selected is not None and selected.exit_code is ExitCode.OK and selected.has_value
+        return make(detail, value=selected.value if present else None, value_present=present,
+                    invocation_id=run.invocation_id,
+                    steps=run.steps, ran=any(answer.ran for answer in run.steps.values()), **fields)
     outputs = {key: a.value for key, a in run.steps.items() if a.ok and a.value is not None}
     return make(
         detail,
@@ -441,6 +458,15 @@ def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
     one. Same rule, same seam, as a ComputeOp's ``output_spec_kind``
     (``compute_op.runner._with_value``).
     """
+    selected = run.steps.get(run.spec.output_from) if run.spec.output_from is not None else None
+    if run.spec.output_from is not None and (
+        selected is None or selected.exit_code is not ExitCode.OK
+        or (run.spec.output is not None and not result.has_value)
+    ):
+        return WizardResult.not_yet(
+            f"{run.spec.name or 'wizard'}: step {run.spec.output_from!r} produced no consumable value",
+            value_present=False, steps=result.steps, ran=result.ran, invocation_id=result.invocation_id,
+        )
     if run.spec.output is None:
         return result
     try:
@@ -452,6 +478,7 @@ def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
             value=None,
             steps=result.steps,
             ran=result.ran,
+            **({"value_present": False, "invocation_id": result.invocation_id} if run.spec.output_from is not None else {}),
         )
     return result.model_copy(update={"value": value})
 
@@ -494,9 +521,15 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
     found = await _resolve(run, step, run.resolve_op, "compute op")
     if isinstance(found, ReturnedValue):
         return found
+    input, unavailable = _bound_input(run, step)
+    if unavailable is not None:
+        return unavailable
     scope = _scope(run.values, step)
     return await run_op(
         found.spec,
+        input=input,
+        asset_folder=found.asset_folder,
+        context=_context_for(run, found, child),
         subject=run.subject_entity or "",
         trusted=True,
         workdir=run.workdir,
@@ -536,12 +569,17 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
     found = await _resolve(run, step, run.resolve_wizard, "wizard")
     if isinstance(found, ReturnedValue):
         return found
+    input, unavailable = _bound_input(run, step)
+    if unavailable is not None:
+        return unavailable
     return await run_wizard(
         found.spec,
         subject_entity=run.subject_entity,
         trusted=True,
         workdir=run.workdir,
         inputs=_scope(run.values, step),
+        input=input,
+        context=_context_for(run, found, child),
         shell=run.shell,
         launch=run.launch,
         approved=run.approved,
@@ -557,6 +595,46 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
         path=(*run.path, step.id),
         required=run.required and step.required,
     )
+
+
+def _bound_input(run: _Run, step: WizardStepSpec) -> tuple[Any, Optional[ReturnedValue]]:
+    """Resolve explicit typed bindings without guessing literals or coercing missing to null."""
+    if "input_value" in step.model_fields_set:
+        return step.input_value, None
+    if step.input_from is None:
+        return MISSING, None
+    if step.input_from == "$input":
+        if run.input is not MISSING:
+            return run.input, None
+    else:
+        answer = run.steps.get(step.input_from)
+        if answer is not None and answer.exit_code is ExitCode.OK and answer.has_value:
+            return answer.value, None
+    return MISSING, ReturnedValue.not_yet(
+        f"step {step.id!r}: required input from {step.input_from!r} has no consumable value",
+        ran=False, value_present=False,
+    )
+
+
+def _context_for(run: _Run, found: Resolved, child: Any):
+    """Keep a callee's code identity separate from this run's shared working directory."""
+    from flow_sdk.schema.data_spec.compute_op_spec import OpSubkind
+
+    if getattr(found.spec, "subkind", None) is not OpSubkind.PYTHON and run.context is None and run.spec.output_from is None and not any(
+        step.input_from is not None or "input_value" in step.model_fields_set for step in run.spec.steps
+    ):
+        return None  # Legacy goal-sequence receipt paths remain unchanged.
+    folder = found.asset_folder or getattr(run.context, "asset_folder", None)
+    if folder is None and getattr(found.spec, "subkind", None) is OpSubkind.PYTHON:
+        raise ValueError("a Python block requires its explicit asset folder")
+    folder = folder or run.workdir
+    if run.context is not None:
+        return replace(run.context, asset_folder=folder, project=found.project or run.context.project,
+                       parent=child, shipped=found.trusted, call_id=str(mint_uuid()))
+    from flow_sdk.core.compute_op.context import CallContext
+
+    return CallContext(asset_folder=folder, workdir=run.workdir, parent=child,
+                       project=found.project, invocation_id=run.invocation_id, shipped=found.trusted)
 
 
 def _scope(values: dict, step: WizardStepSpec) -> dict:

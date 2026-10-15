@@ -17,6 +17,11 @@ Pick the row that matches the request and follow it. Do not hand-write what a sk
 already owns. After every deliverable, present it with `flow show` (see the
 `flowpad-navigation` skill for the full show/navigate rule).
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
+
 ## Routing
 
 **MCP UI / MCP Apps / interactive chat forms** → the **mcp-ui** skill, which owns the
@@ -46,6 +51,10 @@ reported, never an assumed one.
 journey", "clickable mock" — screens to react to before anything is built) → the **mockify**
 skill. It owns the journey bar, the fast and real (captured from the running app) modes, and
 the browser check before showing it.
+
+**Interactive chart with a feedback toolbar** ("chart this flow", a sequence / network flow
+diagram, "a chart I can comment on" — a chart the user steers by leaving comments on it) → the
+**chartit** skill. It owns the chart kinds, the renderer per chart type and the feedback toolbar.
 
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**

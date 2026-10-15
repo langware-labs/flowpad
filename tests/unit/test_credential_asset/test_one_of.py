@@ -399,3 +399,30 @@ async def test_a_connect_wants_every_declared_sign_in_ways_scopes(project, templ
 
     await credential_service.set_credential_by_name("mailbox", {}, project_id=str(project.id), choice=APP_PASSWORD)
     assert await _credential_way_scopes({"google"}) == {MAIL}, "another way chosen: connecting is how a person switches"
+
+
+async def test_setting_the_credential_rechecks_the_sources_waiting_on_it(project, templates):
+    """A source left in setup on this credential turns active when the credential is set — a person who closed
+    Setup after storing it never reaches the source's own Verify, and the poller runs active sources only."""
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus
+    from flow_sdk.schema.data_spec.data_driver_spec import AuthSpec, DataDriverSpec
+    from flow_sdk.sources.families import RecordSource
+    from flow_sdk.sources.protocols import Verdict
+
+    class _Waiting(RecordSource):
+        provider = "one-of-waiting-test"
+
+        async def verify(self) -> Verdict:
+            return Verdict(ready=bool(self.credentials.values.get(APP_PASSWORD)), detail="needs the password")
+
+    manifest = DataDriverSpec(schema=1, name=_Waiting.provider, auth=AuthSpec(credential="mailbox", vars={APP_PASSWORD: APP_PASSWORD}))
+    DataDriver.register(DataDriver.for_class(_Waiting, manifest))
+    await save_credential(manifest=mail(), scope="project", project_id=project.id)
+    source = DataSource(name="waiting", provider=_Waiting.provider, project_id=str(project.id),
+                        status=SourceStatus.SETUP.value)
+    await source.save()
+
+    await credential_service.set_credential_by_name("mailbox", {APP_PASSWORD: "abcd efgh"}, project_id=str(project.id))
+
+    assert (await DataSource.get_one({"id": source.id})).status == SourceStatus.ACTIVE.value

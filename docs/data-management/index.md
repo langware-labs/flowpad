@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-66704284-b246-51c2-849b-cf3c916f33de
-inputs_hash: 6eccfa9bae206736a30b89cf9232f2ddf2fc05791296da4b0f92afd257fbcfd3
+inputs_hash: 0ad9b12a82be0665c07c1bac44cbba40e578cae1189f7f59fcac403c72670203
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/alice/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-15T06:44:33.040803+00:00'
+generated_at: '2026-10-15T08:55:59.822110+00:00'
 latest_process_ref: ''
 file_count: 32
 subfolder_count: 0
@@ -23,7 +23,7 @@ subfolder_count: 0
 - [ComputeNode `fs-records` Action](compute-node-fs-records.md) — The fs-records CRUD action on ComputeNode over disk-backed typed records: type and path routing, the write path, and when to prefer the Entity API.
 - [Data source assets](data-source-asset.md) — Data driver and source asset folders: manifest, source.py, webhooks; an authored source settles to setup if its driver has verify(), else active, new until loaded.
 - [Data Sources UI (Frontend)](data-sources-ui.md) — Data Sources UI components, entity actions, URL-first navigation, health rendering, setup verification, and channels awaiting connection.
-- [Data sources](data-sources.md) — DataSource ingestion reference: poller and sync pipeline, driver families and traits, status and health, reflect modes, origin identity, change envelope, adding a source.
+- [Data sources](data-sources.md) — DataSource lifecycle, source contracts, polling health, account identity, change envelopes, driver registration, and curated Dataset integration.
 - [DataSpec — schemas as Pydantic, the schema as the layout](data-spec.md) — DataSpec schemas, runtime schema compilation, typed dataset values, filesystem layouts, TypeInfo integration, and folder-defined schemas.
 - [Database Architecture](database.md) — SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.
 - [Dataset Layout (Authoring Guide)](datasets.md) — Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows with eight row verbs, queries, counts, source curation, mirroring, editors and the schema tree.

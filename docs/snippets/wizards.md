@@ -9,6 +9,14 @@ the op ([compute-ops](compute-ops.md)); what is left here is what only a
 sequence owns: order, `on_fail`, the values steps pass each other, and the one
 answer the run gives back ([FlowCall](call-returns.md) §8).
 
+For direct typed chaining, `chain` builds this same sequence. A step's
+`input_from` selects `$input` or a prior step ID; `input_value` is a separate
+literal, including explicit null. The two cannot be combined. `output_from`
+selects one step's final value; without it, legacy collected outputs remain.
+Required-value edges reject skips and absent outputs before the next step runs.
+Whole lists pass unchanged; per-item work uses explicit `map_calls`. The
+[FlowCall block recipe](flowcall-blocks.md) executes this path without a server.
+
 Every `python` fence on this page runs as written, by
 `tests/unit/test_wizards_snippets.py` — each `# expected` comment is an
 assertion, so a fence cannot claim a value the code does not return. Commands

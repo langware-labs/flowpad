@@ -11,6 +11,7 @@ import dataclasses
 import logging
 from typing import Any, Optional
 
+from flow_sdk.core.setup import fix
 from flow_sdk.core.setup.tree import SetupNode
 from flow_sdk.schema.data_spec.asset_setup_spec import LoadResult, LoadState, SetupState
 from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
@@ -98,16 +99,20 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
                 ready = answer.ok and not unmet
                 if ready:
                     _REPAIRED.discard((pid, asset))
+                    fix.forget(pid, asset)
                 result = LoadResult(
                     state=LoadState.READY if ready else LoadState.FAILED, project_id=pid,
                     detail=answer.detail if ready else unmet or _leaf_failure(answer.root) or answer.detail,
                     run=setup_run_address(pid, root),
                     display=display, setup_available=not ready and (pid, asset) not in _REPAIRED, asset=asset or None,
                 )
+                if not ready and not result.setup_available:
+                    # Setup ran and still failed: the last step of the flow is the fixer, whoever asked.
+                    fix.start_fix(pid, result)
             except (Exception, asyncio.CancelledError) as exc:
                 result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc) or "Setup was cancelled", display=display)
             _keep(pid, asset, result)
-    return result.model_copy(update={"asset": asset or None}) if result is not None else None
+    return result.model_copy(update={"asset": asset or None, "fix": fix.fix_of(pid, asset)}) if result is not None else None
 
 
 def _configuration_failure(node, target: str = "") -> str:
@@ -192,6 +197,16 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
+    if approved and getattr(asset, "asset_ref", None):
+        # Setup is "make it work" — from the declaration as it is on disk now (a fixer just edited it).
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
+        declared = Path(asset.asset_ref) / "webapp.json"
+        if declared.is_file():
+            await reindex_paths([str(declared)], mint=False)
+            asset = await type(asset).get_by_id(asset.id) or asset
     valid = await validate(pid, target, display) if not approved and not ancestors else None
     if valid is not None:
         return valid
@@ -239,6 +254,7 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     not _unmet(running, target) if target else running.done == running.total)
                 if loaded and all(c.state is LoadState.READY for c in children):
                     _REPAIRED.discard((pid, target))
+                    fix.forget(pid, target)
                     result = LoadResult(state=LoadState.READY, project_id=pid)
                 else:
                     # The load failed and the person said go: setup first (it redoes only what its own
@@ -257,7 +273,37 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
-        return _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
+        kept = _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
+        return kept.model_copy(update={"fix": fix.fix_of(pid, target)})
+
+
+async def bring_up(project: Any, *, asset: Any = None, display: str = "", wait: bool = False) -> LoadResult:
+    """THE way an asset comes up, whoever asks — a screen, ``flow app open``, an agent's auto-open:
+    validate (it answers: done) → load → setup when owed (one repair per failure) → the fixer when setup
+    still fails. An app's owed setup runs unasked: opening it is the person saying "make it work". The
+    project alone stops at SETUP_REQUIRED — its screen asks first. ``wait``: answer once the run it
+    started has settled (a caller that reads where the app runs right after)."""
+    from flow_sdk.builtin.project_setup import _RUNS  # noqa: PLC0415
+
+    pid = str(project.id)
+    last = load_state(pid, asset=str(asset.typeid) if asset is not None else "")
+    # A load that already failed with setup untried goes straight to setup, never round the load again.
+    result = last if last is not None and last.state is LoadState.FAILED and last.setup_available else (
+        await load_project(project, asset=asset, display=display))
+    owed = (result.state is LoadState.SETUP_REQUIRED and asset is not None) or (
+        result.state is LoadState.FAILED and result.setup_available)
+    if owed:
+        result = await load_project(project, approved=True, asset=asset, display=display)
+    if wait and result.state is LoadState.RUNNING:
+        target = result.asset or ""
+        task = _RUNS.get((pid, target)) or _RUNS.get((pid, ""))
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        result = load_state(pid, asset=target) or result
+        if result.state is LoadState.FAILED and result.setup_available:
+            # The load failed: setup is the next step (once — its failure goes to the fixer).
+            return await bring_up(project, asset=asset, display=display, wait=True)
+    return result
 
 
 async def load_asset(project: Any, asset: Any) -> LoadResult:
@@ -268,4 +314,4 @@ async def load_asset(project: Any, asset: Any) -> LoadResult:
     return await load_project(project, asset=asset)
 
 
-__all__ = ["LoadTree", "forget", "load_asset", "load_project", "load_state", "validate"]
+__all__ = ["LoadTree", "bring_up", "forget", "load_asset", "load_project", "load_state", "validate"]

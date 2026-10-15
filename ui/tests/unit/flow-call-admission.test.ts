@@ -67,3 +67,16 @@ it('ComputeOp returns validated check and run answers', async () => {
   expect((await op.check()).stdout).toBe('ready');
   expect((await op.run(false)).exit_code).toBe(7);
 });
+
+it('ComputeOp typed calls preserve lists, null, omitted input and the legacy run body', async () => {
+  const op = new ComputeOp({ id });
+  const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ exit_code: 0, value: [], value_present: true });
+  expect((await op.call<string[]>([], { approved: true })).value).toEqual([]);
+  await op.call(null);
+  await op.call();
+  await op.run(true);
+  expect(post.mock.calls.map((args) => args[1])).toEqual([
+    { approved: true, answer_tagged: true, input: [] }, { approved: false, answer_tagged: true, input: null },
+    { approved: false, answer_tagged: true }, { approved: true },
+  ]);
+});

@@ -26,6 +26,8 @@ import json
 import re
 from typing import Any, Optional
 
+from flow_sdk.schema.data_spec._missing import MISSING  # noqa: F401 — public input sentinel
+
 #: The last fenced ``json`` block in a reply. Last, not first: a model that
 #: shows its working fences an example before the answer.
 _JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", re.DOTALL)

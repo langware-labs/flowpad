@@ -24,7 +24,7 @@ describe('FlowCall decoding', () => {
     expect(() => readFlowEnvelope(failure({ exit_code: 7, ran: false }))).toThrow();
     expect(() => readFlowEnvelope(failure({ ...held, ran: true }))).toThrow();
   });
-  it.each([null, [], {}, { exit_code: 2 }, { exit_code: '0' }, { exit_code: 0, ran: 'yes' }, { exit_code: 0, duration_s: NaN }])('rejects malformed answers: %j', (answer) => {
+  it.each([null, [], {}, { exit_code: 2 }, { exit_code: '0' }, { exit_code: 0, ran: 'yes' }, { exit_code: 0, value_present: 'yes' }, { exit_code: 0, duration_s: NaN }])('rejects malformed answers: %j', (answer) => {
     expect(() => readFlowAnswer(answer)).toThrow('Invalid FlowCall answer');
   });
 });

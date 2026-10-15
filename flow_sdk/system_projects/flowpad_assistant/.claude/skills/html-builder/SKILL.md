@@ -11,7 +11,8 @@ description: >-
   structure, interactivity without a framework, the accessibility floor, and how to
   verify the result); aesthetic direction comes from the `frontend-design` skill,
   which this one loads first. NOT for apps needing a dev server, build, database or
-  auth (web-app-builder), slide decks (decker), or testing pages that already exist
+  auth (web-app-builder), slide decks (decker), an interactive chart the user
+  comments on (chartit), or testing pages that already exist
   (web-tester).
 allowed-tools:
 - Read

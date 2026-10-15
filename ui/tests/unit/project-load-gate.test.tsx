@@ -4,18 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useNavigate } from 'react-router';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Project, type ProjectLoadResult } from '@sdk';
+import { AgenticProcess, Project, type ProjectLoadResult, type ProjectSetupFix } from '@sdk';
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { useProjectLoadStore } from '@src/components/project-setup/project-load-store';
-import { startWizardProcess } from '@src/components/wizard/start-wizard-process';
 
-vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }) }));
-vi.mock('@src/components/wizard/start-wizard-process', () => ({ startWizardProcess: vi.fn() }));
+vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => undefined }));
 vi.mock('@src/hooks/use-process-progress-info', () => ({
   useProcessProgressInfo: () => ({ statusMessage: 'Killing the process on port 4400', activityLabel: null, elapsedTime: '12s' }),
-}));
-vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', () => ({
-  useProcessesForTarget: () => ({ processes: [] }),
 }));
 const projectId = '77777777-7777-4777-8777-777777777777';
 const ready: ProjectLoadResult = { state: 'ready', detail: 'Ready', run: null, project_id: projectId, asset: null };
@@ -155,14 +150,9 @@ function failedForGood() {
   return final;
 }
 
-function fixerAnswers(data: unknown) {
-  const process = { id: 'p1', cancelPrompt: vi.fn().mockResolvedValue(undefined) };
-  vi.mocked(startWizardProcess).mockResolvedValue({
-    process,
-    target: '',
-    result: Promise.resolve({ status: 'done', data }),
-  } as never);
-  return process;
+/** What the backend answers once the setup-fixer it launched is at ``fix``. */
+function fixAt(final: ProjectLoadResult, fix: Partial<ProjectSetupFix>): ProjectLoadResult {
+  return { ...final, fix: { state: 'running', process: 'agentic_process-p1', summary: '', user_action: '', ...fix } };
 }
 
 it('a failed setup offers Fix it first, Cancel beside it, and Try again only as a small link', async () => {
@@ -174,44 +164,49 @@ it('a failed setup offers Fix it first, Cancel beside it, and Try again only as 
   expect(screen.getByRole('button', { name: 'Try again' }).className).toContain('text-muted-foreground');
 });
 
-it('Fix it runs the setup-fixer skill on the whole error, and a fixed setup is loaded again', async () => {
+it('Fix it asks the backend for the setup-fixer, follows it, and a fixed setup is loaded again', async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   const final = failedForGood();
   const load = vi.spyOn(Project, 'load').mockResolvedValue(final);
-  fixerAnswers({ outcome: 'fixed', summary: 'Freed port 4400' });
+  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
+  const fix = vi.spyOn(Project, 'setupFix').mockResolvedValue(fixAt(final, {}));
   gate();
   await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
-  const [request, opts] = vi.mocked(startWizardProcess).mock.calls[0];
-  expect(opts).toEqual({ headless: true, skill: true });
-  expect(request.wizardData?.prompt).toContain('setup-fixer skill');
-  expect(request.wizardData?.payload?.error).toBe('Service: port 4400 is held');
+  expect(fix).toHaveBeenCalledWith(projectId, '');
+  expect(screen.getByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
+  const before = load.mock.calls.length;
+  vi.spyOn(Project, 'loadState').mockResolvedValue(fixAt(final, { state: 'fixed', summary: 'Freed port 4400' }));
+  await vi.advanceTimersByTimeAsync(2000);
   expect(await screen.findByText('Freed port 4400')).toBeInTheDocument();
-  await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(2));
+  await waitFor(() => expect(load.mock.calls.length).toBeGreaterThan(before));
+  vi.useRealTimers();
 });
 
 it('a fix that could not be made says what the person must do, and loads nothing', async () => {
   const final = failedForGood();
   const load = vi.spyOn(Project, 'load').mockResolvedValue(final);
-  fixerAnswers({ outcome: 'not_fixed', summary: 'Needs a key', user_action: 'Add RIG_API_KEY to the project' });
+  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
+  vi.spyOn(Project, 'setupFix').mockResolvedValue(
+    fixAt(final, { state: 'not_fixed', summary: 'Needs a key', user_action: 'Add RIG_API_KEY to the project' }),
+  );
   gate();
   await waitFor(() => expect(load).toHaveBeenCalled());
   const before = load.mock.calls.length;
   await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
   expect(await screen.findByText('Add RIG_API_KEY to the project')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Open process' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Open process' })).toBeInTheDocument();
   expect(load).toHaveBeenCalledTimes(before);
 });
 
-it('Cancel while the fix is still starting stops the process that comes up and stays cancelled', async () => {
+it('the fixer the backend launched by itself shows, and Cancel stops it', async () => {
   const final = failedForGood();
-  vi.spyOn(Project, 'load').mockResolvedValue(final);
-  const process = { id: 'p-late', cancelPrompt: vi.fn().mockResolvedValue(undefined) };
-  let resolveStart: (v: unknown) => void = () => {};
-  vi.mocked(startWizardProcess).mockReturnValue(new Promise((r) => (resolveStart = r)) as never);
+  vi.spyOn(Project, 'load').mockResolvedValue(fixAt(final, {}));
+  vi.spyOn(Project, 'loadState').mockResolvedValue(fixAt(final, {}));
+  vi.spyOn(AgenticProcess, 'getById').mockResolvedValue({ id: 'p1', watch: vi.fn() } as never);
+  const fix = vi.spyOn(Project, 'setupFix').mockResolvedValue(final);
   gate();
-  await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
-  expect(screen.getByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
+  expect(await screen.findByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-  resolveStart({ process, target: '', result: new Promise(() => {}) });
-  await waitFor(() => expect(process.cancelPrompt).toHaveBeenCalled());
-  expect(screen.queryByText(/Fixing the setup/)).not.toBeInTheDocument();
+  expect(fix).toHaveBeenCalledWith(projectId, '', true);
+  expect(screen.queryByTestId('setup-fix-line')).not.toBeInTheDocument();
 });

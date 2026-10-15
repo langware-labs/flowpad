@@ -41,12 +41,12 @@ const specsQuery = new QueryRequest({
 const EMPTY: DataDriver[] = [];
 
 export function useSourceSpecs(options?: { enabled?: boolean }) {
-  const { data: specs = EMPTY } = useEntitiesQuery<DataDriver>(specsQuery, options);
+  const { data: specs = EMPTY, isLoading: loading } = useEntitiesQuery<DataDriver>(specsQuery, options);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
   const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);
   const specFor = useCallback((provider: string) => byName.get(provider), [byName]);
-  return { specs, specFor };
+  return { specs, specFor, loading };
 }
 
 /** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).

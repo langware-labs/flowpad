@@ -6,6 +6,17 @@ id: 59c1ba69-974d-4fc4-aa6b-43f84e354f20
 Exact paths and symbols to model after (or grep for) when applying each
 principle. Open this when you need the real seam, not the idea.
 
+## FlowCall blocks
+
+`flow_sdk/schema/data_spec/compute_op_spec.py` owns block shapes and variants;
+`flow_sdk/core/compute_op/runner.py` owns validation and invocation;
+`flow_sdk/core/compute_op/python.py` loads the authorized `call.py:call`;
+`flow_sdk/core/compute_op/context.py` owns explicit child calls and reference resolution;
+`flow_sdk/core/compute_op/composition.py` exposes item mapping and Wizard-backed chains.
+`returned_value_spec.py` owns outcome, recursive values and output presence. The
+TypeScript entity and CLI use the existing `run` action. See
+[the contract](../../../../docs/snippets/call-returns.md) for the shared recipe.
+
 ## 1. Headless / reflection round trip
 
 | Step                                              | File                                   | Symbol                                              |
@@ -114,4 +125,3 @@ Worked example: `pty_submits_on_paste` declared as a driver trait replaced a
 | Live split: same lookup, two spellings in                           | `flow_sdk/builtin/agentic_process/agentic_process.py`                                                                                    | `_entity_for_transcript_read` canonicalizes (~L4739) vs. the raw-path call (~L6469) |
 | Windows-unsafe string-anchoring (the FLOWPAD-2063/2064 bug class)  | `flow_sdk/builtin/faas/fs_records_actions.py`                                                                                            | `_handle_fs_records_discover_by_path()` (~L1717–1719, `expanded = "/" + expanded`) |
 | Correct `as_posix()` use — relative paths only                      | `flow_sdk/builtin/git_origin.py` (L83), `flow_sdk/builtin/faas/compute_node.py` (L73), `flow_sdk/builtin/flow_message_bundle.py` (L507)  | git rel\_path, zip entry names, portable metadata layout                            |
-
