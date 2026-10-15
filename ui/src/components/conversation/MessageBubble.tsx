@@ -20,7 +20,7 @@ import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
-import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
+import { MessageMarkChip, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import type { WorkerType } from './conversation-session-constants';
 
@@ -420,6 +420,7 @@ export function MessageBubble({
           )}
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
+        {flowMessage?.mark && <MessageMarkChip mark={flowMessage.mark} />}
         {message.content && (
           <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />
         )}

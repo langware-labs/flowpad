@@ -23,6 +23,7 @@ import {
   RemoteWorkerSession,
   Task,
   toplog,
+  dataContext,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -945,7 +946,14 @@ export function ConversationView({
     <div className="space-y-3">
       {approveSessionPicker}
       {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
-      {conversation && <ConversationActions conversation={conversation} onDone={() => void handleRefresh()} />}
+      {conversation && (
+        <ConversationActions
+          conversation={conversation}
+          messages={conversationMessages}
+          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          onDone={() => void handleRefresh()}
+        />
+      )}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button

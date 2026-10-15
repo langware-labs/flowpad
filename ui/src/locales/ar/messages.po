@@ -617,6 +617,11 @@ msgstr ""
 msgid "{0} msgs"
 msgstr "{0} رسائل"
 
+#. placeholder {0}: report.created
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} new"
+msgstr "{0} جديدة"
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "{0} not tested"
@@ -705,6 +710,11 @@ msgstr "{0} سجل"
 msgid "records_on_disk"
 msgstr "{0} سجل على القرص"
 
+#. placeholder {0}: report.removed
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} removed"
+msgstr "{0} محذوفة"
+
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/connections-manager.tsx
@@ -779,6 +789,11 @@ msgstr "{0} نوع"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "types_time"
 msgstr "{0} نوع · {1}"
+
+#. placeholder {0}: report.updated
+#: src/components/data-sources/source-parts.tsx
+msgid "{0} updated"
+msgstr "{0} محدّثة"
 
 #. placeholder {0}: d.title
 #: src/components/credentials/CredentialDialog.tsx
@@ -4460,6 +4475,7 @@ msgstr ""
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/McpCreateDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4766,6 +4782,7 @@ msgid "Check failed"
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "التحقق من الرسائل الجديدة"
 
@@ -4777,6 +4794,10 @@ msgstr ""
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "يرجى التحقق من الاتصال والمحاولة مرة أخرى"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Checked for new messages"
+msgstr "تم التحقق من الرسائل الجديدة"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
@@ -6782,10 +6803,9 @@ msgstr ""
 msgid "Could not publish"
 msgstr ""
 
-#. placeholder {0}: source.name || source.provider
 #: src/components/data-sources/source-parts.tsx
-msgid "Could not pull {0}"
-msgstr "تعذر سحب {0}"
+#~ msgid "Could not pull {0}"
+#~ msgstr "تعذر سحب {0}"
 
 #~ msgid "Could not reach support"
 #~ msgstr "تعذر الوصول إلى الدعم"
@@ -10715,8 +10735,8 @@ msgid "Fetch missing"
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-msgid "Fetch new messages from hub"
-msgstr "جلب الرسائل الجديدة من Hub"
+#~ msgid "Fetch new messages from hub"
+#~ msgstr "جلب الرسائل الجديدة من Hub"
 
 #: src/components/assets/dependency-sources.tsx
 msgid "Fetched automatically wherever this project opens — Flowpad warns when it can't be."
@@ -11066,6 +11086,7 @@ msgstr "الحل المقترح"
 msgid "Fix All"
 msgstr "إصلاح الكل"
 
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebappErrorBanner.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Fix it"
@@ -11084,6 +11105,10 @@ msgstr "أصلح الإعداد — بيانات الاعتماد أو الإع�
 msgid "Fix the mirror map or the rows it names (the detail says which), then Pull, or wait for the next sync."
 msgstr "أصلِح خريطة النسخ أو الصفوف التي تسمّيها (التفاصيل توضّح أيّها)، ثم اسحب، أو انتظر المزامنة التالية."
 
+#: src/components/project-setup/use-setup-fix.ts
+msgid "Fix the setup"
+msgstr "إصلاح الإعداد"
+
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
 msgstr "إصلاح تطبيق الويب"
@@ -11095,6 +11120,10 @@ msgstr ""
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Fixed once created, and you must be able to administer it — this endpoint spends its budget."
 msgstr "ثابت بعد الإنشاء، ويجب أن تكون قادرًا على إدارتها — تستهلك نقطة النهاية هذه ميزانيتها."
+
+#: src/components/project-setup/SetupFailureActions.tsx
+msgid "Fixing the setup…"
+msgstr "جارٍ إصلاح الإعداد…"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Fixing these tightens the skill for every future run."
@@ -16997,6 +17026,10 @@ msgstr "لم يكتمل."
 msgid "Not evaluated yet — nothing has decided how this source starts, so it is not polled."
 msgstr "لم يُقيَّم بعد — لم يُحدَّد كيف يبدأ هذا المصدر، لذلك لا يُجلب منه شيء."
 
+#: src/components/data-sources/source-parts.tsx
+msgid "Not fetched"
+msgstr "لم يتم الجلب"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "لم يعمل بعد"
@@ -18114,6 +18147,7 @@ msgstr "فتح الخطة"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/notifications/NotificationProcessLine.tsx
 #: src/notifications/NotificationProcessLine.tsx
 msgid "Open process"
@@ -24297,6 +24331,10 @@ msgstr "منفذ وكيل SOCKS"
 msgid "Some assets could not be read."
 msgstr "تعذّرت قراءة بعض الأصول."
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Some channels could not be checked"
+msgstr "تعذّر التحقق من بعض القنوات"
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Some contexts could not be deleted"
 msgstr "تعذر حذف بعض السياقات"
@@ -24707,6 +24745,7 @@ msgid "Starting your sandbox…"
 msgstr "جارٍ بدء تشغيل بيئتك المعزولة…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "جاري البدء…"
@@ -25727,6 +25766,14 @@ msgstr "قد يكون الملف محذوفاً أو منقولاً أو لا ي
 msgid "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
 msgstr ""
 
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not repair this setup. Open the process to see what it found."
+msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
+
+#: src/components/project-setup/use-setup-fix.ts
+msgid "The fixer could not start."
+msgstr "تعذّر بدء الإصلاح."
+
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
 msgstr ""
@@ -25999,8 +26046,16 @@ msgid "The skill matches HEAD."
 msgstr "المهارة تطابق HEAD."
 
 #: src/components/data-sources/source-parts.tsx
-msgid "The source was not queued."
-msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
+msgid "The source could not be pulled"
+msgstr "تعذّر سحب المصدر"
+
+#: src/components/data-sources/source-parts.tsx
+msgid "The source did not answer"
+msgstr "لم يستجب المصدر"
+
+#: src/components/data-sources/source-parts.tsx
+#~ msgid "The source was not queued."
+#~ msgstr "لم يتم إضافة المصدر إلى قائمة الانتظار."
 
 #: src/components/data-sources/use-source-delete.ts
 msgid "The source was not removed."
@@ -27317,8 +27372,7 @@ msgstr "المشغّلات"
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
-#: src/components/project-setup/ProjectLoadDialog.tsx
-#: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/task-receive/LaunchDialog.tsx
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -27663,9 +27717,10 @@ msgstr "محدث"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
+#: src/components/data-sources/source-parts.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Up to date"
-msgstr ""
+msgstr "محدّث"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
@@ -28830,6 +28885,7 @@ msgid "Why it ran"
 msgstr ""
 
 #: src/components/conversation/ConversationActions.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "لماذا؟"
 
@@ -29416,19 +29472,3 @@ msgstr "تكبير"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "تصغير"
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "إصلاح الإعداد"
-
-#: src/components/project-setup/SetupFailureActions.tsx
-msgid "Fixing the setup…"
-msgstr "جارٍ إصلاح الإعداد…"
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
-
-#: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "تعذّر بدء الإصلاح."
