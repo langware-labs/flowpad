@@ -48,6 +48,7 @@ ALLOWLIST: dict[str, int] = {
     "fs_store/indexer/roots.py": 1,
     "fs_store/operations/all_projects.py": 2,
     "graph_workflow_manager/manager.py": 2,
+    "icons/registry.py": 1,  # IconRegistry.sync_indexed: an icon pack of ANY scope serves everywhere
     "system_projects/flowpad_assistant/agentic-assets/data_driver/helpdesk/source.py": 1,
     "migrations/migration_2026_09_process_persona_backfill.py": 1,
     "server/routes/assets.py": 1,

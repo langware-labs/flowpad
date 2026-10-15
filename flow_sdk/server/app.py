@@ -1042,6 +1042,28 @@ if _type_icons_path.exists():
     app.mount("/icons", StaticFiles(directory=str(_type_icons_path)), name="type-icons")
 
 
+# ── Icon pack assets (/icon-packs/<kind>/<file>) ─────────────────────────────
+# An ``icon_pack`` asset lives in whatever scope holds it, so no static mount can
+# name its directory: the registry knows which folder serves each kind, and only
+# files inside that folder are served. A pack that failed validation or collides
+# with another has no folder here, and only files a validated icon names are
+# handed out -- never a rejected SVG that happens to sit in the folder.
+@app.get("/icon-packs/{kind}/{asset_path:path}", include_in_schema=False)
+async def icon_pack_file(kind: str, asset_path: str):
+    from fastapi import HTTPException  # noqa: PLC0415
+    from fastapi.responses import FileResponse  # noqa: PLC0415
+
+    from flow_sdk.icons import icons  # noqa: PLC0415
+
+    target = icons.served_file(kind, asset_path)
+    if target is None:
+        await icons.sync_indexed()
+        target = icons.served_file(kind, asset_path)
+    if target is None:
+        raise HTTPException(status_code=404, detail="icon not found")
+    return FileResponse(target, media_type="image/svg+xml", headers={"Content-Security-Policy": "script-src 'none'"})
+
+
 # ── Root-level public files ──────────────────────────────────────────────────
 # Files in ``ui/public/`` end up at the root of the built ``dist/`` (and thus
 # at the root of ``flow_sdk/server/static/``). These are referenced from places

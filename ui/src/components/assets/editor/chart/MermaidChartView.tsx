@@ -7,6 +7,7 @@ import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHead
 import { mermaidRenderer } from '@src/components/milkdown-editor/plugins/fence-render/renderers/mermaid';
 import type { FenceRenderContext } from '@src/components/milkdown-editor/plugins/fence-render/registry';
 import { extractMermaidBlock, readChartDocument, replaceMermaidSource, writeChartMermaid } from './chartDoc';
+import { ChartHeading } from './ChartHeading';
 
 /**
  * A `mermaid` chart: its source IS the mermaid block in CHART.md. A text pane edits it
@@ -129,6 +130,9 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
         onRevealInFinder={() => void fsRef.open({ select: true })}
         actions={actions}
       />
+      <header className="border-b px-4 py-3">
+        <ChartHeading title={chart?.name || folderName} description={chart?.description} />
+      </header>
       <div className="flex min-h-0 flex-1">
         <textarea
           className="w-2/5 min-w-[240px] resize-none border-e bg-muted/40 p-3 font-mono text-sm"

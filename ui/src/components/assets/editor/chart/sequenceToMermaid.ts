@@ -10,6 +10,10 @@
 export interface SequenceParticipant {
   id: string;
   label: string;
+  /** A second, muted line under the label (a route, a service name). */
+  sublabel?: string;
+  /** An icon tag (IconSpec, e.g. `brands.sonos`, `lucide.database`) drawn on the card. */
+  icon?: string;
   note?: string;
 }
 
@@ -54,6 +58,13 @@ function seqId(value: unknown): string {
 const scalar = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const optStr = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
+
+/** A participant's card lines: the label's first line, then an explicit sublabel or the legacy "label\nsecond" line. */
+function participantLines(part: Record<string, unknown>): { label: string; sublabel?: string } {
+  const [label = '', second] = (scalar(part.label) || scalar(part.id)).split('\n');
+  return { label, sublabel: optStr(part.sublabel) || optStr(second) };
+}
 
 /** Never throws: an empty or malformed value renders as an empty diagram. */
 export function sequenceToMermaid(data: unknown): string {
@@ -67,7 +78,8 @@ export function sequenceToMermaid(data: unknown): string {
   for (const part of participants) {
     const pid = seqId(part.id ?? '');
     if (!pid) continue;
-    lines.push(`participant ${pid} as ${seqText(part.label || part.id, '<br/>')}`);
+    const { label, sublabel } = participantLines(part);
+    lines.push(`participant ${pid} as ${seqText([label, sublabel].filter(Boolean).join('\n'), '<br/>')}`);
     if (part.note) lines.push(`Note over ${pid}: ${seqText(part.note)}`);
   }
   for (const msg of messages) {
@@ -99,8 +111,9 @@ export function parseSequence(raw: string | null): SequenceValue {
     title: typeof value.title === 'string' ? value.title : undefined,
     participants: (Array.isArray(value.participants) ? value.participants.filter(isRecord) : []).map((p) => ({
       id: scalar(p.id),
-      label: scalar(p.label) || scalar(p.id),
-      note: typeof p.note === 'string' ? p.note : undefined,
+      ...participantLines(p),
+      icon: optStr(p.icon),
+      note: optStr(p.note),
     })),
     messages: (Array.isArray(value.messages) ? value.messages.filter(isRecord) : []) as unknown as SequenceMessage[],
   };

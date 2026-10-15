@@ -153,3 +153,10 @@ def test_sync_chart_mermaid_leaves_other_formats_alone(tmp_path: Path, fmt: str)
     before = (folder / "CHART.md").read_bytes()
     assert sync_chart_mermaid(folder) is False
     assert (folder / "CHART.md").read_bytes() == before
+
+
+def test_sequence_to_mermaid_puts_a_sublabel_under_the_label() -> None:
+    from flow_sdk.assets.types.chart_mermaid import sequence_to_mermaid
+
+    out = sequence_to_mermaid({"participants": [{"id": "hue", "label": "Philips Hue", "sublabel": "api.meethue.com", "icon": "brands.philips-hue"}], "messages": []})
+    assert "participant hue as Philips Hue<br/>api.meethue.com" in out

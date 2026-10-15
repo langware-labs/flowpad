@@ -212,6 +212,12 @@ Four words were used for neighbours. Say which:
   written by the `tagit` skill and read by `tag-context`. It is not a trace tag
   and never belongs in the toplog catalog.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
+- **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
+  segment, so `acme-vendors.sonos` is the `sonos` icon of the `acme-vendors` pack. Built-in
+  packs ship under `flow_sdk/server/icons/`; an **icon pack asset** (`icon_pack` type,
+  `<scope>/agentic-assets/icon_pack/<name>/icon_pack.json` + SVGs) is the same thing authored in
+  any scope, registered when indexed and served at `/icon-packs/<kind>/`. Ours, not a provider
+  mirror. Two packs with one `kind` is an error, never a precedence.
   (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
   industry word for both is *provider*.
