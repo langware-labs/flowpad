@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
@@ -59,7 +59,7 @@ export function ProjectLoadGate({
     };
   }, [load, location.key, projectId, asset, display, validKey]);
   const result = lifecycle.result;
-  const fix = useSetupFix(projectId, result, lifecycle.error, useCallback(() => void load(), [load]));
+  const fix = useSetupFix(projectId, result, lifecycle.error, () => void load());
   const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
   // Continue with that check once the shared run completes; never retry a failed load.
@@ -144,7 +144,7 @@ export function ProjectLoadGate({
             <Trans>Set up</Trans>
           </Button>
         )}
-        {(result?.state === 'failed' || lifecycle.error || fix.state.phase !== 'idle') && (
+        {fix.show && (
           <SetupFailureActions
             fix={fix}
             busy={lifecycle.starting}
