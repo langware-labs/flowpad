@@ -2934,10 +2934,29 @@ class AgenticProcess(Entity):
         path = self.transcript_path
         if path is None or not path.exists():
             return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
+        if vendor.transcript_owned_by_run:
+            path = self._snapshot_transcript(session_type, path)
         entity_id = await index_session_file(session_type, path)
         if entity_id is None:
             return ApiSuccessResponse(data={"type_id": None, "reason": "This session's transcript could not be read."})
         return ApiSuccessResponse(data={"type_id": f"{session_type}-{entity_id}", "reason": None})
+
+    def _snapshot_transcript(self, session_type: str, path: Path) -> Path:
+        """Copy a run-owned transcript to ``records_data/<type>/`` so the shared row outlives the
+        run. The name keeps the prefix that tells the file's format; one copy per session, kept
+        current (re-copied only when the run's file changed)."""
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        name = path.name if self.session_id and self.session_id in path.name else f"{path.stem}-{self.id}{path.suffix}"
+        dest = get_instance_settings().records_data_dir / session_type / name
+        src = path.stat()
+        if dest.exists() and (d := dest.stat()).st_size == src.st_size and d.st_mtime >= src.st_mtime:
+            return dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest)
+        return dest
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -5236,6 +5255,12 @@ class AgenticProcess(Entity):
         """
         descriptor = await asyncio.to_thread(lambda: self.transcript)
         if descriptor is None or not descriptor.session_id:
+            return None
+        # Discovery can match by cwd and launch time, which finds a sibling's
+        # session as readily as our own. A session another process already
+        # owns is never ours.
+        owners = await AgenticProcess.local_owners_of_session(descriptor.session_id)
+        if any(owner.id != self.id for owner in owners):
             return None
         await self._persist_transcript_session_id(descriptor)
         return self.session_id if self.session_id == descriptor.session_id else None
@@ -8303,6 +8328,13 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
+
+    @classmethod
+    async def local_owners_of_session(cls, session_id: str) -> list["AgenticProcess"]:
+        """Every local process stamped with ``session_id`` (shared/forked sessions can have several)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        return await cls.local_rows(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
 
     @classmethod
     async def get_by_session_id(cls, session_id: str) -> "AgenticProcess | None":

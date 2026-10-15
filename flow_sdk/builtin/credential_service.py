@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
+from flow_sdk.builtin.credential import write_setup_choice
 from flow_sdk.builtin.credential_files import credential_file, remove_credential_files, write_credential_file
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
@@ -122,7 +123,7 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
-    signed_in = sorted(name for name, v in values.items() if spec.vars[name].is_cli and v not in (None, ""))
+    signed_in = sorted(name for name, v in values.items() if not spec.vars[name].holds_value and v not in (None, ""))
     if signed_in:
         raise CredentialError(f"{', '.join(signed_in)} is a sign-in, not a value: nothing is stored for it")
     if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
@@ -376,16 +377,27 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 
 async def set_credential_by_name(
-    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None
+    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None,
+    choice: str = "",
 ) -> "Credential":
-    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed."""
+    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``choice`` names
+    the ONE_OF way set up here when it holds no value (a sign-in through Flowpad); a value given for exactly one
+    way chooses that way by itself."""
     project = await get_project(project_id)
     if project_id and project is None:
         raise CredentialError("project not found")
-    if not any(str(v or "") for v in (values or {}).values()):
+    has_values = any(str(v or "") for v in (values or {}).values())
+    if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    return await set_credential_values(str(spec.typeid), values, deployment_id)
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
+    ways = [var for var, value in (values or {}).items() if str(value or "") and spec.is_way(var)]
+    if way := choice or (ways[0] if len(ways) == 1 else ""):
+        try:
+            await write_setup_choice(spec, way)
+        except ValueError as e:
+            raise CredentialError(str(e)) from e
+    return stored
 
 
 def shipped_provider_title(provider: str) -> str:

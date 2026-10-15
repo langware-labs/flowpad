@@ -1,5 +1,6 @@
 import { launchSurfaceField } from '../process/launch-surface';
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models/ActionInfo';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
@@ -314,6 +315,15 @@ export class Agent extends APIEntity<Agent> {
     // The launch's own answer: `executor` names the process to navigate to;
     // `exit_code` says whether the first turn was accepted (and, when not, why).
     return (await this.post('run', { prompt })) as PromptResult;
+  }
+
+  /** Launch admission: OK means accepted; executor names the process to observe.
+   * Unlike the legacy run method, a held slot is returned as a FlowCall answer.
+   */
+  async launch(prompt: string): Promise<PromptResult> {
+    const action = new ActionInfo('run', Agent.type, this.id, 'POST');
+    action.bodyParameters = { prompt };
+    return dataManager.callFlowAction<PromptResult>(action);
   }
 
   /**

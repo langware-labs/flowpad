@@ -244,8 +244,11 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     process's listeners, it answers its health path)``."""
     serving = process.serving
     snapshot = app_ports.listeners() if snapshot is None else snapshot
-    siblings = [one.serving.start_cmd for one in _processes(app)]
-    mine = app_ports.of_app(snapshot, Path(app.asset_ref), serving.start_cmd, siblings)
+    others = [one.serving for one in _processes(app) if one.serving is not serving]
+    theirs = [declared.port for declared in map(_declared, others) if declared is not None]
+    mine = app_ports.of_app(
+        snapshot, Path(app.asset_ref), serving.start_cmd, [one.start_cmd for one in others], theirs
+    )
     answer = app_ports.decide(
         _declared(serving), mine, snapshot,
         reserved=taken | _STARTING, answers=lambda port: health_answers(port, serving.health),
@@ -253,6 +256,29 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     # A holder that could not be named was already asked its health by the rule.
     up = answer.state == "running" and (answer.holder is None or health_answers(answer.port, serving.health))
     return answer, mine, up
+
+
+async def answers_now(webapp_id: str) -> bool:
+    """Every process of the app answers its health path where its route says it runs now — one probe each,
+    side by side: no process table, no start, no write. The check an open of an app it already loaded asks."""
+    from flow_sdk.builtin.webapp_placement import service_endpoint_name, service_endpoint_ports  # noqa: PLC0415
+
+    app = await _app(webapp_id)
+    if app is None or not app.asset_ref:
+        return False
+    processes = _processes(app)
+    placed = await _placed(app)
+    services = await service_endpoint_ports(app) if any(p.service is not None for p in processes) else {}
+    ports = [
+        (placed.backend.port if placed is not None else None) if process.service is None
+        else services.get(service_endpoint_name(app, process.service))
+        for process in processes
+    ]
+    if not ports or not all(ports):
+        return False
+    probes = (asyncio.to_thread(health_answers, int(port), process.serving.health)
+              for port, process in zip(ports, processes))
+    return all(await asyncio.gather(*probes))
 
 
 async def where(app, serving) -> app_ports.PortAnswer:

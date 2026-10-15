@@ -25,7 +25,7 @@ from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.sources import Acting
 from flow_sdk.sources.http import next_link, paginate
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import MessageData, MessageItem, MessageMarkSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.utils.serialization import iso_to_utc
 from flow_sdk.stream_inbox.projection import project_source_item
@@ -65,14 +65,18 @@ async def _source() -> DataSource:
     return src
 
 
-async def _land(src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False) -> SourceItem:
+async def _land(
+    src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False, mark: MessageMarkSpec | None = None, outcomes: list | None = None,
+) -> SourceItem:
     """One message from Dana in thread ``pr-7``, ingested and projected — no sync round."""
     origin = lambda k: CloudOrigin(kind=PROVIDER, namespace=src.account_key, key=k)  # noqa: E731
     data = MessageData(
         text=key, sender=UserProfile(origin=origin(DANA), address=DANA), conversation=origin("pr-7"),
-        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends,
+        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark,
     )
     outcome = await ingest_item(envelope_of(MessageItem(origin=origin(key), data=data), data_source_id=str(src.id), provider=PROVIDER))
+    if outcomes is not None:
+        outcomes.append(outcome.status)
     row = await SourceItem.get_one({"id": outcome.entity_id})
     await project_source_item(row, source=src, announce=False)
     return row
@@ -154,6 +158,28 @@ async def test_an_ending_message_ends_the_conversation_and_a_later_one_reopens_i
     assert merged.model_dump(mode="json")["ended_at"], "ended_at reaches the local wire"
     assert backfill.ended_at is not None, "a message older than the end does not reopen it"
     assert reopened.ended_at is None
+
+
+@scoped
+async def test_a_message_mark_reaches_the_message_row_and_a_new_mark_is_an_update():
+    at = datetime.now(timezone.utc).replace(microsecond=0)
+    approved = MessageMarkSpec(key="approved", label="Approved", tone="positive")
+    dismissed = MessageMarkSpec(key="dismissed", label="Dismissed")
+    statuses: list = []
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        row = await _land(src, "review-9", at=at, mark=approved, outcomes=statuses)
+        first = await FlowMessage.get_one({"source_item_id": str(row.id)})
+        await _land(src, "review-9", at=at, mark=approved, outcomes=statuses)
+        await _land(src, "review-9", at=at, mark=dismissed, outcomes=statuses)
+        later = await FlowMessage.get_one({"source_item_id": str(row.id)})
+        plain_row = await _land(src, "plain", at=at)
+        plain = await FlowMessage.get_one({"source_item_id": str(plain_row.id)})
+    assert first.mark == approved
+    assert first.model_dump(mode="json")["mark"] == {"key": "approved", "label": "Approved", "tone": "positive"}, "the mark reaches the wire the UI reads"
+    assert statuses == ["created", "unchanged", "updated"], "only the mark changed, and that is a change"
+    assert later.mark == dismissed
+    assert plain.mark is None
 
 
 def _pages(pages: dict[str, tuple[object, str]]) -> httpx.AsyncClient:

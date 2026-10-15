@@ -9,6 +9,7 @@ pinned by a test so it cannot drift silently.
 
 | Category | What it shows | Pinned by |
 | --- | --- | --- |
+| [FlowCall](call-returns.md) | shared call outcomes, typed returned values, and composition | `tests/unit/test_call_returns_snippets.py` |
 | [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
 | [Project git share](project-git-share.md) | let project members clone and push the project's private GitHub repo through the hub, by role; install/connect steps; stop sharing | `tests/unit/test_project_git_share_snippets.py` (runs every fence), `ui/tests/unit/project-git-share-snippet.test.ts` (the TS fence) |
@@ -52,7 +53,7 @@ Its group setup example is run by `tests/unit/test_agents_on_channels_snippets.p
   first lookup is kept.
 * **Values travel as `DataSpec`.** What a driver emits is a
   `SourceItemSpec`, what you send back is a `MessageSpec` subclass, and what an
-  agent returns is a `PromptResult` (see [call-returns](call-returns.md)). They are frozen and refuse unknown keys. A
+  agent returns is a `PromptResult` (see [FlowCall](call-returns.md)). They are frozen and refuse unknown keys. A
   simple `MessageBlock` yields an ephemeral `MessageRequest`; the block owns
   its one-shot reply correlation.
 * **Read before you believe.** A verb returning does not mean rows landed.

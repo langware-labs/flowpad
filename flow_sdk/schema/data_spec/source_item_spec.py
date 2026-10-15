@@ -125,9 +125,14 @@ class SourceItemSpec(DataSpec):
         """What joins ``DIGESTED_FIELDS`` in the change digest: a RECORD's typed fields. A record is a
         row "updated in place" -- an issue's status, a deal's stage -- and those live in ``data``, not
         in the header: without them a changed status reads as *unchanged* and the stored record (and
-        every mirror of it) goes stale. None for messages and files, whose digests are untouched."""
+        every mirror of it) goes stale. A message joins only its ``mark`` (a review re-stated as
+        approved), and only when it has one, so an unmarked message keeps the digest it had. None for
+        files, whose header says it all."""
         fields = record_fields(self.data)
-        return {"data": fields} if fields is not None else None
+        if fields is not None:
+            return {"data": fields}
+        mark = getattr(self.data, "mark", None)
+        return {"mark": mark.model_dump(mode="json")} if mark is not None else None
 
     # The flat triple the row's natural key reads (``SOURCE_ITEM.natural_key``).
     @property

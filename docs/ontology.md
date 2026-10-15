@@ -249,7 +249,7 @@ its own: its `output_spec_kind` names a primitive, a kind whose schema is code, 
 * ComputeOp is the first type with a `subkind` (`cli | prompt | agent | navigate | ask`):
   each subkind's structure is its own schema under the kind
   `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
-  (see [call-returns](snippets/call-returns.md)); `compute_op.rung` is a kind of its own
+  (see [FlowCall](snippets/call-returns.md)); `compute_op.rung` is a kind of its own
   (one rung of a ladder), not a subkind. An op cannot register a kind of its own
   (see Coverage above) — no shipped op needs one, and giving a JSON document a
   module to import is a bigger decision than it looks.

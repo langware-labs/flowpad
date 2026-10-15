@@ -864,11 +864,13 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     @action.get(action_name="load-state")
-    async def load_state_action(self, asset: str = "") -> "ApiResponse":
-        """Observe the current provider lifecycle, without starting or approving anything."""
-        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+    async def load_state_action(self, asset: str = "", validate: bool = False, display: str = "") -> "ApiResponse":
+        """Observe the current provider lifecycle, without starting or approving anything. ``validate``:
+        a READY verdict counts only while the app still answers where it runs (else none — load it)."""
+        from flow_sdk.core.setup import load as lifecycle  # noqa: PLC0415
 
-        result = load_state(str(self.id), asset=asset)
+        result = (await lifecycle.validate(str(self.id), asset, display) if validate
+                  else lifecycle.load_state(str(self.id), asset=asset))
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     # ── the project's apps: which port each process declares, and where it runs now ────────

@@ -60,6 +60,7 @@ import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/G
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
 import { schemaTreePointer } from '@src/components/schema-tree/schema-tree-pointer';
+import type { WorkerType } from '@src/hooks/use-transcript';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -2175,7 +2176,7 @@ export class DockPointer implements IDockPointer {
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex' | 'copilot' | 'opencode' | 'workflow',
+    workerType: WorkerType,
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,

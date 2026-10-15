@@ -36,7 +36,7 @@ export class ComputeOp extends APIEntity<ComputeOp> implements IComputeOp {
 
   /** Is it done? Runs the op's completion check (`GET compute_op/<id>/check`). */
   async check(): Promise<CliResult> {
-    return dataManager.callAction<void, CliResult>(new ActionInfo('check', ComputeOp.type, this.id, 'GET'));
+    return dataManager.callFlowAction<CliResult>(new ActionInfo('check', ComputeOp.type, this.id, 'GET'));
   }
 
   /** Run it (`POST compute_op/<id>/run`). `approved` is the person's say-so for an op that does
@@ -44,6 +44,6 @@ export class ComputeOp extends APIEntity<ComputeOp> implements IComputeOp {
   async run(approved: boolean): Promise<ReturnedValue> {
     const action = new ActionInfo('run', ComputeOp.type, this.id, 'POST');
     action.bodyParameters = { approved };
-    return dataManager.callAction<{ approved: boolean }, ReturnedValue>(action);
+    return dataManager.callFlowAction(action);
   }
 }

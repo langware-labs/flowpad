@@ -87,7 +87,7 @@ await process.prompt("Open https://example.com and tell me the page title.")
 
 ### Chain them
 
-Any result the SDK generates is a `flow.ReturnedValue`, itself a `flow.DataSpec`, like:
+**FlowCall** is the shared contract for invoking work, receiving an outcome and value, and composing results. Participating work calls answer with a `flow.ReturnedValue`, itself a `flow.DataSpec`, for example:
 
 - `cli` — a shell command
 - `prompt` — a model call
@@ -376,7 +376,7 @@ assert chat.subkind == "agent"                  # what it is for: talking to the
 1. **Shapes you can trust** (`flow.DataSpec`): Every value is typed, frozen and file-friendly.
 2. **Files are the database** (`flow.SourceItem`): Disk is the truth; the index rebuilds from it.
 3. **Agents** (`flow.Agent`, `flow.AgenticProcess`): A folder defines it; a process runs it, on any harness.
-4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. Every call answers the same way.
+4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
 5. **Data in** (`flow.DataDriver`, `flow.DataSource`): A driver talks to a system; a source is one stream on it.
 6. **Every channel** (`flow.StreamInbox`): One loop body answers email, Slack, Telegram and WhatsApp.
 7. **Accounts, not tokens** (`flow.Connection`): Sign in once; code asks for the account by name.
@@ -612,7 +612,7 @@ answer = await llm.create_completion("You answer in one word.", "Capital of Fran
 
 ## Chapter 4: Orchestration is Python
 
-`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. Every call answers the same way.
+`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
 
 Chart: Check (`flow.ComputeOp`) -> Run (`flow.ComputeOp`) -> Re-check (`flow.ComputeOp`) -> Answer (`flow.ReturnedValue`)
 

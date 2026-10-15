@@ -7,7 +7,9 @@ import { parseTranscriptResponse, type ParsedTranscript } from '@sdk/utils/agent
  * Worker types the generic transcript viewer supports. Mirrors the server
  * route's whitelist in `flow_sdk/server/routes/transcripts.py`.
  */
-export type WorkerType = 'claude' | 'codex' | 'copilot' | 'opencode' | 'workflow';
+export type WorkerType = 'claude' | 'codex' | 'copilot' | 'opencode' | 'deepagents' | 'workflow';
+/** A worker whose sessions are entities (every transcript worker but `workflow`). */
+export type SessionWorker = Exclude<WorkerType, 'workflow'>;
 
 interface UseTranscriptArgs {
   workerType: WorkerType;

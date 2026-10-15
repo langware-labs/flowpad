@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: 126f934ff28653c32bdcab0a73565fc817ccba59d9a56533ec5526eb864460f2
+inputs_hash: 9514d2c8095782a792398ac78f999f35a4f8e50421c23486800a34e224ada02a
 template_version: 1
 prompt_version: 1
 parent_ref: ''
-vault_root: docs
-generated_at: '2026-10-13T12:04:14Z'
+vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
+generated_at: '2026-10-15T06:45:37.700537+00:00'
 latest_process_ref: ''
 file_count: 58
 subfolder_count: 16
@@ -15,13 +15,13 @@ subfolder_count: 16
 # docs
 
 ## Self-Summary
-> Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.
+> Flowpad architecture and terminology, including the FlowCall call-and-result contract, agents, data management, collaboration, navigation, deployment, runnable SDK examples, and proven debugging findings.
 
 ## Files
 - [Record System Requirements](CLAUDE.md) — The record-system rules: disk is the source of truth, FSRef as the declarative file reference, FSRecord as the single record class, and per-type TypeInfo slots.
 - [AgenticProcess Architecture](agentic-process.md) — Architecture of the AgenticProcess entity representing an agent run, including its transport and visibility axes, worker CLI configuration, session history and terminal runtime.
 - [Agentic process outputs](agentic_process_outputs.md) — How agent runs surface outputs: display, artifacts, workdir versus declared-output modes, and how results reach the client.
-- [Agent Management](agents-management.md) — Top-level index of agent management: the Agent, Deployment and AgenticProcess model, agent.json authoring bundle, intro and auto-launch keys, PTY versus CLI modes, linked subject docs.
+- [Agent Management](agents-management.md) — Agent management overview separating Agent definitions, Deployment placement, and AgenticProcess runs, with authoring bundles and focused interface references.
 - [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.
 - [Automations](automations.md) — Automations screen backed by Trigger rows: dock URLs, UI-to-SDK action chain, if-gate and then-wizard with run_script, runs_on and run lookup, fragile rules, and built-in descriptions.
 - [Server Boot & Bootstrap Flows](boot.md) — Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.
@@ -32,7 +32,7 @@ subfolder_count: 16
 - [Data Management](data-management.md) — Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.
 - [debugMCP Setup](debugMCP-setup.md) — Setting up debugMCP: launching Chrome Canary with CDP, the debugMcp server, the standard Playwright MCP server, and the usage rules.
 - [Dependency setup and Load](dependency-lifecycle.md) — Dependency Load and setup: prerequisites including data sources owing setup (DataSource.setup_owed), first-level steps listed with row count, when load results are forgotten, asset_setup, API, CLI.
-- [Desktop install — test scenarios](desktop-install-test-scenarios.md) — Manual and scripted desktop install test scenarios for the Python pin, in-app Retry panel and clean-room release gate
+- [Desktop install — test scenarios](desktop-install-test-scenarios.md) — Desktop installation test scenarios for Python version selection, retryable startup failures, clean-room release validation, and upgrade regressions.
 - [Developer Setup](dev_setup.md) — Why PyCharm shows unresolved flow_sdk imports under an editable install, and marking the repo root as a Sources Root to fix it.
 - [Global Display Capabilities — Survey & Open Questions](display-capabilities.md) — Survey of how Flowpad displays files, entities, webapps, artifacts and foreign HTML through dock pointers and flow show targets, with trust tiers, gaps, open questions.
 - [doc.md](doc.md) — Empty placeholder document with blank title and only frontmatter, no content.
@@ -44,14 +44,14 @@ subfolder_count: 16
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console recipes for debugging the running frontend: the registered debug globals, bootstrap and WebSocket health, entity cache, and data or PTY bugs.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef, the declarative file and folder reference used throughout records: its class family, indexer walk tags, and read-only inheritance.
 - [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, separating provider mirrors from native entities, with naming rules for agents, sources, endpoints, credentials, setup.
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Flowpad terminology distinguishing native mechanisms from provider mirrors, including FlowCall, agents, schemas, values, records, contexts, activity, and setup.
 - [Icons](icons.md) — Icons: the backend names the glyph, the frontend resolves it, with names in the repo's one dot-tag grammar so collisions cannot arise.
-- [Flowpad](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
+- [Flowpad ](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
 - [Listen Webhook Pipeline](listen_webhook.md) — The webhook listen pipeline: how Claude Code hooks and hook_op envelopes reach POST /webhook/listen, get routed by type, become FlowData, and render.
 - [Wiki namespaces and link graph — flowpad-oss](llm_wiki.md) — Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.
-- [Local Patch Runbook](local_patch.md) — Runbook for running your local checkout on the installed flowpad: the one supported stamped +local deployment, and why site-packages overlays broke.
+- [Local Patch Runbook](local_patch.md) — Local deployment runbook for stamped SDK wheels and Electron patches, including verification, rollback, versioning, and macOS pitfalls.
 - [MCP UI Architecture](mcp-ui.md) — MCP UI architecture in Vibe: the agent writes a .mcp.html file, the backend sandbox proxy hosts it, and the app's ui/message returns as a prompt.
-- [Ontology — type, subkind, kind](ontology.md) — Ontology of type, subkind and kind: closed entity types, per-type variants, open dot-path kinds naming schemas, plus namespaces, how kinds are minted and loaded.
+- [Ontology — type, subkind, kind](ontology.md) — Ontology of entity types, per-type subkinds, registered schema kinds, namespaces, and the ComputeOp shapes participating in FlowCall.
 - [Playwright MCP — Usage & Debug](playwright-usage.md) — Using the Playwright MCP server: its .mcp.json config, the checks required before every use, common errors, and the operating rules.
 - [Prompt Library — managed prompts, foldered, one click to queue](prompt-library.md) — The prompt record type and its foldered library in the terminal ribbon: markdown layout, entity-group folders, and one-click enqueue onto the prompt queue.
 - [Prompt Queue](prompt_queue.md) — The prompt queue: on-disk format, components, launch and follow-up drain flows, UI reflection, the readiness decision, entry lifecycle, and concurrency.
@@ -72,14 +72,14 @@ subfolder_count: 16
 - [TraceGutter - FlowData Trace Events in the Terminal Left Gutter](trace-gutter.md) — The terminal left gutter showing FlowData trace events: sources, the TraceEvent model, the frontend hook chain, row mapping, and the backend flow.
 - [typeid](typeid.md) — Redirect stub: the TypeId doctrine now lives in primitives/typeid.md.
 - [VFS Path Specification](vfs.md) — The vfs:// URI scheme for addressing files under any entity: the type-id path format, the four accepted id formats, and per-entity storage roots.
-- [View Modes — Vibe / Standard / Advanced / Dev "skin" system](viewmodes.md) — Vibe/Standard/Advanced/Dev view-mode system, now per session tab: the skin-layer rule, session transport exception, AdvancedOnly/DevOnly/ViewSwap toolkit, and testing recipe.
+- [View Modes — Vibe / Standard / Advanced / Dev "skin" system](viewmodes.md) — Session-scoped view modes, skin-layer rules, surface switching, frontend gating components, testing recipes, and historical decisions.
 - [WikiTip](wikitip.md) — WikiTip, the bidirectional link between a home-feed card and a wiki page: a real FeedEntry, its hover preview, and the highlight round-trip back.
 - [Windows test VM](windows-test-vm.md) — How-to for connecting to the UTM Windows test VM over ssh, copying files, and installing a locally built Flowpad dev wheel on it.
 - [zschool box](zschool_box.md) — Sketch of the zschool box demo: sharing a sandbox by email link and opening it in vibe, then the template variant carrying an asset package.
 
 ## Subfolders
-- [agent/](agent/index.md) — The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), the one composer that layers a worker's system prompt, and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.
 - [agent-management/](agent-management/index.md) — Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.
+- [agent/](agent/index.md) — The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.
 - [breadcrumbs/](breadcrumbs/index.md) — Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.
 - [collab/](collab/index.md) — 
 - [data-management/](data-management/index.md) — How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.
@@ -91,6 +91,6 @@ subfolder_count: 16
 - [navigation/](navigation/index.md) — How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.
 - [primitives/](primitives/index.md) — The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.
 - [reports/](reports/index.md) — Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.
-- [sdk-site/](sdk-site/index.md) — The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.
-- [snippets/](snippets/index.md) — The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.
+- [sdk-site/](sdk-site/index.md) — The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.
+- [snippets/](snippets/index.md) — Runnable SDK examples with validating tests: FlowCall outcomes and returned values, ComputeOps, wizards, schemas, agents, channels, data sources, datasets, credentials, dependencies, deployment, activity, scanning, and RAG.
 - [tabs/](tabs/index.md) — The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.

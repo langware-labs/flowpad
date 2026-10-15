@@ -1,7 +1,9 @@
-import { Loader2, Play } from 'lucide-react';
+import { LogIn, Loader2, Play } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Shell } from '@sdk';
+import { useProviderSignIn } from '@src/components/oauth/use-provider-sign-in';
+import { errorMessage } from '@src/lib/error-message';
 import { ShellTerminal } from '@src/components/terminal/interactive-terminal/ShellTerminal';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
@@ -16,7 +18,9 @@ import type { AskChoice } from './use-ask-question';
  * `<choice>=<value>` so the op knows which way was taken. A SIGN-IN way has nothing to type and
  * nothing to send: Run starts its command in a terminal of its own, drawn right here under the
  * choice (the person may have to answer it — a browser sign-in, a prompt), and the backend — which
- * re-checks by itself — closes the question once the sign-in exists. So this never polls.
+ * re-checks by itself — closes the question once the sign-in exists. So this never polls. A SIGN-IN
+ * THROUGH FLOWPAD way (`provider`) is the screen's own connect, in this browser — the same one the
+ * source setup's sign-in uses; once the grant lands the way is answered by its name alone.
  */
 export function AskChoiceBlock({
   choices = [],
@@ -77,7 +81,9 @@ export function AskChoiceBlock({
               {choice.hint ? <span className="text-xs text-muted-foreground">{choice.hint}</span> : null}
             </button>
 
-            {on && choice.command ? (
+            {on && choice.provider ? (
+              <AskChoiceSignIn choice={choice} busy={busy} onAnswer={onAnswer} />
+            ) : on && choice.command ? (
               <div className="flex flex-col gap-2 px-3 pb-3" data-testid="ask-choice-sign-in">
                 <code className="rounded bg-muted px-2 py-1.5 text-xs" data-testid="ask-choice-command">
                   {choice.command}
@@ -125,6 +131,44 @@ export function AskChoiceBlock({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** A sign-in-through-Flowpad way: connect its provider in this browser; once the grant lands, the way is answered
+ *  by its name alone — the backend stores nothing for it, and remembers it as the way set up. */
+function AskChoiceSignIn({ choice, busy, onAnswer }: { choice: AskChoice; busy?: boolean; onAnswer: (value: string) => void }) {
+  const { t } = useLingui();
+  const [refused, setRefused] = useState('');
+  const { connecting, signIn } = useProviderSignIn(choice.provider ?? '', {
+    onGranted: () => onAnswer(choice.value),
+    onNotFinished: () => setRefused(t`The sign-in did not finish.`),
+    onError: (e) => setRefused(errorMessage(e, t`Could not start the sign-in.`)),
+  });
+  return (
+    <div className="flex flex-col gap-2 px-3 pb-3" data-testid="ask-choice-oauth">
+      <Button
+        className="gap-1.5 self-start"
+        disabled={busy || connecting}
+        onClick={() => {
+          setRefused('');
+          void signIn();
+        }}
+        data-testid="ask-choice-sign-in-button"
+      >
+        {connecting ? <Loader2 className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />}
+        <Trans>Sign in</Trans>
+      </Button>
+      {connecting && (
+        <span className="text-sm text-muted-foreground" data-testid="ask-choice-oauth-waiting">
+          <Trans>Finish signing in in the browser window that opened…</Trans>
+        </span>
+      )}
+      {refused && (
+        <span className="text-sm" data-testid="ask-choice-oauth-refused">
+          {refused}
+        </span>
+      )}
     </div>
   );
 }

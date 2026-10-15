@@ -1598,15 +1598,25 @@ class DataSource(SetupSkippable, Entity):
         """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
         this waits for the cycle: it is what a person or an agent runs to see a source work. Like
         ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
-        credential means to try again."""
+        credential means to try again.
+
+        A source that is not runnable — waiting on a setup step, or paused by a person — is not fetched: the
+        answer says why (``poll_refusal``, the one author of that sentence) with ``ran: false``. Whatever the
+        family (messages, files, records), a person's Pull answers the same way."""
         await self._make_due()
         await self.save_runtime()
+        if self.status in (SourceStatus.SETUP.value, SourceStatus.DISABLED.value):
+            return ApiSuccessResponse(data={
+                "ran": False, "created": 0, "updated": 0, "unchanged": 0, "removed": 0,
+                "health": self.health, "status": self.status, "error_detail": None, "detail": self.poll_refusal(),
+            })
         report = await self.sync()
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
             "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
             "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
+            "ran": True, "detail": "",
         })
 
     @core_action.post(action_name="set_enabled")

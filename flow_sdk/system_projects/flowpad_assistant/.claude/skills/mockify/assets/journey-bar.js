@@ -7,7 +7,14 @@
     set(k, v) { try { sessionStorage.setItem('mockify:' + k, JSON.stringify(v)); } catch { /* no storage here */ } },
   };
   const docStyle = document.createElement('style');
-  docStyle.textContent = '[data-step][hidden]{display:none!important}';
+  // Hints mark the mock's OWN controls, so they live in the page: a soft accent glow on the control that
+  // leads to the expected next screen, a faint dashed ring on any other control that moves the journey.
+  // box-shadow, not outline: a screen's own outlines (an open decision) stay as they are.
+  docStyle.textContent = `[data-step][hidden]{display:none!important}
+    .mk-next{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 45%,transparent),0 0 14px 2px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px;animation:mk-glow 2.4s ease-in-out 3}
+    .mk-path{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px}
+    @keyframes mk-glow{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 20%,transparent)}}
+    @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}`;
   document.head.append(docStyle);
 
   let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, branch_of?, when?, decisions?[]}
@@ -19,6 +26,9 @@
   const isBranch = (s) => !!s.branch_of;
   const find = (id) => J.findIndex((s) => s.id === id);   // -1 when there is no such step
   const mainAfter = (i) => { for (let k = i + 1; k < J.length; k++) if (!isBranch(J[k])) return k; return i; };
+  // Where a screen goes on: its own `next` (a branch's Try again, a screen that always takes a branch), else
+  // the next main-path screen. Next, its hint and the screen's glowing control all follow this one rule.
+  const onwardOf = (i) => { const n = J[i]?.next ? find(J[i].next) : -1; return n >= 0 ? n : mainAfter(i); };
   const mainBefore = (i) => { for (let k = i - 1; k >= 0; k--) if (!isBranch(J[k])) return k; return i; };
   const show = (id) => {
     if (typeof window.mockGo === 'function') return window.mockGo(id);
@@ -65,6 +75,9 @@
     .back:not([disabled]):hover { background: var(--mk-soft); }
     .next { background: var(--mk-accent); color: var(--mk-accent-fg); border: 1.5px solid var(--mk-accent); }
     .next:not([disabled]):hover { filter: brightness(1.08); }
+    .next.hint { animation: mk-pulse 2.4s ease-in-out 3; box-shadow: 0 0 0 3px color-mix(in srgb, var(--mk-accent) 30%, transparent); }
+    @keyframes mk-pulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--mk-accent) 30%, transparent); } }
+    @media (prefers-reduced-motion: reduce) { .next.hint { animation: none; } }
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
     .fb { border: 1.5px solid var(--mk-muted); padding: 0 10px; font-weight: 600; }
@@ -121,6 +134,36 @@
 
   const $ = (s) => root.querySelector(s);
   const bar = $('.bar'), panel = $('.panel');
+
+  // ── next-step hints: which controls on this screen move the journey, and which one goes onward ──
+  // A control names where it leads with data-next="<step id>"; the one leading onward glows, the rest ring.
+  let hints = store.get('hints') !== false;
+  let marked = [], hintKey = '';
+  const warned = new Set();
+  function markHints(force = false) {
+    const key = `${cur}|${hints}|${J.length}`;
+    if (!force && key === hintKey) return;
+    hintKey = key;
+    marked.forEach((el) => el.classList.remove('mk-next', 'mk-path'));
+    marked = [];
+    $('.next').classList.remove('hint');
+    if (!hints || !J.length) return;
+    const screen = document.querySelector(`[data-step="${CSS.escape(J[cur].id)}"]`) || document.body;
+    const o = onwardOf(cur), onward = o !== cur ? J[o].id : null;
+    screen.querySelectorAll('[data-next]').forEach((el) => {
+      if (el.closest('[hidden], [data-mockify]')) return;
+      const to = el.dataset.next;
+      if (find(to) < 0) { if (!warned.has(to)) { warned.add(to); console.warn(`mockify: data-next="${to}" names no step`); } return; }
+      el.classList.add(to === onward ? 'mk-next' : 'mk-path');
+      marked.push(el);
+    });
+    if (onward && !marked.some((el) => el.classList.contains('mk-next'))) $('.next').classList.add('hint');
+  }
+  // data-next works on its own: a click on such a control moves the journey (no onclick needed).
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-next]');
+    if (el && !el.closest('[data-mockify]')) { e.preventDefault(); window.mockifyGo(el.dataset.next); }
+  });
   let open = '';
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
   const panelState = () => open === 'feedback'
@@ -147,7 +190,11 @@
   };
   // An attribute, never a class: a page rule like `.dark { --accent: … }` (Flowpad's own tokens) would match the
   // host element and override the bar's colours from outside its shadow root.
-  const contrastNow = () => host.toggleAttribute('data-mk-dark', !screenIsDark());
+  const contrastNow = () => {
+    const dark = screenIsDark();
+    host.toggleAttribute('data-mk-dark', !dark);
+    document.documentElement.style.setProperty('--mk-hint', dark ? '#a78bfa' : '#6d28d9');   // = the bar's --mk-accent
+  };
   let contrastQueued = false;   // one check per frame, whoever asks (a step, a drag, a resize, a theme flip)
   const contrast = () => { if (contrastQueued) return; contrastQueued = true; requestAnimationFrame(() => { contrastQueued = false; contrastNow(); }); };
   new MutationObserver(contrast).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -170,11 +217,12 @@
     $('.n').innerHTML = (multi ? `<span class="trail">${trail}</span><span class="count">·</span>` : '')
       + `<span class="count">${cur + 1} of ${J.length}</span>`;
     $('.back').disabled = cur === 0;
-    $('.next').disabled = mainAfter(cur) === cur;
+    $('.next').disabled = onwardOf(cur) === cur;
     const nOpen = openRows().length;
     $('.fb-count').hidden = !nOpen; $('.fb-count').textContent = nOpen;
     $('.submit').hidden = !nOpen; $('.submit-n').textContent = `(${nOpen})`;
     if (open && panelState() !== panelKey) renderPanel();
+    markHints();
   }
 
   function placePanel() {
@@ -194,7 +242,7 @@
         const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
         const num = isBranch(s) ? '' : String(++n);
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
-      }).join('');
+      }).join('') + `<button class="row hints-toggle" style="margin-top:6px">${hints ? '☑' : '☐'} Highlight the next step on each screen</button>`;
       return;
     }
     // feedback
@@ -352,7 +400,7 @@
 
   // ── controls ──
   $('.back').onclick = () => go(mainBefore(cur));
-  $('.next').onclick = () => go(mainAfter(cur));
+  $('.next').onclick = () => go(onwardOf(cur));
   $('.restart').onclick = () => { setPanel(''); go(0); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
   $('.fb').onclick = () => setPanel(open === 'feedback' ? '' : 'feedback');
@@ -366,6 +414,7 @@
   };
   panel.addEventListener('click', (e) => {
     const t = e.target;
+    if (t.closest('.hints-toggle')) { hints = !hints; store.set('hints', hints); markHints(true); renderPanel(); return; }
     const row = t.closest('[data-i]');
     if (row) { setPanel(''); go(+row.dataset.i); return; }
     const chip = t.closest('[data-dec]');

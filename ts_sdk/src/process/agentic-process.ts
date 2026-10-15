@@ -2862,6 +2862,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await this.cancelPrompt();
   }
 
+  private turnAction(instruction: string, workerSessionId?: string): ActionInfo {
+    const action = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
+    action.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    return action;
+  }
+
+  /** Ask the backend to accept a turn. OK means accepted, not completed.
+   * Busy and other expected outcomes remain PromptResults. This method neither
+   * echoes output nor waits for completion; executeInstruction retains that UI contract.
+   */
+  async sendTurn(instruction: string, options: { workerSessionId?: string } = {}): Promise<PromptResult> {
+    return dataManager.callFlowAction<PromptResult>(this.turnAction(instruction, options.workerSessionId));
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},
@@ -2898,8 +2912,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.appendUserMessage(instruction);
 
     // Call backend execute action
-    const actionInfo = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    const actionInfo = this.turnAction(instruction, workerSessionId);
 
     try {
       // The turn's PromptResult. A turn the backend could not take is a 200

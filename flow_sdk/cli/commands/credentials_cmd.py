@@ -48,7 +48,7 @@ from flow_sdk.cli.commands._common import (
     project_for_path,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
-from flow_sdk.schema.data_spec.project_setup_spec import ONE_OF_INPUT, input_name
+from flow_sdk.schema.data_spec.project_setup_spec import ONE_OF_INPUT, input_name, one_of_answer
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 credentials_app = typer.Typer(
@@ -115,10 +115,13 @@ def _status(project_id: Optional[str], deployment_id: Optional[str] = None) -> d
     return _here(here())
 
 
-def _set(name: str, values: dict[str, str], project_id: Optional[str], deployment_id: Optional[str] = None) -> dict:
+def _set(
+    name: str, values: dict[str, str], project_id: Optional[str], deployment_id: Optional[str] = None, choice: str = ""
+) -> dict:
     port = discover_port(required=False)
     if port is not None:
-        payload = {"name": name, "values": values, "project_id": _project_id(port, project_id), "deployment_id": deployment_id}
+        payload = {"name": name, "values": values, "project_id": _project_id(port, project_id),
+                   "deployment_id": deployment_id, "choice": choice}
         return post_graph_json(f"{_url(port)}/set", payload, on_error=_refused)
 
     async def here() -> dict:
@@ -127,7 +130,7 @@ def _set(name: str, values: dict[str, str], project_id: Optional[str], deploymen
         project = await _project(project_id)
         try:
             spec = await set_credential_by_name(
-                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id
+                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id, choice=choice
             )
         except CredentialError as e:
             fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
@@ -233,35 +236,40 @@ def _stdin_pairs() -> list[str]:
     return [line for line in map(str.strip, sys.stdin.read().splitlines()) if line and not line.startswith("#")]
 
 
-def _pairs(assignments: list[str]) -> dict[str, str]:
+def _pairs(items: list[str]) -> tuple[dict[str, str], str]:
+    """``VAR=VALUE`` items → values, and the ONE_OF way named by a bare ``VAR`` (a way that holds no value)."""
     values: dict[str, str] = {}
-    for item in assignments:
-        var, sep, value = item.partition("=")
-        if not sep or not var.strip():
+    way = ""
+    for item in items:
+        var, value = one_of_answer(item)
+        if not var:
             fail(EXIT_INVALID_ARG, "INVALID_ARG", f"expected VAR=VALUE, got {item.split('=')[0]!r}")
-        values[var.strip()] = value
-    return values
+        if value is None:
+            way = var
+        else:
+            values[var] = value
+    return values, way
 
 
-def from_inputs(name: str, env: Optional[dict[str, str]] = None) -> dict[str, str]:
-    """The values a wizard step bound for ``name``: every ``<name>__<VAR>`` in its environment."""
+def from_inputs(name: str, env: Optional[dict[str, str]] = None) -> tuple[dict[str, str], str]:
+    """The values a wizard step bound for ``name`` (every ``<name>__<VAR>`` in its environment), and the ONE_OF way
+    the person picked when it was answered by its name alone (a sign-in through Flowpad: nothing to store)."""
     from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415 — the one spelling of a step value's env name
 
     env = os.environ if env is None else env
     (prefix,) = input_env({input_name(name, ""): ""})
     values = {key[len(prefix):]: value for key, value in env.items() if key.startswith(prefix) and value}
-    # A ONE_OF choice arrives as one value, ``<VAR>=<value>`` of the member the person picked. A choice that
-    # closed by itself (a sign-in done in a terminal) carries no pair, and stores nothing.
-    var, picked, value = values.pop(ONE_OF_INPUT, "").partition("=")
-    if picked and var.strip():
-        values[var.strip()] = value
-    return values
+    # A ONE_OF choice arrives as one value: ``<VAR>=<value>`` of the member the person picked, or a bare ``<VAR>``.
+    # A choice that closed by itself (a sign-in done in a terminal) answers ``{}`` — neither — and stores nothing.
+    answer = values.pop(ONE_OF_INPUT, "")
+    picked, way = _pairs([answer]) if one_of_answer(answer)[0] else ({}, "")
+    return {**values, **picked}, way
 
 
 @credentials_app.command("set")
 def set_credential(
     name: Annotated[str, typer.Argument(help="The credential's name (e.g. telegram).")],
-    assignments: Annotated[Optional[list[str]], typer.Argument(help="VAR=VALUE pairs.")] = None,
+    assignments: Annotated[Optional[list[str]], typer.Argument(help="VAR=VALUE pairs; a bare VAR names the ONE_OF way set up here when it holds no value (a sign-in).")] = None,
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     inputs: Annotated[bool, typer.Option("--from-inputs", help="Take the values a `flow project setup` step was given.")] = False,
     stdin: Annotated[bool, typer.Option("--stdin", help="Read VAR=VALUE lines from stdin — how an agent stores a value it must not print.")] = False,
@@ -270,12 +278,12 @@ def set_credential(
     """Store NAME's values where the deployment (default: this computer) keeps them — for a cloud
     deployment, the hub, which places them on its machine. A name not declared yet is added from its
     template."""
-    values: dict[str, Any] = {
-        **(from_inputs(name) if inputs else {}), **_pairs(_stdin_pairs() if stdin else []), **_pairs(assignments or []),
-    }
-    if not any(values.values()):
+    parts = [from_inputs(name) if inputs else ({}, ""), _pairs(_stdin_pairs() if stdin else []), _pairs(assignments or [])]
+    values: dict[str, Any] = {k: v for part, _ in parts for k, v in part.items()}
+    way = next((w for _, w in reversed(parts) if w), "")
+    if not any(values.values()) and not way:
         fail(EXIT_NOT_YET, "NO_VALUE", f"no value given for {name}")
-    stored = _set(name, values, project, deployment)
+    stored = _set(name, values, project, deployment, choice=way)
     ok({"name": name, "stored": sorted(k for k, v in values.items() if v), "typeid": stored.get("typeid")})
 
 
