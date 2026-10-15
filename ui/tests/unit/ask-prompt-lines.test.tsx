@@ -19,7 +19,7 @@ beforeEach(() => {
     id: 'q1',
     op: 'ask-gmail-GMAIL_APP_PASSWORD',
     prompt: 'App password\nhttps://myaccount.google.com/apppasswords',
-    detail: 'Reads your Gmail inbox into conversations.',
+    detail: 'Reads your Gmail mail into conversations.',
     fields: 'string',
   });
   h.post.mockResolvedValue({});
@@ -35,5 +35,5 @@ it('renders the prompt with its newlines kept, and the why under it', async () =
   const prompt = await screen.findByTestId('ask-prompt');
   expect(prompt).toHaveClass('whitespace-pre-line');
   expect(prompt.textContent).toBe('App password\nhttps://myaccount.google.com/apppasswords');
-  expect(screen.getByTestId('ask-detail')).toHaveTextContent('Reads your Gmail inbox into conversations.');
+  expect(screen.getByTestId('ask-detail')).toHaveTextContent('Reads your Gmail mail into conversations.');
 });

@@ -12,7 +12,7 @@ APP_PASSWORDS = "https://myaccount.google.com/apppasswords"
 
 def _req(*vars: SetupVarSpec) -> SetupRequirementSpec:
     return SetupRequirementSpec(kind=REQUIREMENT_PACK, name="gmail", title="Gmail", help_url=APP_PASSWORDS,
-                                needed_for="Reads your Gmail inbox into conversations.", vars=list(vars))
+                                needed_for="Reads your Gmail mail into conversations.", vars=list(vars))
 
 
 def test_a_label_that_names_its_credential_stands_alone_and_no_credential_help_glued_on():
@@ -34,7 +34,7 @@ def test_the_question_carries_why_the_credential_is_needed():
     var = SetupVarSpec(env_var="GMAIL_ADDRESS", label="Gmail address", secret=False)
     _, ops = compile_setup("p1", [_req(var)], ai=False)
     ask = ops["ask-gmail-GMAIL_ADDRESS"]
-    assert ask.exe_data.detail == "Reads your Gmail inbox into conversations."
+    assert ask.exe_data.detail == "Reads your Gmail mail into conversations."
 
 
 def test_every_shipped_credential_says_what_it_is_needed_for():
