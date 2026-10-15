@@ -404,7 +404,7 @@ describe('ProjectSetupDialog — project requirements card', () => {
     title: 'Gmail',
     required: false,
     used_by: ['data source Gmail'],
-    needed_for: 'Reads your Gmail inbox into conversations, every few minutes, from the address you sign in with.',
+    needed_for: 'Reads your Gmail mail into conversations, every few minutes, from the address you sign in with.',
   });
 
   it('is titled for the project and says what it is for', async () => {
