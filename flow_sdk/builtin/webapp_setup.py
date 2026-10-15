@@ -258,6 +258,29 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     return answer, mine, up
 
 
+async def answers_now(webapp_id: str) -> bool:
+    """Every process of the app answers its health path where its route says it runs now — one probe each,
+    side by side: no process table, no start, no write. The check an open of an app it already loaded asks."""
+    from flow_sdk.builtin.webapp_placement import service_endpoint_name, service_endpoint_ports  # noqa: PLC0415
+
+    app = await _app(webapp_id)
+    if app is None or not app.asset_ref:
+        return False
+    processes = _processes(app)
+    placed = await _placed(app)
+    services = await service_endpoint_ports(app) if any(p.service is not None for p in processes) else {}
+    ports = [
+        (placed.backend.port if placed is not None else None) if process.service is None
+        else services.get(service_endpoint_name(app, process.service))
+        for process in processes
+    ]
+    if not ports or not all(ports):
+        return False
+    probes = (asyncio.to_thread(health_answers, int(port), process.serving.health)
+              for port, process in zip(ports, processes))
+    return all(await asyncio.gather(*probes))
+
+
 async def where(app, serving) -> app_ports.PortAnswer:
     """Where ``serving`` — a process of ``app`` — runs or should start: the rule's answer, changing nothing."""
     process = next((one for one in _processes(app) if one.serving is serving), _Process(serving))

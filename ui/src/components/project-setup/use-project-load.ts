@@ -11,6 +11,34 @@ export const webappAsset = (webappId?: string | null) => (webappId ? new TypeId(
 export const projectLoadKey = (projectId: string, display = '', asset = '') =>
   ['project-load', projectId, display, asset] as const;
 
+/** Apps this tab last saw loaded and answering — the validate phase's verdict, held for the tab's session
+ *  (a reload included: a query's cache would drop it, and the open would wait on a check). Only a hint:
+ *  every open still checks it behind the app. */
+const VALID_LOADS = 'flowpad.valid-loads';
+const validLoads = new Set<string>(readValidLoads());
+function readValidLoads(): string[] {
+  try {
+    const kept: unknown = JSON.parse(sessionStorage.getItem(VALID_LOADS) ?? '[]');
+    return Array.isArray(kept) ? kept.filter((one): one is string => typeof one === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+export const validLoad = {
+  key: (projectId: string, asset = '', display = '') => `${projectId}|${asset}|${display}`,
+  has: (key: string) => validLoads.has(key),
+  set: (key: string, up: boolean) => {
+    if (up === validLoads.has(key)) return;
+    if (up) validLoads.add(key);
+    else validLoads.delete(key);
+    try {
+      sessionStorage.setItem(VALID_LOADS, JSON.stringify([...validLoads]));
+    } catch {
+      // Storage refused (a private window): the verdict lives in this page alone.
+    }
+  },
+};
+
 /**
  * Projection of the backend lifecycle. Polling only refreshes progress; it never retries Load.
  *
