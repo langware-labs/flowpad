@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useProcessProgressInfo } from '@src/hooks/use-process-progress-info';
 import type { SetupFix } from './use-setup-fix';
 
 /** A failed setup: Fix it is the default, Cancel beside it, Try again only a small link. */
@@ -25,6 +26,8 @@ export function SetupFailureActions({
   const running = state.phase === 'running';
   const openProcess = () => process && navigation.openDock(DockPointer.forProcessRuns({ run: process.id }));
   const cancel = running ? fix.cancel : onCancel;
+  // The one-liner: what the fixer last said, else what it is doing now.
+  const progress = useProcessProgressInfo(running ? process : null, running);
   return (
     <div className="flex flex-col gap-3" data-testid="setup-failure-actions">
       {state.phase !== 'idle' && (
@@ -33,7 +36,10 @@ export function SetupFailureActions({
             {running ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-                <Trans>Fixing the setup… ({fix.toolCount} steps)</Trans>
+                <span className="truncate" data-testid="setup-fix-line">
+                  {progress.statusMessage || progress.activityLabel || <Trans>Fixing the setup…</Trans>}
+                </span>
+                {progress.elapsedTime && <span className="shrink-0 text-muted-foreground">{progress.elapsedTime}</span>}
               </span>
             ) : state.phase === 'fixed' ? (
               state.summary

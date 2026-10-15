@@ -11,7 +11,9 @@ import { startWizardProcess } from '@src/components/wizard/start-wizard-process'
 
 vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }) }));
 vi.mock('@src/components/wizard/start-wizard-process', () => ({ startWizardProcess: vi.fn() }));
-vi.mock('@src/hooks/use-agentic-process-stream', () => ({ useAgenticProcessStream: () => [], useProcessToolCount: () => 0 }));
+vi.mock('@src/hooks/use-process-progress-info', () => ({
+  useProcessProgressInfo: () => ({ statusMessage: 'Killing the process on port 4400', activityLabel: null, elapsedTime: '12s' }),
+}));
 vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', () => ({
   useProcessesForTarget: () => ({ processes: [] }),
 }));
@@ -207,6 +209,7 @@ it('Cancel while the fix is still starting stops the process that comes up and s
   vi.mocked(startWizardProcess).mockReturnValue(new Promise((r) => (resolveStart = r)) as never);
   gate();
   await userEvent.click(await screen.findByRole('button', { name: 'Fix it' }));
+  expect(screen.getByTestId('setup-fix-line')).toHaveTextContent('Killing the process on port 4400');
   await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
   resolveStart({ process, target: '', result: new Promise(() => {}) });
   await waitFor(() => expect(process.cancelPrompt).toHaveBeenCalled());

@@ -13,7 +13,6 @@ import { useCallback, useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { startWizardProcess } from '@src/components/wizard/start-wizard-process';
-import { useProcessToolCount } from '@src/hooks/use-agentic-process-stream';
 
 /** The skill that repairs a failed setup flow (`.claude/skills/setup-fixer/SKILL.md`). */
 const SKILL = 'setup-fixer';
@@ -68,7 +67,6 @@ export function useSetupFix(
   fixed.current = reload;
   const process = state.phase === 'idle' ? null : state.process;
   const target = `project-${projectId}`;
-  const toolCount = useProcessToolCount(state.phase === 'running' ? process : null);
   const failure = result?.detail || error || '';
   const fail = useCallback(
     (summary: string, userAction: string, fixer: AgenticProcess | null = null) =>
@@ -168,5 +166,5 @@ export function useSetupFix(
   }, [process, projectId, put]);
 
   const retry = useCallback(() => fixed.current(), []);
-  return { state, process, failure, toolCount, start, cancel, retry };
+  return { state, process, failure, start, cancel, retry };
 }
