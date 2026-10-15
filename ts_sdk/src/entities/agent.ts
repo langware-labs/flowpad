@@ -1,7 +1,7 @@
 import { launchSurfaceField } from '../process/launch-surface';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { ActionInfo } from '../models/ActionInfo';
 import { QueryFilter, QueryRequest } from '../FlowSync/query';
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
 import type { HubRepoOrigin } from '../models/FSOrigin';
@@ -66,6 +66,15 @@ export interface AgentTokenAllocation {
   source: string;
   cost_usd_per_day?: number | null;
   model: string;
+}
+
+/** How signed-out visitors run an agent: the hub's `VisitorDeployment` -- whether the owner allows it, and
+ *  optionally the LLM endpoint each visitor's budget is drawn from and what each visitor may spend of it.
+ *  With no `llm_source` the visitor brings their own token source. */
+export interface AgentVisitorDeployment {
+  allow_visitor_deployment: boolean;
+  llm_source?: string | null;
+  cap_usd?: number | null;
 }
 
 export interface AgentReadinessItem {
@@ -441,6 +450,20 @@ export class Agent extends APIEntity<Agent> {
     return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
 
+  /**
+   * Allow (or stop) signed-out visitors running this agent, each in a sandbox of their own -- funded, when
+   * `setup.llm_source` is given, by a public child of it capped at `setup.cap_usd`:
+   * `POST agent/<id>/setup_visitor_deployment`. Hub-owned and owner-only, so it is reflected to the hub;
+   * allowing is refused (409) for an agent visitors could not run, (403) for a source the caller may not
+   * allocate from. Visitors reach it only through the agent's `visitor` audience (`PUBLIC_VIEWER_ROLE`).
+   */
+  async setupVisitorDeployment(setup: AgentVisitorDeployment): Promise<AgentVisitorDeployment> {
+    const info = new ActionInfo('setup_visitor_deployment', this.getType(), this.id, 'POST');
+    info.hubReflect = true;
+    info.bodyParameters = { ...setup };
+    return await dataManager.callAction<unknown, AgentVisitorDeployment>(info);
+  }
+
   /** Every place this agent runs on — this computer first — with what each owns. */
   async listPlaces(): Promise<AgentPlace[]> {
     return (await this.get<AgentPlace[]>('places')) ?? [];
@@ -709,5 +732,3 @@ export interface AgentVersionState {
   has_repo: boolean;
   pending_changes: number;
 }
-
-
