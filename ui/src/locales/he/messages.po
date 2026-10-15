@@ -24703,6 +24703,7 @@ msgid "Starting your sandbox…"
 msgstr "ה-Sandbox שלך מופעל…"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
+#: src/components/project-setup/ProjectLoadGate.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
