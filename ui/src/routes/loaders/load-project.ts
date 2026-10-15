@@ -232,7 +232,8 @@ export async function loadProjectRoute(
   }
 
   if (!conversationId && !roomId && assetSubPointer) {
-    await loadAssetRoute(assetSubPointer);
+    // The URL names this project: the asset opens as its guest, never switching it.
+    await loadAssetRoute(assetSubPointer, { keepProject: true });
   }
 
   if (roomId) {
