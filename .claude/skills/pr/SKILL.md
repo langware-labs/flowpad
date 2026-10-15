@@ -5,7 +5,8 @@ description: 'Pre-PR quality gate for the flowpad repo — one report that answe
   this branch ready for a PR?". Orchestrates the existing lenses (slick check for
   architecture, code-review for bugs, security-review, flowpad-api-urls, docit) over
   the branch diff, runs the policy tests and linters, and adds the checks no other
-  skill does: a reuse sweep (does code like this already exist?), a test-integrity check (did an edited test stop guarding its behavior?) and the CLAUDE.md
+  skill does: a reuse sweep (does code like this already exist?), a test-integrity check (did an edited test stop guarding its behavior?), a cross-repo
+  check (does the change break the other of flowpad / flowpad-hub?) and the CLAUDE.md
   rules that have no test. `pr` / `pr review [target]` reports only; `pr open` reviews,
   then prepares the PR and waits for approval before every git step. Triggers on "review
   my branch before a PR", "is this ready to merge", "pr check", "open a PR", or "/pr".'
@@ -15,20 +16,21 @@ description: 'Pre-PR quality gate for the flowpad repo — one report that answe
 
 This skill **orchestrates; it does not re-implement.** Each dimension already
 has an owner — run it and fold its findings into one report. Only the reuse
-sweep, the test-integrity check and the untested CLAUDE.md rules are this skill's own work.
+sweep, the test-integrity check, the cross-repo check and the untested CLAUDE.md rules are this skill's own work.
 
 **Which repo.** This folder lives in `flowpad` and is symlinked into
 `flowpad-hub/.claude/skills/pr`. Run against the repo you're in: its own
 `CLAUDE.md` is the rulebook, and its own test tree holds the policy tests
 (`flowpad`: `tests/unit/`; `flowpad-hub`: `flowpad/hub/tests/`). The paths in
 `references/` are written for `flowpad`. In the hub, apply the rules whose code
-exists there and skip the rest.
+exists there and skip the rest. The two repos talk to each other, so a change in
+one may need a look at the other — `references/cross-repo.md` says when.
 
 ## Modes (from the skill arg)
 
 | Skill arg | What it does |
 | --- | --- |
-| *(none)*, `review`, or `review <PR# \| branch \| commit-range \| path>` | Steps 1–4. Report only — never edits, never touches git state |
+| *(none)*, `review`, or `review <PR# \| branch \| commit-range \| path>` | Steps 1–4. Report only — never edits, never touches git state. In an E2B sandbox on a PR, also step 5 (post the review and approve) |
 | `open` | Steps 1–4, then `references/open.md` — every git step gated on explicit approval |
 | `fix` | Steps 1–4, then apply the CONFIRMED findings the user picks, then re-run step 2 on the touched files |
 
@@ -76,10 +78,11 @@ add a retry to get a gate green (CLAUDE.md).
 | Architecture / layer placement | `slick` | `slick check` on the scope |
 | Correctness bugs | `code-review` | at `high` on the scope |
 | Security | `security-review` | on the scope, then `references/rules.md` § Security for the flowpad-specific items |
-| API URL shape | `flowpad-api-urls` (lives in `flowpad-hub`, symlinked into `flowpad`) — its "Reviewing a diff" checklist | only when the diff adds or changes a route, an `@action`, an `apiClient`/`hub_post` call, or a URL string. A new router is fine only for a public / external-shape / special-transport endpoint, per the skill's "When a router is right"; a signed-in router for entity work is a blocker |
+| API URL shape | `flowpad-api-urls` (lives only in `flowpad-hub/.claude/skills/` — from `flowpad`, read it there) — its "Reviewing a diff" checklist | only when the diff adds or changes a route, an `@action`, an `apiClient`/`hub_post` call, or a URL string. A new router is fine only for a public / external-shape / special-transport endpoint, per the skill's "When a router is right"; a signed-in router for entity work is a blocker |
 | Docs agree with code | `docit` | on the scope — report-only here, don't let it edit docs in `review` mode |
 | **Reuse — does this already exist?** | **this skill** | `references/reuse.md` |
 | **CLAUDE.md rules with no test** | **this skill** | `references/rules.md` |
+| **Cross-repo — does the other repo (flowpad ↔ flowpad-hub) need to change too?** | **this skill** | `references/cross-repo.md` — only when the diff hits one of its contact points; reads the other repo, never edits it |
 | **Test integrity — did an edited test stop guarding its behavior?** | **this skill** | `references/test-integrity.md` — only when the diff modifies or deletes an existing test |
 
 Delegate each lens to a subagent when the diff is large; give it the scope from
@@ -121,3 +124,22 @@ Skipped: <lens — why>
 
 Significance bar: no formatting, naming taste, or speculative "could maybe"
 items. A clean dimension is one line ("Reuse: clean"), not a paragraph.
+
+## Step 5 — In a sandbox: post the review and approve
+
+Only when running in an E2B sandbox (`[ -n "$E2B_SANDBOX" ]`) and the target is
+a PR (`PR#`, or a branch that has an open PR — `gh pr view --json number`).
+Anywhere else, skip this step: the report stays report-only.
+
+**Always approve, whatever the verdict — even with blockers.** The findings are
+the review's content; the approval is not a verdict on them. Post both in one
+review:
+
+```bash
+gh pr review <n> --approve --body-file <scratchpad>/pr-report.md
+```
+
+Run it from the repo the PR belongs to (`flowpad` or `flowpad-hub`). If GitHub
+refuses the approval (e.g. the token's user is the PR's author), post the report
+with `gh pr review <n> --comment --body-file …` instead and say in chat why it
+wasn't approved. Never retry with a different account.
