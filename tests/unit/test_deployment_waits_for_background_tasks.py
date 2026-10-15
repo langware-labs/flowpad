@@ -1,9 +1,10 @@
-"""A deployment's agent turns wait for their background tasks.
+"""A deployment's agent turns, and every chat on a hub sandbox, wait for their background tasks.
 
 An agent nobody is watching launches a long job, arms a Monitor on it and ends its turn.
 ``claude -p`` kills background tasks 10 minutes after the answer, so the agent never heard
 its job finish (a QA run on a hub sandbox, 2026-09-24). A deployment's turns lift that
-ceiling. It must ride the turn's own env: inherited ``CLAUDE_CODE_*`` variables are stripped.
+ceiling, and so does a chat on a hub sandbox (a QA subagent killed mid-run, 2026-10-15),
+nobody being there to watch it either. It must ride the turn's own env: inherited ``CLAUDE_CODE_*`` variables are stripped.
 """
 
 from __future__ import annotations
@@ -63,8 +64,17 @@ async def test_a_deployments_turn_waits_for_its_background_tasks(turn_env):
     assert env[claude_driver.BACKGROUND_WAIT_ENV] == "0"
 
 
-async def test_a_turn_outside_a_deployment_keeps_the_clis_default(turn_env):
-    """A chat someone is watching keeps the ceiling -- a background dev server must not hold it open."""
+async def test_a_chat_on_a_hub_sandbox_waits_for_its_background_tasks(turn_env, monkeypatch):
+    """The hub assigned this instance a ComputeNode: it is a sandbox, and its chats run unattended."""
+    monkeypatch.setattr(claude_driver, "get_assigned_compute_node", lambda: f"compute_node-{mint_uuid()}")
+    env = await turn_env()
+
+    assert env[claude_driver.BACKGROUND_WAIT_ENV] == "0"
+
+
+async def test_a_desktop_chat_keeps_the_clis_default(turn_env, monkeypatch):
+    """A desktop chat someone is watching keeps the ceiling -- a background dev server must not hold it open."""
+    monkeypatch.setattr(claude_driver, "get_assigned_compute_node", lambda: None)
     env = await turn_env()
 
     assert claude_driver.BACKGROUND_WAIT_ENV not in env

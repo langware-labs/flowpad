@@ -61,6 +61,7 @@ from flow_sdk.builtin.hooks.types import (
 )
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
+from flow_sdk.instance_settings.runtime import get_assigned_compute_node
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -432,11 +433,12 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        if getattr(process, "deployment_id", None):
-            # A deployment's agent works unattended: it starts a long job, arms a Monitor on it
-            # and ends its turn. ``-p`` kills background tasks 10 minutes after the answer, so the
-            # agent would never hear the job finish. Its turns wait for them instead (the keep-alive
-            # counts the wait); a deployment that set its own ceiling keeps it.
+        if getattr(process, "deployment_id", None) or get_assigned_compute_node() is not None:
+            # A deployment's agent, and any chat on a hub sandbox, works unattended: it hands a
+            # long job to a background subagent or Monitor and ends its turn. ``-p`` kills
+            # background tasks 10 minutes after the answer, so the job died mid-run (a QA cycle on
+            # a hub box, 2026-10-15). These turns wait for them instead (the keep-alive counts the
+            # wait); a process that set its own ceiling keeps it. A desktop chat keeps the default.
             env_vars.setdefault(BACKGROUND_WAIT_ENV, "0")
         try:
             await apply_worker_secret_env(env_vars, process)
