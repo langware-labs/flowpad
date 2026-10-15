@@ -210,8 +210,10 @@ def _project_action(action: str, body: dict | None = None) -> dict:
 
 
 def _start_declared(request: str) -> int | None:
-    """The port of the project app ``request`` names (or of its only app), started by the backend like
-    every other start; None when the caller is in no project or no ``webapp.json`` app here matches."""
+    """The port of the project app ``request`` names (or of its only app), brought up the one way —
+    validate → load → setup → fix (``bring_up``, behind ``app-start``); None when the caller is in no
+    project or no ``webapp.json`` app here matches. A load that does not come up is the answer: its
+    reason, and the fixer's verdict on it."""
     if _project_action_url("app-start", required=False) is None:
         return None
     names = sorted({row["app"] for row in _project_action("app-ports").get("ports") or []})
@@ -219,9 +221,44 @@ def _start_declared(request: str) -> int | None:
     if name is None:
         return None
     row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
-    if not row.get("ok"):
-        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", str(row.get("detail") or f"{name} did not start"))
-    return int(row["port"]) if row.get("port") else None
+    load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
+    if load.get("state") == "failed" and load.get("setup_available"):
+        # The load failed: setup is the next step — once; a setup that still fails goes to the fixer.
+        row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
+        load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
+    if load.get("state") != "ready":
+        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", _not_up(name, load))
+    page = next((r for r in _project_action("app-ports").get("ports") or []
+                 if r["app"] == name and r["process"] == "page"), None)
+    port = (page or {}).get("port") or (page or {}).get("declared")
+    return int(port) if port else None
+
+
+def _follow(load: dict, asset: str) -> dict:
+    """Follow a load to its verdict, as ``flow project load --wait`` does: while it runs, and while the
+    fixer works on its failure."""
+    import time  # noqa: PLC0415
+
+    def going(result: dict) -> bool:
+        return result.get("state") == "running" or (
+            result.get("state") == "failed" and (result.get("fix") or {}).get("state") == "running")
+
+    while going(load):
+        time.sleep(2)
+        load = _project_action(f"load-state?asset={asset}") or load
+    return load
+
+
+def _not_up(name: str, load: dict) -> str:
+    fix = load.get("fix") or {}
+    lines = [f"{name}: {load.get('detail') or str(load.get('state') or 'failed')}"]
+    if fix.get("summary"):
+        lines.append(f"Fix: {fix['summary']}")
+    if fix.get("user_action"):
+        lines.append(fix["user_action"])
+    if fix.get("process"):
+        lines.append(f"Fixer: {fix['process']}")
+    return "\n".join(lines)
 
 
 @app_app.command("ports", help="The port each app of this project declares, and where it runs now.")
@@ -303,7 +340,7 @@ def _where(port: int, folder: Path, start_cmd: str, name: str, *, placed: bool =
     mine = app_ports.of_app(snapshot, folder, start_cmd)
     if mine:
         return mine[0].port, True
-    found = app_ports.decide(app_ports.Declared(port, required=True), mine, snapshot, answers=_answers)
+    found = app_ports.decide(app_ports.Declared(port, required=False), mine, snapshot, answers=_answers)
     if found.state == "conflict":
         _fail(EXIT_START_FAILED, "PORT_HELD", f"{name}: {found.note}")
     return found.port, found.state == "running"

@@ -53,18 +53,17 @@ def test_the_app_already_serving_from_its_folder_is_found_on_the_port_it_listens
     assert app_cmd._where(inferred, tmp_path, START, "shop") == (live, True)
 
 
-def test_another_program_on_the_port_is_an_error_that_names_it_never_the_app(tmp_path, serve, capsys):
+def test_another_program_on_the_port_is_never_the_app_it_runs_beside_it(tmp_path, serve):
+    """An app with no ``webapp.json`` declares no port of its own: a busy port moves it, the way setup
+    moves a non-required port — never PORT_HELD, and never the stranger shown as the app."""
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
     app = tmp_path / "shop"
     app.mkdir()
     port = app_ports.free_port()
-    stranger = serve(elsewhere, port)
-    with pytest.raises((SystemExit, click.exceptions.Exit)):
-        app_cmd._where(port, app, START, "shop")
-    said = capsys.readouterr()
-    assert f"port {port} is held by another program" in said.out + said.err
-    assert f"(pid {stranger.pid})" in said.out + said.err
+    serve(elsewhere, port)
+    moved, serving = app_cmd._where(port, app, START, "shop")
+    assert moved != port and not serving
 
 
 def test_a_listener_in_this_process_is_another_program_too(tmp_path):
@@ -72,35 +71,51 @@ def test_a_listener_in_this_process_is_another_program_too(tmp_path):
     held.bind(("127.0.0.1", 0))
     held.listen()
     try:
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
-            app_cmd._where(held.getsockname()[1], tmp_path, START, "shop")
+        port = held.getsockname()[1]
+        moved, serving = app_cmd._where(port, tmp_path, START, "shop")
+        assert moved != port and not serving
     finally:
         held.close()
 
 
-# ── the project's own app is started by the backend, by the one rule ─────────────────────────────
+# ── the project's own app comes up the one way: validate → load → setup → fix ────────────────
 
 
-def _project(monkeypatch, *, apps: list[str], started: dict | None = None, in_project: bool = True) -> list:
+READY = {"state": "ready", "asset": "micro_app-1"}
+
+
+def _project(monkeypatch, *, apps: list[str], load: dict | None = None, later: list[dict] | None = None,
+             in_project: bool = True) -> list:
     calls: list = []
+    polls = list(later or [])
     monkeypatch.setattr(app_cmd, "_project_action_url", lambda action, required=True: f"project/p/{action}" if in_project else None)
+    monkeypatch.setattr("time.sleep", lambda _s: None)
 
     def action(name, body=None):
         calls.append((name, body))
         if name == "app-ports":
-            return {"ports": [{"app": app, "process": process} for app in apps for process in ("page", "api")]}
-        return {"apps": [started or {"app": apps[0], "ok": True, "port": "3390"}]}
+            return {"ports": [{"app": app, "process": process, "port": 3390 if process == "page" else 3391}
+                              for app in apps for process in ("page", "api")]}
+        if name.startswith("load-state"):
+            return polls.pop(0)
+        return {"apps": [{"app": apps[0], "asset": "micro_app-1", "ok": True, "load": load or READY}]}
 
     monkeypatch.setattr(app_cmd, "_project_action", action)
     return calls
 
 
-def test_open_starts_the_projects_declared_app_through_the_backend_on_its_port(monkeypatch):
-    """``flow app open`` used to scan the folder and start its own server on a picked 80xx port, beside
-    the page and API the app's ``webapp.json`` declares."""
+def test_open_brings_the_projects_declared_app_up_through_the_backend(monkeypatch):
+    """``flow app open`` used to start its own server, and to check the port by its own rule with the
+    port ``required`` whatever ``webapp.json`` said — a busy non-required port was PORT_HELD."""
     calls = _project(monkeypatch, apps=["shop"])
     assert app_cmd._start_declared("shop") == 3390
-    assert calls[-1] == ("app-start", {"app": "shop"})
+    assert ("app-start", {"app": "shop"}) in calls
+
+
+def test_open_follows_a_running_load_and_the_fixer_to_the_verdict(monkeypatch):
+    fixing = {"state": "failed", "detail": "port 3390 busy", "fix": {"state": "running"}}
+    _project(monkeypatch, apps=["shop"], load={"state": "running"}, later=[fixing, {"state": "running"}, READY])
+    assert app_cmd._start_declared("shop") == 3390
 
 
 def test_open_with_no_name_takes_the_projects_only_app(monkeypatch):
@@ -117,12 +132,17 @@ def test_open_outside_a_project_or_for_another_app_keeps_its_own_discovery(monke
     assert app_cmd._start_declared("dashboard") is None
 
 
-def test_a_declared_app_that_cannot_start_is_an_error_that_says_why(monkeypatch, capsys):
-    _project(monkeypatch, apps=["shop"], started={"app": "shop", "ok": False, "detail": "port 3390 is held by another program: java (pid 9)"})
+def test_a_declared_app_that_does_not_come_up_says_why_and_what_the_fixer_found(monkeypatch, capsys):
+    failed = {"state": "failed", "detail": "port 3390 is held by another program: java (pid 9)",
+              "fix": {"state": "not_fixed", "summary": "java is another project's server",
+                      "user_action": "Stop the other project's app.", "process": "agentic_process-1"}}
+    _project(monkeypatch, apps=["shop"], load=failed)
     with pytest.raises((SystemExit, click.exceptions.Exit)):
         app_cmd._start_declared("shop")
     said = capsys.readouterr()
-    assert "held by another program: java (pid 9)" in said.out + said.err
+    out = said.out + said.err
+    assert "held by another program: java (pid 9)" in out
+    assert "Stop the other project's app." in out and "agentic_process-1" in out
 
 
 def test_a_port_the_backend_placed_is_shown_not_the_apis_from_the_same_folder(tmp_path, serve):

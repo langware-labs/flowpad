@@ -3,10 +3,10 @@ id: b355786d-0533-460c-8393-c635a15dc60f
 name: setup-fixer
 description: Repairs a project's failed SETUP FLOW so the next setup run passes —
   a port already taken, a stray process, a wrong declared port, a setup script that
-  breaks. Launched in the background by the "Fix it" button on a failed setup, with
-  the failure in its input. Reads and writes the asset's rca_log.md so every fix teaches
-  the next run, proves the fix by running setup again, and closes the wizard with
-  fixed / not_fixed. NOT for the app's own code (webapp-fixer), Flowpad itself being
+  breaks. Launched in the background by Flowpad when a load's setup fails (and again by
+  the "Fix it" button), with the failure in its input. Reads and writes the asset's
+  rca_log.md so every fix teaches the next run, proves the fix by running setup again,
+  and reports fixed / not_fixed. NOT for the app's own code (webapp-fixer), Flowpad itself being
   broken (flow-diagnose), or a credential only the person can give.
 ---
 
@@ -88,6 +88,6 @@ An app's setup is declared in its asset folder, not in code you guess at:
    Record a `not_fixed` too — what you tried teaches the next run. Keep a `## Known patterns` section at
    the top of the log (this app's ports, what usually holds them, what not to kill, what recurs) and
    update it whenever a dated entry teaches something general — the next run reads that first.
-7. **Close the wizard** with the command in your prompt:
-   `outcome` `fixed` or `not_fixed`; `summary` one line; `user_action` (only when `not_fixed`) — what the
+7. **Report your verdict** the way your prompt's "Your result" block says (a result file), as the value
+   it asks for: `outcome` `fixed` or `not_fixed`; `summary` one line; `user_action` (only when `not_fixed`) — what the
    person must do, in plain words, no jargon.

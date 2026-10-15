@@ -150,7 +150,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
   by a served app's `initSdk`) folds that into the guest's own `document.hidden`
   / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
   polls rest like a hidden page's.
-- `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
+- `flow app open` → a project app (`webapp.json`) comes up through `bring_up` (validate → load → setup → fix, `flow_sdk/core/setup/load.py`); a folder with no `webapp.json` is discovered/started ad hoc → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
 - `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`

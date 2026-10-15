@@ -114,17 +114,19 @@ async def start_app_at(url: str, project_id: Optional[str]) -> Optional[tuple[Ex
     declaration (``serving.ports``) is what ties the two. For a caller that can wait for a server to
     warm up — a probe only asks."""
     from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
     port = _local_port(url)
     app = await webapp_setup.app_declaring(port, project_id) if port else None
-    if app is None:
+    project = await Project.get_by_id(str(app.project_id)) if app is not None and app.project_id else None
+    if app is None or project is None:
         return None
-    installed = await webapp_setup.step(str(app.id), "install", check=True)
-    if not installed.ok:
-        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) is not set up here: {installed.detail}."
-    started = await webapp_setup.step(str(app.id), "start", check=False)
-    if not started.ok:
-        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) did not start: {started.detail}"
+    # The one way an app comes up: validate → load → setup → fix.
+    loaded = await bring_up(project, asset=app, wait=True)
+    if loaded.state is LoadState.FAILED:
+        return ExitCode.NOT_YET, "not_running", f"{app.name} (port {port}) did not come up: {loaded.detail}"
     logger.info("navigate: started %s for %s", app.name, url)
     return ExitCode.OK, "ok", ""
 
