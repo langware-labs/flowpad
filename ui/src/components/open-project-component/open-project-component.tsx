@@ -1,10 +1,8 @@
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
-import { useAllProjects } from '@src/hooks/use-all-projects';
-import { useProjects } from '@src/hooks/use-projects';
 import { dataContext, type ProjectListItem, Project, PrefKey, PageId } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { canonicalPath } from '@src/components/project-selector';
-import { hubProjectListItems } from './hub-project-list';
+import { useProjectListSource } from './use-project-list-source';
 import { normalizePath, useProjectOpener } from './use-open-project';
 import { SectionHairlineTitle } from '@src/components/terminal/project-list-menu';
 import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
@@ -563,15 +561,11 @@ export function OpenProjectComponent({
   const { navigation } = useDockNavigation();
   // New projects go in the ACTIVE workspace's folder; the list shows its projects.
   const { root: defaultWorkspacePath, scopeId } = useActiveWorkspace();
-  const { projects: scannedProjects, isLoading: isLoadingScan } = useAllProjects({
-    enabled: open && !hub,
+  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useProjectListSource({
+    enabled: open,
     includeSystem: showSystem,
     workspace: scopeId,
   });
-  const { projects: hubProjects, isLoading: isLoadingHub } = useProjects({ enabled: open && hub });
-  const hubItems = useMemo(() => hubProjectListItems(hubProjects, showSystem), [hubProjects, showSystem]);
-  const mergedProjects = hub ? hubItems : scannedProjects;
-  const isLoadingScanProjects = hub ? isLoadingHub : isLoadingScan;
 
 
   useEffect(() => {
