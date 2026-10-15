@@ -1,7 +1,6 @@
 import {
   AgenticProcess,
   awaitWizardResult,
-  FlowElementTypes,
   launchWizard,
   type WizardData,
   type WizardLaunchRequest,
@@ -9,9 +8,9 @@ import {
 } from '@sdk';
 import { attachWizardModal, type WizardModalAttachment } from '@src/components/wizard/wizard-modal';
 import { startWizardProcess } from '@src/components/wizard/start-wizard-process';
-import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { useProcessToolCount } from '@src/hooks/use-agentic-process-stream';
 import { notify } from '@src/notifications';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const DOUBLE_CLICK_MS = 250;
 
@@ -88,8 +87,7 @@ export function useWizardRun<T = unknown>(options: UseWizardRunOptions<T>): Wiza
     };
   }, []);
 
-  const items = useAgenticProcessStream(process);
-  const toolCount = useMemo(() => items.filter((fd) => fd.elementType === FlowElementTypes.TOOL_CALL).length, [items]);
+  const toolCount = useProcessToolCount(process);
 
   const finishWithResult = useCallback(
     (res: WizardProcessResult<T>) => {

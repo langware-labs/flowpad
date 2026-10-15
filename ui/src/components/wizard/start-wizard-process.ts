@@ -81,9 +81,12 @@ export interface StartedWizard<T = unknown> {
  */
 export async function startWizardProcess<T = unknown>(
   request: WizardLaunchRequest,
-  opts?: { headless?: boolean },
+  opts?: { headless?: boolean; skill?: boolean },
 ): Promise<StartedWizard<T>> {
   const headless = opts?.headless ?? false;
+  // A skill-launched run: a plain process with a fresh context, no wizard asset and no embedded agent —
+  // its prompt names the skill that drives it, and it closes through the same `flow wizard … close`.
+  const bySkill = opts?.skill ?? false;
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
 
@@ -101,16 +104,19 @@ export async function startWizardProcess<T = unknown>(
   // a warning buried in the console. A name that resolves to nothing is a bug in
   // the caller, and the only useful thing to do with it is say so loudly before
   // anything is spawned.
-  const agentRef = await resolveWizardAgentRef(request.wizardName);
-  if (!agentRef) {
-    // The cache stores misses too; drop it so a wizard indexed after this
-    // failure is resolvable on the next attempt.
-    clearWizardAgentRefCache();
-    throw new Error(
-      `No wizard named "${request.wizardName}" is installed. ` +
-      'A wizard is a folder under agentic-assets/wizard/ whose wizard.json names ' +
-      'the agent that drives it; check the name, or re-index if it was just added.',
-    );
+  let agentRef: string | null = null;
+  if (!bySkill) {
+    agentRef = await resolveWizardAgentRef(request.wizardName);
+    if (!agentRef) {
+      // The cache stores misses too; drop it so a wizard indexed after this
+      // failure is resolvable on the next attempt.
+      clearWizardAgentRefCache();
+      throw new Error(
+        `No wizard named "${request.wizardName}" is installed. ` +
+        'A wizard is a folder under agentic-assets/wizard/ whose wizard.json names ' +
+        'the agent that drives it; check the name, or re-index if it was just added.',
+      );
+    }
   }
 
   const process = await computeNode.createProcess(
@@ -142,7 +148,7 @@ export async function startWizardProcess<T = unknown>(
   // `true` -- the wizard's declared agent IS the process's persona. It is the
   // only agent here, so it used to get the identity directive from the old
   // count-based rule; now it has to say so.
-  await process.loadEmbeddedSubagent(agentRef, true);
+  if (agentRef) await process.loadEmbeddedSubagent(agentRef, true);
 
   // `result` resolves on the FIRST of:
   //  - `wizard.closed` — the agent closed with its verdict (preferred; carries data);
