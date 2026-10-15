@@ -108,6 +108,27 @@ describe('SequenceChartView', () => {
     expect(screen.getByText('browser')).toBeInTheDocument();
   });
 
+  it('draws a sublabel and an icon on a participant card, and the chart description under the title', async () => {
+    const value = {
+      participants: [{ id: 'hue', label: 'Philips Hue', sublabel: 'api.meethue.com', icon: 'lucide.lightbulb' }],
+      messages: [],
+    };
+    render(
+      <MemoryRouter>
+        <SequenceChartView
+          fsRef={makeFsRef({ 'chart.json': JSON.stringify(value) })}
+          chart={{ ...chart, description: 'How Hue connects.' } as unknown as import('@sdk').Chart}
+          projectId={PROJECT}
+        />
+      </MemoryRouter>,
+    );
+    const card = await screen.findByTestId('chart-participant');
+    expect(card.textContent).toContain('Philips Hue');
+    expect(card.textContent).toContain('api.meethue.com');
+    expect(card.querySelector('foreignObject')).not.toBeNull();
+    expect(screen.getByTestId('chart-description').textContent).toBe('How Hue connects.');
+  });
+
   it('Open ↗ on a sub-flow opens the named chart on the project route, scoped to the project', async () => {
     const target = { name: 'auth-check', asset_ref: '/w/p/agentic-assets/chart/auth-check' };
     chartQuery.mockResolvedValueOnce([target]);

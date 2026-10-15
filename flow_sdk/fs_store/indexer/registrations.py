@@ -36,6 +36,7 @@ import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.trigger  # noqa: F401  — a trigger.json asset; unbound, /graph/trigger/* 422s in a fresh process
 import flow_sdk.builtin.chart  # noqa: F401
+import flow_sdk.builtin.icon_pack  # noqa: F401
 import flow_sdk.builtin.wizard  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_md  # noqa: F401

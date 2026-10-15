@@ -52,7 +52,7 @@ mkdir -p "$D"
 cat > "$D/CHART.md" <<'EOF'
 ---
 name: <name>
-description: <one line — what the chart shows>
+description: <2–3 sentences: what this flow is, when it runs, what it ends with — shown under the title>
 format: sequence
 session: <your agentic process id>
 ---
@@ -63,7 +63,7 @@ EOF
 **sequence** — `chart.json`, checked against `chartit.sequence` (`DM check`, data-management skill):
 
 ```json
-{"participants": [{"id": "app", "label": "Acme App", "note": "Flutter — app/frontend"}],
+{"participants": [{"id": "app", "label": "Acme App", "sublabel": "Flutter app", "icon": "lucide.app-window", "note": "app/frontend"}],
  "messages": [
    {"id": "m1", "from": "app", "to": "tenant", "label": "POST …/oauth/init", "note": "locations-routes.js:182"},
    {"id": "m2", "from": "tenant", "to": "app", "label": "{redirectUrl}", "style": "dashed"},
@@ -71,7 +71,21 @@ EOF
    {"id": "m4", "from": "conn", "to": "vauth", "label": "Token refresh", "ref": "token-refresh", "returns": "fresh access token"}]}
 ```
 
-- Participants left to right, initiator first; `label` may carry a second line after `\n`.
+- Participants left to right, initiator first. Every card has a `label`, a `sublabel` (what it is: a
+  product, a host, a service — `api.sonos.com`, `Cloud Run worker`) and an `icon`.
+- `icon` is an icon tag (`<pack>.<icon>`) that MUST resolve, from an icon pack that exists: the
+  built-in `brands.*` (`brands.slack`) and `lucide.*` (`lucide.database`, `lucide.server`,
+  `lucide.user`, `lucide.app-window`, `lucide.cloud`), or an icon pack ASSET in any scope —
+  `<scope>/agentic-assets/icon_pack/<name>/` (`icon_pack.json` + SVGs), e.g. the project's own
+  `acme-vendors.sonos`. Use an existing pack's tags first.
+- A vendor's mark missing: add it to the PROJECT's icon pack asset (create
+  `agentic-assets/icon_pack/<project>-vendors/` if there is none) — the SVG under `assets/`, a
+  single-colour mark with no `<script>`, no `on*` handlers and no external `href`/`url()`; its
+  manifest entry `{"kind": "<vendor>", "asset": "assets/<vendor>.svg", "color": "#hex", "source":
+  "<where it came from + license>"}`. Never edit Flowpad's built-in packs from a project.
+- Check before you finish: `flow icons check <tag> … --path <chart folder>` must print `ok` for every
+  tag and every pack (exit 0). An index of the chart also records unresolved icons on the chart's
+  `problems`. Never leave an unresolved tag — the card would show a fallback glyph.
 - Messages top to bottom, ids `m1, m2…` (what comments target); `from == to` is a self-call;
   `style: "dashed"` for a reply. Labels short (a route or a verb); detail goes in `note` (hover).
 - Copy names exactly as the source has them (typos included — ask before fixing).
