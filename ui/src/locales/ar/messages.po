@@ -1458,6 +1458,10 @@ msgstr "~2 ثانية. يُستخدم للتحقق مما هو على القرص
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
 msgstr "🎉 لا توجد مشاكل — لا شيء يحتاج إلى انتباهك."
@@ -20814,6 +20818,10 @@ msgstr "إزالة الصف"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
+msgstr ""
+
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx

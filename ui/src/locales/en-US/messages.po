@@ -1472,6 +1472,10 @@ msgstr "~2s. Use to check what's on disk without changing anything."
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr "✓ {label} · {when}"
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
 msgstr "🎉 No problems found — nothing needs your attention."
@@ -21009,6 +21013,10 @@ msgstr "Remove row"
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
 msgstr "Remove rule"
+
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
+msgstr "Remove session from this message"
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "Remove this argument"

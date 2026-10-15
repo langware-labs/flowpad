@@ -1457,6 +1457,10 @@ msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינ�
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
 msgstr "🎉 לא נמצאו בעיות — אין צורך בשימת לב."
@@ -20810,6 +20814,10 @@ msgstr "הסרת שורה"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
+msgstr ""
+
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
