@@ -282,7 +282,8 @@ ROWS: tuple[Row, ...] = (
     Row("sdk_typed_run", _sdk_typed_run, (L.COMMON, L.INSTRUCTIONS, L.IO)),
     Row("cli_process_start", _cli_process_start, (L.COMMON,), sites=("flow_sdk/cli/commands/process_cmd.py",)),
     Row("agent_deployment", _agent_deployment, (L.COMMON, L.INSTRUCTIONS), sites=(
-        "flow_sdk/builtin/deployment.py", "flow_sdk/builtin/agent.py", "flow_sdk/builtin/agent_serve.py",
+        "flow_sdk/builtin/deployment.py", "flow_sdk/builtin/agent_run.py", "flow_sdk/builtin/agent.py",
+        "flow_sdk/builtin/agent_serve.py",
         "flow_sdk/blocks/__init__.py", "flow_sdk/builtin/faas/compute_node.py", "flow_sdk/cli/commands/diagnose_cmd.py",
         "flow_sdk/core/capabilities/registry.py", "flow_sdk/core/compute/process_step.py",
         "flow_sdk/core/entity/entity_model.py", "flow_sdk/migrations/runner.py",
