@@ -6436,17 +6436,31 @@ msgstr ""
 msgid "Copy name"
 msgstr "نسخ الاسم"
 
-#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/pages/flow-page/display-history-button.tsx
-#: src/tabs/provider-meta.tsx
 msgid "Copy path"
 msgstr "نسخ المسار"
 
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Copy path of {name}"
+msgstr ""
+
+#. placeholder {0}: file.path
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy path: {0}"
+msgstr ""
+
+#: src/components/spec-editor/SpecEditor.tsx
+#: src/pages/flow-page/display-history-button.tsx
+msgid "Copy path: {filePath}"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+msgid "Copy path: {path}"
+msgstr ""
+
+#: src/tabs/provider-meta.tsx
+msgid "Copy path: {workdir}"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -6483,8 +6497,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Copy this file's path to the clipboard"
-msgstr "نسخ مسار هذا الملف إلى الحافظة"
+#~ msgid "Copy this file's path to the clipboard"
+#~ msgstr "نسخ مسار هذا الملف إلى الحافظة"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
