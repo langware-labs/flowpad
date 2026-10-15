@@ -295,8 +295,12 @@ async def handle_request(
             # gates) into a silent fake success and drift local state from the
             # hub. Only transport failures (status_code == 0: DNS, refused,
             # timeout — i.e. offline) keep the degraded local fallback, and
-            # GETs always do (a stale local read beats an error).
-            if request_info.method.upper() != "GET" and e.status_code >= 400:
+            # GETs do too (a stale local read beats an error) — except a 403:
+            # the hub refusing THIS caller is the answer, not an outage, and a
+            # local read would either show what was refused or hide the refusal
+            # (People & teams turns it into the member's read-only card).
+            is_get = request_info.method.upper() == "GET"
+            if (not is_get and e.status_code >= 400) or (is_get and e.status_code == 403):
                 raise HTTPException(status_code=e.status_code, detail=e.reason)
             service_log.warn(
                 f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
