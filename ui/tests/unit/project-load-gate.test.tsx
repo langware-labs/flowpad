@@ -8,7 +8,7 @@ import { AgenticProcess, Project, type ProjectLoadResult, type ProjectSetupFix }
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
 import { useProjectLoadStore } from '@src/components/project-setup/project-load-store';
 
-vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }) }));
+vi.mock('@sdk/react/hooks', () => ({ useEntity: () => ({ data: { displayName: 'Service' } }), useWatch: () => undefined }));
 vi.mock('@src/hooks/use-process-progress-info', () => ({
   useProcessProgressInfo: () => ({ statusMessage: 'Killing the process on port 4400', activityLabel: null, elapsedTime: '12s' }),
 }));
