@@ -62,7 +62,8 @@ DM ds-put <project>/agentic-assets/dataset/mocks <slug> '{"input": {"title": "�
 - **Start where the user really starts** (often the screen they already live in). If unsure, ask once.
 - One step per screen. `app` names the product the screen lives in.
 - A branch (failure, cancel, "finish later") has `branch_of: <step id>` and `when` ("if denied"); it sits
-  right after the step it branches from. Back / Next follow the main path; branches are reached from
+  right after the step it branches from. A screen that goes on somewhere other than the next main-path screen (a
+  branch's "Try again") says so with `next: <step id>`. Back / Next follow the main path; branches are reached from
   their screen's own buttons or the screens list.
 - Decisions get ids unique across the mock (D1, D2…) in the step that asks them.
 - `session` is YOUR agentic process id (`flow context`) — where Submit sends the feedback.
@@ -89,7 +90,8 @@ When the user says the mock "doesn't look like our app", that is real mode — d
 Paste `assets/journey-bar.js` inline as the last script (build_mock.py does it in real mode) and set
 `MOCKIFY.key = '<slug>'`. It reads the mock row and gives the reviewer Restart, Back / Next, where they
 are, the screens list, per-screen feedback and Submit — contract and controls: `assets/journey-bar.md`.
-In-screen buttons move the journey with `mockifyGo('<id>')`.
+Every control on a screen that moves the journey says where it leads with **`data-next="<step id>"`** — a
+click on it then moves the journey by itself; no `onclick` needed.
 
 ## 4. Put the discussed details on the screens
 
@@ -97,6 +99,9 @@ In-screen buttons move the journey with `mockifyGo('<id>')`.
   text. A user reacts to words.
 - Every state the discussion named: empty, waiting, failed, done, "finish later".
 - Say what each control does when it is not obvious (a one-line hint in the screen's own style).
+- **Show the way forward.** Mark EVERY control that moves the journey with `data-next="<step id>"` — the
+  main button and the branches (Cancel, Skip, Try again); the bar mildly highlights the one that goes on
+  (`assets/journey-bar.md`). A screen with no marked control is a dead end for the reviewer — fix it.
 - **Open decisions**: mark the element with `data-decision="D2"` — the id from the mock row; the bar
   offers that screen's decisions as chips on the feedback box.
 - No invented scope: mock what was discussed; a gap you noticed goes in the reply, not on a screen.

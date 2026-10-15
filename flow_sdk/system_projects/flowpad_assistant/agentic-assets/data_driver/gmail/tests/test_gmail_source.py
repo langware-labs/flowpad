@@ -1,10 +1,11 @@
 """The ``gmail`` data source over a fake IMAP + SMTP mailbox: mapping, the UID cursor, outbound
-MIME, reply routing and the targeted reply lookup — with the app password reaching the source only
-as a credential."""
+MIME, reply routing and the targeted reply lookup — with the way in (a Google sign-in's token, or an app
+password) reaching the source only as the ``gmail`` credential."""
 from __future__ import annotations
 
 import imaplib
 import json
+import os
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
@@ -32,6 +33,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ADDRESS = "Captain@Gmail.com"
 PASSWORD = "app-pass"
+TOKEN = "ya29.google-token"
 ALL_MAIL = "[Gmail]/All Mail"
 
 
@@ -85,6 +87,13 @@ class _Imap:
             raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials")
         return "OK", []
 
+    def authenticate(self, mechanism, respond):
+        said = respond(b"").decode()
+        if mechanism != "XOAUTH2" or said != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
+            raise imaplib.IMAP4.error("[AUTHENTICATIONFAILED] Invalid credentials (Failure)")
+        self.g.calls.append(("AUTHENTICATE", mechanism))
+        return "OK", []
+
     def select(self, box, readonly=True):
         # Gmail's own parser: a mailbox name with a space must arrive quoted.
         if " " in box and not (box.startswith('"') and box.endswith('"')):
@@ -136,11 +145,33 @@ class _Smtp:
         if password != PASSWORD:
             raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
 
+    def ehlo(self):
+        return 250, b"AUTH XOAUTH2"
+
+    def auth(self, mechanism, respond, initial_response_ok=True):
+        if mechanism != "XOAUTH2" or respond() != f"user={ADDRESS}\x01auth=Bearer {TOKEN}\x01\x01":
+            raise smtplib.SMTPAuthenticationError(535, b"bad credentials")
+        self.g.calls.append(("SMTP AUTH", mechanism))
+
     def send_message(self, message):
         parent = str(message.get("In-Reply-To") or "")
         thread = next((t for _, t, r in self.g.boxes[ALL_MAIL] if parent and f"Message-ID: {parent}".encode() in r), None)
         self.g.sent.append(message)
         self.g.deliver(message.as_bytes(), thread or str(9000 + self.g.next_uid), sent=True)
+
+
+@pytest.fixture(autouse=True)
+def credentials(monkeypatch):
+    """The ``gmail`` credential, resolved — read here from ``GMAIL_*`` variables a test sets (``GMAIL_CHOICE``
+    names the way, ``GMAIL_TOKEN`` is a Google sign-in's token). A test with a double patches over it."""
+
+    async def resolve(_row):
+        values = {k: SecretStr(v) for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if (v := os.environ.get(k))}
+        token = SecretStr(os.environ["GMAIL_TOKEN"]) if os.environ.get("GMAIL_TOKEN") else None
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values, token=token, choice=os.environ.get("GMAIL_CHOICE", ""))
+
+    monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
+    monkeypatch.setattr(DataDriver.loaded("gmail"), "credentials_for", resolve)
 
 
 @pytest.fixture
@@ -192,13 +223,60 @@ async def _read(source, file) -> bytes:
         return b"".join([chunk async for chunk in chunks])
 
 
-def test_gmail_is_a_registered_message_source_with_env_only_auth():
+def test_gmail_is_a_registered_message_source_read_with_the_gmail_credential():
     manifest = json.loads(
         (Path(__file__).parents[1] / "data_driver.json").read_text()
     )
     driver = DataDriver.loaded("gmail")
     assert (driver.kind, driver.sends, driver.identity_config_key) == ("datasource.api.gmail", True, "address")
-    assert manifest["auth"]["env"] == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"] and "app_password" not in manifest["config"]
+    assert manifest["auth"]["credential"] == "gmail" and "app_password" not in manifest["config"]
+    assert driver.has_setup  # a new source owes Setup: its verify logs in
+
+
+async def test_the_google_way_logs_in_with_xoauth2_for_imap_and_smtp(gmail, monkeypatch):
+    monkeypatch.delenv("GMAIL_APP_PASSWORD")
+    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_GOOGLE")
+    gmail.deliver(_raw(), "9988", uid=7)
+    result = await DataDriver.loaded("gmail").traverse(_row(), _view())
+    assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
+
+    await DataDriver.loaded("gmail").send(_row(), thread_key="", to="sailor@example.com", text="Ahoy")
+    assert ("SMTP AUTH", "XOAUTH2") in gmail.calls and len(gmail.sent) == 1
+
+
+async def test_the_way_chosen_wins_over_a_value_that_is_also_there(gmail, monkeypatch):
+    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_APP_PASSWORD")
+    gmail.deliver(_raw(), "9988", uid=7)
+    await DataDriver.loaded("gmail").traverse(_row(), _view())
+    assert ("AUTHENTICATE", "XOAUTH2") not in gmail.calls
+
+
+@pytest.mark.parametrize("way", ["GMAIL_GOOGLE", "GMAIL_APP_PASSWORD"])
+async def test_verify_holds_with_either_way(gmail, monkeypatch, way):
+    if way == "GMAIL_GOOGLE":
+        monkeypatch.delenv("GMAIL_APP_PASSWORD")
+        monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", way)
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert verdict.ready and ADDRESS in verdict.detail
+
+
+async def test_verify_owes_setup_with_no_way_and_says_googles_refusal(gmail, monkeypatch):
+    monkeypatch.delenv("GMAIL_APP_PASSWORD")
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert not verdict.ready and verdict.detail == "Sign in with Google or add an app password"
+
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "wrong")
+    source = await DataDriver.loaded("gmail").open(_row())
+    async with source:
+        verdict = await source.verify()
+    assert not verdict.ready and "Invalid credentials" in verdict.detail
 
 
 async def test_the_password_is_a_credential_with_googles_display_spacing_dropped(monkeypatch):

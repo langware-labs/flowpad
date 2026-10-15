@@ -26,13 +26,13 @@ describe('an automation on a message', () => {
           message={message}
           flowMessageId="m-1"
           senderName="Dana Levi"
-          automation={{ name: 'Billing helper', status: 'running', onOpen }}
+          automation={{ name: 'Billing helper', state: 'working', onOpen }}
         />
       </MemoryRouter>,
     );
     const chip = screen.getByTestId('message-automation-chip');
     expect(chip.textContent).toContain('Billing helper');
-    expect(chip.getAttribute('data-status')).toBe('running');
+    expect(chip.getAttribute('data-status')).toBe('working');
     fireEvent.click(chip);
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -40,7 +40,7 @@ describe('an automation on a message', () => {
   it('a session that never finished reads as a dashed chip', () => {
     render(
       <MemoryRouter>
-        <MessageBubble message={message} flowMessageId="m-1" senderName="Dana" automation={{ name: 'Trip planner', status: 'failed', onOpen: vi.fn() }} />
+        <MessageBubble message={message} flowMessageId="m-1" senderName="Dana" automation={{ name: 'Trip planner', state: 'failed', onOpen: vi.fn() }} />
       </MemoryRouter>,
     );
     expect(screen.getByTestId('message-automation-chip').className).toContain('border-dashed');

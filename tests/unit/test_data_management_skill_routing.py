@@ -23,7 +23,8 @@ IGNORED_DIRS = {".flow", "__pycache__"}
 
 
 def _routed_paths(text: str) -> set[str]:
-    return set(re.findall(r"(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
+    # A path into ANOTHER skill (`../other-skill/references/x.md`) is not one of this skill's files.
+    return set(re.findall(r"(?<![/\w])(?:modes|references|scripts)/[A-Za-z0-9_.-]+", text))
 
 
 def _authored_files() -> list[Path]:

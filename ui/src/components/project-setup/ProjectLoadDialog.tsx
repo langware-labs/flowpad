@@ -4,6 +4,8 @@ import { onDependencyLoaded } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AskForm } from '@src/components/ask/AskForm';
+import { SetupFailureActions } from './SetupFailureActions';
+import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
 import { useProjectLoad } from './use-project-load';
 import { openProjectLoad, useProjectLoadStore, type ProjectLoadPayload } from './project-load-store';
@@ -33,6 +35,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   // The question was asked about one app when the verdict names one: the approval is for that app too.
   const load = useProjectLoad(projectId, initial, '', true, initial.asset ?? '');
   const state = load.result?.state;
+  const fix = useSetupFix(projectId, load.result, load.error, () => void load.load());
   const needsSetup = state === 'setup_required';
   // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.
   const watched = useRef(false);
@@ -72,21 +75,24 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
             <Trans>Preparing…</Trans>
           </p>
         )}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            {needsSetup ? t`Not now` : t`Close`}
-          </Button>
-          {needsSetup && (
-            <Button disabled={load.starting} onClick={() => void load.load(true)}>
-              <Trans>Set up</Trans>
+        {fix.show ? (
+          <SetupFailureActions
+            fix={fix}
+            busy={load.starting}
+            onCancel={onClose}
+          />
+        ) : (
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>
+              {needsSetup ? t`Not now` : t`Close`}
             </Button>
-          )}
-          {state === 'failed' && (
-            <Button disabled={load.starting} onClick={() => void load.load()}>
-              <Trans>Try again</Trans>
-            </Button>
-          )}
-        </div>
+            {needsSetup && (
+              <Button disabled={load.starting} onClick={() => void load.load(true)}>
+                <Trans>Set up</Trans>
+              </Button>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

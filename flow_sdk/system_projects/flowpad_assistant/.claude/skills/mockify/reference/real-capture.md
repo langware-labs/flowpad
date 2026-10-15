@@ -69,6 +69,8 @@ The states script draws one step per load from `location.hash` (`mockGo` sets th
 - **Clone, don't draw.** A new tile = a real tile cloned with icon and label swapped; a new strip = the
   captured strip with its text changed; new list rows = a real row cloned (pick one without extras such
   as a count you would have to clear).
+- **Mark the way forward** (`data-next`, SKILL.md §4) on the real controls — the cloned tile, the dialog's
+  primary button, Cancel / Finish later — AFTER cloning: a clone carries no listeners.
 - **Dialogs:** select `[role=dialog][data-state=open]` (a capture also holds hidden dialogs — a floating
   chat, menus). Take its overlay from the ORIGINAL node's `previousElementSibling` before cloning — a
   clone is detached and has no siblings. Append both to `body`.

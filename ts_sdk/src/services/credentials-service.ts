@@ -40,7 +40,8 @@ export interface CredentialVarStatus {
    *  requires it. Read through `isRequired` — never for truth. */
   required: CredentialRequirement;
   /** `file`: the value is a file's content, kept as a file; the variable holds its path.
-   *  `cli`: nothing is stored — a command-line tool holds the sign-in. */
+   *  `cli`: nothing is stored — a command-line tool holds the sign-in. `oauth`: nothing is stored —
+   *  the connection holds the grant. */
   kind: CredentialVarKind;
   /** The store the chosen deployment keeps this variable in; `cli` for a `cli` variable. */
   store: CredentialValueStore;
@@ -48,6 +49,9 @@ export interface CredentialVarStatus {
   present: boolean;
   /** `cli`: the command that signs in on THIS machine; empty for every other kind. */
   login?: string;
+  /** `oauth`: the provider whose grant this way is, and the scopes it must cover (store `connection`). */
+  provider?: string;
+  scopes?: string[];
   /** `cli`: the declared commands, so an edit can save them back. */
   login_spec?: CredentialVarCommand | null;
   check_spec?: CredentialVarCommand | null;
@@ -88,6 +92,8 @@ export interface CredentialStatusRow {
   /** `partial`: some values / a grant missing scopes; `needs_reauth`: oauth, the grant went stale. */
   state: 'connected' | 'partial' | 'missing' | 'needs_reauth';
   vars: CredentialVarStatus[];
+  /** The ONE_OF way set up on this machine (the credential row's `setup_choice`); empty when none is chosen. */
+  setup_choice?: string;
 }
 
 export type CredentialKind = 'env' | 'oauth';

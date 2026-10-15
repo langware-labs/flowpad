@@ -7,7 +7,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Conversation } from '@sdk/entities/conversation';
 import type { IActionSpec } from '@sdk/models/ChannelSpec';
+import type { FlowMessage } from '@sdk/entities/flow-message';
 import { ConversationActions, ConversationEndedLine } from '@src/components/conversation/ConversationActions';
+import { MessageMarkChip } from '@src/components/conversation/ChannelMessageExtras';
 
 afterEach(cleanup);
 
@@ -17,7 +19,38 @@ const conversationWith = (actions: IActionSpec[], fields: Partial<Conversation> 
   return { conversation, act };
 };
 
+const message = (fields: Partial<FlowMessage>) => ({ id: 'm', sender_id: 'dana', ...fields }) as unknown as FlowMessage;
+
 describe('ConversationActions', () => {
+  it('draws an action whose done_mark is on our newest message as done, and keeps the others live', () => {
+    const { conversation } = conversationWith([
+      { id: 'approve', label: 'Approve', done_mark: 'approved' },
+      { id: 'request_changes', label: 'Request changes', done_mark: 'changes_requested' },
+      { id: 'merge', label: 'Merge' },
+    ]);
+    const approved = { key: 'approved', label: 'Approved', tone: 'positive' as const };
+    const messages = [
+      message({ id: 'm1', sender_id: 'me', sent_at: '2026-01-01T00:00:00Z', mark: { key: 'changes_requested', label: 'Changes requested' } }),
+      message({ id: 'm2', sender_id: 'me', sent_at: new Date().toISOString(), mark: approved }),
+      // Someone else's later review is not ours: it does not undo our approval.
+      message({ id: 'm3', sender_id: 'dana', sent_at: new Date(Date.now() + 1000).toISOString(), mark: { key: 'dismissed', label: 'Dismissed' } }),
+    ];
+    render(<ConversationActions conversation={conversation} messages={messages} selfIds={['me']} />);
+    const done = screen.getByTestId('conversation-action-done-approve');
+    expect(done.textContent).toMatch(/^✓ Approved · /);
+    expect(done.tagName).not.toBe('BUTTON');
+    expect(screen.queryByTestId('conversation-action-approve')).toBeNull();
+    expect(screen.getByTestId('conversation-action-request_changes')).toBeTruthy();
+    expect(screen.getByTestId('conversation-action-merge')).toBeTruthy();
+  });
+
+  it("does not draw an action done on someone else's mark", () => {
+    const { conversation } = conversationWith([{ id: 'approve', label: 'Approve', done_mark: 'approved' }]);
+    const messages = [message({ sender_id: 'dana', mark: { key: 'approved', label: 'Approved' } })];
+    render(<ConversationActions conversation={conversation} messages={messages} selfIds={['me']} />);
+    expect(screen.getByTestId('conversation-action-approve')).toBeTruthy();
+  });
+
   it('renders one button per channel action', () => {
     const { conversation } = conversationWith([
       { id: 'approve', label: 'Approve', icon_name: 'Check' },
@@ -90,5 +123,15 @@ describe('ConversationEndedLine', () => {
     expect(screen.queryByTestId('conversation-ended')).toBeNull();
     rerender(<ConversationEndedLine endedAt={new Date(Date.now() - 5 * 60_000).toISOString()} />);
     expect(screen.getByTestId('conversation-ended').textContent).toMatch(/^Ended · /);
+  });
+});
+
+describe('MessageMarkChip', () => {
+  it('shows the label, tinted by tone', () => {
+    render(<MessageMarkChip mark={{ key: 'changes_requested', label: 'Changes requested', tone: 'negative' }} />);
+    const chip = screen.getByTestId('message-mark');
+    expect(chip.textContent).toBe('Changes requested');
+    expect(chip.getAttribute('data-tone')).toBe('negative');
+    expect(chip.className).toContain('border-red-500/60');
   });
 });

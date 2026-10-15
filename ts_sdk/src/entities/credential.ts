@@ -24,7 +24,7 @@ export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof 
 /** What a variable's value IS: the value (`text`), a file's content kept as a file (`file`) — the
  *  variable then holds the file's path — or nothing stored at all (`cli`): a command-line tool
  *  holds the sign-in, and the variable only says how to sign in and how to check. */
-export type CredentialVarKind = 'text' | 'file' | 'cli';
+export type CredentialVarKind = 'text' | 'file' | 'cli' | 'oauth';
 
 /** A command per platform (`darwin` / `linux` / `win32`) — a `cli` variable's `login` and `check`. */
 export interface CredentialVarCommand {
@@ -74,14 +74,20 @@ export function isRequired(v: Weighed | undefined): boolean {
   return requirementOf(v) === CredentialRequirement.MUST;
 }
 
+/** A store keeps a value for it — not a sign-in (`cli`) or a grant (`oauth`), which live elsewhere. */
+export function holdsValue(v: { kind?: string }): boolean {
+  return v.kind !== 'cli' && v.kind !== 'oauth';
+}
+
 /** The either-or group: every `ONE_OF` variable of one credential. */
 export function oneOfGroup<T extends Weighed>(vars: readonly T[]): T[] {
   return vars.filter((v) => requirementOf(v) === CredentialRequirement.ONE_OF);
 }
-/** One member of the group is present — or there is no group to satisfy. */
-export function groupSatisfied(vars: readonly (Weighed & { present: boolean })[]): boolean {
+/** One member of the group is present — or there is no group to satisfy. Once a way is chosen on this machine
+ *  (`choice`: the status row's `setup_choice`, which the backend already checked names a member), that member alone. */
+export function groupSatisfied(vars: readonly (Weighed & { present: boolean; env_var?: string })[], choice = ''): boolean {
   const group = oneOfGroup(vars);
-  return group.length === 0 || group.some((v) => v.present);
+  return group.length === 0 || group.some((v) => v.present && (!choice || v.env_var === choice));
 }
 /**
  * What is still needed, one entry per need: each absent `MUST` variable by itself, then the group

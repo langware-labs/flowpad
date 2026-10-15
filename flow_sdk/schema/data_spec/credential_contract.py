@@ -111,12 +111,15 @@ class CredentialVarKind(StrEnum):
     expect. ``cli``: no value at all — a sign-in a command-line tool holds for itself
     (``gcloud auth application-default login``). Nothing is stored and nothing is
     injected; the variable declares the ``login`` a person runs and the ``check``
-    that says whether it is there.
+    that says whether it is there. ``oauth``: no value either — a grant from ``provider``
+    covering ``scopes``, given in a browser and held by the connection (``token_for``).
+    Both are ways of a ONE_OF group: the alternative to typing a value.
     """
 
     TEXT = "text"
     FILE = "file"
     CLI = "cli"
+    OAUTH = "oauth"
 
 
 #: A var's ``required`` field: the enum, reading a pre-enum bool on the way in.

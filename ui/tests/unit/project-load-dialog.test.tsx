@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Project, type ProjectLoadResult, type SetupNodeResult, type SetupTreeResult } from '@sdk';
 import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
@@ -29,9 +30,11 @@ function mount(result: ProjectLoadResult = required, observed: ProjectLoadResult
     defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false } },
   });
   render(
-    <QueryClientProvider client={client}>
-      <ProjectLoadDialogRoot />
-    </QueryClientProvider>,
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <ProjectLoadDialogRoot />
+      </QueryClientProvider>
+    </MemoryRouter>,
   );
   act(() => openProjectLoad({ ...payload, initial: result }));
 }

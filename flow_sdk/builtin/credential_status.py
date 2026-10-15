@@ -130,36 +130,44 @@ async def _signed_in(var) -> bool:
     return said.returncode == 0 and not said.timed_out
 
 
-async def oauth_states(specs: list["Credential"]) -> dict[str, tuple[str, list[str]]]:
-    """``{provider: (state, missing scopes)}`` for the oauth credentials in ``specs`` — read from the ONE truth
-    about grants (the connection list, ``core/connections/specs``), and the SDK's own scope check for what a
-    held grant covers, checked on the grant already in hand. Never a store read: an oauth credential has no
-    variables."""
+def _grant_key(provider: str, scopes) -> tuple[str, tuple[str, ...]]:
+    return str(provider or "").lower(), tuple(scopes or ())
+
+
+async def oauth_states(specs: list["Credential"]) -> dict[tuple[str, tuple[str, ...]], tuple[str, list[str]]]:
+    """``{(provider, scopes): (state, missing scopes)}`` for every grant ``specs`` ask for — an oauth credential's,
+    and an ``oauth`` way of an env credential's ONE_OF group — read from the ONE truth about grants (the
+    connection list, ``core/connections/specs``), and the SDK's own scope check for what a held grant covers,
+    checked on the grant already in hand. Never a store read: a grant is no variable."""
     from flow_sdk.connections import MissingScopes, _from_spec  # noqa: PLC0415
     from flow_sdk.core.connections.specs import _list_connection_specs_local, match_provider  # noqa: PLC0415
     from flow_sdk.schema.data_spec.connection_spec import ConnectionState  # noqa: PLC0415
 
-    wanted = [spec for spec in specs if spec.is_oauth]
+    wanted = list(dict.fromkeys(
+        [_grant_key(spec.provider, spec.scopes) for spec in specs if spec.is_oauth]
+        + [_grant_key(var.provider, var.scopes) for spec in specs if not spec.is_oauth
+           for var in (spec.vars or {}).values() if var.is_oauth]
+    ))
     if not wanted:
         return {}
     try:
         grants = await _list_connection_specs_local()
     except Exception:  # noqa: BLE001 — no answer about grants reads as not connected, never an error page
         grants = []
-    out: dict[str, tuple[str, list[str]]] = {}
-    for spec in wanted:
-        provider = str(spec.provider or "").lower()
+    out: dict[tuple[str, tuple[str, ...]], tuple[str, list[str]]] = {}
+    for key in wanted:
+        provider, scopes = key
         grant = match_provider(grants, provider)
         if grant is None or grant.state is ConnectionState.DISCONNECTED:
-            out[provider] = ("missing", [])
+            out[key] = ("missing", [])
         elif grant.state is ConnectionState.NEEDS_REAUTH:
-            out[provider] = ("needs_reauth", [])
+            out[key] = ("needs_reauth", [])
         else:
             try:
-                await _from_spec(grant).validate_scopes(spec.scopes or [])
-                out[provider] = ("connected", [])
+                await _from_spec(grant).validate_scopes(list(scopes))
+                out[key] = ("connected", [])
             except MissingScopes as e:
-                out[provider] = ("partial", list(e.missing))
+                out[key] = ("partial", list(e.missing))
     return out
 
 
@@ -182,7 +190,7 @@ class _Draft:
     def settle(self) -> CredentialStatusRowSpec:
         has_group = any(v.is_one_of for v in self.vars)
         needed = self.required or (set() if has_group else {v.env_var for v in self.vars})
-        if all(v.present for v in self.vars if v.env_var in needed) and group_held(self.vars):
+        if all(v.present for v in self.vars if v.env_var in needed) and group_held(self.vars, self.spec.chosen):
             state = "connected"
         elif any(v.present for v in self.vars):
             state = "partial"
@@ -222,7 +230,7 @@ async def credentials_status(
             setup_skipped=spec.setup_skipped, asset_ref=str(spec.asset_ref or ""),
         )
         if spec.is_oauth:
-            state, missing_scopes = grants.get(str(spec.provider or "").lower(), ("missing", []))
+            state, missing_scopes = grants.get(_grant_key(spec.provider, spec.scopes), ("missing", []))
             rows.append(CredentialStatusRowSpec(
                 **common, value_store="connection", kind="oauth", provider=str(spec.provider or ""),
                 scopes=list(spec.scopes or []), missing_scopes=missing_scopes, state=state,
@@ -240,6 +248,14 @@ async def credentials_status(
                 var_rows.append(CredentialVarStatusSpec(
                     **shown, secret=False, store="cli", warning="missing",
                     login=var.login_command, login_spec=var.login, check_spec=var.check,
+                ))
+                continue
+            if var.is_oauth:
+                # A way that is a sign-in through Flowpad: held when the provider's grant covers its scopes.
+                held = grants.get(_grant_key(var.provider, var.scopes), ("missing", []))[0] == "connected"
+                var_rows.append(CredentialVarStatusSpec(
+                    **shown, secret=False, store="connection", present=held, warning=None if held else "missing",
+                    provider=var.provider, scopes=list(var.scopes),
                 ))
                 continue
             ref = refs[(str(spec.id), env_var)]
@@ -272,6 +288,7 @@ async def credentials_status(
             setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
             value_store=next(iter(stores)) if len(stores) == 1 else "mixed",
             lm_provider=spec.lm_provider or "",
+            setup_choice=spec.chosen,
         )))
 
     # A sign-in lives on this computer: it is asked only for the deployment that IS this computer, and a

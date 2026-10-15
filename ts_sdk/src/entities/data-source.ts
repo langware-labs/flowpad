@@ -481,14 +481,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('items', { limit });
   }
 
-  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
-  async syncNow(): Promise<{
-    created: number;
-    updated: number;
-    unchanged: number;
-    health: SourceHealth;
-    status: SourceStatus;
-  }> {
+  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. A source waiting on a
+   *  setup step or paused is not fetched: `ran` is false and `detail` says why. */
+  async syncNow(): Promise<SyncReport> {
     return this.post('sync');
   }
 
@@ -507,6 +502,20 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   async verify(): Promise<VerifyResult> {
     return this.post('verify');
   }
+}
+
+/** What one Pull answered (`POST data_source/<id>/sync`): the cycle's counts, or why it did not run. */
+export interface SyncReport {
+  /** False when the source was not runnable (in setup, or paused); `detail` says why. */
+  ran?: boolean;
+  created: number;
+  updated: number;
+  unchanged: number;
+  removed?: number;
+  health: SourceHealth;
+  status: SourceStatus;
+  error_detail?: string | null;
+  detail?: string;
 }
 
 /** One thing a source in `setup` still needs (`SetupNeedSpec`). */

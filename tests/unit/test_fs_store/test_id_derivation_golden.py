@@ -55,6 +55,8 @@ def test_golden_id_namespaces_per_type() -> None:
         "codex_session": dns,
         "command": dns,
         "copilot_session": dns,
+        "opencode_session": dns,
+        "deepagents_session": dns,
         "project": dns,
     }, (
         "a type gaining or losing an id_namespace override moves EVERY v5 it owns. "

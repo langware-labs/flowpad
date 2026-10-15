@@ -1,5 +1,5 @@
 import { lifecyclesOf, onlyWithSessions, useHandledKeys } from './message-lifecycle';
-import { useMessageAutomationSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
+import { useMessageSessions } from '@src/hooks/conversation/useMessageAutomationSessions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
@@ -23,6 +23,7 @@ import {
   RemoteWorkerSession,
   Task,
   toplog,
+  dataContext,
 } from '@sdk';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -305,7 +306,11 @@ export function ConversationView({
   });
   const launchWorkerOnMessage = useCallback(
     (messageId: string, worker: WorkerType) =>
-      launchWorker(worker, () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId))),
+      launchWorker(
+        worker,
+        () => buildMessageStartPrompt(conversationTypeId, new TypeId(FlowMessage.type, messageId)),
+        messageId,
+      ),
     [launchWorker, conversationTypeId],
   );
 
@@ -356,7 +361,7 @@ export function ConversationView({
   const handledKeys = useHandledKeys(answered ? conversation?.channel_source_id : null);
   // The sessions automations started on this conversation's messages (one live query): the chip on each
   // message, and the lifecycle line's handling / didn't-finish states.
-  const automationSessions = useMessageAutomationSessions(conversationId);
+  const { automation: automationSessions, manual: manualSessions } = useMessageSessions(conversationId);
   const lifecycles = useMemo(() => {
     // A channel nobody here answers still shows the way of a message an automation's agent took.
     if (!answered && automationSessions.size === 0) return null;
@@ -619,6 +624,7 @@ export function ConversationView({
           lifecycle={lifecycles?.get(id) ?? null}
           onAutomate={conversation?.channel_source_id ? handleAutomate : undefined}
           automationSession={automationSessions.get(id) ?? null}
+          session={manualSessions.get(id) ?? null}
           quoted={quotedFor(fm)}
           onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={taskOfMessage(id) ?? threadTask}
@@ -940,7 +946,14 @@ export function ConversationView({
     <div className="space-y-3">
       {approveSessionPicker}
       {/* Its own row: a refusal spans the width under the buttons instead of squeezing beside them. */}
-      {conversation && <ConversationActions conversation={conversation} onDone={() => void handleRefresh()} />}
+      {conversation && (
+        <ConversationActions
+          conversation={conversation}
+          messages={conversationMessages}
+          selfIds={[cloudUserId, localUser?.id, dataContext.bootstrapInfo?.user?.id]}
+          onDone={() => void handleRefresh()}
+        />
+      )}
       <div className="flex items-center justify-end gap-1">
         {canPickup && (
           <button
