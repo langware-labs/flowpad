@@ -256,7 +256,8 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.t.engineChangeAllowed('test'), 'hold', 'an unanswered check holds the engine');
   }
   {
-    // "Restart now" failed: the hold on the engine is released for the session (the desktop will not arrive).
+    // "Restart now" failed: the new desktop is downloaded but NOT installed and running, so the engine stays held —
+    // the periodic check, the pre-start prompt's gate and the UI's upgrade IPC all keep refusing.
     const env = load({ engineStatus: null, dialogResponses: [0] });
     env.t.setupElectronAutoUpdater();
     await env.t.getDesktopUpdateVersion();
@@ -264,7 +265,42 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.t.engineChangeAllowed('test'), 'hold', 'held while the desktop is pending');
     await env.t.restartApplier.apply();
     env.t.restartApplier.failed(new Error('could not restart'));
-    eq(env.t.engineChangeAllowed('test'), 'allow', 'released once the desktop could not be applied');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'still held after "Restart now" failed: the new desktop is not running');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'after a failed restart: no engine check');
+    const r = await env.ipc['upgrade-flowpad']();
+    ok(r.success === false && r.desktopUpdatePending === true, 'after a failed restart: the UI upgrade is refused');
+    eq(env.uv.upgrades.length, 0, 'after a failed restart: the engine was not touched');
+  }
+  {
+    // The desktop update is FULLY DOWNLOADED (update-downloaded emitted) and the user said Later at the ready prompt:
+    // it installs on the next quit, but until the new desktop is installed and running the engine stays held.
+    const env = load({ engineStatus: null, dialogResponses: [1 /* Later at the ready prompt */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.t.getState().desktopDownloadedVersion, '0.2.48', 'the update is fully downloaded');
+    eq(env.dialogCalls.length, 1, 'the ready prompt was shown and answered Later');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'downloaded + Later: the engine stays held');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'downloaded + Later: no engine check');
+    const r = await env.ipc['upgrade-flowpad']();
+    ok(r.success === false && r.desktopUpdatePending === true, 'downloaded + Later: the UI upgrade is refused');
+  }
+  {
+    // Same on the combined screen: "Later" there downloads in the background without a prompt; once the download is
+    // complete the engine is still held (it is installed by the new desktop after the restart, nothing earlier).
+    const env = load({ dialogResponses: [1 /* Later on "Updates available" */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.getDesktopUpdateVersion();
+    eq(await env.t.offerDesktopUpdate('0.2.48'), 'both', 'desktop + engine → the combined screen');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick(); await tick();
+    eq(env.t.getState().desktopDownloadedVersion, '0.2.48', 'combined screen: the update is fully downloaded');
+    eq(env.t.engineChangeAllowed('test'), 'hold', 'combined screen, downloaded + Later: the engine stays held');
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'combined screen, downloaded + Later: no engine check');
+    eq(env.uv.upgrades.length, 0, 'combined screen, downloaded + Later: the engine was not touched');
   }
   {
     // The UI's upgrade IPC is refused while a newer desktop exists, before the server or the window is touched.

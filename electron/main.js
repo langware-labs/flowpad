@@ -136,10 +136,9 @@ const restartApplier = createRestartApplier({
     }
   },
   onFailure: (err) => {
-    // The desktop could not be applied (for example an app running from a temporary macOS location): do not hold
-    // engine updates back for a desktop that will not arrive this session.
-    pendingDesktopVersion = null;
-    desktopApplyFailed = true;
+    // The desktop could not be applied (for example an app running from a temporary macOS location). It stays
+    // pending: the engine changes only after the NEW desktop is installed and running, and the update is downloaded,
+    // so it still installs on the next quit (the dialog below says so).
     showFailureDialog({
       dialog,
       parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
@@ -519,7 +518,6 @@ async function getDesktopUpdateVersion() {
 // What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
 // check answers: a check that failed or is still running is NOT "no newer desktop".
 let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
-let desktopApplyFailed = false;
 function setDesktopStatus(status) {
   desktopStatus = { version: null, ...status };
   updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
@@ -531,11 +529,7 @@ function setDesktopStatus(status) {
  * upgrades the engine asks here, and says why it was held.
  */
 function engineChangeAllowed(context, { mustInstall = false } = {}) {
-  let desktop = pendingDesktopVersion ? { state: 'available', version: pendingDesktopVersion } : desktopStatus;
-  // "Restart now" failed: do not hold the engine back for a desktop that will not arrive this session (onFailure).
-  if (desktopApplyFailed && desktop.state === 'available') {
-    desktop = { state: 'unsupported', reason: 'the desktop update could not be applied this session' };
-  }
+  const desktop = pendingDesktopVersion ? { state: 'available', version: pendingDesktopVersion } : desktopStatus;
   const policy = engineChangePolicy({ desktop, mustInstall });
   if (policy !== 'allow') {
     const why = desktop.state === 'available'
