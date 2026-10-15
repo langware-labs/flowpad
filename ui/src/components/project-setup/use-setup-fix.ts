@@ -76,7 +76,8 @@ export function useSetupFix(
 
   const settle = useCallback(
     (fixer: AgenticProcess, res: WizardProcessResult<SetupFixAnswer>) => {
-      if (stopped.has(fixer.id)) return;
+      // A cancelled fix has had its say; forgetting it keeps the set from growing.
+      if (stopped.delete(fixer.id)) return;
       const answer = res.data;
       if (res.status === 'done' && answer?.outcome === 'fixed') {
         put(projectId, { phase: 'fixed', process: fixer, summary: answer.summary });
@@ -92,11 +93,24 @@ export function useSetupFix(
     [projectId, put, fail],
   );
 
+  /** Follow one fixer to its verdict — once, however many screens show this project. */
+  const attach = useCallback(
+    async (fixer: AgenticProcess, verdict: Promise<WizardProcessResult<SetupFixAnswer>>) => {
+      awaiting.add(fixer.id);
+      put(projectId, { phase: 'running', process: fixer });
+      const res = await verdict;
+      awaiting.delete(fixer.id);
+      settle(fixer, res);
+    },
+    [projectId, put, settle],
+  );
+
   // A fix still running after a reload is picked up again, never started a second time.
   // Asked only while there is a failure or a fix to show — a project that loads fine watches nothing.
   const { processes } = useProcessesForTarget(target, {
     processType: ProcessKind.Wizard,
-    enabled: !!failure || state.phase !== 'idle',
+    // Only an idle screen adopts; a fix this screen follows already has its verdict promised.
+    enabled: !!failure && state.phase === 'idle',
   });
   // Its process is up and its worker has not finished: a live list can still read the worker as unknown.
   const running = (processes ?? []).find((p) => {
@@ -105,13 +119,8 @@ export function useSetupFix(
   });
   useEffect(() => {
     if (!running || state.phase !== 'idle' || awaiting.has(running.id)) return;
-    awaiting.add(running.id);
-    put(projectId, { phase: 'running', process: running });
-    void awaitWizardResult<SetupFixAnswer>(running).then((res) => {
-      awaiting.delete(running.id);
-      settle(running, res);
-    });
-  }, [running, state.phase, settle, projectId, put]);
+    void attach(running, awaitWizardResult<SetupFixAnswer>(running));
+  }, [running, state.phase, attach]);
 
   const start = useCallback(async () => {
     if (state.phase === 'running') return;
@@ -146,15 +155,11 @@ export function useSetupFix(
         void started.process.cancelPrompt().catch(() => {});
         return;
       }
-      awaiting.add(started.process.id);
-      put(projectId, { phase: 'running', process: started.process });
-      const res = await started.result;
-      awaiting.delete(started.process.id);
-      settle(started.process, res);
+      await attach(started.process, started.result);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err), t`The fixer could not start.`);
     }
-  }, [state.phase, failure, result, target, projectId, put, settle, fail]);
+  }, [state.phase, failure, result, target, projectId, put, attach, fail]);
 
   const cancel = useCallback(() => {
     if (process) {
@@ -166,5 +171,7 @@ export function useSetupFix(
   }, [process, projectId, put]);
 
   const retry = useCallback(() => fixed.current(), []);
-  return { state, process, failure, start, cancel, retry };
+  /** Whether the screen shows the failure block: a failure to fix, or a fix to report. */
+  const show = !!failure || state.phase !== 'idle';
+  return { state, process, failure, show, start, cancel, retry };
 }

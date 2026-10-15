@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { onDependencyLoaded } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -35,8 +35,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   // The question was asked about one app when the verdict names one: the approval is for that app too.
   const load = useProjectLoad(projectId, initial, '', true, initial.asset ?? '');
   const state = load.result?.state;
-  const { load: reload } = load;
-  const fix = useSetupFix(projectId, load.result, load.error, useCallback(() => void reload(), [reload]));
+  const fix = useSetupFix(projectId, load.result, load.error, () => void load.load());
   const needsSetup = state === 'setup_required';
   // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.
   const watched = useRef(false);
@@ -76,7 +75,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
             <Trans>Preparing…</Trans>
           </p>
         )}
-        {state === 'failed' || fix.state.phase !== 'idle' ? (
+        {fix.show ? (
           <SetupFailureActions
             fix={fix}
             busy={load.starting}
