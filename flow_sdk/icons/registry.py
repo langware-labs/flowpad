@@ -62,7 +62,9 @@ from xml.etree import ElementTree
 
 from pydantic import ValidationError
 
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec.icon_spec import IconPackDocSpec, IconPackPayload, IconPackSpec, IconSpec
+from flow_sdk.schema.data_spec.spec import validation_summary
 from flow_sdk.tags.grammar import normalize_tag, tag_ancestors
 
 #: The one manifest filename a pack directory is recognised by.
@@ -154,8 +156,7 @@ def read_asset_pack(folder: Path) -> AssetPack:
     except OSError as exc:
         return AssetPack(folder, None, (f"{MANIFEST}: unreadable ({exc})",))
     except ValueError as exc:  # JSONDecodeError and ValidationError both
-        detail = "; ".join(f"{'.'.join(map(str, e['loc']))}: {e['msg']}" for e in exc.errors()) \
-            if isinstance(exc, ValidationError) else str(exc)
+        detail = validation_summary(exc) if isinstance(exc, ValidationError) else str(exc)
         return AssetPack(folder, None, (f"{MANIFEST}: {detail}",))
     try:
         kind = normalize_tag(doc.kind)
@@ -206,7 +207,7 @@ def read_asset_pack(folder: Path) -> AssetPack:
 
 def asset_pack_folders(root: Path) -> list[Path]:
     """Every ``icon_pack`` folder of one scope root (``<root>/agentic-assets/icon_pack/*``)."""
-    base = Path(root) / "agentic-assets" / FAMILY
+    base = Path(root) / AGENTIC_ASSETS_DIR / FAMILY
     if not base.is_dir():
         return []
     return sorted(p.parent for p in base.glob(f"*/{MANIFEST}"))
@@ -313,7 +314,7 @@ class IconRegistry:
     def add_near(self, path: Path) -> None:
         """Register the packs of every scope above ``path`` -- what a docs chart can see."""
         for parent in (Path(path), *Path(path).parents):
-            if (parent / "agentic-assets" / FAMILY).is_dir():
+            if (parent / AGENTIC_ASSETS_DIR / FAMILY).is_dir():
                 self.add_scope(parent)
 
     async def sync_indexed(self) -> None:

@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "data-management",
   "folder_name": "data-management",
-  "inputs_hash": "0ad9b12a82be0665c07c1bac44cbba40e578cae1189f7f59fcac403c72670203",
+  "inputs_hash": "87ef1d6232b1bdb930f0d695cc1fbc0220462c2c359c65eeeb61f6313bf69ed5",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
@@ -14,17 +14,17 @@
       "name": "asset-capsules.md",
       "rel_path": "asset-capsules.md",
       "title": "Asset capsules",
-      "summary": "Asset capsules: named JSON metadata stored in folders, Markdown comments and source-file comments, with read, write, remove operations and typed errors.",
-      "content_hash": "a160703a9c46b02867abcb88a218aa9d699ee4b76ae66b81174358320dea0009",
-      "size_bytes": 7545
+      "summary": "Asset capsules: named JSON metadata stored in folders, Markdown comments and source-file comments, with read, write, remove operations, identity carriers and typed errors.",
+      "content_hash": "39449e675fb93b54caa11b64b1b87b7b103aa50c54267f3c785f5e4b0ba75c55",
+      "size_bytes": 7534
     },
     {
       "name": "asset-management.md",
       "rel_path": "asset-management.md",
       "title": "Asset management",
-      "summary": "flow_sdk.assets — filesystem asset discovery, identity resolution, install, removal, projection and inventory, built on frozen Asset and AssetFolder values.",
-      "content_hash": "158342912007daa71149c524bd2b1a9a4d131b821b4a162dba022eecbb591e5d",
-      "size_bytes": 8808
+      "summary": "flow_sdk.assets: filesystem asset discovery, identity resolution, install, removal, projection, usage matching and inventory, built on frozen Asset and AssetFolder values.",
+      "content_hash": "db0d3b65bdb5d1837eabcc227bd74ed56bc7b2d56b057e70c06b9392d8192b07",
+      "size_bytes": 8809
     },
     {
       "name": "compute-node-fs-records.md",
@@ -62,9 +62,9 @@
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec — schemas as Pydantic, the schema as the layout",
-      "summary": "DataSpec schemas, runtime schema compilation, typed dataset values, filesystem layouts, TypeInfo integration, and folder-defined schemas.",
-      "content_hash": "a518afdb1884c735ce9b6589fbf072e573c1659e605ec018337347442e462f05",
-      "size_bytes": 24435
+      "summary": "DataSpec schemas, runtime schema compilation, typed RowSpec and DatasetSpec values, DatasetLayout on disk, TypeInfo integration, and folder-defined schemas.",
+      "content_hash": "656488003a365d91c4a8b3964cfb2ce944b8eeddd5009001e2d8d1598882fcda",
+      "size_bytes": 24345
     },
     {
       "name": "database.md",
@@ -78,9 +78,9 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Dataset Layout (Authoring Guide)",
-      "summary": "Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows with eight row verbs, queries, counts, source curation, mirroring, editors and the schema tree.",
-      "content_hash": "ac9dc8e08576d10d6355f3fbedc333b99d9f8dfcc22a0ffc6624702319f1b54d",
-      "size_bytes": 36966
+      "summary": "Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows, row verbs, queries, source curation, mirroring, editors and the schema tree.",
+      "content_hash": "c5bdf3637df0a8acfb02846dbb920423fbcb0c72598ebc15c1d9ed89486cc827",
+      "size_bytes": 36366
     },
     {
       "name": "diskio-benchmarks.md",
@@ -102,9 +102,9 @@
       "name": "diskio.md",
       "rel_path": "diskio.md",
       "title": "Interface proposal — v6 — FINAL (iteration 6)",
-      "summary": "Disk-I/O kernel contracts, Python and Rust backends, scanning hierarchy, shared value and transport rules, conformance, and implementation scope.",
-      "content_hash": "e606ef3bdb773468f0e8051b4df9e4092a815882ea29b530faf77ad34b023d85",
-      "size_bytes": 108550
+      "summary": "Disk-I/O kernel contracts: eight protocol pieces, Python and Rust backends, scanning hierarchy, shared value and transport rules, conformance kit, and implementation scope.",
+      "content_hash": "14854ec9d112b448c4abab580d83efe02c6fe6975dc7ca4da29d3597e738b7a1",
+      "size_bytes": 108581
     },
     {
       "name": "entity-index-sync.md",
@@ -118,9 +118,9 @@
       "name": "evals.md",
       "rel_path": "evals.md",
       "title": "Evals — a dataset's own eval, standard results, one report",
-      "summary": "Dataset evals: eval.json spec, eval.py contract, example and run kinds, verdicts, versioned values, the runner and its report, and the SmartNavigator eval.",
-      "content_hash": "e4a9e9c3f15b3557dfc61fe4b3a322b90ccb6b9754c41d14ab2fa3547bd71ac9",
-      "size_bytes": 3919
+      "summary": "Dataset evals: eval.json spec, eval.py contract, row and run kinds, verdicts, versioned values, the runner and its report, and the SmartNavigator eval.",
+      "content_hash": "c0c4f5e0a96400d60002919cae787c6af5722129bc45888d059e3a6c254153e2",
+      "size_bytes": 3863
     },
     {
       "name": "folder-layout.md",
@@ -215,16 +215,16 @@
       "rel_path": "record-search.md",
       "title": "Record Search (FTS5/SQLite)",
       "summary": "Record search on SQLite FTS5: how FSRecord.sync_to_db indexes entries, how Entity.search and the search route query them, and how bulk reindexing runs.",
-      "content_hash": "a2e8fe32c170486c68d1653e275b53a9b65059218cf8437b924ff63a6d9782e0",
-      "size_bytes": 18105
+      "content_hash": "f0001ea45db2c4ff096e526cc82c2349620fb4eb11907ebc78c00671b5f90637",
+      "size_bytes": 18127
     },
     {
       "name": "scan-and-discovery.md",
       "rel_path": "scan-and-discovery.md",
       "title": "Scan and Discovery",
-      "summary": "Filesystem record discovery through FSIndexer, per-type parsing and freshness, session lookup, filtering, explicit indexing, HTTP endpoints, and performance.",
-      "content_hash": "3e69db4bcdebda1fe52297a30202e81206bd9465774f2d1f78038385775424e1",
-      "size_bytes": 40490
+      "summary": "Filesystem record discovery through FSIndexer walkers, per-type parsing and freshness slots, session lookup, RecordQuery filtering, explicit indexing, HTTP endpoints, and performance.",
+      "content_hash": "9302e8c8afc7918c891edffaf9944355f329f1a94dfd71d09a1609fcb11d8a41",
+      "size_bytes": 40485
     },
     {
       "name": "schema-registry.md",
@@ -268,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T08:55:59.822110+00:00",
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
   "latest_process_ref": ""
 }
