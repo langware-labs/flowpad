@@ -1872,12 +1872,12 @@ class Dataset(Entity):
             except (ValueError, ValidationError):
                 return {}
 
-        rows, explain = await asyncio.gather(
+        by_id, explain = await asyncio.gather(
             asyncio.to_thread(read_rows), asyncio.to_thread(store.explanations, self._folder(), self.declared_kind)
         )
         joined = []
         for ex in rows:
-            row = rows.get(ex.row_id)
+            row = by_id.get(ex.row_id)
             dumped = row.model_dump(mode="json", include={"input", "context", "data", "kind"}) if row else {}
             # A logged row keeps its own run's trace in its data -- not this eval's; it stays home too.
             if isinstance(dumped.get("data"), dict):
