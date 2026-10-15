@@ -154,7 +154,7 @@ export function AskForm({
   return (
     <div className="flex flex-col gap-4" data-testid="ask-view">
       <div>
-        <h1 className="text-base font-medium" data-testid="ask-prompt">
+        <h1 className="whitespace-pre-line text-base font-medium" data-testid="ask-prompt">
           {question.prompt}
         </h1>
         {showOp ? <p className="text-xs text-muted-foreground">{question.op}</p> : null}

@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways",
 )
 
 
@@ -391,7 +391,8 @@ async def set_credential_by_name(
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
     stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
-    ways = [var for var, value in (values or {}).items() if str(value or "") and spec.is_way(var)]
+    # The way the values were given for: every ONE_OF value given names its way — one way, and it is the choice.
+    ways = sorted({way for var, value in (values or {}).items() if str(value or "") and (way := spec.way_of(var))})
     if way := choice or (ways[0] if len(ways) == 1 else ""):
         try:
             await write_setup_choice(spec, way)

@@ -945,6 +945,10 @@ msgstr ""
 msgid "{displayName} connection failed"
 msgstr ""
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{done} of {total} set up"
+msgstr ""
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
 msgstr "{doneCount} רשומות"
@@ -4944,6 +4948,10 @@ msgstr "Checking the app…"
 msgid "Checking the help desk files"
 msgstr "בודק את קבצי מרכז העזרה"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Checking the sign-in…"
+msgstr ""
+
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
 msgstr "בודק את אינדקס התגיות…"
@@ -6052,8 +6060,13 @@ msgstr "מחובר"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "מחובר"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connected — {as}"
+msgstr ""
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6197,6 +6210,7 @@ msgstr "פעולות רשימת הקשר"
 msgid "context tokens"
 msgstr "אסימוני Context"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
@@ -7765,6 +7779,11 @@ msgstr "צור פרויקט חדש"
 msgid "Create new…"
 msgstr "צור חדש…"
 
+#. placeholder {0}: shownUrl(field.help_url)
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Create one at {0}"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
 msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מסוג <1>type: markdown_index</1> לתוך תיקיית תיעוד והפעלת <2>flow record index <path></2>."
@@ -9241,6 +9260,7 @@ msgstr "הושלם"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -17847,8 +17867,8 @@ msgstr "בדיסק"
 #~ msgstr "בעת שינוי קובץ"
 
 #: src/components/assets/ProjectDependencyDialog.tsx
-msgid "On hub"
-msgstr "ב-Hub"
+#~ msgid "On hub"
+#~ msgstr "ב-Hub"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -18827,7 +18847,11 @@ msgid "Optional — leave blank for home"
 msgstr "אופציונלי — השאר ריק עבור בית"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "optional — skipped here"
+#~ msgid "optional — skipped here"
+#~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Optional — skipped on this machine"
 msgstr ""
 
 #: src/components/credentials-view/CredentialView.tsx
@@ -20554,6 +20578,10 @@ msgstr ""
 msgid "Reading"
 msgstr "קורא"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "reading {account}"
+msgstr ""
+
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Reading dependencies…"
 msgstr ""
@@ -21490,7 +21518,11 @@ msgid "Required"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "required — it will not work here until it is set up"
+#~ msgid "required — it will not work here until it is set up"
+#~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Required — skipped on this machine"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -23148,7 +23180,6 @@ msgstr "סרגל כלים בחירה"
 msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx

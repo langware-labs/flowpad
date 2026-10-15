@@ -55,6 +55,10 @@ export interface AskChoice {
   value: string;
   label: string;
   hint: string;
+  /** Where to get the value — a link under its input. */
+  help_url?: string;
+  /** The example shown in an empty input. */
+  placeholder?: string;
   secret: boolean;
   file: boolean;
   /** A sign-in command: nothing is typed, the person runs it. Empty: a value is typed. */
@@ -63,6 +67,9 @@ export interface AskChoice {
    *  the choice's `value` — nothing typed, nothing stored. Empty: not this kind of way. */
   provider?: string;
   scopes?: string[];
+  /** A way of several values given together: one input per field, answered as newline-joined
+   *  `<field.value>=<typed>` lines. Empty: the choice is one value (or a sign-in). */
+  fields?: AskChoice[];
 }
 
 export interface AskQuestion {

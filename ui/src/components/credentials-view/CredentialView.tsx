@@ -180,7 +180,7 @@ export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () 
                 </div>
                 <span className="text-xs text-muted-foreground" data-testid={`credential-var-state-${v.env_var}`}>
                   {(oneOf ? oneOfWords : words)[word]}
-                  {oneOf && source.setup_choice === v.env_var && (
+                  {oneOf && source.setup_choice === (v.way || v.env_var) && (
                     <span data-testid={`credential-var-chosen-${v.env_var}`}>
                       <Trans> · the way set up here</Trans>
                     </span>

@@ -56,16 +56,39 @@ describe('SourceSetupDialog', () => {
     expect(startSetup).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('source-setup-running')).toBeTruthy();
     expect(screen.getByTestId('ask-form').textContent).toBe('q-1');
+    expect(screen.queryByTestId('setup-tree')).toBeNull(); // no tree claiming "set up" beside an open question
   });
 
-  it('closes itself once the run it followed ends with everything set up', async () => {
-    const { source } = sourceWhoseRunReads(idle, { ...idle, tree: tree('done') });
+  it('says Connected, in the check’s own words, once the run it followed ends set up; Done closes it', async () => {
+    const said = tree('done');
+    said.root!.run = { exit_code: 0, steps: { verify: { exit_code: 0, detail: 'Reading me@gmail.com.' } } };
+    const { source } = sourceWhoseRunReads(idle, { ...idle, tree: said });
     const onClose = vi.fn();
     render(<SourceSetupDialog source={source} onClose={onClose} />);
     await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(onClose).not.toHaveBeenCalled();
     await tick();
+    expect(screen.getByTestId('source-setup-connected').textContent).toBe('Connected — reading me@gmail.com');
+    expect(screen.getByTestId('source-setup-finished').textContent).toContain('1 of 1 set up');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId('source-setup-done'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('a check that said nothing of its own names the account the source reads', async () => {
+    const { source } = sourceWhoseRunReads(idle, { ...idle, tree: tree('done') });
+    source.account_key = 'me@gmail.com';
+    render(<SourceSetupDialog source={source} onClose={() => {}} />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    await tick();
+    expect(screen.getByTestId('source-setup-connected').textContent).toBe('Connected — reading me@gmail.com');
+  });
+
+  it('while the source’s own check runs, says it is checking the sign-in', async () => {
+    const checking = tree('running');
+    const { source } = sourceWhoseRunReads({ ...going, tree: checking });
+    render(<SourceSetupDialog source={source} onClose={() => {}} />);
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(screen.getByTestId('source-setup-running').textContent).toBe('Checking the sign-in…');
   });
 
   it('a tree an earlier run left set up does not close a dialog that has not run yet', async () => {

@@ -60,8 +60,8 @@ SMTP_HOST = "smtp.gmail.com"
 SMTP_SSL_PORT = 465
 #: A host here is reached in the clear: a test double on this machine, never Google.
 INBOX = "INBOX"
-#: The ``gmail`` credential's sign-in way (its other way is ``GMAIL_APP_PASSWORD``).
-GOOGLE_WAY = "GMAIL_GOOGLE"
+#: The ``gmail`` credential's sign-in way (its other way is ``app_password``).
+GOOGLE_WAY = "google"
 ALL_MAIL = "[Gmail]/All Mail"
 #: One bounded prefix per page; the UID cursor resumes at the next message.
 PAGE_LIMIT = 50
@@ -155,11 +155,14 @@ class GmailSource(EmailAddressing, MessageSource):
 
     @property
     def address(self) -> str:
-        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``."""
+        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``, else the
+        Google account that signed in (``credentials.identity``)."""
         fallback = self.credentials.values.get("GMAIL_ADDRESS")
-        address = str(self.config.get("address") or (fallback.get_secret_value() if fallback else "") or "").strip()
+        address = str(
+            self.config.get("address") or (fallback.get_secret_value() if fallback else "") or self.credentials.identity or ""
+        ).strip()
         if not address:
-            raise Rejected("config.address or GMAIL_ADDRESS is required")
+            raise Rejected("config.address, GMAIL_ADDRESS or a Google sign-in is required")
         return address
 
     def origin(self, key: str, *within: str) -> CloudOrigin:
