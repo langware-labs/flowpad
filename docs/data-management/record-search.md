@@ -93,7 +93,7 @@ SKILL = TypeInfo(
 )
 ```
 
-`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_type_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:203`) and consumed by the agent-records route (`flow_sdk/server/routes/agent_records.py:104`) and the type's `schema_hash` / `to_dict`; the FTS indexer itself does **not** read it — what reaches `entities_fts` is decided by the `search_*` readers above. Current declarations include: `agent`/`subagent`/`skill`/`whiteboard`/`deck`/`deck_template`/`graph_workflow`/`journey`/`helpdesk`/`spreadsheet` → `["description"]`, `dynamic_workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
+`index_fields` is now a field on the per-type `TypeInfo` (`flow_sdk/schema/type_info/*_type_info.py`), **not** a `ClassVar` on a `Record` subclass. It is stored on the `SchemaRegistry` entry (`schema_registry.py:203`) and consumed by the agent-records route (`flow_sdk/server/routes/agent_records.py:104`) and the type's `schema_hash` / `to_dict`; the FTS indexer itself does **not** read it — what reaches `entities_fts` is decided by the `search_*` readers above. Current declarations include: `agent`/`subagent`/`skill`/`deck`/`deck_template`/`graph_workflow`/`journey`/`helpdesk`/`spreadsheet` → `["description"]`, `dynamic_workflow` → `["name","description"]`, `task` → `["description","objective"]`, `markdown` → `["title","tags","links"]`, `chart` → `["description","format"]`, `spec` → `["name","spec_type"]`, `claude_rules`/`claude_memory`/`plan` → `["name"]`.
 
 ---
 
@@ -196,7 +196,7 @@ Returns all record types with a non-null `browseable_by` view mode in their `Typ
 }
 ```
 
-To surface a Record type in the user-facing browser, set `browseable_by=ViewMode.<STANDARD|ADVANCED|DEV>` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_type_info.py`) — there is no boolean `browseable` and no `_browseable` ClassVar on the Record class. Currently: `STANDARD` — `agent`, `subagent`, `skill`, `markdown`, `spec`, `task`, `prompt`, `deck`, `journey`, `mcp`, `spreadsheet`; `ADVANCED` — `claude_rules`, `claude_memory`, `plan`, `whiteboard`, `dataset`, `deck_template`, `dynamic_workflow`, `graph_workflow`, `helpdesk`, `workflow_run`, the report types; `DEV` — `flowpad_diagnosis`, `tag`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see the placement axis / `main_subdir` in `TypeInfo` for that).
+To surface a Record type in the user-facing browser, set `browseable_by=ViewMode.<STANDARD|ADVANCED|DEV>` on its `TypeInfo` (in `flow_sdk/schema/type_info/<type>_type_info.py`) — there is no boolean `browseable` and no `_browseable` ClassVar on the Record class. Currently: `STANDARD` — `agent`, `subagent`, `skill`, `markdown`, `spec`, `task`, `prompt`, `deck`, `journey`, `mcp`, `spreadsheet`, `chart`; `ADVANCED` — `claude_rules`, `claude_memory`, `plan`, `dataset`, `deck_template`, `dynamic_workflow`, `graph_workflow`, `helpdesk`, `workflow_run`, the report types; `DEV` — `flowpad_diagnosis`, `tag`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see the placement axis / `main_subdir` in `TypeInfo` for that).
 
 ### Reindex (FaaS index endpoint)
 

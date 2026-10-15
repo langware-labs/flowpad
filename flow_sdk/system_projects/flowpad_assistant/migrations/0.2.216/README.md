@@ -15,3 +15,13 @@ returns None for this version — "nothing to do" — which is correct.
 
 If this slot is still empty when 0.2.216 is released, the release script
 deletes it rather than shipping a directory with no recipe in it.
+
+## Recipe in this slot
+
+`scripts/migrate.py` — **whiteboard → chart**. Every
+`agentic-assets/whiteboard/<name>/` (user asset root and every project mount)
+moves to `agentic-assets/chart/<name>/`; `WHITE_BOARD.md` becomes `CHART.md`
+with `format: excalidraw` added. Ids untouched, idempotent, an existing chart is
+never overwritten (reported as SKIPPED).
+
+**Approved by the user on 2026-10-15** (the whiteboard → chart plan).

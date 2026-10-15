@@ -121,7 +121,7 @@ If optional Entity projection fails, Markdown-backed editors retain the exact
 body address and show the projection warning; malformed metadata does not hide
 the readable document or cause a write during navigation.
 
-Missing legacy Whiteboard documents are repaired through
+Missing Chart documents (`CHART.md`) are repaired through
 `POST .../fs/ensure_document/<path>` with an explicit TypeId and scaffold fields.
 The authorized selected occurrence must match the type's declared main document.
 The library adds missing defaults and verifies identity; existing canvas data,

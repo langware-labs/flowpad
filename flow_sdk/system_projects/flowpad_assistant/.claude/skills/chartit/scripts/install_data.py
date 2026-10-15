@@ -1,11 +1,11 @@
-"""Put chartit's kinds and its two datasets into a project, under THAT project's namespace.
+"""Put chartit's kinds and its feedback dataset into a project, under THAT project's namespace.
 
 Usage: python -I install_data.py <project root> [--force]
 
 - copies ``schema/agentic-assets/data_schema/chartit`` to ``<project>/agentic-assets/data_schema/chartit``
   with its ``"ns"`` set to the project's own (two projects never define one kind twice);
-- writes ``<project>/agentic-assets/dataset/charts/dataset.json`` (rows: ``chartit.chart``) and
-  ``.../chart-feedback/dataset.json`` (rows: ``chartit.feedback``), the kinds written in full;
+- writes ``<project>/agentic-assets/dataset/chart-feedback/dataset.json`` (rows: ``chartit.feedback``),
+  the kind written in full (charts themselves are Chart entities, not rows);
 - leaves what is already there alone unless ``--force`` (the schema is refreshed then; datasets'
   rows are never touched -- rows go through the SDK / dm_ctl only).
 
@@ -24,12 +24,11 @@ from pathlib import Path
 SKILL = Path(__file__).resolve().parent.parent
 SCHEMA_SRC = SKILL / "schema" / "agentic-assets" / "data_schema" / "chartit"
 DATASETS = {
-    "charts": ("Charts", "One row per interactive chart (chartit); key = the chart's slug.", "chartit.chart"),
     "chart-feedback": ("Chart feedback",
                        "One row per comment a reviewer left on a chart (chartit); key = <chart>-<id>.",
                        "chartit.feedback"),
 }
-KINDS = ("chart", "sequence", "participant", "message", "feedback")
+KINDS = ("sequence", "participant", "message", "feedback")
 
 
 def fail(message: str) -> None:
@@ -81,7 +80,6 @@ def main() -> None:
         "kinds": {k: f"--{ns}--.chartit.{k}" for k in KINDS},
         "next": [
             f'flow schema apply "{root / "agentic-assets" / "data_schema"}"',
-            f'flow record index "{datasets / "charts"}" --types dataset',
             f'flow record index "{datasets / "chart-feedback"}" --types dataset',
         ],
     }))

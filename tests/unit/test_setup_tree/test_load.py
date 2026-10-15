@@ -8,7 +8,6 @@ import pytest
 
 from flow_sdk.builtin import project_setup
 from flow_sdk.core.setup import execute as setup_execute
-from flow_sdk.core.setup import fix
 from flow_sdk.core.setup.load import LoadTree, forget, load_project, load_state, validate
 from flow_sdk.core.setup.tree import SetupNode
 from flow_sdk.core.wizard import state as wizard_state
@@ -72,22 +71,9 @@ def machine(tmp_path, monkeypatch):
     monkeypatch.setattr(setup_package, "execute_setup", execute_with_shell)
     monkeypatch.setattr(wizard_state, "run_dir", lambda key: tmp_path / "runs" / key)
     monkeypatch.setattr(setup_execute, "run_dir", lambda key: tmp_path / "runs" / key)
-    # The fixer is an agent: here it answers what a test tells it, and never spawns.
-    verdicts: list = []
-    fixer = asyncio.Event()
-
-    async def fake_fix(failed, key):
-        verdicts.append(failed)
-        await fixer.wait()
-        fix._FIXES[key] = fix._FIXES[key].model_copy(update=machine_fix.pop(0))
-
-    machine_fix: list = []
-    monkeypatch.setattr(fix, "_run", fake_fix)
-    monkeypatch.setattr(fix, "_FIXES", {})
-    monkeypatch.setattr(fix, "_TASKS", {})
     tree = SimpleNamespace(root=root, gaps=[], resolve_node=resolve_node, resolve_op=resolve_op)
     return SimpleNamespace(project=project, tree=tree, installed=installed, ran=ran, gate=gate, nodes=nodes,
-                           broken=broken, fixer=fixer, fixed_with=machine_fix, fixes=verdicts)
+                           broken=broken)
 
 
 async def settle(machine):
@@ -406,64 +392,45 @@ async def test_a_running_load_says_whether_it_starts_or_sets_up(machine):
     await project_setup._RUNS[(machine.project.id, other.typeid)]
 
 
-# ── fix: the last step — the backend launches the setup-fixer on a setup that still fails ─────────
+
+# ── fix: the setup-fixer is a rung of the step, kept only by a setup run ─────────────────────────
 
 
-async def _fails_after_setup(machine):
-    machine.installed.update(("prepare", "install", "home", "app"))
-    machine.broken.add("service")
-    await load_project(machine.project, tree=machine.tree)
-    await finish(machine)
-    await load_project(machine.project, tree=machine.tree, approved=True)
-    return await finish(machine)
+def _ladder_tree():
+    from flow_sdk.core.setup.derive import _op
 
+    op = _op("app:start", "Start shop", "start", fixer="repair it")
 
-@pytest.mark.asyncio
-async def test_a_setup_that_still_fails_gets_the_fixer_once_whoever_asked(machine):
-    failed = await _fails_after_setup(machine)
-    assert failed.state is LoadState.FAILED and not failed.setup_available
-    assert failed.fix is not None and failed.fix.state == "running"
-    await asyncio.sleep(0)
-    assert [f.detail for f in machine.fixes] == [failed.detail], "launched with the failure in its input"
-    # Asked again while it works: the same fix, never a second one.
-    assert load_state(machine.project.id).fix.state == "running"
-    assert len(machine.fixes) == 1
+    async def resolve_op(name):
+        return Resolved(op, True) if name == op.name else None
+
+    return SimpleNamespace(root="r", resolve_node=None, resolve_op=resolve_op), op
 
 
 @pytest.mark.asyncio
-async def test_a_not_fixed_verdict_rides_the_load_and_is_not_relaunched_unasked(machine):
-    await _fails_after_setup(machine)
-    machine.fixed_with.append({"state": "not_fixed", "summary": "java holds 3390", "user_action": "Stop it."})
-    machine.fixer.set()
-    await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    now = load_state(machine.project.id)
-    assert (now.fix.state, now.fix.user_action) == ("not_fixed", "Stop it.")
-    fix.start_fix(machine.project.id, now)
-    assert len(machine.fixes) == 1, "a verdict stands until the load comes up"
-    machine.fixed_with.append({"state": "not_fixed"})
-    fix.start_fix(machine.project.id, now, again=True)
-    await asyncio.sleep(0)
-    assert len(machine.fixes) == 2, "Fix it asks again"
+async def test_a_plain_load_never_runs_the_fixer():
+    tree, op = _ladder_tree()
+    assert (await LoadTree(tree).resolve_op(op.name)).spec.attempts == []
 
 
 @pytest.mark.asyncio
-async def test_a_fixed_verdict_that_did_not_hold_says_so(machine):
-    await _fails_after_setup(machine)
-    machine.fix_state = fix._FIXES[(machine.project.id, "")] = fix.SetupFix(state="fixed", summary="freed 3390")
-    fix._TASKS.clear()
-    still = load_state(machine.project.id)
-    fix.start_fix(machine.project.id, still)
-    assert fix.fix_of(machine.project.id).state == "not_fixed"
-    assert "did not hold" in fix.fix_of(machine.project.id).user_action
+async def test_the_load_a_setup_run_ends_with_keeps_the_fixer():
+    tree, op = _ladder_tree()
+    assert (await LoadTree(tree, fix=True).resolve_op(op.name)).spec.attempts == op.attempts
 
 
 @pytest.mark.asyncio
-async def test_a_load_that_comes_up_drops_the_last_verdict(machine):
-    fix._FIXES[(machine.project.id, "")] = fix.SetupFix(state="not_fixed")
-    machine.installed.update(("prepare", "install", "service", "home", "app"))
-    loaded = await load_project(machine.project, tree=machine.tree)
-    if loaded.state is LoadState.RUNNING:
-        loaded = await finish(machine)
-    assert loaded.state is LoadState.READY and loaded.fix is None
-    assert fix.fix_of(machine.project.id) is None
+async def test_a_plain_load_keeps_a_ladder_with_no_agent_on_it():
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+    op = ComputeOpSpec.model_validate({
+        "name": "retry", "subkind": "cli", "exe_data": {"webapp_step": "start"},
+        "completion_check": {"webapp_step": "start"},
+        "attempts": [{"subkind": "cli", "exe_data": {"webapp_step": "start"}}],
+    })
+
+    async def resolve_op(_name):
+        return Resolved(op, True)
+
+    tree = SimpleNamespace(root="r", resolve_node=None, resolve_op=resolve_op)
+    assert (await LoadTree(tree).resolve_op("retry")).spec.attempts == op.attempts

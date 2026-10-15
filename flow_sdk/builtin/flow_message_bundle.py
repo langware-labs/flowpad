@@ -408,7 +408,7 @@ async def _pack_attachment_entry(
       - DB-record (no on-disk asset_ref: task/conversation/flow_message/
         claude_session/flowpad_diagnosis) → their header.json serializers.
       - file-backed asset (``TypeInfo.main_subdir is not None``: skill, agent,
-        workflow, whiteboard, spec, prompt, markdown, plan, command, rule) →
+        workflow, chart, spec, prompt, markdown, plan, command, rule) →
         the ONE generic ``_pack_file_backed_attachment``.
     URL attachments have no bytes to bundle — silently skipped.
     """
@@ -466,7 +466,7 @@ async def _pack_attachment_entry(
 
 # ---------------------------------------------------------------------------
 # File-backed asset packing — ONE family handler for skill, agent, workflow,
-# whiteboard, spec, prompt, markdown, plan, command, rule (any type whose
+# chart, spec, prompt, markdown, plan, command, rule (any type whose
 # TypeInfo declares ``main_subdir``). The canonical record is the on-disk
 # asset_ref (a file or a folder); pack copies it verbatim under the bundle at
 # ``attachment/<type>-@<id>/<main_subdir>/<leaf>`` so the in-bundle relpath
@@ -2426,7 +2426,7 @@ async def unpack_bundle(
 ) -> "FlowMessage":
     """Extract .flowmsg into the message's STAGING area, return FlowMessage.
 
-    File-backed assets (skill, agent, workflow, whiteboard, spec, prompt,
+    File-backed assets (skill, agent, workflow, chart, spec, prompt,
     markdown, plan, command, rule) and git-transfer assets are NOT copied into
     any project or indexed here. The extracted tree persists under the
     FlowMessage's record-data dir (``download/`` + ``unpacked/`` — see
@@ -2691,7 +2691,7 @@ async def unpack_bundle(
                 entry_type, entry_id = parsed
 
                 # FILE-BACKED ASSET FAMILY (TypeInfo.main_subdir set): one branch
-                # for skill/agent/workflow/whiteboard/spec/prompt/markdown/plan/
+                # for skill/agent/workflow/chart/spec/prompt/markdown/plan/
                 # command/rule. STAGED — the subtree already persists under the
                 # message's unpacked/ dir; record a MessageAttachment row so the
                 # UI can review + explicitly install (copy + reindex live in the

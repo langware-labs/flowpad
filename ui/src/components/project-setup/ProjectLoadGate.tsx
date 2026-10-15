@@ -59,7 +59,7 @@ export function ProjectLoadGate({
     };
   }, [load, location.key, projectId, asset, display, validKey]);
   const result = lifecycle.result;
-  const fix = useSetupFix(projectId, result, lifecycle.error, () => void load());
+  const fix = useSetupFix(projectId, result, lifecycle.error, (approved) => load(approved));
   const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
   // Continue with that check once the shared run completes; never retry a failed load.

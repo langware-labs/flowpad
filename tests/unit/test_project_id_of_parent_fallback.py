@@ -18,7 +18,7 @@ import pytest
 
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.whiteboard import Whiteboard
+from flow_sdk.builtin.chart import Chart
 from flow_sdk.core import Entity
 
 
@@ -62,10 +62,10 @@ async def test_walk_spans_multiple_hops_generically() -> None:
     # Uses a non-conversation ancestor to prove the walk is type-generic.
     project = str(uuid.uuid4())
     wb_id = str(uuid.uuid4())
-    wb = Whiteboard.model_validate({"id": wb_id, "name": wb_id, "project_id": project})
+    wb = Chart.model_validate({"id": wb_id, "name": wb_id, "project_id": project})
     await wb.save(None)
     conv = Conversation.model_validate(
-        {"id": str(uuid.uuid4()), "parent_type_id": f"whiteboard-{wb.id}"}
+        {"id": str(uuid.uuid4()), "parent_type_id": f"chart-{wb.id}"}
     )
     await conv.save(None)
     sess = ClaudeSession.model_validate(

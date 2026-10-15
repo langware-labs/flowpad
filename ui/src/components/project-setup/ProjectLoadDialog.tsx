@@ -35,7 +35,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   // The question was asked about one app when the verdict names one: the approval is for that app too.
   const load = useProjectLoad(projectId, initial, '', true, initial.asset ?? '');
   const state = load.result?.state;
-  const fix = useSetupFix(projectId, load.result, load.error, () => void load.load());
+  const fix = useSetupFix(projectId, load.result, load.error, (approved) => load.load(approved));
   const needsSetup = state === 'setup_required';
   // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.
   const watched = useRef(false);
