@@ -1,4 +1,4 @@
-"""Guards for the 0.2.216 migration that turns every whiteboard into a chart.
+"""Guards for the 0.2.217 migration that turns every whiteboard into a chart.
 
 Real filesystem, no mocks: ``agentic-assets/whiteboard/<n>/`` →
 ``agentic-assets/chart/<n>/`` with ``WHITE_BOARD.md`` → ``CHART.md`` carrying
@@ -17,7 +17,7 @@ pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 _SCRIPT = (
     Path(__file__).resolve().parents[2]
-    / "flow_sdk/system_projects/flowpad_assistant/migrations/0.2.216/scripts/migrate.py"
+    / "flow_sdk/system_projects/flowpad_assistant/migrations/0.2.217/scripts/migrate.py"
 )
 _ID = "1f6a7c2e-5b1d-4e0a-9c3f-2d8b7e6a5c41"
 _BOARD = '{"kind":"excalidraw","version":1,"data":{"elements":[{"id":"e1"}]}}'
