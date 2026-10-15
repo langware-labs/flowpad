@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec
+from flow_sdk.schema.data_spec.dataset_spec import RowSpec
 
 
 def _plain(value: Any) -> Any:
@@ -32,13 +32,13 @@ def matches(output: Any, gold: Any) -> bool:
     return output == gold
 
 
-def golds(row: ExampleSpec) -> list:
+def golds(row: RowSpec) -> list:
     """A row's gold answers as a list: one, several, or none."""
     gt = row.ground_truth
     return [] if gt is None else (gt if isinstance(gt, list) else [gt])
 
 
-def is_correct(row: ExampleSpec) -> bool | None:
+def is_correct(row: RowSpec) -> bool | None:
     """True / False when the row has both an output and a gold; None when it cannot be scored."""
     answers = golds(row)
     if row.output is None or not answers:
@@ -47,7 +47,7 @@ def is_correct(row: ExampleSpec) -> bool | None:
     return all(any(matches(out, gold) for gold in answers) for out in outputs)
 
 
-def score(rows: Iterable[ExampleSpec]) -> dict:
+def score(rows: Iterable[RowSpec]) -> dict:
     """``{rows, scored, correct, accuracy, wrong: [example ids]}``."""
     rows = list(rows)
     verdicts = [(row.id, is_correct(row)) for row in rows]

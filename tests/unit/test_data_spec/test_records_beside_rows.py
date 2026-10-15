@@ -84,7 +84,7 @@ async def test_a_row_may_link_to_a_record(tmp_path):
     assert record_type_of("ingest.source_item") == "source_item" and record_type_of(f"--{ns}--.crm.touch") is None
     ref = "ingest.source_item.id.0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c"
     await touches.put("t1", {"input": {"what": "reply", "email": ref}})             # a record lives in the instance: not judged from disk
-    assert touches.example("t1")["input"]["email"] == ref
+    assert touches.row("t1")["input"]["email"] == ref
     assert touches.check({"input": {"what": "x", "email": "crm.touch.id.0b7c8a2e-1f0d-4e5a-9c3b-2d4e6f8a1b3c"}})   # another kind is still refused
     _dataset(root, "promoted-items", "ingest.source_item")                                   # promoted items beside: still not checked against THEM
     assert touches.check({"input": {"what": "reply", "email": ref}}) == []

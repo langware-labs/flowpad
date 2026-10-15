@@ -46,7 +46,7 @@ async def test_read_a_dataset():
 async def test_write_rows_and_labels(folder):
     ns = await run_fence(fence_under(DOC, "3."), {"folder": folder})
     assert [g["target"]["value"] for g in ns["gold"]] == ["data-sources", "connectors"]
-    assert (folder / "examples/0001/ground_truth-2/decision.json").is_file()
+    assert (folder / "rows/0001/ground_truth-2/decision.json").is_file()
 
 
 @pytest.fixture
@@ -88,14 +88,14 @@ async def test_log_real_decisions_into_a_training_set(tmp_path, monkeypatch, dec
     monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
     ns = await run_fence(fence_under(DOC, "6."), {"runs": tmp_path})
     assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
-    assert ns["run"].examples >= 1 and ns["run"].metrics["agentic_recall"] == 1.0
+    assert ns["run"].rows >= 1 and ns["run"].metrics["agentic_recall"] == 1.0
 
 
 async def test_keep_records_by_key(folder):
     ns = await run_fence(fence_under(DOC, "7."), {"folder": folder})
     assert ns["keys"] == ["sources"]
     assert ns["problems"] and ns["problems"][0].startswith("input.utterance:")
-    assert not (folder / "examples/sources").exists()
+    assert not (folder / "rows/sources").exists()
 
 
 @pytest.fixture
@@ -118,7 +118,7 @@ def project(tmp_path):
         folder = root / "agentic-assets/dataset" / name
         folder.mkdir(parents=True)
         (folder / "dataset.json").write_text(json.dumps(
-            {"metadata": {"data_layout": "io_folder", "spec": {"examples": [{"input": f"--{ns}--.{kind}"}]}}, "data": {}}))
+            {"metadata": {"data_layout": "io_folder", "spec": {"rows": [{"input": f"--{ns}--.{kind}"}]}}, "data": {}}))
     return root
 
 

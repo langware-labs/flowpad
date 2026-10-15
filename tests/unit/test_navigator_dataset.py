@@ -89,10 +89,10 @@ async def test_the_navigator_eval_runs_every_row_on_its_own_context(shipped, mon
     monkeypatch.setattr(decision, "decide", decide)
     run, folder = await evals.run(shipped, out_dir=tmp_path, concurrency=1)
     benchmark = run.slices["data.suite"].get("benchmark") or run.slices["data.suite"]["—"]
-    assert benchmark["examples"] == 50 and benchmark["error"] == 0
+    assert benchmark["rows"] == 50 and benchmark["error"] == 0
     assert benchmark["agentic_recall"] == 1.0 and benchmark["confident_wrong"] == 0
     assert benchmark["precision"] == 1.0, "only exact rule hits opened anything, and they were right"
-    assert (folder / "report.html").is_file() and (folder / "examples.jsonl").is_file()
+    assert (folder / "report.html").is_file() and (folder / "rows.jsonl").is_file()
     assert any(st["candidates"] for st in seen), "rows offered their recorded candidates, not this machine's search"
     session = next(st for st in seen if st["page"].startswith("/dock/agentic_process/"))
     assert session["context"]["process"]["title"] == "refactor session", "each row runs where it was typed"

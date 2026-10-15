@@ -1,7 +1,7 @@
 /**
- * The dataset editor, as an SDK-provided app: browse a dataset's examples and label them.
+ * The dataset editor, as an SDK-provided app: browse a dataset's rows and label them.
  *
- * Kind-driven, never dataset-specific: it draws nothing itself. The examples are the COLLECTION
+ * Kind-driven, never dataset-specific: it draws nothing itself. The rows are the COLLECTION
  * viewer of the dataset's declared kind (`spec`, e.g. `navigator.dataset`), the chosen one its
  * SINGLE viewer in edit mode (`../viewers`) — a dataset whose kind has viewers of its own is shown
  * by them, any other by the generic viewer built from the kind definitions. The right answer the
@@ -9,7 +9,7 @@
  *
  * Mounted by a webapp asset in three lines — nested inside a dataset (it edits its parent), or
  * shipped on its own with `edits: ["dataset"]`, opened with `?subject=dataset-<id>` (and
- * `&example=<id>` to open one example).
+ * `&row=<id>` to open one row).
  */
 import type { Mounted } from '../viewers/contract';
 import { h } from '../viewers/dom';
@@ -66,11 +66,11 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   const kind = typeof dataset.spec === 'string' ? dataset.spec : '';
   const ctx = datasetViewerContext(subject);
 
-  const { rows }: { rows: any[] } = await dataset.rows(); // every example with its values, in one request
+  const { rows }: { rows: any[] } = await dataset.query(); // every row with its values, in one request
   const counts = h('span', { class: 'muted small', 'data-testid': 'dataset-editor-counts' });
   const showCounts = () =>
     (counts.textContent =
-      `${rows.length} examples · ${rows.filter((r) => r.ground_truth != null).length} labelled · ` +
+      `${rows.length} rows · ${rows.filter((r) => r.ground_truth != null).length} labelled · ` +
       `${rows.filter(needsLabel).length} need a label`);
   showCounts();
   const filter = h('select', { 'data-testid': 'dataset-editor-filter' },
@@ -100,7 +100,7 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   /** Bumped by each list render, so an older one still drawing is dropped rather than shown. */
   let drawing = 0;
   const selectedAt = () => {
-    const at = items.findIndex((r) => r.id === appOption('example'));
+    const at = items.findIndex((r) => r.id === appOption('row'));
     return at < 0 ? undefined : at;
   };
 
@@ -119,14 +119,14 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
     list.replaceChildren(target);
   }
 
-  /** The chosen example is in the URL (`?example=`), so back / forward and a deep link reach it.
+  /** The chosen row is in the URL (`?row=`), so back / forward and a deep link reach it.
    *  Choosing one moves the list's highlight (no redraw) and opens it beside the list. */
   function select(id: string | undefined) {
     const params = new URLSearchParams(location.search);
-    if (id) params.set('example', id);
-    else params.delete('example');
+    if (id) params.set('row', id);
+    else params.delete('row');
     history.pushState(null, '', `${location.pathname}?${params}`);
-    shownExample = appOption('example');
+    shownRow = appOption('row');
     showSelected();
   }
 
@@ -136,14 +136,14 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   }
 
   async function renderDetail() {
-    const row = rows.find((r) => r.id === appOption('example'));
+    const row = rows.find((r) => r.id === appOption('row'));
     split.classList.toggle('closed', !row);
     detail.hidden = !row;
     if (!row) return;
     const body = h('div');
     detail.replaceChildren(
       h('div', { style: 'display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem' },
-        h('b', { class: 'small' }, `Example ${rows.indexOf(row) + 1}`), h('span', { class: 'muted small mono' }, row.kind),
+        h('b', { class: 'small' }, `Row ${rows.indexOf(row) + 1}`), h('span', { class: 'muted small mono' }, row.kind),
         h('span', { style: 'flex:1' }), h('button', { onclick: () => select(undefined) }, 'Close')),
       body,
     );
@@ -193,11 +193,11 @@ async function run(root: HTMLElement, status: HTMLElement): Promise<void> {
   }
 
   filter.addEventListener('change', () => void renderList());
-  // Back moves the chosen example only when it changed (opening a part on its own keeps the URL).
-  let shownExample = appOption('example');
+  // Back moves the chosen row only when it changed (opening a part on its own keeps the URL).
+  let shownRow = appOption('row');
   window.addEventListener('popstate', () => {
-    if (appOption('example') === shownExample) return;
-    shownExample = appOption('example');
+    if (appOption('row') === shownRow) return;
+    shownRow = appOption('row');
     showSelected();
   });
   await Promise.all([renderList(), renderDetail()]);

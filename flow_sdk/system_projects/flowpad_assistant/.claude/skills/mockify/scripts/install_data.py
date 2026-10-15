@@ -65,7 +65,7 @@ def install(root: Path, force: bool = False) -> dict:
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps({
             "metadata": {"title": title, "description": description, "data_layout": "io_folder",
-                         "spec": {"examples": [{"input": f"--{ns}--.{kind}"}]}},
+                         "spec": {"rows": [{"input": f"--{ns}--.{kind}"}]}},
             "data": {},
         }, indent=2) + "\n", encoding="utf-8")
         wrote.append(str(manifest_path.parent))

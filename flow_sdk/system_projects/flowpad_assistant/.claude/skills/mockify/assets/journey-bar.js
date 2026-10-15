@@ -514,7 +514,7 @@
     };
   };
   const loadMock = coalesced(async () => {
-    const found = await data.mocksDs.rows({ match: { key: CFG.key } });
+    const found = await data.mocksDs.query({ match: { key: CFG.key } });
     const row = found.rows[0];
     if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
     const changed = row.version !== data.mock?.version;
@@ -525,7 +525,7 @@
   // The mock's comments, once: the badge counts the open ones, the panel shows this screen's.
   const refresh = coalesced(async () => {
     if (!data.fbDs || !data.mock) return;
-    data.rows = (await data.fbDs.rows({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } })).rows;
+    data.rows = (await data.fbDs.query({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } })).rows;
     render();
   });
   function finishBoot() {
@@ -563,7 +563,7 @@
     (String(dataUrl).match(/^data:([^;,]+)/) || [])[1]] || 'bin';
   function feedbackMarkdown(rows) {
     const m = data.mock, base = data.fbDs?.asset_ref || '';
-    const fileOf = (r, field) => (base ? `${base}/examples/${r.key}/input/${field}.${extOf(r.input[field])}` : `${field} on row ${r.key}`);
+    const fileOf = (r, field) => (base ? `${base}/rows/${r.key}/input/${field}.${extOf(r.input[field])}` : `${field} on row ${r.key}`);
     const byStep = {};
     rows.forEach((r) => (byStep[r.input.step] ||= []).push(r));
     const steps = J.filter((s) => byStep[s.id]);

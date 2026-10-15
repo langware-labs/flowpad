@@ -65,7 +65,7 @@ def kind_of(spec: type) -> str:
         return kind
     # A pydantic parametrization inherits its origin's kind and deliberately
     # does NOT register (docs/ontology.md, "Composition"). Its __name__ is
-    # ``ExampleSpec[Question, Answer, DataSpec]`` — brackets, commas and spaces,
+    # ``RowSpec[Question, Answer, DataSpec]`` — brackets, commas and spaces,
     # none of which belong in a filename. Ask the origin instead.
     origin = (getattr(spec, "__pydantic_generic_metadata__", {}) or {}).get("origin")
     if origin is not None and origin is not spec:

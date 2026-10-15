@@ -1,4 +1,4 @@
-"""``ExampleSpec`` / ``DatasetSpec`` — the typed, generic value models.
+"""``RowSpec`` / ``DatasetSpec`` — the typed, generic value models.
 
 Pinned: parametrized validation builds the concrete class; ``O | list[O]``;
 gold alone and input alone are legal rows; the bare generic is refused; a named
@@ -18,12 +18,12 @@ from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
 from flow_sdk.schema.data_spec.dataset_spec import (
     DEFAULT_DATASET_SPEC,
     DatasetSpec,
-    ExampleSpec,
+    RowSpec,
     FileRef,
     FolderSpec,
     TextSpec,
 )
-from flow_sdk.schema.data_spec.layout import example_id
+from flow_sdk.schema.data_spec.layout import derived_row_id
 
 pytestmark = pytest.mark.timeout(5)  # do not increase without approval
 
@@ -37,18 +37,18 @@ class _Label(DataSpec):
     category: str
 
 
-Row = ExampleSpec[_Email, _Label, DataSpec]
+Row = RowSpec[_Email, _Label, DataSpec]
 
 
 def test_a_parametrization_validates_rows_as_the_concrete_classes() -> None:
-    ds = DatasetSpec[Row].model_validate({"examples": [
+    ds = DatasetSpec[Row].model_validate({"rows": [
         {"input": {"subject": "s", "body": "b"}, "output": {"category": "invoice"}},
     ]})
-    ex = ds.examples[0]
+    ex = ds.rows[0]
     assert type(ex) is Row
     assert type(ex.input) is _Email and type(ex.output) is _Label
     with pytest.raises(ValidationError):
-        DatasetSpec[Row].model_validate({"examples": [{"input": {"subject": "s"}}]})
+        DatasetSpec[Row].model_validate({"rows": [{"input": {"subject": "s"}}]})
 
 
 def test_output_is_one_or_many() -> None:
@@ -69,9 +69,9 @@ def test_gold_alone_and_input_alone_are_legal_rows() -> None:
 def test_the_bare_generic_is_refused() -> None:
     """Unparametrized, Pydantic would silently validate against the BOUNDS."""
     with pytest.raises(TypeError, match="generic"):
-        ExampleSpec.model_validate({"input": {"path": "x"}})
+        RowSpec.model_validate({"input": {"path": "x"}})
     with pytest.raises(TypeError, match="generic"):
-        DatasetSpec.model_validate({"examples": []})
+        DatasetSpec.model_validate({"rows": []})
 
 
 def test_a_named_subclass_registers_and_a_parametrization_does_not() -> None:
@@ -92,7 +92,7 @@ def test_the_leaves_are_registered_kinds() -> None:
 
 
 def test_the_default_spec_accepts_any_artifact_per_slot() -> None:
-    ex = DEFAULT_DATASET_SPEC.example_type().model_validate({
+    ex = DEFAULT_DATASET_SPEC.row_type().model_validate({
         "input": {"path": "in.pdf"},
         "output": {"path": "out", "files": {"a.txt": {"path": "out/a.txt"}}},
         "ground_truth": {"text": "4"},
@@ -101,10 +101,10 @@ def test_the_default_spec_accepts_any_artifact_per_slot() -> None:
 
 
 @pytest.mark.parametrize("form", [
-    {"examples": [{"input": "file_ref", "output": "file_ref"}]},
-    {"examples": [{"input": {"subject": "string", "body": "string"}, "output": {"category": "string"}}]},
-    {"examples": [{"input": "text", "output": "text", "context": {"history": ["string"]}}]},
-    {"examples": [{"input": "text"}]},
+    {"rows": [{"input": "file_ref", "output": "file_ref"}]},
+    {"rows": [{"input": {"subject": "string", "body": "string"}, "output": {"category": "string"}}]},
+    {"rows": [{"input": "text", "output": "text", "context": {"history": ["string"]}}]},
+    {"rows": [{"input": "text"}]},
 ])
 def test_the_keyword_authoring_form_round_trips(form) -> None:
     t = DatasetSpec.parse(form)
@@ -113,9 +113,9 @@ def test_the_keyword_authoring_form_round_trips(form) -> None:
 
 
 def test_the_authoring_form_is_strict() -> None:
-    for bad in ({"rows": []}, {"examples": []}, {"examples": [{}, {}]}, {"examples": [{"output": "text"}]},
-                {"examples": [{"input": "text", "extra": "text"}]},
-                {"examples": [{"input": "text", "output": "text", "ground_truth": "file_ref"}]}):
+    for bad in ({"rows": []}, {"rows": []}, {"rows": [{}, {}]}, {"rows": [{"output": "text"}]},
+                {"rows": [{"input": "text", "extra": "text"}]},
+                {"rows": [{"input": "text", "output": "text", "ground_truth": "file_ref"}]}):
         with pytest.raises(ValueError):
             DatasetSpec.parse(bad)
 
@@ -127,7 +127,7 @@ def test_a_dataset_shape_held_by_a_field_dumps_compactly_and_is_strict() -> None
 
     class Holder(BaseModel):
         spec: Optional[ShapeForm] = None
-    form = {"examples": [{"input": {"subject": "string", "body": "string"}, "output": "text"}]}
+    form = {"rows": [{"input": {"subject": "string", "body": "string"}, "output": "text"}]}
     h = Holder(spec=form)
     # The field HOLDS the form — there is no class to un-render on the way out,
     # which is why the compact dump is now a property of the field's type
@@ -146,20 +146,20 @@ def test_a_malformed_spec_on_disk_degrades_the_slot_not_the_dataset(tmp_path) ->
 
     from flow_sdk.builtin.dataset import Dataset
     (tmp_path / "dataset.json").write_text(json.dumps({
-        "metadata": {"data_layout": "csv", "spec": {"examples": [{"input": "Not A Kind!"}]}}, "data": {}}))
+        "metadata": {"data_layout": "csv", "spec": {"rows": [{"input": "Not A Kind!"}]}}, "data": {}}))
     (tmp_path / "data.csv").write_text("input,expected\n2+2,4\n")
     from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     ds = SchemaRegistry.get("dataset").serializer().load(Dataset, local_origin_for_path(tmp_path))
-    assert ds.spec is None and len(ds.examples) == 1
+    assert ds.spec is None and len(ds.rows) == 1
 
 
-def test_layout_property_reads_example_json_metadata() -> None:
-    ex = DEFAULT_DATASET_SPEC.example_type().model_validate({"input": {"text": "x"}, "metadata": {"layout": "pages"}})
+def test_layout_property_reads_row_json_metadata() -> None:
+    ex = DEFAULT_DATASET_SPEC.row_type().model_validate({"input": {"text": "x"}, "metadata": {"layout": "pages"}})
     assert ex.layout == "pages"
 
 
-def test_example_id_formula_is_unchanged() -> None:
+def test_row_id_formula_is_unchanged() -> None:
     """Pinned: three grammar tests hard-code this; it is a data-migration boundary."""
-    assert example_id("ds-x", "0001") == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0001"))
+    assert derived_row_id("ds-x", "0001") == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0001"))

@@ -40,7 +40,7 @@ def log_of(spec: Any) -> TempLog:
     name = spec.name or "op"
     # A dataset slot is a value of a schema, never a bare primitive: the block's own shapes are
     # each held as ``{"value": <shape>}``. A declared kind is its own shape.
-    shape = spec.log.dataset_kind or {"examples": [{
+    shape = spec.log.dataset_kind or {"rows": [{
         "input": {"value": spec.input if spec.input is not None else "string"},
         **({"output": {"value": spec.output_shape}} if spec.output_shape is not None else {}),
     }]}
@@ -145,14 +145,14 @@ def log_soon(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float
 
 def _run_rows(invocation_id: str) -> list[tuple[Path, Path, dict]]:
     """Every logged call of one run: ``(log folder, example dir, data)`` -- ``row.json`` only."""
-    from flow_sdk.schema.data_spec.layout import _load_example_meta  # noqa: PLC0415 -- the cheap per-row read
+    from flow_sdk.schema.data_spec.layout import _load_row_meta  # noqa: PLC0415 -- the cheap per-row read
 
     root = temp_datasets()
     found = []
     # Every temp log: a block's log may name its own folder (``log.name``).
     for folder in sorted(p for p in root.iterdir() if (p / "dataset.json").is_file()) if root.is_dir() else []:
         for ex_dir in rows(folder):
-            data = _load_example_meta(ex_dir)[1]
+            data = _load_row_meta(ex_dir)[1]
             if data.get("invocation_id") == invocation_id:
                 found.append((folder, ex_dir, data))
     return found
@@ -185,7 +185,7 @@ async def promote(invocation_id: str, to: Any) -> list[str]:
     copied = []
     for folder, ex_dir, _ in _run_rows(invocation_id):
         log = logs.setdefault(folder, Dataset.at(folder))
-        row = log.example(ex_dir.name)
+        row = log.row(ex_dir.name)
         if row is not None:
             copied.append({k: row[k] for k in ("input", "output", "context", "kind", "data") if row.get(k) is not None})
     return await to.append(copied) if copied else []

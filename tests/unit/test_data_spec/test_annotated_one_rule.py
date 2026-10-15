@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.dataset import derive_dataset, iter_examples
+from flow_sdk.assets.types.dataset import derive_dataset, iter_rows
 from flow_sdk.schema.data_spec.dataset_spec import DataLayoutEnum, FileRef, FolderSpec, TextSpec
 from flow_sdk.schema.data_spec.layout import FolderLayout, dataset_layout_for
 
@@ -30,10 +30,10 @@ VARIANTS = {
 
 def _seed(root: Path) -> Path:
     ds = root / "ds"
-    (ds / "examples").mkdir(parents=True)
+    (ds / "rows").mkdir(parents=True)
     (ds / "dataset.json").write_text(json.dumps({"metadata": {"data_layout": "io_folder"}, "data": {}}))
     for name, (files, _) in VARIANTS.items():
-        ex = ds / "examples" / name
+        ex = ds / "rows" / name
         ex.mkdir()
         (ex / "input.txt").write_text("in")
         for rel, body in files.items():
@@ -52,7 +52,7 @@ def test_each_variant_counts_once_on_both_paths(tmp_path):
     assert by_name == expected
 
     # the indexer's path: the extractor over the parsed rows
-    data = {"data_layout": "io_folder", "examples": iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="d")}
+    data = {"data_layout": "io_folder", "rows": iter_rows(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="d")}
     derive_dataset(data, ds, {})
     assert data["num_annotated"] == sum(expected.values()) == 4
 
@@ -60,8 +60,8 @@ def test_each_variant_counts_once_on_both_paths(tmp_path):
 def test_the_index_flag_is_exactly_whether_the_reader_emits_gold(tmp_path):
     ds = _seed(tmp_path)
     layout = FolderLayout()
-    for ex_dir in sorted((ds / "examples").iterdir()):
-        row = layout.read_example(ex_dir)
+    for ex_dir in sorted((ds / "rows").iterdir()):
+        row = layout.read_row(ex_dir)
         assert layout.has_ground_truth(ex_dir) == (row.get("ground_truth") is not None), ex_dir.name
 
 
@@ -69,11 +69,11 @@ def test_a_csv_row_is_annotated_by_its_gold_cell(tmp_path):
     """The base rule, for the layout with no per-example directories: a row
     is annotated when the reader gave it a gold cell (the column exists)."""
     (tmp_path / "data.csv").write_text("input\na\nb\n")
-    data = {"data_layout": "csv", "examples": iter_examples(tmp_path, DataLayoutEnum.CSV, {}, ",", dataset_id="d")}
+    data = {"data_layout": "csv", "rows": iter_rows(tmp_path, DataLayoutEnum.CSV, {}, ",", dataset_id="d")}
     derive_dataset(data, tmp_path, {})
     assert data["num_annotated"] == 0
     (tmp_path / "data.csv").write_text("input,expected\na,1\nb,2\n")
-    data = {"data_layout": "csv", "examples": iter_examples(tmp_path, DataLayoutEnum.CSV, {}, ",", dataset_id="d")}
+    data = {"data_layout": "csv", "rows": iter_rows(tmp_path, DataLayoutEnum.CSV, {}, ",", dataset_id="d")}
     derive_dataset(data, tmp_path, {})
     assert data["num_annotated"] == 2
 

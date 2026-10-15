@@ -6,7 +6,7 @@
   "build": ".",
   "views": [
     {"kind": "eval.run", "shows": ["single", "collection"]},
-    {"kind": "eval.example", "shows": ["single", "collection"]}
+    {"kind": "eval.row", "shows": ["single", "collection"]}
   ],
   "module": "viewer.js"
 }

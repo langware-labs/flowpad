@@ -1,4 +1,4 @@
-"""The generic eval runner: resolve a dataset's eval, run it on every example, record and report."""
+"""The generic eval runner: resolve a dataset's eval, run it on every row, record and report."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.datasets.score import golds, matches
-from flow_sdk.schema.data_spec.eval_spec import EvalRun, EvalSpec, ExampleEval, Verdict
+from flow_sdk.schema.data_spec.eval_spec import EvalRun, EvalSpec, RowEval, Verdict
 
 logger = logging.getLogger(__name__)
 
@@ -66,8 +66,8 @@ def _load(folder: Path, spec: EvalSpec, digest: str) -> Any:
         module = load_module(folder, Path(spec.entry).stem, digest=digest)
     except DriverLoadError as exc:
         raise EvalError(str(exc)) from exc
-    if not callable(getattr(module, "evaluate_example", None)):
-        raise EvalError(f"{folder / spec.entry} defines no evaluate_example(row)")
+    if not callable(getattr(module, "evaluate_row", None)):
+        raise EvalError(f"{folder / spec.entry} defines no evaluate_row(row)")
     return module
 
 
@@ -97,7 +97,7 @@ def _title(row: Any) -> str:
     return json.dumps(inp, default=str)[:120]
 
 
-def _counts(results: list[ExampleEval]) -> dict[str, int]:
+def _counts(results: list[RowEval]) -> dict[str, int]:
     return {v.value: sum(1 for r in results if r.verdict == v) for v in Verdict}
 
 
@@ -116,7 +116,7 @@ def _version(value: Any, folder: Path) -> str:
     return str(value)
 
 
-async def _metrics(module: Any, results: list[ExampleEval]) -> dict[str, Optional[float]]:
+async def _metrics(module: Any, results: list[RowEval]) -> dict[str, Optional[float]]:
     judged = [r for r in results if r.verdict != Verdict.ERROR]
     out: dict[str, Optional[float]] = {
         "accuracy": round(sum(r.verdict == Verdict.CORRECT for r in judged) / len(judged), 4) if judged else None
@@ -125,7 +125,7 @@ async def _metrics(module: Any, results: list[ExampleEval]) -> dict[str, Optiona
         try:
             out.update(await _maybe(module.aggregate(results)))
         except Exception as exc:  # noqa: BLE001 -- an author's aggregate never sinks the run
-            logger.warning("eval aggregate() failed on %d examples: %s", len(results), exc)
+            logger.warning("eval aggregate() failed on %d rows: %s", len(results), exc)
     return out
 
 
@@ -141,7 +141,7 @@ async def run(
     concurrency: int = 4,
     out_dir: Optional[Path] = None,
 ) -> tuple[EvalRun, Path]:
-    """Run ``dataset``'s eval over its examples; write ``evals/<run_id>/`` and return the run and
+    """Run ``dataset``'s eval over its rows; write ``evals/<run_id>/`` and return the run and
     its folder. ``dataset`` is a ``Dataset`` or a dataset folder; ``out_dir`` replaces the
     dataset's own ``evals/`` (a test, a read-only dataset)."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
@@ -161,26 +161,26 @@ async def run(
 
     roles = set(kinds or eval_spec.kinds)
     in_roles = [r for r in ds.read_rows() if r.kind.value in roles]
-    # Only labelled examples can be judged; the rest are counted, not run.
+    # Only labelled rows can be judged; the rest are counted, not run.
     labelled = [r for r in in_roles if golds(r)]
     rows, unlabelled = labelled[: limit or None], len(in_roles) - len(labelled)
     started = datetime.now(timezone.utc)
     gate = asyncio.Semaphore(max(1, concurrency))
 
-    async def one(row: Any) -> ExampleEval:
+    async def one(row: Any) -> RowEval:
         async with gate:
             t0 = time.perf_counter()
             try:
-                result = await _maybe(module.evaluate_example(row))
-                if not isinstance(result, ExampleEval):
-                    result = ExampleEval.model_validate(result)
-            except Exception as exc:  # noqa: BLE001 -- one bad example is a verdict, not a crash
-                result = ExampleEval(verdict=Verdict.ERROR, error=f"{type(exc).__name__}: {exc}")
+                result = await _maybe(module.evaluate_row(row))
+                if not isinstance(result, RowEval):
+                    result = RowEval.model_validate(result)
+            except Exception as exc:  # noqa: BLE001 -- one bad row is a verdict, not a crash
+                result = RowEval(verdict=Verdict.ERROR, error=f"{type(exc).__name__}: {exc}")
             # Slice paths read the row (``data.group``) and the eval's own labels (``labels.feasible``).
             dumped = {**row.model_dump(mode="json"), "labels": result.labels} if eval_spec.slices else {}
             return result.model_copy(
                 update={
-                    "example_id": row.id,
+                    "row_id": row.id,
                     "golds": [g.model_dump(mode="json") if hasattr(g, "model_dump") else g for g in golds(row)],
                     "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
                     "slice": {p: _at(dumped, p) for p in eval_spec.slices},
@@ -188,7 +188,7 @@ async def run(
                 }
             )
 
-    # ``versions()`` may ask the hub (which endpoint) -- fetch it while the examples run.
+    # ``versions()`` may ask the hub (which endpoint) -- fetch it while the rows run.
     versions_task = asyncio.ensure_future(
         _maybe(module.versions()) if callable(getattr(module, "versions", None)) else _maybe({})
     )
@@ -196,11 +196,11 @@ async def run(
     versions = {k: _version(v, folder) for k, v in (await versions_task or {}).items()}
     slices: dict[str, Any] = {}
     for path in eval_spec.slices:
-        groups: dict[str, list[ExampleEval]] = defaultdict(list)
+        groups: dict[str, list[RowEval]] = defaultdict(list)
         for r in results:
             groups[r.slice[path]].append(r)
         slices[path] = {
-            value: {"examples": len(part), **_counts(part), **(await _metrics(module, part))}
+            value: {"rows": len(part), **_counts(part), **(await _metrics(module, part))}
             for value, part in sorted(groups.items())
         }
     root = Path(out_dir) if out_dir else folder / RUNS_DIR
@@ -220,7 +220,7 @@ async def run(
         kinds=sorted(roles),
         started_at=started.isoformat(timespec="seconds"),
         finished_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        examples=len(results),
+        rows=len(results),
         counts={**_counts(results), "unlabelled": unlabelled},
         metrics=await _metrics(module, results),
         slices=slices,
@@ -228,7 +228,7 @@ async def run(
     out = root / run_id
     out.mkdir(parents=True, exist_ok=True)
     (out / "run.json").write_text(record.model_dump_json(indent=2) + "\n")
-    (out / "examples.jsonl").write_text("".join(r.model_dump_json() + "\n" for r in results))
+    (out / "rows.jsonl").write_text("".join(r.model_dump_json() + "\n" for r in results))
     (out / "report.html").write_text(render(record, results, eval_spec))
     ignore = folder / ".gitignore"
     if not out_dir and f"{RUNS_DIR}/" not in (ignore.read_text() if ignore.exists() else ""):

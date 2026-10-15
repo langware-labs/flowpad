@@ -26,7 +26,7 @@ class DataSchema(Entity):
     fields: Optional[dict[str, DataSchemaField]] = APIField(
         default=None, description="A record's fields: shape and meaning."
     )
-    examples: Optional[dict[str, ShapeForm]] = APIField(
+    rows: Optional[dict[str, ShapeForm]] = APIField(
         default=None, description="A dataset's example slots -> shapes."
     )
     include: Optional[list[str]] = APIField(

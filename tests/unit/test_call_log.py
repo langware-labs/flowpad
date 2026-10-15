@@ -46,7 +46,7 @@ def rows(spec):
     from flow_sdk.builtin.dataset import Dataset
 
     folder = call_log.log_of(spec).folder()
-    return [Dataset.at(folder).example(d.name) for d in log_dataset.rows(folder)]
+    return [Dataset.at(folder).row(d.name) for d in log_dataset.rows(folder)]
 
 
 async def test_no_log_declared_writes_nothing(tmp_path, temp):
@@ -116,7 +116,7 @@ async def test_promote_copies_the_whole_run(tmp_path):
     kept._create()
     ids = await call_log.promote(run, Dataset.at(kept.folder()))
     assert len(ids) == 2
-    assert sorted(r["input"]["value"] for r in (Dataset.at(kept.folder()).example(i) for i in ids)) == [1, 2]
+    assert sorted(r["input"]["value"] for r in (Dataset.at(kept.folder()).row(i) for i in ids)) == [1, 2]
 
 
 async def test_a_broken_temp_folder_never_breaks_the_call(tmp_path, monkeypatch):

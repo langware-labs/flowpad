@@ -13,8 +13,8 @@ from typing import ClassVar, Literal, Optional
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
-from flow_sdk.schema.data_spec.layout import FolderLayout, example_id
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
+from flow_sdk.schema.data_spec.layout import FolderLayout, derived_row_id
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -34,7 +34,7 @@ class Score(DataSpec):
     note: Optional[str] = None
 
 
-class Leads(DatasetSpec[ExampleSpec[Lead, Score, DataSpec]]):
+class Leads(DatasetSpec[RowSpec[Lead, Score, DataSpec]]):
     spec_kind: ClassVar[str] = "unittest.bykey.dataset"
 
 
@@ -48,11 +48,11 @@ def _dataset(tmp_path):
 async def test_append_with_a_key_names_the_folder_and_the_row_says_its_key(tmp_path):
     d = _dataset(tmp_path)
     eid, numbered = await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"input": {"name": "Beta"}}])
-    assert (tmp_path / "examples/acme/input/lead.json").is_file()
-    assert (tmp_path / "examples/0001").is_dir()
+    assert (tmp_path / "rows/acme/input/lead.json").is_file()
+    assert (tmp_path / "rows/0001").is_dir()
     assert {r.key: r.id for r in d.read_rows()} == {"0001": numbered, "acme": eid}
-    assert d.example(eid)["key"] == "acme"             # the stored id finds the row
-    assert d.example("acme")["key"] == "acme"          # a key addresses a row like its id does
+    assert d.row(eid)["key"] == "acme"             # the stored id finds the row
+    assert d.row("acme")["key"] == "acme"          # a key addresses a row like its id does
     assert {r["key"] for r in d._index()} == {"0001", "acme"}
 
 
@@ -61,7 +61,7 @@ async def test_a_taken_key_refuses_the_whole_batch(tmp_path):
     await d.append([{"key": "acme", "input": {"name": "Acme"}}])
     with pytest.raises(ValueError, match="already taken"):
         await d.append([{"key": "fresh", "input": {"name": "F"}}, {"key": "acme", "input": {"name": "A2"}}])
-    assert not (tmp_path / "examples/fresh").exists()
+    assert not (tmp_path / "rows/fresh").exists()
 
 
 @pytest.mark.parametrize("bad", ["Acme", "../x", ".hidden", "", "a b"])
@@ -75,12 +75,12 @@ async def test_put_creates_then_replaces_and_keeps_gold_and_metadata(tmp_path):
     eid = await d.put("acme", {"input": {"name": "Acme"}, "kind": "eval"})
     await d.annotate(eid, {"value": 3}, by="heidi")
     assert await d.put("acme", {"input": {"name": "Acme Inc", "status": "won"}}) == eid
-    row = d.example("acme")
+    row = d.row("acme")
     assert row["input"] == {"name": "Acme Inc", "status": "won"}
     assert row["ground_truth"] == {"value": 3, "note": None}    # an input edit never drops the gold
     assert row["kind"] == "eval"
     assert row["metadata"]["annotations"][0]["by"] == "heidi"
-    assert [p.name for p in (tmp_path / "examples").iterdir()] == ["acme"]   # no scratch dir left
+    assert [p.name for p in (tmp_path / "rows").iterdir()] == ["acme"]   # no scratch dir left
 
 
 async def test_a_put_that_does_not_fit_writes_nothing(tmp_path):
@@ -88,14 +88,14 @@ async def test_a_put_that_does_not_fit_writes_nothing(tmp_path):
     await d.put("acme", {"input": {"name": "Acme"}})
     with pytest.raises(ValidationError):
         await d.put("acme", {"input": {"name": "Acme", "status": "maybe"}})
-    assert d.example("acme")["input"] == {"name": "Acme", "status": "new"}
+    assert d.row("acme")["input"] == {"name": "Acme", "status": "new"}
 
 
 async def test_delete_and_rename_by_key(tmp_path):
     d = _dataset(tmp_path)
     acme, beta = await d.append([{"key": "acme", "input": {"name": "Acme"}}, {"key": "beta", "input": {"name": "Beta"}}])
     assert d.rename_row("acme", "acme_corp") == acme            # a rename keeps the row's id
-    assert d.example(acme)["input"]["name"] == "Acme"
+    assert d.row(acme)["input"]["name"] == "Acme"
     with pytest.raises(ValueError, match="already taken"):
         d.rename_row("acme_corp", "beta")
     assert d.delete_row(beta) == "beta"                         # an id works as well as a key
@@ -110,13 +110,13 @@ async def test_check_says_what_is_wrong_and_writes_nothing(tmp_path):
     errors = d.check({"input": {"name": "Acme", "status": "maybe"}})
     assert len(errors) == 1 and errors[0].startswith("input.status:")
     assert d.check({"inputs": {}}) == ["row 1: an object with an `input` is required"]
-    assert not (tmp_path / "examples").exists()
+    assert not (tmp_path / "rows").exists()
 
 
 def test_scratch_dirs_are_never_rows(tmp_path):
-    FolderLayout().append_many(tmp_path, [(ExampleSpec[Lead, Score, DataSpec](input=Lead(name="A")), None)],
+    FolderLayout().append_many(tmp_path, [(RowSpec[Lead, Score, DataSpec](input=Lead(name="A")), None)],
                                dataset_id=DATASET_ID)
-    (tmp_path / "examples/.acme.new-1234/input").mkdir(parents=True)
+    (tmp_path / "rows/.acme.new-1234/input").mkdir(parents=True)
     assert [r["key"] for r in FolderLayout().index(tmp_path, dataset_id=DATASET_ID)] == ["0001"]
 
 
@@ -140,8 +140,8 @@ async def test_the_row_actions_over_http(tmp_path):
 
     resp = await call_local("POST", f"{base}/put-row", {"key": "acme", "row": {"input": {"name": "Acme"}}})
     assert resp.status_code == 200, resp.text
-    acme_id = resp.json()["data"]["example_id"]
-    assert (await call_local("GET", f"{base}/example/{acme_id}")).json()["data"]["key"] == "acme"
+    acme_id = resp.json()["data"]["row_id"]
+    assert (await call_local("GET", f"{base}/row/{acme_id}")).json()["data"]["key"] == "acme"
 
     bad = await call_local("POST", f"{base}/put-row", {"key": "acme", "row": {"input": {"status": "maybe"}}})
     assert bad.status_code == 400 and bad.json()["data"]["errors"]
@@ -155,7 +155,7 @@ async def test_the_row_actions_over_http(tmp_path):
     assert [(r["key"], r["input"]["name"]) for r in rows] == [("acme_corp", "Acme")]
 
     gone = await call_local("POST", f"{base}/delete-row", {"key": "acme_corp"})
-    assert gone.status_code == 200 and gone.json()["data"]["num_examples"] == 0
+    assert gone.status_code == 200 and gone.json()["data"]["num_rows"] == 0
     assert (await call_local("POST", f"{base}/delete-row", {"key": "acme_corp"})).status_code == 404
 
 
@@ -191,9 +191,9 @@ async def test_a_row_kind_nobody_registered_is_named_not_read_as_any(tmp_path):
     folder = tmp_path / "leads"
     folder.mkdir()
     (folder / "dataset.json").write_text(json.dumps({"metadata": {
-        "data_layout": "io_folder", "spec": {"examples": [{"input": "--nobodyns--.crm.lead"}]}}, "data": {}}))
+        "data_layout": "io_folder", "spec": {"rows": [{"input": "--nobodyns--.crm.lead"}]}}, "data": {}}))
     d = Dataset.at(folder)
-    assert d.spec == {"examples": [{"input": "--nobodyns--.crm.lead"}]}
+    assert d.spec == {"rows": [{"input": "--nobodyns--.crm.lead"}]}
     with pytest.raises(ValueError, match="names a kind nobody registered"):
         await d.put("dana", {"input": {"name": "Dana"}})
 
@@ -204,7 +204,7 @@ class Note(DataSpec):
     owner: Optional[str] = None
 
 
-class Notes(DatasetSpec[ExampleSpec[Note, DataSpec, DataSpec]]):
+class Notes(DatasetSpec[RowSpec[Note, DataSpec, DataSpec]]):
     spec_kind: ClassVar[str] = "unittest.bykey.notes"
 
 
@@ -216,18 +216,18 @@ async def test_a_row_file_keeps_utf8_and_leaves_unset_optionals_out(tmp_path):
     d = Dataset(id=DATASET_ID, name="notes", asset_ref=str(tmp_path), data_layout="io_folder",
                 spec="unittest.bykey.notes")
     await d.put("n1", {"input": {"text": "20–500 engineers"}})
-    assert (tmp_path / "examples/n1/input/note.json").read_text(encoding="utf-8") == '{\n  "text": "20–500 engineers"\n}\n'
-    assert d.example("n1")["input"] == {"text": "20–500 engineers", "owner": None}
+    assert (tmp_path / "rows/n1/input/note.json").read_text(encoding="utf-8") == '{\n  "text": "20–500 engineers"\n}\n'
+    assert d.row("n1")["input"] == {"text": "20–500 engineers", "owner": None}
 
 
 def test_validate_names_the_row_by_its_key(tmp_path):
     import json
 
     d = _dataset(tmp_path)
-    (tmp_path / "examples/broken/input").mkdir(parents=True)
-    (tmp_path / "examples/broken/input/lead.json").write_text(json.dumps({"name": "B", "status": "maybe"}))
+    (tmp_path / "rows/broken/input").mkdir(parents=True)
+    (tmp_path / "rows/broken/input/lead.json").write_text(json.dumps({"name": "B", "status": "maybe"}))
     (problem,) = d.validate_rows()
-    assert problem["key"] == "broken" and problem["example_id"] == example_id(DATASET_ID, "broken")
+    assert problem["key"] == "broken" and problem["row_id"] == derived_row_id(DATASET_ID, "broken")
 
 
 def test_a_kind_field_that_does_not_fit_reports_the_value_alone():

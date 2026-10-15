@@ -69,7 +69,7 @@ def test_field_persistence_is_the_one_type_to_persistence_mapping() -> None:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.subagent import SubAgent
 
-    assert field_persistence(Dataset.model_fields["examples"].annotation) is FieldKind.ROWS
+    assert field_persistence(Dataset.model_fields["rows"].annotation) is FieldKind.ROWS
     assert field_persistence(Dataset.model_fields["title"].annotation) is FieldKind.SCALAR
     assert field_persistence(Dataset.model_fields["spec"].annotation) is FieldKind.SCALAR   # a shape, not bytes
     assert field_persistence(Optional[FileRef]) is FieldKind.FILE_REF

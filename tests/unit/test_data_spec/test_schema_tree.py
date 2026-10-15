@@ -28,7 +28,7 @@ def _dataset(root, name, kind):
     folder = root / "agentic-assets/dataset" / name
     folder.mkdir(parents=True)
     (folder / "dataset.json").write_text(json.dumps(
-        {"metadata": {"data_layout": "io_folder", "spec": {"examples": [{"input": kind}]}}, "data": {}}))
+        {"metadata": {"data_layout": "io_folder", "spec": {"rows": [{"input": kind}]}}, "data": {}}))
     return Dataset.at(folder)
 
 
@@ -77,7 +77,7 @@ def test_a_kind_a_dataset_keeps_is_linked_and_any_other_is_held_inside(crm):
 def test_a_kind_names_the_dataset_that_keeps_its_rows(crm):
     root, _ns, datasets = crm
     datasets[0].source_id = "src-1"
-    datasets[0].num_examples = 4
+    datasets[0].num_rows = 4
     nodes = _tree(root, datasets)
     assert nodes["crm.company"].dataset.model_dump() == {
         "id": datasets[0].id, "title": "companies", "rows": 4, "source_id": "src-1"}

@@ -118,10 +118,10 @@ async def test_only_its_owner_sets_or_changes_an_owned_field(proj):
     assert _codes(refused) == [("input.stage", "owned")]
     with pytest.raises(LinkError):
         await deals.put("acme", _deal(stage="won", crm_id="c1"), by="erp")     # another system is not the owner either
-    row = deals.example("acme")["input"]
+    row = deals.row("acme")["input"]
     assert (row["stage"], row["notes"]) == ("open", "call back")
     await deals.put("acme", {"input": {**row, "stage": "won"}}, by="crm")
-    assert deals.example("acme")["input"]["stage"] == "won"
+    assert deals.row("acme")["input"]["stage"] == "won"
 
 
 async def test_owned_fields_in_bulk_writes_and_checks(proj):
@@ -197,7 +197,7 @@ async def test_a_swap_of_unique_values_is_refused_and_a_pruned_row_frees_its_val
 async def test_a_duplicate_that_reached_the_disk_is_reported_not_hidden(proj):
     root, _, deals = proj
     await deals.sync([{"key": "a", **_deal("A", crm_id="c1")}, {"key": "b", **_deal("B", crm_id="c2")}], by="crm")
-    doc = next((root / "agentic-assets/dataset/deals/examples/b/input").glob("*.json"))
+    doc = next((root / "agentic-assets/dataset/deals/rows/b/input").glob("*.json"))
     doc.write_text(doc.read_text().replace('"c2"', '"c1"'))                    # a hand edit, a git pull
     rows, problems = deals.rows_and_problems()
     assert [r.key for r in rows] == ["a"]                                      # the first by key keeps the value
@@ -227,7 +227,7 @@ async def test_owned_and_unique_over_http(proj):
 
     root, ns, _ = proj
     deals = Dataset(id=str(uuid.uuid4()), name="deals-http", asset_ref=str(root / "agentic-assets/dataset/deals-http"),
-                    data_layout="io_folder", spec={"examples": [{"input": f"--{ns}--.crm.deal"}]})
+                    data_layout="io_folder", spec={"rows": [{"input": f"--{ns}--.crm.deal"}]})
     await deals.save()
     base = f"dataset/{deals.id}"
     refused = await call_local("POST", f"{base}/put-row", {"key": "a", "row": _deal("A", crm_id="c1")})

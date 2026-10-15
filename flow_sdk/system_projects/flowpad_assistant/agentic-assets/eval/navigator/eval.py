@@ -9,7 +9,7 @@ import os
 from typing import get_args
 
 from flow_sdk.decision import DecisionFailure, failure_detail
-from flow_sdk.evals import EvalTrace, ExampleEval, Verdict, golds, verdict_of
+from flow_sdk.evals import EvalTrace, RowEval, Verdict, golds, verdict_of
 from flow_sdk.navigation import MIN_CONFIDENCE, call, code_version, same_place
 
 
@@ -18,7 +18,7 @@ def _right(target, golds):
     return bool(target) and any(g.get("route") == "quick" and g.get("target") and same_place(target, g["target"]) for g in golds)
 
 
-async def evaluate_example(row):
+async def evaluate_row(row):
     recorded = row.context.candidates if row.context else []
     request = row.input.model_dump(mode="json", exclude_none=True)
     # Live: this machine's search answers again (what a search change is measured with).
@@ -32,7 +32,7 @@ async def evaluate_example(row):
     if answer.reason in get_args(DecisionFailure):
         wire = answer.run.decision.wire if answer.run and answer.run.decision else None
         said = failure_detail(wire.response) if wire else None
-        return ExampleEval(verdict=Verdict.ERROR, error=f"decision API: {answer.reason}" + (f" -- {said}" if said else ""), trace=trace)
+        return RowEval(verdict=Verdict.ERROR, error=f"decision API: {answer.reason}" + (f" -- {said}" if said else ""), trace=trace)
     pred = out.decision.model_dump(mode="json", exclude_none=True)
     answers = [g.model_dump(mode="json", exclude_none=True) for g in golds(row)]
     gold_kinds = {(g.get("target") or {}).get("kind") for g in answers if g.get("route") == "quick"}
@@ -54,7 +54,7 @@ async def evaluate_example(row):
     unopenable = pred["route"] == "quick" and out.prompt is not None
     if verdict == Verdict.CORRECT and unopenable:
         verdict = Verdict.WRONG
-    return ExampleEval(
+    return RowEval(
         prediction=pred,
         verdict=verdict,
         score=out.decision.confidence,
