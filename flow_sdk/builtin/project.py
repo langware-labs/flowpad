@@ -897,6 +897,14 @@ class Project(SetupSkippable, Entity):
     @action.post(action_name="app-stop")
     async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
         """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
+        return await self._run_apps(app, stop=True, start=restart)
+
+    @action.post(action_name="app-start")
+    async def app_start_action(self, app: str = "") -> "ApiResponse":
+        """Start the app's processes on the ports they declare, or find them running there already."""
+        return await self._run_apps(app, stop=False, start=True)
+
+    async def _run_apps(self, app: str, *, stop: bool, start: bool) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
 
         found = await self._own_apps(app)
@@ -904,8 +912,8 @@ class Project(SetupSkippable, Entity):
             return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
         results = []
         for one in found:
-            answer = await webapp_setup.stop(str(one.id))
-            if restart and answer.ok:
+            answer = await webapp_setup.stop(str(one.id)) if stop else None
+            if start and (answer is None or answer.ok):
                 answer = await webapp_setup.step(str(one.id), "start", check=False)
             results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
         return ApiSuccessResponse(data={"apps": results})

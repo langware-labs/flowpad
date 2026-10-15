@@ -72,6 +72,10 @@ def open_app(
     scan_root = _resolve_root(root)
     process_id = _resolve_process_id(process)
     request = query or ""
+    placed = port is None and not no_start and (declared := _start_declared(request)) is not None
+    if placed:
+        # The project's own app: the backend started it (or found it) on its port, by the one rule.
+        port, no_start = declared, True
 
     artifacts = _list_webapp_artifacts(process_id, request)
     artifact = _select_artifact(artifacts, request, scan_root)
@@ -83,6 +87,7 @@ def open_app(
             port_override=port,
             no_start=no_start,
             timeout=timeout,
+            placed=placed,
         )
         if opened is not None:
             _ok(opened)
@@ -102,6 +107,7 @@ def open_app(
         no_start=no_start,
         install=install,
         timeout=timeout,
+        placed=placed,
     )
     _ok(opened)
 
@@ -203,6 +209,21 @@ def _project_action(action: str, body: dict | None = None) -> dict:
     return _post_graph_json(url, body, timeout=90, on_error=_on_error) or {}
 
 
+def _start_declared(request: str) -> int | None:
+    """The port of the project app ``request`` names (or of its only app), started by the backend like
+    every other start; None when the caller is in no project or no ``webapp.json`` app here matches."""
+    if _project_action_url("app-start", required=False) is None:
+        return None
+    names = sorted({row["app"] for row in _project_action("app-ports").get("ports") or []})
+    name = request if request in names else (names[0] if not request and len(names) == 1 else None)
+    if name is None:
+        return None
+    row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
+    if not row.get("ok"):
+        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", str(row.get("detail") or f"{name} did not start"))
+    return int(row["port"]) if row.get("port") else None
+
+
 @app_app.command("ports", help="The port each app of this project declares, and where it runs now.")
 def app_ports_cmd(
     bare: Annotated[Optional[str], typer.Option("--bare", help="Print only the live (else declared) port of APP or APP/SERVICE.")] = None,
@@ -266,13 +287,16 @@ def _answers(port: int) -> bool:
     return loopback_answers(port, timeout=2)
 
 
-def _where(port: int, folder: Path, start_cmd: str, name: str) -> tuple[int, bool]:
+def _where(port: int, folder: Path, start_cmd: str, name: str, *, placed: bool = False) -> tuple[int, bool]:
     """``(the port the app is or will be on, it is already serving)`` — by the one port rule
     (``flow_sdk/core/app_ports.py``), never "something answers on that port".
 
     The app already running from its folder is the app, on whatever port it listens. A port ANOTHER
     program holds is an error that names it: showing that program as the app is the failure this
-    replaces."""
+    replaces. ``placed``: the backend just started (or found) it on ``port`` — that is the answer; a
+    folder search would take the app's own API, serving from the same folder, for its page."""
+    if placed:
+        return port, True
     from flow_sdk.core import app_ports  # noqa: PLC0415
 
     snapshot = app_ports.listeners()
@@ -297,6 +321,7 @@ def _open_artifact(
     port_override: int | None,
     no_start: bool,
     timeout: float,
+    placed: bool = False,
 ) -> dict | None:
     port = port_override or _artifact_port(artifact)
     if port is None:
@@ -308,7 +333,7 @@ def _open_artifact(
     pid = None
     log_file = None
 
-    port, serving = _where(port, cwd, command or "", artifact.get("name") or "webapp")
+    port, serving = _where(port, cwd, command or "", artifact.get("name") or "webapp", placed=placed)
     if not no_start and not serving:
         if not command:
             return None
@@ -357,6 +382,7 @@ def _open_candidate(
     no_start: bool,
     install: bool,
     timeout: float,
+    placed: bool = False,
 ) -> dict:
     app_dir = Path(candidate.path)
     if candidate.kind == "static":
@@ -366,7 +392,7 @@ def _open_candidate(
     if port is None:
         _fail(EXIT_INVALID_ARG, "NO_PORT", f"Could not infer a port for {candidate.name}")
 
-    port, serving = _where(port, app_dir, candidate.start_cmd, candidate.name)
+    port, serving = _where(port, app_dir, candidate.start_cmd, candidate.name, placed=placed)
     start_cmd = candidate.start_cmd.format(port=port)
     started = False
     pid = None
