@@ -1304,6 +1304,7 @@ async def _prompt(spec: ComputeOpSpec, *, input: Any = MISSING, **_: Any) -> Pro
         return PromptResult.not_yet(f"{spec.display_label}: the model call failed — {error}")
     text = text if isinstance(text, str) else str(text)
     return PromptResult.satisfied(f"{spec.display_label}: answered.", value=value_from_reply(text), text=text,
+                                  endpoint=str(endpoint.typeid),
                                   **({"value_present": bool(text.strip())} if spec.output is not None else {}))
 
 

@@ -195,6 +195,15 @@ flow op trace <invocation_id>   # the run's logged calls, as a tree
 `call_log.trace(invocation_id)` is the same tree in Python. A call whose parent
 was not logged is a root.
 
+Each row also names what produced it: `version` (`block_version`, a hash of
+every file in the block folder) and `model` (the endpoint that answered a
+`prompt` or `decision` op). Label rows as `eval` and the log is an eval set. A
+dataset with no eval of its own kind falls back to the shipped `flowcall` eval,
+which replays each row's input through its block as it is now, judges the answer
+against the label, and slices the report by version and model. It replays only
+blocks this instance ships or indexes. Run it with `python -m flow_sdk.evals
+<log folder>`.
+
 ## Values, skips, references and routing
 
 Use `exit_code == ExitCode.OK` and `has_value` before passing a required value.

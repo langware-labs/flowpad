@@ -54,9 +54,20 @@ def log_of(spec: Any) -> TempLog:
     return found
 
 
-def _dump(value: Any) -> Any:
-    dump = getattr(value, "model_dump", None)
-    return dump(mode="json", exclude_none=True) if callable(dump) else value
+def wrap(spec: Any, value: Any) -> Any:
+    """A block's value as its log holds it: as is for a declared ``dataset_kind``, else ``{"value": ...}``."""
+    return value if spec.log is not None and spec.log.dataset_kind else {"value": value}
+
+
+def unwrap(spec: Any, held: Any) -> Any:
+    """``wrap`` undone: the block's own value from what its log holds (a row's ``input``)."""
+    return held if spec.log is not None and spec.log.dataset_kind else held.value
+
+
+def dump(value: Any) -> Any:
+    """A value as a row holds it: plain JSON."""
+    as_json = getattr(value, "model_dump", None)
+    return as_json(mode="json", exclude_none=True) if callable(as_json) else value
 
 
 def _fits(value: Any, limit: int) -> bool:
@@ -68,9 +79,9 @@ def row_of(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float) 
     limit = spec.log.max_row_bytes
 
     def held(value: Any) -> Any:
-        return value if spec.log.dataset_kind else {"value": value}
+        return wrap(spec, value)
 
-    given = "" if input is MISSING else _dump(input)
+    given = "" if input is MISSING else dump(input)
     if not _fits(given, limit):
         return None
     data = _trace(spec, answer, context, latency_ms)
@@ -85,7 +96,7 @@ def row_of(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float) 
         return {**row, "data": {**data, **(row.get("data") or {})}}
     row = {"kind": "train", "input": held(given), "data": data}
     if spec.output_shape is not None and answer.has_value:
-        output = _dump(answer.value)
+        output = dump(answer.value)
         if _fits(output, limit):
             row["output"] = held(output)
         else:
@@ -95,11 +106,19 @@ def row_of(spec: Any, input: Any, answer: Any, context: Any, latency_ms: float) 
 
 def _trace(spec: Any, answer: Any, context: Any, latency_ms: float) -> dict:
     """What every row's ``data`` carries: the call's place in its run, and how it went."""
+    from flow_sdk.core.compute_op.python import block_version  # noqa: PLC0415
+
+    folder = getattr(context, "asset_folder", None)
     return {
         "invocation_id": answer.invocation_id,
         "call_id": getattr(context, "call_id", None),
         "parent_call_id": getattr(context, "parent_call_id", None),
         "block": spec.name,
+        # What produced it: the block's files (``block_version``) and the model that answered, if any.
+        "block_folder": str(folder) if folder else None,
+        "project": getattr(context, "project", None),
+        "version": block_version(folder) if folder and Path(folder).is_dir() else None,
+        "model": getattr(answer, "endpoint", None),
         "exit_code": answer.exit_code.name,
         "detail": answer.detail,
         "latency_ms": round(latency_ms, 1),
@@ -172,4 +191,4 @@ async def promote(invocation_id: str, to: Any) -> list[str]:
     return await to.append(copied) if copied else []
 
 
-__all__ = ["PREFIX", "log_of", "log_soon", "promote", "row_of", "trace"]
+__all__ = ["PREFIX", "dump", "log_of", "log_soon", "promote", "row_of", "trace", "unwrap", "wrap"]

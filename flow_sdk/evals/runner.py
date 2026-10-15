@@ -47,7 +47,9 @@ def find_evals(dataset_folder: Path, spec: str) -> list[tuple[Path, EvalSpec]]:
     nested = [(f, e) for f, e in _evals_under(Path(dataset_folder)) if e.dataset_kind in (spec, "*")]
     if nested:
         return nested
-    return [(f, e) for f, e in _evals_under(flowpad_assistant_project_root()) if e.dataset_kind == spec]
+    shipped = _evals_under(flowpad_assistant_project_root())
+    # A shipped eval of the dataset's own kind, else one for any kind (FlowCall's ``flowcall``).
+    return [(f, e) for f, e in shipped if e.dataset_kind == spec] or [(f, e) for f, e in shipped if e.dataset_kind == "*"]
 
 
 def _digest(folder: Path) -> str:
