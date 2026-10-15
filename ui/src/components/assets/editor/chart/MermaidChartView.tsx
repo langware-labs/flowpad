@@ -6,7 +6,7 @@ import type { Chart, FSRef } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { mermaidRenderer } from '@src/components/milkdown-editor/plugins/fence-render/renderers/mermaid';
 import type { FenceRenderContext } from '@src/components/milkdown-editor/plugins/fence-render/registry';
-import { extractMermaidBlock, readChartDocument, writeChartMermaid } from './chartDoc';
+import { extractMermaidBlock, readChartDocument, replaceMermaidSource, writeChartMermaid } from './chartDoc';
 
 /**
  * A `mermaid` chart: its source IS the mermaid block in CHART.md. A text pane edits it
@@ -87,7 +87,7 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
     async (text: string) => {
       if (text === lastWritten.current) return;
       lastWritten.current = text;
-      await writeChartMermaid(docRef, chart, text, NOTE);
+      await writeChartMermaid(docRef, chart, text, NOTE, undefined, replaceMermaidSource);
     },
     [docRef, chart],
   );
@@ -148,7 +148,11 @@ export function MermaidChartView({ fsRef, chart, actions, onSource }: MermaidCha
               {error}
             </div>
           )}
-          <div ref={hostRef} className="flex justify-center" data-testid="chart-mermaid-diagram" />
+          <div
+            ref={hostRef}
+            className="flex justify-center [&_svg]:h-auto [&_svg]:w-full"
+            data-testid="chart-mermaid-diagram"
+          />
         </div>
       </div>
     </div>

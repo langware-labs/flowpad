@@ -116,10 +116,18 @@ function stripEphemeralAppState(appState: unknown): Record<string, unknown> {
   return rest;
 }
 
+// Bookkeeping Excalidraw stamps on (re)load — a scene restored on mount differs from the
+// file in these alone, and that must not read as an edit.
+const VOLATILE_ELEMENT_KEYS = new Set(['version', 'versionNonce', 'updated', 'seed', 'index']);
+
 /** Only durable canvas content counts as an edit; viewport/app-state changes do not. */
 function semanticBoardFingerprint(elements: unknown, files: unknown): string {
   return JSON.stringify({
-    elements: Array.isArray(elements) ? elements : [],
+    elements: (Array.isArray(elements) ? elements : []).map((el) =>
+      el && typeof el === 'object'
+        ? Object.fromEntries(Object.entries(el).filter(([k]) => !VOLATILE_ELEMENT_KEYS.has(k)))
+        : el,
+    ),
     files: files ?? {},
   });
 }
@@ -198,6 +206,10 @@ export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartVi
   // no real change. Skip the write when the payload matches the last one.
   const lastWrittenRef = useRef<string | null>(null);
   const lastSemanticRef = useRef<string | null>(null);
+  // Opening a chart never writes: Excalidraw fires onChange on mount with the loaded
+  // scene, and saving that once rewrote CHART.md (and created board.json) for a chart
+  // nobody touched. Only a change to the durable content arms the save.
+  const editedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +267,10 @@ export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartVi
       lastWrittenRef.current = serialized;
       await boardRef.write(serialized);
 
-      await writeChartMermaid(docRef, chart, excalidrawToMermaid(data), AUTO_NOTE);
+      // A sequence or mermaid chart's CHART.md block is its own source, not this board's mirror.
+      if (!chart || chart.format === 'excalidraw') {
+        await writeChartMermaid(docRef, chart, excalidrawToMermaid(data), AUTO_NOTE);
+      }
 
       try {
         const lib = await loadExcalidrawLib();
@@ -283,8 +298,10 @@ export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartVi
       const semanticFingerprint = semanticBoardFingerprint(els, files);
       if (semanticFingerprint !== lastSemanticRef.current) {
         lastSemanticRef.current = semanticFingerprint;
+        editedRef.current = true;
         chart?.markEdit();
       }
+      if (!editedRef.current) return;
       if (saveTimer.current) clearTimeout(saveTimer.current);
       saveTimer.current = setTimeout(() => {
         void persist(els, appState, files);

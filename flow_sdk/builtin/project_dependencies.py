@@ -43,6 +43,8 @@ from flow_sdk.fs_store.origin.fs_origin import safe_join
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.data_spec.flow_json_spec import (
     AssetFlowJsonSpec,
+    DeclaredDependency,
+    DependencyDeclarer,
     DependencySource,
     DependencyState,
     FlowDependency,
@@ -547,6 +549,8 @@ def schedule_resolve(project: "Project") -> None:
 async def _resolve(
     project: "Project", root: Path, *, fetch: bool, install: Iterable[str], update: bool, index: bool,
     read_only: bool = False, asset: Optional[str] = None, declarations: Optional[AssetFlowJsonSpec] = None,
+    declarers: Optional[list[DependencyDeclarer]] = None,
+    own_entries: Optional[list[tuple[str, list[FlowDependency], Optional[str], Path]]] = None,
 ) -> list[DependencyState]:
     try:
         spec = declarations if declarations is not None else flow_json.read_strict(root)
@@ -565,7 +569,8 @@ async def _resolve(
     # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
     # own assets — so its optional entries count; a dependency's own optionals never do.
     queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in spec.entries())
-    for label, entries, problem in ([] if asset else _own_asset_entries(root)):
+    own = own_entries if own_entries is not None else ([] if asset else _own_asset_entries(root))
+    for label, entries, problem, _folder in own:
         if problem:
             states.append(DependencyState(name=label, source="", state="invalid", reason=problem, via=label, via_path=[label]))
             continue
@@ -655,6 +660,14 @@ async def _resolve(
         except flow_json.FlowJsonError as exc:
             states.append(state("invalid", reason=f"{found.resolved.typeid}: {exc}"))
             continue
+        if (declarers is not None and found.resolved is not None and children
+                and all(d.asset != found.resolved.typeid for d in declarers)):
+            # Recorded where the asset is expanded — before its entries meet ``seen`` — so an
+            # entry the walk already reached elsewhere still names this asset as a declarer.
+            declarers.append(_declarer(
+                found.resolved.typeid, child_base.name, via_path + [dep.name], children, _rel(child_base, root),
+                label=dep.label,
+            ))
         queue.extend((child, child_base, False, via_path + [dep.name]) for child in children)
 
     states = [s.model_copy(update={"dismissed": True}) if is_dismissed(pid, s.name) and s.state != "ready" else s for s in states]
@@ -671,8 +684,8 @@ async def _resolve(
     return states
 
 
-def _own_asset_entries(root: Path) -> list[tuple[str, list[FlowDependency], Optional[str]]]:
-    """``(label, entries, problem)`` for every folder asset of the project that carries a
+def _own_asset_entries(root: Path) -> list[tuple[str, list[FlowDependency], Optional[str], Path]]:
+    """``(label, entries, problem, folder)`` for every folder asset of the project that carries a
     ``flow.json`` — found where each folder-backed type is placed (``agentic-assets/<family>/``,
     ``.claude/skills/`` …), never by a path spelled here. ``label`` is ``<family>/<name>``,
     ``problem`` why its file could not be read."""
@@ -689,11 +702,104 @@ def _own_asset_entries(root: Path) -> list[tuple[str, list[FlowDependency], Opti
             try:
                 declared = flow_json.read_strict(folder, AssetFlowJsonSpec)
             except flow_json.FlowJsonError as exc:
-                out.append((label, [], str(exc)))
+                out.append((label, [], str(exc), folder))
                 continue
             if declared is not None:
-                out.append((label, declared.entries(), None))
+                out.append((label, declared.entries(), None, folder))
     return out
+
+
+def _rel(folder: Path, root: Path) -> str:
+    try:
+        return folder.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return canonical_posix_path(str(folder))
+
+
+def _declarer(
+    typeid: Optional[str], name: str, via_path: list[str], entries: list[FlowDependency], path: Optional[str] = None,
+    *, label: Optional[str] = None,
+) -> DependencyDeclarer:
+    from flow_sdk.dependencies.resolve import typeid_of  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+    return DependencyDeclarer(
+        asset=typeid, name=name, type=TypeId(typeid).type if typeid else None, path=path, label=label, via_path=via_path,
+        dependencies=[DeclaredDependency(
+            key=entry.name, source=entry.source, name=entry.label or entry.name,
+            typeid=typeid_of(entry.parsed) if entry.is_ref else None,
+        ) for entry in entries],
+    )
+
+
+def _own_asset_typeid(root: Path, folder: Path) -> Optional[str]:
+    """The id of one of the project's own folder assets, read from its carrier (never minted)."""
+    from flow_sdk.assets.scope import folder_backed_types  # noqa: PLC0415
+
+    for info in folder_backed_types():
+        if any(folder.parent == root / mount for mount in info.scan_mounts):
+            entity_id = info.read_id(folder)
+            return f"{info.type_name}-{entity_id}" if entity_id else None
+    return None
+
+
+async def _indexed_flow_json_folders(root: Path) -> list[tuple[Path, str, str]]:
+    """``(folder, typeid, label)`` for every indexed folder asset under ``root`` holding a flow.json."""
+    from flow_sdk.assets.layout import Folder as FolderShape  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    types = [t for t in SchemaRegistry.get_all_types() if isinstance(getattr(SchemaRegistry.get(t), "shape", None), FolderShape)]
+    rows = await Entity.assets_by_path(PathQueryOptions(search_dirs=[root], types=types, limit=10_000))
+    out: list[tuple[Path, str, str]] = []
+    for row in rows:
+        ref = Path(row.asset_ref) if getattr(row, "asset_ref", None) else None
+        # A folder asset's ref may name its main document rather than the folder.
+        folder = ref.parent if ref is not None and ref.is_file() else ref
+        if folder is not None and (folder / flow_json.FLOW_JSON).is_file():
+            out.append((folder, str(row.typeid), _rel(folder.parent, root) + "/" + folder.name))
+    return out
+
+
+async def declarers(project: "Project") -> list[DependencyDeclarer]:
+    """Every asset whose own ``flow.json`` declares dependencies — the project's own assets and
+    those the walk reaches — each with ALL its entries. Unlike :func:`resolve`, an entry is not
+    dropped for having been reached already, so two assets naming one chart both list it.
+    Read-only: never fetches, mints, indexes or relinks."""
+    if not project.fs_storage_mount_path:
+        return []
+    root = Path(project.fs_storage_mount_path)
+    own = _own_asset_entries(root)
+    typeids = {folder.resolve(): _own_asset_typeid(root, folder) for _l, _e, _p, folder in own}
+    # Folder assets the index holds anywhere in the project (a ``docs/**`` chart too), not
+    # only those under a family mount.
+    for folder, typeid, label in await _indexed_flow_json_folders(root):
+        if folder.resolve() in typeids:
+            typeids[folder.resolve()] = typeids[folder.resolve()] or typeid
+            continue
+        try:
+            declared = flow_json.read_strict(folder, AssetFlowJsonSpec)
+        except flow_json.FlowJsonError as exc:
+            own.append((label, [], str(exc), folder))
+            continue
+        if declared is not None:
+            own.append((label, declared.entries(), None, folder))
+        typeids[folder.resolve()] = typeid
+    out = [
+        _declarer(typeids.get(folder.resolve()), folder.name, [], entries, _rel(folder, root))
+        for _label, entries, problem, folder in own if not problem and entries
+    ]
+    states = await _resolve(
+        project, root, fetch=False, install=(), update=False, index=False, read_only=True, declarers=out, own_entries=own,
+    )
+    # Each entry reads the state of the dependency it names — the walk's one row for that id.
+    by_typeid: dict[str, str] = {}
+    for st in states:
+        if st.typeid:
+            by_typeid.setdefault(st.typeid, st.state)
+    return [d.model_copy(update={"dependencies": [
+        e.model_copy(update={"state": by_typeid.get(e.typeid or "")}) for e in d.dependencies
+    ]}) for d in out]
 
 
 async def _reconcile(project: "Project", desired: dict[str, tuple["Folder", dict]]) -> list[str]:

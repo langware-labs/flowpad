@@ -6,6 +6,7 @@ import { Chart, Project, QueryRequest, TypeId, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from '@src/notifications';
 import { writeChartMermaid, autoNote } from './chartDoc';
 import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
@@ -382,13 +383,22 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
         const found = await Chart.query(
           new QueryRequest({ type: Chart.type, query: { match: { name: ref } }, scope, name: `chart-subflow-${ref}` }),
         );
-        const sameProject = found.filter((c) => !chart?.scope || c.scope === chart.scope);
-        const next = sameProject[0] ?? found[0];
+        // A name can repeat across folders: the chart beside this one wins.
+        const parentOf = (p?: string) => (p ?? '').replace(/\/+$/, '').replace(/\/[^/]*$/, '');
+        const here = parentOf(fsRef.path);
+        const next = found.find((c) => here && parentOf(c.asset_ref) === here) ?? found[0];
         if (!next) {
           notify.error({ title: t`No chart named “${ref}” in this project` });
           return;
         }
-        navigation.openDock(next.dockPointer);
+        // The same editor pointer a Charts tree row opens, kept on the project route so the
+        // project tree (the chart viewer) stays and its selection follows.
+        if (!next.asset_ref) {
+          navigation.openDock(next.dockPointer);
+          return;
+        }
+        const editor = DockPointer.forAssetEditor(Chart.type, next.asset_ref);
+        navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(editor, projectId) : editor);
       } catch (err) {
         notify.error({
           title: t`Could not open the sub-flow`,
@@ -396,7 +406,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
         });
       }
     },
-    [chart, navigation, projectId, t],
+    [fsRef, navigation, projectId, t],
   );
 
   const pick = useCallback((id: string) => {
@@ -662,7 +672,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                       return (
                         <g
                           key={item.key}
-                          className={`m${item.reply ? 'reply' : ''}${markClass(item.target)}`}
+                          className={`m${item.reply ? ' reply' : ''}${markClass(item.target)}`}
                           aria-label={`${item.n}. ${item.label}, from ${item.info.from} to ${item.info.to}`}
                           data-testid="chart-message"
                           {...common}
