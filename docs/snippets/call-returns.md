@@ -23,6 +23,8 @@ answers whether a turn was **accepted**, while `AgenticProcess.run()` waits for 
 Expected unsuccessful outcomes are returned; only bad input and broken systems
 raise, unless the caller opts into `raise_for_status()`.
 
+Every `python` fence below is run by `tests/unit/test_call_returns_snippets.py` (how, just below).
+
 ## TypeScript calls
 
 `dataManager.callFlowAction<R>(actionInfo, transport)` returns the FlowCall answer
