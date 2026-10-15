@@ -170,7 +170,7 @@ def test_every_repo_destination_is_a_real_repo_family():
     }
     assert targets, "no repo destinations found — did the table shape change?"
     # A shipped migration is never edited; a family a LATER migration renames is carried on by it.
-    retired_by_later = {"whiteboard": "0.2.216 moves agentic-assets/whiteboard to agentic-assets/chart"}
+    retired_by_later = {"whiteboard": "0.2.217 moves agentic-assets/whiteboard to agentic-assets/chart"}
     assert targets <= repo_families | set(retired_by_later), f"not repo families: {targets - repo_families}"
 
 

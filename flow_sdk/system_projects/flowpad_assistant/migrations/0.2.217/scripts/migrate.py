@@ -137,7 +137,7 @@ def _migrate_root(root: Path, scope: str) -> RootReport:
                 dest.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(child), str(target))
             except OSError as e:
-                logger.warning("migrate 0.2.216: %s under %s failed: %s", child.name, root, e)
+                logger.warning("migrate 0.2.217: %s under %s failed: %s", child.name, root, e)
                 continue
             report.moved.append((f"{LEGACY_REL}/{child.name}", f"{DEST_REL}/{child.name}"))
         try:
@@ -154,7 +154,7 @@ def _migrate_root(root: Path, scope: str) -> RootReport:
                 try:
                     _convert_main(folder)
                 except OSError as e:
-                    logger.warning("migrate 0.2.216: %s under %s failed: %s", folder.name, root, e)
+                    logger.warning("migrate 0.2.217: %s under %s failed: %s", folder.name, root, e)
     return report
 
 
