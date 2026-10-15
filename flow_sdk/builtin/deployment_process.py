@@ -180,8 +180,14 @@ def shell_id_of(deployment) -> str:
 
 
 def command_of(deployment) -> str:
-    """What is typed into the terminal: this interpreter, on the deployment's file, naming the deployment."""
-    return f"{shlex.quote(sys.executable)} {shlex.quote(str(file_of(deployment)))} {deployment.id}"
+    """What is typed into the terminal: this interpreter, on the deployment's file, naming the deployment.
+    On Windows the terminal is PowerShell, which runs a quoted path only behind its call operator ``&``
+    (as ``flow_command``)."""
+    exe, file = sys.executable, str(file_of(deployment))
+    if sys.platform == "win32":
+        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in (exe, file))
+        return f"& {quoted} {deployment.id}"
+    return f"{shlex.quote(exe)} {shlex.quote(file)} {deployment.id}"
 
 
 async def _shell(deployment):
