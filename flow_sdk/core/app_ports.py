@@ -230,11 +230,15 @@ def launched_by(listener: Listener, start_cmd: str) -> bool:
     return any(_launch_pattern(start_cmd).search(_unquoted(line)) for line in listener.commands)
 
 
-def of_app(snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings: Iterable[str] = ()) -> list[Listener]:
+def of_app(
+    snapshot: Iterable[Listener], folder: Path, start_cmd: str, siblings: Iterable[str] = (), theirs: Iterable[int] = ()
+) -> list[Listener]:
     """The listeners that are THIS process of the app: inside its folder, and not a sibling process of
-    the same app (its API beside its page) — a sibling is told apart by its own start command."""
+    the same app (its API beside its page) — a sibling is told apart by its own start command, and a
+    port a sibling declares (``theirs``) is the sibling's: two processes may share one command."""
     home = os.path.realpath(folder)
-    inside = [one for one in snapshot if _inside(one.cwd, home)]
+    taken = set(theirs)
+    inside = [one for one in snapshot if _inside(one.cwd, home) and one.port not in taken]
     launched = [one for one in inside if launched_by(one, start_cmd)]
     if launched:
         return launched

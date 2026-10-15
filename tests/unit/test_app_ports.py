@@ -210,3 +210,14 @@ def test_ancestors_are_read_for_a_real_process():
     import psutil
 
     assert app_ports._ancestor_commands(psutil.Process(os.getpid()), app_ports._parents())
+
+
+def test_two_processes_with_one_command_are_told_apart_by_the_ports_they_declare():
+    """A page and its API both started as ``python -m http.server {port}``: the command cannot tell them
+    apart, so the API's declared port is the API's — the page's server there is not the API on a wrong port."""
+    command = "python3 -m http.server {port}"
+    page = Listener(1, 3300, "python3", APP, ("python3 -m http.server 3300",))
+    api = Listener(2, 8090, "python3", APP, ("python3 -m http.server 8090",))
+    assert of_app([page], Path(APP), command, [command], theirs=[3300]) == []
+    assert of_app([page, api], Path(APP), command, [command], theirs=[3300]) == [api]
+    assert of_app([page, api], Path(APP), command, [command], theirs=[8090]) == [page]
