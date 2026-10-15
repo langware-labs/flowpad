@@ -17,6 +17,12 @@ and composition (Python callers and wizards). `ProcessCall` carries a call throu
 a message and correlates its answer. REST and CLI adapters expose those parts;
 `ApiResponse` is the transport envelope, not the FlowCall answer.
 
+A **FlowCall block** is a reusable ComputeOp, including the Python variant
+whose entry is `call.py:call`. It declares `input` and `output` with the existing
+schema authoring form, including typed lists. See the
+[executable block and chain recipe](flowcall-blocks.md) for authoring, explicit
+per-item mapping, scoped discovery and invocation correlation.
+
 The scope is participating work calls, not every SDK method. HTTP success says
 the request was handled; read the answer for the work's outcome. Python `AgenticProcess.send_turn()`
 answers whether a turn was **accepted**, while `AgenticProcess.run()` waits for its result.
@@ -42,6 +48,7 @@ contracts, including the envelope returned by `callActionOverWS`.
 | Method | What its answer means |
 | --- | --- |
 | `ComputeOp.check()` / `ComputeOp.run(approved)` | The completed check or operation's outcome and value, through `callFlowAction`. |
+| `ComputeOp.call<T>(input, {approved})` | A completed typed block answer; server-side schemas validate the payload. `T` describes its output value. |
 | `AgenticProcess.sendTurn(instruction, options?)` | Admission only; no optimistic message echo or completion wait. `workerSessionId` is optional. |
 | `Agent.launch(prompt)` | Launch admission; `executor` identifies the process to observe. |
 | Legacy `AgenticProcess.executeInstruction()` | Retains its message echo, readiness checks, and optional completion wait. |
@@ -155,8 +162,10 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
     label: str
     description: str
-    subkind: OpSubkind                        # navigate | cli | decision | prompt | agent | ask
-    exe_data: NavigateOp | CliOp | DecisionOp | PromptOp | AgentOp | AskOp
+    subkind: OpSubkind                        # navigate | cli | decision | prompt | agent | ask | python
+    exe_data: NavigateOp | CliOp | DecisionOp | PromptOp | AgentOp | AskOp | PythonOp
+    input: ShapeForm | None                  # named, record or list input schema
+    output: ShapeForm | None                 # named, record or list output schema
     output_spec_kind: str | None              # a registered DataSpec kind, or a primitive
     completion_check: CliOp | None            # the SAME class as a cli op's exe_data
     status_check: str | None                  # OR a status fact (install:<harness>), asked in-process
@@ -180,6 +189,8 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
 class ReturnedValue(DataSpec):                # compute.returned
     exit_code: ExitCode                       # OK 0 · NOT_YET 1 · NOT_APPLICABLE 3 · NOT_FOUND 4 · REFUSED 7
     value: Any                                # an instance of output_spec_kind
+    value_present: bool | None                 # explicit null is present; None preserves legacy ambiguity
+    invocation_id: str | None                  # correlation of this call and its child work
     detail: str                               # ONE sentence for a person
     ran: bool                                 # False ⇒ nothing executed
     reported: bool                            # the callee gave its own account (else detail is ours)
@@ -291,10 +302,18 @@ except ValidationError as refused:
 
 That `class Greeting(DataSpec)` is the registration: a kind exists once the
 module declaring it has been imported. So a kind is nameable here — in flow\_sdk,
-or in an asset that ships a module, like a data source — and NOT in an op's own
-folder, which holds a JSON document and a markdown file. An op returns a
-primitive or a kind that already exists. The rule, and the one mechanism to
-reuse if that changes, are in [ontology](../ontology.md).
+or in an asset that ships a module, like a data source. A Python-backed op
+imports its code within the owning namespace after approval; its public input
+and output kinds must be independently discoverable through data-schema assets
+or SDK modules. Schema discovery does not import `call.py`. The ownership and
+registration rule is in [ontology](../ontology.md).
+
+Nested lists/maps preserve DataSpec tags too. A required-value chain consumes
+only `OK` with `has_value`; `.ok` alone also accepts a skipped operation.
+`value_present=True` marks a produced nullable value, while false means no
+output. Legacy unmarked null is not silently treated as data. Empty lists,
+zero and false are values. `CollectionResult` retains indexed item answers for
+explicit maps; partial failure has no consumable aggregate output list.
 
 ## 5. Nothing raises for an outcome
 
@@ -503,4 +522,3 @@ signed-in vendor CLI) answers `NOT_YET`, `ran=False`.
 | 21 | `routes/ask.py`                  | unchanged — the HTTP edge a window delivers an answer through                                 |
 | 22 | `execute_wizard`                 | `WizardResult`; busy → `NOT_YET`, `ran=False`                                                 |
 | 23 | `AgenticProcess.prompt`          | `send_turn()` → `PromptResult`; busy → `NOT_YET`, `ran=False` (the HTTP action keeps its 409) |
-

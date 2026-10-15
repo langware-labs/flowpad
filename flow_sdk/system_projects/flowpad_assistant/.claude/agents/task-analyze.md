@@ -35,6 +35,11 @@ CLOSING — depends on the `Presentation:` line at the end of your prompt:
 Write paths in that JSON with FORWARD slashes (`C:/Users/…`), never `C:\Users\…`
 — a backslash is a JSON escape and silently corrupts the path.
 
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work.
+
 ## The closing checklist (run it before you close — every time)
 
 These are not steps in a list you may judge unnecessary. Finding that nothing

@@ -136,6 +136,12 @@ Each kind of work answers with its own subclass (`CliResult`, `PromptResult`,
 `AskResult`, `WizardResult`); the whole contract, checked fence by fence, is
 [FlowCall](call-returns.md).
 
+Block `input`/`output` declarations use this same authoring form: `["int"]`
+means one list whose every element is an integer, not automatic per-item
+execution. Named-schema elements may remain ValueRefs until explicitly
+resolved. Returned values preserve nested tags and distinguish absent output
+from explicit nullable output. See [typed blocks](flowcall-blocks.md).
+
 ```python
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
 

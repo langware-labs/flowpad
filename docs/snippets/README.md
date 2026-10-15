@@ -10,6 +10,7 @@ pinned by a test so it cannot drift silently.
 | Category | What it shows | Pinned by |
 | --- | --- | --- |
 | [FlowCall](call-returns.md) | shared call outcomes, typed returned values, and composition | `tests/unit/test_call_returns_snippets.py` |
+| [FlowCall blocks](flowcall-blocks.md) | real call.py entries, typed whole-list inputs and outputs, Wizard-backed chains and explicit per-item maps | `tests/unit/test_flowcall_blocks_snippets.py` |
 | [Simple message block](message-block.md) | send a prompt through a process-local channel and let an Agent reply | `tests/unit/test_message_block.py`, `tests/unit/test_message_block_snippet.py` |
 | [Data sources](data-sources.md) | connect a source, sync it, read the rows, subscribe to events, write items in, watch a folder, operate it | `tests/unit/test_data_sources_snippets.py` (runs every fence), `tests/unit/test_ingest_write_route.py` |
 | [Project git share](project-git-share.md) | let project members clone and push the project's private GitHub repo through the hub, by role; install/connect steps; stop sharing | `tests/unit/test_project_git_share_snippets.py` (runs every fence), `ui/tests/unit/project-git-share-snippet.test.ts` (the TS fence) |

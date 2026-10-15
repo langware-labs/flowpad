@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "ee7ec3a7701a274df9c6226d75c8babf94d69db4c0b6b1b86d781c6259f715d1",
+  "inputs_hash": "2ef3073f4f3a3e4a6de7cea01714adf80e08518a908397d9d76e9c7601ddbc7e",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Runnable SDK examples with validating tests: FlowCall outcomes and returned values, ComputeOps, wizards, schemas, agents, channels, data sources, datasets, credentials, dependencies, deployment, activity, scanning, and RAG.",
@@ -14,9 +14,9 @@
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Snippets — the dev onboarding shelf",
-      "summary": "SDK snippet shelf mapping capabilities, including FlowCall, to runnable documentation and their validating tests.",
-      "content_hash": "fc1bcb22582ea35a16893da202475e01e03f58cfe7018cd3fa688d16e065565b",
-      "size_bytes": 10213
+      "summary": "Runnable SDK example directory with prerequisite guidance and test mappings, including typed FlowCall blocks, call results, schemas, datasets, and agents.",
+      "content_hash": "6a8906e6c89552aaa62b92026965398242a5a8e5e5a56336225b928fc5c1a7ae",
+      "size_bytes": 10412
     },
     {
       "name": "activity.md",
@@ -30,7 +30,7 @@
       "name": "agent-deployment.md",
       "rel_path": "agent-deployment.md",
       "title": "Agent deployment — snippets",
-      "summary": "Runnable snippets on agent deployment: placing an Agent on a machine, launching sessions, pausing, cloud deploy, custom channel routing, and the per-deployment local agent loop.",
+      "summary": "---\nid: a67d0e93-70ef-4e56-8449-75b918f858af\n---\nRunnable snippets on agent deployment: placing an Agent on a machine, launching sessions, pausing, cloud deploy, custom channel routing, and the per-deployment local agent loop.",
       "content_hash": "34c088b0bdd80338aac2564d4d83bed26bb70fa326acd1bc29a8b66d4be14a37",
       "size_bytes": 14675
     },
@@ -54,7 +54,7 @@
       "name": "agents-on-channels.md",
       "rel_path": "agents-on-channels.md",
       "title": "An agent on a channel — snippets",
-      "summary": "Snippets for putting an agent on WhatsApp or a phone line, answered by the app or your own loop, with credential setup.",
+      "summary": "---\nid: e88a55a6-d845-475e-9dc9-8f98e6b76ac1\n---\nSnippets for putting an agent on WhatsApp or a phone line, answered by the app or your own loop, with credential setup.",
       "content_hash": "17f3461b4520d4d2d3b2b1d8fa987eca23709abad0ea308a964e53daedcf82ea",
       "size_bytes": 8631
     },
@@ -62,7 +62,7 @@
       "name": "asset-dependencies.md",
       "rel_path": "asset-dependencies.md",
       "title": "Asset dependencies — snippets",
-      "summary": "Asset dependency snippets: folder asset's flow.json naming assets by id, transitive resolution across layered data sources, missing-link states, flow dep commands and agent attachments.",
+      "summary": "---\nid: bdff00a2-d751-4c9f-8bea-207a2c5cc999\n---\nAsset dependency snippets: folder asset's flow.json naming assets by id, transitive resolution across layered data sources, missing-link states, flow dep commands and agent attachments.",
       "content_hash": "2ac44117dd14fdc60024dce628041e44a8d484affd173d3f1118d8ee08d10e2e",
       "size_bytes": 10770
     },
@@ -70,15 +70,15 @@
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
       "title": "FlowCall — calls, outcomes, and returned values",
-      "summary": "FlowCall contract: invoking work, ReturnedValue answers, ExitCode outcomes, typed outputs, checks, timeouts, serialization, and composition through tested examples.",
-      "content_hash": "04515783c5b22a87a2398fe7426e39f8186dc2b37a12e7fba667728e0aac27bc",
-      "size_bytes": 25192
+      "summary": "FlowCall contract and interfaces: ReturnedValue outcomes, typed value presence, ComputeOp execution, Wizard composition, agent completion, and wire serialization.",
+      "content_hash": "f438f7c33d2748455f656d9efcce088b807d345c69581555837fe091360a6193",
+      "size_bytes": 30984
     },
     {
       "name": "channel-webhook-routing.md",
       "rel_path": "channel-webhook-routing.md",
       "title": "Channel webhooks: from WhatsApp to an agent",
-      "summary": "Guide to routing WhatsApp Cloud API webhooks to an agent: account, user and group hub claims, source-ID delivery, group sources, answer placement and stage-by-stage diagnostics.",
+      "summary": "---\nid: 7ffd01cc-2fd3-43c9-95d9-cb7b7e390b0a\n---\nGuide to routing WhatsApp Cloud API webhooks to an agent: account, user and group hub claims, source-ID delivery, group sources, answer placement and stage-by-stage diagnostics.",
       "content_hash": "55cd648e1bc838587e8ba4e079775b71a4af11736316d860bb4c059ed56974cd",
       "size_bytes": 15993
     },
@@ -86,9 +86,9 @@
       "name": "compute-ops.md",
       "rel_path": "compute-ops.md",
       "title": "Compute ops — one call that converges, composes, and can ask",
-      "summary": "ComputeOp FlowCall examples for typed outputs, completion checks, asking people, attempts ladders, cancellation, and execution results.",
-      "content_hash": "251a597ab6ddbe6d063ecadf9bf09f5871bdf1af35f8245f03ab0cdcdad6983e",
-      "size_bytes": 8414
+      "summary": "ComputeOp authoring, execution variants, check-before-execute semantics, typed Python blocks, declared outputs, approvals, and executable unit-tested examples.",
+      "content_hash": "2e3fe3ee7399e274b01ab82dac3b81931ee1c8decd43c6b1992c875dfdf6dec3",
+      "size_bytes": 8878
     },
     {
       "name": "connections.md",
@@ -102,7 +102,7 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources — snippets",
-      "summary": "Runnable DataSource snippets: connect and sync a feed, reuse by account, search, mirror folders, subscribe to events, write items, reply, merge sources, write a driver.",
+      "summary": "---\nid: 34ca3b65-68ed-41ec-b3f8-5eee9959d4e8\n---\nRunnable DataSource snippets: connect and sync a feed, reuse by account, search, mirror folders, subscribe to events, write items, reply, merge sources, write a driver.",
       "content_hash": "54547883569587318421c143125540f775c25be000d2057c99bd06d353df72c0",
       "size_bytes": 21704
     },
@@ -110,9 +110,9 @@
       "name": "data-spec.md",
       "rel_path": "data-spec.md",
       "title": "DataSpec",
-      "summary": "DataSpec examples for schemas, runtime forms, registered kinds, FlowCall answers, file-backed values, persistence, and identity.",
-      "content_hash": "bfb1071989d163037db05f056989f468db0296c19166d8502a2c2fef26ffb6e6",
-      "size_bytes": 14165
+      "summary": "Typed DataSpec authoring, namespaces, records, lists, references, shape validation, folder serialization, and executable schema examples.",
+      "content_hash": "a3a53033b3a1d8574c724bf49d2c881dd9144056e224496dda9ae50257ea1bf0",
+      "size_bytes": 14534
     },
     {
       "name": "datasets.md",
@@ -126,9 +126,17 @@
       "name": "decisions.md",
       "rel_path": "decisions.md",
       "title": "Decisions — snippets",
-      "summary": "Decision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.",
+      "summary": "---\nid: 3cfa1e2e-fc53-444c-b785-c41a0623b92e\n---\nDecision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.",
       "content_hash": "834d92059d0ec415449f0f3c85b01b11ab9e13c1ce66f6403e28e3bcc7cd0c65",
       "size_bytes": 10591
+    },
+    {
+      "name": "flowcall-blocks.md",
+      "rel_path": "flowcall-blocks.md",
+      "title": "FlowCall blocks — typed input, call.py, output",
+      "summary": "Typed FlowCall blocks across seven variants, with input/output routing, runnable Python list processing, Wizard chains, mapping, nullable values, references and scoped calls.",
+      "content_hash": "c2bd2d13affe59a27c23c4041874220dd7cef9ffcc85e6966590f42dc45907b2",
+      "size_bytes": 10480
     },
     {
       "name": "gmail-source.md",
@@ -142,7 +150,7 @@
       "name": "llm-endpoints.md",
       "rel_path": "llm-endpoints.md",
       "title": "LLM endpoints — snippets",
-      "summary": "Snippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.",
+      "summary": "---\nid: a49769db-3e4c-4a8b-95f7-c53c082602ff\n---\nSnippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.",
       "content_hash": "6ab0b50b284ee3c838027fb91a42d81cd79af8182033c806f2f9beee3c57a8ba",
       "size_bytes": 14448
     },
@@ -182,9 +190,9 @@
       "name": "processes.md",
       "rel_path": "processes.md",
       "title": "Processes and agents — snippets",
-      "summary": "Snippets for Agents and AgenticProcesses: attaching MCP servers across harnesses, running on the mock worker, and typed process input and output.",
-      "content_hash": "998a38c4dd3f191a216047ad6b8824f2b65e8e026e2ee2bf6c9fef40192a9e3f",
-      "size_bytes": 8708
+      "summary": "AgenticProcess creation and execution examples, admission versus completion, structured FlowCall results, typed block alternatives, and process lifecycle APIs.",
+      "content_hash": "b4ef2600d14a9d423eeb5439c4bb93fb9115fbe1702b2392dc4c512aa07b6b52",
+      "size_bytes": 9085
     },
     {
       "name": "project-dependencies.md",
@@ -246,9 +254,9 @@
       "name": "wizards.md",
       "rel_path": "wizards.md",
       "title": "Wizards — a sequence of calls, and what travels between them",
-      "summary": "Wizard FlowCall composition examples covering ordered steps, bound values, fallback, conditions, failure policies, declared outputs, and shared shells.",
-      "content_hash": "579938127abfda9cd091a7896b82b69336e915809f12d3bba63f4e5f22aa5674",
-      "size_bytes": 14525
+      "summary": "Declarative Wizard composition, checks, inputs, typed input_from bindings, selected output values, step results, approvals, and unit-tested execution examples.",
+      "content_hash": "af32c62b0f9784005a30a5daef546540f72ff16e6f134164b72b1283f5414a5b",
+      "size_bytes": 15062
     },
     {
       "name": "workflows.md",
@@ -260,6 +268,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T06:45:37.533497+00:00",
+  "generated_at": "2026-10-15T09:19:50.046891+00:00",
   "latest_process_ref": ""
 }

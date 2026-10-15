@@ -34,6 +34,11 @@ allowed-tools:
 
 # Web App Builder
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract. In the Flowpad SDK template, invoke `ComputeOp.call` through its existing entity action. Keep generic standalone-app API guidance separate.
+
 ## FIRST: which template? (decide before writing anything)
 
 Two templates ship with this skill. Pick by **whose data the app manages** — not

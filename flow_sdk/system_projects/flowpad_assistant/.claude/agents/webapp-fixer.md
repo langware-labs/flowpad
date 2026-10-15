@@ -21,6 +21,11 @@ mechanical — a server that isn't running, a typo'd import, a 404 asset. Handle
 those directly. If the cause turns out to be genuinely architectural, say so in
 your summary rather than attempting a redesign.
 
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work.
+
 ## What you are given
 
 The wizard prompt carries JSON with:

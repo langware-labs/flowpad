@@ -37,6 +37,11 @@ into a source that demonstrably works, and shows it to the user.
 > **5. Say what is the user's step.** Credentials, OAuth and bot invites are
 > theirs. Name the exact click; never loop waiting for it.
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract. Sources keep paging, cursors and session lifecycles; a block may process a finite page without replacing the source driver.
+
 ## Modes (from the skill arg)
 
 The FIRST whitespace-separated token, if it is exactly `author`, `debug`,

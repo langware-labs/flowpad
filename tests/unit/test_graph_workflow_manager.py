@@ -1078,3 +1078,41 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
                            / "example.json").read_text())["metadata"]["source"]
     assert exec_ex["event_id"] == env.id
     assert exec_ex["actor"] == "user:u-42"
+
+
+@async_context
+async def test_function_calls_typed_block_without_changing_done_or_none(tmp_path):
+    from flow_sdk.builtin.compute_op import ComputeOp
+    from flow_sdk.schema.data_spec.compute_op_spec import PythonOp
+
+    manifest = tmp_path / 'agentic-assets/project_manifest'
+    manifest.mkdir(parents=True)
+    (manifest / 'project_manifest.json').write_text(json.dumps({'ns': 'graph_call_fixture'}))
+    folder = tmp_path / 'agentic-assets/compute_op/graph-call'
+    op = ComputeOp(name='graph-call', asset_ref=str(folder), subkind='python',
+                   exe_data=PythonOp(), input=['int'], output=['int'])
+    await op.save()
+    (folder / 'call.py').write_text('from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue\ndef call(input, *, context):\n return ReturnedValue.satisfied(value=input[::-1])\n')
+    seen = []
+
+    @graph_workflow_functions.register('flowcall_graph_adapter')
+    async def caller(event_name, data, ctx):
+        answer = await ctx.call(str(op.typeid), input=data['items'], approved=True)
+        seen.append(answer.value)
+        if data['emit']:
+            return {'items': answer.value}
+        return None
+
+    @graph_workflow_functions.register('flowcall_graph_sink')
+    def sink(event_name, data, ctx):
+        seen.append(('done', data['items']))
+
+    flow = await _make_flow(tmp_path, 'flowcall_graph',
+        [_fn('caller', 'flowcall_graph_adapter'), _fn('sink', 'flowcall_graph_sink')],
+        [_edge('start', EXTERNAL_SOURCE, 'go', 'caller'), _edge('done', 'caller', 'done', 'sink')])
+    manager = GraphWorkflowManager()
+    await manager.inject(flow.id, 'go', {'items': [1, 2], 'emit': True})
+    await _until(lambda: not manager.live_run_ids())
+    await manager.inject(flow.id, 'go', {'items': [], 'emit': False})
+    await _until(lambda: not manager.live_run_ids())
+    assert seen == [[2, 1], ('done', [2, 1]), []]

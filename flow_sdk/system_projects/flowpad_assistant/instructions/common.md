@@ -13,3 +13,8 @@ title: "System prompt: every process"
   1. The request names a channel ("a Slack message", "email", "WhatsApp"): send on that channel with that channel's own tool. If you have no tool for it, say so and stop — never fall back to a Flowpad message.
   2. No channel named: send a Flowpad message. Run `flow conversation list`, use a conversation only when one of its participants is the named contact, and send with `flow conversation send <conversation id> <text>`.
   3. No participant matches the contact: send nothing — any other conversation is the wrong person — and ask the user for the contact's email.
+
+
+## FlowCall blocks
+
+For reusable input → work → output processing, use a **FlowCall block** (`ComputeOp`) and the [shipped recipe](../docs/Getting%20Started/FlowCall.md). Declare shapes, return `ReturnedValue`, and compose validated values. A list is one input/output value; `map_calls` is explicit. Never treat launch admission or a skipped call as a completed required value.
