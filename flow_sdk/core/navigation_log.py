@@ -1,7 +1,8 @@
 """SmartNavigationLog: every smart-navigation decision, collected as a row of a dataset in temp.
 
 Off unless the instance preference ``preferences.advanced.smart_navigation_log`` is on. When it is, each
-``navigation-decision`` answer is appended -- after the answer has gone out, so logging never
+decision of the ``smart-navigator`` block is appended by FlowCall's block log (``log`` in its
+``compute_op.json``, ``core/compute_op/call_log``) -- after the answer has gone out, so logging never
 slows a navigation -- to this instance's log dataset:
 
     <FLOWPAD_TEMP_DIR>/<instance>/agentic-assets/dataset/smart-navigation-log/   spec: navigator.dataset
@@ -73,15 +74,6 @@ def row_of(request: dict, outcome: Any, answer: Any) -> dict:
     }
 
 
-async def log(request: dict, outcome: Any, answer: Any) -> Optional[str]:
-    """Append one decision (when the log is on); the new example id, else None. Never raises."""
-    from flow_sdk.preferences import smart_navigation_log_enabled  # noqa: PLC0415
-
-    if not smart_navigation_log_enabled() or not (request.get("utterance") or "").strip():
-        return None
-    return await _LOG.append(row_of(request, outcome, answer))
-
-
 async def _indexed() -> Any:
     """This instance's log as the index holds it (no rows read) -- None before its first row."""
     return await _LOG.indexed()
@@ -101,9 +93,4 @@ async def address() -> str:
     return (await entity_app_address(f"dataset-{log.id}") if log is not None else None) or "/dock/preferences/advanced"
 
 
-def log_soon(request: dict, outcome: Any, answer: Any) -> None:
-    """``log`` in the background -- the caller has its answer already."""
-    spawn(log(request, outcome, answer))
-
-
-__all__ = ["NAME", "TITLE", "address", "dataset", "drain", "folder", "log", "log_soon", "row_of"]
+__all__ = ["NAME", "TITLE", "address", "dataset", "drain", "folder", "row_of"]
