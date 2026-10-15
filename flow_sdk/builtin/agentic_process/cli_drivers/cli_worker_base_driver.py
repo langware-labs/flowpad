@@ -482,7 +482,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
     from flow_sdk.utils.environment import INVOCATION_ENV, PARENT_CALL_ENV  # noqa: PLC0415
 
-    context = process.context_data or {}
+    context = getattr(process, "context_data", None) or {}
     for key, name in (("invocation_id", INVOCATION_ENV), ("call_id", PARENT_CALL_ENV)):
         if is_valid_entity_id(str(context.get(key) or "")):
             env[name] = str(context[key])
