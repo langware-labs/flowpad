@@ -102,7 +102,7 @@ def test_shared_skill_and_subagent_mounts_preserve_provider_occurrences(tmp_path
 
 
 def test_existing_asset_tree_writer_agrees_with_sdk_enumeration(tmp_path):
-    types = ("skill", "subagent", "markdown", "task", "plan", "claude_rules", "whiteboard")
+    types = ("skill", "subagent", "markdown", "task", "plan", "claude_rules", "chart")
     expected = {(name, write_asset(tmp_path, name, name).resolve()) for name in types}
     assert {(asset.typeid.type, asset.path) for asset in AssetFolder(path=tmp_path).assets()} == expected
 

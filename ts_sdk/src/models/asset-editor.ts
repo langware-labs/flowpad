@@ -15,7 +15,7 @@ export enum AssetEditor {
   AGENT = 'agent',
   SKILL = 'skill',
   TASK = 'task',
-  WHITEBOARD = 'whiteboard',
+  CHART = 'chart',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
@@ -126,7 +126,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
   [AssetEditor.TASK]: [RecordType.TASK],
-  [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
+  [AssetEditor.CHART]: [RecordType.CHART],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],

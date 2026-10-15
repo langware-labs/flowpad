@@ -120,7 +120,7 @@ const TYPE_LABELS: Record<string, MessageDescriptor> = {
   user: msg`User`,
   user_note: msg`User Note`,
   visitor: msg`Visitor`,
-  whiteboard: msg`Whiteboards`,
+  chart: msg`Charts`,
   wiki: msg`Wikis`,
   wiki_entry: msg`Wiki Entries`,
   workflow_run: msg`Workflow Run`,

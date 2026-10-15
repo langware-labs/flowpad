@@ -1,110 +1,126 @@
 ---
 id: 3f8618bb-02a2-48c1-905e-47f10f0a7329
 name: chartit
-description: 'Builds an interactive HTML chart the user steers by commenting on it
-  — the chart is drawn from a typed row, a feedback toolbar lets the reviewer click
-  any element (a box, an arrow), leave a comment (text + image) and Submit; the comments
-  come back to this session, you edit the row, and the open chart redraws live. The
-  chart and its feedback are typed data (kinds chartit.chart / chartit.feedback, built
-  with the data-management skill). Chart types: sequence (a network flow / message
-  flow between participants, with self-calls). Use for "chart this flow", "draw the
-  network flow", "sequence diagram of X", "a chart I can comment on", or when feedback
-  on a chart arrives. NOT for a clickable UX journey (mockify), a static report or
-  dashboard (html-builder), or slides (decker).'
+description: 'Builds and edits Flowpad Charts — one entity for every kind of chart,
+  opened in Flowpad''s own chart editor: a sequence (network / message flow between
+  participants, with sub-flow blocks that open other charts), an Excalidraw whiteboard
+  (boxes, arrows, freehand), or a Mermaid diagram. Picks the format, writes the chart''s
+  files, indexes it, and shows it; the reviewer clicks any element, comments (text
+  + image) and Submits, and the comments come back to this session to revise the chart.
+  Use for "chart this flow", "draw the network flow", "sequence diagram of X", "make
+  a whiteboard / board / diagram", "mermaid diagram", "a chart I can comment on",
+  converting a chart between formats, or when feedback on a chart arrives. NOT for
+  a clickable UX journey (mockify), a data dashboard or report with numbers (html-builder
+  + dataviz), or slides (decker).'
 ---
 
-# chartit — a chart the user steers by commenting on it
+# chartit — every chart is one Chart entity
 
-A chart is **data plus a renderer**. Its content is a `chartit.chart` row in the project's `charts`
-dataset; the page only draws that row and redraws whenever it changes. Every comment is a
-`chartit.feedback` row in `chart-feedback` (text, optional image, optional `target` = the element id,
-status). **You never edit the chart's HTML to change the chart — you edit the row.** Every data step
-follows the **data-management** skill — load it and obey its ground rules (rows only through `dm_ctl`
-/ the SDK). `DM` below is its `dm_ctl` shell function.
+A **Chart** is a folder asset `<project>/agentic-assets/chart/<name>/`. It is indexed, searchable,
+shareable, and opens in Flowpad's chart editor, which draws it by its **`format`**:
 
-| type | data field | template |
-|---|---|---|
-| `sequence` — network / message flow | `sequence: {participants, messages}` | `templates/sequence/` |
+| format | when | the chart's content | you edit |
+|---|---|---|---|
+| `sequence` | who calls whom, in order: protocols, auth flows, request paths, integrations | `chart.json` (kind `chartit.sequence`) | the JSON |
+| `excalidraw` | a free sketch: architecture boxes, a layout, a rough idea | `board.json` (Excalidraw scene) | the JSON |
+| `mermaid` | a flowchart, state machine, ER or class diagram, gantt — anything Mermaid draws well | the ```` ```mermaid ```` block in `CHART.md` | the block |
 
-## 0. Once per project: the kinds and datasets
+Every chart folder has `CHART.md`: frontmatter `name`, `description`, `format`, `session` (your agentic
+process id — `flow context` — where feedback goes) and a short prose note. For `sequence` and
+`excalidraw` the editor keeps a Mermaid copy in `CHART.md` in sync — that is how any chart reads as text.
+Never write `thumbnail.svg`; the editor makes it.
 
-```bash
-python3 -I <this skill>/scripts/install_data.py <project root>      # prints the next commands
-flow schema apply <project>/agentic-assets/data_schema               # exit 0, every status ok
-flow record index <project>/agentic-assets/dataset/charts --types dataset
-flow record index <project>/agentic-assets/dataset/chart-feedback --types dataset
-```
+## 1. Pick the format, then cut the flows
 
-No `ns` yet: data-management `schema` mode, Gate 1.
+- Several actors exchanging messages over time → `sequence`. Free layout → `excalidraw`. A graph of
+  states / steps / entities → `mermaid`.
+- **Sequence sets: never draw a repeated flow twice.** List every flow first; a run of steps that
+  recurs (token refresh, a proxy hop, "select sources") is its own chart, and each place it happens is
+  ONE message with `ref: "<that chart's name>"` — a SUB-FLOW block with **Open ↗**. Its output enters
+  the calling flow through `returns: "<what comes back>"`.
 
-## 1. Write the chart row
-
-From the user's description, picture or text, write the data. A sequence chart:
-
-- `participants` left to right: `{id, label, note?}` — `label` may carry a second line after `\n`
-  (`"TranslatorAPI\n(GoogleTranslatorAPI)"`).
-- `messages` top to bottom: `{id, from, to, label, style?, note?}` — ids `m1, m2…` (what comments
-  target); `from == to` is a self-call (a loop on the lifeline); `style: "dashed"` for a reply.
-- Copy labels exactly as given (typos included — ask before "fixing" them).
+## 2. Write it
 
 ```bash
-DM check '--<ns>--.chartit.chart' '{"title": "…", "type": "sequence", "status": "draft",
-  "session": "<this process id>", "sequence": {"participants": […], "messages": […]}}'
-DM ds-put <project>/agentic-assets/dataset/charts <slug> '{"input": {…same value…}}'
+D=<project>/agentic-assets/chart/<name>        # name: lowercase-dashed, unique in the project
+mkdir -p "$D"
+cat > "$D/CHART.md" <<'EOF'
+---
+name: <name>
+description: <one line — what the chart shows>
+format: sequence
+session: <your agentic process id>
+---
+<one or two sentences of context: what system, what it is for>
+EOF
 ```
 
-`session` is YOUR agentic process id (`flow context`) — where Submit sends the feedback.
+**sequence** — `chart.json`, checked against `chartit.sequence` (`DM check`, data-management skill):
 
-## 2. The page — copy the template, never hand-draw
+```json
+{"participants": [{"id": "app", "label": "Spora App", "note": "Flutter — app/frontend"}],
+ "messages": [
+   {"id": "m1", "from": "app", "to": "tenant", "label": "POST …/oauth/init", "note": "locations-routes.js:182"},
+   {"id": "m2", "from": "tenant", "to": "app", "label": "{redirectUrl}", "style": "dashed"},
+   {"id": "m3", "from": "conn", "to": "conn", "label": "buildAuthorizeUrl()"},
+   {"id": "m4", "from": "conn", "to": "vauth", "label": "Token refresh", "ref": "token-refresh", "returns": "fresh access token"}]}
+```
 
-Copy `templates/<type>/` to `<project>/agentic-assets/webapp/chart-<slug>/`, fill `webapp.json`, set
-`CHARTIT.key = '<slug>'`, and paste `assets/feedback-toolbar.js` inline into the last `<script>`.
-Nothing else changes in the page. Then:
+- Participants left to right, initiator first; `label` may carry a second line after `\n`.
+- Messages top to bottom, ids `m1, m2…` (what comments target); `from == to` is a self-call;
+  `style: "dashed"` for a reply. Labels short (a route or a verb); detail goes in `note` (hover).
+- Copy names exactly as the source has them (typos included — ask before fixing).
+- Where the facts come from code, cite `file:line` in `note`.
+
+**excalidraw** — `board.json` `{"kind": "excalidraw", "version": 1, "data": {"elements": [...], "appState": {}}}`;
+elements `rectangle` / `ellipse` / `diamond` / `arrow` / `text` with `id`, `type`, `x`, `y`, `width`,
+`height` (text: `text`, `fontSize`); on a grid, nothing overlapping.
+
+**mermaid** — the diagram goes in one ```` ```mermaid ```` block in `CHART.md` under the prose.
+
+Then index and show it:
 
 ```bash
-flow app serve "Chart — <title>"      # from the chart's webapp folder; the URL it prints is app_url
-DM ds-put <charts dataset> <slug> '{"input": {…, "app_url": "<url>", "status": "in_review"}}'
+flow record index "$D" --types chart        # prints the chart-<uuid> TypeId
+flow show entity chart-<uuid>
 ```
 
-Served by Flowpad, the page reaches the SDK at `/sdk/flowpad-sdk.js` — feedback saves. Opened as a bare
-file it still draws from `CHARTIT.chart` (an optional offline copy of the row's input); feedback is off.
+## 3. Design rules (the editor applies them — don't fight them)
 
-## 3. The feedback toolbar (contract)
+The sequence view follows the `dataviz` skill: participant colours are validated categorical slots in
+fixed order (blue, orange, aqua, violet; a 5th+ participant is neutral), never cycled; colour marks
+identity on dots and arrows while text stays in ink; lifelines and cards are hairline and recessive;
+steps are auto-numbered; replies are dashed; hover lifts one element and recedes the rest; a Table view
+carries every value; dark mode is its own token set. Keep a chart under ~25 messages and ≤ 8
+participants — past that, cut sub-flows. A comment asking for a colour or style is a data change
+(`style`) — never a one-off hex.
 
-`feedback-toolbar.js` reads the chart row by `CHARTIT.key` (`Dataset.forKind('chartit.chart')`), calls
-`window.chartitRender(input)` on load and on every row change, and gives the reviewer:
-**CHART · <picked element> · 💬 Feedback (n) · Submit (n)**.
+## 4. Feedback
 
-| reviewer does | the toolbar writes |
-|---|---|
-| clicks a box / arrow (any `[data-target]`) | picks it (glow); clicking it again picks the whole chart |
-| 💬 → text (+ 📎 / pasted image) → **Save** | `append` a `chartit.feedback` row: `chart` = the row's `ref`, `target?`, `text`, `screenshot?`, `status: open`, `created` |
-| ✕ on an open comment | `deleteRow(key, {expected: version})` |
-| **Submit (n)** | queues one prompt to `session` (`AgenticProcess.enqueue`), then sets the rows and the chart to `submitted` |
+Once per project: `python3 -I <this skill>/scripts/install_data.py <project root>` and run the commands
+it prints (`flow schema apply`, `flow record index`) — the `chart-feedback` dataset. Without it the
+editor's 💬 says why it is off.
 
-A new renderer (a new chart type) must only draw from the value and mark every commentable element with
-`data-target="<id>"` and `data-label="<short name>"` — the toolbar does the rest.
-
-## 4. Verify, then present
-
-In a browser (Chrome tools or `real-browser`, your own tab): load the served URL, screenshot, compare to
-what the user gave you (every participant, every arrow, in order, self-calls on the right lifeline);
-click one arrow, save a comment and delete it again (`DM ds-rows` shows it come and go). Never report a
-chart you have not looked at. Then `flow show webapp` and reply with one line: "Click any box or arrow,
-press 💬 to comment, and **Submit** when done — it comes back to me and the chart redraws here."
-
-## 5. Reading feedback (when a Submit prompt arrives)
+The reviewer clicks any box or arrow, presses 💬, writes (text, pasted image) and Saves; **Submit**
+sends every open comment to the chart's `session` in one prompt. When it arrives:
 
 ```bash
 DM ds-rows <project>/agentic-assets/dataset/chart-feedback \
-  --match '{"input.chart": "<chart ref>", "input.status": "submitted"}'
+  --match '{"input.chart": "<chart TypeId>", "input.status": "submitted"}'
 ```
 
-Each row: `target` (a participant or message id; none = whole chart), `text`, `screenshot` (on disk as
-`<row folder>/input/screenshot.<ext>` — open it). Then:
+Each row: `target` (participant / message id; none = whole chart), `text`, `screenshot` (on disk as
+`<row folder>/input/screenshot.<ext>` — open it). Say per comment what you change and what not, edit the
+chart's file, re-index if you renamed anything, set each handled row to `addressed`
+(`DM ds-put-many` with versions), and re-show.
 
-1. Say per comment what you will change and what not, and why.
-2. `DM ds-put` the chart row with the new data and `status: revised` — the open page redraws by itself.
-3. Set each comment you acted on to `addressed` (`DM ds-put-many` with their versions); set the chart
-   back to `in_review`.
-4. Look at it again (§4).
+## 5. Converting
+
+The editor's **Convert to Excalidraw** turns a sequence or mermaid chart into an editable whiteboard (a
+new chart, `<name>-board`). To go the other way, read the synced Mermaid block in `CHART.md` and write a
+new `sequence` / `mermaid` chart from it.
+
+## 6. Verify before you report
+
+Open the chart (`flow show entity`) and look at it — every participant and arrow present, in order,
+self-calls on the right lane, each Open ↗ reaching its chart. Never report a chart you have not seen.

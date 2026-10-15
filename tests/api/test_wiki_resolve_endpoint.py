@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.assets.types.whiteboard import extract_whiteboard
+from flow_sdk.assets.types.chart import extract_chart
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions, build_default_indexer
 from flow_sdk.fs_store.record_types import RecordType
@@ -29,11 +29,11 @@ class MarkdownRecord:
         return _aw()
 
 
-class WhiteboardRecord:
+class ChartRecord:
     @staticmethod
     def from_fsref(ref):
         async def _aw():
-            return extract_whiteboard(ref, resolve_id(SchemaRegistry.get("whiteboard"), ref))
+            return extract_chart(ref, resolve_id(SchemaRegistry.get("chart"), ref))
 
         return _aw()
 
@@ -51,13 +51,13 @@ def _write_markdown(root: Path, name: str) -> None:
     )
 
 
-def _write_whiteboard(root: Path, name: str) -> None:
-    """Drop a whiteboard in its registry-owned folder for the repo walker."""
-    info = SchemaRegistry.get(RecordType.WHITEBOARD)
+def _write_chart(root: Path, name: str) -> None:
+    """Drop a chart in its registry-owned folder for the repo walker."""
+    info = SchemaRegistry.get(RecordType.CHART)
     assert info is not None and info.main_subdir is not None
     folder = root / info.main_subdir / name
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / "WHITE_BOARD.md").write_text(
+    (folder / "CHART.md").write_text(
         f'---\nname: {name}\ndescription: ""\n---\n\n# {name}\n',
         encoding="utf-8",
     )
@@ -76,8 +76,8 @@ async def _index_and_sync(root: Path) -> None:
         if r.record_type == RecordType.MARKDOWN:
             for rec in await MarkdownRecord.from_fsref(r):
                 await rec.sync_to_db()
-        elif r.record_type == RecordType.WHITEBOARD:
-            for rec in await WhiteboardRecord.from_fsref(r):
+        elif r.record_type == RecordType.CHART:
+            for rec in await ChartRecord.from_fsref(r):
                 await rec.sync_to_db()
 
 
@@ -95,30 +95,30 @@ async def test_resolve_markdown_hit(bootstrapped_client, tmp_path: Path) -> None
     assert "asset_ref" not in body["data"]
 
 
-async def test_resolve_whiteboard_hit(bootstrapped_client, tmp_path: Path) -> None:
-    """A whiteboard folder named 'bar' resolves to {type:'whiteboard', ...}."""
-    _write_whiteboard(tmp_path, "beta-wb")
+async def test_resolve_chart_hit(bootstrapped_client, tmp_path: Path) -> None:
+    """A chart folder named 'bar' resolves to {type:'chart', ...}."""
+    _write_chart(tmp_path, "beta-wb")
     await _index_and_sync(tmp_path)
 
     resp = await bootstrapped_client.get("/api/v1/wiki/resolve?name=beta-wb")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["data"]["kind"] == "resolved"
-    assert body["data"]["target_typeid"].startswith("whiteboard-")
+    assert body["data"]["target_typeid"].startswith("chart-")
 
 
 async def test_resolve_collision_is_ambiguous(bootstrapped_client, tmp_path: Path) -> None:
     """Same name in two types is never resolved by preference or ordering."""
     same = "gamma-shared"
     _write_markdown(tmp_path, same)
-    _write_whiteboard(tmp_path, same)
+    _write_chart(tmp_path, same)
     await _index_and_sync(tmp_path)
 
     resp_default = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}")
     assert resp_default.status_code == 200, resp_default.text
     assert resp_default.json()["data"] == {"kind": "ambiguous"}
 
-    resp_pref = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}&prefer_type=whiteboard")
+    resp_pref = await bootstrapped_client.get(f"/api/v1/wiki/resolve?name={same}&prefer_type=chart")
     assert resp_pref.status_code == 200, resp_pref.text
     assert resp_pref.json()["data"] == {"kind": "ambiguous"}
 

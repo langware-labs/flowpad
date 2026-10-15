@@ -236,7 +236,7 @@ def _asset_lookup_paths(resolved: str) -> list[str]:
     """Paths to try against ``asset_ref``, in order.
 
     Folder-asset awareness: a folder-layout entity's ``asset_ref`` is its
-    FOLDER, so showing the main file (``SKILL.md`` / ``WHITE_BOARD.md`` / …)
+    FOLDER, so showing the main file (``SKILL.md`` / ``CHART.md`` / …)
     must also try the parent directory. The registry says which names are a
     folder type's main document (``SchemaRegistry.main_file_owners``).
     """
