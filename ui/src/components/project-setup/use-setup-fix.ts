@@ -67,7 +67,8 @@ export function useSetupFix(
   fixed.current = reload;
   const process = state.phase === 'idle' ? null : state.process;
   const target = `project-${projectId}`;
-  const failure = result?.detail || error || '';
+  // Only a failed verdict is a failure: a project that needs setup carries a `detail` too, and asks Set up.
+  const failure = (result?.state === 'failed' ? result.detail : '') || error || '';
   const fail = useCallback(
     (summary: string, userAction: string, fixer: AgenticProcess | null = null) =>
       put(projectId, { phase: 'not_fixed', process: fixer, summary, userAction }),
