@@ -1457,6 +1457,10 @@ msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינ�
 msgid "⚡ {latencyMs} ms"
 msgstr "⚡ {latencyMs} ms"
 
+#: src/components/conversation/ConversationActions.tsx
+msgid "✓ {label} · {when}"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "🎉 No problems found — nothing needs your attention."
 msgstr "🎉 לא נמצאו בעיות — אין צורך בשימת לב."
@@ -8617,6 +8621,7 @@ msgstr "פרטים"
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
 #: src/components/harness-login/StatusRow.tsx
+#: src/components/project-setup/SetupFailureActions.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 msgid "Details"
 msgstr "פרטים"
@@ -10746,6 +10751,10 @@ msgstr ""
 msgid "Fetching"
 msgstr "מביא"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Fetching older messages…"
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Fetching the desk and indexing it…"
 msgstr ""
@@ -11106,8 +11115,8 @@ msgid "Fix the mirror map or the rows it names (the detail says which), then Pul
 msgstr "תקנו את מפת השיקוף או את השורות שהיא מציינת (הפירוט מציין אילו), ואז בצעו משיכה, או המתינו לסנכרון הבא."
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "Fix the setup"
-msgstr "תיקון ההגדרה"
+#~ msgid "Fix the setup"
+#~ msgstr "תיקון ההגדרה"
 
 #: src/components/webapp-display/useWebappFix.ts
 msgid "Fix the web app"
@@ -15710,6 +15719,10 @@ msgstr ""
 msgid "New workspace…"
 msgstr ""
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Newer"
+msgstr ""
+
 #: src/pages/discover-page/DiscoverToolbar.tsx
 msgid "Newest first"
 msgstr ""
@@ -16377,6 +16390,10 @@ msgstr "אין מודלים."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
+
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "No older conversations"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No one added yet"
@@ -17473,6 +17490,10 @@ msgstr "הודע לישות (הגדל מונה)"
 msgid "Notify people about this push"
 msgstr "להודיע לאנשים על הדחיפה הזו"
 
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
+msgid "Now"
+msgstr ""
+
 #: src/components/stream-inbox-view/ChannelAttentionBar.tsx
 msgid "Now listening."
 msgstr "מאזין עכשיו."
@@ -17528,6 +17549,7 @@ msgid "OK"
 msgstr "אישור"
 
 #: src/components/chats-navigator/useChatHistory.ts
+#: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "Older"
 msgstr "ישנים יותר"
 
@@ -20810,6 +20832,10 @@ msgstr "הסרת שורה"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Remove rule"
+msgstr ""
+
+#: src/components/conversation/MessageSessionChip.tsx
+msgid "Remove session from this message"
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
@@ -28881,7 +28907,6 @@ msgid "Why it ran"
 msgstr ""
 
 #: src/components/conversation/ConversationActions.tsx
-#: src/components/project-setup/SetupFailureActions.tsx
 msgid "Why?"
 msgstr "למה?"
 

@@ -91,7 +91,8 @@ export function useSetupFix(
 
   const retry = useCallback(() => fixed.current(), []);
   const state = stateOf(fix, process);
-  const failure = result?.detail || error || '';
+  // Only a failed verdict is a failure: a project that needs setup carries a `detail` too, and asks Set up.
+  const failure = (result?.state === 'failed' ? result.detail : '') || error || '';
   /** Whether the screen shows the failure block: a failure to fix, or a fix to report. */
   const show = !!failure || state.phase !== 'idle';
   return { state, process, failure, show, start, cancel, retry };
