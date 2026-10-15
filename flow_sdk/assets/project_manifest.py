@@ -94,13 +94,21 @@ def namespace_for(start: Path) -> str:
     own field access, and doing filesystem work in a layer that states it does
     none.
     """
+    root = project_root_of(start)
+    if root is None:
+        return ""
+    spec = _read(manifest_path(root), ProjectManifestSpec)
+    return spec.ns if spec is not None else ""
+
+
+def project_root_of(start: Path) -> Optional[Path]:
+    """The root of the project containing ``start``: the nearest folder (``start``
+    itself included) that holds an assets directory or is a git checkout."""
     here = Path(start).resolve()
     for candidate in [here, *here.parents]:
-        if not ((candidate / AGENTIC_ASSETS_DIR).is_dir() or (candidate / ".git").exists()):
-            continue
-        spec = _read(manifest_path(candidate), ProjectManifestSpec)
-        return spec.ns if spec is not None else ""
-    return ""
+        if (candidate / AGENTIC_ASSETS_DIR).is_dir() or (candidate / ".git").exists():
+            return candidate
+    return None
 
 
 def asset_namespace(folder: Path, declared: "str | None", *, shipped: bool) -> str:

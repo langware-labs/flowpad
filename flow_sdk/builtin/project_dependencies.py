@@ -373,6 +373,37 @@ def _own_identities(root: Path, project_id: Optional[str] = None) -> set[str]:
     return out
 
 
+def declares(consumer: Path, provider: Path, *, ids: Iterable[str] = (), provider_project_id: Optional[str] = None) -> bool:
+    """True when ``consumer``'s ``flow.json`` names ``provider`` -- its folder, its git origin,
+    its project id, or one of ``ids`` (TypeIds of the provider's assets). Direct declarations only,
+    read from the file: no network, no links, so a sync check (an indexer) can ask it."""
+    wanted = _own_identities(Path(provider), provider_project_id) | {f"ref:{i}" for i in ids}
+    try:
+        entries = flow_json.read(Path(consumer)).entries()
+    except Exception:  # noqa: BLE001 -- a broken flow.json declares nothing
+        return False
+    for dep in entries:
+        try:
+            if _identity(dep, Path(consumer)) in wanted:
+                return True
+        except Exception:  # noqa: BLE001 -- one unreadable entry does not decide the rest
+            continue
+    return False
+
+
+def undeclared_use(
+    what: str, consumer: Path, provider: Path, *, ids: Iterable[str] = (), provider_project_id: Optional[str] = None,
+) -> Optional[str]:
+    """The warning for ``consumer`` using ``what`` from another project it does not declare, else ``None``.
+
+    The generic "used an asset from an undeclared project" check: it still works (the asset
+    resolved), but the project would break wherever that other project is not on the machine."""
+    consumer, provider = Path(consumer).resolve(), Path(provider).resolve()
+    if consumer == provider or declares(consumer, provider, ids=ids, provider_project_id=provider_project_id):
+        return None
+    return f"{what} comes from project {provider.name!r}, which is not a declared dependency of {consumer.name!r}"
+
+
 # ── the resolver ────────────────────────────────────────────────────────────
 
 

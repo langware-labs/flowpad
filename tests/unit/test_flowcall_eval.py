@@ -55,7 +55,7 @@ async def logged(spec, folder, *inputs):
 async def label(ds, golds):
     """A person's review: each row an ``eval`` row with its right answer."""
     for d in log_dataset.rows(ds._folder()):
-        row = ds.example(d.name)
+        row = ds.row(d.name)
         keep = {k: row[k] for k in ("input", "output", "data") if row.get(k) is not None}
         await ds.put(d.name, {**keep, "kind": "eval", "ground_truth": {"value": golds[row["input"]["value"]]}})
 
