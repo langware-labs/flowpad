@@ -81,6 +81,7 @@ add a retry to get a gate green (CLAUDE.md).
 | **Reuse — does this already exist?** | **this skill** | `references/reuse.md` |
 | **CLAUDE.md rules with no test** | **this skill** | `references/rules.md` |
 | **Test integrity — did an edited test stop guarding its behavior?** | **this skill** | `references/test-integrity.md` — only when the diff modifies or deletes an existing test |
+| **Windows & Unix compatibility** | **this skill** | `references/cross-platform.md` — paths, OS-only APIs, lines typed into a shell |
 
 Delegate each lens to a subagent when the diff is large; give it the scope from
 step 1 and the lens's own output contract. Skip a lens the diff can't touch
