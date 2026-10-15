@@ -86,7 +86,7 @@ Assemble. The command is long and you will rerun it — keep it in `<mock-dir>/b
 
 ```bash
 python3 -I <skill>/scripts/build_mock.py <mock-dir> --base capture/home.html \
-  --template t-dialog=capture/dialog.html --states states.js --key <mock slug> \
+  --template t-dialog=capture/dialog.html --states states.js --key <mock slug> --project <mock project id> \
   --origin http://localhost:<app port> --html-attrs '<htmlAttrs from info.json>' \
   --head '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=…">'
 ```

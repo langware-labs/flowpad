@@ -1,4 +1,4 @@
-"""Put mockify's kinds and its two datasets into a project, under THAT project's namespace.
+"""Put mockify's kinds and its two datasets into the MOCK project (never the repo), under its namespace.
 
 Usage: python -I install_data.py <project root> [--force]
 
@@ -36,20 +36,15 @@ def fail(message: str) -> None:
     sys.exit(1)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Install mockify's kinds and datasets into a project.")
-    ap.add_argument("root", help="the project root")
-    ap.add_argument("--force", action="store_true", help="refresh the schema copy")
-    args = ap.parse_args()
-    force = args.force
-    root = Path(args.root).resolve()
+def install(root: Path, force: bool = False) -> dict:
+    """Put the kinds and the two datasets into ``root`` (the mock project). Raises ValueError with no ``ns``."""
     manifest = root / "agentic-assets" / "project_manifest" / "project_manifest.json"
     try:
         ns = json.loads(manifest.read_text(encoding="utf-8")).get("ns")
     except (OSError, ValueError):
         ns = None
     if not ns:
-        fail(f"no `ns` in {manifest} -- give the project a namespace first (data-management `schema` mode, Gate 1)")
+        raise ValueError(f"no `ns` in {manifest}")
 
     schema_dst = root / "agentic-assets" / "data_schema" / "mockify"
     wrote = []
@@ -76,15 +71,27 @@ def main() -> None:
         wrote.append(str(manifest_path.parent))
 
     datasets = root / "agentic-assets" / "dataset"
-    print(json.dumps({
-        "ok": True, "ns": ns, "wrote": wrote,
-        "kinds": {k: f"--{ns}--.mockify.{k}" for k in ("mock", "step", "decision", "feedback")},
+    return {
+        "ns": ns, "wrote": wrote,
+        "kinds": {k: f"--{ns}--.mockify.{k}" for k in ("mock", "step", "decision", "anchor", "feedback")},
         "next": [
             f'flow schema apply "{root / "agentic-assets" / "data_schema"}"',
             f'flow record index "{datasets / "mocks"}" --types dataset',
             f'flow record index "{datasets / "mock-feedback"}" --types dataset',
         ],
-    }))
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Install mockify's kinds and datasets into the mock project.")
+    ap.add_argument("root", help="the mock project root (scripts/mock_project.py ensure prints it)")
+    ap.add_argument("--force", action="store_true", help="refresh the schema copy")
+    args = ap.parse_args()
+    try:
+        out = install(Path(args.root).resolve(), args.force)
+    except ValueError as exc:
+        fail(f"{exc} -- make the mock project with scripts/mock_project.py ensure")
+    print(json.dumps({"ok": True, **out}))
 
 
 if __name__ == "__main__":
