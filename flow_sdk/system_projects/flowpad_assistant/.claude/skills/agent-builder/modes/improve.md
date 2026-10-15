@@ -23,6 +23,11 @@ id: 1d29d0ab-6bc0-46b3-8e43-369ff4f15051
 The user has an agent that misbehaves — it gives away answers, rambles, ignores the
 page, breaks character. The fix is almost always in its prompt.
 
+
+## FlowCall integration
+
+For callable work, distinguish the agent definition from the reusable FlowCall block and its ReturnedValue answer. Use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) to connect declared input/output and composition; retain the agent’s existing prompt, deployment and permission rules.
+
 ## 1. Find it
 
 Use the path or name the user gives. Otherwise search: `flow record search <name>`

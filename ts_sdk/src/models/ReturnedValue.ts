@@ -27,11 +27,15 @@ export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
 export const isOk = (answer: Pick<ReturnedValue, 'exit_code'> | null | undefined): boolean =>
   answer?.exit_code === ExitCode.OK || answer?.exit_code === ExitCode.NOT_APPLICABLE;
 
-export interface ReturnedValue {
-  /** On a NESTED answer: `compute.returned`, `compute.returned.cli`, `.prompt`, `.ask`, `.wizard`. */
+export interface ReturnedValue<T = unknown> {
+  /** Answer kind on nested values and typed calls; older action roots may omit it. */
   spec_kind?: string;
   exit_code: ExitCode;
-  value?: unknown;
+  value?: T | null;
+  /** Explicit output presence. Legacy null without this field is ambiguous. */
+  value_present?: boolean | null;
+  /** Correlation for this invocation and its child observations; not an idempotency key. */
+  invocation_id?: string | null;
   /** One sentence for a person. */
   detail?: string;
   /** False when nothing executed: the goal already held, or it never started,
@@ -50,6 +54,17 @@ export interface ReturnedValue {
   executor?: string | null;
   /** The last completion-check run — the verdict's evidence. */
   check?: CliResult | null;
+}
+
+export interface ItemAnswer {
+  index: number;
+  key?: string | null;
+  answer: ReturnedValue;
+}
+
+export interface CollectionResult<T = unknown> extends ReturnedValue<T[]> {
+  /** Reached items in input order; failed batches never compact successful values. */
+  items: ItemAnswer[];
 }
 
 export interface CliResult extends ReturnedValue {
@@ -114,6 +129,7 @@ export const ANSWER_KIND = {
   wizard: 'compute.returned.wizard',
   decision: 'compute.returned.decision',
   navigate: 'compute.returned.navigate',
+  collection: 'compute.returned.collection',
 } as const;
 
 export const isNavigateResult = (answer: Pick<ReturnedValue, 'spec_kind'> | null | undefined): answer is NavigateResult =>

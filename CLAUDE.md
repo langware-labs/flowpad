@@ -4,6 +4,7 @@ version: 2
 ---
 # Claude Guidelines for flow-cli
 
+
 ## Quick Start
 
 ### Prerequisites (Windows)
@@ -272,6 +273,8 @@ values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
 `flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
 before investigating `ActionInfo` or `ApiResponse` transport plumbing.
 Keep the architectural name distinct from existing code identifiers.
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
 
 ## Naming — check the glossary before inventing a noun
 

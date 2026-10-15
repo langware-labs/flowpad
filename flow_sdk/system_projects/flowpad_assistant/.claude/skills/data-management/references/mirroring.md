@@ -3,6 +3,11 @@
 The system outside (a CRM, a tracker) is the truth for what it holds. Flowpad keeps a typed copy
 you can link to, count and show. Everything here ships with the SDK; nothing is yours to build.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## The parts, and whose each is
 
 | Part | Where | Says |

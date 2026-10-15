@@ -20,6 +20,11 @@ id: 9075033e-47fb-48df-99dc-e7c157767b7e
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
 > the user's explicit go, after saying who will be reachable.
 
+
+## FlowCall integration
+
+For callable work, distinguish the agent definition from the reusable FlowCall block and its ReturnedValue answer. Use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) to connect declared input/output and composition; retain the agent’s existing prompt, deployment and permission rules.
+
 ## 1. Interview — one batch, then wait
 
 Send these together, in plain words, and **end your turn there** — write no file until

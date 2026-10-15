@@ -17,17 +17,25 @@ or universal request object. The contract is specified in
 
 | Term | Role in FlowCall |
 |---|---|
-| `ComputeOp` | A configurable unit of work, with its execution specification and optional completion check |
+| `ComputeOp` / FlowCall block | A reusable definition of work, typed input/output, implementation and optional completion check; the entity type remains `compute_op` |
 | `ReturnedValue` | The common answer; specialized results extend it |
 | `ExitCode` | The shared outcome vocabulary for Python, TypeScript, and the CLI |
 | `Wizard` | Composition of calls, binding returned values into later inputs |
 | `ProcessCall` | A message-carried call correlated with its returned answer |
+| `call.py:call` | The conventional entry of a Python-backed block; other variants need no Python wrapper |
+| `CollectionResult` | An explicit per-item map's answer, retaining each reached item's index/key and ReturnedValue |
 
 Say **FlowCall** for the mechanism, **a call** for one invocation, **answer** for
 its `ReturnedValue`, and **value** for `answer.value`. Preserve the code names.
 FlowCall does not mean every SDK method, HTTP response, or event. Transport
 success and the operation's outcome are separate; acceptance and completion
 are separate outcomes too.
+
+A list is one value unless the caller explicitly maps it. `chain` composes
+blocks through Wizard; it does not name another runtime. `invocation_id`
+correlates one call and its child observations; it is not a block ID or an
+idempotency key. `value_present` distinguishes nullable output from no output.
+See [FlowCall blocks](snippets/flowcall-blocks.md).
 
 ## Cross-walk
 

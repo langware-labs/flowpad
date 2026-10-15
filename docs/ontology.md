@@ -223,8 +223,14 @@ unchanged folder is not rebuilt at all — a cost saving, not a correctness rule
 owned by the folder that defines it only while that folder still does: once it moves, is
 renamed or names another kind, the next folder to define the kind takes it, in the same process.
 Dependencies build first, and a name still resolving to `Any` is an error, never a
-field that accepts anything. Any other asset folder (a `compute_op`) mints nothing of
-its own: its `output_spec_kind` names a primitive, a kind whose schema is code, or one a data schema folder defines.
+field that accepts anything. A ComputeOp's `input` and `output` refer to this
+same authoring grammar, including lists; `output_spec_kind` remains the legacy
+named-output form. Its Python variant imports `call.py` only after approval,
+inside the owning project's namespace. That import may define private helper
+schemas, but public contract kinds must be independently loadable SDK or
+data-schema definitions. A kind lookup or metadata listing never imports
+`call.py` to discover a schema. A block's entity ID names the definition;
+neither its ID nor its name is a new schema kind.
 
 ## Not yet done
 
@@ -246,13 +252,13 @@ its own: its `output_spec_kind` names a primitive, a kind whose schema is code, 
   resolver but dropped by the model; declaring it there means mirroring the field
   onto 14 entity classes (`check_asset_spec` enforces it).
 
-* ComputeOp is the first type with a `subkind` (`cli | prompt | agent | navigate | ask`):
+* ComputeOp has `subkind` variants (`cli | prompt | agent | decision | navigate | ask | python`):
   each subkind's structure is its own schema under the kind
   `compute_op.<subkind>`, nested in `exe_data` rather than flattened onto the op
   (see [FlowCall](snippets/call-returns.md)); `compute_op.rung` is a kind of its own
-  (one rung of a ladder), not a subkind. An op cannot register a kind of its own
-  (see Coverage above) — no shipped op needs one, and giving a JSON document a
-  module to import is a bigger decision than it looks.
+  (one rung of a ladder), not a subkind. `compute_op.python` executes the block's
+  `call.py:call`; this does not introduce a `FlowCallBlock` entity or a second
+  schema registry. See [typed blocks](snippets/flowcall-blocks.md).
 
 * Project has a `subkind` (`standard | controller | addon`, `ProjectSubkind` in
   `flow_sdk/schema/data_spec/project_manifest_spec.py`), declared in the project's
@@ -266,4 +272,3 @@ its own: its `output_spec_kind` names a primitive, a kind whose schema is code, 
   blockers: `Conversation.kind` is a two-repo change gating hub authorization,
   `FlowMessage.kind` is on the wire, and `SourceItem.kind` is first in
   `DIGESTED_FIELDS` so changing its value re-digests the corpus.
-
