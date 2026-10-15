@@ -254,24 +254,20 @@ def _can_administer(row: dict) -> bool | None:
     return ("update" in actions) if isinstance(actions, list) else None
 
 
-def _allowance_ids(body) -> set[str]:
-    """The typeids out of a ``token_plan/allowances`` answer; empty when the call failed.
+def _is_mine(row: dict) -> bool | None:
+    """Whether this endpoint is the caller's OWN to spend, out of the hub's permission expansion.
 
-    ``hub_get`` has already stripped the ``{"status", "data"}`` envelope, so the answer is the bare
-    ``{"allowances": [...]}``. Looking for ``data`` again found nothing on every real hub."""
-    ids = body.get("allowances") if isinstance(body, dict) else None
-    return {str(typeid) for typeid in ids} if isinstance(ids, list) else set()
+    The SAME block ``_can_administer`` reads, answering the other question about it: "may I change
+    this" and "is this mine" are not the same, and neither implies the other. The hub answers it
+    while it holds both the caller and the row (``LLMEndpoint.expand_permissions``), so there is no
+    second read and nothing to join here.
 
-
-def _hub_user_typeid() -> str | None:
-    """The hub identity this box is signed in as (``user-<uuid>``), or ``None`` when signed out."""
-    try:
-        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
-
-        user_id = str((get_user() or {}).get("id") or "")
-    except Exception:  # noqa: BLE001
-        return None
-    return f"user-{user_id}" if user_id else None
+    ``None`` when the row carries no expansion -- a catalog row, which is asked for deliberately
+    without one, or a read that did not ask. Unknown is not "no".
+    """
+    expand = row.get("expand") if isinstance(row, dict) else None
+    mine = expand.get("mine") if isinstance(expand, dict) else None
+    return mine if isinstance(mine, bool) else None
 
 
 async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndpoint"]:
@@ -370,13 +366,6 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     # A failed catalog read costs only the fallback: answering with the scoped rows beats
     # answering with nothing.
     rows = list(rows) + list(_rows(await hub_get("llm_endpoint", action="catalog")) or [])
-    # THIRD read: which of these are this person's OWN allowances. The hub keeps "whose allowance"
-    # as a ``partof`` edge to the user and serializes no field for it; ``token_plan/allowances`` is
-    # the caller-scoped answer. Same failure tolerance as the catalog: a failed read leaves
-    # ``holder_typeid`` None on every row, and the picker falls back to ``can_administer``.
-    mine = _allowance_ids(await hub_get("token_plan", action="allowances"))
-    me = _hub_user_typeid()
-
     fields = set(LLMEndpoint.model_fields)
     endpoints: list[LLMEndpoint] = []
     seen: set[str] = set()
@@ -396,7 +385,8 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
             payload["kind"] = LLMEndpointKind.HUB
             # ``None`` unless this row came from the scoped listing WITH an answer -- see the field.
             payload["can_administer"] = _can_administer(row) if row_id in held else None
-            payload["holder_typeid"] = me if (me and f"llm_endpoint-{row_id}" in mine) else None
+            # Off the SAME expansion block as ``can_administer`` above -- one read answers both.
+            payload["is_mine"] = _is_mine(row) if row_id in held else None
             endpoints.append(LLMEndpoint(**payload))
             if row_id:
                 seen.add(row_id)

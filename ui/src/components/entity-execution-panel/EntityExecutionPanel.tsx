@@ -645,9 +645,12 @@ export function EntityExecutionPanel({
   // attached ref-by-ref in `handleSend`); what went away is the UI that used to
   // fill it — the asset manager is a read-only board now, not a picker.
 
+  const scrollRef = useRef<AutoScrollContainerHandle>(null);
   const handleSend = useCallback(
     async (text: string, opts?: { forceNewProcess?: boolean; files?: File[] }) => {
       if (!targetStr) return;
+      // The reader's own message always brings them back to the latest line.
+      scrollRef.current?.scrollToBottom();
       if (text) inputHistory.addToHistory(text);
       const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
 
@@ -805,9 +808,8 @@ export function EntityExecutionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPrompt?.nonce]);
 
-  const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
-    scrollRef.current?.scrollToBottom();
+    scrollRef.current?.follow();
     // In dense mode new tool events (and the appearing activity footer) don't
     // bump messages.length — track the group count + active edge too.
   }, [messages.length, turnGroups.length, activity.active]);

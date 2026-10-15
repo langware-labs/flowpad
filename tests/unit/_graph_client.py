@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 
-async def call_local(method: str, path: str, json: dict | None = None, params: dict | None = None):
+async def call_local(
+    method: str, path: str, json: dict | None = None, params: dict | None = None, headers: dict | None = None
+):
     from fastapi import FastAPI
     from httpx import ASGITransport, AsyncClient
 
@@ -15,4 +17,4 @@ async def call_local(method: str, path: str, json: dict | None = None, params: d
     app.add_middleware(RequestTransactionMiddleware)
     app.include_router(graph_router, prefix="/api/v1/graph")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://localhost") as client:
-        return await client.request(method, f"/api/v1/graph/{path}", json=json, params=params)
+        return await client.request(method, f"/api/v1/graph/{path}", json=json, params=params, headers=headers)
