@@ -12,7 +12,7 @@ The document is itself a value -- of the kind ``data_schema``, whose schema is `
 
 The definition's VARIANT (its subkind) is optional:
 
-* **implicit** -- read from the body: ``fields`` is a ``record``, ``examples`` is a ``dataset``;
+* **implicit** -- read from the body: ``fields`` is a ``record``, ``rows`` is a ``dataset``;
 * **explicit** -- ``subkind`` declared, and a body that does not match is refused;
 * **none** -- no body at all: a documentation node for a branch of the ontology. It registers
   nothing, so the kind stays anonymous (the ontology's rule: a kind names a shape or nothing).
@@ -31,7 +31,7 @@ from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 Subkind = Literal["record", "dataset"]
-#: The example slots a ``dataset`` definition may name (``ExampleSpec``'s three type slots).
+#: The row slots a ``dataset`` definition may name (``RowSpec``'s three type slots).
 DATASET_SLOTS = ("input", "output", "context")
 
 
@@ -98,7 +98,7 @@ class DataSchemaDocSpec(AssetDocumentSpec):
     #: ``record``: field name -> its shape and meaning.
     fields: Optional[dict[str, DataSchemaField]] = None
     #: ``dataset``: the example slots (``input`` required; ``output`` / ``context``) -> shapes.
-    examples: Optional[dict[str, ShapeForm]] = None
+    rows: Optional[dict[str, ShapeForm]] = None
     #: ``record`` only: other record kinds whose fields (and rules) this one has too -- shared
     #: fields defined once. A field of the same name here is an error, never a silent override.
     include: Optional[list[str]] = None
@@ -121,7 +121,7 @@ class DataSchemaDocSpec(AssetDocumentSpec):
 
     @model_validator(mode="after")
     def _one_body_matching_the_subkind(self) -> "DataSchemaDocSpec":
-        bodies = [name for name, body in (("record", self.fields or self.include), ("dataset", self.examples)) if body]
+        bodies = [name for name, body in (("record", self.fields or self.include), ("dataset", self.rows)) if body]
         if len(bodies) > 1:
             raise ValueError(f"a data schema defines one shape; this one has {' and '.join(bodies)}")
         if self.subkind and bodies != [self.subkind]:
@@ -132,10 +132,10 @@ class DataSchemaDocSpec(AssetDocumentSpec):
         if self.include is not None and (not self.include or len(set(self.include)) != len(self.include)
                                          or not all(isinstance(k, str) and k for k in self.include)):
             raise ValueError('include names one or more record kinds, each once: {"include": ["crm.tagged"]}')
-        if self.examples is not None:
-            if "input" not in self.examples:
+        if self.rows is not None:
+            if "input" not in self.rows:
                 raise ValueError('a dataset data schema names its "input" slot')
-            extra = set(self.examples) - set(DATASET_SLOTS)
+            extra = set(self.rows) - set(DATASET_SLOTS)
             if extra:
                 raise ValueError(f"unknown example slots {sorted(extra)}; a slot is one of {DATASET_SLOTS}")
         return self
@@ -147,7 +147,7 @@ class DataSchemaDocSpec(AssetDocumentSpec):
             return self.subkind
         if self.fields or self.include:
             return "record"
-        if self.examples:
+        if self.rows:
             return "dataset"
         return None
 

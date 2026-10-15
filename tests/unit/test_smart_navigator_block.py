@@ -113,7 +113,7 @@ async def test_the_block_log_keeps_a_live_decision_but_not_a_replay(answers, tmp
     from flow_sdk.core.log_dataset import rows
 
     log = Dataset.at(navigation_log.folder())
-    [row] = [log.example(d.name) for d in rows(navigation_log.folder())]
+    [row] = [log.row(d.name) for d in rows(navigation_log.folder())]
     assert row["input"]["utterance"] == "live one", "an eval replay is no decision -- it must not land in the log"
     assert row["output"]["route"] == "agentic"
     assert row["data"]["block"] == "smart-navigator" and row["data"]["invocation_id"], "the run's trace rides along"

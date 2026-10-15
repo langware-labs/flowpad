@@ -1,7 +1,7 @@
-"""Two runs of one eval on one dataset, example by example: what a change fixed and what it broke.
+"""Two runs of one eval on one dataset, row by row: what a change fixed and what it broke.
 
-A metric moves with the model's own noise; the examples that changed verdict are the evidence. Runs
-are paired by example id, so only the examples both runs judged count.
+A metric moves with the model's own noise; the rows that changed verdict are the evidence. Runs
+are paired by row id, so only the rows both runs judged count.
 """
 
 from __future__ import annotations
@@ -10,33 +10,33 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.schema.data_spec.eval_spec import EvalRun, ExampleEval, Verdict
+from flow_sdk.schema.data_spec.eval_spec import EvalRun, RowEval, Verdict
 
 
 @dataclass
 class Comparison:
-    """``before`` → ``after``: the examples whose verdict changed, and each metric's delta."""
+    """``before`` → ``after``: the rows whose verdict changed, and each metric's delta."""
 
-    fixed: list[ExampleEval] = field(default_factory=list)  # not correct before, correct now
-    broken: list[ExampleEval] = field(default_factory=list)  # correct before, not now
+    fixed: list[RowEval] = field(default_factory=list)  # not correct before, correct now
+    broken: list[RowEval] = field(default_factory=list)  # correct before, not now
     still_wrong: int = 0
     paired: int = 0
     unjudged: int = 0  # an error on either side: nothing was judged, so it neither fixed nor broke
     deltas: dict[str, Optional[float]] = field(default_factory=dict)
 
 
-def compare(before: tuple[EvalRun, list[ExampleEval]], after: tuple[EvalRun, list[ExampleEval]]) -> Comparison:
-    (run_a, examples_a), (run_b, examples_b) = before, after
-    was = {e.example_id: e.verdict for e in examples_a}
+def compare(before: tuple[EvalRun, list[RowEval]], after: tuple[EvalRun, list[RowEval]]) -> Comparison:
+    (run_a, rows_a), (run_b, rows_b) = before, after
+    was = {e.row_id: e.verdict for e in rows_a}
     out = Comparison()
-    for e in examples_b:
-        if e.example_id not in was:
+    for e in rows_b:
+        if e.row_id not in was:
             continue
-        if Verdict.ERROR in (was[e.example_id], e.verdict):
+        if Verdict.ERROR in (was[e.row_id], e.verdict):
             out.unjudged += 1
             continue
         out.paired += 1
-        right_before, right_now = was[e.example_id] == Verdict.CORRECT, e.verdict == Verdict.CORRECT
+        right_before, right_now = was[e.row_id] == Verdict.CORRECT, e.verdict == Verdict.CORRECT
         if right_now and not right_before:
             out.fixed.append(e)
         elif right_before and not right_now:
@@ -50,7 +50,7 @@ def compare(before: tuple[EvalRun, list[ExampleEval]], after: tuple[EvalRun, lis
 
 
 def previous(folder: Path, run: EvalRun) -> Optional[EvalRun]:
-    """The last run before ``run`` of the same eval over the same example roles."""
+    """The last run before ``run`` of the same eval over the same row roles."""
     from flow_sdk.evals.store import runs  # noqa: PLC0415
 
     return next(

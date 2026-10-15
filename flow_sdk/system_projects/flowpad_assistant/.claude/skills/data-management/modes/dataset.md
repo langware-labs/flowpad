@@ -71,7 +71,7 @@ pulled — report it, never overwrite it.
 
 `<ds>` is the dataset's folder path, id, or exact name. Bulk data (a CSV, a JSON
 export): turn it into rows in a script and `ds-append` them in one call (`ds-sync` when the
-script runs again and again) — never copy files into `examples/`, and never loop `ds-put` /
+script runs again and again) — never copy files into `rows/`, and never loop `ds-put` /
 `ds-delete` over hundreds of rows: the bulk verbs take the lock and read the links once.
 
 ## Gate 4 — probe, then for real

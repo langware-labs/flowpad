@@ -16,7 +16,7 @@ from typing import ClassVar, Optional
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
 from flow_sdk.schema.data_spec.io import Binary
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -33,7 +33,7 @@ class Shot(DataSpec):
     screenshot: Optional[Binary] = None
 
 
-class Shots(DatasetSpec[ExampleSpec[Shot, DataSpec, DataSpec]]):
+class Shots(DatasetSpec[RowSpec[Shot, DataSpec, DataSpec]]):
     spec_kind: ClassVar[str] = "unittest.binary.dataset"
 
 

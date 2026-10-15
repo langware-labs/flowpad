@@ -55,9 +55,9 @@ async def drain() -> None:
 
 def rows(folder: Path) -> list[Path]:
     """A log's example dirs, oldest first: numbered rows by number (``0009`` before ``10000``)."""
-    from flow_sdk.schema.data_spec.layout import _example_dirs  # noqa: PLC0415 -- THE row enumeration
+    from flow_sdk.schema.data_spec.layout import _row_dirs  # noqa: PLC0415 -- THE row enumeration
 
-    return sorted(_example_dirs(folder), key=lambda p: (0, int(p.name), "") if p.name.isdigit() else (1, 0, p.name))
+    return sorted(_row_dirs(folder), key=lambda p: (0, int(p.name), "") if p.name.isdigit() else (1, 0, p.name))
 
 
 class TempLog:

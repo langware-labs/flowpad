@@ -153,7 +153,7 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
         # This instance's log, by where it lives: an earlier test's log (its own temp) is indexed too.
         here = navigation_log.folder().resolve()
         [row] = [r for r in listed["data"] if Path(r["asset_ref"]).resolve() == here]
-        assert (row["title"], row["num_examples"]) == ("SmartNavigationLog", 2)
+        assert (row["title"], row["num_rows"]) == ("SmartNavigationLog", 2)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 
@@ -275,6 +275,6 @@ async def test_logging_a_decision_never_rereads_the_log(bootstrapped_client, mon
         assert reads == [], "appending one row read the whole log"
         here = navigation_log.folder().resolve()
         [row] = [r for r in await Dataset.get_all({"name": navigation_log.TITLE}) if Path(r.asset_ref).resolve() == here]
-        assert row.num_examples == 4
+        assert row.num_rows == 4
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

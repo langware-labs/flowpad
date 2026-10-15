@@ -1377,7 +1377,7 @@ piece; the walk half is already §1.
 `layout.FolderLayout._scan`, `declared.data_schema_folders.walk`, `datasets/links`: per-row
 folder I/O that scales with dataset size, and today's datasets are hundreds of rows.
 **Re-enters** when a dataset reaches ~10⁴ rows: `FolderLayout._scan` is then a §1 walk over
-`examples/`, and `_gather` a Python one-read pass — no new piece.
+`rows/`, and `_gather` a Python one-read pass — no new piece.
 
 **T11 — RAG and LLM-index stores (15 functions). Excluded.** The heavy write is usearch's own
 whole-file save (`rag/store.py::RagStore.flush`, `os.replace`); `rag/indexing.index_documents`

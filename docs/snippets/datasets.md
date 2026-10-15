@@ -3,7 +3,7 @@ id: d6e8f077-4190-4650-8378-a5d491cc4b97
 ---
 # Datasets — snippets
 
-A dataset is a folder of examples: `input` + `context` → the right `ground_truth`, and what a run
+A dataset is a folder of rows: `input` + `context` → the right `ground_truth`, and what a run
 produced as `output`. When its `spec` NAMES a kind, every slot is a typed value — and the schemas
 those kinds name can be defined as `data_schema` folders — nested in the dataset itself, or
 shipped. The example is the SmartNavigator eval set: its schemas ship
@@ -22,14 +22,14 @@ pinned by `tests/unit/test_data_spec/test_declared_kinds.py`,
 flowpad_assistant/agentic-assets/data_schema/  # shipped, flat: the folder name is the kind
   navigation.map/ .place/ .subplace/           # the map (screens)
   navigation.here/ .ref/ .shown/ .outcome/     # you are here
-  navigator.dataset/                           # {"examples": {"input": "navigator.request", ...}}
+  navigator.dataset/                           # {"rows": {"input": "navigator.request", ...}}
   navigator.request/ .context/ .candidate/ .decision/
 
 dev/dataset/smart-navigator/                   # the rows -- not shipped
   dataset.json                          # metadata.spec: "navigator.dataset"
   map.json                              # reference: the navigation map, for browsing
-  examples/0001/
-    input/request.json  context/candidates/  ground_truth/decision.json  example.json
+  rows/0001/
+    input/request.json  context/candidates/  ground_truth/decision.json  row.json
 ```
 
 ```json
@@ -49,7 +49,7 @@ from flow_sdk.builtin.dataset import Dataset
 from flow_sdk.core.navigation import DATASET
 
 nav = Dataset.at(DATASET)                 # the entity from disk alone -- no index needed
-summary = (nav.spec, nav.num_examples, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
+summary = (nav.spec, nav.num_rows, nav.kind_counts)   # ('navigator.dataset', 253, {'eval': 251, 'test': 2})
 rows = nav.read_rows()
 first = rows[0].input.utterance           # 'open data sources'
 where = rows[0].input.here.view           # 'home' -- the navigation.here it was typed on
@@ -70,20 +70,20 @@ await mine.annotate(ids[0], [
     {"route": "quick", "target": {"kind": "view", "value": "data-sources"}},
     {"route": "quick", "target": {"kind": "view", "value": "connectors"}},
 ])
-gold = mine.example(ids[0])["ground_truth"]   # both answers -- any one is right
+gold = mine.row(ids[0])["ground_truth"]   # both answers -- any one is right
 ```
 
 `append` checks every row before writing anything; `annotate` replaces the gold. Over HTTP the
-same verbs are `POST dataset/<id>/append`, `GET dataset/<id>/example/<eid>`,
+same verbs are `POST dataset/<id>/append`, `GET dataset/<id>/row/<id>`,
 `POST annotate`, `POST validate`, `POST score`.
 
 ## 4. Evaluate the navigator on it
 
 A dataset is evaluated by an **eval** -- `eval.json` (`EvalSpec`) + `eval.py` -- nested in it, or
 shipped for its kind. The navigator's ships at `flowpad_assistant/agentic-assets/eval/navigator/`:
-it runs each example through the public `flow_sdk.navigation.decide` on the example's OWN recorded
-`here` and candidates, and answers a standard `ExampleEval` per row. The runner writes
-`evals/<run>/run.json`, `examples.jsonl` and a navigable `report.html`.
+it runs each row through the public `flow_sdk.navigation.decide` on the row's OWN recorded
+`here` and candidates, and answers a standard `RowEval` per row. The runner writes
+`evals/<run>/run.json`, `rows.jsonl` and a navigable `report.html`.
 
 ```python
 from flow_sdk import evals
@@ -139,7 +139,7 @@ did, and the **needs label** filter lists what is left.
 
 ## 7. Keep records by key
 
-A row's **key** is its example folder's name. Give one on `append`, then address the row by it —
+A row's **key** is its row folder's name. Give one on `append`, then address the row by it —
 never compute an id: a row's id is stored in the row (a rename keeps it), and every read hands back
 both `key` and `id`.
 
@@ -225,7 +225,7 @@ expression (`{op, operands}`: `$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $
 Over HTTP: `GET dataset/<id>/rows?filter={match, order_by, limit, offset}` → `{rows, total, problems, version}`,
 `GET rows-version` → `{version}`, `GET count?filter=…&group_by=a,b` → `{total, groups}`, `POST put-rows {rows, expected?}`,
 `POST delete-rows {keys, expected?}`, `POST sync-rows {rows, prune?, match?}`. TypeScript:
-`dataset.rows(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
+`dataset.query(query)`, `count`, `putMany`, `deleteRows`, `sync` — and `dataset.onRowsChanged(handler)`:
 every row write says `dataset.rows.changed` once (the keys that moved, never their values), so a page
 re-reads when told instead of on a timer — or on focus: a write made while the socket was down is told
 on reconnect as one `{op: "sync", keys: []}` (`docs/flow-events.md`). A script outside the server is
@@ -247,13 +247,13 @@ await leads.put_many([
     {"key": "eli", "input": {"name": "Eli Stone", "company": companies.ref_of(acme)}},
     {"key": "fay", "input": {"name": "Fay Levi", "company": companies.ref_of(bolt)}},
 ])
-at_acme = [r["key"] for r in leads.rows({"input.company.name": "Acme"}, order_by={"key": "asc"})["rows"]]   # follows the link
+at_acme = [r["key"] for r in leads.query({"input.company.name": "Acme"}, order_by={"key": "asc"})["rows"]]   # follows the link
 per_company = leads.count(group_by=["input.company.key"], metrics={"people": "distinct:input.name"}, order_by={"count": "desc"})
-found = leads.rows(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
+found = leads.query(q="levi", expand=["input.company"])                    # text anywhere in the row; linked rows beside
 names = sorted(v["row"]["input"]["name"] for v in found["linked"].values())
 unused = [key for key, by in leads.used_by().items() if not by]           # rows nothing links to
 levis = {"op": "$PROP", "operands": ["input.company", {"op": "$LIKE", "operands": ["input.name", "levi"]}]}
-colleagues = leads.rows({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
+colleagues = leads.query({"op": "$IN", "operands": ["input.company", levis]}, order_by={"key": "asc"})   # a join: one question
 ```
 
 A date bucket is written `week:input.day` (also `day:` / `month:` / `quarter:`; `week_start="sunday"`
@@ -274,9 +274,9 @@ and no client of your own to keep.
 ```python
 from flow_sdk.datasets import LinkError
 
-row = tasks.rows({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
+row = tasks.query({"key": "t-1"})["rows"][0]                   # status is the CRM's; notes is ours
 await tasks.put("t-1", {"input": {**row["input"], "status": "DONE", "notes": "called twice"}}, expected=row["version"])
-now = tasks.rows({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
+now = tasks.query({"key": "t-1"})["rows"][0]["input"]         # status 'DONE' as the CRM answered, notes kept
 try:
     await tasks.put("t-1", {"input": {**now, "seen": "today"}})   # mirrored from a path nothing can write
 except LinkError as refused:

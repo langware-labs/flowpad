@@ -70,6 +70,6 @@ def schema_tree(root: Path, datasets: Iterable[Any], mounts: tuple[tuple[str, st
             rules=form.get("rules", []),
             uses=[use(named) for named in dict.fromkeys(n for field in fields for n in kinds_named(field.shape))],
             dataset=SchemaDatasetSpec(id=keeps[0].id, title=keeps[0].title or keeps[0].name,
-                                      rows=keeps[0].num_examples, source_id=keeps[0].source_id) if keeps else None,
+                                      rows=keeps[0].num_rows, source_id=keeps[0].source_id) if keeps else None,
         ))
     return SchemaTreeSpec(schemas=nodes)

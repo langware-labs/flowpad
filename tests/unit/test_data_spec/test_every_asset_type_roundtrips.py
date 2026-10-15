@@ -70,7 +70,7 @@ VALID: dict[str, dict] = {
     "data_schema": {
         "subkind": "record",
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
-        "examples": None,
+        "rows": None,
         "ns": "acme",
         # a rule is ONE of `same` / `unique`, never both filled
         "rules": [{"same": ["persona.icp", "icp"], "description": "the persona is one of the row's ICP's"},

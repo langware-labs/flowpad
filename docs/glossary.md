@@ -176,14 +176,15 @@ mechanism: [`ontology.md`](ontology.md).
   schemas, instances are values. (`data_schema.json` is itself a value — of the kind
   `data_schema`, whose schema is `DataSchemaDocSpec`.)
 
-## row · example · record · item (2026-10-11)
+## row · record · item (2026-10-11, one word since 2026-10-15)
 
-Four words were used for neighbours. Say which:
+Three words were used for neighbours. Say which:
 
-- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. THE
-  public word (`rows`, `put-row`, `delete_rows`, `usedBy`).
-- **example** — the same thing as eval data and on disk (`examples/<key>/`, `ExampleSpec`, `kind:
-  train|eval|test`). Older names keep it (`example()`, `example_id`); new ones say row / `id`.
+- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. The
+  ONE word, in the API (`query`, `put-row`, `delete_rows`, `usedBy`), on disk (`rows/<key>/row.json`),
+  in types (`RowSpec`, `RowKind` `train|eval|test`) and in evals (`RowEval`, `eval.row`,
+  `rows.jsonl`). "Example" is not an identifier anywhere: in prose, the eval set is the rows
+  whose kind is `eval`.
 - **record** — an entity the instance keeps and indexes (a task, a session, a source item):
   found with record search, never a dataset row. (`subkind: record` in a data schema is a third,
   unrelated use: "a schema with fields".)
@@ -211,13 +212,13 @@ Four words were used for neighbours. Say which:
   capsule on a failing test pointing at its rules doc (`breadcrumb.test.*`),
   written by the `tagit` skill and read by `tag-context`. It is not a trace tag
   and never belongs in the toplog catalog.
-- **`harness` and `worker` are two names for one axis.** `HarnessType`
 - **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
   segment, so `acme-vendors.sonos` is the `sonos` icon of the `acme-vendors` pack. Built-in
   packs ship under `flow_sdk/server/icons/`; an **icon pack asset** (`icon_pack` type,
   `<scope>/agentic-assets/icon_pack/<name>/icon_pack.json` + SVGs) is the same thing authored in
   any scope, registered when indexed and served at `/icon-packs/<kind>/`. Ours, not a provider
   mirror. Two packs with one `kind` is an error, never a precedence.
+- **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
   industry word for both is *provider*.
@@ -398,7 +399,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 | Hub merge deny-set | `_hub_reflect._merge_skip_fields(entity)`; `wiki_cache._cache_payload` | Derived from the `Sharing` declarations (`fields_not_accepted_from_hub()` + hub wire aliases from `APIField(hub_name=…)`; `fields_not_in_bundle()`), not hand lists. The three ALLOW lists (`_FM_FIELDS`, `hub_bridge._LOCAL_FIELDS`, `membership_sync._MIRRORED_FIELDS`) are wire-format subsets and stay declared. |
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
-| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
+| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes a row; a gold label is written against the dataset's output shape |
 | asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` route indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
 | `data_schema` | ours | A SCHEMA defined by a folder, not code: `agentic-assets/data_schema/<full.kind>/` (`data_schema.json` + `description.md`); the folder name is its kind. Indexing registers it under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python: `DataSchema` (the row), `DataSchemaDocSpec` (the document). Named `data_spec` until 2026-10-07; a folder still under that name is not read; the asset scan reports it as an issue naming the rename (`TypeInfo.retired_families`). |
 | `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `mounts` (which audience, where) / `services` (APIs it brings along); `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` route (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement's `app` or `admin` proxy, and that route is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's `app` proxy routes its bundles. |

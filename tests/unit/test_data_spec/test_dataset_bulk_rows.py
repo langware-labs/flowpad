@@ -27,7 +27,7 @@ def _names(dataset):
 async def test_put_many_creates_and_replaces_in_one_call(crm):
     _, companies, _ = crm
     await companies.put("acme", {"input": {"name": "Acme"}})
-    before = companies.example("acme")
+    before = companies.row("acme")
     ids = await companies.put_many([{"key": "acme", "input": {"name": "Acme Inc"}}, {"key": "bolt", "input": {"name": "Bolt"}}])
     assert _names(companies) == {"acme": "Acme Inc", "bolt": "Bolt"}
     assert ids[0] == before["id"] and len(set(ids)) == 2          # a replaced row keeps its id
@@ -56,7 +56,7 @@ async def test_put_many_refuses_the_batch_when_a_row_changed_since(crm):
 
     _, companies, _ = crm
     await companies.put_many([{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt"}}])
-    seen = {k: companies.example(k)["version"] for k in ("acme", "bolt")}
+    seen = {k: companies.row(k)["version"] for k in ("acme", "bolt")}
     await companies.put("bolt", {"input": {"name": "Bolt Ltd"}})                   # someone else, meanwhile
     with pytest.raises(ConflictError, match="bolt"):
         await companies.put_many([{"key": "acme", "input": {"name": "A2"}}, {"key": "bolt", "input": {"name": "B2"}}], expected=seen)
@@ -85,12 +85,12 @@ async def test_a_batch_reads_what_its_checks_need_once(crm, monkeypatch):
 async def test_sync_makes_the_dataset_hold_exactly_the_rows_given(crm):
     _, companies, _ = crm
     await companies.put_many([{"key": k, "input": {"name": k.title()}} for k in ("acme", "bolt", "core")])
-    untouched = companies.example("acme")["version"]
+    untouched = companies.row("acme")["version"]
     done = await companies.sync([{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt Ltd"}},
                                  {"key": "dyne", "input": {"name": "Dyne"}}])
     assert done == {"created": ["dyne"], "updated": ["bolt"], "unchanged": ["acme"], "deleted": ["core"]}
     assert _names(companies) == {"acme": "Acme", "bolt": "Bolt Ltd", "dyne": "Dyne"}
-    assert companies.example("acme")["version"] == untouched      # a row that reads the same is not rewritten
+    assert companies.row("acme")["version"] == untouched      # a row that reads the same is not rewritten
     again = await companies.sync([{"key": k, "input": {"name": n}} for k, n in _names(companies).items()])
     assert (again["created"], again["updated"], again["deleted"]) == ([], [], [])
     assert (await companies.sync([], prune=False)) == {"created": [], "updated": [], "unchanged": [], "deleted": []}
@@ -123,7 +123,7 @@ async def test_sync_repairs_a_row_that_no_longer_fits_and_prunes_one_too(crm):
     root, companies, _ = crm
     await companies.put_many([{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt"}}])
     for key in ("acme", "bolt"):
-        doc = next((root / f"agentic-assets/dataset/companies/examples/{key}/input").glob("*.json"))
+        doc = next((root / f"agentic-assets/dataset/companies/rows/{key}/input").glob("*.json"))
         doc.write_text('{"name": 7}')
     assert len(companies.rows_and_problems()[1]) == 2
     done = await companies.sync([{"key": "acme", "input": {"name": "Acme"}}])
@@ -140,7 +140,7 @@ async def test_the_bulk_actions_over_http(tmp_path):
     base = f"dataset/{d.id}"
     put = await call_local("POST", f"{base}/put-rows", {"rows": [{"key": "acme", "input": {"name": "Acme"}}, {"key": "bolt", "input": {"name": "Bolt"}}]})
     assert put.status_code == 200, put.text
-    assert put.json()["data"]["keys"] == ["acme", "bolt"] and put.json()["data"]["num_examples"] == 2
+    assert put.json()["data"]["keys"] == ["acme", "bolt"] and put.json()["data"]["num_rows"] == 2
 
     bad = await call_local("POST", f"{base}/put-rows", {"rows": [{"key": "core", "input": {"name": "Core"}}, {"key": "acme", "input": {"status": "maybe"}}]})
     assert bad.status_code == 400 and {d["path"].split(".")[0] for d in bad.json()["data"]["details"]} == {"acme"}
@@ -148,9 +148,9 @@ async def test_the_bulk_actions_over_http(tmp_path):
     assert stale.status_code == 409
 
     synced = await call_local("POST", f"{base}/sync-rows", {"rows": [{"key": "acme", "input": {"name": "Acme"}}, {"key": "dyne", "input": {"name": "Dyne"}}]})
-    assert synced.json()["data"] == {"created": ["dyne"], "updated": [], "unchanged": ["acme"], "deleted": ["bolt"], "num_examples": 2}
+    assert synced.json()["data"] == {"created": ["dyne"], "updated": [], "unchanged": ["acme"], "deleted": ["bolt"], "num_rows": 2}
 
     assert (await call_local("POST", f"{base}/delete-rows", {"keys": ["acme", "ghost"]})).status_code == 404
     gone = await call_local("POST", f"{base}/delete-rows", {"keys": ["acme", "dyne"]})
-    assert gone.json()["data"] == {"keys": ["acme", "dyne"], "num_examples": 0}
+    assert gone.json()["data"] == {"keys": ["acme", "dyne"], "num_rows": 0}
     assert (await call_local("POST", f"{base}/delete-rows", {"keys": "acme"})).status_code == 400

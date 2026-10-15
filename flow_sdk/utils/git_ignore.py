@@ -44,7 +44,7 @@ def _parent(path: Path) -> Optional[Path]:
 
 def _probe_name(path: Path) -> str:
     """``path`` as named from its parent: a folder carries a trailing ``/`` so a folder-only pattern
-    (``/examples/``) matches it."""
+    (``/rows/``) matches it."""
     return f"{path.name}/" if path.is_dir() else path.name
 
 

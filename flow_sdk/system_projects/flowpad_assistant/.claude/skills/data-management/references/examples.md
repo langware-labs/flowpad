@@ -66,7 +66,7 @@ company while Dana still points at it. Renaming the company row keeps its id, so
     "title": "CRM leads",
     "description": "Every lead, one row each; the row key is a short slug of the name.",
     "data_layout": "io_folder",
-    "spec": {"examples": [{"input": "--acme--.crm.lead"}]}
+    "spec": {"rows": [{"input": "--acme--.crm.lead"}]}
   },
   "data": {}
 }
@@ -76,14 +76,14 @@ company while Dana still points at it. Renaming the company row keeps its id, so
 - Records only need `input`. Add `"output"` (and gold labels) only for a dataset that
   scores a model — then see `connect-data-source define` for labelling.
 - A dataset kind can be named instead of inlined: a schema folder with
-  `"examples": {"input": "crm.lead", "output": "crm.score"}` registers one, and the
+  `"rows": {"input": "crm.lead", "output": "crm.score"}` registers one, and the
   manifest says `"spec": "--acme--.crm.dataset"`.
 
 ## A row, as the SDK writes it
 
 ```
-examples/dana/                  ← the row's KEY
-  example.json                  {"metadata": {"id": "<the row's id>", "kind": "train"}, "data": {}}
+rows/dana/                  ← the row's KEY
+  row.json                  {"metadata": {"id": "<the row's id>", "kind": "train"}, "data": {}}
   input/lead.json               the scalar fields
   input/notes/0001/note.json    a list of a kind: one folder per element
   input/notes/0002/note.json

@@ -32,19 +32,19 @@ A static Flowpad-SDK app imports `/sdk/flowpad-sdk.js`:
 | the dataset holding a kind | `Dataset.forKind(kind, projectId)` — at load, by kind (ids do not survive a clone; kinds do) | `Dataset.for_kind(kind, project_root)` (one folder: `Dataset.at(folder)`); `DM ds-find <kind>` |
 | the kind a dataset's rows are | `ds.rowKind` (inline spec) | `ds.row_kind` |
 | a kind's fields → build a form | `kindForm("--ns--.kind")` → `{fields: {name: {shape, description, required}}}`; an outage throws | `DataSpec.parse(kind).model_fields` |
-| rows | `ds.rows()` → `{rows, problems}`; each row has `key`, `id`, `ref`, `version`, `input`; each problem `key`, `id`, `ref`, `errors`, `version` and the `input` as stored (unchecked) — show it, keep links to it, repair it with `put(key, …, {expected: problem.version})` | `ds.rows_and_problems()` → rows with `key`, `id`, `version` (`ds.ref_of(r.id)` for the ref) |
-| SOME rows — the list behind a number, a search, a page | `ds.rows({match, q, order_by, limit, offset, expand})` → `{rows, total, problems, linked?}`; `match` is `{op, operands}` (`$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $IS_NOT_NULL`, under `$AND` / `$OR`) or a plain `{path: value}` map; a date compares as its ISO string | `ds.rows(match, q=, order_by=, limit=, offset=, expand=)` → the same dict (`query` is the same call) |
+| rows | `ds.query()` → `{rows, problems}`; each row has `key`, `id`, `ref`, `version`, `input`; each problem `key`, `id`, `ref`, `errors`, `version` and the `input` as stored (unchecked) — show it, keep links to it, repair it with `put(key, …, {expected: problem.version})` | `ds.rows_and_problems()` → rows with `key`, `id`, `version` (`ds.ref_of(r.id)` for the ref) |
+| SOME rows — the list behind a number, a search, a page | `ds.query({match, q, order_by, limit, offset, expand})` → `{rows, total, problems, linked?}`; `match` is `{op, operands}` (`$EQ $NE $GT $GE $LT $LE $IN $NIN $LIKE $IS_NULL $IS_NOT_NULL`, under `$AND` / `$OR`) or a plain `{path: value}` map; a date compares as its ISO string | `ds.query(match, q=, order_by=, limit=, offset=, expand=)` → the same dict |
 | a path — in `match`, `order_by`, `group_by`, `expand` | ONE grammar, a rule path with the slot written: `key`, `input.stage`, `input.stage_dates.won`, `input.tags.*` (any element), and **a path follows a link**: `input.persona.icp.key` ("deals of this ICP"), `input.company.name` — no join, no second call | same |
-| the linked rows a page shows (names, not references) | `ds.rows({expand: ["input.persona"]})` → `linked[row.input.persona].row.input.name` — one call, never one `findRow` per link | `ds.rows(expand=[...])["linked"]` |
+| the linked rows a page shows (names, not references) | `ds.query({expand: ["input.persona"]})` → `linked[row.input.persona].row.input.name` — one call, never one `findRow` per link | `ds.query(expand=[...])["linked"]` |
 | a count — a dashboard number | `ds.count({match, q, group_by, metrics, order_by, week_start})` → `{total, groups: [{by, count, metrics?}], metrics?}` — the SAME `match` the list uses, so the number and its rows cannot disagree | `ds.count(match, group_by=[...], metrics={...})` |
 | per week / month / quarter | `group_by: ["week:input.day"]` (also `day:` `month:` `quarter:`), keyed `2026-09-13` (the week's first day), `2026-09`, `2026-Q3`; `week_start: "sunday"` when your week begins there; `order_by: {"week:input.day": "asc"}` for a series; `bucketOf(day, "week", "sunday")` gives a period's key | same names |
 | people, not rows — first / last / total | `metrics: {people: "distinct:input.email", first: "min:input.day", total: "sum:input.amount"}` (`distinct` · `min` · `max` · `sum`) | same |
-| text anywhere in a row | `ds.rows({q: "pricing objection"})` (every word, list items included); `$LIKE` on a list field = some element contains it | `ds.rows(q=...)` |
+| text anywhere in a row | `ds.query({q: "pricing objection"})` (every word, list items included); `$LIKE` on a list field = some element contains it | `ds.query(q=...)` |
 | a join on a value that is not a link ("people who replied AND have a meeting") | a sub-query in `$IN` / `$NIN`: `{op: "$IN", operands: ["input.email", {op: "$PROP", operands: ["input.email", {"input.metric": "em_reply"}]}]}` — a third operand names another kind's rows; one call | same |
 | who links to a row — and rows nothing links to | `ds.usedBy(keys?)` → `{key: [{dataset_id, kind, key}]}` (`[]` = unused); what a delete is refused for, asked first | `ds.used_by(keys=None)` |
 | records (a task, a session, an ingested email) — not rows | `searchRecords(q, {record_type, limit})`; `SourceItem.query(new QueryRequest({type: "source_item", query: new QueryFilter({match: {data_source_id}, limit: 50})}))` — paging goes in `query`, a stray top-level key is refused | a script: `flow_sdk.local_client.graph_get("source_item", {"match": {...}, "limit": 50})`, `.search(q)` |
 | link a row to a record | a field shaped `?ingest.source_item` holds `ingest.source_item.id.<item id>`; `expand` returns it as `linked[ref] = {type, id, record}` (over REST). Keep the provider's `external_id` too — record ids are per machine | same |
-| one row | `ds.example(key)` | `ds.example(key)` |
+| one row | `ds.row(key)` | `ds.row(key)` |
 | check before saving | `ds.check({input})` → `{ok, errors, details}` (references included); a lone value: `checkKind(kind, value)` | `ds.check_row({...})` → the same `{ok, errors, details}` (`ds.check` → its lines, `[]` when it fits) |
 | save | `ds.put(key, {input}, {expected: row.version})` → 409 when someone changed it | `await ds.put(key, {...}, expected=v)` |
 | add | `ds.append([{key, input}])` | `await ds.append([...])` |
@@ -74,8 +74,8 @@ workaround it shipped; the SDK now does the right side — never reproduce the l
 
 | It did | Do instead |
 | --- | --- |
-| re-computed Flowpad's example id (`uuid5(DNS, "<dataset>:<folder>")`) in the browser | rows carry `key`, `id` and `ref`; address by `key`, link by `ref` |
-| kept the folder name a second time as `example.json` `data.key` | `row.key` |
+| re-computed Flowpad's row id (`uuid5(DNS, "<dataset>:<folder>")`) in the browser | rows carry `key`, `id` and `ref`; address by `key`, link by `ref` |
+| kept the folder name a second time as `row.json` `data.key` | `row.key` |
 | wrote `input/<kind>.json` and `input/<field>/0001/<kind>.json` through the file API | `put` / `append` — the SDK owns the layout |
 | validated the WHOLE dataset after writing, then wrote the old files back | `check` before; `put` validates and writes nothing when it fails |
 | modelled links as `{type, key}` kinds and read the target out of a description with a regex | a field typed by the target kind holding `<kind>.id.<uuid>` |
@@ -83,7 +83,7 @@ workaround it shipped; the SDK now does the right side — never reproduce the l
 | sliced `--sales_desk--.` off kind names | keep kinds whole; the link's target is the field's own (full) kind |
 | scanned every dataset each load to find its own | `Dataset.forKind(kind, projectId)` |
 | re-read a row before saving to detect a concurrent edit | `put(…, {expected: row.version})` |
-| a `python3` CRM-sync script wrote `input/<kind>.json` and `example.json` itself | `load_root` + `Dataset.for_kind(kind, root)`, `check` then `put` / `delete_row`, on `$FLOWPAD_PYTHON` |
+| a `python3` CRM-sync script wrote `input/<kind>.json` and `row.json` itself | `load_root` + `Dataset.for_kind(kind, root)`, `check` then `put` / `delete_row`, on `$FLOWPAD_PYTHON` |
 | read linked datasets with `read_rows()` (one bad row stopped the whole sync) and looked rows up only among the rows that read (a broken row's record was then created a second time) | `rows_and_problems()` everywhere; find a record by its natural key in rows AND in `problems[].input`, and repair a broken one with `put(key, …, expected=problem["version"])` |
 
 A page may keep its own link model (`{type, key}`, easy to show and pick) as long as it converts
@@ -95,7 +95,7 @@ them — and stores only references. Helpers: `parseValueRef(ref)` → `{kind, i
 links and rules too; without `projectId` it is the SHAPE only. Refusals carry `details`
 (`{path, code, message}`; `code` `shape:…`, `dangling_ref`, `inline_row`, `rule`, and on a 409
 `conflict`, `gone` or `referenced`) — read those, never parse the `errors` lines or the message.
-A problem's row is `id` / `ref` (`example_id` is the old name — do not use it). The shape grammar
+A problem's row is `id` / `ref` (`row_id` is the old name — do not use it). The shape grammar
 is read with `enumValues(shape)`, `linkTargets(shape)`, `namedKind(shape)` and `unwrap(shape)` —
 never split `enum:` or `|` yourself. `kindForm(kind).rules` lists the kind's rules across rows.
 

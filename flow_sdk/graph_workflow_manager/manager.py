@@ -22,7 +22,7 @@ Standardized I/O records — one convention at every altitude:
 * inline executions: ``<run record dir>/executions/<seq>-<node>/{input,output}``.
 * the RUN itself: ``records_root/graph_workflow_run/<stem>/execution/{input,output}``
   — entry events in, terminal (unrouted) emissions out.
-Every finished execution and run is stamped with ``example.json`` (Dataset
+Every finished execution and run is stamped with ``row.json`` (Dataset
 IO_FOLDER-compatible; deterministic id) — runs are born as training data.
 
 The per-node scheduler (serial/parallel, queue, merge_identical) is keyed by
@@ -87,7 +87,7 @@ def prepare_execution_io(base: Path, fe: "RunEvent") -> tuple[Path, Path]:
 
     The slot NAMES are the layout's constants (``INPUT`` / ``OUTPUT``), which
     is what makes an execution dir an ``io_folder`` example dir; the
-    ``example.json`` stamp comes later (``_stamp_example``). Best-effort — a
+    ``row.json`` stamp comes later (``_stamp_row``). Best-effort — a
     read-only disk never fails the execution."""
     from flow_sdk.schema.data_spec.layout import INPUT, OUTPUT  # noqa: PLC0415
 
@@ -644,7 +644,7 @@ class GraphWorkflowManager:
         if direction == "output":
             self._emit_flow_tag(run, "output", {"event": fe.event, "payload": fe.data})
 
-    def _stamp_example(
+    def _stamp_row(
         self,
         exec_dir: Path,
         run: _Run,
@@ -669,13 +669,13 @@ class GraphWorkflowManager:
         try:
             from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
 
-            # The ONE example.json writer — the same one FolderLayout.write uses.
-            FolderLayout().write_example_meta(
+            # The ONE row.json writer — the same one FolderLayout.write uses.
+            FolderLayout().write_row_meta(
                 exec_dir,
                 {"id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")), "kind": "train", "source": source},
             )
         except OSError:
-            logger.debug("GraphWorkflowManager: example.json stamp failed", exc_info=True)
+            logger.debug("GraphWorkflowManager: row.json stamp failed", exc_info=True)
 
     # ── routing ───────────────────────────────────────────────────────────────
 
@@ -841,7 +841,7 @@ class GraphWorkflowManager:
                 (output_dir / "log.txt").write_text("\n".join(ctx.logs) + "\n", encoding="utf-8")
         except OSError:
             pass
-        self._stamp_example(exec_dir, run, node.id, seq, fe)
+        self._stamp_row(exec_dir, run, node.id, seq, fe)
         run.journal.append("node_done", {"node": node.id, "duration_ms": duration, "execution": {"seq": seq}})
         # Reserve the successor hop (pending += 1, synchronous) BEFORE releasing
         # this execution slot — counters must never hit 0/0 mid-handoff.
@@ -889,7 +889,7 @@ class GraphWorkflowManager:
             (output_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
         except OSError:
             pass
-        self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc.id)
+        self._stamp_row(exec_base, run, node.id, seq, fe, process_id=proc.id)
         try:
             proc.status = (ProcessStatus.STOPPED if result.ok else ProcessStatus.FAILED).value
             proc.exit_code = result.returncode
@@ -1108,7 +1108,7 @@ class GraphWorkflowManager:
         finally:
             duration = int((time.monotonic() - started) * 1000)
             if exec_base is not None:
-                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id, agent_id=agent_id)
+                self._stamp_row(exec_base, run, node.id, seq, fe, process_id=proc_id, agent_id=agent_id)
             if failed:
                 self._finish_execution(run, rt)
                 run.journal.append(
@@ -1287,7 +1287,7 @@ class GraphWorkflowManager:
             "run_end", {"status": status, "events": run.events, "executions": run.executions, "error": run.error}
         )
         # The whole RUN is an example too (input = entry events, output = terminals).
-        self._stamp_example(run.record_dir / "execution", run, "$run", 0, None)
+        self._stamp_row(run.record_dir / "execution", run, "$run", 0, None)
         try:
             row = await GraphWorkflowRun.get_by_id(run.id)
             if row is not None:
