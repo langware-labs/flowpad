@@ -2882,7 +2882,9 @@ class AgenticProcess(Entity):
         vendor = self._vendor()
         session_type = vendor.session_entity_type
         if session_type is None:
-            return ApiSuccessResponse(data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."})
+            return ApiSuccessResponse(
+                data={"type_id": None, "reason": f"{vendor.key} sessions cannot be attached yet."}
+            )
         path = self.transcript_path
         if path is None or not path.exists():
             return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
@@ -3852,6 +3854,11 @@ class AgenticProcess(Entity):
         apply_worker_env(env_vars, self)
         await apply_worker_secret_env(env_vars, self)
 
+        # A fork with no transcript of its own yet branches off its parent; once the
+        # first turn materialises it, ``resumable`` is true and it resumes itself.
+        fork_source = None
+        if not resumable and self.driver.pins_resume_cwd:
+            fork_source = (self.cli_config or {}).get("fork_session_id")
         context = _AgenticContext(
             workdir=self.workdir,
             env_vars=env_vars,
@@ -3860,7 +3867,8 @@ class AgenticProcess(Entity):
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
-            resume_session_id=self.session_id if resumable else None,
+            resume_session_id=fork_source or (self.session_id if resumable else None),
+            fork_session=bool(fork_source),
             disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
             **self._process_asset_context_kwargs(process_assets),
         )
