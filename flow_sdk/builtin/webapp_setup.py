@@ -244,8 +244,11 @@ def _look(app, process: _Process, taken: set[int], snapshot: Optional[list] = No
     process's listeners, it answers its health path)``."""
     serving = process.serving
     snapshot = app_ports.listeners() if snapshot is None else snapshot
-    siblings = [one.serving.start_cmd for one in _processes(app)]
-    mine = app_ports.of_app(snapshot, Path(app.asset_ref), serving.start_cmd, siblings)
+    others = [one.serving for one in _processes(app) if one.serving is not serving]
+    theirs = [declared.port for declared in map(_declared, others) if declared is not None]
+    mine = app_ports.of_app(
+        snapshot, Path(app.asset_ref), serving.start_cmd, [one.start_cmd for one in others], theirs
+    )
     answer = app_ports.decide(
         _declared(serving), mine, snapshot,
         reserved=taken | _STARTING, answers=lambda port: health_answers(port, serving.health),
