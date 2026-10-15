@@ -24,7 +24,7 @@ sweep, the test-integrity check, the cross-repo check and the untested CLAUDE.md
 (`flowpad`: `tests/unit/`; `flowpad-hub`: `flowpad/hub/tests/`). The paths in
 `references/` are written for `flowpad`. In the hub, apply the rules whose code
 exists there and skip the rest. The two repos talk to each other, so a change in
-one may need a look at the other — `references/cross-repo.md` says when.
+one may need a look at the other — see the cross-repo lens in step 3.
 
 ## Modes (from the skill arg)
 
@@ -82,7 +82,7 @@ add a retry to get a gate green (CLAUDE.md).
 | Docs agree with code | `docit` | on the scope — report-only here, don't let it edit docs in `review` mode |
 | **Reuse — does this already exist?** | **this skill** | `references/reuse.md` |
 | **CLAUDE.md rules with no test** | **this skill** | `references/rules.md` |
-| **Cross-repo — does the other repo (flowpad ↔ flowpad-hub) need to change too?** | **this skill** | `references/cross-repo.md` — only when the diff hits one of its contact points; reads the other repo, never edits it |
+| **Cross-repo — does the other repo (flowpad ↔ flowpad-hub) need to change too?** | **this skill** | `.claude/pr-cross-repo.md` in the `flowpad-hub` checkout (private — the guide stays there). Find the checkout: the repo you're in, `../flowpad-hub`, `~/Developer/flowpad-hub`, or this session's `--add-dir` folders. Not found → skip and say so |
 | **Test integrity — did an edited test stop guarding its behavior?** | **this skill** | `references/test-integrity.md` — only when the diff modifies or deletes an existing test |
 
 Delegate each lens to a subagent when the diff is large; give it the scope from
