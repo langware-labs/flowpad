@@ -15,6 +15,9 @@ vi.mock('@src/components/ask/ask-claims', () => ({
   claimAskRun: () => () => {},
   openQuestionOf: async () => h.question,
 }));
+vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', () => ({
+  useProcessesForTarget: () => ({ processes: [] }),
+}));
 vi.mock('@src/components/ask/AskForm', () => ({ AskForm: () => <p>the question</p> }));
 
 import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';

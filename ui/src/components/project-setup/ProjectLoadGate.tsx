@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
@@ -7,6 +7,8 @@ import { Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { AskForm } from '@src/components/ask/AskForm';
+import { SetupFailureActions } from './SetupFailureActions';
+import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
 import { useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
@@ -57,6 +59,8 @@ export function ProjectLoadGate({
     };
   }, [load, location.key, projectId, asset, display, validKey]);
   const result = lifecycle.result;
+  const fix = useSetupFix(projectId, result, lifecycle.error, useCallback(() => void load(), [load]));
+  const navigate = useNavigate();
   // Joining a provider-only run does not verify this consumer's saved display.
   // Continue with that check once the shared run completes; never retry a failed load.
   const displayChecked = !display || result?.display === display;
@@ -140,10 +144,12 @@ export function ProjectLoadGate({
             <Trans>Set up</Trans>
           </Button>
         )}
-        {(result?.state === 'failed' || lifecycle.error) && (
-          <Button className="self-start" disabled={lifecycle.starting} onClick={() => void load()}>
-            <Trans>Try again</Trans>
-          </Button>
+        {(result?.state === 'failed' || lifecycle.error || fix.state.phase !== 'idle') && (
+          <SetupFailureActions
+            fix={fix}
+            busy={lifecycle.starting}
+            onCancel={() => void navigate(-1)}
+          />
         )}
       </div>
     </div>
