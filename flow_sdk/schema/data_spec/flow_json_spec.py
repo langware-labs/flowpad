@@ -6,7 +6,7 @@ may be), and two standing declarations every clone of the project must also see:
 
     {
       "dependencies": {
-        "langware-os": "git+https://github.com/langware-labs/langware-os#main",
+        "handbook":   "git+https://github.com/acme/handbook#main",
         "legal-docs":  {"source": "git+https://github.com/acme/handbook#main", "path": "legal"}
       },
       "optionalDependencies": {"policies": "hub:8c1f0b2e-…", "notes": "file:~/notes"},
@@ -52,6 +52,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path
+from flow_sdk.schema.data_spec.asset_setup_spec import LoadResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.value_ref import parse_ref as parse_kind_id
 from flow_sdk.tags.envelope import parse_target
@@ -61,6 +62,13 @@ FLOW_JSON = "flow.json"
 DEPENDENCY_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 #: A project whose every prompt must carry a dozen skills has not chosen; it has listed.
 MAX_ALWAYS_USE_SKILLS = 8
+
+
+def _dependency_name(name: str) -> str:
+    if not DEPENDENCY_NAME.fullmatch(name):
+        raise ValueError(f"{name!r} is not a dependency name (letters, digits, . _ -)")
+    return name
+
 
 SourceKind = Literal["ref", "git", "hub", "file"]
 #: ``not_found``: an id nothing on this machine or on the hub answers to.
@@ -217,6 +225,8 @@ class FlowDependency(DataSpec):
     label: Optional[str] = None
     description: Optional[str] = None
 
+    _valid_name = field_validator("name")(_dependency_name)
+
     @property
     def parsed(self) -> DependencySource:
         return parse_source(self.source)
@@ -246,8 +256,7 @@ class AssetFlowJsonSpec(DataSpec):
     @classmethod
     def _entries(cls, value: dict) -> dict:
         for name, entry in value.items():
-            if not DEPENDENCY_NAME.match(name):
-                raise ValueError(f"{name!r} is not a dependency name (letters, digits, . _ -)")
+            _dependency_name(name)
             target = entry if isinstance(entry, str) else entry.target
             if parse_source(target).kind != "ref" and not cls.locations:
                 raise ValueError(f"{name!r}: an asset depends on an id (<type>-<uuid> or <kind>.id.<uuid>), not a location")
@@ -388,6 +397,11 @@ class DependencyState(DataSpec):
     typeid: Optional[str] = None
     label: Optional[str] = None
     description: Optional[str] = None
+    #: The provider project on this machine; never the consuming project's id.
+    project_id: Optional[str] = None
+    home_page: Optional[str] = None
+    #: Resolution and operational readiness are deliberately separate.
+    lifecycle: Optional[LoadResult] = None
     #: A required, not-ready dependency whose warning was dismissed until the next restart.
     dismissed: bool = False
 

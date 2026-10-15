@@ -14,13 +14,9 @@ Public API::
         init_local_storage_driver,
     )
 
-Heavy symbols (middleware, routers, startup helpers) are lazy-loaded via
-``__getattr__`` to avoid circular imports when only ``FlowServer`` /
-``FlowDrivers`` are needed.
+Server symbols are lazy-loaded via ``__getattr__`` so importing a pure helper
+such as ``search_filters`` does not initialize FastAPI.
 """
-
-from .driver_types import FlowDrivers
-from .flow_server import FlowServer
 
 __all__ = [
     "FlowServer",
@@ -34,8 +30,9 @@ __all__ = [
     "init_local_storage_driver",
 ]
 
-# Lazy imports for symbols that pull in heavy dependency chains.
 _LAZY_MAP: dict[str, tuple[str, str]] = {
+    "FlowServer": (".flow_server", "FlowServer"),
+    "FlowDrivers": (".driver_types", "FlowDrivers"),
     "CatchAllExceptionMiddleware": (
         ".middleware.catch_all_exception_middleware",
         "CatchAllExceptionMiddleware",

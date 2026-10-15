@@ -22,10 +22,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-from typing import Iterable, Optional
+from typing import Iterable, NamedTuple, Optional
 from urllib.parse import quote
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.cloud_client.transport.proxy import _HOP as _HOP_BYTES
+from flow_sdk.schema.data_spec.service_endpoint_spec import WEB_AUDIENCES
 
 Headers = list[tuple[str, str]]
 
@@ -87,9 +89,7 @@ def inbound_headers(headers: Iterable[tuple[str, str]]) -> Headers:
     cookie would land in FlowPad's jar.
     """
     return [
-        (name.lower(), value)
-        for name, value in headers
-        if name.lower() not in _HOP and name.lower() != "set-cookie"
+        (name.lower(), value) for name, value in headers if name.lower() not in _HOP and name.lower() != "set-cookie"
     ]
 
 
@@ -158,43 +158,124 @@ def _mac(secret: str, message: str) -> str:
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
-def sign_caller(caller: str, secret: str, *, now: int) -> str:
-    """``v1.<caller>.<ts>.<hmac>``. The hub mints these; here only for tests and a symmetric contract."""
+def _sign(subject: str, secret: str, *, now: int) -> str:
+    """``v1.<subject>.<ts>.<hmac>`` — the one framing every signed value on the wire uses."""
     if not secret:
-        raise ValueError("cannot sign a caller without a secret")
-    if not _CALLER_RE.fullmatch(str(caller or "")):
-        raise ValueError(f"{caller!r} cannot be carried as a caller")
-    message = f"{_CALLER_VERSION}.{caller}.{int(now)}"
+        raise ValueError("cannot sign without a secret")
+    message = f"{_CALLER_VERSION}.{subject}.{int(now)}"
     return f"{message}.{_mac(secret, message)}"
 
 
-def verify_caller(value: Optional[str], secret: Optional[str], *, now: int, max_age: int = CALLER_MAX_AGE) -> Optional[str]:
-    """The caller a signed header names, or None when it is forged, stale, junk — or there is no secret."""
+def _verify(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[str]:
+    """The subject a signed value carries, or None when forged, stale, junk — or there is no secret."""
     if not value or not secret or len(value) > _MAX_HEADER:
         return None
     parts = value.split(".")
     if len(parts) != 4 or parts[0] != _CALLER_VERSION:
         return None
-    _, caller, ts, mac = parts
-    if not _CALLER_RE.fullmatch(caller) or not ts.isdigit():
-        return None
-    if not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{caller}.{ts}")):
+    _, subject, ts, mac = parts
+    if not ts.isdigit() or not hmac.compare_digest(mac, _mac(secret, f"{_CALLER_VERSION}.{subject}.{ts}")):
         return None
     age = int(now) - int(ts)
     if age > max_age or age < -_CALLER_SKEW:
         return None
-    return caller
+    return subject
+
+
+def sign_caller(caller: str, secret: str, *, now: int) -> str:
+    """``v1.<caller>.<ts>.<hmac>``. The hub mints these; here only for tests and a symmetric contract."""
+    if not _CALLER_RE.fullmatch(str(caller or "")):
+        raise ValueError(f"{caller!r} cannot be carried as a caller")
+    return _sign(caller, secret, now=now)
+
+
+def verify_caller(
+    value: Optional[str], secret: Optional[str], *, now: int, max_age: int = CALLER_MAX_AGE
+) -> Optional[str]:
+    """The caller a signed header names, or None when it is forged, stale, junk — or there is no secret."""
+    caller = _verify(value, secret, now=now, max_age=max_age)
+    return caller if caller is not None and _CALLER_RE.fullmatch(caller) else None
+
+
+# ── the grant (one admission, carried as a ticket or kept as a cookie) ───────
+
+#: The three browser doors a grant can name. ``system`` is the box's own UI (9007);
+#: ``admin`` and ``app`` are the placement's two audience proxies.
+SYSTEM_AUDIENCE = "system"
+GRANT_AUDIENCES = (SYSTEM_AUDIENCE, *WEB_AUDIENCES)
+#: The endpoint a ``system`` grant names when its minter has no row to point at (this box's own
+#: CLI): the system door checks a grant's audience, never its row.
+SYSTEM_ENDPOINT = "00000000-0000-4000-8000-000000000000"
+#: A browser is sent to the box carrying a ticket once; it must cover the hop, no more.
+TICKET_MAX_AGE = 60
+#: How long a grant cookie admits a browser without returning to the hub.
+GRANT_MAX_AGE = 12 * 60 * 60
+#: Who a stamped-public endpoint admits without an identity.
+VISITOR = "visitor"
+_SUBJECT_SEP = "|"
+
+
+class Grant(NamedTuple):
+    """ONE admission: *caller* may enter *endpoint* through the *audience* door.
+
+    The subject every door signs — a hub ticket, a box grant cookie, a hub audience
+    session all carry this and nothing else. A grant for one endpoint opens no
+    other, and one for the ``app`` door is refused at the ``admin`` one.
+    """
+
+    caller: str
+    audience: str
+    endpoint: str
+
+    def encode(self) -> str:
+        return _SUBJECT_SEP.join((self.caller, self.audience, self.endpoint))
+
+    def is_valid(self) -> bool:
+        """Whether every part can ride the wire: no separator inside, a known door, an id for an endpoint."""
+        return bool(
+            _CALLER_RE.fullmatch(self.caller) and self.audience in GRANT_AUDIENCES and is_valid_entity_id(self.endpoint)
+        )
+
+    @classmethod
+    def decode(cls, subject: str) -> Optional["Grant"]:
+        parts = str(subject or "").split(_SUBJECT_SEP)
+        if len(parts) != 3:
+            return None
+        grant = cls(*parts)
+        return grant if grant.is_valid() else None
+
+
+def sign_grant(grant: Grant, secret: str, *, now: int) -> str:
+    """``v1.<caller>|<audience>|<endpoint>.<ts>.<hmac>`` — the caller codec over a grant subject."""
+    if not grant.is_valid():
+        raise ValueError(f"{grant!r} cannot be carried as a grant")
+    return _sign(grant.encode(), secret, now=now)
+
+
+def verify_grant(value: Optional[str], secret: Optional[str], *, now: int, max_age: int) -> Optional[Grant]:
+    """The grant a signed value carries, or None when forged, stale, malformed — or there is no secret."""
+    subject = _verify(value, secret, now=now, max_age=max_age)
+    return Grant.decode(subject) if subject is not None else None
 
 
 __all__ = [
     "CALLER_HEADER",
     "CALLER_MAX_AGE",
     "GATE_HEADER",
+    "GRANT_AUDIENCES",
+    "GRANT_MAX_AGE",
+    "Grant",
+    "SYSTEM_AUDIENCE",
+    "SYSTEM_ENDPOINT",
+    "TICKET_MAX_AGE",
     "USER_HEADER",
+    "VISITOR",
     "inbound_headers",
     "outbound_headers",
     "public_base",
     "sign_caller",
+    "sign_grant",
     "upstream_path",
     "verify_caller",
+    "verify_grant",
 ]

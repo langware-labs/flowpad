@@ -15,7 +15,7 @@ from flow_sdk.builtin.shell import Shell
 WINDOWS_NPM_CMD_SHIM = [
     r"C:\WINDOWS\system32\cmd.exe",
     "/c",
-    r"C:\Users\gaditunes\AppData\Roaming\npm\codex.CMD",
+    r"C:\Users\user\AppData\Roaming\npm\codex.CMD",
     "--dangerously-bypass-approvals-and-sandbox",
     "-c",
     "check_for_update_on_startup=false",
@@ -25,7 +25,7 @@ WINDOWS_NPM_CMD_SHIM = [
 POSIX_NODE_SHEBANG = ["node", "/usr/local/lib/node_modules/@openai/codex/bin/codex.js", "--foo"]
 
 # Native binary — the plain case, argv[0].
-NATIVE_EXE = [r"C:\Users\gaditunes\.local\bin\claude.exe", "--resume", "abc"]
+NATIVE_EXE = [r"C:\Users\user\.local\bin\claude.exe", "--resume", "abc"]
 
 
 class TestCmdlineMatchesExpected:

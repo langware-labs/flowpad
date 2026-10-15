@@ -308,3 +308,45 @@ async def test_a_row_survives_a_round_trip_with_its_models(env):
 async def test_find_by_secret_is_empty_rather_than_guessing(env):
     assert await LLMEndpoint.find_by_secret("") is None
     assert await LLMEndpoint.find_by_secret("lm_api.nothing-here") is None
+
+
+# ── by_provider: one call from a provider key to a pinnable row ──────────────
+
+
+@pytest.mark.asyncio
+async def test_by_provider_stores_the_key_and_converges_on_one_row(env):
+    from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+
+    first = await LLMEndpoint.by_provider(LMApiProvider.OPENROUTER, key="sk-or-test")
+    second = await LLMEndpoint.by_provider("openrouter")  # the key is stored now
+    assert first.id == second.id
+    assert first.secret_name == "lm_api.openrouter"
+    assert first.resolve_api_key(allow_environment=False) == "sk-or-test"
+
+
+@pytest.mark.asyncio
+async def test_by_provider_without_a_stored_key_raises_and_ignores_the_environment(env, monkeypatch):
+    from flow_sdk.external_apis.llm.errors import LLMNoCredential
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "from-env")
+    with pytest.raises(LLMNoCredential):
+        await LLMEndpoint.by_provider("openrouter")
+
+
+@pytest.mark.asyncio
+async def test_by_provider_config_changes_one_tier_and_persists(env):
+    from flow_sdk.builtin.llm_endpoint import LLMEndpointConfig
+
+    plain = await LLMEndpoint.by_provider("openrouter", key="sk-or-test")
+    tuned = await LLMEndpoint.by_provider("openrouter", config=LLMEndpointConfig(models={"sm": "z-ai/glm-4.7-flash"}))
+    assert tuned.id == plain.id
+    loaded = await LLMEndpoint.find_by_secret("lm_api.openrouter")
+    assert loaded.models["sm"] == "z-ai/glm-4.7-flash"
+    assert loaded.models["md"] == plain.models["md"]
+
+
+@pytest.mark.asyncio
+async def test_by_provider_refuses_flowpad(env):
+    for key in ("anything", None):
+        with pytest.raises(ValueError):
+            await LLMEndpoint.by_provider("flowpad", key=key)

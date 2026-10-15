@@ -136,10 +136,10 @@ def test_last_turn_error_text_reads_the_systementrys_own_message():
     ended error" into something a person can act on."""
     entries = [
         _user("u1", "install ripgrep"),
-        _error("e1", "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72"),
+        _error("e1", "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72"),
     ]
 
-    assert _last_turn_error_text(entries) == "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72"
+    assert _last_turn_error_text(entries) == "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72"
 
 
 def test_last_turn_error_text_only_the_latest_turn():

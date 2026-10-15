@@ -99,7 +99,7 @@ from flow_sdk.schema.data_spec.message_state_spec import MessageState
 gate = rule.gate_op    # the row's `gate` as the DecisionOp it is; None when the rule has no worded if
 gate.sentence          # 'asks for a refund or disputes a charge'
 gate.questions["match"].instructions
-#   'Is this true of the message (`text`, `subject`, from `sender`): asks for a refund or disputes a charge?'
+#   'Is this true of the message (`text`, `subject`, `files`, from `sender`): asks for a refund or disputes a charge?'
 gate.require["match"].yes          # 0.85
 
 verdict = await decide_op(gate, MessageState.from_text("Hi, I was billed for a plan I cancelled. Can you reverse it?"))
@@ -112,7 +112,7 @@ verdict = await rule.decide_on(text="Attached is the invoice for September.")   
 ```
 
 `decide_op` answers a `DecisionVerdict` (`compute.returned.decision`), like every op answers
-a `ReturnedValue`; it records nothing and runs nothing — this is the fast test under the
+a FlowCall answer (`ReturnedValue`); it records nothing and runs nothing — this is the fast test under the
 sentence and the try list over recent messages. A `DecisionError` is `met=False` with
 `unavailable` naming the closed reason. `rule.decide_on` takes `text=` or `message_id=`.
 
@@ -121,10 +121,11 @@ sentence and the try list over recent messages. A `DecisionError` is `met=False`
 ```python
 from flow_sdk.automations import decision_subjects
 from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.user import User
 from flow_sdk.stream_inbox.message_subject import state_of
 
 fm = await FlowMessage.get_one({"source_item_id": item.id})
-state = state_of(fm)
+state = state_of(fm, await User.self_ids())
 state.model_dump(mode="json", exclude_defaults=True)
 # {'sender': 'Dana Levi <dana@customer.test>', 'subject': 'Charged twice for October',
 #  'text': 'I see two charges of $49 …', 'received_at': '…', 'conversation_id': '…', 'message_id': '…'}

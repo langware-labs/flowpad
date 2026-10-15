@@ -27,6 +27,7 @@ from flow_sdk.sources.files import FileSupport, local_file, read_file
 from flow_sdk.sources.folder import FolderSource
 from flow_sdk.sources.memory import MemoryMessages, MemorySource, MemoryStore
 from flow_sdk.sources.protocols import (
+    Acting,
     ByteStore,
     Choosing,
     Drafting,
@@ -58,6 +59,7 @@ from flow_sdk.sources.values import (
     FileItem,
     FileKind,
     MessageData,
+    MessageMarkSpec,
     MessageFileData,
     MessageItem,
     MessageQuery,
@@ -83,6 +85,7 @@ __all__ = [
     "FileSupport",
     "Openable",
     "Reacting",
+    "Acting",
     "local_file",
     "read_file",
     "DEFAULT_PAGE_SIZE",
@@ -115,6 +118,7 @@ __all__ = [
     "MemorySource",
     "MemoryStore",
     "MessageData",
+    "MessageMarkSpec",
     "MessageItem",
     "MessageQuery",
     "MessageSource",

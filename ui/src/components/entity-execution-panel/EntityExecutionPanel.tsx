@@ -32,6 +32,7 @@ import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { BackgroundWorkChip } from './BackgroundWorkChip';
 import { QueueChip } from './QueueChip';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -51,6 +52,7 @@ import { useProcessesForProject } from './hooks/useProcessesForProject';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { ChatPlanModeProvider } from '@src/components/terminal/interactive-terminal/chat-plan-mode-context';
 import { PlanInteractionBar } from '@src/components/terminal/interactive-terminal/PlanInteractionBar';
+import { SurfaceSwitchWaitNotice } from '@src/components/terminal/interactive-terminal/SurfaceSwitchWaitNotice';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { useLaunchingAgent } from '@src/hooks/use-launching-agent';
 import { AgentIntroMessage } from '@src/components/agents/AgentIntroMessage';
@@ -643,9 +645,12 @@ export function EntityExecutionPanel({
   // attached ref-by-ref in `handleSend`); what went away is the UI that used to
   // fill it — the asset manager is a read-only board now, not a picker.
 
+  const scrollRef = useRef<AutoScrollContainerHandle>(null);
   const handleSend = useCallback(
     async (text: string, opts?: { forceNewProcess?: boolean; files?: File[] }) => {
       if (!targetStr) return;
+      // The reader's own message always brings them back to the latest line.
+      scrollRef.current?.scrollToBottom();
       if (text) inputHistory.addToHistory(text);
       const mustCreateNew = opts?.forceNewProcess === true || forceNewRef.current;
 
@@ -803,9 +808,8 @@ export function EntityExecutionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPrompt?.nonce]);
 
-  const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
-    scrollRef.current?.scrollToBottom();
+    scrollRef.current?.follow();
     // In dense mode new tool events (and the appearing activity footer) don't
     // bump messages.length — track the group count + active edge too.
   }, [messages.length, turnGroups.length, activity.active]);
@@ -932,7 +936,9 @@ export function EntityExecutionPanel({
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
         onHistoryOpen={() => setHistoryRequested(true)}
-        afterHistorySlot={typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot}
+        afterHistorySlot={
+          typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot
+        }
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
@@ -986,19 +992,21 @@ export function EntityExecutionPanel({
                 flowData={m}
                 worker={activeProcess?.worker_type ?? undefined}
                 agent={launchingAgent}
-                isUser={m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')}
+                isUser={
+                  m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user')
+                }
               />
             ))
           )}
         </AutoScrollContainer>
-        {/* Pending-interaction notice, `allowPicker={false}`: this surface never
-            offers the structured picker. On a PTY worker it says a question is
-            waiting and opens the terminal (the agent's own picker is blocked
-            there — an answer sent from here is rejected and its text is eaten as
-            keystrokes). On a headless worker it renders nothing: the composer
-            right below already takes the answer as a normal turn. */}
+        {/* A vibe switch held back while the agent works (see SurfaceSwitchWaitNotice). */}
+        <SurfaceSwitchWaitNotice processId={activeProcess?.id} />
+        {/* Pending interaction: the agent's question as a card with its options
+            on a headless worker. On a PTY worker it says a question is waiting
+            and opens the terminal (the agent's own picker is blocked there — an
+            answer sent from here is rejected and its text is eaten as keystrokes). */}
         <ChatPlanModeProvider process={activeProcess}>
-          <PlanInteractionBar items={items} allowPicker={false} />
+          <PlanInteractionBar items={items} />
         </ChatPlanModeProvider>
       </LinkScope>
       {promptContext && (
@@ -1031,7 +1039,12 @@ export function EntityExecutionPanel({
         // attachments on, a pasted image becomes a chip sent with the text.
         onPasteImages={allowImagePaste && (activeProcess || !allowAttachments) ? handlePasteImages : undefined}
         allowAttachments={allowAttachments}
-        leadingSlot={<QueueChip process={activeProcess} />}
+        leadingSlot={
+          <div className="flex items-center gap-2">
+            <QueueChip process={activeProcess} />
+            <BackgroundWorkChip process={activeProcess} />
+          </div>
+        }
         history={inputHistory}
         animateEnqueue
         // The PROCESS id, which is what makes a draft follow the session across

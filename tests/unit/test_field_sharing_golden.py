@@ -296,9 +296,10 @@ def test_the_two_egress_seams_now_agree():
             # `sender` is the typed author, local only: the hub keeps the `sender_id` wire
             # string, so a hub refresh must never turn an agent's reply back into a person.
             # `reactions`: who reacted with what on a channel message, projected from the SourceItem.
+            # `mark`: what a channel message did (a review's verdict), projected from the SourceItem.
             # `outbound` / `delivery_failure`: this machine's outbox — "I wrote this to send" and why
             # the hub does not have it yet. Facts about this machine's sending, nowhere else.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "outbound", "delivery_failure"],
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "mark", "outbound", "delivery_failure"],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -318,6 +319,7 @@ def test_the_two_egress_seams_now_agree():
             # `origin` is a nested CloudOrigin model the filler leaves None —
             # the cloud record this message caches, absent on Flowpad-native ones.
             # `delivery_failure` is a nested HubFailure, None until a send fails.
+            # `mark` is a nested MessageMarkSpec, None on a message that did nothing.
             [
                 "attachment",
                 "body_status",
@@ -329,6 +331,7 @@ def test_the_two_egress_seams_now_agree():
                 "kind",
                 "last_active_at",
                 "last_edited_at",
+                "mark",
                 "origin",
                 "origin_local",
                 "private_context_entities_",
@@ -384,7 +387,8 @@ def test_the_two_egress_seams_now_agree():
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
-            # `is_unread`/`unread_count`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
+            # `is_unread`/`unread_count`/`archived`: this viewer's unread and archive, projected by
+            # `stream_inbox.recompute_unread`.
             # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
             # `address`/`started_at`/`ended_at`: who a channel conversation is with and when it ran —
             # stamped by the local projection from the channel's own messages.
@@ -392,8 +396,8 @@ def test_the_two_egress_seams_now_agree():
             # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
             # project it was asked from — this machine's bookkeeping until delivery.
             # `channel_answered`: whether anything here answers the channel — stamped by the local projection.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
-             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "archived",
+             "channel_spec", "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id",
              "channel_answered"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
@@ -416,6 +420,7 @@ def test_the_two_egress_seams_now_agree():
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
                 "unread_count",
+                "archived",
                 # Stamped by the local projection with `channel_source_id`, never by a caller.
                 "channel_answered",
                 "private_context_entities_",

@@ -189,7 +189,7 @@ async def test_the_node_executor_refuses_git_on_this_machine_but_not_on_a_remote
     from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
     from flow_sdk.config import ComputeProviderType
 
-    monkeypatch.setattr("flow_sdk.builtin.faas.command_executor.git_usable", lambda: False)
+    monkeypatch.setattr("flow_sdk.utils.command_executor.git_usable", lambda: False)
 
     here = _RecordingNode(ComputeProviderType.LOCAL_MACHINE)
     refused = await ComputeNodeCommandExecutor(here).run(["git", "status"], cwd="/tmp/x")

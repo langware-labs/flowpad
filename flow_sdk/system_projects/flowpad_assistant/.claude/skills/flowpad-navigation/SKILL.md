@@ -38,6 +38,34 @@ Key on the **intent**, not on the mode and not on who authored the file:
 When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
 the failure mode of navigating is yanking them out of their work.
 
+**A session opens as a live-session tab, not its transcript.** `flow show entity` opens
+nothing for a `claude_session` or `agentic_process`, and `flow navigate entity` lands
+on the read-only transcript. Show the session view instead — a tab beside your process,
+the user switches to it themselves:
+
+```bash
+flow show view shell/agentic_process-<process-id>
+```
+
+Have only the Claude session id (the transcript's `<uuid>.jsonl` name)? Look up the
+process that owns it:
+
+```bash
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select id from entities where type='agentic_process' and json_extract(data,'\$.session_id')='<session-uuid>'"
+```
+
+Exit 0 only means the show was delivered — confirm the tab is open before saying so
+(`1` = open):
+
+```bash
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select json_extract(data,'\$.visible') from entities where type='tab' and json_extract(data,'\$.target_id')='<process-id>'"
+```
+
+Open the transcript only when it is asked for
+(`flow show view lens/claude/transcript/<session-uuid>`).
+
 ## You have a file path
 
 Apply the decision rule above to the user's words first — having a path does not
@@ -124,10 +152,12 @@ flow navigate entity <typeid>   # only on an explicit "take me there"
 ## A running web app you started
 
 ```bash
-flow show webapp --port <port>
+flow show webapp --port <port>            # for the project's end users (its `app`)
+flow show webapp --port <port> --admin    # for its operators (its `admin` app: a back office, a console)
 ```
 
-Use the port the dev server actually reported, never an assumed one.
+Use the port the dev server actually reported, never an assumed one. Add `--admin` only when
+what you built is for the people who RUN the project, not the people who use it.
 
 ## A web page (docs, a vendor's guide)
 
@@ -247,6 +277,9 @@ automations` is wrong and will fail.
 Do not invent a TypeId and do not ask the user — that is what those actions are for.
 
 ## Exit codes
+
+Showing a place participates in **FlowCall**: `NavigateResult` is the specialized
+`ReturnedValue` answer. Read its outcome separately from whether it was delivered.
 
 `flow show` and `flow navigate` print one JSON line to stdout — the answer, with
 `exit_code`, `verdict` and `detail` — and exit with that `exit_code`:

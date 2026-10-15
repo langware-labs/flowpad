@@ -148,7 +148,7 @@ _SUPPLEMENTAL_CONSTRUCTOR_KWARGS: dict[str, dict] = {
         "settings_json": {"language": "Hebrew"},
         "disallowed_tools": ["Bash(git checkout:*)"],
     },
-    "codex": {"bypass_hook_trust": True},
+    "codex": {"bypass_hook_trust": True, "fork_session_id": "src"},
     "copilot": {
         "custom_instruction_dirs": ["/instructions"],
         "plugin_dirs": ["/runtime-plugin"],

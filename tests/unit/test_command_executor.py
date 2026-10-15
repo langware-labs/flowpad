@@ -10,8 +10,8 @@ that are easy to get subtly different:
   ``ComputeNode.run_command`` takes a string. A mock cannot tell you this — the
   local leg has to actually spawn a process, and the remote leg has to be
   inspected for the exact string it would send.
-* **``env`` is an additive overlay.** A remote node can only prepend assignments
-  to a command, so "replace the environment" is not expressible there. Both legs
+* **``env`` is an additive overlay.** Providers pass command overlays separately from
+  command text, and retain the ambient environment. Both legs
   therefore mean "these variables on top of what the target already has". If the
   local leg ever passed ``env`` straight to ``subprocess``, PATH would vanish and
   the divergence would only show up on one substrate.
@@ -23,16 +23,18 @@ CliResult. Real remote IO belongs to the provider's own tests.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import asyncio
-
 import pytest
 
 from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor
+from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.config import ComputeProviderType
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
 from flow_sdk.utils.command_executor import _LocalCommandExecutor
 
@@ -155,6 +157,40 @@ async def test_make_dirs_is_idempotent(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
+async def test_local_node_preserves_native_arguments_environment_and_cwd(tmp_path: Path):
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    args = [r"^remote\..*\.(url|pushurl)$", "%PATH%", "a&b", 'embedded"quote', "space trailing\\", ""]
+    program = "import json,os,sys; print(json.dumps([sys.argv[1:],os.getcwd(),os.getenv('FLOWPAD_ARGV_TEST'),bool(os.getenv('PATH'))]))"
+    result = await node.get_command_executor().run(
+        [sys.executable, "-c", program, *args], cwd=str(tmp_path), env={"FLOWPAD_ARGV_TEST": "literal & value"}
+    )
+    assert result.ok, result.stderr
+    received, cwd, overlay, inherited = json.loads(result.stdout)
+    assert received == args
+    assert Path(cwd).resolve() == tmp_path.resolve()
+    assert (overlay, inherited) == ("literal & value", True)
+
+
+async def test_local_node_uses_provider_directory_when_cwd_is_omitted():
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    result = await node.get_command_executor().run([sys.executable, "-c", "import os; print(os.getcwd())"])
+    assert result.ok, result.stderr
+    assert Path(result.stdout.strip()).resolve() == Path(node.compute_provider.get_home_path()).resolve()
+
+
+async def test_git_repo_local_node_reads_remote_regex_without_a_shell(tmp_path: Path):
+    from flow_sdk.builtin.faas.git_repo import GitRepo
+
+    node = ComputeNode(node_provider_type=ComputeProviderType.LOCAL_MACHINE)
+    executor = node.get_command_executor()
+    assert (await executor.run(["git", "init"], cwd=str(tmp_path))).ok
+    remote = "https://example.test/repo.git"
+    assert (await executor.run(["git", "remote", "add", "origin", remote], cwd=str(tmp_path))).ok
+    result = await GitRepo(str(tmp_path), node)._folder.git("config", "--get-regexp", r"^remote\..*\.(url|pushurl)$")
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == f"remote.origin.url {remote}"
+
+
 def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_code: "int | None" = 0,
                hang: bool = False, error: "Exception | None" = None):
     """Records the exact command string the executor would send."""
@@ -162,6 +198,7 @@ def _stub_node(path_sep: str = "/", *, stdout: str = "", stderr: str = "", exit_
 
     async def run_command(command, session_id=None, background=True, env=None):
         sent.append(command)
+        node.last_env = env
         if error is not None:
             raise error
         if hang:
@@ -189,12 +226,12 @@ async def test_remote_prefixes_cwd():
     assert sent[0] == "cd '/work/my repo' && git status"
 
 
-async def test_remote_prefixes_env_as_an_overlay():
+async def test_remote_passes_env_separately_from_command():
     node, sent = _stub_node()
-    await ComputeNodeCommandExecutor(node).run(["git", "fetch"], env={"FLOWPAD_GIT_TOKEN": "s3cret"})
+    result = await ComputeNodeCommandExecutor(node).run(["git", "fetch"], env={"FLOWPAD_GIT_TOKEN": "s3cret"})
 
-    # Assignments prepended to the command — the node's own environment is untouched.
-    assert sent[0] == "FLOWPAD_GIT_TOKEN='s3cret' git fetch"
+    assert sent[0] == result.command == "git fetch"
+    assert {item.name: item.value for item in node.last_env} == {"FLOWPAD_GIT_TOKEN": "s3cret"}
 
 
 async def test_remote_maps_the_cli_command_to_a_result():

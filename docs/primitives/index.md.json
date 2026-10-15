@@ -2,7 +2,7 @@
   "schema_version": 1,
   "typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
   "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
-  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
+  "vault_root": "docs",
   "folder_rel_path": "primitives",
   "folder_name": "primitives",
   "inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751",

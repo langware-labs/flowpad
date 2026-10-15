@@ -6,12 +6,15 @@ No LLM, no frontend — just the engine contract the User Journey feature rides 
 """
 import asyncio
 import json
+from pathlib import Path
 
 from flow_sdk.assets.types.graph_workflow_doc import GUIDED_PRESENT_KINDS
 from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun, RunStatus
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.graph_workflow_manager import GraphWorkflowManager, parse_graph_workflow_doc
 from tests.pytest_plugin import async_context
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 async def _until(cond, what="condition"):
@@ -110,9 +113,8 @@ def test_shipped_journeys_are_valid():
     left one journey behind exactly this way.)
     """
     import glob
-    from pathlib import Path
 
-    graphs = sorted(glob.glob("flow_sdk/system_projects/*/agentic-assets/journey/*/graph.json"))
+    graphs = sorted(glob.glob(str(REPO / "flow_sdk/system_projects/*/agentic-assets/journey/*/graph.json")))
     assert graphs, "no shipped journeys found — did the path change?"
     problems = {
         Path(g).parent.name: parse_graph_workflow_doc(Path(g).read_text(encoding="utf-8")).validate_graph()

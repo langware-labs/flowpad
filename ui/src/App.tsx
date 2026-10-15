@@ -14,7 +14,6 @@ import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetails
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
-import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
@@ -23,6 +22,7 @@ import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { HarnessSignInDialogRoot } from '@src/components/harness-login/HarnessSignInDialog';
+import { ProjectLoadDialogRoot } from '@src/components/project-setup/ProjectLoadDialog';
 import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
 import { SourceSetupDialogRoot } from '@src/components/setup-wizard/SourceSetupDialog';
 import { MissingDependenciesDialogRoot } from '@src/components/project-home/MissingDependenciesDialog';
@@ -143,7 +143,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* `<DiagnoseErrorModal/>` is mounted in `main.tsx`, above the router:
             the root error boundary replaces this whole tree, and the error
             screen's diagnose button still needs a host. */}
-        <CleanupModal />
         <DeleteAssetModal />
         <InputPromptModal />
         <ImageAnnotatorRoot />
@@ -176,7 +175,12 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         {!isHubOnly() && <HarnessSignInDialogRoot />}
-        {!isHubOnly() && <ProjectSetupDialogRoot />}
+        {!isHubOnly() && (
+          <>
+            <ProjectSetupDialogRoot />
+            <ProjectLoadDialogRoot />
+          </>
+        )}
         {!isHubOnly() && <SourceSetupDialogRoot />}
         {/* A required dependency of the open project is not on this machine. */}
         {!isHubOnly() && <MissingDependenciesDialogRoot />}

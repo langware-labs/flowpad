@@ -122,6 +122,8 @@ export interface IDataDriver extends IEntity {
   sends?: boolean;
   /** Why the folder's source did not load, or empty. */
   load_error?: string;
+  /** What a person calls the sign-in it reads through (`GitHub`), or empty when it needs none. */
+  sign_in_title?: string;
   reflect?: string[];
   /** The form's fields, under the manifest's own key: how each is drawn. */
   config?: Record<string, SpecConfigField>;
@@ -132,6 +134,8 @@ export interface IDataDriver extends IEntity {
   manifest_schema?: number;
   /** Offered in the add-source picker; an unlisted provider still loads and polls. */
   listed?: boolean;
+  /** Drawn by default on a stream inbox's channel line until its owner connects one. */
+  featured?: boolean;
   /** The cloud creates the account for the owning agent — no form to fill. */
   provisioned?: boolean;
   /**
@@ -179,12 +183,14 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';
+  sign_in_title: string = '';
   reflect: string[] = [];
   config: Record<string, SpecConfigField> = {};
   auth: Record<string, unknown> | null = null;
   requires: Record<string, string> = {};
   manifest_schema: number = 1;
   listed: boolean = true;
+  featured: boolean = false;
   provisioned: boolean = false;
   calls: CallStart | '' = '';
 

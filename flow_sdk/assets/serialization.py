@@ -259,9 +259,11 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
                     data[lay.body] = header_raw[lay.body]
     elif main is not None:
         ref = FrontMatterFsRef(main)
-        header_raw = ref.read_frontmatter()
         if lay.body:
-            data[lay.body] = ref.read_body().strip()
+            # One read and parse for both halves; the file is not opened again for its body.
+            header_raw, data[lay.body] = ref.read_frontmatter_and_body()
+        else:
+            header_raw = ref.read_frontmatter()
     # Absent on disk ⇒ the entity's DEFAULT, not None: the spec's None is
     # "not present", and a non-Optional entity field (an enum) must not see it.
     # The marker fields are EXCLUDED: they were read above, and the spec's
@@ -275,6 +277,17 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
 
 def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
     """Decode file-owned fields into a filesystem record without an Entity."""
+    return read_asset_data_with_header(path, info, identity=identity)[0]
+
+
+def read_asset_data_with_header(path: Path, info: Any, *, identity: str | None = None) -> tuple[Any, dict[str, Any]]:
+    """``read_asset_data`` plus the main document's raw header it was decoded from.
+
+    The header is handed back so a caller that needs it too (the indexer's
+    ``row_derive_fn``) does not read and parse the main document a second time.
+    It belongs to this one call — nothing is kept. ``{}`` for a type with no
+    ``asset_spec``, whose own reader never exposes one.
+    """
     from flow_sdk.fs_store.fs_record import FSRecord
     from flow_sdk.fs_store.fs_ref import FSRef
 
@@ -286,7 +299,7 @@ def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
         records = info.from_disk_fn(FSRef(layout.root, read_only=True), resolved_id)
         if len(records) != 1:
             raise ValueError("Asset reader must return one record")
-        return records[0]
+        return records[0], {}
     data, header = read_main(info, layout.root, field_data=read_asset_fields(layout.root, info))
     if info.rows_field and info.rows_layout_field:
         from flow_sdk.schema.data_spec.dataset_spec import DEFAULT_DATASET_SPEC, DataLayoutEnum
@@ -298,7 +311,7 @@ def read_asset_data(path: Path, info: Any, *, identity: str | None = None):
         )
     if info.derive_fields_fn is not None:
         info.derive_fields_fn(data, layout.root, header)
-    return FSRecord(type=info.type_name, id=resolved_id, asset_ref=str(layout.root), **data)
+    return FSRecord(type=info.type_name, id=resolved_id, asset_ref=str(layout.root), **data), header
 
 
 def read_asset_parent(path: Path, info: Any):

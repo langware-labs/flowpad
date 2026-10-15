@@ -8,6 +8,7 @@ covered by tests/unit/test_diagnostic_report.py.
 import asyncio
 import json
 import logging
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -548,6 +549,8 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
                     ],
                 }
             }
+            # The turn ends right after report.py's result: its worker deregisters.
+            ap_mod._PROMPT_WORKERS.pop("slow-worker-id", None)
             await asyncio.sleep(3600)
 
         @classmethod
@@ -581,6 +584,83 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
         _tpath.unlink(missing_ok=True)
     assert rc == 0
     assert state["checks"] >= 3  # proves warmup waited through the empty-file polls
+
+
+class _StartedDriver:
+    """A driver whose transcript already has its first line, so the warm-up sees a started worker."""
+
+    def transcript_path(self, _ap):
+        return Path(__file__)
+
+
+@pytest.mark.long  # ~2.0s: the agent's closing message outlasts the runner's 1.5 s re-check
+@pytest.mark.asyncio
+async def test_run_diagnose_does_not_stop_the_worker_before_its_turn_ends():
+    """report.py's result is not the end of the turn: the agent still writes a closing message.
+    Stopping it then records "[Request interrupted by user]", which the classifier reads as the
+    user's. The runner must leave the worker alone until its turn is over."""
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    stopped_while_active: list[bool] = []
+
+    class _FakeAP(_TakesTurns):
+        def __init__(self, **_kw):
+            self.id = "closing-worker-id"
+            self.session_id = "fakesess"
+
+        def enable_assistant(self):
+            pass
+
+        driver = _StartedDriver()
+
+        async def stream_transcript(self, timeout=0):
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": '{"diagnosis_id": "'
+                            + _DIAG_ID
+                            + '", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
+                        }
+                    ],
+                }
+            }
+            await asyncio.sleep(2.0)  # the closing message is being written
+            ap_mod._PROMPT_WORKERS.pop("closing-worker-id", None)  # the turn ends
+
+        async def _stop_headless_turn(self, source=""):
+            stopped_while_active.append(ap_mod.prompt_worker_active(self.id))
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    ap_mod._PROMPT_WORKERS["closing-worker-id"] = object()
+    try:
+        with (
+            patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+            patch(
+                "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+                _diagnosis_type_only(None),
+            ),
+            patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+            patch(
+                "flow_sdk.cli.commands.diagnose_cmd._load_recorded_diagnosis",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=10)
+    finally:
+        ap_mod._PROMPT_WORKERS.pop("closing-worker-id", None)
+    assert rc == 0
+    assert stopped_while_active == [False]
 
 
 # --------------------------------------------------------------------------- #
@@ -952,8 +1032,19 @@ async def test_what_is_stamped_survives_the_cross_link(tmp_path):
     fake = _recording_ap(transcript, [])
 
     async def stream(self, timeout=0):
-        yield {"message": {"role": "user", "content": [{"type": "tool_result", "content": json.dumps(
-            {"diagnosis_id": did, "conversation_id": None, "flow_message_id": None, "status": "fixed"})}]}}
+        yield {
+            "message": {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "content": json.dumps(
+                            {"diagnosis_id": did, "conversation_id": None, "flow_message_id": None, "status": "fixed"}
+                        ),
+                    }
+                ],
+            }
+        }
 
     async def a_process(cls, _id):
         return SimpleNamespace(id="fake-id")
@@ -970,7 +1061,9 @@ async def test_what_is_stamped_survives_the_cross_link(tmp_path):
         patch("flow_sdk.core.entity.cross_link.cross_link_entities", new=cross_link),
         patch("flow_sdk.cli.commands.diagnose_cmd._post_home_feed_entry", new=AsyncMock(return_value=None)),
     ):
-        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=lambda _e: None), timeout=10)
+        rc = await asyncio.wait_for(
+            diagnose_cmd._run_diagnose("app is stuck", 1800.0, emit=lambda _e: None), timeout=10
+        )
 
     assert rc == 0
     row = await FlowpadDiagnosis.get_by_id(did)

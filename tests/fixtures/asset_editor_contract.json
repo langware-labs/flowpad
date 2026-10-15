@@ -7,7 +7,7 @@
     "agent",
     "skill",
     "task",
-    "whiteboard",
+    "chart",
     "deck_template",
     "deck",
     "spreadsheet",
@@ -21,6 +21,8 @@
     "llm_endpoint",
     "credential",
     "diagnosis_request",
+    "asset_setup",
+    "compute_op",
     "html",
     "mcp_app",
     "image",
@@ -53,8 +55,8 @@
     "task": [
       "task"
     ],
-    "whiteboard": [
-      "whiteboard"
+    "chart": [
+      "chart"
     ],
     "deck_template": [
       "deck_template"
@@ -95,6 +97,12 @@
     "diagnosis_request": [
       "diagnosis_request"
     ],
+    "asset_setup": [
+      "asset_setup"
+    ],
+    "compute_op": [
+      "compute_op"
+    ],
     "html": [],
     "mcp_app": [],
     "image": [],
@@ -116,7 +124,7 @@
     "agent": "agent",
     "skill": "skill",
     "task": "task",
-    "whiteboard": "whiteboard",
+    "chart": "chart",
     "deck_template": "deck_template",
     "deck": "deck",
     "spreadsheet": "spreadsheet",
@@ -129,7 +137,9 @@
     "mcp": "mcp",
     "llm_endpoint": "llm_endpoint",
     "credential": "credential",
-    "diagnosis_request": "diagnosis_request"
+    "diagnosis_request": "diagnosis_request",
+    "asset_setup": "asset_setup",
+    "compute_op": "compute_op"
   },
   "url_cases": [
     {

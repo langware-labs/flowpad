@@ -42,6 +42,8 @@ export interface DataSourceSendOutcome {
 export interface IDataSource extends IEntity {
   /** The source's asset folder on this machine (`agentic-assets/data_source/<name>/`). */
   asset_ref?: string | null;
+  /** The project containing this source, independent of its agent/user owner. */
+  project_id?: string | null;
   owner?: string | null;
   name: string;
   kind?: string;
@@ -50,10 +52,12 @@ export interface IDataSource extends IEntity {
   account_key?: string;
   account_identities?: string[];
   allowed_senders?: string[];
+  open_to_all?: boolean;
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
   setup_detail?: string;
+  setup_needs?: SetupNeed[];
   verified_at?: string | null;
   poll_interval_seconds?: number;
   window_days?: number;
@@ -66,6 +70,10 @@ export interface IDataSource extends IEntity {
   gitignored?: boolean;
   /** Pull only: never write back to the remote (default false). */
   read_only?: boolean;
+  /** The dataset this source's records are mirrored into after every sync: a dataset folder of its
+   *  project, a `Dataset.mirror` map, and who the rows are written as (default: the provider). Rows'
+   *  outside-owned fields then write back through this source. */
+  mirror?: { dataset: string; map: { key: string; input: Record<string, unknown> }; by?: string } | null;
   /** Where a file source's files are on this machine (the folder it places them in, else its own tree);
    *  null for a record source or one that names no folder yet. Derived by the backend, never stored. */
   files_root?: string | null;
@@ -156,6 +164,13 @@ export interface DataSourceChoiceSet {
   detail: string;
 }
 
+/** What a write to the outside system answered (`createItem`, `updateItem`, `deleteItem`): `item_id` is the record kept here. */
+export interface DataSourceWriteBack {
+  item_id: string;
+  origin: { kind: string; namespace: string; key: string; url?: string | null };
+  status: 'created' | 'updated' | 'deleted';
+}
+
 // The decorator binds to the declaration IMMEDIATELY below it. Anything slipped in
 // between silently unhooks it — the class stops registering, and the store then has no
 // constructor for `data_source`, so every list of sources renders empty with nothing
@@ -183,6 +198,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
   allowed_senders: string[] = [];
+  open_to_all = false;
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -190,6 +206,9 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  #eng, then press Verify again." Written by the driver's verdict, so the
    *  card never has to guess why a source is in `setup`. */
   setup_detail: string = '';
+  /** The same, as data: what `setup` waits on — a sign-in (`connection`) or the driver's own check (`setup`).
+   *  A surface names it ("Needs GitHub sign-in") without parsing a sentence or knowing a provider. */
+  setup_needs: SetupNeed[] = [];
   verified_at: string | null = null;
   poll_interval_seconds: number = 300;
   window_days: number = 7;
@@ -222,10 +241,12 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
     this.allowed_senders = entity.allowed_senders ?? this.allowed_senders;
+    this.open_to_all = entity.open_to_all ?? this.open_to_all;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;
     this.setup_detail = entity.setup_detail ?? this.setup_detail;
+    this.setup_needs = entity.setup_needs ?? this.setup_needs;
     this.verified_at = entity.verified_at ?? this.verified_at;
     this.poll_interval_seconds = entity.poll_interval_seconds ?? this.poll_interval_seconds;
     this.window_days = entity.window_days ?? this.window_days;
@@ -268,6 +289,13 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  to make them agree (`error_detail` names the files). Not broken: the source keeps polling. */
   get isHeld(): boolean {
     return this.health === 'ok' && this.error_code === 'write_back_held';
+  }
+
+  /** Running, but the dataset it mirrors into is not the mirror of its records: the sweep failed
+   *  (`mirror_failed`) or some records did not fit the row kind (`mirror_misfit`); `error_detail` says
+   *  which. Not broken: the source keeps polling, and a good sweep clears it. */
+  get isMirrorBroken(): boolean {
+    return this.health === 'ok' && (this.error_code === 'mirror_failed' || this.error_code === 'mirror_misfit');
   }
 
   /** Stopped on purpose: nothing is fetched until a person resumes it. */
@@ -428,19 +456,34 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     return this.post('reply', { item_id: itemId, text });
   }
 
+  /** Make one record IN THE OUTSIDE SYSTEM through the source's driver (as `updateItem`). `data` is
+   *  the driver's record shape; the record it answers is kept here at once. 403 a read-only source ·
+   *  400 a driver that cannot, or data it refuses. */
+  async createItem(data: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('create_item', { data });
+  }
+
+  /** Change one record IN THE OUTSIDE SYSTEM — the record `itemId` of this source — through the
+   *  source's driver and the credential it already holds: how a field the app owns goes back to a
+   *  system of record. `changes` are the outside system's own fields; the record the driver answers
+   *  is kept here at once. 404 no such item · 403 a read-only source · 400 a driver that cannot. */
+  async updateItem(itemId: string, changes: Record<string, unknown>): Promise<DataSourceWriteBack> {
+    return this.post('update_item', { item_id: itemId, changes });
+  }
+
+  /** Remove one record FROM THE OUTSIDE SYSTEM, through the driver (as `updateItem`). */
+  async deleteItem(itemId: string): Promise<DataSourceWriteBack> {
+    return this.post('delete_item', { item_id: itemId });
+  }
+
   /** This source's records, newest first. */
   async items(limit = 20): Promise<{ items: Array<Record<string, unknown>> }> {
     return this.post('items', { limit });
   }
 
-  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. */
-  async syncNow(): Promise<{
-    created: number;
-    updated: number;
-    unchanged: number;
-    health: SourceHealth;
-    status: SourceStatus;
-  }> {
+  /** One sync cycle NOW, reported — unlike `pollNow`, which only marks the source due. A source waiting on a
+   *  setup step or paused is not fetched: `ran` is false and `detail` says why. */
+  async syncNow(): Promise<SyncReport> {
     return this.post('sync');
   }
 
@@ -461,6 +504,33 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
   }
 }
 
+/** What one Pull answered (`POST data_source/<id>/sync`): the cycle's counts, or why it did not run. */
+export interface SyncReport {
+  /** False when the source was not runnable (in setup, or paused); `detail` says why. */
+  ran?: boolean;
+  created: number;
+  updated: number;
+  unchanged: number;
+  removed?: number;
+  health: SourceHealth;
+  status: SourceStatus;
+  error_detail?: string | null;
+  detail?: string;
+}
+
+/** One thing a source in `setup` still needs (`SetupNeedSpec`). */
+export interface SetupNeed {
+  /** `connection`: a sign-in it reads through; `setup`: its driver's own check. */
+  kind: 'connection' | 'setup' | string;
+  /** The provider, for a connection (`github`). */
+  name?: string;
+  /** What a person calls it (`GitHub`). */
+  title?: string;
+  /** `missing`, `needs_reauth`, `refused`. */
+  state?: string;
+  detail?: string;
+}
+
 /** What `DataSource.verify` answers — the same shape the stream inbox's attention bar shows in place. */
 export interface VerifyResult {
   status: SourceStatus;
@@ -474,4 +544,6 @@ export interface VerifyResult {
   pending?: string[];
   /** The provider did not answer, so nothing is known about the setup; the status stands. */
   transient?: boolean;
+  /** The connection layer's answer as data — the sign-in it needs. */
+  needs?: SetupNeed[];
 }

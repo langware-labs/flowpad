@@ -128,7 +128,7 @@ function detectPolicyBlockInLog(text, { launcher = false } = {}) {
     for (let j = i - 1; j >= 0 && i - j < 400; j--) {
       const frame = lines[j].match(/^\s*File "([^"]+)"/);
       if (frame && !file) file = frame[1];
-      if (/^Traceback \(most recent call last\)/.test(lines[j])) { start = j; break; }
+      if (/^\s*Traceback \(most recent call last\)/.test(lines[j])) { start = j; break; }   // indented when uv nests a build's stderr
       if (!file) start = j;
     }
     return {
@@ -139,6 +139,23 @@ function detectPolicyBlockInLog(text, { launcher = false } = {}) {
     };
   }
   return null;
+}
+
+/**
+ * The application-control block in a FAILED `uv tool install`, or null.
+ *
+ * The block does not always wait for the backend: uv runs the interpreter during the install itself (a
+ * dependency without a wheel is built from source: setuptools imports `unicodedata`; `--compile-bytecode`
+ * runs python too), and an unsigned stdlib module of the uv-managed CPython is refused right there
+ * (2026-10-12, Smart App Control: `ImportError: DLL load failed while importing unicodedata`). The install
+ * output is the evidence then, in the launcher's sense: every wording counts (uv's own `Failed to spawn …
+ * os error 4551` included). `path` says where the evidence came from, for the panel.
+ */
+function policyBlockFromInstallError(err) {
+  if (!err) return null;
+  const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
+  const match = detectPolicyBlockInLog(text, { launcher: true });
+  return match ? { ...match, path: 'the engine install (uv tool install output)' } : null;
 }
 
 // A server log older than this at probe creation belongs to a previous launch: its content is
@@ -348,6 +365,9 @@ async function performRuntimeRepair({
     //    the tool venv. The working installation is untouched until this passes — the failure
     //    that started all this (uvicorn → multiprocessing.connection → _multiprocessing) is
     //    reproduced here, against the real packages, before anything is replaced.
+    //    (Kept on a first install too: measured on the VM, skipping it saved nothing — the scratch install fills
+    //    uv's cache and the real install then runs from it — and it is the one check that the engine loads on the
+    //    signed runtime before anything is replaced.)
     step('stage', 'checking the FlowPad engine imports on the repaired runtime (staging, the current install is untouched)');
     try {
       await io.stageEngine(python);
@@ -416,7 +436,7 @@ function describeRuntimeBlock(match, { repairable, priorFailure }) {
     lines.push(`"${match.module}" belongs to a Python package, not to the interpreter, so a runtime repair cannot help. ` +
       'Smart App Control blocks files it does not know yet (this usually happens right after a package release) ' +
       'and clears on its own once the file gains reputation, typically within a few days. Try again later, or if this ' +
-      'computer is managed by an organization, ask IT to allow the file; use “Share with us” to send the logs.');
+      'computer is managed by an organization, ask IT to allow the file; use “Send Report” to send the logs.');
   } else if (repairable) {
     lines.push('FlowPad can attempt to repair its Python runtime without changing Windows security settings: ' +
       'it downloads the official CPython build published by the Python Software Foundation, verifies every file\'s signature, ' +
@@ -424,7 +444,7 @@ function describeRuntimeBlock(match, { repairable, priorFailure }) {
   } else if (priorFailure) {
     lines.push(`A repair was already attempted for this version (${priorFailure.at}) and ${priorFailure.result === 'ok' ? 'succeeded, but the engine is blocked again' : `failed: ${priorFailure.detail || 'see the logs'}`}. ` +
       'If this computer is managed by an organization, its policy may need IT approval before FlowPad can run; ' +
-      'use “Share with us” to send the logs.');
+      'use “Send Report” to send the logs.');
   }
   lines.push('', 'Blocked:', `  ${match.line}`);
   if (match.file) lines.push(`  in ${match.file}`);
@@ -439,6 +459,7 @@ module.exports = {
   isInterpreterModule,
   unwrapRichLines,
   detectPolicyBlockInLog,
+  policyBlockFromInstallError,
   createPolicyBlockProbe,
   runtimeStatePath,
   readRuntimeState,

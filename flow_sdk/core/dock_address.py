@@ -612,6 +612,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.SCHEMA_TREE: _m(
         _OPT,
         scope_keyed=True,
+        pointer_form="<kind>[/<kind>…]",
         label="Schema",
         aliases=("schema tree", "data schema", "schemas", "data model"),
     ),

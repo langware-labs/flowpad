@@ -264,7 +264,7 @@ def test_asset_hash_tracks_inner_file_edits(tmp_path: Path) -> None:
     )
     before = dataset_asset_hash(FSRef(csv_ds))
     import os
-    os.utime(csv_ds / "data.csv", (before + 100, before + 100))
+    os.utime(csv_ds / "data.csv", ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(csv_ds)) > before
 
     io_ds = _seed_io_dataset(tmp_path, "io", examples={"0001": {"input": "a", "expected": "b"}})
@@ -583,10 +583,10 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
         tmp_path, "dje",
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder"},
-        manifest_data={"owner": "eran"},
+        manifest_data={"owner": "dan"},
     )
     rec = _extract(FSRef(ds))[0]
-    assert rec.meta_dict()["data"]["owner"] == "eran"  # free dataset data section
+    assert rec.meta_dict()["data"]["owner"] == "dan"  # free dataset data section
 
 
 # ── determinism / counts / hash ──
@@ -615,7 +615,7 @@ def test_asset_hash_tracks_nested_new_forms(tmp_path: Path) -> None:
     )
     before = dataset_asset_hash(FSRef(ds))
     nested = ds / "examples" / "0001" / "output-2" / "a.txt"
-    os.utime(nested, (before + 100, before + 100))
+    os.utime(nested, ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert dataset_asset_hash(FSRef(ds)) > before
 
 
@@ -719,11 +719,11 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
         tmp_path, "djts",
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder", "title": "T"},
-        manifest_data={"owner": "eran", "team": "ml"},
+        manifest_data={"owner": "dan", "team": "ml"},
     )
     meta = _extract(FSRef(ds))[0].meta_dict()
     assert meta["data_layout"] == "io_folder"          # known field from metadata section
-    assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
+    assert meta["data"] == {"owner": "dan", "team": "ml"}  # free dataset data section
 
 
 def test_dataset_spec_is_parsed_and_compacted(tmp_path: Path) -> None:

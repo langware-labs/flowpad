@@ -36,7 +36,7 @@ from ..compute_provider import (
     ListDirItem,
     get_remote_paths_and_data_for_files,
 )
-from ..env_prefix import build_env_prefix
+from ..env_prefix import command_environment
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,11 @@ _INHERITED_NO_COLOR_ENV_VARS = (
     # inherit the parent automation contract.
     "CODEX_CI",
 )
+
+# The terminal the SERVER was launched from. A Flowpad PTY is its own xterm, not
+# that app: inherited, ``TERM_PROGRAM=Apple_Terminal`` makes zsh load Apple's
+# session save, whose exit chatter ("Saving session...") then lands in output.
+_INHERITED_HOST_TERMINAL_ENV_VARS = ("TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID")
 
 _FALSEY_COLOR_ENV_VARS = (
     "CLICOLOR",
@@ -98,7 +103,7 @@ def _build_interactive_pty_env(
 
     env = without_inherited_claude_session(os.environ)
 
-    for key in _INHERITED_NO_COLOR_ENV_VARS:
+    for key in (*_INHERITED_NO_COLOR_ENV_VARS, *_INHERITED_HOST_TERMINAL_ENV_VARS):
         env.pop(key, None)
 
     for key in _FALSEY_COLOR_ENV_VARS:
@@ -714,15 +719,10 @@ class LocalComputeProvider(ComputeProvider):
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
 
-        # Shared with the E2B provider so the two can't drift again — and so
-        # the escaping has exactly one place to be tested. The values join the
-        # string here, after the log line above.
-        env_prefix = build_env_prefix(env)
-
         try:
-            full_command = env_prefix + command
             process = await asyncio.create_subprocess_shell(
-                full_command,
+                command,
+                env={**os.environ, **command_environment(env)},
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._node_dirs.get(provider_node_id, self._default_working_dir),

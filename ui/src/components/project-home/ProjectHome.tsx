@@ -8,7 +8,6 @@ import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectClou
 import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
-import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import { launchWizard } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
@@ -16,7 +15,12 @@ import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { ProjectLanguageCard } from './ProjectLanguageCard';
+import { ProjectDataSources } from './ProjectDataSources';
 import { ProjectDependenciesCard } from './ProjectDependenciesCard';
+import { QuickCreateModal } from '@src/components/quick-create/QuickCreateModal';
+import { Button } from '@src/components/ui/button';
+import { Plus } from 'lucide-react';
+import { useProject } from '@sdk/react/hooks';
 import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
@@ -35,7 +39,7 @@ const NEW_SESSION_TAG = 'NewSession';
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
   spawnProjectId?: string | null;
-  /** Render only the "Create" body with no tab bar — the terminal empty state,
+  /** Render only the Overview body with no tab bar — the terminal empty state,
    *  whose whole point is to start something. The landing shows both tabs. */
   createOnly?: boolean;
   /** Hub-owned body rendered inside the shared Project Home shell. When set,
@@ -43,67 +47,79 @@ interface ProjectHomeProps {
   cloudContent?: React.ReactNode;
 }
 
-/**
- * SessionTiles — the single worker-launch affordance on the project home: the
- * QuickCreatePanel `session` group (the big vendor tiles — Claude / Codex /
- * Copilot in their brand colors) plus a Terminal tile appended via
- * `extraSessionTiles`. Terminal's creation path (and its modals) live on the
- * terminal strip controller, which this host encapsulates so the controller +
- * modals run once, here — the vendor tiles launch through the panel's own
- * `openNewClaudeProcess` path and need none of it.
- */
-const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: PanelHandlers }> = ({
-  spawnProjectId,
-  panelProps,
-}) => {
+/** Launchers share the established terminal/Vibe opener controller. */
+const SessionTiles: React.FC<{ project: Project | null; panelProps: PanelHandlers }> = ({ project, panelProps }) => {
   const { t } = useLingui();
-  const { modals, isTabCreationPending, openers } = useTerminalStripController({ spawnProjectId });
-
-  const terminalTile = useMemo(() => {
-    const opener = openers.find((o) => o.id === 'terminal');
+  const { modals, isTabCreationPending, openers } = useTerminalStripController({ spawnProjectId: project?.id });
+  const tileFor = (id: string, label: string, wikiword: string) => {
+    const opener = openers.find((o) => o.id === id);
     if (!opener) return [];
     return [
       {
-        key: 'terminal',
+        key: id,
         Icon: opener.Icon,
-        label: t`Terminal`,
-        wikiword: 'Terminal sessions',
+        label,
+        wikiword,
         disabled: isTabCreationPending,
         onClick: () => opener.onActivate(),
       },
     ];
-  }, [openers, isTabCreationPending, t]);
-
+  };
   return (
     <div data-testid="project-home-start-session" {...tagAttrs(NEW_SESSION_TAG, 'button')}>
-      <QuickCreatePanel {...panelProps} sections={['chat']} extraSessionTiles={terminalTile} />
+      <QuickCreatePanel
+        {...panelProps}
+        project={project}
+        sections={['chat']}
+        chatTitle={<Trans>Launch</Trans>}
+        leadingSessionTiles={tileFor('vibe', t`Vibe`, 'Vibe')}
+        extraSessionTiles={tileFor('terminal', t`Terminal`, 'Terminal sessions')}
+      />
       {modals}
     </div>
   );
 };
 
-/** The "Create" body — the session tiles and the New asset / New folder tiles.
- *  Its own component so the tabbed landing and the terminal empty state share
- *  one definition. Favorites are NOT repeated here: the desktop (rail flyout /
- *  full desktop page) already owns them, and the "+" tile they carried
- *  duplicated the very asset grid below. */
-const CreateTab: React.FC<{
-  projectId: string | null;
-  spawnProjectId?: string | null;
-  panelProps: PanelHandlers;
-  /** The project's dependencies, above the "Add dependency" tiles — only for
-   *  the active project, whose entity the card reads and writes. */
-  project?: Project | null;
-}> = ({ projectId, spawnProjectId, panelProps, project }) => (
-  <div className="flex flex-col gap-6">
-    {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
-    {/* The project's own agents, right under the vendor session tiles: both
-        answer "start something", and an agent IS a session starter. */}
-    <ProjectAgentsStrip projectId={projectId} />
-    {project && <ProjectDependenciesCard project={project} />}
-    <QuickCreatePanel {...panelProps} sections={['build', 'write', 'connect', 'folder', 'helpdesk']} />
-  </div>
-);
+const Overview: React.FC<{ project: Project | null; panelProps: PanelHandlers; dependencies: boolean }> = ({
+  project,
+  panelProps,
+  dependencies,
+}) => {
+  const [newOpen, setNewOpen] = useState(false);
+  return (
+    <div className="flex flex-col gap-6" data-testid="project-home-overview">
+      {project && <SessionTiles project={project} panelProps={panelProps} />}
+      <section>
+        <h3 className="mb-2 text-sm font-semibold">
+          <Trans>New</Trans>
+        </h3>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label={t`Create new`}
+          data-testid="project-home-new"
+          disabled={!project}
+          onClick={() => setNewOpen(true)}
+        >
+          <Plus className="size-5" />
+        </Button>
+      </section>
+      {project && <ProjectAgentsStrip projectId={project.id} presentation="browse" />}
+      {/* The project's flow.json dependencies — not on the terminal empty state. */}
+      {project && dependencies && <ProjectDependenciesCard project={project} />}
+      {project && <ProjectDataSources projectId={project.id} />}
+      <QuickCreateModal
+        open={newOpen}
+        onOpenChange={setNewOpen}
+        panelProps={panelProps}
+        project={project}
+        sections={['build', 'write', 'connect', 'project']}
+        showAddExisting
+        allUserTypes
+      />
+    </div>
+  );
+};
 
 /** Which tab hosts which tag word — see the `?highlight=` effect below.
  *  Add an entry whenever a card on a non-default tab takes `tagAttrs`. */
@@ -118,8 +134,7 @@ const TAB_FOR_TAG: Record<string, string> = {
  * unambiguously "the project itself" rather than content inside it.
  *
  * Organized into two tabs:
- *   - **Create**    — the session tiles (workers + terminal) and the New asset /
- *                     New folder tiles.
+ *   - **Overview**  — Launch, New, existing agents and data sources.
  *   - **Customize** — home title/background + the vibe agents layered on.
  *
  * A third, **Secrets**, was retired: it was one of five surfaces over the same
@@ -134,9 +149,10 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
   const shareRoles = useShareRoles();
 
-  // The dialogs the create tiles defer to. Hosted here rather than in the panel
+  // The dialogs the New picker defers to. Hosted here rather than in the panel
   // so they outlive whatever the tile click dismisses.
-  const { panelProps, dialogs } = useQuickCreatePick();
+  const { project: resolvedProject } = useProject(projectTypeId);
+  const { panelProps, dialogs } = useQuickCreatePick(resolvedProject ?? null);
 
   // Customize cards are project-entity bound — only when the resolved
   // project is the active one (they read/write live Project state).
@@ -209,14 +225,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
     return Promise.resolve();
   }, [project]);
 
-  const createTab = (
-    <CreateTab
-      projectId={projectId}
-      spawnProjectId={spawnProjectId}
-      panelProps={panelProps}
-      project={createOnly ? null : project}
-    />
-  );
+  const overview = <Overview project={resolvedProject ?? null} panelProps={panelProps} dependencies={!createOnly} />;
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
   // mount, so the generic TagHighlightObserver would find nothing — open the
@@ -235,13 +244,15 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           separate "Members" caption was one label too many. */}
       {projectTypeId && (
         <div
-          className="flex items-center justify-between border-b border-border/50 px-4 py-2"
+          className="flex flex-wrap items-center justify-between gap-2 border-b border-border/50 px-4 py-2"
           data-testid="project-home-members"
         >
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 [&>*]:shrink-0">
             {cloudMode ? (
               <>
-                <span className="truncate text-sm font-medium">{project?.displayName ?? project?.name ?? 'Project'}</span>
+                <span className="truncate text-sm font-medium">
+                  {project?.displayName ?? project?.name ?? 'Project'}
+                </span>
                 <ProjectPublishedButton projectId={projectTypeId.id} />
               </>
             ) : (
@@ -251,7 +262,6 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 {project && <ProjectCloudLinkButton project={project} />}
                 {project && <ProjectGitShareToggle project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
-                <ProjectUploadMessageButton projectId={projectTypeId.id} />
               </>
             )}
           </div>
@@ -304,19 +314,19 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           {cloudMode ? (
             cloudContent
           ) : createOnly ? (
-            createTab
+            overview
           ) : (
             <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
               <TabsList>
                 <TabsTrigger value="create" data-testid="project-home-tab-create">
-                  <Trans>Create</Trans>
+                  <Trans>Overview</Trans>
                 </TabsTrigger>
                 <TabsTrigger value="customize" data-testid="project-home-tab-customize">
                   <Trans>Customize</Trans>
                 </TabsTrigger>
               </TabsList>
 
-              <TabsContent value="create">{createTab}</TabsContent>
+              <TabsContent value="create">{overview}</TabsContent>
 
               <TabsContent value="customize" className="flex flex-col gap-6">
                 {project && (

@@ -5,7 +5,7 @@
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type DataSource, TypeId } from '@sdk';
+import { DataDriver, type DataSource, TypeId } from '@sdk';
 import { LOCAL_OWNER as LOCAL, fakeSource } from './fake-source';
 
 const fake = (name: string, status = 'active', provider = 'slack', fields: Parameters<typeof fakeSource>[2] = {}) =>
@@ -15,10 +15,15 @@ const specFor = () => ({ sends: true, icon_name: 'Slack' }) as never;
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openTab: vi.fn() } }),
 }));
-vi.mock('@src/components/data-sources/DataSourceDialog', () => ({ DataSourceDialog: () => null }));
+vi.mock('@src/components/data-sources/DataSourceDialog', () => ({
+  DataSourceDialog: ({ initial }: { initial?: { name?: string } }) => (
+    <div data-testid="add-dialog" data-initial={initial?.name ?? ''} />
+  ),
+}));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
 import { AttachedChannelsBar, groupChannels } from '@src/components/stream-inbox-view/AttachedChannelsBar';
+import { channelOffers } from '@src/components/data-sources/use-source-specs';
 import { useSourceSetupStore } from '@src/components/setup-wizard/source-setup-store';
 
 function mount(rows: DataSource[], selected = new Set<string>()) {
@@ -88,10 +93,11 @@ describe('AttachedChannelsBar', () => {
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
 
-  it('while filtering, the controls give way to ×, which shows everything again', () => {
+  it('while filtering, the + turns into × in its place — nothing else on the line moves — and × shows everything again', () => {
     const onSelectedChange = mount([fake('a', 'active', 'gmail'), fake('b')], new Set(['gmail|gmail']));
     expect(screen.queryByTestId('attached-channels-add')).toBeNull();
-    expect(screen.queryByTestId('attached-channels-details')).toBeNull();
+    // The rest of the line stays, so the marks a person points at do not shift.
+    expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
     const marks = screen.getAllByTestId('attached-channel');
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
     fireEvent.click(screen.getByTestId('attached-channels-clear'));
@@ -117,7 +123,9 @@ describe('AttachedChannelsBar', () => {
     const owed = fake('s', 'setup', 'telegram', { setup_detail: 'Pair the phone.' });
     const held = fake('h', 'active', 'gmail', { health: 'ok', error_code: 'write_back_held', error_detail: 'a.md' });
     const verify = vi.spyOn(owed, 'verify').mockResolvedValue({ status: 'setup', ready: false, layer: 'setup', detail: '' });
-    const pollNow = vi.spyOn(held, 'pollNow').mockResolvedValue({ status: 'active', health: 'ok', detail: 'queued' });
+    const syncNow = vi
+      .spyOn(held, 'syncNow')
+      .mockResolvedValue({ ran: true, created: 0, updated: 0, unchanged: 1, health: 'ok', status: 'active' });
     const heldVerify = vi.spyOn(held, 'verify');
     mount([held, owed]);
     fireEvent.click(screen.getByTestId('attached-channels-details'));
@@ -125,7 +133,7 @@ describe('AttachedChannelsBar', () => {
     expect([heldReason.title, owedReason.title]).toEqual(['Pull: a.md', 'Setup: Pair the phone.']);
     fireEvent.click(heldReason);
     fireEvent.click(owedReason);
-    expect([pollNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 0]);
+    expect([syncNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 0]);
     expect(useSourceSetupStore.getState()).toMatchObject({ open: true, payload: { source: owed } });
   });
 
@@ -134,5 +142,68 @@ describe('AttachedChannelsBar', () => {
     mount([phone, fake('s')]);
     fireEvent.click(screen.getByTestId('attached-channels-details'));
     expect(screen.getAllByTestId('attached-channel-account').map((e) => e.textContent)).toEqual(['972500000000']);
+  });
+});
+
+/** Channels still to connect: drawn by default from the drivers that declare `featured`. */
+describe('channel offers', () => {
+  afterEach(cleanup);
+
+  const driver = (name: string, fields: Partial<DataDriver> = {}) =>
+    new DataDriver({ name, title: name, icon_name: 'Mail', sends: true, ...fields } as never);
+  const specs = [
+    driver('flow_chat', { group: 'Chat', group_order: 0, group_icon_name: 'Slack', featured: true }),
+    driver('own_chat', { group: 'Chat', group_order: 1 }),
+    driver('mailbox', { title: 'Mailbox', featured: true }),
+    driver('feed', { featured: true, sends: false }),
+    driver('plain'),
+    driver('agent_mail', { featured: true, provisioned: true }),
+  ];
+
+  it('offers each featured message channel once — a group as one choice, opened on its first member', () => {
+    expect(channelOffers(specs, [], false).map((o) => [o.key, o.label, o.iconName, o.spec.name])).toEqual([
+      ['Chat', 'Chat', 'Slack', 'flow_chat'],
+      ['mailbox', 'Mailbox', 'Mail', 'mailbox'],
+    ]);
+  });
+
+  it('offers a provisioned channel to an agent only', () => {
+    expect(channelOffers(specs, [], true).map((o) => o.key)).toContain('agent_mail');
+  });
+
+  it('folds once the owner has a source of any featured channel, whatever its status', () => {
+    expect(channelOffers(specs, [fake('a', 'disabled', 'own_chat')], false)).toEqual([]);
+    // A channel that is not featured (the tasks channel) does not count as connected.
+    expect(channelOffers(specs, [fake('a', 'active', 'plain')], false)).toHaveLength(2);
+  });
+
+  const mountOffers = (selected = new Set<string>()) =>
+    render(
+      <AttachedChannelsBar
+        owner={new TypeId(LOCAL)}
+        rows={[fake('a', 'active', 'plain')]}
+        specFor={specFor}
+        offers={channelOffers(specs, [], false)}
+        selected={selected}
+        onSelectedChange={vi.fn()}
+      />,
+    );
+
+  it('draws an offer beside the attached marks, and pressing it opens the add dialog on that channel', () => {
+    mountOffers();
+    expect(screen.getAllByTestId('attached-channel')).toHaveLength(1);
+    const offers = screen.getAllByTestId('channel-offer');
+    expect(offers.map((e) => [e.dataset.channel, e.getAttribute('aria-label')])).toEqual([
+      ['Chat', 'Connect Chat'],
+      ['mailbox', 'Connect Mailbox'],
+    ]);
+    expect(screen.queryByTestId('add-dialog')).toBeNull();
+    fireEvent.click(offers[0]);
+    expect(screen.getByTestId('add-dialog').dataset.initial).toBe('flow_chat');
+  });
+
+  it('keeps the offers while the list is filtered — the line keeps its width', () => {
+    mountOffers(new Set(['plain|plain']));
+    expect(screen.queryAllByTestId('channel-offer').length).toBeGreaterThan(0);
   });
 });

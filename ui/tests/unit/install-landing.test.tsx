@@ -100,7 +100,7 @@ vi.mock('@src/components/git/CreatePrivateRepoForm', async () => {
 import InstallLanding from '@src/pages/entry/InstallLanding';
 
 const INSTALL_QUERY =
-  '?content_repo=https%3A%2F%2Fgithub.com%2Fcloudnsite%2Fcustomer-support.git&content_branch=main&name=Globex+agents';
+  '?content_repo=https%3A%2F%2Fgithub.com%2Fglobex%2Fcustomer-support.git&content_branch=main&name=Globex+agents';
 
 describe('/install landing', () => {
   beforeEach(() => {

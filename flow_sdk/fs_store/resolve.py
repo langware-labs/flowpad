@@ -89,6 +89,7 @@ async def resolve_asset(
     owner_id: str | None = None,
     strict: bool = False,
     known_unowned: bool = False,
+    placed_only: bool = False,
 ) -> Resolved:
     """The ``(type, id, layout)`` of the asset at ``path``.
 
@@ -100,14 +101,16 @@ async def resolve_asset(
     on disk, else ``NotAnAsset``. ``strict`` makes a failed owner lookup raise instead of
     reading as "unowned" (pass it whenever a miss leads to a write);
     ``known_unowned`` says the caller has ALREADY proved no row owns this
-    asset, so the lookup is skipped rather than repeated.
+    asset, so the lookup is skipped rather than repeated. ``placed_only`` is for a
+    caller that MINTS on the answer: the registry then classifies by name and
+    declared mount only, never by extension alone (``SchemaRegistry.type_for``).
     """
     p = Path(path).expanduser()
     if not p.is_absolute():
         p = Path("/") / p
     p = p.resolve()
     if type_name is None:
-        type_name = SchemaRegistry.type_for(p)
+        type_name = SchemaRegistry.type_for(p, placed_only=placed_only)
     info = SchemaRegistry.get(type_name) if type_name else None
     if info is None:
         raise NotAnAsset(f"{p} is not an asset")

@@ -226,10 +226,33 @@ async def finish_io(process: "AgenticProcess", answer: "PromptResult", output_sp
         })
     # Only a valid declared output is a product of the run; a failed one is evidence, kept in ``files``.
     await register_outputs(process, files)
+    await keep_value(process, value)
     return answer.model_copy(update={"value": value})
+
+
+#: Where a run's declared output is kept as one value file, on the process row (``context_data``).
+OUTPUT_VALUE_KEY = "output_value"
+
+
+async def keep_value(process: "AgenticProcess", value: Any) -> None:
+    """The run's value as ``<output>/<kind>.value.json`` — the file the value viewer opens, by kind, with the
+    same viewers a dataset row gets — and its path on the process row, so a surface can offer it."""
+    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+    from flow_sdk.values import tagged_json  # noqa: PLC0415
+
+    kind = spec_tag(value) or type(value).__name__
+    path = output_dir(process) / f"{kind.rsplit('.', 1)[-1]}.value.json"
+    try:
+        path.write_text(tagged_json(value, kind), encoding="utf-8")
+    except Exception as error:  # noqa: BLE001 — the value is already the answer; the file is a courtesy
+        logger.warning("keep_value: could not keep %s: %s", path, error)
+        return
+    if (process.context_data or {}).get(OUTPUT_VALUE_KEY) != str(path):
+        process.context_data = {**(process.context_data or {}), OUTPUT_VALUE_KEY: str(path)}
+        await process.save()
 
 
 __all__ = [
     "check_declared_input", "declared_output_spec", "finish_io", "input_dir", "output_dir", "prepare_io",
-    "register_outputs", "resolve_output_spec", "take_turn",
+    "keep_value", "register_outputs", "resolve_output_spec", "take_turn",
 ]

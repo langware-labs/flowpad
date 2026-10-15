@@ -27,14 +27,14 @@ async def test_set_hook_refuses_an_unsupported_event_with_the_reason(bootstrappe
 
     response = await client.post(
         f"/api/v1/graph/agentic_process/{process.id}/set-hook",
-        json={"event": HookEventType.PRE_TOOL_USE.value},
+        json={"event": HookEventType.POST_TOOL_USE.value},
     )
 
     assert response.status_code in (200, 501), response.text
     body = response.json()
     assert body["status"] != "SUCCESS", "an unsupported cell must not report success"
     assert "does not support" in body["message"]
-    assert HookEventType.PRE_TOOL_USE.value in body["message"]
+    assert HookEventType.POST_TOOL_USE.value in body["message"]
 
     # And nothing was persisted — the refusal happens BEFORE mutation.
     reloaded = await AgenticProcess.get_by_id(process.id)

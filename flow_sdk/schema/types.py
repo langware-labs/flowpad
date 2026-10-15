@@ -114,6 +114,8 @@ class EntityType(StrEnum):
     # codex_project=True provenance flag. Kept for backward compatibility.
     CODEX_PROJECT = "codex_project"
     COPILOT_SESSION = "copilot_session"
+    OPENCODE_SESSION = "opencode_session"
+    DEEPAGENTS_SESSION = "deepagents_session"
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
     TRIGGER_LOG = "trigger_log"
@@ -128,7 +130,7 @@ class EntityType(StrEnum):
     PROMPT = "prompt"
     PROMPT_COMPLETION = "prompt_completion"
     CONVERSATION = "conversation"
-    WHITEBOARD = "whiteboard"
+    CHART = "chart"
     AGENT_TRACE = "agent_trace"
     DYNAMIC_WORKFLOW = "dynamic_workflow"
     # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,

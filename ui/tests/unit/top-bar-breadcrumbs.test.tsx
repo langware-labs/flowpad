@@ -163,22 +163,22 @@ describe('useEntityBreadcrumbs', () => {
     ctx.project = null; // a person-to-person chat has no project
     vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
       targetTypeId: SESSION,
-      target: { displayName: 'Live session · Nir', conversation_id: CONV_ID },
+      target: { displayName: 'Live session · Carol', conversation_id: CONV_ID },
       projectId: null,
     } as never);
     vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
     vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
-      String(typeId) === `conversation-${CONV_ID}` ? ({ displayName: 'Nir Levy, Eran' } as never) : (null as never),
+      String(typeId) === `conversation-${CONV_ID}` ? ({ displayName: 'Carol Lane, Alice' } as never) : (null as never),
     );
 
     const { result } = renderHook(() =>
       useEntityBreadcrumbs({ ...dock('live', SESSION), viewType: 'live_session' } as never),
     );
 
-    await waitFor(() => expect(result.current.crumbs.map((c) => c.label)).toContain('Nir Levy, Eran'));
+    await waitFor(() => expect(result.current.crumbs.map((c) => c.label)).toContain('Carol Lane, Alice'));
     const labels = result.current.crumbs.map((c) => c.label);
-    expect(labels.indexOf('Nir Levy, Eran')).toBeLessThan(labels.length - 1); // before the session
-    const conv = result.current.crumbs.find((c) => c.label === 'Nir Levy, Eran')!;
+    expect(labels.indexOf('Carol Lane, Alice')).toBeLessThan(labels.length - 1); // before the session
+    const conv = result.current.crumbs.find((c) => c.label === 'Carol Lane, Alice')!;
     expect(conv.kind).toBe('ancestor');
     expect(conv.pointer?.toUrl()).toContain(`conversation/${CONV_ID}`);
   });
@@ -475,7 +475,7 @@ describe('useEntityBreadcrumbs — whose place this is', () => {
 
   it("reads the user's Stream Inbox as theirs, never a project's", () => {
     vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue(nothing);
-    ctx.localUser = { id: 'u1', name: 'Eran' };
+    ctx.localUser = { id: 'u1', name: 'Alice' };
     const streamInbox = {
       pointer: '',
       tabHash: 'stream_inbox',
@@ -487,7 +487,7 @@ describe('useEntityBreadcrumbs — whose place this is', () => {
     const { result } = renderHook(() => useEntityBreadcrumbs(streamInbox));
 
     expect(result.current.crumbs.map((c) => [c.label, c.kind])).toEqual([
-      ['Eran', 'ancestor'],
+      ['Alice', 'ancestor'],
       ['Stream Inbox', 'current'],
     ]);
   });

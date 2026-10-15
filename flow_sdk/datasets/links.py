@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, Iterable, Iterator, Optional
 
 from flow_sdk.schema.data_spec.value_ref import parse_ref
 
@@ -59,13 +59,47 @@ def _manifest_spec(folder: Path) -> Any:
     return ((doc.get("metadata") or {}) if isinstance(doc, dict) else {}).get("spec")
 
 
-def datasets_for_kind(kind: str, owner: Path | str) -> list[Path]:
-    """The dataset folders under ``<owner>/agentic-assets/dataset/`` whose rows are ``kind``."""
+def datasets_by_kind(owner: Path | str, cache: Optional[dict] = None) -> dict[str, list[Path]]:
+    """``{row kind: [dataset folders]}`` under ``<owner>/agentic-assets/dataset/`` -- one listing, read
+    once per ``cache``."""
+    slot = ("datasets-by-kind", str(owner))
+    if cache is not None and slot in cache:
+        return cache[slot]
+    found: dict[str, list[Path]] = {}
     root = Path(owner) / "agentic-assets" / DATASET_FAMILY
-    if not root.is_dir():
-        return []
-    return [folder for folder in sorted(root.iterdir())
-            if (folder / MANIFEST).is_file() and row_kind(_manifest_spec(folder)) == kind]
+    if root.is_dir():
+        for folder in sorted(root.iterdir()):
+            if (folder / MANIFEST).is_file():
+                found.setdefault(row_kind(_manifest_spec(folder)), []).append(folder)
+    if cache is not None:
+        cache[slot] = found
+    return found
+
+
+def datasets_for_kind(kind: str, owner: Path | str, cache: Optional[dict] = None) -> list[Path]:
+    """The dataset folders under ``<owner>/agentic-assets/dataset/`` whose rows are ``kind``."""
+    return datasets_by_kind(owner, cache).get(kind, [])
+
+
+def is_row_kind(kind: str, owner: Path | str, cache: Optional[dict] = None) -> bool:
+    """Whether a dataset beside ``owner`` keeps rows of ``kind``. A field naming such a kind LINKS to
+    one of its rows; a field naming any other kind holds the value in the row itself."""
+    return bool(kind) and bool(datasets_for_kind(kind, owner, cache))
+
+
+def datasets_holding(kind: str, candidates: Iterable[Any], cache: Optional[dict] = None) -> list:
+    """The datasets among ``candidates`` (index rows) whose folder still holds rows of ``kind``, once
+    per folder. The index proposes, the disk decides: a stale row never differs from the Python
+    lookup (``datasets_for_kind``)."""
+    found, seen = [], set()
+    for d in candidates:
+        folder = Path(d.asset_ref).resolve() if d.asset_ref else None
+        if folder is None or not folder.is_dir() or folder in seen:
+            continue
+        if folder in {f.resolve() for f in datasets_for_kind(kind, owner_of(folder), cache)}:
+            seen.add(folder)
+            found.append(d)
+    return found
 
 
 def _forms(value: Any) -> dict:
@@ -136,7 +170,7 @@ def _row_index(kind: str, owner: Path | str, cache: dict) -> Optional[dict[str, 
     holds ``kind``."""
     slot = ("rows-of-kind", kind)
     if slot not in cache:
-        folders = datasets_for_kind(kind, owner)
+        folders = datasets_for_kind(kind, owner, cache)
         cache[slot] = {rid: (folder, key) for folder in folders for rid, key in _row_ids(folder).items()} if folders else None
     return cache[slot]
 
@@ -144,16 +178,44 @@ def _row_index(kind: str, owner: Path | str, cache: dict) -> Optional[dict[str, 
 def _inline_detail(where: str, tag: str, owner: Path | str, cache: dict) -> Optional[dict]:
     # A row kind (one a dataset beside holds) is LINKED, never copied in: an inline copy escapes the
     # link checks and the delete protection, and goes stale the moment the row changes.
-    if tag and _row_index(tag, owner, cache) is not None:
+    if is_row_kind(tag, owner, cache):
         return {"path": where, "code": "inline_row",
                 "message": f"a {tag} row written inline -- link to the row instead (its ref, <kind>.id.<uuid>)"}
     return None
+
+
+def record_type_of(kind: str, cache: Optional[dict] = None) -> Optional[str]:
+    """The Flowpad record type whose document a kind is (``ingest.source_item`` -> ``source_item``),
+    or None for a kind that is not a record's. A reference of such a kind names a RECORD -- kept by
+    the instance, not in a dataset beside this one."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
+
+    slot = ("record-types",)
+    known = (cache or {}).get(slot)
+    if known is None:
+        known = {}
+        for name in SchemaRegistry.get_all_types():
+            info = SchemaRegistry.get(name)
+            spec = getattr(info, "asset_spec", None)
+            if isinstance(spec, type):
+                for kind_name in (getattr(spec, "spec_kind", ""), spec_tag(spec)):   # the kind as declared, and as registered
+                    if kind_name:
+                        known.setdefault(kind_name, name)
+        if cache is not None:
+            cache[slot] = known
+    return known.get(kind)
 
 
 def _ref_detail(where: str, ref: str, owner: Path | str, stores: tuple, cache: dict) -> Optional[dict]:
     from flow_sdk.values import resolve_ref  # noqa: PLC0415
 
     kind, rid = parse_ref(ref)  # type: ignore[misc]
+    if record_type_of(kind, cache) is not None:
+        # a link to a RECORD (an ingested email: `ingest.source_item.id.<id>`): it lives in the
+        # instance's store, which a write from disk cannot see -- so it is not judged here (and never
+        # against a dataset beside that happens to hold promoted items of the same kind)
+        return None
     rows = _row_index(kind, owner, cache)
     if rows is not None:
         return None if rid in rows else {"path": where, "code": "dangling_ref", "message": f"no {kind} row {rid}"}
@@ -237,24 +299,24 @@ def _kinds_within(forms: list) -> Optional[set[str]]:
     """Every kind a FIELD of these forms names, all the way down -- the kinds a value of these forms
     can hold a reference to. A slot's own kind is what the row IS, not a link (unless one of its
     fields names it again). None when a kind is not registered (its fields are unknown)."""
-    from flow_sdk.schema.data_spec.declared import _refs  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.declared import kinds_named  # noqa: PLC0415
     from flow_sdk.schema.data_spec.spec import DataSpec  # noqa: PLC0415
 
     def fields_of(kind: str) -> Optional[list[str]]:
         shape = DataSpec.parse(kind)
-        return None if shape is Any else _refs(getattr(shape, "__authoring__", None) or {})
+        return None if shape is Any else kinds_named(getattr(shape, "__authoring__", None) or {})
 
     held: set[str] = set()
     todo: list[str] = []
     for form in forms:
         if isinstance(form, str):   # the slot's kind: only its fields count
-            for kind in _refs(form):
+            for kind in kinds_named(form):
                 inner = fields_of(kind)
                 if inner is None:
                     return None
                 todo += inner
         else:
-            todo += _refs(form)
+            todo += kinds_named(form)
     while todo:
         kind = todo.pop()
         if kind in held:
@@ -341,4 +403,4 @@ def detail_lines(details: list[dict]) -> list[str]:
 
 
 __all__ = ["SLOTS", "dangling_details", "datasets_for_kind", "detail_lines", "find_row", "link_index", "linkers_of", "links_in",
-           "owner_of", "raw_dangling_details", "referrers", "refs_in_raw", "row_kind", "shape_details", "slot_values"]
+           "owner_of", "raw_dangling_details", "record_type_of", "referrers", "refs_in_raw", "row_kind", "shape_details", "slot_values"]

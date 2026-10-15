@@ -15,7 +15,7 @@ export enum AssetEditor {
   AGENT = 'agent',
   SKILL = 'skill',
   TASK = 'task',
-  WHITEBOARD = 'whiteboard',
+  CHART = 'chart',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
   SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
@@ -39,6 +39,10 @@ export enum AssetEditor {
   // A diagnosis request: open it, fund it, send files along, read the runs that came back.
   // A local row with no file, so it is fileless like LLM_ENDPOINT.
   DIAGNOSIS_REQUEST = 'diagnosis_request',
+  // A declared setup node: its steps and their live state, and the wizard each of its hooks fires.
+  ASSET_SETUP = 'asset_setup',
+  // A compute op: what it does, whether it is done (Check), and Run.
+  COMPUTE_OP = 'compute_op',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -122,7 +126,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
   [AssetEditor.TASK]: [RecordType.TASK],
-  [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
+  [AssetEditor.CHART]: [RecordType.CHART],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
   [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
@@ -136,6 +140,8 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
   [AssetEditor.CREDENTIAL]: [RecordType.CREDENTIAL],
   [AssetEditor.DIAGNOSIS_REQUEST]: [RecordType.DIAGNOSIS_REQUEST],
+  [AssetEditor.ASSET_SETUP]: [RecordType.ASSET_SETUP],
+  [AssetEditor.COMPUTE_OP]: [RecordType.COMPUTE_OP],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],

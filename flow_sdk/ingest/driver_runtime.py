@@ -45,6 +45,7 @@ from flow_sdk.sources.protocols import (
     StableHandle,
     Verdict,
     Verifiable,
+    actions_of,
 )
 from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -138,6 +139,10 @@ class Pass:
     #: Greatest ordinal covered — observability only, never read back as a floor.
     high_water: Optional[str] = None
     unchanged: bool = False
+    #: The ``external_id`` of EVERY record the outside system has, when this pass proved it: a source
+    #: that ``lists_everything``, read from the start to the end. None otherwise -- absence then
+    #: proves nothing, and nothing is removed.
+    listed: Optional[frozenset] = None
     #: Reaction reports the pass found — applied to the messages they name, never stored as records.
     reactions: list = field(default_factory=list)
 
@@ -571,19 +576,40 @@ class DriverRuntime:
             # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
             # five minutes; a self-hosted gateway may delete the file sooner).
             kept = await self._stage(row, source, kept)
-            return self._records(row, kept, carried, moved_on=carried != started_at)
+            # The whole collection, proven: read from the very start (`complete`), to the very end
+            # (`cursor is None`), unnarrowed, by a source that lists everything. Every LISTED record
+            # counts -- one older than the window is still there.
+            whole = cls.lists_everything and complete and cursor is None and narrow is None
+            return self._records(row, kept, carried, moved_on=carried != started_at, listed=items if whole else None)
 
-    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool) -> Pass:
+    async def read_before(self, row: Any, before: datetime, page_size: int) -> Pass:
+        """One page of what the source held BEFORE ``before``, newest first: a list paged past its oldest held
+        row asks for this. No cursor and no window: the forward position is not read and the Pass carries
+        none, so placing it never moves the row's position. Only a ``pages_backward`` source is asked."""
+        source = await self.open(row)
+        async with source:
+            page = await source.fetch(None, page_size=page_size, narrow={"before": before})
+            kept = await self._stage(row, source, list(page.items))
+            return self._records(row, kept, None, moved_on=False)
+
+    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
         messages, reactions = split_reactions(items)
         kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
+        every = None
+        if listed is not None:
+            every = frozenset(envelope_of(item, data_source_id=str(row.id), provider=self.provider).external_id
+                              for item in split_reactions(listed)[0])
         return Pass(
+            listed=every,
             items=envelopes,
             cursor=cursor,
             high_water=max(stamps).isoformat() if stamps else None,
             # Nothing arrived and the position did not move: the free no-op a 304 or an empty page is.
-            unchanged=not items and not moved_on,
+            # ... unless the source lists everything: its listing must still be compared with what is
+            # stored (the last record may have just been removed outside).
+            unchanged=not items and not moved_on and every is None,
             reactions=reactions,
         )
 
@@ -804,7 +830,7 @@ class DriverRuntime:
         drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:
-            recorded = await self._record(row, source, await self._keep_sent(row, sent))
+            recorded = await self._record_ours(row, source, sent) is not None
         return SendOutcome(
             external_id=sent.origin.key,
             status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
@@ -812,18 +838,24 @@ class DriverRuntime:
             artifact_id=str(getattr(sent.data, "artifact_id", "") or ""),
         )
 
-    async def _record(self, row: Any, source: Source, sent: Any) -> bool:
-        """Ingest what we just sent, marked ours — at once, not whenever the provider's echo is next
-        read. The echo carries the same natural key, so it lands on this row and keeps the mark;
-        without the mark a copy with no self author would read as a stranger's message."""
+    async def _record_ours(self, row: Any, source: Source, sent: Any) -> Optional[str]:
+        """Ingest a message we just wrote (a send, an action's message), marked ours — at once, not
+        whenever the provider's echo is next read. The echo carries the same natural key, so it lands
+        on this row and keeps the mark; without the mark a copy with no self author would read as a
+        stranger's message. Answers the ``SourceItem`` id, or ``None`` when the transport records its
+        own copy (``data.recorded``) or the bookkeeping failed."""
         from flow_sdk.ingest.ingestor import ingest_item  # noqa: PLC0415
 
+        if getattr(sent.data, "recorded", False):
+            return None
         try:
-            await ingest_item(envelope_of(sent, data_source_id=str(row.id), provider=self.provider), sent_by_us=True)
+            outcome = await ingest_item(
+                envelope_of(await self._keep_sent(row, sent), data_source_id=str(row.id), provider=self.provider), sent_by_us=True
+            )
         except Exception:  # noqa: BLE001 — the message IS delivered; bookkeeping must not unsend it
             logger.exception("[ingest] %s sent %s but could not record the copy", self.provider, sent.origin.key)
-            return False
-        return True
+            return None
+        return str(outcome.entity_id) if outcome.entity_id else None
 
     async def ingest_pushed(
         self, row: Any, payload: Any, *, headers: Any = None, raw: bytes = b"", verified_by_hub: bool = False
@@ -890,6 +922,21 @@ class DriverRuntime:
                 await source.unreact(target, emoji)  # type: ignore[attr-defined]
             else:
                 await source.react(target, emoji)  # type: ignore[attr-defined]
+
+    async def act(self, row: Any, conversation: CloudOrigin, action: str, text: str = "", *, ended: bool = False) -> Optional[str]:
+        """Run the channel's ``action`` on ``conversation`` (``ended``: whether it has ended). A message
+        the action wrote is recorded as ours, like a sent one (its echo lands on the same row); answers
+        that record's ``SourceItem`` id, or ``None`` when the action wrote nothing. A channel without
+        the action, or an action not offered in the conversation's state, raises ``Unsupported``."""
+        spec = next((a for a in actions_of(self.cls) if a.id == action), None)
+        if spec is None:
+            raise Unsupported(f"no action {action} on this channel")
+        if spec.when != "any" and (spec.when == "ended") != ended:
+            raise Unsupported(f"this action is not available on {'an ended' if ended else 'an open'} conversation")
+        source = await self.open(row, persona=True)
+        async with source:
+            written = await source.act(conversation, action, text)  # type: ignore[attr-defined]
+        return await self._record_ours(row, source, written) if written is not None else None
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""

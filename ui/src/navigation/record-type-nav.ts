@@ -17,6 +17,7 @@ import {
   dataManager,
   editorForType,
   isTypeId,
+  projectSchemas,
   RecordType,
   TypeId,
 } from '@sdk';
@@ -24,6 +25,7 @@ import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { notify } from '@src/notifications';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
 /**
  * An action as AUTHORED in the RECORD_TYPE_NAV table: `name` is a lazy lingui
@@ -135,6 +137,15 @@ function registeredAssetPointer(result: AssetRow): DockPointer | null {
   return editorForType(result.record_type) ? assetEditorPointer(result.record_type, result) : null;
 }
 
+/** A session row opened by reading its transcript file (no local process behind it). */
+function transcriptNav(worker: SessionWorker): RecordTypeNav {
+  return {
+    primaryAction: (r, navigation) => {
+      if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript(worker, r.asset_ref));
+    },
+  };
+}
+
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
     dockPointer: (r) => assetEditorPointer('skill', r),
@@ -224,6 +235,22 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const tid = resultTypeId(r);
       return tid ? DockPointer.forGraphWorkflow(tid.id) : null;
     },
+  },
+  // A schema opens on its project's schema tree, selected. The tree addresses a schema by its FULL
+  // kind (namespace included), which a row does not carry — so the project's schemas are asked for
+  // the one with this name. Outside a project it has no tree and opens as its folder.
+  data_schema: {
+    resolvePointer: async (asset) => {
+      const row = asset as SearchRow;
+      if (!row.project_id) return row.asset_ref ? DockPointer.forAssetEditor(row.record_type, row.asset_ref) : null;
+      const tree = await projectSchemas(row.project_id).catch(() => null);
+      const node = tree?.schemas.find((schema) => schema.name === row.name || schema.kind === row.name);
+      return DockPointer.forSchemaTree(row.project_id, node ? [node.kind] : []);
+    },
+  },
+  // A help desk opens as its project's portal.
+  helpdesk: {
+    dockPointer: (r) => (r.project_id ? DockPointer.forHelpdesk(r.project_id) : null),
   },
   graph_context: {
     dockPointer: (r) => {
@@ -360,6 +387,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       },
     ],
   },
+  // OpenCode/DeepAgents keep sessions in a store: a row is a shared snapshot with no
+  // local process to resume, so opening it means reading its transcript.
+  opencode_session: transcriptNav('opencode'),
+  deepagents_session: transcriptNav('deepagents'),
   copilot_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');
@@ -450,6 +481,17 @@ export function isResultNavigable(result: SearchRow): boolean {
   if (nav?.primaryAction || nav?.resolvePointer) return true;
   if (nav?.dockPointer?.(result)) return true;
   return registeredAssetPointer(result) != null;
+}
+
+/**
+ * Where an asset opens when its type has a screen of its own and no asset editor (a graph
+ * workflow's canvas, a trigger in Automations, a schema on the schema tree); null otherwise.
+ * Asset trees ask this so a row opens what a search result opens, never the asset's raw folder.
+ * An editor-backed type keeps the pointer its row was built with.
+ */
+export function assetScreenPointer(asset: AssetRow): DockPointer | null {
+  if (editorForType(asset.record_type)) return null;
+  return RECORD_TYPE_NAV[asset.record_type]?.dockPointer?.(asset as SearchRow) ?? null;
 }
 
 /** Whether a type's assets open through a lookup (`assetTargetLookup`) — openable with no static editor. */

@@ -16,7 +16,7 @@ does parallelize.
 
 Failure is always **fail-open**: any problem with the child (spawn failure, bad
 JSON, missing terminal result line, non-zero exit, kill) logs one warning and
-falls back to the in-process walk, mirroring ``_maybe_rs_indexer``'s temperament.
+falls back to the in-process walk.
 The run still completes with a correct, complete candidate set — just in-process.
 """
 from __future__ import annotations

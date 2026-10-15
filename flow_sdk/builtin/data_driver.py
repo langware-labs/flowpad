@@ -95,6 +95,7 @@ class DataDriver(DriverRuntime, Entity):
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
+    featured: bool = APIField(default=False)
     provisioned: bool = APIField(default=False)
     #: How a person starts a call on it: ``webrtc`` | ``clip`` | ``dial``; blank takes no calls.
     calls: CallStart = APIField(default=CallStart.NONE)
@@ -206,6 +207,18 @@ class DataDriver(DriverRuntime, Entity):
         """
         driver = self._loaded()
         return bool(driver is not None and driver.can_send)
+
+    @computed_field
+    @property
+    def sign_in_title(self) -> str:
+        """What a person calls the sign-in this driver reads through (its ``auth.connector``) — ``GitHub`` —
+        or ``""`` when it needs none. Read off the provider registry, so no surface spells a provider name."""
+        connector = self.auth.connector if self.auth is not None else ""
+        if not connector:
+            return ""
+        from flow_sdk.builtin.credential_service import shipped_provider_title  # noqa: PLC0415
+
+        return shipped_provider_title(connector) or connector.title()
 
     @computed_field
     @property

@@ -13,7 +13,7 @@ import { useViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
 import { LinkScope } from '@src/components/links/LinkHandlersContext';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
@@ -66,10 +66,19 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   // is in the stream, and the next frame paints it. (A warm return to a mounted
   // pane is logged by InteractiveTerminal, which owns the activation; a failed
   // load resolves too, and is logged by useHistoryLoadAlert.)
+  // Whether the first history load has settled. Until it has, an empty stream
+  // means "not loaded yet", not "nothing said": a cold chat (first open since the
+  // app loaded) took up to 2 s to load and showed "Start a conversation" meanwhile.
+  const [historySettled, setHistorySettled] = useState(process.historyLoaded);
   useEffect(() => {
+    let stale = false;
+    setHistorySettled(process.historyLoaded);
     const started = performance.now();
     void process
       .loadHistory()
+      .finally(() => {
+        if (!stale) setHistorySettled(true);
+      })
       .then(() => {
         if (!process.historyLoaded || !toplog.isOn('tab_switch')) return;
         requestAnimationFrame(() => {
@@ -83,6 +92,9 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
       .catch((err) => {
         console.error('[SimpleChatPane] loadHistory failed', err);
       });
+    return () => {
+      stale = true;
+    };
   }, [process.id]);
 
   // Render a turn this pane did not start — typed into the xterm, or already
@@ -112,11 +124,34 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   const intro = useAgentIntro(launchingAgent);
   const hasRows = turnGroups.length > 0 || !!intro;
 
+  // "Start a conversation" flashes on a chat that was already showing messages,
+  // seen on returning to a chat tab after a few minutes away. Warm switches show
+  // no history reload, so the cause is unknown: say whenever this pane paints the
+  // empty state, whether it had rows before, and what the process looked like then.
+  const hadRowsRef = useRef(false);
+  useEffect(() => {
+    if (hasRows) {
+      hadRowsRef.current = true;
+      return;
+    }
+    if (!historySettled) return;
+    // First paint empty is a fresh mount (cold load, or a second copy of the pane);
+    // empty after rows is the stream itself emptying under a mounted pane.
+    const sink = hadRowsRef.current ? 'chat_empty_after_rows' : 'chat_empty_on_mount';
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=${sink} proc=${process.id.slice(0, 8)} ` +
+        `stream=${process.flowDataStream.items.length} history_loaded=${String(process.historyLoaded)} ` +
+        `status=${process.status ?? '-'} worker=${process.workerStatus ?? '-'} pty_mode=${String(process.pty_mode)} ` +
+        `visible=${String(process.visible)}`,
+    );
+  }, [hasRows, historySettled, process]);
+
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   const anchorIndex = useMemo(() => nearestGroup(turnGroups, focusAt), [turnGroups, focusAt]);
   const paneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (anchorIndex === null) scrollRef.current?.scrollToBottom();
+    if (anchorIndex === null) scrollRef.current?.follow();
   }, [turnGroups.length, activity.active, anchorIndex]);
   // Focused: open at the moment asked for, once per moment — a live turn appending below must not
   // yank the reader back to it.
@@ -127,7 +162,11 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   }, [focusAt, anchorIndex !== null]);
 
   return (
-    <div ref={paneRef} className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
+    <div
+      ref={paneRef}
+      className={cn('flex h-full min-h-0 flex-col bg-background', className)}
+      data-testid="simple-chat-pane"
+    >
       <LinkScope process={process}>
         <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
           {!hasRows ? (
@@ -141,10 +180,19 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
               </div>
               {activity.active ? (
                 <ChatActivityLine process={process} />
+              ) : !historySettled ? (
+                // Still loading: no invitation to start what may be a long chat.
+                <p className="text-sm" data-testid="simple-chat-loading">
+                  <Trans>Loading conversation…</Trans>
+                </p>
               ) : (
                 <div>
-                  <p className="text-[15px] font-medium text-foreground"><Trans>Start a conversation</Trans></p>
-                  <p className="mt-1 text-sm"><Trans>Send a message below and the agent will get to work.</Trans></p>
+                  <p className="text-[15px] font-medium text-foreground">
+                    <Trans>Start a conversation</Trans>
+                  </p>
+                  <p className="mt-1 text-sm">
+                    <Trans>Send a message below and the agent will get to work.</Trans>
+                  </p>
                 </div>
               )}
             </div>

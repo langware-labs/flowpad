@@ -74,6 +74,11 @@ export interface ViewerMeta {
    */
   chrome?: 'fullbleed' | 'workspace';
   /**
+   * How a win/ focus window frames this viewer alone: `'bare'` (default) is the
+   * view and nothing else; `'browser'` keeps the top nav bar and the footer.
+   */
+  focusChrome?: 'bare' | 'browser';
+  /**
    * When true, every sub-pointer of this viewType folds into ONE tab — the
    * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
    * views whose pointer is in-view sub-navigation (category/field) rather than a
@@ -171,6 +176,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Globe',
     tabLocation: 'overview',
     canAddAsTab: true,
+    focusChrome: 'browser',
   },
   [ViewType.APP]: {
     title: msg`App`,

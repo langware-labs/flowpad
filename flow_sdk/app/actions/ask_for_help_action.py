@@ -32,7 +32,7 @@ from flow_sdk.builtin.task import Task
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.request_context.methods import get_current_request_info, request_fields
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.help_request_spec import AskForHelpRequest, HelpRecipient, HelpRecipientKind
 from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
@@ -50,9 +50,7 @@ IDEMPOTENT_TICKETS = "idempotent_guest_conversation"
 
 def _parse_request(body: dict) -> AskForHelpRequest:
     """The request from a JSON body, or from the ``request`` field of a multipart one (with files)."""
-    raw = body.get("request")
-    fields = json.loads(raw) if isinstance(raw, str) else (raw if isinstance(raw, dict) else body)
-    return AskForHelpRequest.model_validate({k: v for k, v in fields.items() if k != "files"})
+    return AskForHelpRequest.model_validate({k: v for k, v in request_fields(body).items() if k != "files"})
 
 
 @action.post(action_name="ask-for-help", types=None)

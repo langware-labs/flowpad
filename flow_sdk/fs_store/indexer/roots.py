@@ -376,7 +376,7 @@ def default_roots() -> list[FSRef]:
     USER_HOME_FOLDER comes from InstanceSettings.user_home so test mode
     (which sandboxes user_home) walks the sandbox, not the real home.
     """
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import legacy_project_scope_id  # noqa: PLC0415
     from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     settings = get_instance_settings()
@@ -415,7 +415,7 @@ def default_roots() -> list[FSRef]:
                 cwd,
                 record_type=RecordType.CWD_ROOT,
                 scope=Scope.PROJECT.value,
-                project_id=Project.derive_id_for_path(cwd),
+                project_id=legacy_project_scope_id(cwd),
             )
         )
 

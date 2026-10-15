@@ -29,7 +29,7 @@ def _mock_response(status_code: int = 200, json_body=None, headers=None, text: s
     return resp
 
 
-def _git_origin(owner: str = "langware-labs", name: str = "flowpad-hub", branch: str = "main") -> dict:
+def _git_origin(owner: str = "acme", name: str = "hub", branch: str = "main") -> dict:
     return {
         "kind": "git",
         "provider": "github",

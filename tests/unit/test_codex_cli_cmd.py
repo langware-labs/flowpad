@@ -298,7 +298,7 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    cmd.fork_session_id = "launch-only-fork"
+    cmd.fork_session_id = "parent-session"
     cmd.system_prompt_file = "/tmp/system-prompt"
     cmd.developer_instructions = "launch derived"
     cmd.extra_config_overrides = [("provider.name", "runtime")]
@@ -311,6 +311,7 @@ def test_to_json_roundtrip():
         "env_vars": {"X": "1"},
         "worker_type": "codex",
         "session_id": "abc",
+        "fork_session_id": "parent-session",
         "resume": True,
         "model": "gpt-5.2",
         "permission_mode": "default",
@@ -354,3 +355,33 @@ def test_from_json_defaults():
     assert cmd.add_dirs == []
     assert cmd.json_stream is True
     assert cmd.ephemeral is True
+
+
+@pytest.mark.parametrize("json_stream", [True, False])
+def test_worker_path_is_handed_to_codex_as_its_shell_path(json_stream, monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers.codex import cli as codex_cli
+
+    monkeypatch.setattr(codex_cli, "worker_bin_folder", lambda worker_type: None)
+    pinned = "/backend/.venv/bin:/usr/bin"
+    flags = CodexAgentOptions(workdir="/repo", env_vars={"PATH": pinned}, json_stream=json_stream)._emit_flags()
+
+    assert f'shell_environment_policy.set.PATH="{pinned}"' in flags
+    assert "allow_login_shell=false" in flags
+
+
+def test_shell_path_is_the_spawn_path_with_the_codex_folder_behind_the_pin(monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers import cli_worker_base_driver as base
+    from flow_sdk.builtin.agentic_process.cli_drivers.codex import cli as codex_cli
+
+    monkeypatch.setattr(codex_cli, "worker_bin_folder", lambda worker_type: "/nvm/bin")
+    env_vars = {"PATH": "/backend/.venv/bin:/usr/bin"}
+    flags = CodexAgentOptions(workdir="/repo", env_vars=env_vars)._emit_flags()
+
+    spawn_path = base.insert_capability_path_dir("/nvm/bin", env_vars["PATH"])
+    assert f'shell_environment_policy.set.PATH="{spawn_path}"' in flags
+
+
+def test_no_worker_path_adds_no_shell_path_override():
+    flags = CodexAgentOptions(workdir="/repo")._emit_flags()
+
+    assert not any("shell_environment_policy" in f or "allow_login_shell" in f for f in flags)

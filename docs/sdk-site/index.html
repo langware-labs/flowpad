@@ -856,7 +856,7 @@ pre.code.show-imp .imp-note{display:none}
 <span class="k">await</span> <span class="n">process</span><span class="o">.</span><span class="n">prompt</span><span class="p">(</span><span class="s2">&quot;Open https://example.com and tell me the page title.&quot;</span><span class="p">)</span></code></pre><figcaption><span class="proof">✓ runs in CI</span><button type="button" class="copy" data-copy-pre="op-process" aria-label="Copy code">Copy</button></figcaption></figure></div>
     </div><div class="ps-group" id="blocks-chain"><h3>Chain them <a href="#agents">Chapter 3 →</a></h3>
       <div class="rv-intro">
-        <p class="rv-lead">Any result the SDK generates is a <code class="lg"><i>flow</i>.<b>ReturnedValue</b></code>, itself a <code class="lg"><i>flow</i>.<b>DataSpec</b></code>, like:</p>
+        <p class="rv-lead"><strong>FlowCall</strong> is the shared contract for invoking work, receiving an outcome and value, and composing results. Participating work calls answer with a <code class="lg"><i>flow</i>.<b>ReturnedValue</b></code>, itself a <code class="lg"><i>flow</i>.<b>DataSpec</b></code>, like:</p>
         <ul class="rv-execs"><li><code class="lg rv-x">cli</code><span class="rv-dash">—</span><span>a shell command</span></li><li><code class="lg rv-x">prompt</code><span class="rv-dash">—</span><span>a model call</span></li><li><code class="lg rv-x">agent</code><span class="rv-dash">—</span><span>an agent turn</span></li><li><code class="lg rv-x">ask</code><span class="rv-dash">—</span><span>a user input request</span></li></ul>
         <p class="rv-lead">DataSpec in, ReturnedValue out: its <code>value</code> is the DataSpec the run produced, so it can be the next step's input.</p>
       </div>
@@ -1150,7 +1150,7 @@ flow<span class="w"> </span>connections<span class="w"> </span><span class="nb">
 
   <section class="cmap" id="ideal" aria-labelledby="cmap-h">
     <div class="sec-head"><h2 id="cmap-h">Nine chapters, one point each</h2><figure class="mini-info" role="img" aria-label="one point -&gt; one snippet -&gt; runs in CI"><div class="mi-tile"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V17h5v-1.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg><span>one point</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg><span>one snippet</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile mi-spec"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>runs in CI</span></div></figure></div>
-    <ol class="cmap-grid"><li><a href="#shapes"><span class="cm-n">1</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>DataSpec</b></code></span><span class="cm-t">Shapes you can trust</span><span class="cm-d">Every value is typed, frozen and file-friendly.</span></a></li><li><a href="#files"><span class="cm-n">2</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>SourceItem</b></code></span><span class="cm-t">Files are the database</span><span class="cm-d">Disk is the truth; the index rebuilds from it.</span></a></li><li><a href="#agents"><span class="cm-n">3</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Agent</b></code><code class="lg"><i>flow</i>.<b>AgenticProcess</b></code></span><span class="cm-t">Agents</span><span class="cm-d">A folder defines it; a process runs it, on any harness.</span></a></li><li><a href="#orchestration"><span class="cm-n">4</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>ComputeOp</b></code><code class="lg"><i>flow</i>.<b>ReturnedValue</b></code></span><span class="cm-t">Orchestration is Python</span><span class="cm-d">Your loop is the engine. Every call answers the same way.</span></a></li><li><a href="#sources"><span class="cm-n">5</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>DataDriver</b></code><code class="lg"><i>flow</i>.<b>DataSource</b></code></span><span class="cm-t">Data in</span><span class="cm-d">A driver talks to a system; a source is one stream on it.</span></a></li><li><a href="#channels"><span class="cm-n">6</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>StreamInbox</b></code></span><span class="cm-t">Every channel</span><span class="cm-d">One loop body answers email, Slack, Telegram and WhatsApp.</span></a></li><li><a href="#connections"><span class="cm-n">7</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Connection</b></code></span><span class="cm-t">Accounts, not tokens</span><span class="cm-d">Sign in once; code asks for the account by name.</span></a></li><li><a href="#credentials"><span class="cm-n">8</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>SecretPack</b></code><code class="lg"><i>flow</i>.<b>SecretStore</b></code></span><span class="cm-t">Secrets, declared</span><span class="cm-d">Declarations hold names; values live in a store git never sees.</span></a></li><li><a href="#ship"><span class="cm-n">9</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Deployment</b></code></span><span class="cm-t">Place it anywhere</span><span class="cm-d">Same verbs on this computer or a machine of its own.</span></a></li></ol>
+    <ol class="cmap-grid"><li><a href="#shapes"><span class="cm-n">1</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>DataSpec</b></code></span><span class="cm-t">Shapes you can trust</span><span class="cm-d">Every value is typed, frozen and file-friendly.</span></a></li><li><a href="#files"><span class="cm-n">2</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>SourceItem</b></code></span><span class="cm-t">Files are the database</span><span class="cm-d">Disk is the truth; the index rebuilds from it.</span></a></li><li><a href="#agents"><span class="cm-n">3</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Agent</b></code><code class="lg"><i>flow</i>.<b>AgenticProcess</b></code></span><span class="cm-t">Agents</span><span class="cm-d">A folder defines it; a process runs it, on any harness.</span></a></li><li><a href="#orchestration"><span class="cm-n">4</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>ComputeOp</b></code><code class="lg"><i>flow</i>.<b>ReturnedValue</b></code></span><span class="cm-t">Orchestration is Python</span><span class="cm-d">Your loop is the engine. FlowCall gives participating work calls a shared answer contract.</span></a></li><li><a href="#sources"><span class="cm-n">5</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>DataDriver</b></code><code class="lg"><i>flow</i>.<b>DataSource</b></code></span><span class="cm-t">Data in</span><span class="cm-d">A driver talks to a system; a source is one stream on it.</span></a></li><li><a href="#channels"><span class="cm-n">6</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>StreamInbox</b></code></span><span class="cm-t">Every channel</span><span class="cm-d">One loop body answers email, Slack, Telegram and WhatsApp.</span></a></li><li><a href="#connections"><span class="cm-n">7</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Connection</b></code></span><span class="cm-t">Accounts, not tokens</span><span class="cm-d">Sign in once; code asks for the account by name.</span></a></li><li><a href="#credentials"><span class="cm-n">8</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>SecretPack</b></code><code class="lg"><i>flow</i>.<b>SecretStore</b></code></span><span class="cm-t">Secrets, declared</span><span class="cm-d">Declarations hold names; values live in a store git never sees.</span></a></li><li><a href="#ship"><span class="cm-n">9</span><span class="cm-chips"><code class="lg"><i>flow</i>.<b>Deployment</b></code></span><span class="cm-t">Place it anywhere</span><span class="cm-d">Same verbs on this computer or a machine of its own.</span></a></li></ol>
   </section>
 
   <section class="install" id="install" aria-labelledby="install-h">
@@ -1531,7 +1531,7 @@ answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;
     <p class="c2-n">Chapter 4</p>
     <div class="c2-chips"><code class="lg lg-big"><i>flow</i>.<b>ComputeOp</b></code><code class="lg lg-big"><i>flow</i>.<b>ReturnedValue</b></code></div>
     <h2 id="orchestration-h">Orchestration is Python</h2>
-    <p class="ps-line">Your loop is the engine. Every call answers the same way.</p></div>
+    <p class="ps-line">Your loop is the engine. FlowCall gives participating work calls a shared answer contract.</p></div>
     <figure class="mini-info" role="img" aria-label="check -&gt; run -&gt; re-check"><div class="mi-tile"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><span>check</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile mi-proc"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m10 8 6 4-6 4z"/></svg><span>run</span></div><svg class="mi-arrow" viewBox="0 0 28 14" aria-hidden="true"><path d="M2 7H22"/><path d="M17 2l6 5-6 5" fill="none"/></svg><div class="mi-tile mi-spec"><svg viewBox="0 0 24 24" class="cn-ic" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg><span>re-check</span></div></figure>
   </header>
   <figure class="diagram ch2-chart"><div class="d-scroll"><svg viewBox="0 0 800 118" style="max-width:800px" role="img" aria-label="Check (flow.ComputeOp) -&gt; Run (flow.ComputeOp) -&gt; Re-check (flow.ComputeOp) -&gt; Answer (flow.ReturnedValue)">
@@ -1585,9 +1585,14 @@ answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;
   <div class="c2-foot"><button type="button" class="btn-ghost" data-copy-md="md-orchestration">Copy chapter as Markdown</button></div>
   <script type="text/markdown" id="md-orchestration">## Chapter 4: Orchestration is Python
 
-`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. Every call answers the same way.
+`flow.ComputeOp` · `flow.ReturnedValue` — FlowCall gives participating work calls
+a shared answer contract. A Python block exposes `call(input, *, context)` in
+its asset&#x27;s `call.py`; its manifest declares input/output schemas. `chain`
+uses Wizard for ordered value composition, while `map_calls` explicitly calls
+once per item and retains partial outcomes. Ordinary control flow can remain Python.
 
-Chart: Check (`flow.ComputeOp`) -&gt; Run (`flow.ComputeOp`) -&gt; Re-check (`flow.ComputeOp`) -&gt; Answer (`flow.ReturnedValue`)
+Chart: Validate input → optional check → call → validate output → ReturnedValue.
+A pure transformation needs no completion check, agent or persisted run entity.
 
 ### Control flow is Python
 
@@ -1855,6 +1860,9 @@ async with ZenSource(SourceBinding(config={}, account_key=&quot;zen&quot;)) as z
 `flow.StreamInbox` — One loop body answers email, Slack, Telegram and WhatsApp.
 
 Chart: Channel (`flow.DataSource`) -&gt; Stream inbox (`flow.StreamInbox`) -&gt; Agent (`flow.AgenticProcess`) -&gt; Reply (`flow.DataSpec`)
+
+For webhook setup, user/group claims and delivery versus answering placement, read
+[channel webhook routing](../snippets/channel-webhook-routing.md) in the source checkout.
 
 ### Let the app answer
 
@@ -2361,14 +2369,19 @@ await process.prompt(&quot;Open https://example.com and tell me the page title.&
 
 ### Chain them
 
-Any result the SDK generates is a `flow.ReturnedValue`, itself a `flow.DataSpec`, like:
+**FlowCall** is the shared contract for invoking work, receiving an outcome and value, and composing results. Participating work calls answer with a `flow.ReturnedValue`, itself a `flow.DataSpec`, for example:
 
 - `cli` — a shell command
 - `prompt` — a model call
 - `agent` — an agent turn
 - `ask` — a user input request
+- `python` — a typed `call.py` function, including whole-list processing
 
-DataSpec in, ReturnedValue out: its `value` is the DataSpec the run produced, so it can be the next step&#x27;s input.
+Typed input in, ReturnedValue out: its `value` can be a DataSpec value, primitive,
+record or list held to the declared output. A required-value chain consumes
+only OK with a present value; admission and skipped operations are not completed
+data. [FlowCall blocks](../snippets/flowcall-blocks.md) shows the executable
+`call.py` convention, whole-list processing and Wizard-backed chaining.
 
 Chart: IN CVSpec (`flow.DataSpec`: cv.docx | pdf | md) -&gt; CV reviewer (`flow.AgenticProcess`, prompt: “Review and improve the CV, save it with _reviewed”) -&gt; OUT cv_reviewed (`flow.ReturnedValue`, itself a `flow.DataSpec`; exit_code = OK, value = the reviewed CVSpec, text = the agent&#x27;s message) -&gt; value can be chained next: the next step takes input=cv_reviewed.value.
 
@@ -2650,7 +2663,7 @@ assert chat.subkind == &quot;agent&quot;                  # what it is for: talk
 1. **Shapes you can trust** (`flow.DataSpec`): Every value is typed, frozen and file-friendly.
 2. **Files are the database** (`flow.SourceItem`): Disk is the truth; the index rebuilds from it.
 3. **Agents** (`flow.Agent`, `flow.AgenticProcess`): A folder defines it; a process runs it, on any harness.
-4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. Every call answers the same way.
+4. **Orchestration is Python** (`flow.ComputeOp`, `flow.ReturnedValue`): Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
 5. **Data in** (`flow.DataDriver`, `flow.DataSource`): A driver talks to a system; a source is one stream on it.
 6. **Every channel** (`flow.StreamInbox`): One loop body answers email, Slack, Telegram and WhatsApp.
 7. **Accounts, not tokens** (`flow.Connection`): Sign in once; code asks for the account by name.
@@ -2886,9 +2899,14 @@ answer = await llm.create_completion(&quot;You answer in one word.&quot;, &quot;
 
 ## Chapter 4: Orchestration is Python
 
-`flow.ComputeOp` · `flow.ReturnedValue` — Your loop is the engine. Every call answers the same way.
+`flow.ComputeOp` · `flow.ReturnedValue` — FlowCall gives participating work calls
+a shared answer contract. A Python block exposes `call(input, *, context)` in
+its asset&#x27;s `call.py`; its manifest declares input/output schemas. `chain`
+uses Wizard for ordered value composition, while `map_calls` explicitly calls
+once per item and retains partial outcomes. Ordinary control flow can remain Python.
 
-Chart: Check (`flow.ComputeOp`) -&gt; Run (`flow.ComputeOp`) -&gt; Re-check (`flow.ComputeOp`) -&gt; Answer (`flow.ReturnedValue`)
+Chart: Validate input → optional check → call → validate output → ReturnedValue.
+A pure transformation needs no completion check, agent or persisted run entity.
 
 ### Control flow is Python
 
@@ -3049,6 +3067,9 @@ async with ZenSource(SourceBinding(config={}, account_key=&quot;zen&quot;)) as z
 `flow.StreamInbox` — One loop body answers email, Slack, Telegram and WhatsApp.
 
 Chart: Channel (`flow.DataSource`) -&gt; Stream inbox (`flow.StreamInbox`) -&gt; Agent (`flow.AgenticProcess`) -&gt; Reply (`flow.DataSpec`)
+
+For webhook setup, user/group claims and delivery versus answering placement, read
+[channel webhook routing](../snippets/channel-webhook-routing.md) in the source checkout.
 
 ### Let the app answer
 

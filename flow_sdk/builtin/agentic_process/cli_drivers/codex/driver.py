@@ -37,8 +37,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
+    find_codex_resumable_session,
     find_codex_session_jsonl,
     find_latest_codex_session_jsonl,
+    is_subagent_rollout,
     read_codex_rollout_meta,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
@@ -146,7 +148,7 @@ class CodexDriver:
     pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
     # A PTY launch drops the prompt (codex reads it from stdin); prompt() types it.
     pty_launch_drops_prompt = True
-    pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
+    pins_resume_cwd = False  # codex mints its own rollout; no Claude transcript-cwd pinning
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -179,7 +181,19 @@ class CodexDriver:
         generated process instruction assets.
         """
         cmd = CodexAgentOptions.from_json(process.cli_config)
+        stamped_rollout = find_codex_session_jsonl(process.session_id) if process.session_id else None
+        if stamped_rollout is not None and is_subagent_rollout(stamped_rollout):
+            # A sub-agent thread adopted by an older build. Codex will not resume
+            # it, so forget it: this launch starts fresh and its own rollout is
+            # adopted in its place.
+            logger.warning(
+                "CodexDriver: process %s session %s is a sub-agent thread, not a session; starting fresh",
+                process.id, process.session_id,
+            )
+            process.session_id = None
         cmd.session_id = process.session_id
+        if process.session_id:
+            cmd.fork_session_id = None  # Once adopted, reopen the child instead of forking again.
         cmd.workdir = process.workdir
         cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
@@ -437,7 +451,7 @@ class CodexDriver:
     def _rollout_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path: Path | None = None
         if process.session_id:
-            path = find_codex_session_jsonl(process.session_id)
+            path = find_codex_resumable_session(process.session_id)
         if path is None:
             # BOUNDED, like copilot and opencode: the newest rollout for a cwd is
             # another process's unless it is newer than this one — adopting it
@@ -476,7 +490,8 @@ class CodexDriver:
         return codex_tail_status(transcript_path)
 
     def has_resumable_session(self, process: "AgenticProcess") -> bool:
-        return bool(process.session_id) and find_codex_session_jsonl(process.session_id) is not None
+        return bool(process.session_id) and find_codex_resumable_session(process.session_id) is not None
+
 
     def supports_plan_mode(self, process: "AgenticProcess") -> bool:
         # Codex has no CLI plan-mode equivalent yet; tracked as a follow-up.

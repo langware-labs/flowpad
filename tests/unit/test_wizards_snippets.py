@@ -18,8 +18,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.core.wizard.plan import plan_wizard
 from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
-from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import AskOp, CliOp, ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, WizardResult
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
 from tests.unit.test_call_returns_snippets import with_assertions
@@ -50,12 +51,13 @@ def _scope(tmp_path: Path) -> dict:
         "WizardSpec": WizardSpec, "WizardStepSpec": WizardStepSpec,
         "WizardResult": WizardResult, "ExitCode": ExitCode, "Resolved": Resolved,
         "run_wizard": run_wizard, "MAX_WIZARD_DEPTH": MAX_WIZARD_DEPTH,
+        "plan_wizard": plan_wizard, "AskOp": AskOp,
         "tmp": tmp_path,
     }
 
 
 def test_the_page_has_its_fences():
-    assert len(FENCES) == 7, "one per section — a section without one proves nothing"
+    assert len(FENCES) == 9, "one per section — a section without one proves nothing"
 
 
 @pytest.mark.parametrize("index", range(len(FENCES)))

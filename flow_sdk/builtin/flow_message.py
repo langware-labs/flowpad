@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
@@ -228,7 +228,11 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # entity itself stays on the host (it declares no ``main_subdir``, so the
     # packer never ships it), and the receiver never gets a row or folder for it.
     # Probing for one reported EVERY reply as missing, forever.
-    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion"}
+    #
+    # ``process_call`` / ``returned_value`` are a call on a message and its answer
+    # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
+     "process_call", "returned_value"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -255,29 +259,36 @@ LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
 SESSION_START_MARKER_KEY = "session_start"
 
 
-def carrier_marker(attachments) -> "dict | None":
-    """The JSON object in the session carrier's ``prompt_preview``, if any.
-    THE parser of that marker — ``attachments`` may be ``Attachment`` models
-    or the raw dicts a hub payload carries."""
+def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
+    """``(id, JSON object)`` from the first ``<kind>-<id>`` TYPE_ID attachment, if any —
+    a VALUE riding the header's ``prompt_preview`` (a hub-known field), not an entity.
+    THE parser of such carriers (the session marker, a process call, its answer).
+    ``attachments`` may be ``Attachment`` models or the raw dicts a hub payload carries;
+    a carrier whose preview is missing or not a JSON object reads as none."""
     import json as _json  # noqa: PLC0415
 
     def _get(a, key):
         return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
 
+    prefix = f"{kind}-"
     for a in attachments or []:
         if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
             continue
-        if not str(_get(a, "data") or "").startswith("remote_worker_session-"):
+        data = str(_get(a, "data") or "")
+        if not data.startswith(prefix):
             continue
-        preview = _get(a, "prompt_preview")
-        if not preview:
-            return None
         try:
-            marker = _json.loads(preview)
+            value = _json.loads(_get(a, "prompt_preview") or "")
         except (ValueError, TypeError):
             return None
-        return marker if isinstance(marker, dict) else None
+        return (data[len(prefix):], value) if isinstance(value, dict) else None
     return None
+
+
+def carrier_marker(attachments) -> "dict | None":
+    """The JSON object in the session carrier's ``prompt_preview``, if any."""
+    found = carried_value(attachments, "remote_worker_session")
+    return found[1] if found else None
 
 
 def _carrier_marker(fm: "FlowMessage") -> "dict | None":
@@ -610,6 +621,9 @@ class FlowMessage(Entity):
     # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
     # never blanks it, and never sent where the hub would drop it.
     reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
+    # like ``envelope``: re-derived here, so a hub refresh never blanks it.
+    mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

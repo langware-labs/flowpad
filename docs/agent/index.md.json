@@ -5,18 +5,18 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "8e12a4b9bc677e160f319a693e5a8f90bc3f4d8eb39d3479e93205736a5d4d12",
+  "inputs_hash": "90cc507a9cd10900845495e75df34aa84462873c127302b738f4386520801b57",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
+  "self_summary": "The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.",
   "files": [
     {
       "name": "agentic_process_statuses.md",
       "rel_path": "agentic_process_statuses.md",
       "title": "AgenticProcess statuses — the canonical model",
-      "summary": "Canonical four-axis AgenticProcess status model: worker_status evidence, process status meaning, the busy boolean, os_status liveness, broadcast seams, and read-only frontend rules.",
-      "content_hash": "eb20dcdb5f6d3be952fce1d3318663c7520c94a9ce0e766544dc7b9ffa22ab5e",
-      "size_bytes": 11167
+      "summary": "Canonical AgenticProcess status axes, readiness, worker lifecycle, busy state, and frontend parity; distinguishes persisted intent, observed runtime, and operation outcomes.",
+      "content_hash": "cbe00270ece389867a8349a5208cdeb2773a19cd76682a7cda9d814be84ef817",
+      "size_bytes": 11891
     },
     {
       "name": "chief-of-staff.md",
@@ -30,12 +30,20 @@
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface — rendered demo",
-      "summary": "Rendered interface-card tour of the AgenticProcess entity: persisted fields, all 42 backend actions, and the public TypeScript SDK surface.",
-      "content_hash": "5580baddf83846712ace157c87e0e5135eca3d064d30dbe62aaf610806f506ea",
-      "size_bytes": 29252
+      "summary": "Rendered interface tour covering the AgenticProcess Python entity, caller API, backend actions, and TypeScript SDK through executable interface cards.",
+      "content_hash": "f25999d95bc231d25fb3466361775e62aaff070952386e9fae7b2661a86316c4",
+      "size_bytes": 29091
+    },
+    {
+      "name": "system-prompt-layers.md",
+      "rel_path": "system-prompt-layers.md",
+      "title": "System-prompt layers",
+      "summary": "System-prompt layers for a worker: the single composer, the nine LayerKey layers in order with scope, the app launch_surface stamp, and each vendor's delivery channel.",
+      "content_hash": "3ffdf82badc0dcf7e953ddb344a09499b0aff01b4488617f187f536738b29e11",
+      "size_bytes": 4145
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-15T08:55:59.530008+00:00",
   "latest_process_ref": ""
 }

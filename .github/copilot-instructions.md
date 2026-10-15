@@ -4,6 +4,11 @@ id: 91856acd-d005-470d-b3c8-0e762229408a
 
 # Claude Guidelines for flow-cli
 
+
+## FlowCall blocks
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](../docs/snippets/call-returns.md) before adding a local loader or result protocol.
+
 ## Quick Start
 
 ### Prerequisites (Windows)
@@ -48,7 +53,7 @@ npm run dev
 
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
-> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
 
 ### Validating the HUB UI (non-negotiable)
 

@@ -22,7 +22,7 @@ git reuse and clones, hub failures, cycles, the transitive rules — are pinned 
 ```json
 {
   "dependencies": {
-    "langware-os": "git+https://github.com/langware-labs/langware-os#main",
+    "handbook": "git+https://github.com/acme/handbook#main",
     "legal-docs":  { "source": "git+https://github.com/acme/handbook#main", "path": "legal" }
   },
   "optionalDependencies": {
@@ -111,6 +111,11 @@ site.dependency_warnings()`), counted by the project's setup readiness, and fetc
 setup wizard. `site.dismiss_dependency_warning(name)` silences it until Flowpad restarts.
 `site.install_dependency(name)` brings in an optional one.
 
+Add and install also invoke the resolved provider project's [Load lifecycle](../dependency-lifecycle.md).
+`project_id` identifies that provider, `home_page` exposes its declared home, and `lifecycle`
+reports `setup_required`, `running`, `ready`, or `failed` separately from file resolution.
+Missing setup requires explicit approval; listing dependencies never starts setup.
+
 ## 4. A process in one project opens a document from the other
 
 The process belongs to `site` — `project_id` is the binding, and its working directory
@@ -183,7 +188,7 @@ import { Project } from '@sdk/entities/project';
 
 const project = await Project.getById<Project>(projectId);
 const { dependencies, warnings } = await project.dependencies();
-const added = await project.addDependency('git+https://github.com/langware-labs/langware-os#main');
+const added = await project.addDependency('git+https://github.com/acme/handbook#main');
 await project.installDependency('policies');
 for (const w of warnings) await project.dismissDependencyWarning(w.name);
 ```

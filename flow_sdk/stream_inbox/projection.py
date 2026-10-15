@@ -42,7 +42,7 @@ from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
-from flow_sdk.stream_inbox._locks import loop_lock, new_registry
+from flow_sdk.stream_inbox._locks import loop_lock, new_registry, single_flight
 from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
@@ -176,6 +176,23 @@ async def end_conversation(conversation_id: str, at: Optional[datetime] = None) 
     await conversation.save(notify=False)
 
 
+def _follow_ending(conversation, item) -> bool:
+    """A message that ends its conversation (``MessageData.ends_conversation``: a merged or closed
+    pull request) ends it at the message's time, once; a later message that does not reopens it. A
+    message older than the end (a backfill) leaves it as it is. Answers whether anything changed
+    (the caller saves)."""
+    data = getattr(item, "data", None)
+    at = getattr(data, "sent_at", None) or (iso_to_utc(item.occurred_at) if item.occurred_at else None)
+    if getattr(data, "ends_conversation", False):
+        if conversation.ended_at is None:
+            conversation.ended_at = at or datetime.now(timezone.utc)
+            return True
+    elif conversation.ended_at is not None and at is not None and at > iso_to_utc(conversation.ended_at):
+        conversation.ended_at = None
+        return True
+    return False
+
+
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
 #: sync is a few hundred; this bounds the work per `sync.completed` without a
 #: cursor, because the next sync's sweep picks up whatever is left.
@@ -290,6 +307,7 @@ async def project_source_item(
     recount: bool = True,
     announce: bool = True,
     known_unplaced: bool = False,
+    item_changed: bool = False,
 ) -> Optional[tuple[str, str]]:
     """Project one SourceItem into its conversation.
 
@@ -302,6 +320,11 @@ async def project_source_item(
     ``recount=False`` defers the thread recount to the caller. A sweep sets it:
     recounting per item is quadratic in thread depth, because each recount
     reloads the whole thread.
+
+    ``item_changed=True`` says the item itself was edited since it was placed (an
+    ``.updated`` tag). The row's body is hydrated from the item at read time, so no
+    stored field changes — the projection pushes the re-read row itself, or an open
+    conversation keeps the old text until a reload.
 
     ``announce=False`` suppresses the projected tag. A sweep sets it when the
     batch itself would be a storm, for the reason `IngestMode` encodes one layer
@@ -372,6 +395,8 @@ async def project_source_item(
     ours = item.is_ours(source)
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
+    if _follow_ending(conversation, item):
+        changed = True
     if changed:
         await conversation.save(notify=False)
 
@@ -393,13 +418,13 @@ async def project_source_item(
                 return await _place_message(
                     item, source, channel, subject, key, thread, thread_id,
                     conversation_id, sender, sender_name, None,
-                    notify=notify, recount=recount, announce=announce,
+                    notify=notify, recount=recount, announce=announce, item_changed=False,
                 )
     # Already placed: idempotent re-projection, no lock needed.
     return await _place_message(
         item, source, channel, subject, key, thread, thread_id,
         conversation_id, sender, sender_name, existing_fm,
-        notify=notify, recount=recount, announce=announce,
+        notify=notify, recount=recount, announce=announce, item_changed=item_changed,
     )
 
 
@@ -521,6 +546,11 @@ def _envelope_of(item, source):
     )
 
 
+def _mark_of(item, source):
+    """What a message-shaped payload says it did (``MessageData.mark``), or None."""
+    return getattr(_payload_of(item, source), "mark", None)
+
+
 async def _thread_of(message):
     """The thread a placed message is in, or None (not placed, or placed before threads)."""
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
@@ -578,7 +608,7 @@ def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
     conversation_id, sender, sender_name, existing_fm,
-    *, notify, recount, announce,
+    *, notify, recount, announce, item_changed,
 ):
     """Write the message row + pointers for one resolved message.
 
@@ -600,11 +630,11 @@ async def _place_message(
     # the announcement lands exactly once without either lane knowing who won.
     first_placement = existing_fm is None
     envelope = _envelope_of(item, source)
+    dirty = False
     if existing_fm is not None:
         fm_id = str(existing_fm.id)
         want = iso_to_utc(item.occurred_at) if item.occurred_at else None
         have = iso_to_utc(existing_fm.sent_at) if existing_fm.sent_at else None
-        dirty = False
         if want is not None and have != want:
             existing_fm.sent_at = want
             dirty = True
@@ -629,6 +659,9 @@ async def _place_message(
             dirty = True
         if existing_fm.envelope != envelope:
             existing_fm.envelope = envelope
+            dirty = True
+        if existing_fm.mark != (mark := _mark_of(item, source)):
+            existing_fm.mark = mark
             dirty = True
         # Files and reactions are projection-owned: a row placed before either arrived heals here.
         have = [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]
@@ -676,6 +709,7 @@ async def _place_message(
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
         "envelope": envelope.model_dump(mode="json") if envelope else None,
+        "mark": m.model_dump(mode="json") if (m := _mark_of(item, source)) else None,
         "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
         "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
     }
@@ -704,6 +738,12 @@ async def _place_message(
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
+    if notify and not first_placement and (dirty or item_changed):
+        # `materialize_flow_message` leaves an existing local row untouched and
+        # silent, and the heal above saved silently: push the re-read (hydrated) row.
+        fresh = await FlowMessage.get_one({"id": fm_id})
+        if fresh is not None:
+            await fresh.notify_updated()
     if first_placement and item.external_id:
         await _heal_replies_to(item, fm_id, notify=notify)
     if recount:
@@ -1166,7 +1206,7 @@ async def _on_item(event) -> None:
         # answered. The ingest lane draws the same line one level down, where
         # `emit_item_tag` returns early on `unchanged`.
         first_placement = event.tag.rsplit(".", 1)[-1] == "created"
-        await project_source_item(item, announce=first_placement)
+        await project_source_item(item, announce=first_placement, item_changed=not first_placement)
         _touch()
     except Exception:  # noqa: BLE001 — never fail the ingest that triggered us
         logger.exception("[stream-inbox] projection failed for source_item %s", entity_id)
@@ -1186,25 +1226,13 @@ async def _on_sync(event) -> None:
     that lands after the running sweep read its batch.
     """
     source_id = str((event.data or {}).get("source_id") or "")
-    if not source_id:
-        return
-    pending = _sweeps.setdefault(asyncio.get_running_loop(), {})
-    if source_id in pending:
-        pending[source_id] = True
-        return
-    pending[source_id] = False
-    try:
-        while True:
-            try:
-                if await reconcile_source(source_id):
-                    _touch()
-            except Exception:  # noqa: BLE001
-                logger.exception("[stream-inbox] reconcile failed for source %s", source_id)
-            if not pending[source_id]:
-                return
-            pending[source_id] = False
-    finally:
-        pending.pop(source_id, None)
+    if source_id:
+        await single_flight(_sweeps, source_id, lambda: _reconcile(source_id), "[stream-inbox] reconcile failed for source %s")
+
+
+async def _reconcile(source_id: str) -> None:
+    if await reconcile_source(source_id):
+        _touch()
 
 
 def _touch() -> None:

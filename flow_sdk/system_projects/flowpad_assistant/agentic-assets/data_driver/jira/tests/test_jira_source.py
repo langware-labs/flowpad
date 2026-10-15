@@ -31,6 +31,7 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 EMAIL, TOKEN = "ada@acme.test", "atl-token-1234"
 JQL = "project = PROJ order by updated DESC"
 _SINCE = re.compile(r'updated >= "(\d{4}/\d{2}/\d{2}(?: \d{2}:\d{2})?)"')
+_BEFORE = re.compile(r'updated < "(\d{4}/\d{2}/\d{2} \d{2}:\d{2})"')
 
 
 def adf(*paragraphs: str) -> dict:
@@ -99,6 +100,9 @@ class _Jira:
         if since:
             floor = datetime.strptime(since.group(1), "%Y/%m/%d %H:%M" if " " in since.group(1) else "%Y/%m/%d")
             rows = [i for i in rows if i["fields"]["updated"][:16].replace("-", "/").replace("T", " ") >= floor.strftime("%Y/%m/%d %H:%M")]
+        before = _BEFORE.search(jql)
+        if before:
+            rows = [i for i in rows if i["fields"]["updated"][:16].replace("-", "/").replace("T", " ") < before.group(1)]
         start = int(params.get("nextPageToken", "tok-0").removeprefix("tok-"))
         size = int(params.get("maxResults", 50))
         page = rows[start : start + size]
@@ -277,3 +281,36 @@ async def test_a_bad_jql_is_the_persons_to_fix(jira):
 async def test_the_driver_is_a_record_source_that_does_not_send():
     driver = await DataDriver.get("jira")
     assert (driver.family, driver.sends, driver.cls.identity_config_key) == ("record", False, "site")
+
+
+async def test_a_backward_read_asks_jql_for_older_and_lists_only_older_newest_first():
+    now = datetime(2026, 7, 30, 12, 0, 30, tzinfo=timezone.utc)
+    fake = _Jira(seed(5, now=now))
+    with local_http_server(fake) as url:
+        async with _source(url) as source:
+            bound = now - timedelta(minutes=2)  # issue 2 sits exactly on it: not older
+            page = await source.fetch(None, page_size=2, narrow={"before": bound})
+    params = fake.searches()[-1]
+    assert params["jql"] == '(project = PROJ) AND updated < "2026/07/30 11:59" ORDER BY updated DESC'
+    assert params["maxResults"] == str(2 + module.BACKWARD_SLACK) and "nextPageToken" not in params
+    assert [item.data.key for item in page.items] == ["PROJ-3", "PROJ-4"]
+    assert all(item.data.published_at < bound for item in page.items)
+    assert page.next_cursor is None and page.resume_cursor is None, "a backward read leaves the forward cursor alone"
+
+
+async def test_a_backward_bound_inside_a_minute_is_cut_exactly_here():
+    now = datetime(2026, 7, 30, 12, 0, 0, tzinfo=timezone.utc)
+    fake = _Jira(seed(3, now=now))
+    with local_http_server(fake) as url:
+        async with _source(url) as source:
+            bound = now - timedelta(minutes=1, seconds=-20)  # 11:59:20 — issue 1 at 11:59:00 is older
+            page = await source.fetch(None, page_size=10, narrow={"before": bound})
+    assert 'updated < "2026/07/30 12:00"' in fake.searches()[-1]["jql"], "rounded up, never down"
+    assert [item.data.key for item in page.items] == ["PROJ-1", "PROJ-2", "PROJ-3"]
+
+
+async def test_a_forward_read_is_unchanged_by_backward_support(jira):
+    async with _source(jira.url) as source:
+        page = await source.fetch(page_size=10)
+    assert jira.searches()[-1]["jql"] == "(project = PROJ) order by updated DESC"
+    assert [item.data.key for item in page.items] == [f"PROJ-{n}" for n in range(1, 6)] and page.resume_cursor

@@ -29,11 +29,12 @@ INDEXED_TYPES = {
     "agent_trace", "subagent", "agent", "graph_workflow", "asset_cleanup_report",
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
+    "deepagents_session", "opencode_session",
     "asset_setup", "credential", "compute_op", "data_source", "data_driver", "data_schema",
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "trigger", "usage_report", "whiteboard", "wizard", "workflow_run",
+    "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
@@ -41,7 +42,7 @@ FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
     "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
-    "whiteboard", "wizard",
+    "chart", "wizard",
 )
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
@@ -49,7 +50,7 @@ FOLDER_PORTABLE = (
 FOLDER_NO_LEGACY = ("credential", "mcp", "project_manifest", "trigger")
 #: Folder types whose main document is markdown: the id lives in that
 #: document's frontmatter (``Frontmatter``).
-FOLDER_MARKDOWN = ("skill", "task", "whiteboard")
+FOLDER_MARKDOWN = ("skill", "task", "chart")
 FOLDER_CAPSULE = FOLDER_PORTABLE + FOLDER_NO_LEGACY
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 #: Entity documents (``<type>.json``): the id is the document root's ``"id"``
@@ -112,7 +113,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
     # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op` and
     # `data_source`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 8, 15)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 8, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -275,6 +276,12 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
         folder = root / "raw-copilot"
         folder.mkdir()
         return FSRef(folder / "events.jsonl"), "copilot_session:raw-copilot", uuid.NAMESPACE_DNS
+    if type_name == "opencode_session":
+        path.write_text('{"type":"step_start","sessionID":"ses_raw"}\n', encoding="utf-8")
+        return FSRef(path), "opencode_session:ses_raw", uuid.NAMESPACE_DNS
+    if type_name == "deepagents_session":
+        path.write_text('{"type":"init","session_id":"raw-deep"}\n', encoding="utf-8")
+        return FSRef(path), "deepagents_session:raw-deep", uuid.NAMESPACE_DNS
     if type_name == "data_driver":
         folder = root / "rss"
         folder.mkdir()
@@ -305,6 +312,7 @@ def _deterministic_case(root: Path, type_name: str) -> tuple[FSRef, str, uuid.UU
 
 DETERMINISTIC_TYPES = (
     "claude_hook", "claude_session", "codex_session", "copilot_session",
+    "deepagents_session", "opencode_session",
     "data_driver", "dynamic_workflow", "markdown_index", "mcp_server",
     "plugin", "project", "spreadsheet", "todo_file",
     "workflow_run",
@@ -320,7 +328,9 @@ def test_deterministic_provider_exact_v5_matrix(tmp_path: Path, type_name: str) 
     assert resolve_id(info, ref) == str(uuid.uuid5(namespace, stable_key))
 
 
-@pytest.mark.parametrize("type_name", ("claude_session", "codex_session", "copilot_session", "dynamic_workflow"))
+@pytest.mark.parametrize(
+    "type_name", ("claude_session", "codex_session", "copilot_session", "deepagents_session", "dynamic_workflow")
+)
 def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -> None:
     path = tmp_path / "asset"
     if type_name == "claude_session":
@@ -333,6 +343,9 @@ def test_provider_embedded_valid_id_is_adopted(tmp_path: Path, type_name: str) -
         folder = tmp_path / V4
         folder.mkdir()
         ref = FSRef(folder / "events.jsonl")
+    elif type_name == "deepagents_session":
+        path.write_text(json.dumps({"type": "init", "session_id": V4}) + "\n")
+        ref = FSRef(path)
     elif type_name == "dynamic_workflow":
         path.write_text(f"export const meta = {{id: '{V4}'}};")
         ref = FSRef(path)
@@ -430,3 +443,14 @@ def test_shipped_asset_declares_an_install_independent_key(
     assert str(Path(getattr(ref, "_path", ref)).resolve()) not in stable_key, (
         f"{type_name}: the stable key still embeds the install path — {stable_key!r}"
     )
+
+
+def test_an_installed_copilot_transcript_keeps_its_session_id(tmp_path: Path) -> None:
+    """An install keeps the file name, so a received Copilot transcript is
+    ``<project>/agentic-assets/copilot_session/events.jsonl``: its parent is the type folder,
+    not the session. The id comes from the ``session.start`` event, so the installed row is the
+    shared one and Open finds it."""
+    events = tmp_path / "agentic-assets" / "copilot_session" / "events.jsonl"
+    events.parent.mkdir(parents=True)
+    events.write_text(json.dumps({"type": "session.start", "data": {"sessionId": V4}}) + "\n", encoding="utf-8")
+    assert resolve_id(_info("copilot_session"), FSRef(events)) == V4

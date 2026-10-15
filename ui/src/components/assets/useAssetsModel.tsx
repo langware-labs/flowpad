@@ -19,7 +19,6 @@ import { useAddDependency } from '@src/hooks/use-add-dependency';
 import { useProjectAssetMenu } from '@src/hooks/use-project-asset-menu';
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { useIsDev } from '@src/contexts/view-mode-context';
 import {
   assetScopeBucket,
   defaultScopeFilter,
@@ -40,6 +39,7 @@ import {
   assetContextFolderNodeId,
   assetContextFoldersRoot,
 } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
+import { useDataSourcesRoot } from '@src/components/browseable-tree/adapters/dataSourcesRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import {
   basename as fsBasename,
@@ -120,8 +120,9 @@ export function useAssetsModel() {
     isLoading: typesLoading,
     error: typesError,
     reload: reloadTypes,
-  } = useAssetTypes({ vibeAsStandard: true });
+  } = useAssetTypes({ allUserTypes: true });
   const { indexType } = useSystemTools();
+  const dataSourcesRoot = useDataSourcesRoot();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
@@ -248,10 +249,6 @@ export function useAssetsModel() {
     return counts;
   }, [assetStats.per_type, assetMenu, myEndpoints.length, myDiagnosisRequests, effectiveFilter.scope]);
 
-  // Dev mode sees every registered type regardless of count; everyone else only
-  // sees types that actually have items in the current scope.
-  const isDev = useIsDev();
-
   // An LLM endpoint belongs to a PERSON, never to a project — it is exactly the kind of
   // user-scoped asset the User chip exists for. Under a project-only scope the row would
   // claim the project owns budgets it has nothing to do with, so it is dropped there
@@ -266,25 +263,19 @@ export function useAssetsModel() {
     [allTypes, effectiveFilter.scope],
   );
 
-  // The set of type names the menu lists, as a stable string key. Non-dev: hide
-  // empty types once counts are in. First load (`statsLoading`, no cached counts)
-  // → empty, so the navigator shows its "Loading…" state; then the list collapses
-  // to the types with content. `null` = dev (show all). Keying on the *set* (not
-  // the count values) means a count changing 3→4 doesn't churn `displayTypes` /
-  // `roots` — only a type appearing/disappearing does.
+  // Gate every browsing mode on live counts. Key on the shown set so count
+  // updates within a category do not rebuild its roots.
   const shownTypesKey = useMemo(() => {
-    if (isDev) return null;
     if (statsLoading) return '';
     return visibleTypes
       .filter((t) => (typeCounts.get(t.type_name) ?? 0) > 0)
       .map((t) => t.type_name)
       .join(',');
-  }, [isDev, statsLoading, visibleTypes, typeCounts]);
+  }, [statsLoading, visibleTypes, typeCounts]);
 
   // The types the menu actually lists. Derived purely from `shownTypesKey` +
   // `visibleTypes`, so its array identity is stable while the shown set is.
   const displayTypes = useMemo(() => {
-    if (shownTypesKey === null) return visibleTypes; // dev: all
     if (shownTypesKey === '') return []; // loading, or genuinely nothing to show
     const shown = new Set(shownTypesKey.split(','));
     return visibleTypes.filter((t) => shown.has(t.type_name));
@@ -292,9 +283,9 @@ export function useAssetsModel() {
 
   // First-load spinner for the type list: true only until the first counts land
   // (react-query `isLoading` is first-load-only, so scope refetches with a warm
-  // cache don't re-flash it). Dev mode never gates on counts.
-  const menuLoading = typesLoading || (!isDev && statsLoading);
-  const menuError = typesError ?? (!isDev ? statsError : null);
+  // cache don't re-flash it).
+  const menuLoading = typesLoading || statsLoading;
+  const menuError = typesError ?? statsError;
   const reloadMenu = () => {
     void Promise.all([reloadTypes(), reloadStats()]).catch(() => {});
   };
@@ -771,6 +762,7 @@ export function useAssetsModel() {
       typeRoots.splice(taskIdx >= 0 ? taskIdx + 1 : typeRoots.length, 0, filesRoot);
     }
     list.push(...typeRoots);
+    if (dataSourcesRoot) list.push(dataSourcesRoot);
     // Dependencies (project flow.json) — shown whenever a project is in scope
     // (even with none yet, so the "+" add action is reachable).
     if (hasScopeProject) {
@@ -793,6 +785,7 @@ export function useAssetsModel() {
     }
     return list;
   }, [
+    dataSourcesRoot,
     displayTypes,
     indexType,
     handleNew,

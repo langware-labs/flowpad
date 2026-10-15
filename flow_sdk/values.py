@@ -64,11 +64,13 @@ def save_value(value: DataSpec, store: Path | str) -> str:
             return ref_of(kind, found)
     folder = store / f"{kind}-{digest[:10]}"
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / VALUE_FILE).write_text(
-        json.dumps({"spec_kind": kind, **value.model_dump(mode="json")}, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    (folder / VALUE_FILE).write_text(tagged_json(value, kind), encoding="utf-8")
     return ref_of(kind, ensure_id(folder))
+
+
+def tagged_json(value: DataSpec, kind: str) -> str:
+    """A value file's text: the value's fields under its ``spec_kind`` tag — what a value viewer reads."""
+    return json.dumps({"spec_kind": kind, **value.model_dump(mode="json")}, indent=2, ensure_ascii=False) + "\n"
 
 
 def resolve_ref(ref: str, near: Path | str) -> DataSpec:

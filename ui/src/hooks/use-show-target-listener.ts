@@ -1,5 +1,5 @@
 import type { ShowPlacement, ShowTarget } from '@sdk';
-import { AgenticProcess, dataManager, tabManager, TypeId, type IEntity } from '@sdk';
+import { AgenticProcess, dataManager, TypeId, type IEntity } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { presentDockTab } from '@src/navigation/present-dock-tab';
@@ -55,7 +55,7 @@ export function isFreshShow(
 }
 
 /** No placement (an older backend): no anchor, not a host — a plain tab at the end. */
-const NO_PLACEMENT: ShowPlacement = { tab_id: null, host: false };
+const NO_PLACEMENT: ShowPlacement = { tab_id: null, host: false, project_id: null };
 
 /**
  * Where this listener puts a show, from the backend's placement — or null when
@@ -92,10 +92,9 @@ export function useShowTargetListener(): void {
       return;
     }
 
-    // The anchor is the process's OWN tab, as the backend resolved it.
-    const anchor = placement.tab_id ? tabManager.getSnapshot().find((t) => t.id === placement.tab_id) : undefined;
-
-    await presentDockTab(dock, { projectId: anchor?.project_id, ...slot });
+    // The project is the showing process's, decided by the backend with the rest
+    // of the placement — never read off this client's tab snapshot.
+    await presentDockTab(dock, { projectId: placement.project_id, ...slot });
   }, []);
 
   const handle = useCallback(

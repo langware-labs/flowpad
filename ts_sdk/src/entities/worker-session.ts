@@ -100,3 +100,15 @@ export class CodexSession extends WorkerSession<CodexSession> {
 export class CopilotSession extends WorkerSession<CopilotSession> {
   static type: string = 'copilot_session';
 }
+
+/** OpenCode session — the transcript FlowPad wrote for an OpenCode run, snapshotted on share. */
+@registerEntity
+export class OpencodeSession extends WorkerSession<OpencodeSession> {
+  static type: string = 'opencode_session';
+}
+
+/** DeepAgents session — the transcript FlowPad's runner wrote, snapshotted on share. */
+@registerEntity
+export class DeepagentsSession extends WorkerSession<DeepagentsSession> {
+  static type: string = 'deepagents_session';
+}

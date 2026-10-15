@@ -1422,7 +1422,7 @@ def _write_pref(key: str, value: Any) -> None:
     Writing ``index_function`` also drops the cached shared indexer, because
     ``build_default_indexer`` picks the scan mode once and ``get_shared_indexer``
     caches the instance for the process lifetime — without this the new mode would
-    only apply after a restart (the papercut ``indexer_backend`` still has).
+    only apply after a restart.
     """
     from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
 
@@ -1990,9 +1990,9 @@ def setup_desktop_filesystem() -> None:
         PREF_SMART_NAVIGATION_LOG: DEFAULT_SMART_NAVIGATION_LOG,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
-        # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
-        # FLOWPAD_RS_INDEXER_BIN; falls back to python when unavailable).
-        "preferences.advanced.indexer_backend": "python",
+        # Disk I/O engine: "python" | "rust" (the vendored flowpad-diskio-scan binary;
+        # falls back to python when unavailable). Read per scan — no restart needed.
+        "preferences.advanced.diskio_backend": "python",
         # Per-folder indexing consent (macOS-TCC / cross-OS special folders).
         # "ask" (default) → surface an in-app consent request before walking;
         # "skip" → never walk; "allow" → walk (one expected OS prompt); "denied"

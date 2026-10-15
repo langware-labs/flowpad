@@ -392,6 +392,9 @@ class HubRepoCheckout(HubRepoMirror):
                 raise RuntimeError(f"{self.root} is not empty and not a checkout of this repository")
             self.root.parent.mkdir(parents=True, exist_ok=True)
             await self.git("clone", "-q", "--branch", self.branch, self.clone_url, str(self.root), cwd=self.root.parent)
+            from flow_sdk.utils.git_ignore import protect_env_local  # noqa: PLC0415
+
+            await asyncio.to_thread(protect_env_local, self.root)
             return
         await self.git("remote", "set-url", "origin", self.clone_url)
         code, out = await self.git("pull", "-q", "--ff-only", "origin", self.branch, check=False)

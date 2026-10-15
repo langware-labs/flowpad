@@ -72,6 +72,7 @@ def _fake_process(shell, *, driver, running: bool):
         id="proc-gated-prompt",
         driver=driver,
         pty_mode=True,
+        context_data={},  # prompt() drops a saved question before it routes
         exist_in_db=True,
         shell=_shell,
         is_running=_is_running,
@@ -81,7 +82,9 @@ def _fake_process(shell, *, driver, running: bool):
     )
     fake._typed_pty_delivery = AgenticProcess._typed_pty_delivery.__get__(fake)
     fake._schedule_gated_pty_delivery = AgenticProcess._schedule_gated_pty_delivery.__get__(fake)
-    fake._note_transcript_size_at_prompt = lambda: None  # the turn baseline has its own tests (stream_transcript_idle_turn_end)
+    fake._note_transcript_size_at_prompt = lambda: (
+        None
+    )  # the turn baseline has its own tests (stream_transcript_idle_turn_end)
     return fake, starts, sent
 
 

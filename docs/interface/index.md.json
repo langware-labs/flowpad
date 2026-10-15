@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "interface",
   "folder_name": "interface",
-  "inputs_hash": "8436cbf2415c0f42548df4a1059a2e709a2fe0ae004869e4594453dd32be3ae3",
+  "inputs_hash": "148df96da87fd48e3398513decc845796183e0d8350a721ffef2697d4af6b64f",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
@@ -22,17 +22,17 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess — interface",
-      "summary": "Interface reference for the AgenticProcess entity: Python object, HTTP action endpoints and the frontend TypeScript class",
-      "content_hash": "4442992f392e2895277c4c341fb919a52c7b142f3da69848db01fe8dea369936",
-      "size_bytes": 61282
+      "summary": "Complete AgenticProcess Python, backend action, and TypeScript interface reference, with transport, visibility, lifecycle, and execution flows.",
+      "content_hash": "8d635ec6c542dfac3416d80c0c5591d72363a27d673c833f7ed4281cdf6e5037",
+      "size_bytes": 62468
     },
     {
       "name": "cli-drivers.md",
       "rel_path": "cli-drivers.md",
       "title": "CLI drivers — interface",
-      "summary": "CLI driver layer interface: the WorkerDriver protocol and per-vendor packages (Claude, Codex, Copilot, OpenCode) through which AgenticProcess drives coding-agent CLIs.",
-      "content_hash": "003bc55ff363645bb19f488bc3fc8433ca596bc755b4038099a786858d16d57b",
-      "size_bytes": 39301
+      "summary": "WorkerDriver protocol, vendor implementations, naming traits, launch modes, session access, cancellation, and integration flows for agent CLI drivers.",
+      "content_hash": "bab73c53b2de2a687b0a9ab1c4d9b3b6372663594c5bc82dd664696816129aec",
+      "size_bytes": 40376
     },
     {
       "name": "compute-node.md",
@@ -46,17 +46,17 @@
       "name": "flows.md",
       "rel_path": "flows.md",
       "title": "Agentic-process flows (test-derived)",
-      "summary": "End-to-end agentic-process flows reconstructed from reference tests, naming the TS SDK call, graph action and Python method at every step, plus pty_mode routing.",
-      "content_hash": "be8e003de4a48cd757f2af761536c3ca0d2ab041486001a031c7a3ca292c0245",
-      "size_bytes": 33543
+      "summary": "Test-derived agentic-process flows across SDK, HTTP, Python, PTY, streaming, restart, recovery, queues, forks, and shell tabs.",
+      "content_hash": "793567709a6774c254a986a6eb808da775e9a016b59523cb51a715d823884763",
+      "size_bytes": 33523
     },
     {
       "name": "pty-layer.md",
       "rel_path": "pty-layer.md",
       "title": "PTY layer — interface",
-      "summary": "The internal PTY layer's API surface: PtyRegistry and PtyState membership FSM, framed stream files, terminal-command endpoints, WS attach lifecycle, replay route and seq rule.",
-      "content_hash": "c2c8d70b65497a43818fbecea01e7e725a3f11ed9c356b9d2c7779049436b6a9",
-      "size_bytes": 16587
+      "summary": "Internal PTY layer API surface: PtyRegistry and PtyState membership FSM, PtyStreamFile framed stream, LocalComputeProvider, terminal-command endpoints, WS lifecycle, replay route and seq rule.",
+      "content_hash": "e84c0601cf9ed6eb87dd5723452bfae42f74a8a583729bb136876fe3e14a4a83",
+      "size_bytes": 17023
     },
     {
       "name": "session-naming.md",
@@ -70,9 +70,9 @@
       "name": "shell.md",
       "rel_path": "shell.md",
       "title": "Shell — interface",
-      "summary": "Interface reference for the Shell entity, the database metadata layer of a PTY terminal session, covering its persisted fields, TypeId format and API.",
-      "content_hash": "be403c36f33c1d49a825723f2041017d0d519ba1bc70f2abbd81dd34966fe623",
-      "size_bytes": 19693
+      "summary": "Shell interface reference covering PTY metadata, lifecycle, HTTP actions, TypeScript methods, and FlowCall command results.",
+      "content_hash": "970bf382995ceddcae5a5123f0525729cbb34651384e6d1a9cea904fbcb32796",
+      "size_bytes": 19689
     },
     {
       "name": "status-model.md",
@@ -86,12 +86,12 @@
       "name": "test-coverage.md",
       "rel_path": "test-coverage.md",
       "title": "Test coverage — the agentic-process stack, per area × per front",
-      "summary": "Audit matrix of test coverage for the agentic-process stack by area and front (unit, api, vitest, react, long)",
-      "content_hash": "dd579d15f18c890a26b0fd86fc593499031e37e9a4f717a92bab48e01644b507",
-      "size_bytes": 19936
+      "summary": "Audit matrix of test coverage for the agentic-process stack (AgenticProcess, Shell, PTY layer, ComputeNode, CLI drivers, status model) by front, with remaining gaps.",
+      "content_hash": "9731c2f06231f9d9714a16083729d1a635bc9735012e30c522f95b7b1e8d681f",
+      "size_bytes": 20090
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-07T14:33:53Z",
+  "generated_at": "2026-10-15T08:55:59.960001+00:00",
   "latest_process_ref": ""
 }

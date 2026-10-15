@@ -48,25 +48,27 @@ from flow_sdk.builtin.agentic_process.process_hooks import (
     normalize_process_hook_events,
 )
 from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
-from flow_sdk.builtin.hooks.capabilities import process_capability, settings_file_scopes
+from flow_sdk.builtin.hooks.capabilities import PROCESS_EVENTS, settings_file_scopes
 from flow_sdk.builtin.hooks.types import (
     AgentHookResponse,
     BlockResponse,
     ContextResponse,
     HookCapabilities,
+    HookCapability,
     HookOutcome,
     HookScope,
     PermissionResponse,
 )
 from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
 from flow_sdk.flowpad_types.vendors import vendor_for
+from flow_sdk.instance_settings.runtime import get_assigned_compute_node
 from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
-from flow_sdk.transcript_analyzer.worker_status import WorkerStatus, _tail_status
+from flow_sdk.transcript_analyzer.worker_status import USER_INPUT_TOOLS, WorkerStatus, _tail_status
 
 VENDOR = vendor_for("claude")
 
@@ -105,9 +107,16 @@ _RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SE
 
 #: Claude is the only harness with both halves: a settings file it discovers at
 #: three scopes, and a plugin directory we hand over at launch.
+#: Claude's process hooks also carry ``PreToolUse``, projected ONLY for the tools
+#: that block on the user (``USER_INPUT_TOOLS``): Claude may hold such a call out
+#: of its transcript until it is answered, so the hook is how Flowpad learns a
+#: question is waiting (``AgenticProcess.on_hook``).
+_PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE}
+_PRE_TOOL_USE_MATCHER = "|".join(sorted(USER_INPUT_TOOLS))
+
 _HOOK_CAPABILITIES: "HookCapabilities" = {
     **settings_file_scopes(),
-    HookScope.PROCESS: process_capability(response_events=_RESPONSE_EVENTS),
+    HookScope.PROCESS: HookCapability(events=_PROCESS_EVENTS, response_events=_RESPONSE_EVENTS),
 }
 
 #: How much of the transcript's tail to read for the model: its last assistant entry is near the end,
@@ -231,7 +240,7 @@ class ClaudeDriver:
         return restart_payload_from_cli_options(options)
 
     def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
-        return build_process_hook_snapshot(events, provider=self.name)
+        return build_process_hook_snapshot(events, provider=self.name, supported=_PROCESS_EVENTS)
 
     def hook_capabilities(self) -> "HookCapabilities":
         return dict(_HOOK_CAPABILITIES)
@@ -242,7 +251,7 @@ class ClaudeDriver:
         process_id: str,
         events: Sequence[HookEventType],
     ) -> ProcessHookRuntime:
-        normalized = normalize_process_hook_events(events, provider=self.name)
+        normalized = normalize_process_hook_events(events, provider=self.name, supported=_PROCESS_EVENTS)
         if not normalized:
             assets.remove(_PROCESS_HOOK_PLUGIN)
             return ProcessHookRuntime()
@@ -265,7 +274,14 @@ class ClaudeDriver:
 
         hooks = {
             "description": "Flowpad process-scoped hooks",
-            "hooks": {event.value: [{"hooks": [_handler(event)]}] for event in normalized},
+            "hooks": {
+                event.value: [
+                    {"matcher": _PRE_TOOL_USE_MATCHER, "hooks": [_handler(event)]}
+                    if event is HookEventType.PRE_TOOL_USE
+                    else {"hooks": [_handler(event)]}
+                ]
+                for event in normalized
+            },
         }
         manifest = {
             "author": {"name": "Flowpad"},
@@ -417,11 +433,12 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        if getattr(process, "deployment_id", None):
-            # A deployment's agent works unattended: it starts a long job, arms a Monitor on it
-            # and ends its turn. ``-p`` kills background tasks 10 minutes after the answer, so the
-            # agent would never hear the job finish. Its turns wait for them instead (the keep-alive
-            # counts the wait); a deployment that set its own ceiling keeps it.
+        if getattr(process, "deployment_id", None) or get_assigned_compute_node() is not None:
+            # A deployment's agent, and any chat on a hub sandbox, works unattended: it hands a
+            # long job to a background subagent or Monitor and ends its turn. ``-p`` kills
+            # background tasks 10 minutes after the answer, so the job died mid-run (a QA cycle on
+            # a hub box, 2026-10-15). These turns wait for them instead (the keep-alive counts the
+            # wait); a process that set its own ceiling keeps it. A desktop chat keeps the default.
             env_vars.setdefault(BACKGROUND_WAIT_ENV, "0")
         try:
             await apply_worker_secret_env(env_vars, process)

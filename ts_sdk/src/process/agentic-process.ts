@@ -320,6 +320,12 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
   readonly busy?: boolean;
+  /**
+   * A print-mode worker is alive and idle, kept running by background work the agent left behind
+   * (a dev server, a watcher). Not a turn — ``busy`` is false and the chat accepts messages — but it
+   * holds a process; ``stopBackground()`` ends it.
+   */
+  readonly background_work?: boolean;
   /** Null on the wire when the backend has no transcript to derive one from. */
   readonly worker_status?: WorkerStatus | null;
   session_id?: string | null;
@@ -1078,6 +1084,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * signed-out turn and so cannot tell one refusal from the next.
    */
   worker_status_detail_id?: string | null;
+  /**
+   * The question the worker is blocked on, as its `PreToolUse` hook reported it
+   * (`AskUserQuestion` / `ExitPlanMode`). Claude may keep such a call out of
+   * its transcript until it is answered, so this is how a chat surface can show
+   * it at all. Null once answered; computed on every process payload.
+   */
+  pending_user_input?: { tool_use_id: string; tool_name: string; input: Record<string, unknown> } | null;
 
   get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
@@ -2819,6 +2832,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
+   * End the background work a parked worker is waiting on, and the process that holds it.
+   * ``cancelPrompt`` stops a turn; this is for when no turn is running. Rejects (409) when there
+   * is nothing to stop — the work may have ended on its own a moment earlier.
+   */
+  async stopBackground(): Promise<void> {
+    await this.post('stop-background');
+  }
+
+  /**
    * Interrupt the in-flight turn from a single call site. For a visible PTY
    * process this sends Ctrl-C (``\x03``, no trailing newline) to the same PTY
    * the xterm types into; for a print-mode process it cancels the streaming
@@ -2838,6 +2860,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       }
     }
     await this.cancelPrompt();
+  }
+
+  private turnAction(instruction: string, workerSessionId?: string): ActionInfo {
+    const action = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
+    action.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    return action;
+  }
+
+  /** Ask the backend to accept a turn. OK means accepted, not completed.
+   * Busy and other expected outcomes remain PromptResults. This method neither
+   * echoes output nor waits for completion; executeInstruction retains that UI contract.
+   */
+  async sendTurn(instruction: string, options: { workerSessionId?: string } = {}): Promise<PromptResult> {
+    return dataManager.callFlowAction<PromptResult>(this.turnAction(instruction, options.workerSessionId));
   }
 
   async executeInstruction(
@@ -2876,8 +2912,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.appendUserMessage(instruction);
 
     // Call backend execute action
-    const actionInfo = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
+    const actionInfo = this.turnAction(instruction, workerSessionId);
 
     try {
       // The turn's PromptResult. A turn the backend could not take is a 200
@@ -3080,20 +3115,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * @param options - Optional instruction to execute
    * @returns Shell session ID and session ID
    */
-  async start(options?: {
-    instruction?: string;
-    visible?: boolean;
-    ptyTimeout?: number;
-    /** Initial PTY dimensions. Authoritative resize is issued by the
-     * InteractiveTerminal once xterm has fitted; this seed exists so the
-     * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
-    cols?: number;
-    rows?: number;
-    /** Explicit user retry of a failed-to-start process: clears the
-     * server-side `start_failure` latch before launching. Without it the
-     * backend refuses to respawn a latched process. */
-    retry?: boolean;
-  }, hooks?: { beforeAttach?: () => void }): Promise<boolean> {
+  async start(
+    options?: {
+      instruction?: string;
+      visible?: boolean;
+      ptyTimeout?: number;
+      /** Initial PTY dimensions. Authoritative resize is issued by the
+       * InteractiveTerminal once xterm has fitted; this seed exists so the
+       * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+      cols?: number;
+      rows?: number;
+      /** Explicit user retry of a failed-to-start process: clears the
+       * server-side `start_failure` latch before launching. Without it the
+       * backend refuses to respawn a latched process. */
+      retry?: boolean;
+    },
+    hooks?: { beforeAttach?: () => void },
+  ): Promise<boolean> {
     // No client-side STOPPING guard. The server's ``open`` action runs
     // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
     // a dead worker, it's reset to STOPPED and the start proceeds normally.
@@ -3272,11 +3310,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async switchMode(mode: WorkerMode): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
     const shell = !wantPty && this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
-    if (!wantPty) {
-      if (shell) {
-        shell.status = ShellStatus.CLOSING;
-        dataManager.notifyEntityChanged(shell);
-      }
+    const shellStatus = shell?.status;
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
     }
     // Staged BEFORE the request: backend broadcasts land before the response,
     // and the prior latch would discard the authoritative frame as stale.
@@ -3310,9 +3347,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
         shell?.ptyConnection?.markPtyGone();
       }
     } catch (error) {
-      // Rejected (409 mid-turn, or a launch failure) — the intent never became
-      // durable, so roll fields and latch back or the UI stays pinned to it.
+      // Rejected (409 mid-turn or background work running, or a launch failure)
+      // — the intent never became durable, so roll fields and latch back or the
+      // UI stays pinned to it. The PTY was never killed, so its shell isn't closing.
       restoreTransport();
+      if (shell && shellStatus !== undefined) {
+        shell.status = shellStatus;
+        dataManager.notifyEntityChanged(shell);
+      }
       throw error;
     }
   }

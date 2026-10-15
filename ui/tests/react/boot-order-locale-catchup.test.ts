@@ -52,7 +52,8 @@ describe('boot order: project adopted before the locale list lands', () => {
     // subscription can fire. This reproduces the boot state a box is in when the
     // locale subsystem comes up: the project is current, the app is not in its
     // language, and the event that would have said so is already in the past.
-    // (Deliberately not `setLocale`, which would stamp en-US onto the project.)
+    // (Deliberately not `setLocale`, which would record en-US as this device's own
+    // language for the project.)
     instancePreferences.set(PrefKey.LOCALE, 'en-US');
     await waitFor(() => expect(getLocale()).toBe('en-US'));
 

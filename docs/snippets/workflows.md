@@ -56,7 +56,7 @@ What each line does:
 * `agent.process_message(m)` prompts with the message body and answers with a
   frozen `PromptResult`: `text` is the assistant's reply, `executor` the process
   that ran it. A turn the process would not take answers `NOT_YET` with
-  `ran=False` instead of hanging — see [call-returns](call-returns.md).
+  `ran=False` instead of hanging — see [FlowCall](call-returns.md).
 * `EmailMessageSpec.reply_to(m, body=...)` addresses the author, keeps the
   thread, adds `Re:` once. `m.reply(spec)` sends it through the driver and
   then acks — the ack piggybacks on the reply. It records its intent before

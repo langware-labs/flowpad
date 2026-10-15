@@ -70,10 +70,10 @@ def test_count_and_group_by():
     assert count(ROWS) == {"total": 5, "groups": []}
     got = count(ROWS, match={"op": "$GE", "operands": ["input.day", "2026-09-01"]}, group_by=["input.metric"])
     assert got == {"total": 4, "groups": [{"by": {"input.metric": "sent"}, "count": 2},
-                                           {"by": {"input.metric": "reply"}, "count": 1},
-                                           {"by": {"input.metric": "mtg"}, "count": 1}]}
+                                           {"by": {"input.metric": "mtg"}, "count": 1},      # a tie: by the value
+                                           {"by": {"input.metric": "reply"}, "count": 1}]}
     two = count(ROWS, group_by=["input.metric", "input.day"])
-    assert two["total"] == 5 and len(two["groups"]) == 5 and two["groups"][0]["by"] == {"input.metric": "sent", "input.day": "2026-09-03"}
+    assert two["total"] == 5 and len(two["groups"]) == 5 and two["groups"][0]["by"] == {"input.metric": "mtg", "input.day": "2026-09-02"}   # all ties: ordered by value
 
 
 # ── on a dataset, and over HTTP ──────────────────────────────────────────────
@@ -144,3 +144,12 @@ async def test_the_read_actions_over_http(tmp_path):
 
     assert (await call_local("GET", f"{base}/rows", params={"filter": "{not json"})).status_code == 400
     assert (await call_local("GET", f"{base}/rows", params={"limit": "-1"})).status_code == 400
+
+
+def test_a_filter_of_only_paging_words_is_a_page_not_a_match():
+    from flow_sdk.db.drivers.query import QueryFilter
+
+    paged = QueryFilter.parse({"limit": 3, "offset": 6})
+    assert (paged.limit, paged.offset, paged.match) == (3, 6, None)        # was: "the rows whose limit is 3"
+    assert QueryFilter.parse({"status": "open"}).match.operands == ["status", "open"]
+    assert QueryFilter.parse({}).limit is None                             # an empty map still parses

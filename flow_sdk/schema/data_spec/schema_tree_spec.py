@@ -1,6 +1,6 @@
-"""``SchemaTree`` — the schemas one project defines, and how they hang together.
+"""``SchemaTreeSpec`` — the schemas one project defines, and how they hang together.
 
-One answer for the schema view of a dataset: every kind a data schema folder of the project
+One answer for the schema tree of a project: every schema a data schema folder of the project
 defines, the kinds each one names, and the dataset that keeps its rows. A kind a field names is
 either LINKED (a dataset keeps rows of it, the field holds a reference to one) or held INSIDE the
 row (nobody keeps rows of it) -- the schema writes both the same way, so the tree says which.
@@ -52,7 +52,7 @@ class SchemaDatasetSpec(DataSpec):
 
 
 class SchemaNodeSpec(DataSpec):
-    """One kind a project's schema folder defines."""
+    """One schema a project's data schema folder defines."""
 
     spec_kind: ClassVar[str] = "schema.tree.node"
 
@@ -70,12 +70,11 @@ class SchemaNodeSpec(DataSpec):
 
 
 class SchemaTreeSpec(DataSpec):
-    """Every kind one project defines, in the order its folders are read."""
+    """Every schema one project defines, in the order its folders are read."""
 
     spec_kind: ClassVar[str] = "schema.tree"
 
-    project_id: str
-    kinds: list[SchemaNodeSpec] = []
+    schemas: list[SchemaNodeSpec] = []
 
 
 __all__ = ["Held", "SchemaDatasetSpec", "SchemaFieldSpec", "SchemaNodeSpec", "SchemaTreeSpec", "SchemaUseSpec"]

@@ -96,7 +96,7 @@ overlay rather than navigation and no caller mounts its own.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
-Whiteboards have **no** `.excalidraw` extension handling — they are
+Charts have **no** `.excalidraw` extension handling — they are
 folder-backed entities opened by TypeId. Folders are browsed
 (`ViewType.ASSETS` folder/fs pointers), never "opened". Entities always win
 over extensions: a path that resolves to an entity opens its type's editor.
@@ -110,7 +110,7 @@ of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-
 1. **`EDITOR_TYPES` / `TYPE_TO_EDITOR`** (`ts_sdk/src/models/asset-editor.ts:24-47`)
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
    claude_memory, claude_rules, command, plan, prompt), agent, skill, task,
-   workflow, whiteboard, agent_trace, dynamic_workflow, usage_report,
+   workflow, chart, agent_trace, dynamic_workflow, usage_report,
    asset_cleanup_report, mcp. Rendered by `AssetEditorRouter`.
 2. **Per-entity `dockPointer` getters** (SDK) — `APIEntity.dockPointer`
    default is `ViewType.HOME` (`APIEntity.ts:481`); asset types override via
@@ -138,12 +138,19 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 
 ## 4. Webapps & artifacts
 
-- `flow show webapp --port N` → registers a `proxy` `ServiceEndpoint` on the
-  local placement → `{kind: app, typeid: service_endpoint-<id>, runtime: dev}` →
-  the APP dock → `PersistentIframe` (src = the endpoint's `direct-url`; global
+- `flow show webapp --port N` → registers a `proxy` ROUTE (`port-N`) on the local
+  placement's `app` proxy (`--admin`: its `admin` one) →
+  `{kind: app, typeid: service_endpoint-<id>, route: "port-N", runtime: dev}` →
+  the APP dock (`?route=port-N`) → `PersistentIframe` (src = the route's `direct-url`; global
   iframe registry keyed by src; liveness = client-side fetch probe, diagnosis =
-  the endpoint's `probe`).
-- `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
+  the endpoint's `probe`). A frame whose tab is not shown is PARKED — kept
+  mounted, hidden with CSS — which its guest cannot see, so the registry tells
+  it: `flowpad:visibility {hidden}` on every park and show, and in answer to a
+  guest's `flowpad:visibility-please`; the SDK (`adoptHostVisibility`, installed
+  by a served app's `initSdk`) folds that into the guest's own `document.hidden`
+  / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
+  polls rest like a hidden page's.
+- `flow app open` → a project app (`webapp.json`) comes up through `bring_up` (validate → load → setup → fix, `flow_sdk/core/setup/load.py`); a folder with no `webapp.json` is discovered/started ad hoc → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
 - `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`
@@ -158,7 +165,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
 |---|---|---|---|
 | 1 (was: most locked) | `HtmlPreview` — shown `.html` | backend-origin `fs/serve/<path>` url, `allow-same-origin` — see below | same as tier 3 in practice; its own relative pages/assets resolve because the url mirrors the path |
 | 2 | MCP sandbox — `McpAppPreview` (vibe), `ShowView` (`/dock/show`, skill `ui/<component>.html`), `AppHost` (`/dock/apps/<uname>`) | backend-origin `sandbox_proxy.html`, per-request CSP (`_sandbox_csp`, default `connect-src 'none'`) | JSON-RPC bridge; only the vibe `.mcp.html` path routes `ui/message` back to the agent; guest tool calls stubbed everywhere |
-| 3 | `PersistentIframe` — an app's endpoint (a dev server's `direct-url`, or a `static` endpoint's `service` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
+| 3 | `PersistentIframe` — an app's route on its placement's audience proxy (a dev server's `direct-url`, or a `static` route's `service/<mount>/` path) | real origin, `allow-same-origin allow-scripts allow-forms allow-popups …` + broad `allow=` list | full browser powers on its own origin |
 | 4 (full) | Bespoke asset editors / native views | app origin, no iframe | full app access |
 
 No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
@@ -169,7 +176,8 @@ It shipped withholding `allow-same-origin`, on the reasoning that an opaque
 origin costs only `localStorage` while keeping an agent-written page away from
 the API. On a **cookie-gated** instance that is wrong: an opaque origin's *site
 for cookies* is null, so every request the document itself makes is cross-site
-and the `SameSite=Lax` `__Host-cookie-gate` cookie is withheld. The frame's
+and the `__Host-grant` cookie (`SameSite=None; Partitioned`, keyed to the
+top-level site) is withheld. The frame's
 first load is parent-initiated and carries the cookie, so the page renders —
 then its own images and its own link clicks each come back as the gate's
 Forbidden page. The host is identical; the host is not what the browser decides
@@ -185,7 +193,7 @@ from — see [§8](#8-open-questions) Q1.
   (`ui.py:49-74`, `app.py:601`).
 - `/assets/*` hashed bundle; explicit public root files (favicon/logo/ws-test).
 - `/mcp-sandbox/sandbox_proxy.html` — the only CSP-bearing surface.
-- **a `static` ServiceEndpoint's `service` route**
+- **a `static` route's `service/<mount>/` path** (or a `static` ServiceEndpoint's own)
   (`server/routes/service_endpoint.py`) and **`fs/serve`**
   (`actions/fs/fs_actions.py`) — the two raw-bytes/MIME paths, and both are
   thin callers of the one implementation, `serve_app_bytes` (ETag/304,

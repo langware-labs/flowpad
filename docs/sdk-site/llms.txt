@@ -9,12 +9,16 @@ The whole guide as one Markdown file: flow-sdk.md
 - Chapter 1: Shapes you can trust (flow.DataSpec; page anchor #shapes): Every value is typed, frozen and file-friendly.
 - Chapter 2: Files are the database (flow.SourceItem; page anchor #files): Disk is the truth; the index rebuilds from it.
 - Chapter 3: Agents (flow.Agent, flow.AgenticProcess; page anchor #agents): A folder defines it; a process runs it, on any harness.
-- Chapter 4: Orchestration is Python (flow.ComputeOp, flow.ReturnedValue; page anchor #orchestration): Your loop is the engine. Every call answers the same way.
+- Chapter 4: Orchestration is Python (flow.ComputeOp, flow.ReturnedValue; page anchor #orchestration): Your loop is the engine. FlowCall gives participating work calls a shared answer contract.
 - Chapter 5: Data in (flow.DataDriver, flow.DataSource; page anchor #sources): A driver talks to a system; a source is one stream on it.
 - Chapter 6: Every channel (flow.StreamInbox; page anchor #channels): One loop body answers email, Slack, Telegram and WhatsApp.
 - Chapter 7: Accounts, not tokens (flow.Connection; page anchor #connections): Sign in once; code asks for the account by name.
 - Chapter 8: Secrets, declared (flow.SecretPack, flow.SecretStore; page anchor #credentials): Declarations hold names; values live in a store git never sees.
 - Chapter 9: Place it anywhere (flow.Deployment; page anchor #ship): Same verbs on this computer or a machine of its own.
+
+## Source-checkout references
+
+- ../snippets/channel-webhook-routing.md: WhatsApp account/user/group claims, delivery targets, authentication, admission, answering placement and diagnostics. Requires a Flowpad source checkout.
 
 ## Rules
 

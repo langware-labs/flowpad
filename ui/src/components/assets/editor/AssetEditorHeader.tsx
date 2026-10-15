@@ -27,7 +27,7 @@ export interface AssetEditorHeaderProps {
 }
 
 /**
- * Shared header for asset editors (markdown, whiteboard, …).
+ * Shared header for asset editors (markdown, chart, …).
  *
  * The page header owns asset identity (type icon, name, path). This compact
  * secondary row contains only editor/file controls:

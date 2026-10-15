@@ -65,10 +65,10 @@ export interface FindSessionResult {
 
 /**
  * Convert a VFS-relative path to an OS absolute path.
- * VFS paths are relative (no leading slash, no drive letter) like "Users/gadi/Flowpad workspace".
+ * VFS paths are relative (no leading slash, no drive letter) like "Users/bob/Flowpad workspace".
  * This function combines them with the OS root and normalizes slashes for the target OS.
  *
- * @param vfsPath - VFS-relative path (e.g., "Users/gadi/Flowpad workspace/.flow/system_skills")
+ * @param vfsPath - VFS-relative path (e.g., "Users/bob/Flowpad workspace/.flow/system_skills")
  * @param root - OS filesystem root (e.g., "C:\\" on Windows, "/" on Unix)
  * @returns OS absolute path with normalized slashes
  */
@@ -104,6 +104,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   fs_storage_mount_path?: string | null;
   home_dir?: string | null;
   auto_login?: boolean;
+  allow_login?: boolean;
+  login_roles?: string[];
   logged_in_user?: string | null;
   static type: string = 'compute_node';
 
@@ -137,6 +139,8 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     // dropped it, and every card rendered "signed out". Every other field here
     // is assigned for the same reason; these two were simply missed.
     this.auto_login = entity.auto_login;
+    this.allow_login = entity.allow_login;
+    this.login_roles = entity.login_roles;
     this.logged_in_user = entity.logged_in_user;
   }
 

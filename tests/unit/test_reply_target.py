@@ -104,7 +104,7 @@ class TestItRepliesToTheCorrespondent:
             _message("agentmail:joe@agentmail.to", "theirs"),
         ]
         wire["items"] = {
-            "mine": _item("mine", "eran-1968@agentmail.to", "Re: Round trip"),
+            "mine": _item("mine", "alice-1968@agentmail.to", "Re: Round trip"),
             "theirs": _item("theirs", "joe@agentmail.to", "Round trip"),
         }
         target = await resolve_reply_target(CONVERSATION)
@@ -119,7 +119,7 @@ class TestItRepliesToTheCorrespondent:
         wire["cloud"] = "cloud-7"
         wire["messages"] = [_message("cloud-7", "mine"), _message("agentmail:joe@agentmail.to", "theirs")]
         wire["items"] = {
-            "mine": _item("mine", "eran-1968@agentmail.to", "Re: Round trip"),
+            "mine": _item("mine", "alice-1968@agentmail.to", "Re: Round trip"),
             "theirs": _item("theirs", "joe@agentmail.to", "Round trip"),
         }
 
@@ -297,20 +297,20 @@ class TestAChannelRepliesToTheChannel:
     async def test_a_slack_reply_is_addressed_to_the_channel_not_the_author(self, wire):
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
-        wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="T0123/C08L1P4C95J")}
+        wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="T0123/C0123456789")}
 
         target = await resolve_reply_target(CONVERSATION)
 
-        assert target.to == "C08L1P4C95J", "the reply was addressed to the author — Slack DMs that"
+        assert target.to == "C0123456789", "the reply was addressed to the author — Slack DMs that"
 
     @pytest.mark.asyncio
     async def test_a_channel_record_with_no_channel_refuses(self, wire):
         """Better a refusal than a post addressed to an empty string."""
         wire["spec"] = SlackMessageSpec
         wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
-        wire["messages"] = [_message("slack:U06L8JSQJ1X", "i-1", kind="slack")]
-        wire["items"] = {"i-1": _item("i-1", "U06L8JSQJ1X", "hello", origin_namespace="")}
+        wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="")}
 
         with pytest.raises(ChannelSendUnavailable):
             await resolve_reply_target(CONVERSATION)

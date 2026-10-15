@@ -24,6 +24,11 @@ describe('link matches', () => {
     ]);
   });
 
+  it('keeps a bracketed absolute path whole across a space in a folder name', () => {
+    const line = 'Completed the SDK gap list (/Users/alice/Flowpad workspace/marketing/docs/gtm-sdk-gaps.md).';
+    expectFileLinks(line, ['/Users/alice/Flowpad workspace/marketing/docs/gtm-sdk-gaps.md']);
+  });
+
   it('reads quote marks inside a word as part of it, not as quotes that swallow the paths between them', () => {
     const line = "I've written docs/navigation/navigation_medium.md, it isn't committed; the users' 'notes/my a.md' and don't 'x.ts:3'";
     expectFileLinks(line, [
@@ -74,7 +79,7 @@ describe('link matches', () => {
   });
 
   it('cuts Hebrew text around a URL into runs that join back to the text', () => {
-    const text = 'היי ערן, התיקון כאן\nPR: https://github.com/langware-labs/flowpad/pull/544 תודה';
+    const text = 'היי דנה, התיקון כאן\nPR: https://github.com/langware-labs/flowpad/pull/544 תודה';
     const segments = linkSegments(text);
     expect(segments.map((segment) => segment.text).join('')).toBe(text);
     expect(segments.filter((segment) => segment.link).map((segment) => segment.text)).toEqual([

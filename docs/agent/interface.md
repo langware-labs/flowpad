@@ -106,7 +106,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 630
 ```
@@ -128,7 +128,7 @@ returns: "one coherent process contract"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 679
 ```
@@ -149,13 +149,13 @@ params:
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
   ModelTier: "sm | md | lg"
-  PromptResult: "a turn's answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
+  PromptResult: "a turn's FlowCall answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
   StreamEvent: "streamed execution event"
 returns: "supporting Python contracts"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 142
 ```
@@ -178,7 +178,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 912
 ```
@@ -206,7 +206,7 @@ errors: [InvalidTransition, StartFailure, WorkerBusy]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1147
 ```
@@ -231,7 +231,7 @@ errors: [WorkerBusy, ProcessStopping, ProcessFailed]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1991
 ```
@@ -265,7 +265,7 @@ returns: "backend-owned runtime projection"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 3814
 ```
@@ -304,7 +304,7 @@ returns: "updated process context or projected assets"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 4065
 ```
@@ -334,7 +334,7 @@ errors: ["400", "409", "500"]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1581
 ```
@@ -359,7 +359,7 @@ errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 2163
 ```
@@ -382,7 +382,7 @@ errors: ["400", "409", "500"]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 2892
 ```
@@ -407,7 +407,7 @@ errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 3874
 ```
@@ -430,7 +430,7 @@ errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 5402
 ```
@@ -456,7 +456,7 @@ returns: "public AgenticProcess support contracts"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 64
 ```
@@ -511,7 +511,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 247
 ```
@@ -547,7 +547,7 @@ returns: "Record<string, unknown> via serializeAgenticContext"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
   line: 36
 ```
@@ -563,7 +563,7 @@ returns: IAgenticProcessOptions
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
   line: 114
 ```
@@ -584,7 +584,7 @@ returns: SpawnResult
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
   line: 124
 ```
@@ -607,7 +607,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 428
 ```
@@ -645,7 +645,7 @@ returns: "derived SDK view of backend state"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 524
 ```
@@ -669,7 +669,8 @@ params:
   submit: "async (instruction?, options?) -> void"
   cancelPrompt: "async () -> void"
   interruptTurn: "async () -> void"
-  executeInstruction: "async (instruction, options?) -> void"
+  sendTurn: "async (instruction, {workerSessionId}?) -> PromptResult — FlowCall admission, no echo or completion wait"
+  executeInstruction: "async (instruction, options?) -> void — legacy echo and optional completion wait"
   sendInput: "async (text) -> void"
   inject: "async (instruction) -> {instructionId, injectedQueueSize}"
 returns: "action completion or streamed turn"
@@ -677,7 +678,7 @@ errors: [ActionError, AbortError]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1071
 ```
@@ -710,7 +711,7 @@ returns: "stream state or unsubscribe callback"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1129
 ```
@@ -736,7 +737,7 @@ errors: [ActionError, WorkerBusy]
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 2337
 ```
@@ -765,7 +766,7 @@ returns: "updated reflected entity or requested plan operation"
 source:
   origin:
     kind: local
-    base: /Users/alice/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1004
 ```

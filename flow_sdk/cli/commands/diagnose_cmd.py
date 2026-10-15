@@ -441,6 +441,7 @@ async def _run_diagnose(
         emit = _TerminalSink()
 
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.agentic_process import prompt_worker_active
     from flow_sdk.config import flowpad_assistant_project_root
     from flow_sdk.core.entity.cross_link import cross_link_entities
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -551,7 +552,10 @@ async def _run_diagnose(
         consumer = asyncio.create_task(_consume())
         try:
             while not consumer.done():
-                if await _completed():
+                # Recorded is not finished: the agent is still writing its closing message, and
+                # stopping the worker now interrupts it mid-turn (a "[Request interrupted by
+                # user]" the classifier reads as the user's). Leave when the turn's worker ends.
+                if await _completed() and not prompt_worker_active(ap.id):
                     break
                 # Re-check cadence only — there is no give-up timeout; we leave
                 # the loop as soon as the stream finishes or recording is detected.
@@ -960,7 +964,11 @@ async def _run_request(request_id: str, transcript_timeout: float) -> int:
     elif not ask:
         typer.echo("This diagnosis was requested by someone supporting you; its result is sent to them.")
 
-    text = _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True) if ask else ""
+    text = (
+        _ask("Describe the issue or paste the error, then press Enter (leave empty to skip): ", verbatim=True)
+        if ask
+        else ""
+    )
     typer.echo("Diagnosing — spinning up the agent (this can take a few seconds)…")
 
     sink, narration, done = _TerminalSink(), [], {}

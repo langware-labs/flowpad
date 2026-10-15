@@ -21,6 +21,7 @@ class _Process:
 
     def __init__(self):
         self.id = "proc-1"
+        self.context_data = {}
         self.prompts: list = []
 
     async def wait(self, timeout=None, on_status=None):
@@ -288,6 +289,9 @@ class _Deployment:
         if self.error is not None:
             raise self.error
         return self.process
+
+    async def agent(self):
+        return None  # declares no output: the answer is the turn's own
 
 
 def _spawn_path(monkeypatch, *, deployment, refusals, settled):

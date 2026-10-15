@@ -3,13 +3,14 @@
     flow dep list                                  # every declared dependency and its state here
     flow dep add data_source-7c1e… --label "Team knowledge"   # an asset, by id
     flow dep add data_source-0a9d… --asset data_source-7c1e…  # declared in THAT asset's flow.json
-    flow dep add ../langware-os                    # a folder in git is written as its repo
+    flow dep add ../handbook                       # a folder in git is written as its repo
     flow dep add git+https://github.com/acme/handbook#main --path legal --optional
     flow dep add hub:8c1f0b2e-…                    # a hub project
-    flow dep remove langware-os                    # leaves the folder on disk alone
+    flow dep remove handbook                       # leaves the folder on disk alone
     flow dep sync [--update]                       # fetch what is missing; --update pulls Flowpad's clones
     flow dep install policies                      # bring in an optional one
-    flow dep check langware-os                     # exit 0 when it is ready here, 4 when not
+    flow dep load policies [--approve]             # check/load; explicit approval permits setup
+    flow dep check handbook                        # exit 0 when it is ready here, 4 when not
 
 ``--project`` names the project; the default is the project whose folder is the working
 directory. Every command prints one JSON envelope.
@@ -130,3 +131,23 @@ def check(
     if row.get("state") != "ready":
         fail(int(ExitCode.NOT_YET), "NOT_READY", f"{name}: {row.get('state')} — {row.get('reason') or ''}".rstrip(" —"), {"dependency": row})
     ok({"dependency": row})
+
+
+@dep_app.command("load")
+def load(
+    name: Annotated[str, typer.Argument(help="The dependency's name.")],
+    approve: Annotated[bool, typer.Option("--approve", help="Approve required setup, then load the service.")] = False,
+    project: ProjectOpt = None,
+) -> None:
+    """Load NAME through the same approval gate as Open; never prompts or approves implicitly."""
+    port = discover_port(required=True)
+    data = get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {}
+    row = next((d for d in data.get("dependencies", []) if d.get("name") == name and not d.get("via")), None)
+    if row is None or not row.get("project_id"):
+        fail(int(ExitCode.NOT_FOUND), "NO_PROVIDER", f"{name!r} has no resolved provider project")
+    result = post_graph_json(_url(port, row["project_id"], "load"), {"approved": approve}, on_error=_refused)
+    if result.get("state") == "setup_required":
+        fail(int(ExitCode.NOT_YET), "SETUP_REQUIRED", result.get("detail") or f"{name} requires setup", result)
+    if result.get("state") == "failed":
+        fail(int(ExitCode.NOT_YET), "LOAD_FAILED", result.get("detail") or f"Could not load {name}", result)
+    ok(result)

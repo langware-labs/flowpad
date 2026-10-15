@@ -113,14 +113,29 @@ transport. Each also forces `loadHistory({ force: true })` afterwards — the
 every direction, including chat→vibe where no transport changes at all, so a
 turn produced on the surface being left is not missing from the incoming pane.
 
-One case still leaves the two out of step, deliberately: **first sight never
-mutates.** Opening a dock in chat on a session that is already `pty_mode=true`
-records the mode and leaves the worker alone — "the mode this dock opened in" is
-not a statement that the user left the terminal. So code still must not infer
-"this is the chat surface, therefore the worker is headless"; read `pty_mode` /
-`AgenticProcess.isHeadless` when that is what you mean. That inference led to
-hidden components and a broken chat/vibe view (e.g. the AskUserQuestion card not
-showing for sessions that had visited the terminal once).
+**Chat/vibe and the terminal are mutually exclusive, first sight included.**
+Opening a dock in chat or vibe on a session that is still `pty_mode=true` (a
+reload, a `?viewMode=standard` link) switches it to headless like any other mode
+change — it used to be left on its PTY, so a question the agent then asked waited
+in a terminal nobody could see.
+
+A switch the worker cannot take yet **waits, and says why**
+(`SurfaceSwitchWaitNotice`): mid-turn (`busy`), or — after the turn ended —
+background work the agent launched (`run_in_background`) still running in the
+PTY, which `switch-mode` refuses with a 409 (`BACKGROUND_TASKS_RUNNING`) rather
+than kill it. While a chat switch waits, `InteractiveTerminal` keeps the terminal
+on screen under the notice instead of a chat over the live PTY. The session's
+surface switch is greyed mid-turn (`busy`), as before; background work is not
+`busy`, so that pick lands and the notice says why the switch is still waiting.
+
+The other direction waits too: a chat worker the agent left background work in
+(`background_work`) cannot take a switch to the terminal (the work belongs to its
+process and would die with it). The notice then offers **Switch anyway**, behind a
+confirmation that the switch ends the work — see `agent-management/mode-switching.md`.
+
+Code still must not infer "this is the chat surface, therefore the worker is
+headless" — during that wait it is not; read `pty_mode` /
+`AgenticProcess.isHeadless` when that is what you mean.
 
 ## The toolkit — `@src/components/view-mode`
 

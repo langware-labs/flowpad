@@ -10,6 +10,7 @@ import {
   customDraft,
   editDraft,
   emptyVar,
+  loginCommands,
   namesLocked,
   packDraft,
   scopeLocked,
@@ -200,6 +201,49 @@ describe('toSaveRequest', () => {
 
     expect(req.typeid).toBe('credential-1');
     expect(req.scope).toBeUndefined();
+  });
+
+  it('an edit keeps an either-or group and a cli variable\'s commands, and never sends a value for it', () => {
+    const login = { commands: { darwin: 'gcloud auth application-default login' } };
+    const check = { commands: { darwin: 'gcloud auth application-default print-access-token' } };
+    const base = statusRow().vars[0];
+    const google = statusRow({
+      vars: [
+        { ...base, env_var: 'GOOGLE_APPLICATION_CREDENTIALS', required: 'ONE_OF', kind: 'file' },
+        { ...base, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', found_in: null, login: login.commands.darwin, login_spec: login, check_spec: check },
+        { ...base, env_var: 'GCP_REGION', required: 'OPTIONAL' },
+      ],
+    });
+
+    const { vars } = toSaveRequest(editDraft(google), 'p1').manifest;
+    expect(vars.GOOGLE_APPLICATION_CREDENTIALS).toMatchObject({ required: 'ONE_OF', kind: 'file' });
+    expect(vars.GCLOUD_ADC).toMatchObject({ required: 'ONE_OF', kind: 'cli', login, check });
+    expect(vars.GCP_REGION.required).toBe('OPTIONAL');
+
+    // Set values: the cli variable shows its command, and whatever is in its slot is not written.
+    const d = valuesDraft(google);
+    expect(loginCommands(d.vars[1], google)).toEqual([login.commands.darwin]);
+    d.vars[0].value = '{"type": "service_account"}';
+    d.vars[1].value = 'stray';
+    expect(validateDraft(d, new Set()).vars).toEqual({});
+    expect(toSaveRequest(d, 'p1').values).toEqual({ GOOGLE_APPLICATION_CREDENTIALS: '{"type": "service_account"}' });
+  });
+
+  it('a template keeps ONE_OF, and does not demand a value from a group member or a cli variable', () => {
+    const spec = new Credential({
+      name: 'google-cloud',
+      title: 'Google Cloud',
+      scope: 'system',
+      vars: {
+        GOOGLE_APPLICATION_CREDENTIALS: { required: 'ONE_OF', kind: 'file' },
+        GCLOUD_ADC: { required: 'ONE_OF', kind: 'cli', login: { commands: { darwin: 'gcloud auth application-default login', linux: 'gcloud auth application-default login' } } },
+      },
+    } as never);
+    const d = templateDraft(spec, 'project');
+
+    expect(loginCommands(d.vars[1])).toEqual(['gcloud auth application-default login']);
+    expect(validateDraft(d, new Set()).vars).toEqual({});
+    expect(Object.values(toSaveRequest(d, 'p1').manifest.vars).map((x) => x.required)).toEqual(['ONE_OF', 'ONE_OF']);
   });
 
   it('packing sends no values', () => {

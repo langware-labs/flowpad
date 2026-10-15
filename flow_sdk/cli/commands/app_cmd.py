@@ -27,8 +27,6 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-from flow_sdk.core.dev_server import find_free_port as _find_free_port
-from flow_sdk.core.dev_server import port_open as _port_open
 from flow_sdk.core.dev_server import start_detached as _start_detached
 from flow_sdk.core.dev_server import wait_for_port as _wait_for_port
 
@@ -74,6 +72,10 @@ def open_app(
     scan_root = _resolve_root(root)
     process_id = _resolve_process_id(process)
     request = query or ""
+    placed = port is None and not no_start and (declared := _start_declared(request)) is not None
+    if placed:
+        # The project's own app: the backend started it (or found it) on its port, by the one rule.
+        port, no_start = declared, True
 
     artifacts = _list_webapp_artifacts(process_id, request)
     artifact = _select_artifact(artifacts, request, scan_root)
@@ -85,6 +87,7 @@ def open_app(
             port_override=port,
             no_start=no_start,
             timeout=timeout,
+            placed=placed,
         )
         if opened is not None:
             _ok(opened)
@@ -104,6 +107,7 @@ def open_app(
         no_start=no_start,
         install=install,
         timeout=timeout,
+        placed=placed,
     )
     _ok(opened)
 
@@ -176,6 +180,98 @@ def free_dev_port(
     _ok({"port": port, "in_range": _STATIC_PORT_RANGE.start <= port < _STATIC_PORT_RANGE.stop})
 
 
+def _project_action_url(action: str, *, required: bool = True) -> str | None:
+    """``project/<id>/<action>`` for the project the caller stands in; None outside any project —
+    and, with ``required=False``, when no backend is running."""
+    from flow_sdk.cli.commands._common import discover_port, graph_url, project_for_path  # noqa: PLC0415
+
+    server_port = _discover_port() if required else discover_port(required=False)
+    if not server_port:
+        return None
+    project_id = project_for_path(server_port, os.getcwd(), create=False)
+    return graph_url(server_port, f"project/{project_id}/{action}") if project_id else None
+
+
+def _project_action(action: str, body: dict | None = None) -> dict:
+    """Call an action of the project the caller stands in: a GET, or a POST when there is a body."""
+    from flow_sdk.cli.commands._common import get_graph_json  # noqa: PLC0415
+
+    url = _project_action_url(action)
+    if url is None:
+        _fail(EXIT_NOT_FOUND, "NO_PROJECT", f"No Flowpad project contains {os.getcwd()}")
+
+    def _on_error(status_code: int, rbody: dict) -> None:
+        message = str(rbody.get("message") or f"HTTP {status_code}")
+        _fail(EXIT_NOT_FOUND if status_code == 404 else EXIT_CONNECTION_ERROR, "NOT_FOUND" if status_code == 404 else "SERVER_ERROR", message)
+
+    if body is None:
+        return get_graph_json(url, timeout=15, on_error=_on_error) or {}
+    return _post_graph_json(url, body, timeout=90, on_error=_on_error) or {}
+
+
+def _start_declared(request: str) -> int | None:
+    """The port of the project app ``request`` names (or of its only app), brought up the one way —
+    validate → load → setup → fix (``bring_up``, behind ``app-start``); None when the caller is in no
+    project or no ``webapp.json`` app here matches. A load that does not come up is the answer: its
+    reason, and the fixer's verdict on it."""
+    if _project_action_url("app-start", required=False) is None:
+        return None
+    names = sorted({row["app"] for row in _project_action("app-ports").get("ports") or []})
+    name = request if request in names else (names[0] if not request and len(names) == 1 else None)
+    if name is None:
+        return None
+    load: dict = {"setup_available": True}
+    # A failed load goes on to setup, once (``bring_up`` reads the failure); the setup-fixer is a step of it.
+    while load.get("state") != "ready" and load.get("setup_available"):
+        row = (_project_action("app-start", {"app": name}).get("apps") or [{}])[0]
+        load = _follow(row.get("load") or {}, str(row.get("asset") or ""))
+    if load.get("state") != "ready":
+        _fail(EXIT_START_FAILED, "APP_NOT_STARTED", f"{name}: {load.get('detail') or load.get('state') or 'failed'}")
+    page = next((r for r in _project_action("app-ports").get("ports") or []
+                 if r["app"] == name and r["process"] == "page"), None)
+    port = (page or {}).get("port") or (page or {}).get("declared")
+    return int(port) if port else None
+
+
+def _follow(load: dict, asset: str) -> dict:
+    """Follow a load to its verdict, as ``flow project load --wait`` does — a setup run and its fixer
+    included: the fixer is a step of that run."""
+    import time  # noqa: PLC0415
+
+    while load.get("state") == "running":
+        time.sleep(2)
+        load = _project_action(f"load-state?asset={asset}") or load
+    return load
+
+
+@app_app.command("ports", help="The port each app of this project declares, and where it runs now.")
+def app_ports_cmd(
+    bare: Annotated[Optional[str], typer.Option("--bare", help="Print only the live (else declared) port of APP or APP/SERVICE.")] = None,
+) -> None:
+    """The one place an agent, a wizard step or a person reads an app's port — never a guess, never a
+    number copied into a prompt. ``--bare shop`` or ``--bare shop/api`` prints one number for ``$(...)``."""
+    rows = _project_action("app-ports").get("ports") or []
+    if bare is None:
+        _ok({"ports": rows})
+        return
+    name, _, process = bare.partition("/")
+    row = next((r for r in rows if r["app"] == name and r["process"] == (process or "page")), None)
+    port = (row or {}).get("port") or (row or {}).get("declared")
+    if not port:
+        _fail(EXIT_NOT_FOUND, "NO_PORT", f"{bare} declares no port and is not running")
+    typer.echo(str(port))
+
+
+@app_app.command("stop", help="Stop an app of this project on this machine, whoever started it.")
+def app_stop_cmd(name: Annotated[str, typer.Argument(help="The app's name.")]) -> None:
+    _ok(_project_action("app-stop", {"app": name}))
+
+
+@app_app.command("restart", help="Stop an app of this project and start it again on its port.")
+def app_restart_cmd(name: Annotated[str, typer.Argument(help="The app's name.")]) -> None:
+    _ok(_project_action("app-stop", {"app": name, "restart": True}))
+
+
 def _resolve_root(root: str | None) -> Path:
     path = Path(root or os.getcwd()).expanduser().resolve()
     if not path.exists() or not path.is_dir():
@@ -204,6 +300,35 @@ def _list_webapp_artifacts(process_id: str, query: str) -> list[dict]:
     return artifacts if isinstance(artifacts, list) else []
 
 
+def _answers(port: int) -> bool:
+    """Something speaks HTTP on ``port`` — asked only of a holder the process table cannot name."""
+    from flow_sdk.core.dev_server import loopback_answers  # noqa: PLC0415
+
+    return loopback_answers(port, timeout=2)
+
+
+def _where(port: int, folder: Path, start_cmd: str, name: str, *, placed: bool = False) -> tuple[int, bool]:
+    """``(the port the app is or will be on, it is already serving)`` — by the one port rule
+    (``flow_sdk/core/app_ports.py``), never "something answers on that port".
+
+    The app already running from its folder is the app, on whatever port it listens. A port ANOTHER
+    program holds is an error that names it: showing that program as the app is the failure this
+    replaces. ``placed``: the backend just started (or found) it on ``port`` — that is the answer; a
+    folder search would take the app's own API, serving from the same folder, for its page."""
+    if placed:
+        return port, True
+    from flow_sdk.core import app_ports  # noqa: PLC0415
+
+    snapshot = app_ports.listeners()
+    mine = app_ports.of_app(snapshot, folder, start_cmd)
+    if mine:
+        return mine[0].port, True
+    found = app_ports.decide(app_ports.Declared(port, required=False), mine, snapshot, answers=_answers)
+    if found.state == "conflict":
+        _fail(EXIT_START_FAILED, "PORT_HELD", f"{name}: {found.note}")
+    return found.port, found.state == "running"
+
+
 def _register_webapp(process_id: str, payload: dict) -> dict:
     return _post_process_action(process_id, "register-webapp-artifact", payload)
 
@@ -216,6 +341,7 @@ def _open_artifact(
     port_override: int | None,
     no_start: bool,
     timeout: float,
+    placed: bool = False,
 ) -> dict | None:
     port = port_override or _artifact_port(artifact)
     if port is None:
@@ -227,7 +353,8 @@ def _open_artifact(
     pid = None
     log_file = None
 
-    if not no_start and not _port_open(port):
+    port, serving = _where(port, cwd, command or "", artifact.get("name") or "webapp", placed=placed)
+    if not no_start and not serving:
         if not command:
             return None
         pid, log_file = _start_detached(command, cwd=cwd, port=port, name=artifact.get("name") or "webapp")
@@ -275,6 +402,7 @@ def _open_candidate(
     no_start: bool,
     install: bool,
     timeout: float,
+    placed: bool = False,
 ) -> dict:
     app_dir = Path(candidate.path)
     if candidate.kind == "static":
@@ -284,6 +412,7 @@ def _open_candidate(
     if port is None:
         _fail(EXIT_INVALID_ARG, "NO_PORT", f"Could not infer a port for {candidate.name}")
 
+    port, serving = _where(port, app_dir, candidate.start_cmd, candidate.name, placed=placed)
     start_cmd = candidate.start_cmd.format(port=port)
     started = False
     pid = None
@@ -292,7 +421,7 @@ def _open_candidate(
     if install and candidate.kind != "static":
         _install_dependencies_if_needed(app_dir, start_cmd)
 
-    if not no_start and not _port_open(port):
+    if not no_start and not serving:
         pid, log_file = _start_detached(start_cmd, cwd=app_dir, port=port, name=candidate.name)
         started = True
         if not _wait_for_port(port, timeout):
@@ -434,10 +563,24 @@ _STATIC_PORT_RANGE = range(8000, 8100)
 
 
 def _choose_static_port() -> int:
-    for port in _STATIC_PORT_RANGE:
-        if not _port_open(port):
-            return port
-    return _find_free_port()
+    """A free port in the dev band, else one the OS assigns — never a port an app of this instance
+    declares (``app_ports.free_port`` is the one picker)."""
+    from flow_sdk.core import app_ports  # noqa: PLC0415
+
+    return app_ports.free_port(_declared_ports(), _STATIC_PORT_RANGE)
+
+
+def _declared_ports() -> set[int]:
+    """The ports this project's apps declare, as the backend knows them. Empty when it cannot be asked:
+    a picker must still answer with the backend down, or outside a project."""
+    from flow_sdk.cli.commands._common import local_get  # noqa: PLC0415
+
+    try:
+        url = _project_action_url("app-ports", required=False)
+        rows = ((local_get(url, timeout=5).json().get("data") or {}).get("ports") or []) if url else []
+    except (Exception, SystemExit):  # noqa: BLE001 -- no backend, no project: nothing declared that we can know of
+        return set()
+    return {int(row["declared"]) for row in rows if row.get("declared")}
 
 
 def _install_dependencies_if_needed(app_dir: Path, start_cmd: str) -> None:

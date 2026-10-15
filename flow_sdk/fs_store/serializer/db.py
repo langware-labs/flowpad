@@ -49,11 +49,18 @@ def refuse_disk_only(cls: type, names: tuple[str, ...], medium: str) -> None:
 def digest_over(obj: Any, fields: Iterable[str]) -> str:
     """Stable sha256 over ``fields`` of ``obj`` — a spec before save or a row
     after, read by name so both shapes digest identically. Canonicalised
-    through ``canonical_entity_bytes``, which already owns that contract."""
+    through ``canonical_entity_bytes``, which already owns that contract.
+
+    A spec may add to what is hashed with ``digest_extra() -> dict | None`` (a record's own typed
+    fields): None adds NOTHING, so every object that has none keeps exactly the digest it had."""
     from flow_sdk.llm_index.core import sha256_bytes  # noqa: PLC0415
     from flow_sdk.semantic_lock.targets import canonical_entity_bytes  # noqa: PLC0415
 
     payload = {name: getattr(obj, name, None) for name in fields}
+    extra = getattr(obj, "digest_extra", None)
+    more = extra() if callable(extra) else None
+    if more:
+        payload.update(more)
     return sha256_bytes(canonical_entity_bytes(payload))
 
 

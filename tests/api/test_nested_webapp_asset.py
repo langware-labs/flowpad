@@ -17,7 +17,7 @@ import pytest
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR as AA
 from flow_sdk.builtin.faas.serve_static import API_ORIGIN_SNIPPET
-from flow_sdk.builtin.webapp_placement import webapp_endpoints
+from flow_sdk.builtin.webapp_placement import webapp_routes
 from flow_sdk.core.display_target import resolve_display_target
 
 pytestmark = pytest.mark.asyncio
@@ -82,10 +82,10 @@ async def test_a_nested_editor_is_indexed_as_a_child_of_its_definition(bootstrap
 
 
 async def _served_at(app) -> str:
-    """The app's endpoint path — the endpoint indexing placed it on."""
-    (endpoint,) = await webapp_endpoints(app.id)
-    assert endpoint.backend.type == "static" and endpoint.backend.root == str(Path(app.asset_ref) / ".")
-    return f"/api/v1/graph/service_endpoint/{endpoint.id}/service/"
+    """The app's served path — its mount on the audience proxy indexing placed it on."""
+    (placed,) = await webapp_routes(app.id)
+    assert placed.backend.type == "static" and placed.backend.root == str(Path(app.asset_ref) / ".")
+    return f"/api/v1/graph/service_endpoint/{placed.id}/service/{placed.mount}/"
 
 
 async def test_the_editor_is_served_like_any_other_webapp(bootstrapped_client, user, tmp_path):
@@ -124,5 +124,6 @@ async def test_showing_the_editor_resolves_to_the_app_dock(bootstrapped_client, 
     assert target["typeid"] == str(app.typeid)
     assert target["runtime"] == "served"
     assert target["micro_app_id"] == app.id
-    assert f"/{target['endpoint_id']}/" in await _served_at(app), "shown through the endpoint that serves it"
+    served = await _served_at(app)
+    assert f"/{target['endpoint_id']}/service/{target['route']}/" in served, "shown through the route that serves it"
     assert "artifact_id" not in target, "a webapp asset has no source plane"

@@ -365,6 +365,25 @@ class Agent(Entity):
 
         return dedupe_by_name(asset.to_spec() for asset in await self.mcp_assets())
 
+    async def save(self, owner=None, notify: bool = True):
+        from flow_sdk.core.entity.entity_model import in_remote_reflection, store_suppressed
+
+        if not self.auto_launch or store_suppressed() or in_remote_reflection():
+            return await super().save(owner=owner, notify=notify)
+        from pathlib import Path
+        from flow_sdk.assets.document import DocumentPatch
+        from flow_sdk.builtin.agent_authoring import agent_document_edit
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        # Resolve a new asset's placement before taking the project guard. The
+        # guard precedes super().save's entity lock, including peer reindexing.
+        await self._prepare_for_storage()
+        info = SchemaRegistry.get(self.get_type())
+        document = str(Path(self.asset_ref) / info.shape.main)
+        async with agent_document_edit(document, DocumentPatch(set_fields={"auto_launch": True}),
+                                       project_id=self.project_id):
+            return await super().save(owner=owner, notify=notify)
+
     async def add_mcp(self, spec: "McpSpec") -> bool:
         """Attach an MCP server to this agent; return whether it changed.
 
@@ -744,7 +763,7 @@ class Agent(Entity):
 
     async def home(self) -> str | None:
         """The folder this agent's own files are relative to — the project whose folder
-        holds its definition (``langware-os`` for its legal agent), else the repository
+        holds its definition (``handbook`` for its legal agent), else the repository
         it sits in. ``None`` for an agent with no files (a row-only agent).
 
         Paths in a system prompt (``docs/legal/guide.md``) mean this folder. When the

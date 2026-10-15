@@ -6,6 +6,7 @@
  * from a query moments after the tree first expands; a build-time answer would be frozen wrong
  * for every row listed before that.
  */
+import { useLingui } from '@lingui/react/macro';
 import { Brain } from 'lucide-react';
 import { IconWithBadge, type IconComp } from '@src/components/graph-view/icons/IconWithBadge';
 import { isRagRoot, useRagIndexingRoots, useRagRoots } from '@src/hooks/use-rag-roots';
@@ -20,6 +21,7 @@ interface RagFolderIconProps {
 }
 
 export function RagFolderIcon({ Base, path, size = 'h-3.5 w-3.5' }: RagFolderIconProps) {
+  const { t } = useLingui();
   const roots = useRagRoots();
   const indexing = isRagRoot(useRagIndexingRoots(), path);
   if (!isRagRoot(roots, path)) {
@@ -37,7 +39,7 @@ export function RagFolderIcon({ Base, path, size = 'h-3.5 w-3.5' }: RagFolderIco
       // legible as a brain rather than a dot.
       badgeClassName={`h-[72%] w-[72%] -bottom-1 -right-1 p-0 text-primary [stroke-width:2.25]${indexing ? ' animate-pulse' : ''}`}
       data-testid="rag-root-badge"
-      aria-label="Indexed for search"
+      aria-label={t`Indexed for search`}
     />
   );
 }
