@@ -1,0 +1,8 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id":    {"shape": "string", "description": "Unique id; messages name it in from / to."},
+    "label": {"shape": "string", "description": "The box title; a second line after a newline."},
+    "note":  {"shape": "?string", "description": "Shown on hover."}
+  }
+}

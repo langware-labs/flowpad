@@ -52,6 +52,10 @@ journey", "clickable mock" — screens to react to before anything is built) →
 skill. It owns the journey bar, the fast and real (captured from the running app) modes, and
 the browser check before showing it.
 
+**Interactive chart with a feedback toolbar** ("chart this flow", a sequence / network flow
+diagram, "a chart I can comment on" — a chart the user steers by leaving comments on it) → the
+**chartit** skill. It owns the chart kinds, the renderer per chart type and the feedback toolbar.
+
 **Slide deck / presentation / slideshow / pitch deck / keynote** (anything the user
 wants as slides — even phrased as "make me a presentation about X") → the **decker**
 skill. Do NOT hand-write slide HTML and do NOT route a deck through the static-HTML rule
