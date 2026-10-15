@@ -449,3 +449,22 @@ is what our `SubAgent` mirrors; a Chief of Staff uses it natively for short jobs
 | **setup tree** | `core/setup` (`setup_tree`, `execute_setup`, `derive.ProjectTree`) | Ours. A project comes up LEAF FIRST: every asset that needs setting up is a node, the project the root; per node its `prepare` wizard on the way down, its children one at a time, its `run` wizard on the way up. A failed child leaves its parent `blocked` (siblings still run); a node two parents share runs once; a cycle is refused before anything runs. `POST project/<id>/setup {root?}`, `flow project setup`, a web app found down, a received declared app — all run it. Not the `artifact-setup` agent (a free agent that works out how a received app runs); that is only the fallback for an app that declares nothing. |
 | **AssetSetup** | `AssetSetupSpec` (`asset.setup`), `builtin/asset_setup.py`, `agentic-assets/asset_setup/<name>/asset_setup.json` | Ours. A DECLARED node of the setup tree — what a derivation cannot know (a source's container): `prepare` / `run` / `on_load` wizard names (`on_load` runs when the asset is SHOWN — `core/setup/load.load_asset`; never asks), extra `children`, `inputs`. Attaches to its `subject`, else the asset folder holding it (a driver's → every source of that driver). The run's answer is a `SetupTreeResult` of `SetupNodeResult`s, recorded per root beside a wizard's `run.json`. |
 
+
+## Parked worker (2026-10-14)
+
+A headless (`claude -p`) worker normally lives for one turn. When the agent leaves
+background work running (a dev server, a deploy watcher) the CLI stays alive for it, and
+between turns the worker is **parked**: alive and idle, registered but *not a turn* —
+`busy` is false, a message the user sends is written to the SAME process, and
+`background_work` tells the UI why a not-busy process still holds a worker.
+
+* **parked worker** — ours (`ClaudeCLIStreamWorker.parked`, `prompt_worker_parked`).
+  Not a provider concept: Claude Code's own words are "background session" and
+  "supervisor", which flowpad does not use, and its work cannot move between processes.
+* **`background_work`** — the entity field that says a parked worker exists.
+  **`stop-background`** ends it (and the work with it).
+* **`WorkerTurns`** (`worker_turns.py`) — the turns of one worker that outlives them: when
+  each begins and ends, and who listens to it.
+* **Not** the PTY layer's *parked connection id* (`detached_connections`, the "parked-id
+  reaper" in `pty-layer.md`): that is a WebSocket subscription kept for a reconnect, on a
+  PTY. Say "parked worker" or "parked connection", never bare "parked".

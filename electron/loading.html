@@ -286,6 +286,80 @@
     .error-share-note.ok { color: hsl(140 40% 60%); }
     .error-share-note.fail { color: hsl(0 70% 65%); }
 
+    /* "Send Report" popup (FLOWPAD-2251): the optional-email ask. Closing it in ANY
+       way — send, ×, Esc — uploads the logs; the email is the only variable. */
+    .share-modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: hsl(0 0% 0% / 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 108; /* above .error-overlay (100), below the logs viewer (110) */
+    }
+
+    /* `display: flex` above beats the hidden attribute's UA `display: none` — restate it,
+       or the popup is visible from page load. */
+    .share-modal-overlay[hidden] { display: none; }
+
+    .share-modal {
+      position: relative;
+      width: min(420px, calc(100vw - 48px));
+      padding: 20px;
+      background: hsl(0 0% 7%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.75rem;
+    }
+
+    .share-modal h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: hsl(0 0% 90%);
+      margin-bottom: 8px;
+    }
+
+    .share-modal-text {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 55%);
+      margin-bottom: 14px;
+    }
+
+    .share-modal-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .share-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      font-size: 1.1rem;
+      line-height: 1;
+      color: hsl(0 0% 50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .share-modal-close:hover { color: hsl(0 0% 85%); }
+
+    .share-email {
+      flex: 1 1 220px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      color: hsl(0 0% 85%);
+      background: hsl(0 0% 8%);
+      border: 1px solid hsl(0 0% 14.9%);
+      border-radius: 0.5rem;
+      outline: none;
+    }
+
+    .share-email:focus { border-color: hsl(0 0% 30%); }
+    .share-email::placeholder { color: hsl(0 0% 40%); }
+
     .error-step {
       margin-bottom: 24px;
     }
@@ -422,6 +496,24 @@
     <pre class="logs-content" id="logs-content"></pre>
   </div>
 
+  <!-- "Send Report" popup. The upload is already decided when it opens: send, the ×
+       and Esc all close it INTO the upload — the email field is the only choice in it. -->
+  <div class="share-modal-overlay" id="share-modal" hidden>
+    <div class="share-modal">
+      <button class="share-modal-close" id="share-close" title="Close and upload">&times;</button>
+      <h3>Share logs with the Flowpad team</h3>
+      <p class="share-modal-text">
+        You can add your email address to help us associate this upload with you, although we can’t
+        guarantee a response. The logs will be uploaded automatically when you close this window,
+        whether or not you provide an email address.
+      </p>
+      <div class="share-modal-row">
+        <input class="share-email" id="share-email" type="email" placeholder="Your email (optional)" autocomplete="email" spellcheck="false" />
+        <button class="quit-btn" id="share-send">Send logs</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Startup error panel: replaces the native OS error popup. Retry is shown
        only for a failed install/start (retryable), not for a backend timeout. -->
   <div class="error-overlay" id="error-overlay">
@@ -432,12 +524,12 @@
       <div class="error-tools">
         <button class="quit-btn" id="copy-details">Copy error details</button>
         <button class="quit-btn" id="open-logs">Open logs folder</button>
-        <button class="quit-btn" id="share-logs">Share with us</button>
+        <button class="quit-btn" id="share-logs">Send Report</button>
         <button class="quit-btn" id="export-logs" hidden>Export logs</button>
       </div>
       <p class="error-share-note" id="share-status">
-        “Share with us” opens your email app with a short message to the Flowpad team and shows a zip of
-        your latest logs to attach. Nothing is sent until you press Send in your email app.
+        “Send Report” zips your latest logs (passwords and tokens are masked) and uploads them to the
+        Flowpad team.
       </p>
 
       <div class="error-step">
