@@ -173,7 +173,10 @@ two facts and nothing saved:
   on the port it listens on; a program anywhere else on the port is never taken for the app.
 
 A service starts before the page, and the page is told its port in `FLOWPAD_APP_PORT_<NAME>`.
-`flow app ports` lists declared and live ports; `flow app stop|restart <app>` act on whatever runs.
+`flow app ports` lists declared and live ports; `flow app stop <app>` acts on whatever runs.
+`flow app open|restart <app>` bring the app up the one way every caller does — validate → load →
+setup → fix (`bring_up`, `flow_sdk/core/setup/load.py`): a busy non-required port moves, and a setup
+that still fails gets the setup-fixer, whose verdict rides the load (`LoadResult.fix`).
 A dead `http://localhost:<port>` whose port an app of the agent's project declares starts that app
 when the agent's `auto_open` navigates to it.
 

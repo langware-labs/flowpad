@@ -1,0 +1,12 @@
+{
+  "type": "agent",
+  "id": "2f941749-dcc7-498c-acb4-3899f4d19351",
+  "name": "setup-fixer",
+  "description": "Repairs a project's failed setup flow so the next load passes. Launched by the backend on a failed load.",
+  "avatar": "🔧",
+  "worker_type": "claude",
+  "model": "md",
+  "permission_mode": "bypassPermissions",
+  "enabled": true,
+  "load_flowpad_assistant": true
+}

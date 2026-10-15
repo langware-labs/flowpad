@@ -550,7 +550,7 @@ async def test_the_apps_service_starts_on_this_desktop_and_is_an_endpoint_of_its
         assert stopped["data"]["apps"][0]["ok"], stopped
         assert not webapp_setup.health_answers(page) and not webapp_setup.health_answers(api)
 
-        again = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop", "restart": True})).json()
+        again = (await client.post(f"/api/v1/graph/project/{project.id}/app-stop", json={"app": "shop", "restart": True, "wait": True})).json()
         assert again["data"]["apps"][0]["port"] == str(page), again
         assert webapp_setup.health_answers(page) and webapp_setup.health_answers(api)
     finally:

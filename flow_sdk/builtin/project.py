@@ -895,28 +895,62 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"ports": rows})
 
     @action.post(action_name="app-stop")
-    async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
-        """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
-        return await self._run_apps(app, stop=True, start=restart)
+    async def app_stop_action(self, app: str = "", restart: bool = False, wait: bool = False) -> "ApiResponse":
+        """Stop the app's processes on this machine, whoever started them; ``restart`` brings them up again
+        (``app-start``)."""
+        return await self._run_apps(app, stop=True, start=restart, wait=wait)
 
     @action.post(action_name="app-start")
-    async def app_start_action(self, app: str = "") -> "ApiResponse":
-        """Start the app's processes on the ports they declare, or find them running there already."""
-        return await self._run_apps(app, stop=False, start=True)
+    async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
+        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
+        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        return await self._run_apps(app, stop=False, start=True, wait=wait)
 
-    async def _run_apps(self, app: str, *, stop: bool, start: bool) -> "ApiResponse":
+    async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
         if not found:
             return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
         results = []
         for one in found:
-            answer = await webapp_setup.stop(str(one.id)) if stop else None
-            if start and (answer is None or answer.ok):
-                answer = await webapp_setup.step(str(one.id), "start", check=False)
-            results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
+            row: dict = {"app": one.name, "asset": str(one.typeid)}
+            if stop:
+                answer = await webapp_setup.stop(str(one.id))
+                # What it was checked against is gone: the next open asks again.
+                forget(str(self.id), str(one.typeid))
+                row.update(ok=answer.ok, detail=answer.detail)
+                if not answer.ok:
+                    results.append(row)
+                    continue
+            if start:
+                loaded = await bring_up(self, asset=one, wait=wait)
+                page = next((p for p in await webapp_setup.ports(str(one.id)) if p["process"] == "page"), {})
+                row.update(ok=loaded.state is not LoadState.FAILED, detail=loaded.detail,
+                           port=str(page["port"]) if page.get("port") else None, load=loaded.model_dump(mode="json"))
+            results.append(row)
         return ApiSuccessResponse(data={"apps": results})
+
+    @action.post(action_name="setup-fix")
+    async def setup_fix_action(self, asset: str = "", stop: bool = False) -> "ApiResponse":
+        """`POST /project/<id>/setup-fix {asset?, stop?}` — Fix it: run the setup-fixer on this load's
+        failure (the one the backend launches by itself, launched again), or stop it. Answers the load."""
+        from flow_sdk.core.setup import fix  # noqa: PLC0415
+        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
+
+        pid = str(self.id)
+        if stop:
+            await fix.stop_fix(pid, asset)
+        else:
+            failed = load_state(pid, asset=asset)
+            if failed is None or failed.state is not LoadState.FAILED:
+                return ApiFailResponse(message="There is no failed load here to fix", status_code=400)
+            fix.start_fix(pid, failed, again=True)
+        current = load_state(pid, asset=asset)
+        return ApiSuccessResponse(data=current.model_dump(mode="json") if current is not None else None)
 
     @action.get(action_name="setup-requirements")
     async def setup_requirements_action(self) -> "ApiResponse":
