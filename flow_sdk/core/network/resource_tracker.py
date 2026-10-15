@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from functools import lru_cache
 from itertools import count
 from typing import Any
 from uuid import uuid4
@@ -33,6 +34,12 @@ def _extract_entity_parts(to_entity: Any) -> tuple[str | None, str | None, str |
     return str(entity_type), str(entity_id), f"{entity_type}-{entity_id}"
 
 
+@lru_cache(maxsize=None)
+def _api_fields(entity_cls: type) -> tuple[str, ...]:
+    """An entity class's API fields — fixed per class, so asked once, not on every frame."""
+    return tuple(key for key in entity_cls.model_fields if entity_cls.is_api_field(key))
+
+
 def _to_message_dict(op_message: Any) -> dict:
     """Serialize supported DataOpMessage variants to a plain JSON-safe dict."""
     if isinstance(op_message, dict):
@@ -45,7 +52,16 @@ def _to_message_dict(op_message: Any) -> dict:
     if not isinstance(data, dict):
         raise TypeError(f"Serialized op_message is not a dict: {type(data)}")
 
-    return jsonable_encoder(data, exclude_none=True)
+    message = jsonable_encoder(data, exclude_none=True)
+    # A cleared field is a value, not an absence. The client MERGES an update into
+    # the row it holds, so an API field dropped for being None (a reopened
+    # conversation's `ended_at`) kept its old value there until a reload.
+    entity = getattr(op_message, "data", None)
+    if callable(getattr(entity, "is_api_field", None)) and isinstance(message.get("data"), dict):
+        for key in _api_fields(type(entity)):
+            if key not in message["data"] and getattr(entity, key) is None:
+                message["data"][key] = None
+    return message
 
 
 def _prepare_data_op_message(op_message: Any) -> dict:

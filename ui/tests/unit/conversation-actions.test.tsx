@@ -34,6 +34,8 @@ describe('ConversationActions', () => {
       message({ id: 'm2', sender_id: 'me', sent_at: new Date().toISOString(), mark: approved }),
       // Someone else's later review is not ours: it does not undo our approval.
       message({ id: 'm3', sender_id: 'dana', sent_at: new Date(Date.now() + 1000).toISOString(), mark: { key: 'dismissed', label: 'Dismissed' } }),
+      // Our own later comment carries no mark: it does not take the approval back either.
+      message({ id: 'm4', sender_id: 'me', sent_at: new Date(Date.now() + 2000).toISOString() }),
     ];
     render(<ConversationActions conversation={conversation} messages={messages} selfIds={['me']} />);
     const done = screen.getByTestId('conversation-action-done-approve');
