@@ -7,7 +7,7 @@ A Wizard SEQUENCES calls. Each step names one thing — a ComputeOp or another
 wizard — and reads one answer back. Everything about HOW work is done lives in
 the op ([compute-ops](compute-ops.md)); what is left here is what only a
 sequence owns: order, `on_fail`, the values steps pass each other, and the one
-answer the run gives back ([call-returns](call-returns.md) §8).
+answer the run gives back ([FlowCall](call-returns.md) §8).
 
 Every `python` fence on this page runs as written, by
 `tests/unit/test_wizards_snippets.py` — each `# expected` comment is an
