@@ -26018,16 +26018,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
+#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
+#~ msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not repair this setup. The step above says what it found."
-#~ msgstr ""
+msgid "The fixer could not repair this setup. The step above says what it found."
+msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "تعذّر بدء الإصلاح."
+#~ msgid "The fixer could not start."
+#~ msgstr "تعذّر بدء الإصلاح."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"

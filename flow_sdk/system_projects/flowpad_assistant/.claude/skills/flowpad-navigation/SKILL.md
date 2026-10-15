@@ -38,6 +38,34 @@ Key on the **intent**, not on the mode and not on who authored the file:
 When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
 the failure mode of navigating is yanking them out of their work.
 
+**A session opens as a live-session tab, not its transcript.** `flow show entity` opens
+nothing for a `claude_session` or `agentic_process`, and `flow navigate entity` lands
+on the read-only transcript. Show the session view instead — a tab beside your process,
+the user switches to it themselves:
+
+```bash
+flow show view shell/agentic_process-<process-id>
+```
+
+Have only the Claude session id (the transcript's `<uuid>.jsonl` name)? Look up the
+process that owns it:
+
+```bash
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select id from entities where type='agentic_process' and json_extract(data,'\$.session_id')='<session-uuid>'"
+```
+
+Exit 0 only means the show was delivered — confirm the tab is open before saying so
+(`1` = open):
+
+```bash
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select json_extract(data,'\$.visible') from entities where type='tab' and json_extract(data,'\$.target_id')='<process-id>'"
+```
+
+Open the transcript only when it is asked for
+(`flow show view lens/claude/transcript/<session-uuid>`).
+
 ## You have a file path
 
 Apply the decision rule above to the user's words first — having a path does not
