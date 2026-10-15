@@ -168,14 +168,14 @@ async def handle_request(
     # fallback for this branch.
     from flow_sdk.server.routes._hub_reflect import (
         is_git_backed_remote_fs,
-        proxy_git_backed_remote_fs,
+        proxy_to_hub,
     )
 
     entity_for_early_fs_proxy = kwargs.get("self")
     if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
         entity_for_early_fs_proxy = request_info.auth_result.target
     if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
-        return await proxy_git_backed_remote_fs(request)
+        return await proxy_to_hub(request)
 
     request_params = request_info.request_parameters
 
@@ -470,6 +470,13 @@ async def catch_all(request: Request, response: Response, background_tasks: Back
     """
     Catch all paths and HTTP methods and process them with this function.
     """
+    # A type that exists only on the hub has nothing here to parse an action against, read or
+    # write — forward the request whole, before any local resolution (see ``hub_only_type``).
+    from flow_sdk.server.routes._hub_reflect import hub_only_type, proxy_hub_only
+
+    entity_type = hub_only_type(request.url.path) if request.method != "OPTIONS" else None
+    if entity_type is not None:
+        return await proxy_hub_only(request, entity_type)
     try:
         request_info = get_current_request_info()
         if request_info is not None:
