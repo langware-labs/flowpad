@@ -1,5 +1,6 @@
 ---
 id: 26f5399a-af9d-4b55-8b64-3b1166ac11b1
+version: 2
 ---
 # FlowCall — calls, outcomes, and returned values
 
@@ -24,7 +25,7 @@ raise, unless the caller opts into `raise_for_status()`.
 
 **Every fence on this page is checked.** `tests/unit/test_call_returns_snippets.py`
 runs every `python` fence as written; a line ending `# <expected>` is asserted
-(`expr == expected`, prose after ` — ` is ignored). Every `pyi` fence is a
+(`expr == expected`, prose after `—` is ignored). Every `pyi` fence is a
 shape listing, and its fields are checked against the real class. A fence that
 needs a real agent harness or an LLM source says so on its first line and runs
 in the long tier (`tests/long_tests/test_call_returns_live.py`).
@@ -32,7 +33,7 @@ in the long tier (`tests/long_tests/test_call_returns_live.py`).
 The decisions behind this page were made one problem at a time in review
 (2026-09-22); the 23-site audit that prompted them is at the end.
 
----
+***
 
 Every fence below runs in one session, after this one — the names they use and a folder to work in:
 
@@ -187,13 +188,13 @@ class DecisionVerdict(ReturnedValue):         # compute.returned.decision
     latency_ms: float
 ```
 
-| subkind | answers with | `executor` |
-| --- | --- | --- |
-| `cli` | `CliResult` | `None`, or `shell-<id>` when it ran in a terminal |
+| subkind    | answers with      | `executor`                                              |
+| ---------- | ----------------- | ------------------------------------------------------- |
+| `cli`      | `CliResult`       | `None`, or `shell-<id>` when it ran in a terminal       |
 | `decision` | `DecisionVerdict` | `None` — the verdict is its own proof, never re-checked |
-| `prompt` | `PromptResult` | `None` |
-| `agent` | `PromptResult` | `agentic_process-<id>` |
-| `ask` | `AskResult` | `None` |
+| `prompt`   | `PromptResult`    | `None`                                                  |
+| `agent`    | `PromptResult`    | `agentic_process-<id>`                                  |
+| `ask`      | `AskResult`       | `None`                                                  |
 
 A caller that only composes reads the base; a caller that knows what it called
 reads the rest. There is no wrapper. A NESTED answer — a wizard step's, a
@@ -261,7 +262,7 @@ except ValidationError as refused:
 ```
 
 That `class Greeting(DataSpec)` is the registration: a kind exists once the
-module declaring it has been imported. So a kind is nameable here — in flow_sdk,
+module declaring it has been imported. So a kind is nameable here — in flow\_sdk,
 or in an asset that ships a module, like a data source — and NOT in an op's own
 folder, which holds a JSON document and a markdown file. An op returns a
 primitive or a kind that already exists. The rule, and the one mechanism to
@@ -297,14 +298,14 @@ except OpNotReached as failed:
 carried.returncode                        # 2 — the exception CARRIES the result
 ```
 
-| what happened | `exit_code` | `ran` | how a caller tells |
-| --- | --- | --- | --- |
-| not approved | `REFUSED` | False | never retry |
-| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET` | False | `busy` — try later; the only case an edge answers 409 |
-| never started (no harness, spawn failed) | `NOT_YET` | False | not `busy` — `detail` says why; retrying changes nothing |
-| still running when the wait ended | `NOT_YET` | True | `timed_out` — do not re-run on top of it |
-| ended in error / interrupted | `NOT_YET` | True | the process, via `executor` |
-| a reply that is not the declared kind | `NOT_YET` | True | `text` keeps the reply |
+| what happened                                                  | `exit_code` | `ran` | how a caller tells                                       |
+| -------------------------------------------------------------- | ----------- | ----- | -------------------------------------------------------- |
+| not approved                                                   | `REFUSED`   | False | never retry                                              |
+| someone else is running it (a wizard's lock, a turn in flight) | `NOT_YET`   | False | `busy` — try later; the only case an edge answers 409    |
+| never started (no harness, spawn failed)                       | `NOT_YET`   | False | not `busy` — `detail` says why; retrying changes nothing |
+| still running when the wait ended                              | `NOT_YET`   | True  | `timed_out` — do not re-run on top of it                 |
+| ended in error / interrupted                                   | `NOT_YET`   | True  | the process, via `executor`                              |
+| a reply that is not the declared kind                          | `NOT_YET`   | True  | `text` keeps the reply                                   |
 
 Waiting on a person is an `ask` op in progress, like any other op — there is no
 `PENDING`. Error vs interrupted is not copied onto the answer; the process row
@@ -445,32 +446,33 @@ type(answer) is PromptResult              # True
 The box's default LLM source answers. A box with no API-capable source (only a
 signed-in vendor CLI) answers `NOT_YET`, `ran=False`.
 
----
+***
 
 ## The 23 sites, and what each became
 
-| # | site | became |
-| --- | --- | --- |
-| 1 | `WizardRunResult.returned()` | deleted — `WizardResult` IS a `ReturnedValue` |
-| 2 | `check_op` | the check's `CliResult`, its `exit_code` the verdict |
-| 3 | `flow op run` | exits `returned.exit_code`; a bad document or a 500 exits 2, never `REFUSED` |
-| 4 | `ComputeOp.run_action` | 200 with the answer for every exit code, `REFUSED` included |
-| 5 | `ComputeOp.run` | returns `REFUSED` |
-| 6 | `hook_models._exec_script` | `CliResult` |
-| 7 | `Shell.run` (REST) | `CliResult`, `executor='shell-<id>'` |
-| 8 | `Wizard.run` | `WizardResult` |
-| 9 | `_agent_attempt` | deleted — the `agent` subkind → `PromptResult` + `executor` |
-| 10 | `CommandExecutor.run` | `CliResult` |
-| 11 | `ComputeNodeCommandExecutor.run` | `CliResult`; a missing exit stays `None`; a given timeout is enforced |
-| 12 | `_attempt` (command rung) | deleted — the `cli` subkind → `CliResult` |
-| 13 | `_ask_attempt` | the `ask` subkind → `AskResult` |
-| 14 | `run_shell` | `CliResult` |
-| 15 | `run_op` | one call → the subkind's answer; `REFUSED` returned |
-| 16 | `launch_step_process` | `PromptResult` + `executor` |
-| 17 | `Shell.run_and_capture` | `CliResult`, `executor='shell-<id>'`, `timed_out` |
-| 18 | `run_wizard` | `WizardResult`; no `PENDING`; `REFUSED` returned |
-| 19 | `AgenticProcess.run` | `PromptResult`; no `ProcessError` |
-| 20 | `_AgentRunner.run` | `PromptResult`; no `RuntimeError` |
-| 21 | `routes/ask.py` | unchanged — the HTTP edge a window delivers an answer through |
-| 22 | `execute_wizard` | `WizardResult`; busy → `NOT_YET`, `ran=False` |
-| 23 | `AgenticProcess.prompt` | `send_turn()` → `PromptResult`; busy → `NOT_YET`, `ran=False` (the HTTP action keeps its 409) |
+| #  | site                             | became                                                                                        |
+| -- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1  | `WizardRunResult.returned()`     | deleted — `WizardResult` IS a `ReturnedValue`                                                 |
+| 2  | `check_op`                       | the check's `CliResult`, its `exit_code` the verdict                                          |
+| 3  | `flow op run`                    | exits `returned.exit_code`; a bad document or a 500 exits 2, never `REFUSED`                  |
+| 4  | `ComputeOp.run_action`           | 200 with the answer for every exit code, `REFUSED` included                                   |
+| 5  | `ComputeOp.run`                  | returns `REFUSED`                                                                             |
+| 6  | `hook_models._exec_script`       | `CliResult`                                                                                   |
+| 7  | `Shell.run` (REST)               | `CliResult`, `executor='shell-<id>'`                                                          |
+| 8  | `Wizard.run`                     | `WizardResult`                                                                                |
+| 9  | `_agent_attempt`                 | deleted — the `agent` subkind → `PromptResult` + `executor`                                   |
+| 10 | `CommandExecutor.run`            | `CliResult`                                                                                   |
+| 11 | `ComputeNodeCommandExecutor.run` | `CliResult`; a missing exit stays `None`; a given timeout is enforced                         |
+| 12 | `_attempt` (command rung)        | deleted — the `cli` subkind → `CliResult`                                                     |
+| 13 | `_ask_attempt`                   | the `ask` subkind → `AskResult`                                                               |
+| 14 | `run_shell`                      | `CliResult`                                                                                   |
+| 15 | `run_op`                         | one call → the subkind's answer; `REFUSED` returned                                           |
+| 16 | `launch_step_process`            | `PromptResult` + `executor`                                                                   |
+| 17 | `Shell.run_and_capture`          | `CliResult`, `executor='shell-<id>'`, `timed_out`                                             |
+| 18 | `run_wizard`                     | `WizardResult`; no `PENDING`; `REFUSED` returned                                              |
+| 19 | `AgenticProcess.run`             | `PromptResult`; no `ProcessError`                                                             |
+| 20 | `_AgentRunner.run`               | `PromptResult`; no `RuntimeError`                                                             |
+| 21 | `routes/ask.py`                  | unchanged — the HTTP edge a window delivers an answer through                                 |
+| 22 | `execute_wizard`                 | `WizardResult`; busy → `NOT_YET`, `ran=False`                                                 |
+| 23 | `AgenticProcess.prompt`          | `send_turn()` → `PromptResult`; busy → `NOT_YET`, `ran=False` (the HTTP action keeps its 409) |
+
