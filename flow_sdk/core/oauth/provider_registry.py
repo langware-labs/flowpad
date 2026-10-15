@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
+
 logger = logging.getLogger(__name__)
 
 GITHUB = "github"
@@ -932,11 +934,11 @@ async def refresh_local_grant(provider: str, value: Any) -> Any:
 
 #: One refresh at a time per (provider, user): two readers of an expiring grant must not both spend its
 #: refresh token (a provider that rotates it voids the loser's).
-_REFRESH_LOCKS: dict[tuple[str, str], asyncio.Lock] = {}
+_REFRESH_LOCKS = new_registry()
 
 
 def _refresh_lock(provider: str, user_id: str) -> asyncio.Lock:
-    return _REFRESH_LOCKS.setdefault((provider, user_id), asyncio.Lock())
+    return keyed_loop_lock(_REFRESH_LOCKS, f"{provider}\0{user_id}")
 
 
 async def credential_for(
