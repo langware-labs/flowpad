@@ -39,7 +39,11 @@ interface GitPanelProps {
   workdir: string;
   /** Called after a push so an outer owner (e.g. the footer) can refresh too. */
   onPushed?: () => void;
+  /** Called after a review worker launches, so a dialog owner can close itself. */
+  onReviewLaunched?: () => void;
 }
+
+const ReviewLaunchedContext = React.createContext<(() => void) | undefined>(undefined);
 
 function statusColor(status: string): string {
   switch (status) {
@@ -255,16 +259,18 @@ const ReviewInWorker: React.FC<{ workdir: string; commit?: string; testIdPrefix:
   commit,
   testIdPrefix,
 }) => {
+  const onLaunched = React.useContext(ReviewLaunchedContext);
   const launch = useCallback(
     async (workerType: WorkerType) => {
       try {
         await AgenticProcess.launch({ workerType, workdir, launchPrompt: reviewPrompt(commit), enableAssistant: true });
+        onLaunched?.();
       } catch (err) {
         console.error('[GitPanel] review launch failed', err);
         notify.error({ title: t`Failed to start session` });
       }
     },
-    [workdir, commit],
+    [workdir, commit, onLaunched],
   );
   return <WorkerToolbar onLaunch={launch} testIdPrefix={testIdPrefix} />;
 };
@@ -279,12 +285,7 @@ const UnpushedCommitsBadge: React.FC<{
   workdir: string;
   ahead: number;
   onSelect: (commit: GitRevision) => void;
-}> = ({
-  git,
-  workdir,
-  ahead,
-  onSelect,
-}) => {
+}> = ({ git, workdir, ahead, onSelect }) => {
   const [commits, setCommits] = useState<GitRevision[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -351,7 +352,7 @@ const UnpushedCommitsBadge: React.FC<{
 
 // ---------------------------------------------------------------------------
 
-export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed }) => {
+export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed, onReviewLaunched }) => {
   const [data, setData] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
@@ -608,292 +609,299 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
   const net = sloc.added - sloc.removed;
 
   return (
-    <TooltipProvider delayDuration={400}>
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {revision && (
-          <div className="flex items-center gap-2 border-b px-3 py-2">
-            <Button variant="ghost" size="sm" onClick={() => openReview()} className="h-6 gap-1 px-1.5 text-xs">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              <Trans>Working tree</Trans>
-            </Button>
-            <span className="text-xs font-medium">
-              <Trans>Commit</Trans> <span className="font-mono">{revision.slice(0, 7)}</span>
-            </span>
-            <div className="ms-auto">
-              <ReviewInWorker workdir={workdir} commit={revision} testIdPrefix="git-review-commit" />
-            </div>
-          </div>
-        )}
-        {/* Header */}
-        {!revision && (
-          <div className="flex items-center justify-between border-b px-3 py-2">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="truncate text-sm font-medium">
-                  {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
-                </span>
-                {data && !data.error && data.branch && (
-                  <CopyButton
-                    value={data.branch}
-                    title={t`Copy branch name`}
-                    testId="git-panel-copy-branch"
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    copiedIconClassName="text-green-500"
-                  />
-                )}
-                {data && !data.error && data.branch && !data.upstream && (
-                  <>
-                    <HeaderChip
-                      title={data.upstreamCandidate ? t`Track ${data.upstreamCandidate}` : t`No upstream configured`}
-                      testId="git-panel-no-upstream"
-                    >
-                      <Trans>No upstream configured</Trans>
-                    </HeaderChip>
-                    {data.upstreamCandidate && (
-                      <Button
-                        variant="link"
-                        size="sm"
-                        className="h-5 px-1 text-xs"
-                        data-testid="git-panel-set-upstream"
-                        disabled={settingUpstream}
-                        onClick={async () => {
-                          setSettingUpstream(true);
-                          setUpstreamError(null);
-                          try {
-                            const result = await git.setUpstream(data.branch!);
-                            if (result.error) setUpstreamError(result.error);
-                            else {
-                              await fetchStatus();
-                              onPushed?.();
-                            }
-                          } catch (error) {
-                            setUpstreamError(String(error));
-                          } finally {
-                            setSettingUpstream(false);
-                          }
-                        }}
-                      >
-                        <Trans>Set it</Trans>
-                      </Button>
-                    )}
-                  </>
-                )}
-                {upstreamError && (
-                  <span role="alert" className="text-xs text-destructive">
-                    {upstreamError}
-                  </span>
-                )}
-                {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
-                  <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
-                    <Trans>Up to date</Trans>
-                  </HeaderChip>
-                )}
-                {data && !data.error && data.ahead > 0 && (
-                  <UnpushedCommitsBadge git={git} workdir={workdir} ahead={data.ahead} onSelect={(commit) => openReview(commit.hash)} />
-                )}
-                {data && !data.error && data.behind > 0 && (
-                  <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
-                )}
+    <ReviewLaunchedContext.Provider value={onReviewLaunched}>
+      <TooltipProvider delayDuration={400}>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {revision && (
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <Button variant="ghost" size="sm" onClick={() => openReview()} className="h-6 gap-1 px-1.5 text-xs">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                <Trans>Working tree</Trans>
+              </Button>
+              <span className="text-xs font-medium">
+                <Trans>Commit</Trans> <span className="font-mono">{revision.slice(0, 7)}</span>
+              </span>
+              <div className="ms-auto">
+                <ReviewInWorker workdir={workdir} commit={revision} testIdPrefix="git-review-commit" />
               </div>
-              {data && !data.error && data.remoteUrl && (
-                <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
-                  {data.remoteWebUrl ? (
-                    <button
-                      type="button"
-                      onClick={() => openExternal(data.remoteWebUrl!)}
-                      title={t`Open in browser`}
-                      data-testid="git-panel-open-remote"
-                      className="truncate hover:text-foreground hover:underline"
-                    >
-                      {data.remoteUrl}
-                    </button>
-                  ) : (
-                    <span className="truncate" data-testid="git-panel-remote">
-                      {data.remoteUrl}
+            </div>
+          )}
+          {/* Header */}
+          {!revision && (
+            <div className="flex items-center justify-between border-b px-3 py-2">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate text-sm font-medium">
+                    {data?.error ? <Trans>Not a git repo</Trans> : (data?.branch ?? 'git')}
+                  </span>
+                  {data && !data.error && data.branch && (
+                    <CopyButton
+                      value={data.branch}
+                      title={t`Copy branch name`}
+                      testId="git-panel-copy-branch"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      copiedIconClassName="text-green-500"
+                    />
+                  )}
+                  {data && !data.error && data.branch && !data.upstream && (
+                    <>
+                      <HeaderChip
+                        title={data.upstreamCandidate ? t`Track ${data.upstreamCandidate}` : t`No upstream configured`}
+                        testId="git-panel-no-upstream"
+                      >
+                        <Trans>No upstream configured</Trans>
+                      </HeaderChip>
+                      {data.upstreamCandidate && (
+                        <Button
+                          variant="link"
+                          size="sm"
+                          className="h-5 px-1 text-xs"
+                          data-testid="git-panel-set-upstream"
+                          disabled={settingUpstream}
+                          onClick={async () => {
+                            setSettingUpstream(true);
+                            setUpstreamError(null);
+                            try {
+                              const result = await git.setUpstream(data.branch!);
+                              if (result.error) setUpstreamError(result.error);
+                              else {
+                                await fetchStatus();
+                                onPushed?.();
+                              }
+                            } catch (error) {
+                              setUpstreamError(String(error));
+                            } finally {
+                              setSettingUpstream(false);
+                            }
+                          }}
+                        >
+                          <Trans>Set it</Trans>
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {upstreamError && (
+                    <span role="alert" className="text-xs text-destructive">
+                      {upstreamError}
                     </span>
                   )}
-                  <CopyButton
-                    value={data.remoteUrl}
-                    title={t`Copy remote URL`}
-                    testId="git-panel-copy-remote"
-                    className="shrink-0 hover:text-foreground"
-                    iconClassName="h-2.5 w-2.5"
-                    copiedIconClassName="text-green-500"
-                  />
+                  {data && !data.error && data.upstream && data.ahead === 0 && data.behind === 0 && (
+                    <HeaderChip title={t`Same commits as ${data.upstream}`} testId="git-panel-in-sync">
+                      <Trans>Up to date</Trans>
+                    </HeaderChip>
+                  )}
+                  {data && !data.error && data.ahead > 0 && (
+                    <UnpushedCommitsBadge
+                      git={git}
+                      workdir={workdir}
+                      ahead={data.ahead}
+                      onSelect={(commit) => openReview(commit.hash)}
+                    />
+                  )}
+                  {data && !data.error && data.behind > 0 && (
+                    <HeaderChip className="bg-amber-500/20 text-amber-500">↓{data.behind}</HeaderChip>
+                  )}
                 </div>
-              )}
-            </div>
-            <div className="flex items-center gap-1">
-              {!data?.error && (data?.files?.length ?? 0) > 0 && (
-                <ReviewInWorker workdir={workdir} testIdPrefix="git-review-changes" />
-              )}
-              {!data?.error && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setMode((m) => (m === 'standard' ? 'advanced' : 'standard'))}
-                      className="h-6 px-1.5 text-[10px] capitalize"
-                      data-testid="git-panel-mode"
-                    >
-                      {mode}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom" className="text-xs">
-                    <span className="font-medium">
-                      {mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}
-                    </span>
-                    <span className="block text-muted-foreground">
-                      {mode === 'standard' ? (
-                        <Trans>Simple actions — click to show all git operations</Trans>
-                      ) : (
-                        <Trans>All git operations — click for simplified actions</Trans>
-                      )}
-                    </span>
-                  </TooltipContent>
-                </Tooltip>
-              )}
-              {!data?.error && (
+                {data && !data.error && data.remoteUrl && (
+                  <div className="flex min-w-0 items-center gap-1 pl-5 text-[10px] text-muted-foreground">
+                    {data.remoteWebUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => openExternal(data.remoteWebUrl!)}
+                        title={t`Open in browser`}
+                        data-testid="git-panel-open-remote"
+                        className="truncate hover:text-foreground hover:underline"
+                      >
+                        {data.remoteUrl}
+                      </button>
+                    ) : (
+                      <span className="truncate" data-testid="git-panel-remote">
+                        {data.remoteUrl}
+                      </span>
+                    )}
+                    <CopyButton
+                      value={data.remoteUrl}
+                      title={t`Copy remote URL`}
+                      testId="git-panel-copy-remote"
+                      className="shrink-0 hover:text-foreground"
+                      iconClassName="h-2.5 w-2.5"
+                      copiedIconClassName="text-green-500"
+                    />
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-1">
+                {!data?.error && (data?.files?.length ?? 0) > 0 && (
+                  <ReviewInWorker workdir={workdir} testIdPrefix="git-review-changes" />
+                )}
+                {!data?.error && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMode((m) => (m === 'standard' ? 'advanced' : 'standard'))}
+                        className="h-6 px-1.5 text-[10px] capitalize"
+                        data-testid="git-panel-mode"
+                      >
+                        {mode}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">
+                      <span className="font-medium">
+                        {mode === 'standard' ? <Trans>Standard mode</Trans> : <Trans>Advanced mode</Trans>}
+                      </span>
+                      <span className="block text-muted-foreground">
+                        {mode === 'standard' ? (
+                          <Trans>Simple actions — click to show all git operations</Trans>
+                        ) : (
+                          <Trans>All git operations — click for simplified actions</Trans>
+                        )}
+                      </span>
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {!data?.error && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => void push()}
+                    disabled={pushing}
+                    className="h-6 gap-1 px-1.5 text-[10px]"
+                    title="git push"
+                    data-testid="git-panel-push"
+                  >
+                    <GitPushIcon busy={pushing} />
+                    <Trans>Push</Trans>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => void push()}
-                  disabled={pushing}
-                  className="h-6 gap-1 px-1.5 text-[10px]"
-                  title="git push"
-                  data-testid="git-panel-push"
+                  onClick={() => {
+                    setLoading(true);
+                    void fetchStatus();
+                  }}
+                  className="h-6 w-6 p-0"
                 >
-                  <GitPushIcon busy={pushing} />
-                  <Trans>Push</Trans>
+                  <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setLoading(true);
-                  void fetchStatus();
-                }}
-                className="h-6 w-6 p-0"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Summary chips — new / changed / removed, at a glance */}
-        {data && !data.error && (
-          <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-            {buckets.map((b) => (
-              <div
-                key={b.key}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
-                  b.files.length > 0 ? b.tone : 'border-border bg-muted/40 text-muted-foreground'
-                }`}
-              >
-                <b.icon className="h-4 w-4 shrink-0" />
-                <span className="text-lg font-semibold tabular-nums leading-none">{b.files.length}</span>
-                <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Line totals — the size of the change, not just its file count */}
-        {data && !data.error && data.files.length > 0 && (
-          <div
-            className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5 text-[11px] tabular-nums"
-            data-testid="git-panel-sloc"
-          >
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              <Trans>Lines</Trans>
-            </span>
-            <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
-              +{sloc.added}
-            </span>
-            <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
-              -{sloc.removed}
-            </span>
-            <span
-              className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
-              data-testid="git-panel-sloc-net"
-            >
-              {net > 0 ? '+' : ''}
-              {net}{' '}
-              <span className="font-normal text-muted-foreground">
-                <Trans>net</Trans>
-              </span>
-            </span>
-          </div>
-        )}
-
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-1">
-          {fetchError ? (
-            <p role="alert" className="p-3 text-xs text-destructive">
-              {fetchError}
-            </p>
-          ) : loading && !data ? (
-            <div className="flex flex-col gap-1.5 p-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="h-7 animate-pulse rounded bg-muted" />
-              ))}
-            </div>
-          ) : data?.error ? (
-            <div className="flex flex-col items-center gap-3 px-3 py-6">
-              <p className="text-center text-xs text-muted-foreground">
-                <Trans>Not a git repository</Trans>
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                disabled={initing}
-                onClick={() => {
-                  void handleGitInit();
-                }}
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-                {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
-              </Button>
-              {initError && <p className="text-center text-[10px] text-red-500">{initError}</p>}
-            </div>
-          ) : !data || !data.files || data.files.length === 0 ? (
-            <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
-              <Trans>No changes</Trans>
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {buckets
-                .filter((b) => b.files.length > 0)
-                .map((b) => (
-                  <div key={b.key}>
-                    <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {b.label} ({b.files.length})
-                    </p>
-                    <div className="flex flex-col gap-0.5">{b.files.map((f, i) => renderFileRow(f, i))}</div>
-                  </div>
-                ))}
             </div>
           )}
-        </div>
 
-        {/* Diff modal — rendered via portal so it's always on top */}
-        {selectedFile && (
-          <GitFileDiffModal
-            computeNodeId={computeNodeId}
-            workdir={workdir}
-            filepath={selectedFile.path}
-            status={selectedFile.status}
-            revision={revision}
-            open={!!selectedFile}
-            onClose={() => openReview(revision)}
-          />
-        )}
-      </div>
-    </TooltipProvider>
+          {/* Summary chips — new / changed / removed, at a glance */}
+          {data && !data.error && (
+            <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+              {buckets.map((b) => (
+                <div
+                  key={b.key}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 ${
+                    b.files.length > 0 ? b.tone : 'border-border bg-muted/40 text-muted-foreground'
+                  }`}
+                >
+                  <b.icon className="h-4 w-4 shrink-0" />
+                  <span className="text-lg font-semibold tabular-nums leading-none">{b.files.length}</span>
+                  <span className="text-[10px] font-medium uppercase tracking-wide opacity-80">{b.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Line totals — the size of the change, not just its file count */}
+          {data && !data.error && data.files.length > 0 && (
+            <div
+              className="flex shrink-0 items-center gap-3 border-b px-3 py-1.5 text-[11px] tabular-nums"
+              data-testid="git-panel-sloc"
+            >
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <Trans>Lines</Trans>
+              </span>
+              <span className="font-semibold text-green-500" data-testid="git-panel-sloc-added">
+                +{sloc.added}
+              </span>
+              <span className="font-semibold text-red-500" data-testid="git-panel-sloc-removed">
+                -{sloc.removed}
+              </span>
+              <span
+                className={`font-semibold ${net > 0 ? 'text-green-500' : net < 0 ? 'text-red-500' : 'text-muted-foreground'}`}
+                data-testid="git-panel-sloc-net"
+              >
+                {net > 0 ? '+' : ''}
+                {net}{' '}
+                <span className="font-normal text-muted-foreground">
+                  <Trans>net</Trans>
+                </span>
+              </span>
+            </div>
+          )}
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-1">
+            {fetchError ? (
+              <p role="alert" className="p-3 text-xs text-destructive">
+                {fetchError}
+              </p>
+            ) : loading && !data ? (
+              <div className="flex flex-col gap-1.5 p-2">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-7 animate-pulse rounded bg-muted" />
+                ))}
+              </div>
+            ) : data?.error ? (
+              <div className="flex flex-col items-center gap-3 px-3 py-6">
+                <p className="text-center text-xs text-muted-foreground">
+                  <Trans>Not a git repository</Trans>
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  disabled={initing}
+                  onClick={() => {
+                    void handleGitInit();
+                  }}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  {initing ? <Trans>Initializing…</Trans> : <Trans>Initialize git repo</Trans>}
+                </Button>
+                {initError && <p className="text-center text-[10px] text-red-500">{initError}</p>}
+              </div>
+            ) : !data || !data.files || data.files.length === 0 ? (
+              <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+                <Trans>No changes</Trans>
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {buckets
+                  .filter((b) => b.files.length > 0)
+                  .map((b) => (
+                    <div key={b.key}>
+                      <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {b.label} ({b.files.length})
+                      </p>
+                      <div className="flex flex-col gap-0.5">{b.files.map((f, i) => renderFileRow(f, i))}</div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Diff modal — rendered via portal so it's always on top */}
+          {selectedFile && (
+            <GitFileDiffModal
+              computeNodeId={computeNodeId}
+              workdir={workdir}
+              filepath={selectedFile.path}
+              status={selectedFile.status}
+              revision={revision}
+              open={!!selectedFile}
+              onClose={() => openReview(revision)}
+            />
+          )}
+        </div>
+      </TooltipProvider>
+    </ReviewLaunchedContext.Provider>
   );
 };
