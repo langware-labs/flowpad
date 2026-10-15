@@ -149,7 +149,7 @@ params:
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
   ModelTier: "sm | md | lg"
-  PromptResult: "a turn's answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
+  PromptResult: "a turn's FlowCall answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
   StreamEvent: "streamed execution event"
 returns: "supporting Python contracts"
 source:

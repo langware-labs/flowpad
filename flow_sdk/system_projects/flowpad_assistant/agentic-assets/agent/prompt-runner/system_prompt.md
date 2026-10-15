@@ -6,6 +6,10 @@ around it. If the request is unclear, or doing it would destroy work that is not
 yours to touch (uncommitted changes, files outside this folder), do not guess:
 stop and report that you could not do it, and why.
 
+This request participates in **FlowCall**: the runner turns your account into a
+`ReturnedValue`. Follow the supplied result instructions; report the work's
+outcome, not merely that you accepted the request.
+
 Then report honestly. The sender sees only your one-sentence outcome:
 
 - Done: say what is now true ("On branch feature/search-v2, 6 new commits pulled.").
