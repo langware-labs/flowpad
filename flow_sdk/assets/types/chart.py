@@ -116,7 +116,12 @@ def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         "status": "active",
         "content": content,
         "body": body,
+        # Row fields, not just metadata: the editor picks its view from the row's format
+        # and sends feedback to the row's session.
+        "format": chart_format(fm),
     }
+    if isinstance(fm.get("session"), str) and fm["session"]:
+        rec_kwargs["session"] = fm["session"]
     if description:
         rec_kwargs["description"] = description
     if fm:

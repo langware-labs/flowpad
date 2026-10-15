@@ -39,6 +39,17 @@ export function extractMermaidBlock(doc: string): string {
   return FENCE_RE.exec(block ?? doc)?.[1] ?? '';
 }
 
+/**
+ * Replace a mermaid chart's source where it lives: the auto block when there is one,
+ * else the first mermaid fence in place (a hand-written chart keeps its own layout),
+ * else a new block.
+ */
+export function replaceMermaidSource(currentDoc: string, mermaid: string, note: string): string {
+  if (BLOCK_RE.test(currentDoc) || !FENCE_RE.test(currentDoc)) return spliceMermaidBlock(currentDoc, mermaid, note);
+  const body = mermaid.endsWith('\n') ? mermaid : mermaid + '\n';
+  return currentDoc.replace(FENCE_RE, () => '```mermaid\n' + body + '```');
+}
+
 /** Read CHART.md, materializing it when a fresh chart has none yet. */
 export async function readChartDocument(docRef: FSRef, chart?: Chart) {
   return docRef.readDocument().catch(async (error: unknown) => {
@@ -59,11 +70,12 @@ export async function writeChartMermaid(
   mermaid: string,
   note: string,
   setFields?: Record<string, string>,
+  splice: (doc: string, mermaid: string, note: string) => string = spliceMermaidBlock,
 ): Promise<void> {
   const document = await readChartDocument(docRef, chart);
   await docRef.updateDocument({
     expected_revision: document.revision,
-    body: spliceMermaidBlock(document.body, mermaid, note),
+    body: splice(document.body, mermaid, note),
     ...(setFields ? { set_fields: setFields } : {}),
   });
 }

@@ -2935,8 +2935,10 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
-        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
+    async def dependencies_action(self, asset: str = "", declarers: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings.
+        ``?declarers=1`` adds ``declarers``: every asset whose own flow.json declares
+        dependencies, with all its entries (the walk above lists each dependency once)."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
         try:
@@ -2951,6 +2953,8 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
+                   if declarers else {}),
             }
         )
 

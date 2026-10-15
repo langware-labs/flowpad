@@ -41,8 +41,13 @@ Never write `thumbnail.svg`; the editor makes it.
 
 ## 2. Write it
 
+A chart lives in `<project>/agentic-assets/chart/<name>/` by default. When it documents a part of the
+project, it may instead live with the docs: `<project>/docs/<area>/<name>/` (a folder holding `CHART.md`)
+— it is the same Chart entity, and the project tree shows it as `docs › <area> › <name>`. Names stay
+unique per project either way (`ref` resolves by name).
+
 ```bash
-D=<project>/agentic-assets/chart/<name>        # name: lowercase-dashed, unique in the project
+D=<project>/agentic-assets/chart/<name>        # or <project>/docs/<area>/<name>; name unique in the project
 mkdir -p "$D"
 cat > "$D/CHART.md" <<'EOF'
 ---
@@ -84,6 +89,37 @@ Then index and show it:
 flow record index "$D" --types chart        # prints the chart-<uuid> TypeId
 flow show entity chart-<uuid>
 ```
+
+## 2b. A chart is an asset — link it both ways
+
+A chart is a folder asset like any other, so it takes part in Flowpad's asset links: an optional
+`flow.json` in an asset's folder names other assets **by id** (`docs/snippets/asset-dependencies.md`).
+Never invent a second link format.
+
+- **A chart's children** — the assets the chart is about or is made of: the sub-flow charts it opens,
+  and the real assets on its lanes (a data source, a credential, a webapp, a skill). Write them into the
+  CHART's `flow.json`:
+  ```bash
+  flow dep add chart-<sub-flow uuid>       --asset chart-<this uuid> --label "Token refresh"
+  flow dep add data_source-<uuid>          --asset chart-<this uuid> --label "Hue connector"
+  ```
+  Every message with `ref` MUST have its chart listed here — `ref` (the name) draws the block, the
+  dependency is what makes the link real (share and include bring it along; a missing one reads
+  `not_found`).
+- **Charts of another asset** — an asset that HAS charts (a data source documented by its auth flow, a
+  project by its architecture) lists them in ITS `flow.json`:
+  ```bash
+  flow dep add chart-<uuid> --asset data_source-<uuid> --label "Auth flow"
+  ```
+- A participant that IS an asset carries its id in `note` (`"note": "data_source-<uuid> · server.js:211"`)
+  so a reader can jump to it.
+- A **chart set** (an overview with sub-flows) is a tree: the overview chart depends on each flow chart,
+  each flow chart on the shared sub-flow charts it opens. Shared sub-flows are leaves many charts point
+  to — draw each once.
+- `flow dep list` (from the project folder) shows every link and its state; run it before reporting.
+- If `flow dep add --asset chart-…` refuses with "projects do not nest" (a known bug), write the entry
+  into the chart's `flow.json` yourself in the same shape — `{"dependencies": {"<key>": {"ref":
+  "chart-<uuid>", "name": "<label>"}}}`, ids only — then check it with `flow dep list`.
 
 ## 3. Design rules (the editor applies them — don't fight them)
 

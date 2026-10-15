@@ -108,16 +108,40 @@ describe('SequenceChartView', () => {
     expect(screen.getByText('browser')).toBeInTheDocument();
   });
 
-  it('Open ↗ on a sub-flow navigates to the chart named by its ref', async () => {
-    const target = { name: 'auth-check', scope: 'project-1', dockPointer: { url: 'chart:auth-check' } };
+  it('Open ↗ on a sub-flow opens the named chart on the project route, scoped to the project', async () => {
+    const target = { name: 'auth-check', asset_ref: '/w/p/agentic-assets/chart/auth-check' };
     chartQuery.mockResolvedValueOnce([target]);
     renderView();
     fireEvent.click(await screen.findByTestId('chart-subflow-open'));
-    await waitFor(() => expect(openDock).toHaveBeenCalledWith(target.dockPointer));
-    const request = (chartQuery.mock.calls[0] as unknown[])[0] as { query: unknown };
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+    const pointer = (openDock.mock.calls[0] as unknown[])[0] as { viewType: string; pointer: string };
+    expect(pointer.viewType).toBe('project');
+    expect(pointer.pointer).toContain(`${PROJECT}/editor/chart/`);
+    expect(pointer.pointer).toContain('w/p/agentic-assets/chart/auth-check');
+    const request = (chartQuery.mock.calls[0] as unknown[])[0] as { query: unknown; scope?: { id: string }[] };
     expect(JSON.stringify(request.query)).toContain('auth-check');
+    expect(request.scope?.map((s) => s.id)).toEqual([PROJECT]);
     // The open button never picks the block for a comment.
     expect(screen.queryByTestId('chart-feedback-panel')).toBeNull();
+  });
+
+  it('Open ↗ prefers the chart in the same folder when a name repeats', async () => {
+    const elsewhere = { name: 'auth-check', asset_ref: '/w/p/docs/other/auth-check' };
+    const sibling = { name: 'auth-check', asset_ref: '/w/p/agentic-assets/chart/auth-check' };
+    chartQuery.mockResolvedValueOnce([elsewhere, sibling]);
+    renderView();
+    fireEvent.click(await screen.findByTestId('chart-subflow-open'));
+    await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+    const pointer = (openDock.mock.calls[0] as unknown[])[0] as { pointer: string };
+    expect(pointer.pointer).toContain('agentic-assets/chart/auth-check');
+  });
+
+  it('a returns arrow is styled as a reply message, so its label plate and text get the message styles', async () => {
+    renderView();
+    const label = await screen.findByText('user row');
+    const group = label.closest('[data-testid="chart-message"]')!;
+    expect(group.classList.contains('m')).toBe(true);
+    expect(group.classList.contains('reply')).toBe(true);
   });
 
   it('the Table view lists every message with sender and receiver', async () => {
