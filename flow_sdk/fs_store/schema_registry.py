@@ -511,6 +511,12 @@ class TypeInfo:
         return any(walk.anywhere for walk in self.walk)
 
     @property
+    def recursive_mounts(self) -> tuple[str, ...]:
+        """The declared mounts the type walks RECURSIVELY: an asset may sit at
+        any depth below one (``docs/network/net/CHART.md`` is a chart)."""
+        return tuple(dict.fromkeys(m for walk in self.walk if walk.recursive and not walk.anywhere for m in walk.mounts))
+
+    @property
     def scan_mounts(self) -> tuple[str, ...]:
         """Every root-relative directory a copy of this type may BE in: the
         declared walk mounts plus placement's (``placement.scan_mounts``)."""
@@ -1367,6 +1373,14 @@ class SchemaRegistry:
         # sits directly in the mount, so its parent IS the mount.
         named_parts = p.parent.parent.parts
         singleton_parts = p.parent.parts
+        def below_recursive_mount(info) -> bool:
+            # The walk descends the whole mount, so any ancestor may be it.
+            return any(
+                mount_matches(named_parts[:k], Path(m).parts)
+                for m in info.recursive_mounts
+                for k in range(len(named_parts), 0, -1)
+            )
+
         return frozenset(
             info.type_name
             for info in candidates
@@ -1375,6 +1389,7 @@ class SchemaRegistry:
                 mount_matches(singleton_parts if info.singleton else named_parts, Path(m).parts)
                 for m in info.scan_mounts
             )
+            or below_recursive_mount(info)
         )
 
     @classmethod

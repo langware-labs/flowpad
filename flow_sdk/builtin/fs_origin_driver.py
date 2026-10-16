@@ -56,6 +56,19 @@ class FSOriginDriver(Protocol):
         """
         ...
 
+    async def materialize_pinned(
+        self,
+        origin: "FSOrigin",
+        *,
+        preferred_root: Optional[Path] = None,
+        preferred_project_id: Optional[str] = None,
+        token: Optional[str] = None,
+    ) -> tuple[Path, Optional[str]]:
+        """Open a RECEIVED share: exactly the version it was shared at, never
+        touching a checkout the receiver owns. A driver whose origin pins no
+        version materializes as usual. Same return as :meth:`materialize`."""
+        ...
+
     def matches(self, origin: "FSOrigin", local_path: Path) -> bool:
         """Whether ``local_path`` is a materialization of ``origin``. Optional
         capability — a driver with no notion of it returns False."""

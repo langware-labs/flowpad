@@ -4167,6 +4167,7 @@ msgid "Boundary"
 msgstr "גבול"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "ענף"
 
@@ -5833,6 +5834,10 @@ msgstr "אישור ומיזוג"
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "אשר את כל השינויים ובצע מיזוג לענף הראשי. Claude יצא מ-worktree בעת סיום."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit and push this file"
+msgstr "בצע commit ו-push לקובץ הזה"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
 msgstr "ייחוס הקומיט"
@@ -6660,6 +6665,11 @@ msgstr "לא ניתן לבדוק — {failed}"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
+
+#: src/hooks/use-git-share-gate.ts
+#: src/hooks/use-git-share-gate.ts
+msgid "Could not commit and push"
+msgstr "לא ניתן היה לבצע commit ו-push"
 
 #~ msgid "Could not connect GitHub"
 #~ msgstr "לא ניתן להתחבר ל-GitHub"
@@ -11851,6 +11861,11 @@ msgstr "Git"
 msgid "Git changes"
 msgstr "שינויים בגיט"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Git could not commit or push this file."
+msgstr "Git לא הצליח לבצע commit או push לקובץ הזה."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
 msgstr "Git נדרש כדי לשתף קבצים"
@@ -11890,6 +11905,11 @@ msgstr "מאגר Git"
 
 #~ msgid "Git setup finished, but the project still isn't ready to link."
 #~ msgstr "הגדרת Git הסתיימה, אך הפרויקט עדיין לא מוכן לקישור."
+
+#: src/components/assets/editor/GitShareBar.tsx
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Git share failed"
+msgstr "השיתוף דרך Git נכשל"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git status of the working directory"
@@ -17426,6 +17446,7 @@ msgstr ""
 msgid "Not saved: {0}"
 msgstr "לא נשמר: {0}"
 
+#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17488,6 +17509,10 @@ msgstr ""
 #: src/components/automations/AutomationRow.tsx
 msgid "Not tested yet"
 msgstr ""
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Not updated"
+msgstr "לא עודכן"
 
 #~ msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
 #~ msgstr ""
@@ -19226,6 +19251,7 @@ msgstr ""
 #~ msgid "path"
 #~ msgstr "נתיב"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -20430,6 +20456,10 @@ msgstr "דחפו את {folderName}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push & notify"
 msgstr "דחפו & הודיעו"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Push and share"
+msgstr "בצע push ושתף"
 
 #~ msgid "Push failed"
 #~ msgstr "דחיפה נכשלה"
@@ -23266,6 +23296,10 @@ msgstr ""
 msgid "Send message"
 msgstr "שלח הודעה"
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Send my edits back"
+msgstr "שלח את השינויים שלי בחזרה"
+
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "שליחת קריאה מינימלית אחת דרך נקודת הקצה הזו"
@@ -23788,6 +23822,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
+#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -23904,6 +23939,10 @@ msgstr "משותף"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Shared by every place"
 msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+msgstr "שותף דרך Git — הורדה פותחת בדיוק את הגרסה ששותפה, בלי לגעת בעותק שלך."
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -24734,6 +24773,10 @@ msgstr ""
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
 msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Someone else changed this file on the remote. Resolve the conflict in Git, then share again."
+msgstr "מישהו אחר שינה את הקובץ הזה במאגר המרוחק. פתור את ההתנגשות ב-Git ושתף שוב."
 
 #~ msgid "Someone else changed this too. Switch to Advanced view to merge."
 #~ msgstr "מישהו אחר שינה את זה גם כן. יש לעבור לתצוגה המתקדמת כדי למזג."
@@ -26476,6 +26519,10 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 msgid "the vault"
 msgstr ""
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "The version that was shared with you"
+msgstr "הגרסה ששותפה איתך"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The wizard could not run"
@@ -28115,6 +28162,11 @@ msgstr "מעודכן"
 msgid "Update"
 msgstr "עדכן"
 
+#. placeholder {0}: status.behind
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Update ({0} newer)"
+msgstr "עדכן ({0} חדשות יותר)"
+
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -28158,6 +28210,10 @@ msgstr "עודכן"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Updated {0}"
 msgstr "{0} עודכן בהצלחה"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Updated to the latest version"
+msgstr "עודכן לגרסה האחרונה"
 
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
@@ -28596,6 +28652,7 @@ msgstr "יש לאמת את ההגדרה תחילה."
 #~ msgid "Verify: {0}"
 #~ msgstr "אימות: {0}"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
 msgstr "גרסה"
@@ -29452,6 +29509,7 @@ msgstr "עובד…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -29823,6 +29881,10 @@ msgstr "בקשת האבחון שלך חזרה"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "שם התצוגה שלך"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Your edits were sent back"
+msgstr "השינויים שלך נשלחו בחזרה"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr ""

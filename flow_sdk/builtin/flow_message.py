@@ -399,11 +399,16 @@ def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
             if asset_ref and Path(asset_ref).exists():
                 return folder
         if fm_id:
-            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
+            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, staged_git_entry_dir
 
             staged = staged_entry_dir(fm_id, record_stem(etype, eid))
             if staged.exists():
                 return staged
+            # A git share stages its pointer (metadata only); the bytes come by
+            # git at install, so the pointer IS the downloaded attachment.
+            pointer = staged_git_entry_dir(fm_id, record_stem(etype, eid))
+            if (pointer / "metadata.json").exists():
+                return pointer
         return None
     except Exception:
         return None

@@ -211,3 +211,18 @@ def test_a_shared_mount_resolves_to_the_type_that_needs_no_declaration(tmp_path:
 
     assert SchemaRegistry.type_for(plain, placed_only=True) == "markdown"
     assert SchemaRegistry.type_for(index, placed_only=True) == "markdown_index"
+
+
+def test_a_main_document_at_any_depth_of_a_recursive_mount_is_that_type(tmp_path: Path) -> None:
+    """``chart`` walks ``docs/**``: a chart folder nested below ``docs`` (the
+    agent-written ``docs/network/<chart>/CHART.md``) is a chart for every
+    single-path caller too — a turn-end reindex must not mint it as markdown."""
+    nested = tmp_path / "docs" / "network" / "net" / "CHART.md"
+    nested.parent.mkdir(parents=True)
+    nested.write_text("# net\n", encoding="utf-8")
+    assert SchemaRegistry.type_for(nested, placed_only=True) == "chart"
+    assert SchemaRegistry.type_for(nested.parent) == "chart"
+    # a loose doc beside it stays a document
+    assert SchemaRegistry.type_for(tmp_path / "docs" / "network" / "notes.md", placed_only=True) == "markdown"
+    # outside any recursive mount the name alone does not make a chart
+    assert SchemaRegistry.type_for(tmp_path / "elsewhere" / "net" / "CHART.md") == "markdown"

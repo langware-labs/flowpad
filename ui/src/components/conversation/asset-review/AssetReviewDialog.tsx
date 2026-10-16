@@ -34,6 +34,39 @@ function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; d
   return { label: t`Cloud`, Icon: Cloud, detail: null };
 }
 
+/** What a git share points at — the bytes arrive by git when it is downloaded. */
+function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
+  const origin = (ma.origin ?? null) as (GitOrigin & { head_commit?: string | null }) | null;
+  const commit = origin?.head_commit ? origin.head_commit.slice(0, 12) : null;
+  return (
+    <div className="rounded border border-border px-4 py-5 text-sm text-muted-foreground" data-testid="git-pointer-preview">
+      <p>
+        <Trans>Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.</Trans>
+      </p>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">
+        {origin?.rel_path && (
+          <>
+            <dt><Trans>Path</Trans></dt>
+            <dd className="truncate text-foreground">{origin.rel_path}</dd>
+          </>
+        )}
+        {commit && (
+          <>
+            <dt><Trans>Version</Trans></dt>
+            <dd className="text-foreground">{commit}</dd>
+          </>
+        )}
+        {origin?.branch && (
+          <>
+            <dt><Trans>Branch</Trans></dt>
+            <dd className="text-foreground">{origin.branch}</dd>
+          </>
+        )}
+      </dl>
+    </div>
+  );
+}
+
 const isGitAttachment = (ma: MessageAttachment): boolean => ma.transfer_mode === 'git' || ma.origin != null;
 const typeWordOf = (type?: string): string => {
   const t = type || 'file';
@@ -581,6 +614,9 @@ function AttachmentReviewDialog({
             {selected.asset_type === Project.type ? (
               // A project has no staged files: it previews from its row.
               <ProjectPreview project={selectedProjectRow} fallbackName={selected.name} />
+            ) : selectedIsGit ? (
+              // A git share stages a POINTER, not files: say what it opens.
+              <GitPointerPreview ma={selected} />
             ) : (
               <StagedAssetViewer attachment={selected} />
             )}
