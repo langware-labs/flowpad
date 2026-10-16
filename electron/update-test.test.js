@@ -7,7 +7,7 @@
  */
 
 const assert = require('assert');
-const { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, _setLogLine } = require('./update-test');
+const { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine } = require('./update-test');
 
 let passed = 0;
 function eq(actual, expected, msg) {
@@ -114,6 +114,17 @@ withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: 'soon' }
 });
 withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS: undefined }, () => {
   eq(checkBoundMs(), undefined, 'test mode, unset: the app default');
+});
+
+// ── checkIntervalMs: same rules as the bound ─────────────────────────────────
+withEnv({ FLOWPAD_UPDATE_TEST: undefined, FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS: '30000' }, () => {
+  eq(checkIntervalMs(), undefined, 'normal run: the app keeps its own periodic interval');
+});
+withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS: '30000' }, () => {
+  eq(checkIntervalMs(), 30000, 'test mode: the interval from the environment');
+});
+withEnv({ FLOWPAD_UPDATE_TEST: '1', FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS: '0' }, () => {
+  eq(checkIntervalMs(), undefined, 'test mode, zero: the app default');
 });
 
 console.log(`update-test.test.js: ${passed} assertions passed`);

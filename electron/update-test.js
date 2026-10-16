@@ -13,6 +13,7 @@
  *   FLOWPAD_UPDATE_TEST_ANSWERS scripts the update dialogs, e.g.
  *     FLOWPAD_UPDATE_TEST_ANSWERS="both=later,restart=later,engine=upgrade"
  *   Prompt ids (button 0 always accepts, 1 defers):
+ *     move    — macOS: the app runs from a transient place     ("Move to Applications" / "Not now")
  *     both    — desktop + engine both have a new version   ("Update now" / "Later")
  *     restart — the desktop update is downloaded           ("Restart now" / "Later")
  *     engine  — an engine-only update                      ("Upgrade" / "Later")
@@ -26,6 +27,8 @@
  *   FLOWPAD_UPDATE_CONFIG            alternate app-update.yml (a local `generic` feed) for electron-updater (main.js)
  *   FLOWPAD_PYPI_JSON_URL            alternate "latest flowpad" JSON in place of pypi.org (uv-manager.js)
  *   FLOWPAD_UPDATE_TEST_ENGINE_SPEC  what install/upgrade/repair resolve instead of `flowpad@latest` (uv-manager.js)
+ *   FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS  how often a running session re-checks both update channels (default 20 min),
+ *                                    so a test can watch a held engine at a later tick without waiting (main.js)
  *   FLOWPAD_UPDATE_TEST_CHECK_BOUND_MS  how long the launch-time desktop update check may take before the app
  *                                    gives up on it (default 20 s). A CI runner can need longer; a check that
  *                                    gave up means no "Updates available" screen at that launch (main.js)
@@ -98,9 +101,15 @@ function checkBoundMs() {
   return isEnabled() && Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
+/** The periodic re-check interval in ms, or undefined (the app's own default) outside test mode. */
+function checkIntervalMs() {
+  const ms = Number(process.env.FLOWPAD_UPDATE_TEST_CHECK_INTERVAL_MS);
+  return isEnabled() && Number.isFinite(ms) && ms > 0 ? ms : undefined;
+}
+
 /** The `forceRunAfter` argument for quitAndInstall: off in test mode (the harness relaunches itself). */
 function forceRunAfter(forceRun) {
   return isEnabled() ? false : forceRun;
 }
 
-module.exports = { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, _setLogLine };
+module.exports = { isEnabled, answerFor, event, parseAnswers, forceRunAfter, checkBoundMs, checkIntervalMs, _setLogLine };

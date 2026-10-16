@@ -259,7 +259,7 @@ function setupElectronAutoUpdater() {
       }
     }
     await checkPackageUpdateInBackground();
-  }, UPDATE_CHECK_INTERVAL_MS);
+  }, updateTest.checkIntervalMs() || UPDATE_CHECK_INTERVAL_MS);
 }
 
 // How often a long-running session re-checks both update channels.
@@ -1955,6 +1955,7 @@ async function startApp() {
       readState: () => { try { return JSON.parse(fs.readFileSync(locationPromptStatePath(), 'utf8')); } catch { return null; } },
       writeState: (state) => fs.writeFileSync(locationPromptStatePath(), JSON.stringify(state), 'utf8'),
       share: (text) => shareDiagnostics(text, 'could not move itself to Applications'),
+      scriptedAnswer: () => updateTest.answerFor('move', { execPath: process.execPath }),
       log,
     }).catch((err) => log.warn(`[location] move offer failed: ${err.message}`));
   }
