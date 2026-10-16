@@ -1,5 +1,10 @@
 import { t } from '@lingui/core/macro';
+import { Send } from 'lucide-react';
+import { useState } from 'react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { Button } from '@src/components/ui/button';
+import { useFileShareSource } from '@src/hooks/use-file-share-source';
 import { useFS } from '@src/hooks/useFS';
 
 /**
@@ -65,6 +70,10 @@ export function HtmlPreview({ path }: { path: string }) {
   // the URL from the first render, so the frame loads once, already bound.
   const processParam = flowId ? `&process=${encodeURIComponent(flowId)}` : '';
   const src = computeNode?.typeId && fs ? `${fs.getServeUrl(path)}?r=${revision}${processParam}` : null;
+  // Share the page: inside a repo it travels as a git pointer to this exact
+  // version (the dialog's Git toggle), else as a copy of the file.
+  const [sharing, setSharing] = useState(false);
+  const shareSource = useFileShareSource(computeNode?.typeId, sharing ? path : null);
 
   if (!src) {
     return (
@@ -73,13 +82,26 @@ export function HtmlPreview({ path }: { path: string }) {
   }
 
   return (
-    <iframe
-      title={t`HTML preview`}
-      sandbox={PREVIEW_SANDBOX}
-      src={src}
-      className="h-full w-full border-0 bg-white"
-      data-testid="html-preview"
-    />
+    <div className="relative h-full w-full">
+      <iframe
+        title={t`HTML preview`}
+        sandbox={PREVIEW_SANDBOX}
+        src={src}
+        className="h-full w-full border-0 bg-white"
+        data-testid="html-preview"
+      />
+      <Button
+        size="sm"
+        variant="secondary"
+        className="absolute right-3 top-3 gap-1.5 shadow"
+        onClick={() => setSharing(true)}
+        data-testid="html-preview-share"
+      >
+        <Send className="h-3.5 w-3.5" />
+        {t`Share`}
+      </Button>
+      {shareSource && <ShareToConversationDialog open onClose={() => setSharing(false)} source={shareSource} />}
+    </div>
   );
 }
 

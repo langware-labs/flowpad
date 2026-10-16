@@ -4167,6 +4167,7 @@ msgid "Boundary"
 msgstr "حد فاصل"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "الفرع"
 
@@ -5833,6 +5834,10 @@ msgstr "الالتزام والدمج"
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "الالتزام بجميع التغييرات ودمج الفرع الحالي مع الفرع الأصل. سيغادر Claude بيئة العمل عند الانتهاء."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit and push this file"
+msgstr "نفّذ commit و push لهذا الملف"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
 msgstr "إسناد الالتزام"
@@ -6660,6 +6665,11 @@ msgstr "تعذّر التحقق — {failed}"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
+
+#: src/hooks/use-git-share-gate.ts
+#: src/hooks/use-git-share-gate.ts
+msgid "Could not commit and push"
+msgstr "تعذّر تنفيذ commit و push"
 
 #~ msgid "Could not connect GitHub"
 #~ msgstr "تعذر الاتصال بـ GitHub"
@@ -11851,6 +11861,11 @@ msgstr "Git"
 msgid "Git changes"
 msgstr "تغييرات Git"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Git could not commit or push this file."
+msgstr "تعذّر على Git تنفيذ commit أو push لهذا الملف."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
 msgstr "Git مطلوب لمشاركة الملفات"
@@ -11890,6 +11905,11 @@ msgstr "مستودع Git"
 
 #~ msgid "Git setup finished, but the project still isn't ready to link."
 #~ msgstr "تم إعداد Git، لكن المشروع ما زال غير جاهز للربط."
+
+#: src/components/assets/editor/GitShareBar.tsx
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Git share failed"
+msgstr "فشلت المشاركة عبر Git"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git status of the working directory"
@@ -17426,6 +17446,7 @@ msgstr ""
 msgid "Not saved: {0}"
 msgstr "لم يُحفظ: {0}"
 
+#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17488,6 +17509,10 @@ msgstr ""
 #: src/components/automations/AutomationRow.tsx
 msgid "Not tested yet"
 msgstr ""
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Not updated"
+msgstr "لم يُحدَّث"
 
 #~ msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
 #~ msgstr ""
@@ -19230,6 +19255,7 @@ msgstr ""
 #~ msgid "path"
 #~ msgstr "المسار"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -20434,6 +20460,10 @@ msgstr "دفع {folderName}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push & notify"
 msgstr "إرسال وإخطار"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Push and share"
+msgstr "نفّذ push وشارك"
 
 #~ msgid "Push failed"
 #~ msgstr "فشل الإرسال"
@@ -23270,6 +23300,10 @@ msgstr ""
 msgid "Send message"
 msgstr "إرسال الرسالة"
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Send my edits back"
+msgstr "أرسل تعديلاتي"
+
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
 msgstr "إرسال استدعاء بسيط واحد عبر نقطة النهاية هذه"
@@ -23792,6 +23826,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
+#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -23908,6 +23943,10 @@ msgstr "مشترك"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Shared by every place"
 msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+msgstr "تمت المشاركة عبر Git — التنزيل يفتح النسخة التي شوركت بالضبط، دون المساس بنسختك."
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -24738,6 +24777,10 @@ msgstr ""
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
 msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Someone else changed this file on the remote. Resolve the conflict in Git, then share again."
+msgstr "غيّر شخص آخر هذا الملف في المستودع البعيد. حُلّ التعارض في Git ثم شارك مجددًا."
 
 #~ msgid "Someone else changed this too. Switch to Advanced view to merge."
 #~ msgstr "غيّر شخص آخر هذا أيضًا. يمكنك التبديل إلى العرض المتقدم للدمج."
@@ -26480,6 +26523,10 @@ msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام
 msgid "the vault"
 msgstr ""
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "The version that was shared with you"
+msgstr "النسخة التي شوركت معك"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The wizard could not run"
@@ -28119,6 +28166,11 @@ msgstr "محدّث"
 msgid "Update"
 msgstr "تحديث"
 
+#. placeholder {0}: status.behind
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Update ({0} newer)"
+msgstr "حدّث ({0} أحدث)"
+
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -28162,6 +28214,10 @@ msgstr "آخر تحديث"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Updated {0}"
 msgstr "تم تحديث {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Updated to the latest version"
+msgstr "تم التحديث إلى أحدث نسخة"
 
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
@@ -28600,6 +28656,7 @@ msgstr "يجب التحقق من الإعداد أولاً."
 #~ msgid "Verify: {0}"
 #~ msgstr "التحقق: {0}"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
 msgstr "الإصدار"
@@ -29456,6 +29513,7 @@ msgstr "يعمل…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -29827,6 +29885,10 @@ msgstr "عاد طلب التشخيص الخاص بك"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "اسمك المعروض"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Your edits were sent back"
+msgstr "أُرسلت تعديلاتك"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr ""

@@ -274,17 +274,19 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
     await unpack_bundle(zip_path, local_user_id="gx8")
 
     # Consent boundary: NOTHING cloned at download time.
-    cloned_root = workspace / "clone-origin"
-    expected = cloned_root / REL_PATH / "SKILL.md"
-    assert not expected.exists(), "unpack must not clone anymore — install does"
+    shared = workspace / ".shared"
+    assert not shared.exists(), "unpack must not clone anymore — install does"
 
     # No project mapped → the user installs into the user scope; the git-mode
-    # restore resolves its own checkout (clones into the agent workspace).
+    # restore makes Flowpad's own clone of the remote (``.shared/repos``) and
+    # opens the shared commit in a worktree of it (``.shared/<repo>@<commit>``).
     await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}", scope="user")
+    pinned = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sender_repo, capture_output=True, text=True).stdout.strip()
+    expected = shared / f"clone-origin@{pinned[:12]}" / REL_PATH / "SKILL.md"
     assert expected.exists(), f"receiver did not clone/index git transfer into {expected}"
     recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
     assert recv_skill is not None
-    assert Path(recv_skill.asset_ref).resolve() == (cloned_root / REL_PATH).resolve()
+    assert Path(recv_skill.asset_ref).resolve() == expected.parent.resolve()
     assert recv_skill.origin and recv_skill.origin.provider == "file"
     results = await Entity.search(GIT_CLONE_SEARCH_TOKEN, record_type=EntityType.SKILL.value)
     assert any(result.id == GIT_CLONE_SKILL_ID for result in results), (
@@ -581,15 +583,16 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
     await sender_doc_entity.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
 
-    cloned_root = workspace / "markdown-clone-origin"
-    expected = cloned_root / rel_path
-    assert not expected.exists(), "unpack must not clone anymore — install does"
+    shared = workspace / ".shared"
+    assert not shared.exists(), "unpack must not clone anymore — install does"
 
     # Git-mode user-scope install: the checkout resolves itself (no .claude
     # layout gate — the root is only a clone preference in git mode).
     await _install_staged(
         GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}", scope="user"
     )
+    pinned = subprocess.run(["git", "rev-parse", "HEAD"], cwd=sender_repo, capture_output=True, text=True).stdout.strip()
+    expected = shared / f"markdown-clone-origin@{pinned[:12]}" / rel_path
     assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
     assert received_doc is not None

@@ -25,7 +25,10 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from pydantic import ValidationError
+
 from flow_sdk.actions.action_registry import action
+from flow_sdk.builtin.git_share_specs import GitShareFixRequest, SharedFileRequest
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.utils.git import _run_git, find_project_root, git_remote_url
@@ -42,8 +45,8 @@ _REASONS: dict[str, str] = {
     "unsupported-origin": "The repository's origin isn't a supported Git host.",
     "detached-head": "The repository is in a detached-HEAD state — check out a branch.",
     "no-commit": "The repository has no commits yet — commit the asset first.",
-    "dirty": "The repository has uncommitted changes — commit them so they travel.",
-    "unpushed": "The branch has unpushed commits — push them so the receiver can clone them.",
+    "dirty": "This asset has uncommitted changes — commit them so they travel.",
+    "unpushed": "This version is not pushed yet — push it so the receiver can open it.",
     "status-failure": "Couldn't read the repository's Git status.",
 }
 
@@ -51,7 +54,7 @@ _REASONS: dict[str, str] = {
 def _result(code: str | None, git_origin: dict | None = None) -> dict:
     """Build the preflight payload from a reason code (None ⇒ available)."""
     if code is None:
-        return {"available": True, "reason": None, "code": None, "git_origin": git_origin}
+        return {"available": True, "reason": None, "code": None, "fix": None, "git_origin": git_origin}
     # The origin rides along on the failure branch too when we managed to derive
     # one. "Can't share yet" and "has no repo" are different states, and a
     # caller that only wants to NAME the repo (a header chip) shouldn't have to
@@ -60,6 +63,7 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
         "available": False,
         "reason": _REASONS.get(code, code),
         "code": code,
+        "fix": FIXES.get(code),
         "git_origin": git_origin,
     }
 
@@ -139,36 +143,48 @@ async def _resolve_asset_git_path(entity_type: str, entity_id: str) -> str | Non
     return str(src_root) if src_root is not None else None
 
 
-def _repo_share_status(repo_root: str, origin) -> str | None:
-    """Reason code blocking a Git share of a checkout, or None when clean+pushed.
+def _repo_share_status(repo_root: str, origin, src_root: str | None = None) -> str | None:
+    """Reason code blocking a Git share of ``src_root`` (the shared asset's own
+    path; the whole repo when None), or None when it can travel.
 
-    ``origin`` is the ``GitOrigin`` ``for_asset_path`` already derived — its
-    ``head_commit``/``branch`` carry the no-commit / detached-HEAD states, so we
-    reuse them instead of re-spawning ``rev-parse``/``branch``. Only the dirty +
-    unpushed reads (which the origin doesn't capture) run here. Fail-closed: any
-    git read that errors returns ``status-failure``. Sync subprocesses — call in
-    a thread.
+    Only the SHARED path has to be committed — an unrelated edit elsewhere in
+    the repo does not travel and does not block. The pinned commit (HEAD) has
+    to be on the remote: some remote-tracking ref contains it. ``origin`` is the
+    ``GitOrigin`` ``for_asset_path`` already derived — its ``head_commit``/
+    ``branch`` carry the no-commit / detached-HEAD states. Fail-closed: any git
+    read that errors returns ``status-failure``. Sync subprocesses — call in a
+    thread.
     """
     if not origin.head_commit:
         return "no-commit"  # nothing to clone yet
     if not origin.branch:
         return "detached-head"  # the share pins a branch; there isn't one
     try:
-        # Uncommitted / untracked changes would silently not travel.
-        porcelain = _run_git(["git", "status", "--porcelain"], repo_root, timeout=10)
+        scope = ["--", src_root] if src_root else []
+        porcelain = _run_git(["git", "status", "--porcelain", "-uall", *scope], repo_root, timeout=10)
         if porcelain.returncode != 0:
             return "status-failure"
         if porcelain.stdout.strip():
             return "dirty"
-        # Commits ahead of the upstream are unclonable by the receiver. No
-        # upstream configured ⇒ rev-list exits non-zero ⇒ treat as unpushed.
-        ahead = _run_git(["git", "rev-list", "--count", "@{u}..HEAD"], repo_root, timeout=10)
-        if ahead.returncode != 0 or (ahead.stdout.strip() or "0") != "0":
-            return "unpushed"
+        # The usual case is one ancestry check on its own branch; only a commit
+        # pushed elsewhere pays for the scan of every remote branch.
+        on_branch = _run_git(
+            ["git", "merge-base", "--is-ancestor", origin.head_commit, f"refs/remotes/origin/{origin.branch}"],
+            repo_root,
+            timeout=10,
+        )
+        if on_branch.returncode != 0:
+            on_remote = _run_git(["git", "branch", "-r", "--contains", origin.head_commit], repo_root, timeout=10)
+            if on_remote.returncode != 0 or not on_remote.stdout.strip():
+                return "unpushed"
         return None
     except Exception:
         logger.debug("[git-preflight] status read failed for %s", repo_root, exc_info=True)
         return "status-failure"
+
+
+#: The one-click fix the sender is offered for a blocking code.
+FIXES: dict[str, str] = {"dirty": "commit", "no-commit": "commit", "unpushed": "push"}
 
 
 async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
@@ -201,7 +217,7 @@ async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
         remote = await asyncio.to_thread(git_remote_url, repo_root)
         return _result("missing-remote" if not remote else "unsupported-origin")
 
-    blocking = await asyncio.to_thread(_repo_share_status, repo_root, origin)
+    blocking = await asyncio.to_thread(_repo_share_status, repo_root, origin, src_root)
     if blocking is not None:
         return _result(blocking, git_origin=origin.model_dump(mode="python"))
     return _result(None, git_origin=origin.model_dump(mode="python"))
@@ -219,3 +235,73 @@ async def git_share_preflight_action() -> ApiResponse:
         logger.error("[git-preflight] error for %s: %s", typeid, e, exc_info=True)
         return ApiSuccessResponse(data=_result("status-failure"))
 
+
+
+async def git_share_fix(entity_type: str, entity_id: str, fix: str) -> dict:
+    """Apply the sender's one-click fix, then answer with the fresh preflight.
+
+    ``commit`` commits and pushes ONLY the shared asset's path (the person's
+    other edits stay uncommitted); ``push`` pushes the commits already made and
+    stages nothing. Neither ever force-pushes: a remote that moved on is
+    rebased onto, and a conflict comes back as ``kind="conflict"`` with its
+    paths for the existing resolve flow.
+    """
+    from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+    src_root = await _resolve_asset_git_path(entity_type, entity_id)
+    repo_root = await asyncio.to_thread(find_project_root, src_root) if src_root else None
+    if not repo_root:
+        return {"ok": False, "kind": "no_repo", "message": _REASONS["not-in-repo"], "conflicted": [],
+                "preflight": await git_share_preflight(entity_type, entity_id)}
+    repo = await GitRepo.local(repo_root)
+    if fix == "commit":
+        rel = Path(src_root).resolve().relative_to(Path(repo_root).resolve()).as_posix() or "."
+        pushed = await repo.push(paths=[rel], message=f"Share {Path(rel).name or Path(repo_root).name}")
+    else:
+        pushed = await repo.push_commits()
+    return {
+        "ok": pushed.ok,
+        "kind": pushed.kind,
+        "message": pushed.message,
+        "conflicted": pushed.conflicted,
+        "preflight": await git_share_preflight(entity_type, entity_id),
+    }
+
+
+@action.post(action_name="git_share_fix", types="all")
+async def git_share_fix_action() -> ApiResponse:
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    try:
+        body = GitShareFixRequest.model_validate(await request_info.get_post_data() or {})
+    except ValidationError as e:
+        return ApiFailResponse(message=f"Invalid git share fix: {e}", status_code=400)
+    typeid = request_info.target_entity_typeid
+    return ApiSuccessResponse(data=await git_share_fix(typeid.type, str(typeid.id), body.fix))
+
+
+@action.post(action_name="shared-file-artifact", types=None)
+async def shared_file_artifact_action() -> ApiResponse:
+    """The artifact that stands for one file being shared, when its kind of file
+    travels as one (an .html page) — so the Share dialog can offer, and
+    preflight, sharing it by git. ``type_id: null``: share the file itself."""
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    try:
+        body = SharedFileRequest.model_validate(await request_info.get_post_data() or {}) if request_info else None
+    except ValidationError as e:
+        return ApiFailResponse(message=f"Invalid shared file: {e}", status_code=400)
+    if body is None:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    try:
+        artifact = await Artifact.for_shared_file(body.path)
+    except FileNotFoundError as e:
+        return ApiFailResponse(message=str(e), status_code=404)
+    except ValueError:
+        # Not a page that travels as an artifact: the caller shares the file itself.
+        return ApiSuccessResponse(data={"type_id": None, "name": None})
+    return ApiSuccessResponse(data={"type_id": f"{artifact.type}-{artifact.id}", "name": artifact.name})

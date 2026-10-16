@@ -1,4 +1,5 @@
 import { Conversation, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
@@ -163,7 +164,9 @@ export function AssetInstallActions({
       openDisplayTarget(show, navigation);
     } catch (err) {
       console.error('[asset-review] git download failed', err);
-      const reason = err instanceof Error ? err.message : t`Download failed`;
+      // The backend's reason (no access, the shared version is gone, offline),
+      // not the transport's "Request failed with status code 424".
+      const reason = errorMessage(err, t`Download failed`);
       setGitError(reason);
       notify.error({ title: t`Download failed`, message: reason });
     } finally {

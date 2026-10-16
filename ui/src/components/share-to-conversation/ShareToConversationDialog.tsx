@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -32,7 +32,7 @@ import { SendProgressNotice } from '@src/components/conversation/SendProgressNot
 import type { ShareSource } from '@src/hooks/share-sources';
 import { type CarriedEntity, DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
 import { GitignoredNotice } from '@src/components/share-to-conversation/GitignoredNotice';
-import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { runGitShareFix, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
@@ -283,6 +283,28 @@ export function ShareToConversationDialog({
   // toggle stops the share entirely — we never silently downgrade to a copy.
   const gitMode = gitCapable && gitSharing && preflight.available;
   const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
+  // The one-click fix for a blocked Git share: commit + push only this asset, or
+  // push what is already committed. A conflict is reported, never forced.
+  const [fixBusy, setFixBusy] = useState(false);
+  const applyGitFix = useCallback(async () => {
+    const ref = source.gitPreflightRef;
+    if (!ref || !preflight.fix) return;
+    setFixBusy(true);
+    try {
+      const res = await runGitShareFix(ref, preflight.fix);
+      if (!res.ok) {
+        setLocalError(
+          res.kind === 'conflict'
+            ? t`Someone else changed this file on the remote. Resolve the conflict in Git, then share again.`
+            : res.message || t`Git could not commit or push this file.`,
+        );
+      }
+    } catch (e) {
+      setLocalError(errorMessage(e, t`Git could not commit or push this file.`));
+    } finally {
+      setFixBusy(false);
+    }
+  }, [source.gitPreflightRef, preflight.fix, t]);
   const canShareSelected = !gitBlocked && (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   // Subscribed only while THIS dialog's connect is pending, so an abandoned
@@ -667,11 +689,13 @@ export function ShareToConversationDialog({
                     aria-checked={gitSharing}
                     aria-label={t`Share using Git origin`}
                     onClick={() => {
-                      // Can turn OFF anytime; can only turn ON when eligible.
-                      if (!gitSharing && !preflight.available) return;
+                      // Can turn OFF anytime; can turn ON when eligible, or when a
+                      // one-click fix (commit / push) can make it eligible — turning
+                      // it on is what shows that fix.
+                      if (!gitSharing && !preflight.available && !preflight.fix) return;
                       setGitSharing((v) => !v);
                     }}
-                    disabled={busy || preflight.loading || (!preflight.available && !gitSharing)}
+                    disabled={busy || preflight.loading || (!preflight.available && !preflight.fix && !gitSharing)}
                     data-testid="share-git-toggle"
                     data-state={gitSharing ? 'on' : 'off'}
                     className={cn(
@@ -720,6 +744,24 @@ export function ShareToConversationDialog({
                       (preflight.reason ?? (
                         <Trans>This asset can't be shared with Git. Turn Git sharing off to send a copy.</Trans>
                       ))
+                    )}
+                    {!preflight.loading && preflight.fix && source.gitPreflightRef && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-2"
+                        data-testid={`share-git-fix-${preflight.fix}`}
+                        disabled={fixBusy}
+                        onClick={() => void applyGitFix()}
+                      >
+                        {fixBusy ? (
+                          <Trans>Working…</Trans>
+                        ) : preflight.fix === 'commit' ? (
+                          <Trans>Commit and push this file</Trans>
+                        ) : (
+                          <Trans>Push and share</Trans>
+                        )}
+                      </Button>
                     )}
                   </div>
                 )}
