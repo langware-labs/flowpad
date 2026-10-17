@@ -180,3 +180,38 @@ async def test_b10_remote_unreachable_and_no_clone(make_world, family):
     res, row = await w.share(project_root=None, before_unpack=lambda: shutil.rmtree(w.remote))
     async with w.phase("assert"):
         _fails_cleanly(w, res, row, "no-access")
+
+
+async def test_a_shared_chart_brings_its_sibling_charts_and_icon_packs(make_world):
+    """A chart opens its sub-flows (sibling charts, by name) and draws logos
+    from icon packs: sharing ONE chart makes those findable on the receiver too."""
+    import json
+    import uuid
+
+    from flow_sdk.builtin.chart import Chart
+    from flow_sdk.core import Entity
+
+    w = make_world("chart")
+    sib_id = str(uuid.uuid4())
+    sib = w.sender / "docs" / "network" / "spora-oauth-init" / "CHART.md"
+    sib.parent.mkdir(parents=True)
+    sib.write_text(f"---\nid: {sib_id}\nname: spora-oauth-init\n---\n\n# oauth init\n", encoding="utf-8")
+    pack = w.sender / "agentic-assets" / "icon_pack" / "spora-vendors"
+    (pack / "assets").mkdir(parents=True)
+    (pack / "assets" / "sonos.svg").write_text("<svg/>", encoding="utf-8")
+    (pack / "icon_pack.json").write_text(
+        json.dumps({"version": 1, "kind": "spora-vendors", "icons": [{"kind": "sonos", "asset": "assets/sonos.svg"}]}),
+        encoding="utf-8",
+    )
+    git(w.sender, "add", "-A")
+    git(w.sender, "commit", "-qm", "siblings")
+    git(w.sender, "push", "-q", "origin", BRANCH)
+
+    res, row = await w.share(project_root=None)
+    async with w.phase("assert"):
+        assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+        sibling = await Chart.get_one({"id": sib_id})
+        assert sibling is not None, "the sibling chart a sub-flow opens is not on the receiver"
+        assert Path(sibling.asset_ref).parent == Path(row.asset_ref).parent, "the sibling is not beside it"
+        packs = [p for p in await Entity.search("spora-vendors", record_type="icon_pack")]
+        assert packs, "the icon pack the chart draws logos from is not on the receiver"

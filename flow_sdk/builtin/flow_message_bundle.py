@@ -1335,12 +1335,31 @@ async def _restore_git_transfer_entry(
     return True
 
 
+#: (checkout, commit) pairs whose ``received_with`` companions are already
+#: indexed: a checkout at a commit never changes, so re-opening it skips the walk.
+_COMPANIONS_INDEXED: set[tuple[str, str]] = set()
+
+
 async def _index_git_checkout(entry_type: str, local_root: Path, origin, info, project_id: str | None) -> None:
-    """Index the asset of a git share from the checkout it was opened in."""
+    """Index the asset of a git share from the checkout it was opened in, and
+    what its type declares it needs from the same checkout (``received_with``)
+    — in ONE walk over the checkout when the asset's own type is among those."""
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-    scope = _git_origin_index_scope(local_root, origin.rel_path, info)
-    await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+    companions = tuple(dict.fromkeys(info.received_with)) if info is not None else ()
+    seen = (str(local_root), getattr(origin, "head_commit", None) or "")
+    if entry_type not in companions:
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+    elif seen in _COMPANIONS_INDEXED:
+        # The companions are indexed; the asset itself may be new at this commit.
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+        return
+    if companions and seen not in _COMPANIONS_INDEXED:
+        await _reindex_root(local_root, RecordType.REAL_PROJECT_CWD, types=tuple(RecordType(t) for t in companions), project_id=project_id)
+        if seen[1]:
+            _COMPANIONS_INDEXED.add(seen)
 
 
 async def reopen_git_share(entry_type: str, entry_id: str, origin, local_root: Path, project_id: str | None) -> Path:

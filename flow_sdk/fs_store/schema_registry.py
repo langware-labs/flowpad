@@ -409,6 +409,12 @@ class TypeInfo:
     # ``pack_reference`` / ``restore_reference`` hooks own what is particular
     # to the type (not the hub's ``cloud_file_transport``).
     receive_transfer: str | None = field(default=None, metadata=_MERGE)
+    # ``received_with``: the types a received git share of this type needs from
+    # the SAME checkout to work there — indexed over the whole worktree when it
+    # opens (a chart's sub-flows are sibling charts it opens by name, and its
+    # vendor logos are an icon pack). Bytes are already on disk at the pinned
+    # commit; this only makes them findable.
+    received_with: tuple[str, ...] = field(default=(), metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:
