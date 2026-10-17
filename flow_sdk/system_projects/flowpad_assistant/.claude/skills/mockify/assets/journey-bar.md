@@ -2,7 +2,9 @@
 
 `journey-bar.js` is pasted inline, last in `<body>`, in every mock. It is the reviewer's control strip:
 
-**🎯 · ⟲ Restart · ‹ Back · <step title / app trail · n of N> · Next › · ☰ screens · 💬 feedback (n) · Review & send (n) · –**
+**🎯 · ⟲ Restart · ‹ Back · <step title / app trail · n of N> · Next › · ☰ screens · ▶ Execute (n) · –**
+
+Every popup (☰ screens, feedback, review, save) opens with the same toolbar: **💬 Feedback · Review · 💾 Save to repo**.
 
 ## What the page defines (before the script)
 
@@ -41,7 +43,8 @@ The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `f
 | 💬 → text (+ decision chip, + 📎 / pasted image) → **Save** | `append` one `mockify.feedback` row: `mock` = the mock row's `ref`, `step`, `text`, `decision?`, `screenshot?` (a `data:image/…;base64` URL — stored as `input/screenshot.png`), `status: open`, `created`; key `<mock>-<step>-<base36 time>` |
 | 🎯 → point at an element (hover outlines it, Esc cancels) → the feedback box opens on it → **Save** | the same row, plus `anchor` (`mockify.anchor`: a `selector` from the screen's `[data-step]` or an id, the element's `label`, its `html`, its position `x y w h`) and `element_shot` (the element drawn through an SVG `foreignObject`, best effort: no picture for a big subtree or a cross-origin image) |
 | ✕ on an open comment | `deleteRow(key, {expected: version})` |
-| **Review & send (n)** | nothing yet: opens the review panel — the open comments as ONE markdown document (screen by screen in journey order; each with its decision, the element it is on and its selector, and the paths of its images under the mock-feedback dataset folder), with **📁 Open folder** (the mock row's `folder`, shown in Finder / Explorer through the compute node), **⧉ Copy** and **Send ▶** |
+| **▶ Execute (n)** on the bar | what **Send to <session>** below does, for the open comments — no review first; greyed with none open or no session |
+| **Review** (popup toolbar) | nothing yet: opens the review panel — the open comments as ONE markdown document (screen by screen in journey order; each with its decision, the element it is on and its selector, and the paths of its images under the mock-feedback dataset folder), with **📁 Open folder** (the mock row's `folder`, shown in Finder / Explorer through the compute node), **⧉ Copy** and **Send ▶** |
 | **Send to <session> ▶** | uploads **that same markdown** as a file into the mock's `session` input folder and queues ONE line pointing at it ("File <name>.md is available here: <path>" — a multi-line prompt typed into a terminal session sits unsubmitted in its input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
 
 A comment on an element shows as a numbered **bubble** at that element (at its saved spot when the selector no
