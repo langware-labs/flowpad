@@ -21888,8 +21888,12 @@ msgstr "Restart"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "Restart required — {changedCount} {0} changed"
 
-#: src/components/terminal/interactive-terminal/RestartButton.tsx
-#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#. placeholder {0}: fields.join(', ')
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {0}"
+msgstr "Restart required — changed since start: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
 msgstr "Restart required — config changed since start"
 

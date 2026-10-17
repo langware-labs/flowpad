@@ -21689,8 +21689,12 @@ msgstr "إعادة تشغيل"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "يلزم إعادة التشغيل — تغيّر {changedCount} {0}"
 
-#: src/components/terminal/interactive-terminal/RestartButton.tsx
-#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#. placeholder {0}: fields.join(', ')
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {0}"
+msgstr "إعادة التشغيل مطلوبة — تغيّر منذ البدء: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
 msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
 

@@ -445,6 +445,7 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
+    "restart_changed_fields",
     # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
     # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
     # (tab_order). A delegated write is exactly as invisible to the caller as an
@@ -876,6 +877,13 @@ class AgenticProcess(Entity):
             "True iff a worker-relevant field changed since the last successful "
             "start_pty() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
             "Set automatically by the save-hook; can also be set externally via API."
+        ),
+    )
+    restart_changed_fields: list[str] = APIField(
+        default_factory=list,
+        description=(
+            "Names of the launch-config fields behind ``restart_required`` "
+            "(the ``restart-info`` diff). Empty when no restart is required."
         ),
     )
     start_failure: str | None = APIField(
@@ -1842,6 +1850,7 @@ class AgenticProcess(Entity):
             self.last_started_snapshot = snapshot_payload
             self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
+            self.restart_changed_fields = []
             await self.save()
 
             # The worker is live with the queued prompt as its launch arg; the
@@ -6333,7 +6342,13 @@ class AgenticProcess(Entity):
                 # already does the same recompute on session rotation — this is
                 # the same move for a process that has not rotated yet.
                 self.last_started_hash = reference
-            self.restart_required = self._restart_snapshot() != reference
+            payload = self._restart_snapshot_payload()
+            self.restart_required = self._restart_snapshot(payload) != reference
+            self.restart_changed_fields = (
+                sorted({c["field"] for c in self._diff_snapshot_fields(self.last_started_snapshot, payload)})
+                if self.restart_required
+                else []
+            )
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
