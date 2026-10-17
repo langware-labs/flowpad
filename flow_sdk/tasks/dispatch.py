@@ -143,29 +143,56 @@ async def _run_for(task, name: str, spec):
         f"You own task {task.id}: {task.title}. The task ledger is your only channel — use the "
         "task-management skill (owner.md). You never talk to the person."
     )
-    cli_config = agent.to_agent_options().to_json() if agent is not None else {}
-    cli_config.pop("agents_json", None)
     # The run works in this machine's record area, never the project's git tree: what it makes is the
     # task's until a person keeps it. A brief that names a project path is the person's own instruction.
     from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
 
     workdir = data_dir_for("task", task.id) / "work"
     workdir.mkdir(parents=True, exist_ok=True)
-    process = AgenticProcess(
-        workdir=str(workdir),
-        name=f"{name}: {task.title}"[:120],
-        worker_type=worker_type_value(agent.worker_type) if agent is not None else None,
-        project_id=task.project_id,
-        pty_mode=False,
-        visible=False,
-        process_type=ProcessKind.EXECUTION.value,
-        load_flowpad_assistant=True,
-        cli_config=cli_config,
-        target_typeid_str=await thread_session(task),
-        context_data={"task_id": task.id, "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
-                      "launched_by_agent": getattr(agent, "name", "") or ""},
-    )
+    run = {
+        "workdir": str(workdir),
+        "name": f"{name}: {task.title}"[:120],
+        "project_id": task.project_id,
+        "pty_mode": False,
+        "visible": False,
+        "process_type": ProcessKind.EXECUTION.value,
+        "target_typeid_str": await thread_session(task),
+    }
+    staff = await _staff_agent(agent, name)
+    if staff is not None and staff.system_prompt:
+        prompt = ""  # the staff agent's own system prompt stands in for the .md file's
+    context_data = {"task_id": task.id, "instructions": "\n\n".join(p for p in (prompt, ownership) if p),
+                    "launched_by_agent": getattr(agent, "name", "") or ""}
+    if staff is not None:
+        # The staff member is a Flowpad agent of the creator's project: it runs as itself — its worker,
+        # options, system prompt and MCP servers — through no placement (``create_agentic_process_from_agent``).
+        from flow_sdk.builtin.agent_run import create_agentic_process_from_agent  # noqa: PLC0415
+
+        process = await create_agentic_process_from_agent(staff, "", **run, context_data=context_data)
+    else:
+        process = AgenticProcess(
+            **run,
+            worker_type=worker_type_value(agent.worker_type) if agent is not None else None,
+            cli_config=agent.to_agent_options().to_json() if agent is not None else {},
+            context_data=context_data,
+        )
+    # A task run never runs staff of its own, and always has the task-management skill.
+    process.cli_config = {k: v for k, v in (process.cli_config or {}).items() if k != "agents_json"}
+    process.load_flowpad_assistant = True
     return await process.save()
+
+
+async def _staff_agent(creator, name: str):
+    """The Flowpad agent behind ``subagent:<name>``: the agent of that name in the creator's project
+    (where its staff live, ``cos.staff_dir``), else ``None`` — a staff member that is only a
+    ``.claude/agents`` file."""
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+    project_id = getattr(creator, "project_id", None)
+    if not project_id:
+        return None
+    rows = await Agent.get_all({"match": {"name": name, "project_id": project_id}}) or []
+    return rows[0] if rows else None
 
 
 async def thread_session(task) -> str:
