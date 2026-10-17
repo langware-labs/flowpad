@@ -29,10 +29,10 @@ from typing import ClassVar, Optional
 from pydantic import model_validator
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.core import Entity, action
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
-from flow_sdk.core import Entity, action
-from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
 
@@ -122,11 +122,15 @@ class Folder(Entity):
         return None
 
     @classmethod
-    async def mint_for_origin(cls, origin: FSOrigin, *, local_path: Optional[str] = None) -> "Folder":
+    async def mint_for_origin(
+        cls, origin: FSOrigin, *, local_path: Optional[str] = None, adopt_id: Optional[str] = None
+    ) -> "Folder":
         """Find a folder by its origin handle, otherwise mint a UUID identity.
 
         Legacy folders used UUID-shaped origin handles as ids; keep resolving
         those rows without requiring every origin's natural key to be a UUID.
+        ``adopt_id``: the sender's id for a received folder — adopted when it is a valid entity id
+        nothing here holds yet, so the chip and every shared ref name the same folder on both sides.
         """
         origin_key = origin.key()
         existing = await cls.get_one({"origin_id": origin_key})
@@ -137,7 +141,9 @@ class Folder(Entity):
         # ``path`` (local cache) is set when the caller knows the local dir
         # (sender add-time); a bare received origin leaves it None until
         # ``resolve_location`` materializes it.
+        adopted = adopt_id if adopt_id and is_valid_entity_id(adopt_id) and await cls.get_by_id(adopt_id) is None else None
         folder = cls(
+            **({"id": adopted} if adopted else {}),
             origin_id=origin_key,
             origin=origin,
             path=local_path,
@@ -195,7 +201,7 @@ class Folder(Entity):
             return False
         # Get-or-create keyed by origin (idempotent — a re-received chip
         # reconciles with an already-minted folder). Local path stays unset.
-        folder = await cls.mint_for_origin(origin)
+        folder = await cls.mint_for_origin(origin, adopt_id=str(entity_id))
         if not getattr(folder, "name", None) and metadata.get("name"):
             folder.name = metadata["name"]
             await folder.save(owner_typeid)
