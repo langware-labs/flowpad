@@ -1,13 +1,12 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw } from 'lucide-react';
 import { isHomeSurface } from '@src/navigation/dock-layout';
 import { tabDock } from '@src/tabs/project-entry';
 import { useLastKnownTab } from '@src/tabs/use-tab-manager';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
@@ -117,13 +116,6 @@ export function TopNavBar() {
         testId="top-nav-files"
       />
       <AppButton project={project} />
-      {/* Automations — the list of rules, every kind. */}
-      <NavIconButton
-        icon={Zap}
-        label={t`Automations`}
-        onClick={() => navigation.openDock(DockPointer.forAutomations())}
-        testId="top-nav-automations"
-      />
       <RuntimeChip kind={runtimeKind} project={project} />
       <ProjectSetupButton project={project} />
       <NewWorkspaceDialogHost />

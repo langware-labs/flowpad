@@ -1,9 +1,7 @@
 /**
- * The ⚡ in the navigation bar: a place (the automations list), opened by URL alone, with
- * no activity counter.
+ * Automations is reached from the left rail.
  */
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
@@ -37,7 +35,6 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
 vi.mock('@src/components/floating-chat/floating-chat-context', () => ({ useOptionalFloatingChat: () => null }));
 
 import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
-import { DockPointer } from '@src/navigation/DockPointer';
 
 beforeEach(() => {
   openDock.mockClear();
@@ -45,16 +42,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('the automations button', () => {
-  it('opens the automations list by URL alone', async () => {
+  it('lives on the rail rather than the top navigation bar', () => {
     render(<TooltipProvider><TopNavBar /></TooltipProvider>);
-    await userEvent.setup().click(screen.getByTestId('top-nav-automations'));
-    expect(openDock).toHaveBeenCalledTimes(1);
-    expect(openDock.mock.calls[0][0].toUrl('/')).toBe(DockPointer.forAutomations().toUrl('/'));
-  });
-
-  it('shows the Automations label without a counter', () => {
-    render(<TooltipProvider><TopNavBar /></TooltipProvider>);
-    expect(screen.queryByTestId('top-nav-automations-badge')).toBeNull();
-    expect(screen.getByTestId('top-nav-automations').getAttribute('aria-label')).toBe('Automations');
+    expect(screen.queryByTestId('top-nav-automations')).toBeNull();
   });
 });
