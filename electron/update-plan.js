@@ -26,6 +26,32 @@ function decideOffer({ desktopLatest, engineStatus }) {
   return 'none';
 }
 
+// ── may the RUNNING desktop change the engine? ──────────────────────────────
+
+/**
+ * The desktop is the stronger channel: the engine is changed (upgraded, installed, repaired) by the running
+ * desktop only when no newer desktop is waiting — a new engine can need things only the new desktop knows.
+ *
+ * @param {{state: 'available'|'current'|'unknown'|'unsupported'}} desktop  what the update check found:
+ *   available   — a desktop newer than the running one exists (downloaded or not, "Later" or not)
+ *   current     — running the latest desktop
+ *   unsupported — nothing to update: a dev run, the Microsoft Store build (the Store delivers desktops)
+ *   unknown     — the check failed or timed out: we cannot tell that no newer desktop exists
+ * @param {boolean} mustInstall  the app cannot run without an engine (first-time install, repair of a broken one)
+ * @returns {'allow'|'hold'|'desktop-first'}
+ *   allow         — change the engine as asked
+ *   hold          — leave the engine alone: no prompt, no upgrade
+ *   desktop-first — update the desktop, then install the engine with the NEW desktop
+ * An engine that must be installed is never held back by an UNKNOWN desktop status: a missing engine is worse
+ * than a version gap, and there is no newer desktop we know of to wait for.
+ */
+function engineChangePolicy({ desktop, mustInstall = false }) {
+  const state = desktop && desktop.state;
+  if (state === 'current' || state === 'unsupported') return 'allow';
+  if (state === 'available') return mustInstall ? 'desktop-first' : 'hold';
+  return mustInstall ? 'allow' : 'hold'; // 'unknown' and anything unrecognised
+}
+
 // ── the engine version saved for the new desktop to install ─────────────────
 
 /** Remember which engine version was offered alongside `desktopVersion`. Consent comes later (see markConsented). */
@@ -102,6 +128,7 @@ function createReadyReminder({ isReady, show, intervalMs = READY_REMINDER_MS, ti
 module.exports = {
   READY_REMINDER_MS,
   decideOffer,
+  engineChangePolicy,
   savePendingEngine,
   markPendingEngineConsented,
   planAfterDesktopUpdate,

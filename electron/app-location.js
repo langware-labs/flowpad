@@ -48,9 +48,10 @@ function shouldOfferMove({ platform, isPackaged, execPath, isInApplicationsFolde
  * @param {() => ({offeredFor?: string}|null)} deps.readState
  * @param {(state: object) => void} deps.writeState
  * @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} [deps.share]  "Send Report" on the failure dialog
+ * @param {(() => number|null)|null} [deps.scriptedAnswer]  test hook: the button index to answer the "Move?" question with, or null to ask the user
  * @param {{info: Function, warn: Function}} deps.log
  */
-async function offerMoveToApplications({ platform, app, dialog, execPath, readState, writeState, share = null, log }) {
+async function offerMoveToApplications({ platform, app, dialog, execPath, readState, writeState, share = null, scriptedAnswer = null, log }) {
   const state = (() => { try { return readState() || {}; } catch { return {}; } })();
   const decision = shouldOfferMove({
     platform,
@@ -69,7 +70,8 @@ async function offerMoveToApplications({ platform, app, dialog, execPath, readSt
   // Record BEFORE asking: a crash or quit mid-dialog must not turn into a prompt on every launch.
   try { writeState({ offeredFor: app.getVersion() }); } catch (err) { log.warn(`[location] could not record the prompt: ${err.message}`); }
 
-  const { response } = await dialog.showMessageBox({
+  const scripted = typeof scriptedAnswer === 'function' ? scriptedAnswer() : null;
+  const { response } = scripted !== null ? { response: scripted } : await dialog.showMessageBox({
     type: 'question',
     title: 'Move Flowpad to Applications?',
     message: 'Flowpad is running from a temporary location.',
