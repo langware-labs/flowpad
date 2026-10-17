@@ -99,5 +99,8 @@ async def test_html_file_rides_as_a_pinned_git_pointer(tmp_path):
     assert token in opened.read_text(encoding="utf-8"), "the receiver did not get the shared version"
     assert git(opened.parent, "rev-parse", "HEAD") == pinned
     assert snapshot(mine) == before
+    found = await Artifact.shared_file_at(str(opened))
+    assert found is not None and found.id == art.id, "the page viewer cannot find the shared page by its path"
     hits = await Entity.search("nudge_backoffice_mock", record_type="artifact")
     assert any(h.id == art.id for h in hits), "the shared page is not findable by name"
+

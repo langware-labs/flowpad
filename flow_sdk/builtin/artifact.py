@@ -216,9 +216,12 @@ class Artifact(Entity):
         }
         existing = await cls.get_one({"id": entity_id})
         if existing is not None and not overwrite:
-            if existing.origin is not None and existing.origin.key() == origin.key():
-                return True
-            raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+            same_share = existing.origin is not None and existing.origin.key() == origin.key()
+            if not same_share:
+                raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+            if getattr(existing.origin, "head_commit", None) == getattr(origin, "head_commit", None):
+                return True  # the same version again: nothing to do
+            # The same shared asset at a newer commit is a new VERSION of it: re-open below.
         if _is_single_file(origin):
             # A single shared file (an .html page) opens straight away, at the
             # exact commit it was shared at — no setup wizard has anything to do.
@@ -236,6 +239,19 @@ class Artifact(Entity):
         artifact.id = entity_id
         await artifact.save(owner_typeid)
         return True
+
+    @classmethod
+    async def shared_file_at(cls, path: str) -> "Artifact | None":
+        """The shared-file artifact whose file is at ``path``, in any spelling the
+        path reaches this machine in — a viewer's ``/Users/…`` is this Windows
+        machine's ``C:\\Users\\…`` (``asset_ref_spellings`` resolves it). Read-only."""
+        from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
+
+        for ref in asset_ref_spellings(path):
+            found = cls._first_matching_kind(await cls.get_all({"match": {"asset_ref": ref}}), SHARED_FILE_KIND)
+            if found is not None:
+                return found
+        return None
 
     @classmethod
     async def for_shared_file(cls, path: str) -> "Artifact":

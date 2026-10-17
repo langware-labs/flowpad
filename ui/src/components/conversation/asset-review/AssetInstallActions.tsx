@@ -79,18 +79,21 @@ function ScopeButton({
 export function AssetInstallActions({
   attachment,
   conversationProjectId,
+  initialError,
 }: {
   attachment: MessageAttachment;
   /** The conversation's mapped project — the picker's preselected default and
    *  the default install+run target. */
   conversationProjectId?: string | null;
+  /** A failure from opening this attachment before the dialog opened. */
+  initialError?: string | null;
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   // Transient failure reason for a Git Download/Setup — shown inline; the
   // Download button stays clickable so the receiver can retry (each attachment
   // retries independently; a pull failure never indexes stale content).
-  const [gitError, setGitError] = useState<string | null>(null);
+  const [gitError, setGitError] = useState<string | null>(initialError ?? null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { scopeId: workspace } = useActiveWorkspace();
   const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen, workspace });

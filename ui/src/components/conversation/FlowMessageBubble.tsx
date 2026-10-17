@@ -1050,6 +1050,7 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   const { run: openGitShare } = useOpenGitShare(attachment, projectId);
+  const [openError, setOpenError] = useState<string | null>(null);
    
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
@@ -1129,10 +1130,14 @@ export function MessageEntityChip({
   const dialog = attachment && reviewOpen && (
     <AssetReviewDialog
       open={reviewOpen}
-      onClose={() => setReviewOpen(false)}
+      onClose={() => {
+        setReviewOpen(false);
+        setOpenError(null);
+      }}
       attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
       initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
+      initialError={openError}
     />
   );
   // A git share is a pointer that never touches the receiver's own checkout:
@@ -1141,7 +1146,15 @@ export function MessageEntityChip({
   const gitShare = attachment?.transfer_mode === 'git' && attachment.asset_type !== 'project' && !handleFolderPull;
   const onStagedClick =
     handleFolderPull ??
-    (gitShare ? async () => void ((await openGitShare()) && setReviewOpen(true)) : () => setReviewOpen(true));
+    (gitShare
+      ? async () => {
+          const failed = await openGitShare();
+          if (failed) {
+            setOpenError(failed);
+            setReviewOpen(true);
+          }
+        }
+      : () => setReviewOpen(true));
   if (state === 'staged') {
     return (
       <>
