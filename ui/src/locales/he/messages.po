@@ -21685,8 +21685,12 @@ msgstr "הפעלה מחדש"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "נדרש הפעלה מחדש — {changedCount} {0} השתנו"
 
-#: src/components/terminal/interactive-terminal/RestartButton.tsx
-#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#. placeholder {0}: fields.join(', ')
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {0}"
+msgstr "נדרשת הפעלה מחדש — השתנו מאז ההתחלה: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
 msgstr "נדרשת הפעלה מחדש — התצורה השתנתה מאז ההתחלה"
 
