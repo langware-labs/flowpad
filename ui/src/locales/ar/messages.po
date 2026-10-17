@@ -6961,7 +6961,7 @@ msgstr "تعذّر فتح المهارة"
 msgid "Could not open the folder"
 msgstr ""
 
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
 msgstr "تعذّر فتح النسخة التي شوركت"
 
@@ -9345,9 +9345,7 @@ msgstr ""
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Download failed"
 msgstr "فشل التحميل"
 
@@ -9365,7 +9363,6 @@ msgstr "تنزيل الرسالة"
 msgid "Download sample CSV"
 msgstr ""
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "تم التحميل"
@@ -11058,8 +11055,8 @@ msgid "Files & Directories"
 msgstr "الملفات والمجلدات"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Files not available"
-msgstr ""
+#~ msgid "Files not available"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"

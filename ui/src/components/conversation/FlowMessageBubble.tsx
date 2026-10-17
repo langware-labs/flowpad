@@ -1137,7 +1137,8 @@ export function MessageEntityChip({
   );
   // A git share is a pointer that never touches the receiver's own checkout:
   // one click installs AND opens it; a failure (said in a toast) opens the review.
-  const gitShare = attachment?.transfer_mode === 'git' && !handleFolderPull;
+  // A whole project is not a pointer: its review asks where it lands (Clone & Open, a taken name).
+  const gitShare = attachment?.transfer_mode === 'git' && attachment.asset_type !== 'project' && !handleFolderPull;
   const onStagedClick =
     handleFolderPull ??
     (gitShare ? async () => void ((await openGitShare()) && setReviewOpen(true)) : () => setReviewOpen(true));
