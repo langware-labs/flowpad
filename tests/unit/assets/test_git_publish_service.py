@@ -58,6 +58,8 @@ def hub(tmp_path, monkeypatch):
         return self
 
     monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", hub_post)
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_graph_url", lambda *_a, **_k: str(bare))
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_put", lambda *_a, **_k: _async({}))
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.resolve_hub_api_key", lambda **_: "hub-token")
     monkeypatch.setattr(
         "flow_sdk.assets.hub_repo_sync.mirror_root", lambda repo_id: tmp_path / "hub_git" / "mirrors" / repo_id
@@ -95,14 +97,16 @@ async def test_an_unlinked_project_refuses_before_the_hub_is_asked(tmp_path, mon
     assert calls == []
 
 
-async def test_an_agent_of_a_git_project_sends_the_projects_files_first(tmp_path, monkeypatch, hub) -> None:
+@pytest.mark.parametrize("git_backed", [False, True])
+async def test_an_agent_sends_the_projects_files_first(tmp_path, monkeypatch, hub, git_backed) -> None:
     """Every way of publishing an agent ends here, so this is where its project's files go
     with it: an agent the hub cannot stand up inside its project cannot be launched."""
     _, calls, _ = hub
     root = tmp_path / "project"
     project = Project(id=mint_uuid(), name="q", remote=True, fs_storage_mount_path=str(root))
     agent = _agent_in(project, root)
-    (root / ".git").mkdir()
+    if git_backed:
+        (root / ".git").mkdir()
     _own(monkeypatch, project)
     sent: list[int] = []
 
@@ -131,9 +135,9 @@ async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_p
     assert not (root / ".git").exists()
     # The asset landed in the hub repo at its project-relative path.
     assert _git(bare, "show", f"main:{REL}/agent.json") == '{"type": "agent", "name": "Q"}'
-    assert f"FlowPad-Asset: {agent.typeid}" in _git(bare, "log", "-1", "--format=%B", "main")
+    assert f"FlowPad-Project: {project.typeid}" in _git(bare, "log", "-1", "--format=%B", "main")
 
-    (_, repo_for, _, _), (_, _, action, payload) = calls
+    (_, repo_for, _, _), _, (_, _, action, payload) = calls
     assert repo_for == project.id
     assert action == "publish_asset"
     assert payload == {"project": {"id": project.id}, "asset": {"type": "agent", "id": agent.id}, "rel_path": REL}
@@ -149,7 +153,7 @@ async def test_publish_pushes_the_asset_into_the_hub_repo_and_registers_it(tmp_p
 
     assert result.project == {"id": project.id}
     assert result.asset["on_hub"] is True
-    assert result.git["pushed"] is True and result.git["pulled_back"] is False
+    assert result.git["pushed"] is False and result.git["pulled_back"] is False
     assert result.local_cache_warning is None
 
 

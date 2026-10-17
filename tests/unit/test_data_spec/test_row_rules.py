@@ -25,7 +25,7 @@ def _dataset(root, name, kind):
     folder = root / "agentic-assets/dataset" / name
     folder.mkdir(parents=True)
     (folder / "dataset.json").write_text(json.dumps(
-        {"metadata": {"title": name, "data_layout": "io_folder", "spec": {"examples": [{"input": kind}]}}, "data": {}}))
+        {"metadata": {"title": name, "data_layout": "io_folder", "spec": {"rows": [{"input": kind}]}}, "data": {}}))
     return Dataset.at(folder)
 
 
@@ -110,7 +110,7 @@ async def test_a_row_written_by_hand_that_breaks_a_rule_is_reported_on_read(gtm)
     root, _, ds = gtm
     ref = await _seed(ds)
     await ds["deal"].put("d", {"input": {"name": "D", "icp": ref("icp", "a"), "persona": ref("persona", "pa")}})
-    doc = next((root / "agentic-assets/dataset/deal/examples/d/input").glob("*.json"))
+    doc = next((root / "agentic-assets/dataset/deal/rows/d/input").glob("*.json"))
     doc.write_text(doc.read_text().replace(ref("icp", "a"), ref("icp", "b")))      # a writer that skips the SDK
     rows, (problem,) = ds["deal"].rows_and_problems()
     assert rows == [] and problem["details"][0]["code"] == "rule"

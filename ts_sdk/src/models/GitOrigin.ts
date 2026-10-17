@@ -102,6 +102,11 @@ export function gitOriginCloneUrl(o: GitOrigin): string {
     const leaf = stripGitSuffix(o.name.trim());
     return `file://${owner}/${leaf}.git`;
   }
+  if (o.provider.includes('://')) {
+    // Self-hosted (git daemon, on-prem http with a port): the provider IS the base
+    // URL, kept as-is — mirrors flow_sdk/utils/git_identity.git_origin_clone_url.
+    return `${o.provider.replace(/\/+$/, '')}/${o.owner.replace(/^\/+|\/+$/g, '')}/${stripGitSuffix(o.name)}`;
+  }
   return `https://${providerHost(o.provider)}/${o.owner}/${stripGitSuffix(o.name)}.git`;
 }
 

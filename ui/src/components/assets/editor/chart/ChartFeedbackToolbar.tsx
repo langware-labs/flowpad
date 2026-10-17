@@ -72,7 +72,7 @@ export function ChartFeedbackToolbar({
   chartRefRef.current = chartRef;
 
   const refresh = useCallback(async (ds: Dataset) => {
-    const found = await ds.rows({
+    const found = await ds.query({
       match: { 'input.chart': chartRefRef.current },
       order_by: { 'input.created': 'asc' },
     });

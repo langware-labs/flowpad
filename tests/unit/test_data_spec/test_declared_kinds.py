@@ -39,7 +39,7 @@ def _nav_tree(root: Path, ns: str) -> None:
     top = _spec(
         root,
         "nav.dataset",
-        {"examples": {"input": "nav.request", "context": "nav.context", "output": "nav.decision"}},
+        {"rows": {"input": "nav.request", "context": "nav.context", "output": "nav.decision"}},
         ns=ns,
     )
     _spec(
@@ -124,9 +124,9 @@ def test_a_dataset_definition_types_the_dataset_that_names_it(tmp_path):
     ("body", "fragment"),
     [
         ({"subkind": "dataset", "fields": {"a": {"shape": "string"}}}, "subkind 'dataset' declared"),
-        ({"fields": {"a": {"shape": "string"}}, "examples": {"input": "string"}}, "one shape"),
+        ({"fields": {"a": {"shape": "string"}}, "rows": {"input": "string"}}, "one shape"),
         ({"fields": {"a": {"shape": "nobody.defines.this"}}}, "nobody defines"),
-        ({"examples": {"output": "string"}}, '"input"'),
+        ({"rows": {"output": "string"}}, '"input"'),
         ({"fields": {"a": {"shape": "enum:x||y"}}}, "enum"),
     ],
     ids=["subkind-mismatch", "two-bodies", "unknown-kind", "dataset-without-input", "bad-enum"],
@@ -206,7 +206,7 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
     row failed. Found in the browser on a live instance; proven by an on/off lever."""
     from flow_sdk.assets.serialization import read_asset_data
     from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleKind
+    from flow_sdk.schema.data_spec.dataset_spec import RowKind
     from flow_sdk.schema.data_spec.layout import FolderLayout
 
     ns = _ns()
@@ -231,7 +231,7 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
         [
             (
                 row(
-                    kind=ExampleKind.EVAL,
+                    kind=RowKind.EVAL,
                     input={"utterance": "hi"},
                     context={"candidates": []},
                     ground_truth={"route": "agentic"},
@@ -244,7 +244,7 @@ def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tm
     for folder in declared.data_schema_folders(ds):  # the indexer reaching every definition again
         declared.register_folder(folder)
     assert d.validate_rows() == []
-    assert (ds / "examples/0001/input/request.json").is_file()
+    assert (ds / "rows/0001/input/request.json").is_file()
 
 
 def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_path):
@@ -252,7 +252,7 @@ def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_pa
     still holds the old one. A file is named by the class's own registered tag, so the old class
     keeps its name -- ``request.json``, never ``declared_..._request.json``."""
     from flow_sdk.builtin.dataset import Dataset
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleKind
+    from flow_sdk.schema.data_spec.dataset_spec import RowKind
     from flow_sdk.schema.data_spec.layout import FolderLayout
 
     ns = _ns()
@@ -269,7 +269,7 @@ def test_a_changed_definition_rebuilds_and_rows_written_before_still_read(tmp_pa
     )
     FolderLayout().append_many(
         ds,
-        [(d.row_type(kind=ExampleKind.EVAL, input={"utterance": "hi"}, context={"candidates": []}), None)],
+        [(d.row_type(kind=RowKind.EVAL, input={"utterance": "hi"}, context={"candidates": []}), None)],
         dataset_id=d.id,
     )
     request = next(f for f in declared.data_schema_folders(ds) if f.name == "nav.request")

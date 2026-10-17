@@ -101,6 +101,7 @@ EXPECTED = {
     "PROMPT": "prompt",
     "CONVERSATION": "conversation",
     "CHART": "chart",
+    "ICON_PACK": "icon_pack",
     "DATASET": "dataset",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",

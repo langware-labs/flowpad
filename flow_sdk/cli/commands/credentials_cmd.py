@@ -259,10 +259,11 @@ def from_inputs(name: str, env: Optional[dict[str, str]] = None) -> tuple[dict[s
     env = os.environ if env is None else env
     (prefix,) = input_env({input_name(name, ""): ""})
     values = {key[len(prefix):]: value for key, value in env.items() if key.startswith(prefix) and value}
-    # A ONE_OF choice arrives as one value: ``<VAR>=<value>`` of the member the person picked, or a bare ``<VAR>``.
-    # A choice that closed by itself (a sign-in done in a terminal) answers ``{}`` — neither — and stores nothing.
-    answer = values.pop(ONE_OF_INPUT, "")
-    picked, way = _pairs([answer]) if one_of_answer(answer)[0] else ({}, "")
+    # A ONE_OF choice arrives as one value: ``<VAR>=<value>`` of the way the person picked — one line per value
+    # of a way of several — or a bare ``<VAR>`` (a sign-in). A choice that closed by itself (a sign-in done in a
+    # terminal) answers ``{}`` — neither — and stores nothing.
+    lines = [line for line in values.pop(ONE_OF_INPUT, "").splitlines() if one_of_answer(line)[0]]
+    picked, way = _pairs(lines)
     return {**values, **picked}, way
 
 

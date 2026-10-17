@@ -14,8 +14,9 @@ import type { AskChoice } from './use-ask-question';
  * A question with more than one way to answer it ("a key file, OR sign in with gcloud") —
  * wherever the question is drawn (`AskForm`, `AskModal`, `AskView`).
  *
- * One card per way; the picked card opens its own form. A VALUE way is the ordinary input, sent as
- * `<choice>=<value>` so the op knows which way was taken. A SIGN-IN way has nothing to type and
+ * One card per way, the first one picked; the picked card opens its own form. A VALUE way is the ordinary
+ * input, sent as `<choice>=<value>` so the op knows which way was taken; a way of several values (`fields`) is
+ * one input per field, sent once all are filled as newline-joined `<field>=<value>` lines. A SIGN-IN way has nothing to type and
  * nothing to send: Run starts its command in a terminal of its own, drawn right here under the
  * choice (the person may have to answer it — a browser sign-in, a prompt), and the backend — which
  * re-checks by itself — closes the question once the sign-in exists. So this never polls. A SIGN-IN
@@ -33,7 +34,7 @@ export function AskChoiceBlock({
   busy?: boolean;
   /** The op's word for Send, already translated; empty means Send. */
   submitLabel?: ReactNode;
-  /** A value way was filled in: `<choice.value>=<typed value>`. */
+  /** A value way was filled in: `<choice.value>=<typed value>` (a line per field for a way of several). */
   onAnswer: (value: string) => void;
 }) {
   const { t } = useLingui();
@@ -59,9 +60,12 @@ export function AskChoiceBlock({
     <div className="flex flex-col gap-1.5" role="radiogroup" aria-label={t`Ways to answer`} data-testid="ask-choices">
       {choices.map((choice) => {
         const on = choice.value === picked;
-        const typed = values[choice.value] ?? '';
+        const multi = !!choice.fields?.length;
+        const fields = multi ? choice.fields! : [choice];
+        const typedOf = (field: AskChoice) => values[`${choice.value}/${field.value}`] ?? '';
+        const filled = fields.every((field) => typedOf(field));
         const send = () => {
-          if (typed && !busy) onAnswer(`${choice.value}=${typed}`);
+          if (filled && !busy) onAnswer(fields.map((field) => `${field.value}=${typedOf(field)}`).join('\n'));
         };
         return (
           <div
@@ -112,18 +116,45 @@ export function AskChoiceBlock({
               </div>
             ) : on ? (
               <div className="flex flex-col gap-2 px-3 pb-3">
-                <AskValueInput
-                  id={`ask-choice-value-${choice.value}`}
-                  testId="ask-choice-input"
-                  secret={choice.secret}
-                  file={choice.file}
-                  value={typed}
-                  onChange={(value) => setValues((prev) => ({ ...prev, [choice.value]: value }))}
-                  onEnter={send}
-                />
+                {fields.map((field) => {
+                  const id = `ask-choice-value-${choice.value}-${field.value}`;
+                  return (
+                    <div key={field.value} className="flex flex-col gap-1">
+                      {multi ? (
+                        <label htmlFor={id} className="text-xs text-muted-foreground">
+                          {field.label || field.value}
+                        </label>
+                      ) : null}
+                      <AskValueInput
+                        id={id}
+                        testId={multi ? `ask-choice-input-${field.value}` : 'ask-choice-input'}
+                        secret={field.secret}
+                        file={field.file}
+                        placeholder={field.placeholder}
+                        value={typedOf(field)}
+                        onChange={(value) => setValues((prev) => ({ ...prev, [`${choice.value}/${field.value}`]: value }))}
+                        onEnter={send}
+                      />
+                      {field.help_url ? (
+                        <a
+                          href={field.help_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-primary hover:underline"
+                          data-testid={`ask-choice-help-${field.value}`}
+                        >
+                          <Trans>Create one at {shownUrl(field.help_url)}</Trans> ↗
+                        </a>
+                      ) : null}
+                      {multi && field.hint ? (
+                        <span className="text-xs text-muted-foreground">{field.hint}</span>
+                      ) : null}
+                    </div>
+                  );
+                })}
                 <div>
-                  <Button size="sm" disabled={busy || !typed} onClick={send} data-testid="ask-choice-submit">
-                    {submitLabel || <Trans>Send</Trans>}
+                  <Button size="sm" disabled={busy || !filled} onClick={send} data-testid="ask-choice-submit">
+                    {submitLabel || <Trans>Continue</Trans>}
                   </Button>
                 </div>
               </div>
@@ -171,4 +202,9 @@ function AskChoiceSignIn({ choice, busy, onAnswer }: { choice: AskChoice; busy?:
       )}
     </div>
   );
+}
+
+/** A help link as a person reads it: no scheme, no trailing slash. */
+function shownUrl(url: string): string {
+  return url.replace(/^https?:\/\//, '').replace(/\/$/, '');
 }

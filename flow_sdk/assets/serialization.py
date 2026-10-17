@@ -306,7 +306,7 @@ def read_asset_data_with_header(path: Path, info: Any, *, identity: str | None =
         from flow_sdk.schema.data_spec.layout import coerce_dataset_enum, dataset_layout_for
         rows_layout = coerce_dataset_enum(header.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
         data[info.rows_field] = dataset_layout_for(rows_layout).read(
-            layout.root, DEFAULT_DATASET_SPEC.example_type(), dataset_id=resolved_id,
+            layout.root, DEFAULT_DATASET_SPEC.row_type(), dataset_id=resolved_id,
             field_spec=header.get("field_spec") or {}, delimiter=header.get("delimiter") or ",",
         )
     if info.derive_fields_fn is not None:

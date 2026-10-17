@@ -18,14 +18,14 @@ from flow_sdk.builtin.dataset import Dataset
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
 TOY_EVAL = '''
-from flow_sdk.evals import EvalTrace, ExampleEval, verdict_of
+from flow_sdk.evals import EvalTrace, RowEval, verdict_of
 
-async def evaluate_example(row):
+async def evaluate_row(row):
     text = row.input.utterance
     if text.startswith("boom"):
         raise RuntimeError("the eval broke on this row")
     pred = {"route": "quick", "target": {"kind": "view", "value": "data-sources" if text.startswith("ok") else "home"}}
-    return ExampleEval(
+    return RowEval(
         prediction=pred, verdict=verdict_of(pred, row), score=0.9, labels={"len": str(len(text) > 6)},
         trace=EvalTrace(kind="toy.trace", value={"saw": text}),
     )
@@ -70,18 +70,18 @@ async def toy(tmp_path):
 
 async def test_a_run_judges_every_labelled_row_and_records_it(toy, tmp_path):
     run, out = await evals.run(toy, out_dir=tmp_path / "runs")
-    assert (run.eval_name, run.examples, run.versions) == ("toy", 3, {"engine": "toy"}), "the nested eval, not the shipped one"
+    assert (run.eval_name, run.rows, run.versions) == ("toy", 3, {"engine": "toy"}), "the nested eval, not the shipped one"
     assert run.counts == {"correct": 1, "wrong": 1, "abstained": 0, "error": 1, "unlabelled": 1}
     assert run.metrics["accuracy"] == 0.5 and run.metrics["seen"] == 3.0, "errors are not judged; aggregate is the eval's"
-    rows = [json.loads(line) for line in (out / "examples.jsonl").read_text().splitlines()]
+    rows = [json.loads(line) for line in (out / "rows.jsonl").read_text().splitlines()]
     boom = next(r for r in rows if r["title"] == "boom")
     assert boom["verdict"] == "error" and "the eval broke" in boom["error"], "one bad row is a verdict, not a crash"
-    assert {r["slice"]["data.group"] for r in rows} == {"a", "b"} and run.slices["labels.len"]["True"]["examples"] == 2
+    assert {r["slice"]["data.group"] for r in rows} == {"a", "b"} and run.slices["labels.len"]["True"]["rows"] == 2
     assert all(len(r["golds"]) == 1 and r["golds"][0]["target"] == GOLD["target"] for r in rows)
     assert json.loads((out / "run.json").read_text())["run_id"] == run.run_id
 
 
-async def test_the_report_is_one_page_with_every_example(toy, tmp_path):
+async def test_the_report_is_one_page_with_every_row(toy, tmp_path):
     _, out = await evals.run(toy, out_dir=tmp_path / "runs")
     page = (out / "report.html").read_text()
     assert page.startswith("<!doctype html>") and "<script" in page and "http" not in page.split("<body>")[1].split("<script")[0]
@@ -127,11 +127,11 @@ async def test_the_navigator_eval_counts_an_unanswered_decision_as_an_error(tmp_
     )
     run, out = await evals.run(Dataset.at(folder), out_dir=tmp_path / "runs")
     assert run.eval_name == "navigator" and run.counts["error"] == 1 and run.counts["abstained"] == 0
-    [row] = [json.loads(line) for line in (out / "examples.jsonl").read_text().splitlines()]
+    [row] = [json.loads(line) for line in (out / "rows.jsonl").read_text().splitlines()]
     assert row["error"].startswith("decision API: no_endpoint") and row["trace"]["kind"] == "navigator.run"
 
 
-async def test_two_runs_compare_example_by_example(toy, tmp_path):
+async def test_two_runs_compare_row_by_row(toy, tmp_path):
     # The second run judges "bad one" right: one fixed, nothing broken.
     from flow_sdk.evals.compare import compare
     from flow_sdk.evals.store import load
@@ -165,13 +165,13 @@ def test_agentic_recall_counts_only_requests_that_belong_to_the_assistant_alone(
     # must not pull the assistant's recall down.
     import importlib.util
 
-    from flow_sdk.schema.data_spec.eval_spec import ExampleEval, Verdict
+    from flow_sdk.schema.data_spec.eval_spec import RowEval, Verdict
 
     path = Path(evals.__file__).resolve().parents[1] / "system_projects/flowpad_assistant/agentic-assets/eval/navigator/eval.py"
     spec = importlib.util.spec_from_file_location("navigator_eval_under_test", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     acted = {"route": "quick", "target": {"kind": "action", "value": "restart-session"}}
-    both = ExampleEval(verdict=Verdict.CORRECT, prediction=acted, golds=[{"route": "agentic"}, acted], score=0.9)
-    alone = ExampleEval(verdict=Verdict.CORRECT, prediction={"route": "agentic"}, golds=[{"route": "agentic"}])
+    both = RowEval(verdict=Verdict.CORRECT, prediction=acted, golds=[{"route": "agentic"}, acted], score=0.9)
+    alone = RowEval(verdict=Verdict.CORRECT, prediction={"route": "agentic"}, golds=[{"route": "agentic"}])
     assert module.aggregate([both, alone])["agentic_recall"] == 1.0

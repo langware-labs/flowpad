@@ -118,7 +118,7 @@ def ensure_project_namespace(project) -> None:
     event loop hand the whole sweep to one thread rather than hopping per project —
     the hop costs several times the read it offloads.
     """
-    from flow_sdk.assets.project_manifest import ensure_namespace, namespace_seed  # noqa: PLC0415
+    from flow_sdk.assets.project_manifest import ensure_namespace, namespace_seed, read_manifest  # noqa: PLC0415
     from flow_sdk.config import is_hidden_project  # noqa: PLC0415
     from flow_sdk.fs_store.operations import namespace_roots  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
@@ -126,12 +126,18 @@ def ensure_project_namespace(project) -> None:
     mount = _mount_of(project)
     if mount is None or is_hidden_project(str(mount), bool(getattr(project, "system", False))):
         return
-    if not is_valid_project_cwd(mount):
+    if not is_valid_project_cwd(mount, include_temp=True):
         return
     if not mount.is_dir():  # seeding names a folder; it must never CREATE one
         return
     try:
-        spec = ensure_namespace(mount, namespace_seed(mount))
+        # Explicit temporary projects still own their declared kinds after restart.
+        # Discovery policy only gates creating a namespace, not reading an existing one.
+        spec = read_manifest(mount)
+        if spec is None or not spec.ns:
+            if not is_valid_project_cwd(mount):
+                return
+            spec = ensure_namespace(mount, namespace_seed(mount))
     except OSError as exc:  # a read-only or vanished checkout is not a startup failure
         logger.warning("[namespace] %s could not be seeded: %s", mount, exc)
         return

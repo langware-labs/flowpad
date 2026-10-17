@@ -13,6 +13,7 @@ from . import (  # noqa: F401
     diagnosis_request_action,
     execute_prompt,
     flow_message_action,
+    git_share_drift_action,
     git_share_preflight_action,
     graph_crud_actions,
     group_task_action,

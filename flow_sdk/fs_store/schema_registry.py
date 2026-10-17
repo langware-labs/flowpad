@@ -409,6 +409,12 @@ class TypeInfo:
     # ``pack_reference`` / ``restore_reference`` hooks own what is particular
     # to the type (not the hub's ``cloud_file_transport``).
     receive_transfer: str | None = field(default=None, metadata=_MERGE)
+    # ``received_with``: the types a received git share of this type needs from
+    # the SAME checkout to work there — indexed over the whole worktree when it
+    # opens (a chart's sub-flows are sibling charts it opens by name, and its
+    # vendor logos are an icon pack). Bytes are already on disk at the pinned
+    # commit; this only makes them findable.
+    received_with: tuple[str, ...] = field(default=(), metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:
@@ -509,6 +515,12 @@ class TypeInfo:
     def walks_anywhere(self) -> bool:
         """One of the type's walks is the folder-wide one (a skill is a skill anywhere)."""
         return any(walk.anywhere for walk in self.walk)
+
+    @property
+    def recursive_mounts(self) -> tuple[str, ...]:
+        """The declared mounts the type walks RECURSIVELY: an asset may sit at
+        any depth below one (``docs/network/net/CHART.md`` is a chart)."""
+        return tuple(dict.fromkeys(m for walk in self.walk if walk.recursive and not walk.anywhere for m in walk.mounts))
 
     @property
     def scan_mounts(self) -> tuple[str, ...]:
@@ -1367,6 +1379,14 @@ class SchemaRegistry:
         # sits directly in the mount, so its parent IS the mount.
         named_parts = p.parent.parent.parts
         singleton_parts = p.parent.parts
+        def below_recursive_mount(info) -> bool:
+            # The walk descends the whole mount, so any ancestor may be it.
+            return any(
+                mount_matches(named_parts[:k], Path(m).parts)
+                for m in info.recursive_mounts
+                for k in range(len(named_parts), 0, -1)
+            )
+
         return frozenset(
             info.type_name
             for info in candidates
@@ -1375,6 +1395,7 @@ class SchemaRegistry:
                 mount_matches(singleton_parts if info.singleton else named_parts, Path(m).parts)
                 for m in info.scan_mounts
             )
+            or below_recursive_mount(info)
         )
 
     @classmethod

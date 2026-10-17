@@ -18,3 +18,8 @@ title: "System prompt: every process"
 ## FlowCall blocks
 
 For reusable input → work → output processing, use a **FlowCall block** (`ComputeOp`) and the [shipped recipe](../docs/Getting%20Started/FlowCall.md). Declare shapes, return `ReturnedValue`, and compose validated values. A list is one input/output value; `map_calls` is explicit. Never treat launch admission or a skipped call as a completed required value.
+
+For calls that outlive a request, use ComputeOp.start and retain the block identity
+and call_id for get_call. Admission is not output; consume only a completed
+record’s successful ReturnedValue with a present value. Do not replay interrupted
+or uncertain effectful calls automatically. Check installed SDK support first.

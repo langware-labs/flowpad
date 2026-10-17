@@ -7,6 +7,7 @@ import { RAIL_ITEMS, type RailItemId } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
@@ -30,7 +31,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import { Bug, Mail, Plug } from 'lucide-react';
+import { Bug, Mail, Plug, Zap } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 // Membership AND order both come from RAIL_ITEMS (rail-visibility.ts). This file
@@ -75,6 +76,12 @@ export function CollapsedSidebar() {
       viewType: ViewType.STREAM_INBOX,
       open: () => navigation.openTab(ViewType.STREAM_INBOX),
       badge: unreadCount,
+    },
+    automations: {
+      title: t`Automations`,
+      icon: Zap,
+      viewType: ViewType.AUTOMATIONS,
+      open: () => navigation.openDock(DockPointer.forAutomations()),
     },
     // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): a connection is
     // more than a key, and the rail reads better with a glyph per job. A literal is right here —

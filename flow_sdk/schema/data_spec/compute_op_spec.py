@@ -369,7 +369,8 @@ class AskChoiceSpec(DataSpec):
     """One way to answer a question that offers several (``AskOp.choices``).
 
     A value choice is typed (or picked, a ``file``); the answer is ``<value>=<what was given>``, one string.
-    A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
+    A ``fields`` choice is several values given together: one input per field, answered as newline-joined
+    ``<field value>=<what was given>`` lines. A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
     question closes by itself once its goal holds (``auto_continue``)."""
 
     spec_kind: ClassVar[str] = "compute_op.ask.choice"
@@ -378,6 +379,10 @@ class AskChoiceSpec(DataSpec):
     value: str
     label: str = ""
     hint: str = ""
+    #: Where to get the value — shown as a link under its input.
+    help_url: str = ""
+    #: The example shown in an empty input.
+    placeholder: str = ""
     secret: bool = False
     file: bool = False
     #: The command the person runs instead of giving a value, on this machine.
@@ -386,6 +391,8 @@ class AskChoiceSpec(DataSpec):
     #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
     provider: str = ""
     scopes: list[str] = []
+    #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
+    fields: list["AskChoiceSpec"] = []
 
 
 class AskItemSpec(DataSpec):
@@ -572,6 +579,29 @@ class Rung(DataSpec):
         return exe_data_by_subkind(data)
 
 
+class CallLogSpec(DataSpec):
+    """A block's call log (``core/compute_op/call_log``): each call a row of a dataset in temp."""
+
+    #: The rows' registered dataset kind -- the block's eval set kind, so its eval reads the log.
+    #: Absent: rows in the block's own ``input`` / ``output`` shapes.
+    dataset_kind: Optional[str] = None
+    #: Rows kept; past it the oldest go. A log, not a store.
+    max_rows: int = Field(default=500, gt=0)
+    #: A row's ``input`` or ``output`` over this many JSON bytes is not kept (an input: no row).
+    max_row_bytes: int = Field(default=65536, gt=0)
+    #: The log's folder in temp. Absent: ``call-log-<block>``.
+    name: str = ""
+    #: The log dataset's title. Absent: ``CallLog <block>``.
+    title: str = ""
+    #: An instance preference that turns the log on (``preferences.advanced.smart_navigation_log``).
+    #: Absent: always on.
+    enabled_by: str = ""
+    #: A function in the block's ``call.py``, ``(input, answer) -> row | None``, that writes the row
+    #: as ``dataset_kind`` holds it; ``None`` skips the call. The run's trace joins its ``data``.
+    #: Absent: the block's ``input`` / ``output`` as they are.
+    row: str = ""
+
+
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
@@ -616,6 +646,8 @@ class ComputeOpSpec(AssetDocumentSpec):
     setup: Text = ""
     #: How long an agent following ``setup`` gets (an ask's AI Assist). Unset: ``SETUP_TIMEOUT``.
     setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
+    #: Log every call of this block as a dataset row, with its run's trace. Absent: no log.
+    log: Optional[CallLogSpec] = None
 
     def setup_timeout(self) -> float:
         return self.setup_timeout_seconds or SETUP_TIMEOUT
@@ -627,7 +659,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     @model_serializer(mode="wrap")
     def _legacy_document(self, handler):
         result = handler(self)
-        for field in ("input", "output"):
+        for field in ("input", "output", "log"):
             if field not in self.model_fields_set and getattr(self, field) is None:
                 result.pop(field, None)
         return result

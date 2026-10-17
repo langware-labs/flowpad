@@ -81,6 +81,8 @@ export interface PromptResult extends ReturnedValue {
   text?: string;
   /** Files produced by a declared-output run, or selected for a channel reply. */
   files?: string[];
+  /** The LLM endpoint that answered a `prompt` op (its TypeId): which model a logged call measured. */
+  endpoint?: string | null;
 }
 
 export interface AskResult extends ReturnedValue {
@@ -117,6 +119,16 @@ export interface DecisionVerdict extends ReturnedValue {
   latency_ms?: number;
 }
 
+/** What the `smart-navigator` block answered: `value` is the `navigation.outcome`; the rest is how it
+ *  was decided. Opening a dock and handing the request to the assistant are both OK. */
+export interface NavigatorResult extends ReturnedValue {
+  /** How it was decided (`rule`, `decision`) or why it was handed on (`unsure`, `no_endpoint`, ...). */
+  reason?: string;
+  latency_ms?: number;
+  /** How it was decided, the model's request and response included when one was asked. */
+  run?: { reason?: string; decision?: Record<string, unknown> | null } | null;
+}
+
 /**
  * The `spec_kind` a NESTED answer (a wizard step's, a check's) carries on the
  * wire — the one way a reader tells which class it holds. Mirrors the
@@ -128,6 +140,7 @@ export const ANSWER_KIND = {
   ask: 'compute.returned.ask',
   wizard: 'compute.returned.wizard',
   decision: 'compute.returned.decision',
+  navigator: 'compute.returned.navigator',
   navigate: 'compute.returned.navigate',
   collection: 'compute.returned.collection',
 } as const;

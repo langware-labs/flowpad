@@ -24,7 +24,7 @@ dot-path tag (``flow_sdk/tags/grammar.py``) resolved through the ONE
 ``SchemaRegistry``. Reserved primitives resolve to Python types; a registered
 kind to its class; anything else is **anonymous** — legal, opaque (``Any``),
 never minted. A named subclass registers itself; a Pydantic parametrization
-(``ExampleSpec[A, B]``) inherits its origin's kind and deliberately does NOT.
+(``RowSpec[A, B]``) inherits its origin's kind and deliberately does NOT.
 
 A shape is a CLASS, and a class is not a Pydantic value. A field that DECLARES
 one holds the authoring form instead (``_form.ShapeForm``) and compiles it

@@ -204,6 +204,43 @@ describe('ExcalidrawChartView', () => {
     expect(writeLog).toHaveLength(0);
   });
 
+  it('opening a chart never writes: the mount echo (same scene, Excalidraw bookkeeping) is not an edit', async () => {
+    // A mermaid chart's folder: no board.json, CHART.md holding the chart's own diagram.
+    const doc = '---\nformat: mermaid\n---\n```mermaid\nflowchart LR\n  a --> b\n```\n';
+    files['root/CHART.md'] = doc;
+    const fsRef = makeFsRef('root', files, writeLog);
+
+    renderEditor(fsRef, { markEdit: vi.fn(), format: 'mermaid' } as unknown as import('@sdk').Chart);
+
+    await screen.findByTestId('excalidraw-stub');
+    // Excalidraw's onChange after mount carries the loaded scene back, with only viewport changes.
+    await userEvent.click(screen.getByTestId('trigger-viewport-change'));
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+      await Promise.resolve();
+    });
+
+    expect(writeLog).toHaveLength(0);
+    expect(files['root/board.json']).toBeUndefined();
+    expect(files['root/CHART.md']).toBe(doc);
+  });
+
+  it('never rewrites CHART.md of a non-excalidraw chart, even after an edit', async () => {
+    const doc = '```mermaid\nflowchart LR\n  a --> b\n```\n';
+    files['root/CHART.md'] = doc;
+    const fsRef = makeFsRef('root', files, writeLog);
+
+    renderEditor(fsRef, { markEdit: vi.fn(), format: 'mermaid' } as unknown as import('@sdk').Chart);
+
+    await userEvent.click(await screen.findByTestId('trigger-change'));
+    await act(async () => {
+      vi.advanceTimersByTime(800);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(writeLog.filter((w) => w.path === 'root/board.json')).toHaveLength(1));
+    expect(files['root/CHART.md']).toBe(doc);
+  });
+
   it('marks only durable canvas changes, not viewport-only callbacks', async () => {
     files['root/board.json'] = INITIAL_BOARD;
     const fsRef = makeFsRef('root', files, writeLog);

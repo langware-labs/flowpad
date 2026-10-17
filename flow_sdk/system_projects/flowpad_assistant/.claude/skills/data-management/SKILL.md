@@ -121,7 +121,7 @@ reasons (a 400 carries the validation `errors`).
 | a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
 
 Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
-`ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
+`ds.query({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
 the linked rows back beside; `ds.count({group_by: ["week:input.day"], metrics: {people:
 "distinct:input.email"}})`; `ds.usedBy()`; `putMany` / `deleteRows` / `sync` as one step;
 `ds.onRowsChanged(handler)` instead of polling. One import home in Python: `from flow_sdk.datasets

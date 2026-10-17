@@ -17,7 +17,7 @@ from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.asset_setup_spec import SetupSkipSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement, CredentialVarKind, Requirement, is_valid_env_var
-from flow_sdk.schema.data_spec.credential_status_spec import group_held
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, group_held
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 REQUIREMENT_PACK = "pack"
@@ -63,6 +63,7 @@ class SetupVarSpec(DataSpec):
     label: str = ""
     hint: str = ""
     help_url: str = ""
+    placeholder: str = ""
     pattern: str = ""
     secret: bool = True
     #: The value is a file's content (a key file) — asked with a file picker, kept as a file.
@@ -76,6 +77,8 @@ class SetupVarSpec(DataSpec):
     #: oauth: the provider whose sign-in this way is, and the scopes its grant must cover.
     provider: str = ""
     scopes: list[str] = []
+    #: ONE_OF: the way this value belongs to (``CredentialVarSpec.way``); empty = its own name.
+    way: str = ""
 
     @property
     def is_one_of(self) -> bool:
@@ -108,6 +111,8 @@ class SetupRequirementSpec(DataSpec):
     vars: list[SetupVarSpec] = []
     #: pack: the ONE_OF way chosen here (``Credential.chosen``) — it alone settles the group.
     setup_choice: str = ""
+    #: pack: how each ONE_OF way of several values is offered (``CredentialSpec.ways``).
+    ways: dict[str, CredentialWaySpec] = {}
     #: pack: how an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI Assist.
     setup: str = ""
     #: pack: how long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).

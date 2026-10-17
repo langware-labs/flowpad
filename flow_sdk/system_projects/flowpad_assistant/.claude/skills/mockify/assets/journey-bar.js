@@ -14,13 +14,16 @@
     .mk-next{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 45%,transparent),0 0 14px 2px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px;animation:mk-glow 2.4s ease-in-out 3}
     .mk-path{box-shadow:0 0 0 1.5px color-mix(in srgb,var(--mk-hint,#8b5cf6) 35%,transparent)!important;border-radius:6px}
     @keyframes mk-glow{50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--mk-hint,#8b5cf6) 20%,transparent)}}
-    @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}`;
+    @media (prefers-reduced-motion:reduce){.mk-next{animation:none}}
+    .mk-pick{outline:2px solid #6d28d9!important;outline-offset:2px!important}
+    html.mk-picking,html.mk-picking *{cursor:crosshair!important}`;
   document.head.append(docStyle);
 
   let J = CFG.journey || [];       // the steps (from the mock row once loaded): {id, app, title, note?, branch_of?, when?, decisions?[]}
   let cur = 0;
   const data = { sdk: null, mock: null, mocksDs: null, fbDs: null, rows: [], error: '' };
   const openRows = () => data.rows.filter((r) => r.input.status === 'open');
+  const sentRows = () => data.rows.filter((r) => r.input.status !== 'open');
   const stepRows = () => data.rows.filter((r) => r.input.step === J[cur]?.id);
 
   const isBranch = (s) => !!s.branch_of;
@@ -39,6 +42,7 @@
     cur = Math.min(J.length - 1, Math.max(0, i));
     const id = J[cur].id;
     if (record && location.hash.slice(1) !== id) history.pushState(null, '', '#' + id);
+    justSaved = '';   // a new screen starts with the box out
     show(id);
     render();
     contrast();
@@ -66,7 +70,11 @@
       border: 1.5px solid var(--mk-edge); border-radius: 999px; box-shadow: 0 6px 20px rgba(0,0,0,.25); max-width: calc(100vw - 16px); }
     .grip { cursor: grab; padding: 0 4px; color: var(--mk-muted); user-select: none; touch-action: none; font-size: 14px; }
     .grip:active { cursor: grabbing; }
-    .tag { font-weight: 800; font-size: 10px; letter-spacing: .1em; color: var(--mk-accent); padding-right: 2px; }
+    .scope { color: var(--mk-accent); }
+    .scope.on { background: var(--mk-accent); color: var(--mk-accent-fg); }
+    .anchor { display: flex; gap: 8px; align-items: center; margin: 6px 0 8px; padding: 6px 8px; border-radius: 8px; background: var(--mk-soft); }
+    .anchor b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .item.on { outline: 2px solid var(--mk-accent); border-radius: 8px; }
     button { all: unset; box-sizing: border-box; cursor: pointer; color: inherit; border-radius: 999px; white-space: nowrap; }
     button:focus-visible { outline: 2px solid var(--mk-accent); outline-offset: 2px; }
     button[disabled] { opacity: .35; cursor: default; }
@@ -93,10 +101,20 @@
     .submit:hover { background: var(--mk-soft); }
     [hidden] { display: none !important; }
     .min .hide-min { display: none !important; }
-    @media (max-width: 640px) { .trail, .restart-label, .nav .lbl, .fb-label { display: none; } .step { max-width: 30vw; } .nav { padding: 0 10px; } }
+    @media (max-width: 900px) { .restart-label, .nav .lbl, .fb-label, .save-label, .trail { display: none; } .step { max-width: 26vw; } .nav { padding: 0 10px; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
       border: 1.5px solid var(--mk-edge); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px; }
     .panel.down { top: 50px; } .panel.up { bottom: 50px; }
+    .panel.wide { width: min(680px, calc(100vw - 16px)); }
+    .md { margin: 8px 0 0; padding: 10px 12px; max-height: 46vh; overflow: auto; white-space: pre-wrap; word-break: break-word;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--mk-soft); border-radius: 8px; }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .tb { height: 30px; padding: 0 12px; border: 1.5px solid var(--mk-muted); font-weight: 600; }
+    .tb:hover { background: var(--mk-soft); }
+    .toolbar .send { margin-left: auto; height: 32px; padding: 0 16px; font-weight: 700; background: var(--mk-accent); color: var(--mk-accent-fg); }
+    .panel .close { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 999px; color: var(--mk-muted); font-size: 14px; }
+    .panel .close:hover { background: var(--mk-soft); color: var(--mk-fg); }
+    .panel h4:first-of-type { padding-right: 28px; }
     .panel h4 { margin: 4px 2px 8px; font-weight: 700; font-size: 11px; color: var(--mk-muted); text-transform: uppercase; letter-spacing: .06em; }
     .row { display: flex; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 8px; align-items: baseline; }
     .row:hover { background: var(--mk-soft); } .row.on { background: var(--mk-soft); font-weight: 700; }
@@ -118,7 +136,7 @@
     .msg { padding: 8px; border-radius: 8px; background: var(--mk-soft); margin-top: 8px; }
   </style>
   <div class="bar" role="toolbar" aria-label="Mock journey">
-    <span class="grip hide-min" title="Drag">⋮⋮</span><span class="tag">MOCK</span>
+    <span class="grip hide-min" title="Drag">⋮⋮</span><button class="ico scope" title="Point at an element to comment on it (Esc cancels)" aria-label="Comment on an element"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h2"/><path d="M14 3h1"/><path d="M3 9v1"/><path d="M21 9v2"/><path d="M3 14v1"/></svg></button>
     <button class="ico restart hide-min" title="Restart the mock from the first screen" aria-label="Restart">⟲<span class="restart-label">Restart</span></button>
     <button class="nav back hide-min" title="Previous screen (←)" aria-label="Back">‹ <span class="lbl">Back</span></button>
     <div class="where"><span class="step"></span><span class="n"></span></div>
@@ -126,7 +144,8 @@
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
     <button class="ico fb" title="Feedback on this screen" aria-label="Feedback">💬<span class="lbl fb-label">Feedback</span><span class="badge fb-count" hidden></span></button>
-    <button class="submit hide-min" hidden title="Send all saved feedback to the session that builds this mock">Submit <span class="submit-n"></span></button>
+    <button class="ico save-repo hide-min" title="Save this mock into the repo (it lives outside it until then)" aria-label="Save to repo">💾<span class="lbl save-label">Save</span></button>
+    <button class="submit" title="See the feedback as the session receives it — send what is new"><span class="submit-lbl">Review</span> <span class="submit-n"></span></button>
     <button class="ico min-btn" title="Minimise" aria-label="Minimise">–</button>
   </div>
   <div class="panel down" hidden></div>`;
@@ -168,9 +187,12 @@
   let panelKey = '';   // what the open panel last drew: re-drawn only when this changes
   const panelState = () => open === 'feedback'
     ? `f|${cur}|${!!data.fbDs}|${stepRows().map((r) => r.key + r.version).join()}`
-    : `${open}|${cur}|${J.length}`;
+    : open === 'save' ? `v|${data.mock?.version}` : open === 'send' ? `s|${data.rows.map((r) => r.key + r.version).join()}` : `${open}|${cur}|${J.length}`;
   const setPanel = (p) => { open = p; renderPanel(); };
-  let draft = { text: '', decision: '', image: '' };
+  const NO_DRAFT = { text: '', decision: '', image: '', anchor: null, shot: '' };
+  let draft = { ...NO_DRAFT };
+  let justSaved = '';   // after a Save: the box folds away and the saved entry shows, until a new comment
+  const composing = () => !justSaved;
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   // ── contrast: the bar takes the opposite of the screen behind it ──
@@ -220,9 +242,11 @@
     $('.next').disabled = onwardOf(cur) === cur;
     const nOpen = openRows().length;
     $('.fb-count').hidden = !nOpen; $('.fb-count').textContent = nOpen;
-    $('.submit').hidden = !nOpen; $('.submit-n').textContent = `(${nOpen})`;
+    $('.submit-lbl').textContent = nOpen ? 'Review & send' : 'Review';
+    $('.submit-n').textContent = nOpen ? `(${nOpen})` : '';
     if (open && panelState() !== panelKey) renderPanel();
     markHints();
+    drawPins();
   }
 
   function placePanel() {
@@ -230,6 +254,7 @@
     panel.className = 'panel ' + (r.top > innerHeight / 2 ? 'up' : 'down');
     panel.style.cssText = r.left + 420 > innerWidth ? 'left:auto;right:0' : '';
   }
+  const CLOSE = '<button class="close" title="Close (Esc)" aria-label="Close">✕</button>';
   function renderPanel() {
     panel.hidden = !open;
     panelKey = panelState();
@@ -238,26 +263,67 @@
     if (open === 'steps') {
       let n = 0;
       const multi = multiApp();
-      panel.innerHTML = '<h4>Screens</h4>' + J.map((s, i) => {
+      panel.innerHTML = CLOSE + '<h4>Screens</h4>' + J.map((s, i) => {
         const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
         const num = isBranch(s) ? '' : String(++n);
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
       }).join('') + `<button class="row hints-toggle" style="margin-top:6px">${hints ? '☑' : '☐'} Highlight the next step on each screen</button>`;
       return;
     }
+    if (open === 'save') {
+      panel.classList.add('wide');
+      const repo = data.mock?.input.repo || '', session = data.mock?.input.session || '';
+      const dest = repo ? `${repo}/agentic-assets/webapp/mock-${CFG.key}` : '';
+      if (session && target.id !== session) sessionOf().then(() => open === 'save' && renderPanel());
+      panel.innerHTML = CLOSE + `<h4>Save to repo</h4>`
+        + `<div class="note">Until now this mock lives outside the repo (a temp mock project). Saving copies it into the repo as one self-contained folder: the page, its assets, the journey and <code>mock.json</code>. Feedback stays out.</div>`
+        + (dest ? `<pre class="md">${esc(dest)}/</pre>` : `<div class="msg">The mock row names no repo — nothing to save into.</div>`)
+        + `<div class="toolbar" style="margin-top:8px"><button class="send save-now"${dest && session ? '' : ' disabled'}>${session ? `Ask ${esc(target.name || '…')} to save it ▶` : 'No session to save it'}</button></div>`;
+      return;
+    }
+    if (open === 'send') {
+      if (data.mock?.input.session && target.id !== data.mock.input.session) sessionOf().then(() => open === 'send' && renderPanel());
+      panel.classList.add('wide');
+      const unsent = openRows(), sent = sentRows();
+      const folder = data.mock?.input.folder || CFG.folder || '';
+      const tools = (which) => `<div class="toolbar"><button class="tb open-folder"${folder ? '' : ' disabled title="The mock row has no folder"'}>📁 Open folder</button>`
+        + `<button class="tb copy-md" data-which="${which}">⧉ Copy</button>`
+        + (!data.mock?.input.session ? `<button class="send" disabled title="The mock row names no session to send to">No session to send to</button>`
+          : which === 'unsent' ? `<button class="send send-now" title="session ${esc(data.mock.input.session)}">Send to ${esc(target.name || '…')} ▶</button>`
+          : `<button class="send send-again" title="session ${esc(data.mock.input.session)}">Send again to ${esc(target.name || '…')} ▶</button>`) + `</div>`;
+      let html = CLOSE;
+      if (unsent.length) {
+        html += `<h4>Review &amp; send · ${unsent.length} new comment(s)</h4><div class="note">The session receives this as a file in its input folder, with a one-line note pointing at it.</div>`
+          + tools('unsent') + `<pre class="md">${esc(feedbackMarkdown(unsent))}</pre>`;
+      } else {
+        html += `<h4>Review</h4><div class="note">No new comments to send — leave one with 💬 Feedback or the picker.</div>`;
+      }
+      if (sent.length) {
+        html += `<h4 style="margin-top:14px">Already sent · ${sent.length} comment(s)</h4>` + (unsent.length ? '' : tools('sent'))
+          + `<pre class="md">${esc(feedbackMarkdown(sent))}</pre>`;
+      }
+      panel.innerHTML = html;
+      return;
+    }
+    panel.classList.remove('wide');
     // feedback
     const s = J[cur] || {};
     const decisions = s.decisions || [];
-    let html = `<h4>Feedback · ${esc(s.title || '')}</h4>`;
+    let html = CLOSE + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
     if (!data.fbDs) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
       panel.innerHTML = html; return;
     }
-    if (decisions.length) {
+    if (composing() && decisions.length) {
       html += `<div class="chips">${decisions.map((d) => `<button class="chip${draft.decision === d.id ? ' on' : ''}" data-dec="${esc(d.id)}" title="${esc(d.question)}">${esc(d.id)} · ${esc(d.question.length > 40 ? d.question.slice(0, 40) + '…' : d.question)}</button>`).join('')}</div>`;
     }
-    html += `<textarea placeholder="What should change on this screen? (paste an image here too)"></textarea>`
+    if (composing() && draft.anchor) {
+      html += `<div class="anchor">📍 <span>On</span> <b title="${esc(draft.anchor.selector)}">${esc(draft.anchor.label)}</b><button class="ico clear-anchor" title="Not on this element">✕</button></div>`
+        + (draft.shot ? `<img class="thumb" src="${draft.shot}" alt="the element">` : '');
+    }
+    if (!composing()) html += `<div class="actions"><button class="tb review-all">Review all feedback</button><button class="save new-comment">＋ New comment</button></div>`;
+    else html += `<textarea placeholder="${draft.anchor ? 'What do you want for this element?' : 'What should change on this screen? (or use the picker at the left of the bar to point at an element)'}"></textarea>`
       + (draft.image ? `<img class="thumb" src="${draft.image}" alt="attached image">` : '')
       + `<div class="actions"><button class="attach">📎 ${draft.image ? 'Replace image' : 'Attach image'}</button>`
       + (draft.image ? '<button class="ico clear-img" title="Remove the image">✕</button>' : '')
@@ -266,13 +332,15 @@
     if (here.length) {
       html += `<h4 style="margin-top:14px">Saved on this screen (${here.length})</h4>` + here.map((r) => {
         const i = r.input;
-        return `<div class="item"><div class="meta">${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
+        return `<div class="item${r.key === justSaved ? ' on' : ''}" data-key="${esc(r.key)}"><div class="meta">${i.anchor ? `<b>📍 ${esc(i.anchor.label)}</b>` : ''}${i.decision ? `<b>${esc(i.decision)}</b>` : ''}<span>${esc(i.status)}</span><span>${esc((i.created || '').slice(11, 16))}</span>`
           + (i.status === 'open' ? `<button class="del" data-key="${esc(r.key)}" data-v="${esc(r.version || '')}" title="Delete">✕</button>` : '') + `</div>`
-          + `<div>${esc(i.text)}</div>${i.screenshot ? `<img class="thumb" src="${i.screenshot}" alt="">` : ''}</div>`;
+          + `<div>${esc(i.text)}</div>${i.element_shot ? `<img class="thumb" src="${i.element_shot}" alt="the element">` : ''}${i.screenshot ? `<img class="thumb" src="${i.screenshot}" alt="">` : ''}</div>`;
       }).join('');
     }
     panel.innerHTML = html;
+    if (justSaved) root.querySelector('.item.on')?.scrollIntoView({ block: 'nearest' });
     const ta = $('textarea');
+    if (!ta) return;
     ta.value = draft.text;
     ta.addEventListener('input', () => { draft.text = ta.value; });
     ta.addEventListener('paste', (e) => {
@@ -288,6 +356,126 @@
     fr.readAsDataURL(file);
   };
 
+  // ── 🎯 point at an element: the comment is saved with where it is, and a bubble marks it ──
+  const isOurs = (el) => !!el.closest?.('[data-mockify], [data-mockify-pins]');
+  let picking = false, hovered = null;
+  const unhover = () => { hovered?.classList.remove('mk-pick'); hovered = null; };
+  const setPicking = (on) => {
+    picking = on;
+    document.documentElement.classList.toggle('mk-picking', on);
+    $('.scope').classList.toggle('on', on);
+    if (!on) unhover();
+  };
+  document.addEventListener('mouseover', (e) => {
+    if (!picking || isOurs(e.target)) return;
+    unhover(); hovered = e.target; hovered.classList.add('mk-pick');
+  }, true);
+  // Capture phase: while picking, a click points — it never presses the mock's own control.
+  document.addEventListener('click', (e) => {
+    if (!picking || isOurs(e.target)) return;
+    e.preventDefault(); e.stopPropagation();
+    const el = e.target;
+    setPicking(false);
+    draft.anchor = anchorOf(el); draft.shot = '';
+    justSaved = '';
+    setPanel('feedback');
+    snapshot(el).then((png) => { if (png && draft.anchor) { draft.shot = png; renderPanel(); } });
+  }, true);
+
+  // A selector that finds the element again: from the nearest id or the screen's [data-step] section down.
+  function cssPath(el) {
+    const parts = [];
+    for (let e = el; e && e.nodeType === 1 && e !== document.body; e = e.parentElement) {
+      if (e.id && document.querySelectorAll(`#${CSS.escape(e.id)}`).length === 1) { parts.unshift(`#${CSS.escape(e.id)}`); break; }
+      if (e.dataset.step) { parts.unshift(`[data-step="${CSS.escape(e.dataset.step)}"]`); break; }
+      let n = 1;
+      for (let sib = e.previousElementSibling; sib; sib = sib.previousElementSibling) if (sib.tagName === e.tagName) n++;
+      parts.unshift(`${e.tagName.toLowerCase()}:nth-of-type(${n})`);
+    }
+    return parts.join(' > ');
+  }
+  function anchorOf(el) {
+    const r = el.getBoundingClientRect();
+    const said = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.innerText || el.value || '';
+    return {
+      selector: cssPath(el),
+      label: said.trim().replace(/\s+/g, ' ').slice(0, 60) || `<${el.tagName.toLowerCase()}>`,
+      html: el.outerHTML.slice(0, 1500),
+      x: r.right + scrollX, y: r.top + scrollY, w: r.width, h: r.height,
+    };
+  }
+  // The element as it looks, best effort: its subtree with computed styles inlined, drawn through an SVG
+  // <foreignObject> onto a canvas. Big subtrees, cross-origin images (a tainted canvas) give no picture.
+  async function snapshot(el) {
+    try {
+      const r = el.getBoundingClientRect();
+      const w = Math.ceil(Math.min(r.width, 1200)), h = Math.ceil(Math.min(r.height, 900));
+      const src = [el, ...el.querySelectorAll('*')];
+      if (w < 4 || h < 4 || src.length > 400) return '';
+      const copy = el.cloneNode(true);
+      const dst = [copy, ...copy.querySelectorAll('*')];
+      src.forEach((node, k) => {
+        const cs = getComputedStyle(node);
+        dst[k].setAttribute('style', Array.from(cs, (prop) => `${prop}:${cs.getPropertyValue(prop)}`).join(';'));
+        dst[k].classList?.remove('mk-pick', 'mk-next', 'mk-path');
+      });
+      let bg = 'transparent';
+      for (let e = el; e; e = e.parentElement) { const c = getComputedStyle(e).backgroundColor; if (lum(c) !== null) { bg = c; break; } }
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><foreignObject width="100%" height="100%">`
+        + `<div xmlns="http://www.w3.org/1999/xhtml" style="background:${bg};width:${w}px;height:${h}px;overflow:hidden">`
+        + `${new XMLSerializer().serializeToString(copy)}</div></foreignObject></svg>`;
+      const img = new Image();
+      img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      await img.decode();
+      const scale = Math.min(2, devicePixelRatio || 1);
+      const canvas = Object.assign(document.createElement('canvas'), { width: w * scale, height: h * scale });
+      const g = canvas.getContext('2d');
+      g.scale(scale, scale); g.drawImage(img, 0, 0);
+      return canvas.toDataURL('image/png');
+    } catch { return ''; }
+  }
+
+  // Bubbles: one per pointed-at comment on this screen, at its element (or where the element was).
+  const pins = document.createElement('div');
+  pins.setAttribute('data-mockify-pins', '');
+  pins.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;z-index:2147483646;';
+  document.body.append(pins);
+  const pinRoot = pins.attachShadow({ mode: 'open' });
+  pinRoot.innerHTML = `<style>
+    .pin { all: unset; position: absolute; transform: translate(-40%, -60%); width: 24px; height: 24px; display: grid; place-items: center;
+      border-radius: 50% 50% 50% 4px; background: #6d28d9; color: #fff; font: 700 11px ui-sans-serif, system-ui, sans-serif;
+      border: 2px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.35); cursor: pointer; }
+    .pin:hover { transform: translate(-40%, -60%) scale(1.12); }
+    .pin.done { background: #6e7681; }
+  </style><div class="layer"></div>`;
+  function drawPins() {
+    const layer = pinRoot.querySelector('.layer');
+    layer.replaceChildren();
+    stepRows().filter((r) => r.input.anchor).forEach((r, k) => {
+      const a = r.input.anchor;
+      let x = a.x, y = a.y;
+      try {
+        const el = document.querySelector(a.selector);
+        if (el && !el.closest('[hidden]')) { const b = el.getBoundingClientRect(); x = b.right + scrollX; y = b.top + scrollY; }
+      } catch { /* a selector that no longer parses: the stored spot stands */ }
+      const pin = Object.assign(document.createElement('button'), { className: `pin${r.input.status === 'open' ? '' : ' done'}`, textContent: String(k + 1) });
+      pin.title = `${a.label}: ${r.input.text}`;
+      pin.style.left = `${x}px`; pin.style.top = `${y}px`;
+      pin.onclick = () => openComment(r);
+      layer.append(pin);
+    });
+  }
+  // A bubble opens its comment: the feedback panel on it, and its element outlined for a moment.
+  function openComment(r) {
+    setPanel('feedback');
+    const item = root.querySelector(`.item[data-key="${CSS.escape(r.key)}"]`);
+    item?.classList.add('on'); item?.scrollIntoView({ block: 'nearest' });
+    try {
+      const el = document.querySelector(r.input.anchor.selector);
+      el?.classList.add('mk-pick'); setTimeout(() => el?.classList.remove('mk-pick'), 1600);
+    } catch { /* no element: the comment still opens */ }
+  }
+
   // ── data: the mock row and its feedback rows, through the Flowpad SDK ──
   async function boot() {
     let sdk;
@@ -298,12 +486,13 @@
     }
     try {
       await sdk.initSdk();
-      let projectId = null;
-      try { const { app } = await sdk.resolveAppHost(); projectId = app?.project_id || null; } catch { /* not an app endpoint */ }
+      // The mock project (mock_project.py ensure) holds the datasets; the serving process may belong to the repo's.
+      let projectId = CFG.project || null;
+      if (!projectId) try { const { app } = await sdk.resolveAppHost(); projectId = app?.project_id || null; } catch { /* not an app endpoint */ }
       projectId = projectId || sdk.dataContext?.projectTypeId?.id || null;
       const [[mocksDs], [fbDs]] = await Promise.all(['mockify.mock', 'mockify.feedback']
         .map((kind) => sdk.Dataset.forKind(kind, projectId || undefined)));
-      if (!mocksDs || !fbDs) throw new Error('this project has no mocks / mock-feedback dataset (mockify scripts/install_data.py)');
+      if (!mocksDs || !fbDs) throw new Error('this project has no mocks / mock-feedback dataset (set MOCKIFY.project to the mock project id)');
       Object.assign(data, { sdk, mocksDs, fbDs });
       await loadMock();
       await refresh();
@@ -325,7 +514,7 @@
     };
   };
   const loadMock = coalesced(async () => {
-    const found = await data.mocksDs.rows({ match: { key: CFG.key } });
+    const found = await data.mocksDs.query({ match: { key: CFG.key } });
     const row = found.rows[0];
     if (!row) throw new Error(`no mock row "${CFG.key}" in the mocks dataset`);
     const changed = row.version !== data.mock?.version;
@@ -336,7 +525,7 @@
   // The mock's comments, once: the badge counts the open ones, the panel shows this screen's.
   const refresh = coalesced(async () => {
     if (!data.fbDs || !data.mock) return;
-    data.rows = (await data.fbDs.rows({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } })).rows;
+    data.rows = (await data.fbDs.query({ match: { 'input.mock': data.mock.ref }, order_by: { 'input.created': 'asc' } })).rows;
     render();
   });
   function finishBoot() {
@@ -353,11 +542,15 @@
     const input = { mock: data.mock.ref, step: s.id, text: text || '(image)', status: 'open', created: new Date().toISOString() };
     if (draft.decision) input.decision = draft.decision;
     if (draft.image) input.screenshot = draft.image;
+    if (draft.anchor) input.anchor = draft.anchor;
+    if (draft.shot) input.element_shot = draft.shot;
     const key = `${CFG.key}-${s.id}-${Date.now().toString(36)}`;
     $('.save').disabled = true;
     try {
       await data.fbDs.append([{ key, input }]);
-      draft = { text: '', decision: '', image: '' };
+      draft = { ...NO_DRAFT };
+      justSaved = key;   // saved: the box folds away and the new entry shows, highlighted
+      panelKey = '';   // refresh redraws the open panel once
       await refresh();
     } catch (err) {
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not saved: ${esc(err?.message || err)}</div>`);
@@ -365,36 +558,84 @@
     }
   }
 
+  // The feedback as one markdown document — what the review panel shows, Copy copies and Send sends.
+  const extOf = (dataUrl) => ({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' })[
+    (String(dataUrl).match(/^data:([^;,]+)/) || [])[1]] || 'bin';
+  function feedbackMarkdown(rows) {
+    const m = data.mock, base = data.fbDs?.asset_ref || '';
+    const fileOf = (r, field) => (base ? `${base}/rows/${r.key}/input/${field}.${extOf(r.input[field])}` : `${field} on row ${r.key}`);
+    const byStep = {};
+    rows.forEach((r) => (byStep[r.input.step] ||= []).push(r));
+    const steps = J.filter((s) => byStep[s.id]);
+    const out = [`# Feedback on mock "${m?.input.title || CFG.key}" (\`${CFG.key}\`)`, '',
+      `${rows.length} comment(s) on ${steps.length} screen(s).`,
+      ...(m?.input.folder || CFG.folder ? [`Mock folder: \`${m?.input.folder || CFG.folder}\``] : []), ''];
+    steps.forEach((s) => {
+      out.push(`## ${find(s.id) + 1}. ${s.title} — \`${s.id}\` (${s.app})`, '');
+      byStep[s.id].forEach((r) => {
+        const i = r.input;
+        const where = [i.decision && `**${i.decision}**`, i.anchor && `on "${i.anchor.label}" \`${i.anchor.selector}\``].filter(Boolean).join(' · ');
+        out.push(`- ${where ? where + ' — ' : ''}${i.text.trim().replace(/\n/g, '\n  ')}`);
+        if (i.screenshot) out.push(`  - image: \`${fileOf(r, 'screenshot')}\``);
+        if (i.element_shot) out.push(`  - element: \`${fileOf(r, 'element_shot')}\``);
+      });
+      out.push('');
+    });
+    out.push('---', `The rows: the mock-feedback dataset, \`input.mock = ${m?.ref}\`, \`input.status = submitted\` (mockify skill, "Reading feedback").`);
+    return out.join('\n');
+  }
+
+  // The session the feedback goes to, by the mock row's `session` — its name is shown on the Send buttons.
+  let target = { id: '', proc: null, name: '' };
+  async function sessionOf() {
+    const id = data.mock?.input.session || '';
+    if (!id || !data.sdk) return null;
+    if (target.id !== id) {
+      const proc = await data.sdk.dataManager.getByTypeId(new data.sdk.TypeId('agentic_process', id)).catch(() => null);
+      target = { id, proc, name: proc ? (proc.name || proc.title || `session ${id.slice(0, 8)}`) : '' };
+    }
+    return target.proc;
+  }
+  // How the feedback reaches the session: the markdown as a FILE in its input folder, and ONE line that
+  // points at it — the app's own attachment convention ("File <name> is available here: <path>"). A
+  // multi-line prompt typed into a terminal session lands in its input box and is never submitted.
+  const noteFor = (rows, name, path) => {
+    const screens = new Set(rows.map((r) => r.input.step)).size;
+    return `Mock feedback on "${data.mock?.input.title || CFG.key}" (${CFG.key}): ${rows.length} comment(s) on ${screens} screen(s). `
+      + `File ${name} is available here: ${path} — read it and follow the mockify skill, "Reading feedback".`;
+  };
+  async function sendText(rows) {
+    const proc = await sessionOf();
+    if (!proc) throw new Error(data.mock?.input.session ? `session ${data.mock.input.session} not found` : 'the mock row names no session');
+    const sdk = data.sdk;
+    const dir = await sdk.dataManager.callAction(new sdk.ActionInfo('input-dir', 'agentic_process', proc.id, 'GET'));
+    if (!dir?.abs_path || !dir?.compute_node_id) throw new Error("could not find the session's input folder");
+    const name = `mock-feedback-${CFG.key}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.md`;
+    const file = new File([feedbackMarkdown(rows)], name, { type: 'text/markdown' });
+    const uploads = await sdk.fsStore.getState().uploadFiles(new sdk.TypeId(dir.compute_node_id), dir.abs_path, [file]);
+    await Promise.all(uploads.map((u) => u.waitForCompletion()));
+    await proc.enqueue(noteFor(rows, name, `${dir.abs_path}/${name}`), 'mockify');
+  }
+
   async function submitAll() {
     const rows = openRows();
     if (!rows.length || !data.mock) return;
-    const btn = $('.submit'); btn.disabled = true;
+    const btn = root.querySelector('.send-now'); btn.disabled = true;
     try {
-      // The session hears first: if anything after fails, the comments are still open and Submit can run again.
+      // The session hears first: if anything after fails, the comments are still open and Send can run again.
       const m = data.mock;
-      const byStep = {};
-      rows.forEach((r) => (byStep[r.input.step] ||= []).push(r.input));
-      const lines = J.filter((s) => byStep[s.id]).map((s) => `- ${s.id} (${s.title}): ` + byStep[s.id]
-        .map((i) => `${i.decision ? i.decision + ': ' : ''}${i.text.slice(0, 120)}${i.screenshot ? ' [image]' : ''}`).join(' | '));
-      const prompt = `Feedback submitted on mock "${CFG.key}" — ${rows.length} comment(s) on ${Object.keys(byStep).length} screen(s).\n`
-        + `Read them as typed rows (mockify skill, "Reading feedback"): the mock-feedback dataset, match input.mock = ${m.ref} and input.status = submitted.\n`
-        + lines.join('\n');
-      if (m.input.session) {
-        const proc = await data.sdk.dataManager.getByTypeId(new data.sdk.TypeId('agentic_process', m.input.session));
-        if (!proc) throw new Error(`session ${m.input.session} not found`);
-        await proc.enqueue(prompt, 'mockify');
-      }
+      await sendText(rows);   // the same markdown the review panel showed, as a file
       await data.fbDs.putMany(rows.map((r) => ({ key: r.key, input: { ...r.input, status: 'submitted' } })),
         { expected: Object.fromEntries(rows.map((r) => [r.key, r.version])) });
       await data.mocksDs.put(CFG.key, { input: { ...m.input, status: 'submitted' } }, { expected: m.version });
       open = 'feedback';
       await Promise.all([refresh(), loadMock()]);
       panelKey = panelState();
-      panel.innerHTML = `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent${m.input.session ? ' to the session that builds this mock' : ' — no session on the mock row, so nothing was sent; they are saved as submitted'}.</div>`;
+      panel.innerHTML = CLOSE + `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent to ${esc(target.name || 'the session that builds this mock')}.</div>`;
       placePanel(); panel.hidden = false;
     } catch (err) {
-      setPanel('feedback');
-      panel.insertAdjacentHTML('beforeend', `<div class="msg">Not submitted: ${esc(err?.message || err)}</div>`);
+      setPanel('send');
+      panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`);
     } finally { btn.disabled = false; }
   }
 
@@ -403,8 +644,10 @@
   $('.next').onclick = () => go(onwardOf(cur));
   $('.restart').onclick = () => { setPanel(''); go(0); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
-  $('.fb').onclick = () => setPanel(open === 'feedback' ? '' : 'feedback');
-  $('.submit').onclick = submitAll;
+  $('.fb').onclick = () => { justSaved = ''; setPanel(open === 'feedback' ? '' : 'feedback'); };
+  $('.submit').onclick = () => setPanel(open === 'send' ? '' : 'send');
+  $('.scope').onclick = () => setPicking(!picking);
+  $('.save-repo').onclick = () => setPanel(open === 'save' ? '' : 'save');
   const minLabel = () => { const m = bar.classList.contains('min'), b = $('.min-btn'); b.textContent = m ? '+' : '–'; b.title = m ? 'Restore' : 'Minimise'; b.setAttribute('aria-label', b.title); };
   if (store.get('min')) bar.classList.add('min');
   minLabel();
@@ -414,13 +657,48 @@
   };
   panel.addEventListener('click', (e) => {
     const t = e.target;
+    if (t.closest('.close')) { setPanel(''); return; }
+    if (t.closest('.send-now')) { submitAll(); return; }
+    if (t.closest('.save-now')) {
+      const b = t.closest('.save-now'); b.disabled = true;
+      sessionOf().then((proc) => {
+        if (!proc) throw new Error('the mock row names no session');
+        return proc.enqueue(`Save mock "${CFG.key}" to the repo: the person pressed Save — run the mockify skill's scripts/mock_project.py save ${data.mock.input.repo} ${CFG.key} (SKILL.md "Save to repo").`, 'mockify');
+      }).then(() => { b.textContent = `✓ Asked ${target.name} to save it`; })
+        .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not asked: ${esc(err?.message || err)}</div>`); });
+      return;
+    }
+    if (t.closest('.send-again')) {
+      const b = t.closest('.send-again'); b.disabled = true;
+      sendText(sentRows())
+        .then(() => { b.textContent = `✓ Sent to ${target.name}`; })
+        .catch((err) => { b.disabled = false; panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`); });
+      return;
+    }
+    if (t.closest('.review-all')) { setPanel('send'); return; }
+    if (t.closest('.copy-md')) {
+      const b = t.closest('.copy-md'), md = feedbackMarkdown(b.dataset.which === 'sent' ? sentRows() : openRows());
+      const done = () => { b.textContent = '✓ Copied'; setTimeout(() => { b.textContent = '⧉ Copy'; }, 1500); };
+      navigator.clipboard?.writeText(md).then(done, () => {
+        const ta = Object.assign(document.createElement('textarea'), { value: md });
+        document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); done();
+      });
+      return;
+    }
+    if (t.closest('.open-folder')) {
+      const folder = data.mock?.input.folder || CFG.folder, node = data.sdk?.dataContext?.computeNodeTypeId;
+      if (folder && node) new data.sdk.FSRef(folder, node).open().catch((err) => panel.insertAdjacentHTML('beforeend', `<div class="msg">Could not open the folder: ${esc(err?.message || err)}</div>`));
+      return;
+    }
     if (t.closest('.hints-toggle')) { hints = !hints; store.set('hints', hints); markHints(true); renderPanel(); return; }
     const row = t.closest('[data-i]');
     if (row) { setPanel(''); go(+row.dataset.i); return; }
+    if (t.closest('.new-comment')) { justSaved = ''; renderPanel(); return; }
     const chip = t.closest('[data-dec]');
     if (chip) { draft.decision = draft.decision === chip.dataset.dec ? '' : chip.dataset.dec; renderPanel(); return; }
     if (t.closest('.attach')) { $('.file').click(); return; }
     if (t.closest('.clear-img')) { draft.image = ''; renderPanel(); return; }
+    if (t.closest('.clear-anchor')) { draft.anchor = null; draft.shot = ''; renderPanel(); return; }
     if (t.closest('.save')) { saveFeedback(); return; }
     const del = t.closest('.del');
     if (del) { data.fbDs.deleteRow(del.dataset.key, del.dataset.v ? { expected: del.dataset.v } : {}).then(refresh); }
@@ -440,9 +718,11 @@
   });
   const pos = store.get('pos');
   if (pos) requestAnimationFrame(() => place(pos.x, pos.y));
-  addEventListener('resize', () => { reclamp(); contrast(); });
+  addEventListener('resize', () => { reclamp(); contrast(); drawPins(); });
 
   addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && picking) { setPicking(false); return; }
+    if (e.key === 'Escape' && open) { setPanel(''); return; }
     const t = e.composedPath()[0];
     if (t && t.closest && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
     if (e.key === 'ArrowRight' && !$('.next').disabled) $('.next').click();

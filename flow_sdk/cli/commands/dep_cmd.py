@@ -62,10 +62,14 @@ def _url(port: int, project_id: str, action: str) -> str:
 
 
 @dep_app.command("list")
-def list_(project: ProjectOpt = None) -> None:
+def list_(
+    project: ProjectOpt = None,
+    declarers: Annotated[bool, typer.Option("--declarers", help="Also list every asset whose own flow.json declares dependencies, with all its entries.")] = False,
+) -> None:
     """Every declared dependency and its state on this machine."""
     port = discover_port(required=True)
-    ok(get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {})
+    url = _url(port, _project(port, project), "dependencies") + ("?declarers=1" if declarers else "")
+    ok(get_graph_json(url, on_error=_refused) or {})
 
 
 @dep_app.command("add")

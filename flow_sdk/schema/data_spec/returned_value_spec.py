@@ -356,6 +356,8 @@ class PromptResult(ReturnedValue):
     #: (``process_message``): the files it saved to send back, absolute. Empty for a model call and a
     #: workdir-mode run.
     files: list[str] = []
+    #: The LLM endpoint that answered a ``prompt`` op (its TypeId): which model a logged call measured.
+    endpoint: Optional[str] = None
 
 
 class AskResult(ReturnedValue):

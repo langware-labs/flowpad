@@ -123,7 +123,7 @@ EXPECTED_PAIRS = {
     ("FREE_SECTION", "FREE_SECTION"),  # the other one
     ("SCALAR", "DIR_LIST"),          # a list of shapes: JSON-able, but io explodes it
     ("SCALAR", "DIR_DICT"),          # a dict of shapes: same
-    ("ROWS", "DIR_LIST"),            # `Dataset.examples` — the single ROWS field
+    ("ROWS", "DIR_LIST"),            # `Dataset.rows` — the single ROWS field
     # (`FILE_REF`/`DIR_LIST` went with `MessageSpec.attachments: list[FileRef]` — an outgoing
     # message's files are `MessageFile` values now, which land as SCALAR/DIR_LIST.)
 }

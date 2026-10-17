@@ -19,5 +19,6 @@ from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 @action.get(action_name="icons", types=None)
 async def get_icons() -> ApiResponse:
-    """Every icon pack this backend serves, in resolution order."""
+    """Every icon pack this backend serves, in resolution order -- built-in and asset packs."""
+    await icons.sync_indexed()
     return ApiSuccessResponse(data={"icon_packs": icons.payload()})

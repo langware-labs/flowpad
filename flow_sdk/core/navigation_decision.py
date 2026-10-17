@@ -24,12 +24,16 @@ for the assistant.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.core.dock_address import VIEW_META, ViewType, canonical_address, dock_url, parse_dock_url, parse_view_type
 from flow_sdk.core.navigation import kind
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
+
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.navigator_spec import NavigatorResult
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +136,8 @@ async def decide_run(
 
     req = kind("navigator.request").model_validate(request)
     here = req.here.model_dump(mode="json", exclude_none=True) if req.here else None
+    if candidates is None and req.replay is not None:
+        candidates = [c.model_dump(mode="json", exclude_none=True) for c in req.replay.candidates]
     answer = await route(req.utterance, here=here, candidates=candidates)
     outcome: dict[str, Any] = {"decision": decision_of(answer), "candidates": answer.offered}
     target = answer.target if answer.route == "quick" else None
@@ -152,4 +158,20 @@ async def decide_run(
     return out, answer
 
 
-__all__ = ["UI_BUILT", "address_of", "decide", "decide_run", "decision_of", "entity_app_address"]
+#: The shipped ``smart-navigator`` FlowCall block: ``navigator.request`` -> ``navigation.outcome``.
+BLOCK = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "compute_op" / "smart-navigator"
+
+
+async def call(request: Any) -> "NavigatorResult":
+    """Call the ``smart-navigator`` block -- THE way in: ``navigator.request`` -> a ``NavigatorResult``
+    whose value is the ``navigation.outcome``. Read from its shipped folder, not the index: the magic
+    line must route before (and without) a scan. The block logs live decisions; a ``replay`` is not logged."""
+    from flow_sdk.core.compute_op import run_op  # noqa: PLC0415
+    from flow_sdk.core.compute_op.context import CallContext  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec  # noqa: PLC0415
+
+    spec = ComputeOpSpec.model_validate_json((BLOCK / "compute_op.json").read_text())
+    return await run_op(spec, input=request, trusted=True, context=CallContext(asset_folder=BLOCK, shipped=True))
+
+
+__all__ = ["BLOCK", "UI_BUILT", "address_of", "call", "decide", "decide_run", "decision_of", "entity_app_address"]

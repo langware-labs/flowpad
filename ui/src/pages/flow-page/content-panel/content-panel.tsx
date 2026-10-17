@@ -605,10 +605,12 @@ function ContentPanelBody({
   const renderedBody = homeAgent && consumerProject
     ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
     : renderBody(bodyViewType);
+  const appAddress = bodyViewType === ViewType.APP && !homeAgent ? appDockAddress(currentDock) : null;
   const body = loadProject ? (
     <OwnerLoadGate
       urlProject={loadProject}
-      appId={bodyViewType === ViewType.APP && !homeAgent ? (appDockAddress(currentDock)?.microAppId ?? null) : null}
+      appId={appAddress?.microAppId ?? null}
+      artifactId={appAddress?.artifactId ?? null}
       display={display}
     >
       {renderedBody}

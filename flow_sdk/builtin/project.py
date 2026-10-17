@@ -1629,7 +1629,7 @@ class Project(SetupSkippable, Entity):
     async def publish_files_to_hub(self) -> HubRepoOrigin:
         """Put the project folder into this project's hub-hosted repository and make that
         the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        the hub's. Git ignore rules apply even when the folder is not a checkout."""
         from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
         from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
         from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
@@ -1637,8 +1637,6 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
         mount = Path(self.fs_storage_mount_path or "")
-        if not (mount / ".git").exists():
-            raise RuntimeError("Sharing through the hub repository needs the project folder to be a git checkout")
         repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
@@ -2935,8 +2933,10 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
-        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
+    async def dependencies_action(self, asset: str = "", declarers: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings.
+        ``?declarers=1`` adds ``declarers``: every asset whose own flow.json declares
+        dependencies, with all its entries (the walk above lists each dependency once)."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
         try:
@@ -2951,6 +2951,8 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
+                   if declarers else {}),
             }
         )
 

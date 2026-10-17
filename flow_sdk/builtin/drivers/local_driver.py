@@ -43,6 +43,10 @@ class LocalOriginDriver:
         # Return the ROOT (base); the caller joins rel_path as placement.
         return Path(base), preferred_project_id
 
+    async def materialize_pinned(self, origin, **kwargs):
+        """No version to pin: a received share opens where it materializes."""
+        return await self.materialize(origin, **kwargs)
+
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
         try:
             target = _resolve_local_path(origin)

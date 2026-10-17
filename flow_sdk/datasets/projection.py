@@ -218,7 +218,7 @@ def _outside_id(ref: Any, by: str, owner: Path, links: dict) -> Any:
         if found and by == ROW_KEY:
             links[(ref, by)] = found[1]
         else:
-            rows = found[0].rows({"key": found[1]})["rows"] if found else []
+            rows = found[0].query({"key": found[1]})["rows"] if found else []
             links[(ref, by)] = rows[0]["input"].get(by) if rows else None
     return links[(ref, by)]
 
@@ -284,7 +284,7 @@ def _rows_by(dataset: Any, field: str, values: list) -> dict:
     wanted = [v for v in values if v not in (None, "")]
     if not wanted:
         return {}
-    rows = dataset.rows({"op": "$IN", "operands": [field, wanted]})["rows"]
+    rows = dataset.query({"op": "$IN", "operands": [field, wanted]})["rows"]
     return {field_of_row(row, field): row for row in rows}
 
 

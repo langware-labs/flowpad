@@ -299,33 +299,37 @@ async def test_an_id_the_hub_cannot_give_says_why(tmp_path, monkeypatch, status,
     assert states[0].state == state and says in states[0].reason
 
 
-async def test_an_id_found_on_the_hub_is_fetched_with_its_project(tmp_path, monkeypatch):
-    """The hub names the project holding the id; fetching that project here makes the id local."""
+async def test_an_id_found_on_the_hub_indexes_only_its_published_folder(tmp_path, monkeypatch):
+    """A published skill fetch indexes its folder, never sibling agent/channel definitions."""
     wanted_id = "3b0c1d7e-2222-4222-8222-222222222222"
     asked: list[str] = []
     fetched: dict = {}
 
     async def lookup(typeid):
         asked.append(typeid)
-        return "8c1f0b2e-1111-4111-8111-111111111111"
+        return "8c1f0b2e-1111-4111-8111-111111111111", ".claude/skills/hubteam"
 
     async def fetch_hub_project(dep, project_id, *, fetch, update, cloned):
-        # What a fetch leaves behind: the hub project on this machine, holding the source under ITS id.
+        assert dep.path == ".claude/skills/hubteam"
+        # What a fetch leaves behind: the published skill folder, not the entire project.
         team_p = await _project(tmp_path, "hub-team")
-        fetched["src"] = await _source(tmp_path, team_p, "hubteam", id=wanted_id)
-        return project_dependencies._Found(None, team_p.fs_storage_mount_path, "hub_repo", True)
+        skill_dir = Path(team_p.fs_storage_mount_path) / ".claude/skills/hubteam"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(f"---\nid: {wanted_id}\nname: hubteam\ndescription: Shared skill\n---\n# Shared skill\n")
+        fetched["path"] = skill_dir
+        return project_dependencies._Found(None, str(fetched["path"]), "hub_repo", True)
 
     monkeypatch.setattr(dep_resolve, "hub_lookup", lookup)
     monkeypatch.setattr(project_dependencies, "_hub", fetch_hub_project)
     site = await _project(tmp_path, "site")
-    _declare(site, {"dependencies": {"team": f"data_source-{wanted_id}"}})
+    _declare(site, {"dependencies": {"team": f"skill-{wanted_id}"}})
 
     assert (await site.dependencies())[0].state == "missing", "a status read does not fetch"
     states = await site.resolve_dependencies()
 
-    assert asked == [f"data_source-{wanted_id}"]
-    assert (states[0].state, states[0].typeid) == ("ready", f"data_source-{wanted_id}")
-    assert _canon(fetched["src"].files_root) in site.include_dirs
+    assert asked == [f"skill-{wanted_id}"]
+    assert (states[0].state, states[0].typeid) == ("ready", f"skill-{wanted_id}")
+    assert _canon(fetched["path"]) in site.include_dirs
 
 
 # ── verbs and setup ─────────────────────────────────────────────────────────
@@ -525,3 +529,46 @@ async def test_stress_concurrent_attachment_rounds_preserve_sources(tmp_path):
         await asyncio.gather(*(project.remove_dependency(s.name, asset=str(agent.typeid)) for s in sources))
         assert await project.dependencies(asset=str(agent.typeid)) == []
     assert {p: p.read_bytes() for p in files} == before
+
+
+@pytest.mark.parametrize("enveloped", [False, True])
+async def test_hub_asset_lookup_uses_published_asset_contract(monkeypatch, enveloped):
+    from flow_sdk.cloud_client.transport import hub_http
+
+    async def hub_get(resource, entity_id, *, action, params):
+        assert str(resource) == "project" and entity_id is None
+        assert action == "published_asset"
+        assert params == {"typeid": "skill-3b0c1d7e-2222-4222-8222-222222222222"}
+        row = {"source_project_id": "8c1f0b2e-1111-4111-8111-111111111111",
+               "rel_path": ".claude/skills/mail"}
+        return {"data": row} if enveloped else row
+
+    monkeypatch.setattr(hub_http, "hub_get_or_raise", hub_get)
+    assert await dep_resolve.hub_asset_location("skill-3b0c1d7e-2222-4222-8222-222222222222") == (
+        "8c1f0b2e-1111-4111-8111-111111111111", ".claude/skills/mail",
+    )
+
+
+async def test_scoped_source_folder_indexes_itself_without_sibling_channels(tmp_path):
+    from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir
+    from flow_sdk.builtin.data_source import DataSource
+
+    source_id = "ec1c7e3c-8bb2-4cea-b223-228b57af10d8"
+    sibling_id = "a4c1eacb-5af3-4ae1-b051-4360690ca554"
+    family = tmp_path / "received" / "agentic-assets" / "data_source"
+    for name, entity_id in (("mail", source_id), ("channel", sibling_id)):
+        folder = family / name
+        folder.mkdir(parents=True)
+        (folder / "data_source.json").write_text(json.dumps({
+            "id": entity_id, "name": name, "data_driver_name": "gmail", "read_only": True,
+        }))
+    source_file = family / "mail" / "data_source.json"
+    before = source_file.read_bytes()
+    assert await DataSource.get_by_id(source_id) is None
+
+    await _index_additional_dir(str(family / "mail"), read_only=True, strict=True)
+
+    source = await DataSource.get_by_id(source_id)
+    assert source is not None and source.read_only and source.provider == "gmail"
+    assert await DataSource.get_by_id(sibling_id) is None
+    assert source_file.read_bytes() == before

@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING, Any, Iterable, Optional
 
-from flow_sdk.schema.data_spec.credential_status_spec import active_way
+from flow_sdk.schema.data_spec.credential_status_spec import active_way, way_named, ways
 from flow_sdk.schema.data_spec.permission_spec import (
     MECHANISM_API_KEY,
     STATUS_DECLARED,
@@ -267,18 +267,20 @@ def _needed_names(row, declared: list[str] = ()) -> list[str]:
     grant) — or, while none is there, every member a store can hold (any one of them would do). A declared
     member of the group counts only while it is the way in use."""
     by_name = {v.env_var: v for v in row.vars}
-    ways = [v.env_var for v in row.vars if v.is_one_of]
-    if declared and not ways:
+    grouped = ways(by_name)
+    members = [n for group in grouped.values() for n in group]
+    if declared and not members:
         return list(declared)
-    active = active_way(by_name, row.setup_choice, lambda name: by_name[name].present)
+    active = active_way(by_name, row.setup_choice, lambda name: by_name[name].present, grouped)
     if not active:
-        group = [n for n in ways if by_name[n].holds_value]
+        group = [n for n in members if by_name[n].holds_value]
     else:  # a sign-in there unchosen holds no stored value to name: it settles the group by itself
-        group = [active] if active == row.setup_choice or by_name[active].holds_value else []
+        chosen = active == way_named(by_name, row.setup_choice, grouped)
+        group = [n for n in grouped[active] if chosen or by_name[n].holds_value]
     needed = [v.env_var for v in row.vars if v.is_must] + group
     if not declared:
         return needed
-    return [n for n in declared if n not in ways or n in needed] + [n for n in needed if n not in declared]
+    return [n for n in declared if n not in members or n in needed] + [n for n in needed if n not in declared]
 
 
 def _values_item(

@@ -157,7 +157,7 @@ const ROWS: Record<string, RowSpec[]> = {
     [msg`Synced`, (e) => ago(e.last_synced_at)],
     [msg`Error`, (e) => text(e.error_detail)],
   ],
-  dataset: [[msg`Rows`, (e) => count(e.num_examples)], [msg`Annotated`, (e) => count(e.num_annotated)], UPDATED],
+  dataset: [[msg`Rows`, (e) => count(e.num_rows)], [msg`Annotated`, (e) => count(e.num_annotated)], UPDATED],
   llm_endpoint: [
     [msg`Provider`, (e) => text(e.provider)],
     [msg`Enabled`, (e) => onOff(e.enabled)],

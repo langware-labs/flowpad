@@ -121,6 +121,24 @@ describe('AskChoiceBlock', () => {
     expect(onAnswer).toHaveBeenCalledWith('GOOGLE_APPLICATION_CREDENTIALS={"type": "service_account"}');
   });
 
+  it('a way of several values draws an input per field and answers them together, one line each', () => {
+    const onAnswer = vi.fn();
+    const ADDRESS = { value: 'GMAIL_ADDRESS', label: 'Gmail address', hint: '', secret: false, file: false, command: '' };
+    const PASSWORD = { ...APP_PASSWORD, hint: 'Needs 2-Step Verification.', help_url: 'https://myaccount.google.com/apppasswords' };
+    const paired = { value: 'app_password', label: 'App password', hint: '', secret: true, file: false, command: '', fields: [ADDRESS, PASSWORD] };
+    render(<AskChoiceBlock choices={[paired, GOOGLE]} onAnswer={onAnswer} />);
+
+    expect(screen.getByLabelText('Gmail address')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-choice-help-GMAIL_APP_PASSWORD')).toHaveTextContent('Create one at myaccount.google.com/apppasswords');
+    expect(screen.getByText('Needs 2-Step Verification.')).toBeInTheDocument();
+    expect(screen.getByTestId('ask-choice-submit')).toHaveTextContent('Continue');
+    fireEvent.change(screen.getByTestId('ask-choice-input-GMAIL_ADDRESS'), { target: { value: 'me@gmail.com' } });
+    expect(screen.getByTestId('ask-choice-submit')).toBeDisabled();
+    fireEvent.change(screen.getByTestId('ask-choice-input-GMAIL_APP_PASSWORD'), { target: { value: 'abcd' } });
+    fireEvent.click(screen.getByTestId('ask-choice-submit'));
+    expect(onAnswer).toHaveBeenCalledWith('GMAIL_ADDRESS=me@gmail.com\nGMAIL_APP_PASSWORD=abcd');
+  });
+
   it('a sign-in way shows its command and a Run: no input, no Send', () => {
     const onAnswer = vi.fn();
     render(<AskChoiceBlock choices={[KEY_FILE, GCLOUD]} onAnswer={onAnswer} />);

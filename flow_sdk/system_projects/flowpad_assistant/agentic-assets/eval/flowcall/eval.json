@@ -1,0 +1,19 @@
+{
+  "name": "flowcall",
+  "dataset_kind": "*",
+  "kinds": [
+    "eval"
+  ],
+  "entry": "eval.py",
+  "metrics": [
+    "accuracy"
+  ],
+  "slices": [
+    "labels.version",
+    "labels.model"
+  ],
+  "explain": {
+    "accuracy": "Of the labelled calls the block answered, how many answers matched the label. The block is called again with each row's input, as it is now. A block this instance does not know, or one that is gone, is an error row, never run."
+  },
+  "description": "Any FlowCall block's call log: each labelled row's input through the block again, its answer judged against the row's label. Used when a dataset has no eval of its own kind."
+}

@@ -35,8 +35,8 @@ class ResolvedSecrets(DataSpec):
     expires_at: Optional[AwareDatetime] = None
     #: Named values for the ``env`` and ``secrets`` shapes.
     values: dict[str, SecretStr] = {}
-    #: A declared credential with a ONE_OF group: the way it is set up by (a member's name — the thing a source
-    #: branches on), ``token`` holding the grant when that way is a sign-in. ``""``: no group, or none set up.
+    #: A declared credential with a ONE_OF group: the way it is set up by (the way's name — ``CredentialVarSpec.way``,
+    #: else its one member's — the thing a source branches on), ``token`` holding the grant when that way is a sign-in. ``""``: no group, or none set up.
     choice: str = ""
 
     def wire(self) -> dict:

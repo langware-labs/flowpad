@@ -158,6 +158,52 @@ as success; a value-producing map requires `OK` and a present value per item.
 There is no automatic flattening, filtering, retry or rollback. Dataset writes,
 notifications and artifact writes can have effects before a later item fails.
 
+## Tracing a run
+
+`invocation_id` is the trace id of one top-level run: every call made inside it
+carries the same one, and each also names the call that made it
+(`CallContext.parent_call_id`; `None` for the run's root). `CallContext.call`,
+`chain`, `map_calls` and Wizard steps pass both down. An `agent` block's worker
+inherits them as `FLOWPAD_INVOCATION_ID` / `FLOWPAD_PARENT_CALL_ID`, so its own
+`flow op run` calls join the run. `ComputeOp.start`, the `run`/`start` actions and
+a `ProcessCall` take an optional `invocation_id` and `parent_call_id`; without one
+the call is a run of its own.
+
+A block opts into a call log with `"log": {}` in its `compute_op.json`
+(`CallLogSpec`: `dataset_kind`, `max_rows` = 500, `max_row_bytes` = 65536). Each
+call is then a row of the dataset
+`<FLOWPAD_TEMP_DIR>/<instance>/agentic-assets/dataset/call-log-<block>/`, written
+after the answer and never raising. Its `input` / `output` are
+`{"value": ...}` of the block's shapes, or the rows of `dataset_kind` (the
+block's eval set kind, so that eval reads the log). Its `data` holds the trace.
+Temp is cleared by the OS and the oldest rows go past `max_rows`: copy a run out
+whole with `call_log.promote(invocation_id, to=<dataset>)` to keep it.
+
+A block that owns a named log says so in the same place: `name` (the folder,
+instead of `call-log-<block>`), `title`, `enabled_by` (an instance preference
+that turns the log on) and `row` (a function in its `call.py`,
+`(input, answer) -> row | None`, writing the row as `dataset_kind` holds it;
+`None` skips the call, and the trace joins the row's `data`). The
+`smart-navigator` block is SmartNavigationLog this way: `navigator.dataset`
+rows in `smart-navigation-log/`, on with Preferences → Advanced, and no row for
+a `replay` -- an eval's request is no decision.
+
+```sh
+flow op trace <invocation_id>   # the run's logged calls, as a tree
+```
+
+`call_log.trace(invocation_id)` is the same tree in Python. A call whose parent
+was not logged is a root.
+
+Each row also names what produced it: `version` (`block_version`, a hash of
+every file in the block folder) and `model` (the endpoint that answered a
+`prompt` or `decision` op). Label rows as `eval` and the log is an eval set. A
+dataset with no eval of its own kind falls back to the shipped `flowcall` eval,
+which replays each row's input through its block as it is now, judges the answer
+against the label, and slices the report by version and model. It replays only
+blocks this instance ships or indexes. Run it with `python -m flow_sdk.evals
+<log folder>`.
+
 ## Values, skips, references and routing
 
 Use `exit_code == ExitCode.OK` and `has_value` before passing a required value.

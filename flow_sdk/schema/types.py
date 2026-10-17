@@ -131,6 +131,7 @@ class EntityType(StrEnum):
     PROMPT_COMPLETION = "prompt_completion"
     CONVERSATION = "conversation"
     CHART = "chart"
+    ICON_PACK = "icon_pack"
     AGENT_TRACE = "agent_trace"
     DYNAMIC_WORKFLOW = "dynamic_workflow"
     # A Claude Code workflow *run* — the provider's wf_<runId>.json journal,

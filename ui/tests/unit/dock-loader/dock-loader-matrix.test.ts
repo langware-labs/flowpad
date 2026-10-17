@@ -75,6 +75,11 @@ const worldRows: Row[] = [
     name: 'project: a chart asset folder',
     url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/agentic-assets/chart/login-flow`,
   },
+  {
+    // A chart found under docs/ (a CHART.md folder) opens through the same editor route.
+    name: 'project: a chart asset folder under docs/',
+    url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/docs/network/spora-net`,
+  },
   { name: 'project: the project page', url: `/dock/project/${P}` },
   { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
   {

@@ -406,6 +406,8 @@ export interface IAgenticProcess extends IEntity {
    * Cleared only by start() on its success path.
    */
   restart_required?: boolean;
+  /** Launch-config fields behind `restart_required`; empty when none. */
+  restart_changed_fields?: string[];
   /**
    * Reason the last worker launch failed to start (the worker exited within
    * the backend's instant-exit window). Non-null LATCHES the process out of
@@ -1166,6 +1168,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * this as the "Restart" affordance on the process toolbar.
    */
   restart_required: boolean = false;
+
+  /** Launch-config fields behind `restart_required` (backend save-hook). */
+  restart_changed_fields: string[] = [];
 
   /**
    * Reason the last worker launch failed to start (instant-exit latch).
