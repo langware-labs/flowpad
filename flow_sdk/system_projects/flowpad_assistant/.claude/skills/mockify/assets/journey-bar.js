@@ -88,7 +88,6 @@
     @media (prefers-reduced-motion: reduce) { .next.hint { animation: none; } }
     .ico { height: 32px; min-width: 32px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; color: var(--mk-fg); }
     .ico:hover { background: var(--mk-soft); }
-    .fb { border: 1.5px solid var(--mk-muted); padding: 0 10px; font-weight: 600; }
     .where { display: flex; flex-direction: column; min-width: 0; padding: 0 6px; }
     .step { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
     .n { color: var(--mk-muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; display: flex; gap: 4px; min-width: 0; max-width: 260px; }
@@ -97,11 +96,13 @@
     .trail .on { color: var(--mk-accent); font-weight: 700; }
     .sep { width: 1px; height: 22px; background: var(--mk-muted); opacity: .4; margin: 0 2px; }
     .badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-fg); font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
-    .submit { height: 32px; padding: 0 12px; font-weight: 700; border: 1.5px solid var(--mk-accent); color: var(--mk-accent); }
-    .submit:hover { background: var(--mk-soft); }
+    .execute { height: 32px; padding: 0 14px; font-weight: 700; border-radius: 999px; background: var(--mk-accent); color: var(--mk-accent-fg); }
+    .execute:disabled { opacity: .45; cursor: default; }
+    .ptools { display: flex; gap: 4px; margin: -2px 28px 8px 0; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, var(--mk-muted) 35%, transparent); }
+    .ptools .tb.on { border-color: var(--mk-accent); color: var(--mk-accent); }
     [hidden] { display: none !important; }
     .min .hide-min { display: none !important; }
-    @media (max-width: 900px) { .restart-label, .nav .lbl, .fb-label, .save-label, .trail { display: none; } .step { max-width: 26vw; } .nav { padding: 0 10px; } }
+    @media (max-width: 900px) { .restart-label, .nav .lbl, .trail { display: none; } .step { max-width: 26vw; } .nav { padding: 0 10px; } }
     .panel { position: absolute; left: 0; width: min(420px, calc(100vw - 16px)); max-height: 70vh; overflow: auto; background: var(--mk-bg); color: var(--mk-fg);
       border: 1.5px solid var(--mk-edge); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.3); padding: 10px; }
     .panel.down { top: 50px; } .panel.up { bottom: 50px; }
@@ -143,9 +144,7 @@
     <button class="nav next hide-min" title="Next screen (→)" aria-label="Next"><span class="lbl">Next</span> ›</button>
     <span class="sep hide-min"></span>
     <button class="ico steps hide-min" title="All screens" aria-label="All screens">☰</button>
-    <button class="ico fb" title="Feedback on this screen" aria-label="Feedback">💬<span class="lbl fb-label">Feedback</span><span class="badge fb-count" hidden></span></button>
-    <button class="ico save-repo hide-min" title="Save this mock into the repo (it lives outside it until then)" aria-label="Save to repo">💾<span class="lbl save-label">Save</span></button>
-    <button class="submit" title="See the feedback as the session receives it — send what is new"><span class="submit-lbl">Review</span> <span class="submit-n"></span></button>
+    <button class="execute" title="Send the comments so far to the session that builds this mock">▶ Execute <span class="exec-n"></span></button>
     <button class="ico min-btn" title="Minimise" aria-label="Minimise">–</button>
   </div>
   <div class="panel down" hidden></div>`;
@@ -241,9 +240,8 @@
     $('.back').disabled = cur === 0;
     $('.next').disabled = onwardOf(cur) === cur;
     const nOpen = openRows().length;
-    $('.fb-count').hidden = !nOpen; $('.fb-count').textContent = nOpen;
-    $('.submit-lbl').textContent = nOpen ? 'Review & send' : 'Review';
-    $('.submit-n').textContent = nOpen ? `(${nOpen})` : '';
+    $('.exec-n').textContent = nOpen ? `(${nOpen})` : '';
+    $('.execute').disabled = !nOpen || !data.mock?.input.session;
     if (open && panelState() !== panelKey) renderPanel();
     markHints();
     drawPins();
@@ -254,7 +252,10 @@
     panel.className = 'panel ' + (r.top > innerHeight / 2 ? 'up' : 'down');
     panel.style.cssText = r.left + 420 > innerWidth ? 'left:auto;right:0' : '';
   }
-  const CLOSE = '<button class="close" title="Close (Esc)" aria-label="Close">✕</button>';
+  // Every panel opens with the same toolbar: the screen's feedback, the review of what is sent, saving to the repo.
+  const TOOLS = [['feedback', '💬 Feedback'], ['send', 'Review'], ['save', '💾 Save to repo']];
+  const head = () => '<button class="close" title="Close (Esc)" aria-label="Close">✕</button><div class="ptools">'
+    + TOOLS.map(([p, l]) => `<button class="tb ptool${open === p ? ' on' : ''}" data-panel="${p}">${l}</button>`).join('') + '</div>';
   function renderPanel() {
     panel.hidden = !open;
     panelKey = panelState();
@@ -263,7 +264,7 @@
     if (open === 'steps') {
       let n = 0;
       const multi = multiApp();
-      panel.innerHTML = CLOSE + '<h4>Screens</h4>' + J.map((s, i) => {
+      panel.innerHTML = head() + '<h4>Screens</h4>' + J.map((s, i) => {
         const label = (isBranch(s) ? '↳ ' : '') + esc(isBranch(s) && s.when ? `${s.when} — ${s.title}` : s.title);
         const num = isBranch(s) ? '' : String(++n);
         return `<button class="row${isBranch(s) ? ' br' : ''}${i === cur ? ' on' : ''}" data-i="${i}"><span class="num">${num}</span>${label}${multi ? `<small>${esc(s.app)}</small>` : ''}</button>`;
@@ -275,7 +276,7 @@
       const repo = data.mock?.input.repo || '', session = data.mock?.input.session || '';
       const dest = repo ? `${repo}/agentic-assets/webapp/mock-${CFG.key}` : '';
       if (session && target.id !== session) sessionOf().then(() => open === 'save' && renderPanel());
-      panel.innerHTML = CLOSE + `<h4>Save to repo</h4>`
+      panel.innerHTML = head() + `<h4>Save to repo</h4>`
         + `<div class="note">Until now this mock lives outside the repo (a temp mock project). Saving copies it into the repo as one self-contained folder: the page, its assets, the journey and <code>mock.json</code>. Feedback stays out.</div>`
         + (dest ? `<pre class="md">${esc(dest)}/</pre>` : `<div class="msg">The mock row names no repo — nothing to save into.</div>`)
         + `<div class="toolbar" style="margin-top:8px"><button class="send save-now"${dest && session ? '' : ' disabled'}>${session ? `Ask ${esc(target.name || '…')} to save it ▶` : 'No session to save it'}</button></div>`;
@@ -291,7 +292,7 @@
         + (!data.mock?.input.session ? `<button class="send" disabled title="The mock row names no session to send to">No session to send to</button>`
           : which === 'unsent' ? `<button class="send send-now" title="session ${esc(data.mock.input.session)}">Send to ${esc(target.name || '…')} ▶</button>`
           : `<button class="send send-again" title="session ${esc(data.mock.input.session)}">Send again to ${esc(target.name || '…')} ▶</button>`) + `</div>`;
-      let html = CLOSE;
+      let html = head();
       if (unsent.length) {
         html += `<h4>Review &amp; send · ${unsent.length} new comment(s)</h4><div class="note">The session receives this as a file in its input folder, with a one-line note pointing at it.</div>`
           + tools('unsent') + `<pre class="md">${esc(feedbackMarkdown(unsent))}</pre>`;
@@ -309,7 +310,7 @@
     // feedback
     const s = J[cur] || {};
     const decisions = s.decisions || [];
-    let html = CLOSE + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
+    let html = head() + `<h4>Feedback · ${esc(s.title || '')}</h4>`;
     if (s.note) html += `<div class="note">${esc(s.note)}</div>`;
     if (!data.fbDs) {
       html += `<div class="msg">${esc(data.error || 'Loading…')}</div>`;
@@ -620,7 +621,7 @@
   async function submitAll() {
     const rows = openRows();
     if (!rows.length || !data.mock) return;
-    const btn = root.querySelector('.send-now'); btn.disabled = true;
+    const btn = $('.execute'); btn.disabled = true;
     try {
       // The session hears first: if anything after fails, the comments are still open and Send can run again.
       const m = data.mock;
@@ -631,12 +632,12 @@
       open = 'feedback';
       await Promise.all([refresh(), loadMock()]);
       panelKey = panelState();
-      panel.innerHTML = CLOSE + `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent to ${esc(target.name || 'the session that builds this mock')}.</div>`;
+      panel.innerHTML = head() + `<h4>Submitted</h4><div class="msg">${rows.length} comment(s) sent to ${esc(target.name || 'the session that builds this mock')}.</div>`;
       placePanel(); panel.hidden = false;
     } catch (err) {
       setPanel('send');
       panel.insertAdjacentHTML('beforeend', `<div class="msg">Not sent: ${esc(err?.message || err)}</div>`);
-    } finally { btn.disabled = false; }
+    } finally { render(); }
   }
 
   // ── controls ──
@@ -644,10 +645,8 @@
   $('.next').onclick = () => go(onwardOf(cur));
   $('.restart').onclick = () => { setPanel(''); go(0); };
   $('.steps').onclick = () => setPanel(open === 'steps' ? '' : 'steps');
-  $('.fb').onclick = () => { justSaved = ''; setPanel(open === 'feedback' ? '' : 'feedback'); };
-  $('.submit').onclick = () => setPanel(open === 'send' ? '' : 'send');
+  $('.execute').onclick = submitAll;
   $('.scope').onclick = () => setPicking(!picking);
-  $('.save-repo').onclick = () => setPanel(open === 'save' ? '' : 'save');
   const minLabel = () => { const m = bar.classList.contains('min'), b = $('.min-btn'); b.textContent = m ? '+' : '–'; b.title = m ? 'Restore' : 'Minimise'; b.setAttribute('aria-label', b.title); };
   if (store.get('min')) bar.classList.add('min');
   minLabel();
@@ -658,6 +657,8 @@
   panel.addEventListener('click', (e) => {
     const t = e.target;
     if (t.closest('.close')) { setPanel(''); return; }
+    const tool = t.closest('.ptool');
+    if (tool) { if (tool.dataset.panel === 'feedback') justSaved = ''; setPanel(tool.dataset.panel); return; }
     if (t.closest('.send-now')) { submitAll(); return; }
     if (t.closest('.save-now')) {
       const b = t.closest('.save-now'); b.disabled = true;
