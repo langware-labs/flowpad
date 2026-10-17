@@ -34,7 +34,7 @@ INDEXED_TYPES = {
     "dataset", "deck_template", "deck", "dynamic_workflow",
     "helpdesk", "journey", "markdown_index", "markdown", "mcp", "mcp_server", "micro_app", "plan", "plugin",
     "project", "project_manifest", "prompt", "skill", "spec", "spreadsheet",
-    "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run",
+    "task", "todo_file", "trigger", "usage_report", "chart", "wizard", "workflow_run", "icon_pack",
 }
 
 FRONTMATTER_PORTABLE = ("subagent", "claude_md", "markdown")
@@ -42,7 +42,7 @@ FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
     "graph_workflow", "dataset", "deck", "deck_template", "journey", "skill", "task",
-    "chart", "wizard",
+    "chart", "wizard", "icon_pack",
 )
 #: Folder-capsule types introduced after the json capsule; they mint +
 #: persist + adopt like the rest. ``project_manifest`` is the per-project
@@ -113,7 +113,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     # key. See `test_shipped_asset_declares_an_install_independent_key`.
     # Native JSON: the three reports + the entity documents `agent`, `asset_setup`, `compute_op` and
     # `data_source`, which carry their ids.
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (22, 8, 17)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (23, 8, 17)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)

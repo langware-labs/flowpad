@@ -276,6 +276,11 @@ Keep the architectural name distinct from existing code identifiers.
 
 A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
 
+Durable work uses `ComputeOp.start` and `get_call` with exact block/call IDs.
+Admission has no completed output; interrupted work is not replayed automatically.
+Check installed capabilities before migrating callers, and use `CallContext.attach_executor`
+to record a child executor rather than searching by process name or start time.
+
 ## Naming — check the glossary before inventing a noun
 
 **[`docs/glossary.md`](docs/glossary.md)** **is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:

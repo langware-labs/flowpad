@@ -41,10 +41,10 @@ describe('asset document action', () => {
     const final = await ref.updateDocument({ expected_revision: after.revision, set_fields: { eval: false } });
     expect(final.fields.eval).toBe(false); expect(final.fields.metadata).toEqual({ owner: 'team' });
   });
-  it('repairs an exact legacy whiteboard document while preserving its board and later prose', async () => {
-    const board = ref.parent.child('agentic-assets/whiteboard/legacy/board.json');
-    const document = ref.parent.child('agentic-assets/whiteboard/legacy/WHITE_BOARD.md');
-    const typeid = new TypeId('whiteboard', 'bc8a85f1-8ca3-4081-bcd4-5429a0e1c753');
+  it('repairs a chart document while preserving its board and later prose', async () => {
+    const board = ref.parent.child('agentic-assets/chart/legacy/board.json');
+    const document = ref.parent.child('agentic-assets/chart/legacy/CHART.md');
+    const typeid = new TypeId('chart', 'bc8a85f1-8ca3-4081-bcd4-5429a0e1c753');
     await board.write('{"sentinel":"preserve"}');
     await expect(document.readDocument()).rejects.toMatchObject({response: {status: 404}});
     await document.ensureDocument(typeid, {name: 'Legacy', description: 'Repair fixture'});

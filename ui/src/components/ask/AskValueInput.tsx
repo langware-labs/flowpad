@@ -11,6 +11,7 @@ export function AskValueInput({
   testId,
   secret,
   file,
+  placeholder,
   value,
   onChange,
   onEnter,
@@ -19,6 +20,7 @@ export function AskValueInput({
   testId: string;
   secret?: boolean;
   file?: boolean;
+  placeholder?: string;
   value: string;
   onChange: (value: string) => void;
   onEnter: () => void;
@@ -31,6 +33,7 @@ export function AskValueInput({
       autoFocus
       type={secret ? 'password' : 'text'}
       autoComplete={secret ? 'off' : undefined}
+      placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={(e) => {

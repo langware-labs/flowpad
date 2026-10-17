@@ -5,18 +5,18 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "2ef3073f4f3a3e4a6de7cea01714adf80e08518a908397d9d76e9c7601ddbc7e",
+  "inputs_hash": "40befe51e1c1d30083e80a517df6a809554d80e06e8210563a1021c6a56e8591",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Runnable SDK examples with validating tests: FlowCall outcomes and returned values, ComputeOps, wizards, schemas, agents, channels, data sources, datasets, credentials, dependencies, deployment, activity, scanning, and RAG.",
+  "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
   "files": [
     {
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Snippets — the dev onboarding shelf",
-      "summary": "Runnable SDK example directory with prerequisite guidance and test mappings, including typed FlowCall blocks, call results, schemas, datasets, and agents.",
-      "content_hash": "6a8906e6c89552aaa62b92026965398242a5a8e5e5a56336225b928fc5c1a7ae",
-      "size_bytes": 10412
+      "summary": "Runnable SDK onboarding recipes index: category links, pinning tests, channel routing, typed values, and conventions for sources, agents, workflows, and FlowCall.",
+      "content_hash": "5a1c819384a46b9a6778d43d656bfae59e569f208c90fcff8d2e1604b6fa878e",
+      "size_bytes": 10670
     },
     {
       "name": "activity.md",
@@ -30,7 +30,7 @@
       "name": "agent-deployment.md",
       "rel_path": "agent-deployment.md",
       "title": "Agent deployment — snippets",
-      "summary": "---\nid: a67d0e93-70ef-4e56-8449-75b918f858af\n---\nRunnable snippets on agent deployment: placing an Agent on a machine, launching sessions, pausing, cloud deploy, custom channel routing, and the per-deployment local agent loop.",
+      "summary": "Runnable snippets on agent deployment: placing an Agent on a machine, launching sessions, pausing, cloud deploy, custom channel routing, and the per-deployment local agent loop.",
       "content_hash": "34c088b0bdd80338aac2564d4d83bed26bb70fa326acd1bc29a8b66d4be14a37",
       "size_bytes": 14675
     },
@@ -54,7 +54,7 @@
       "name": "agents-on-channels.md",
       "rel_path": "agents-on-channels.md",
       "title": "An agent on a channel — snippets",
-      "summary": "---\nid: e88a55a6-d845-475e-9dc9-8f98e6b76ac1\n---\nSnippets for putting an agent on WhatsApp or a phone line, answered by the app or your own loop, with credential setup.",
+      "summary": "Snippets for putting an agent on WhatsApp or a phone line, answered by the app or your own loop, with credential setup.",
       "content_hash": "17f3461b4520d4d2d3b2b1d8fa987eca23709abad0ea308a964e53daedcf82ea",
       "size_bytes": 8631
     },
@@ -62,7 +62,7 @@
       "name": "asset-dependencies.md",
       "rel_path": "asset-dependencies.md",
       "title": "Asset dependencies — snippets",
-      "summary": "---\nid: bdff00a2-d751-4c9f-8bea-207a2c5cc999\n---\nAsset dependency snippets: folder asset's flow.json naming assets by id, transitive resolution across layered data sources, missing-link states, flow dep commands and agent attachments.",
+      "summary": "Asset dependency snippets: folder asset's flow.json naming assets by id, transitive resolution across layered data sources, missing-link states, flow dep commands and agent attachments.",
       "content_hash": "2ac44117dd14fdc60024dce628041e44a8d484affd173d3f1118d8ee08d10e2e",
       "size_bytes": 10770
     },
@@ -70,15 +70,15 @@
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
       "title": "FlowCall — calls, outcomes, and returned values",
-      "summary": "FlowCall contract and interfaces: ReturnedValue outcomes, typed value presence, ComputeOp execution, Wizard composition, agent completion, and wire serialization.",
-      "content_hash": "f438f7c33d2748455f656d9efcce088b807d345c69581555837fe091360a6193",
-      "size_bytes": 30984
+      "summary": "FlowCall outcomes and typed ReturnedValue contracts, durable invocation, admission versus completion, serialization, value presence, executor correlation, and Wizard composition.",
+      "content_hash": "5a2cce25b4975a394c8b59faae9c1e73e92ff3c46daa0fc7a01a4169eabeffb7",
+      "size_bytes": 32455
     },
     {
       "name": "channel-webhook-routing.md",
       "rel_path": "channel-webhook-routing.md",
       "title": "Channel webhooks: from WhatsApp to an agent",
-      "summary": "---\nid: 7ffd01cc-2fd3-43c9-95d9-cb7b7e390b0a\n---\nGuide to routing WhatsApp Cloud API webhooks to an agent: account, user and group hub claims, source-ID delivery, group sources, answer placement and stage-by-stage diagnostics.",
+      "summary": "Guide to routing WhatsApp Cloud API webhooks to an agent: account, user and group hub claims, source-ID delivery, group sources, answer placement and stage-by-stage diagnostics.",
       "content_hash": "55cd648e1bc838587e8ba4e079775b71a4af11736316d860bb4c059ed56974cd",
       "size_bytes": 15993
     },
@@ -102,7 +102,7 @@
       "name": "data-sources.md",
       "rel_path": "data-sources.md",
       "title": "Data sources — snippets",
-      "summary": "---\nid: 34ca3b65-68ed-41ec-b3f8-5eee9959d4e8\n---\nRunnable DataSource snippets: connect and sync a feed, reuse by account, search, mirror folders, subscribe to events, write items, reply, merge sources, write a driver.",
+      "summary": "Runnable DataSource snippets: connect and sync a feed, reuse by account, search, mirror folders, subscribe to events, write items, reply, merge sources, write a driver.",
       "content_hash": "54547883569587318421c143125540f775c25be000d2057c99bd06d353df72c0",
       "size_bytes": 21704
     },
@@ -118,15 +118,15 @@
       "name": "datasets.md",
       "rel_path": "datasets.md",
       "title": "Datasets — snippets",
-      "summary": "Runnable dataset snippets: data_schema row kinds, rows by key, links, evals, SmartNavigationLog, mirroring via sync, query, count and text search, and editing outside-owned fields.",
-      "content_hash": "d88499f76e7630db92ae798e64e1c45cdf07932f9fd870e24d7fc456ae698d59",
-      "size_bytes": 17753
+      "summary": "Dataset snippets: row schemas as folders, reading and writing rows, evaluation, rows by key, links, mirroring, relational queries, aggregation, and source-owned field writes.",
+      "content_hash": "e108ce971687bb0f30b05c3d04edac4275cdd790169293099432c19e4ec37c5a",
+      "size_bytes": 17701
     },
     {
       "name": "decisions.md",
       "rel_path": "decisions.md",
       "title": "Decisions — snippets",
-      "summary": "---\nid: 3cfa1e2e-fc53-444c-b785-c41a0623b92e\n---\nDecision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.",
+      "summary": "Decision snippets: DecisionSpec closed questions answered with calibrated probabilities through a hub endpoint, the Jev and OpenAI vocabulary, navigator routing, and decision wizard steps.",
       "content_hash": "834d92059d0ec415449f0f3c85b01b11ab9e13c1ce66f6403e28e3bcc7cd0c65",
       "size_bytes": 10591
     },
@@ -134,23 +134,23 @@
       "name": "flowcall-blocks.md",
       "rel_path": "flowcall-blocks.md",
       "title": "FlowCall blocks — typed input, call.py, output",
-      "summary": "Typed FlowCall blocks across seven variants, with input/output routing, runnable Python list processing, Wizard chains, mapping, nullable values, references and scoped calls.",
-      "content_hash": "c2bd2d13affe59a27c23c4041874220dd7cef9ffcc85e6966590f42dc45907b2",
-      "size_bytes": 10480
+      "summary": "Typed ComputeOp authoring with call.py, whole-list inputs, Wizard-backed chains, explicit maps, references, approval, invocation tracing, and bounded call logs.",
+      "content_hash": "95f08370154c274dec8882bc2caddf2e5a3173919e5912294f494fb510552935",
+      "size_bytes": 13033
     },
     {
       "name": "gmail-source.md",
       "rel_path": "gmail-source.md",
       "title": "Gmail source",
-      "summary": "Snippet: create a Gmail data source from the shipped driver with credentials read from .env.local, never stored.",
-      "content_hash": "a0177a3161e093485921b5e7ef0849d8b0b16e8eb06a4fa24991c3557c7b8515",
-      "size_bytes": 807
+      "summary": "Gmail source creation from the shipped driver with an app password kept out of the row, and the OAuth gmail_send helper for report senders.",
+      "content_hash": "e9f49ae526451d5eb643f8539f16f63d21101d9a5629551b848c026d4ff03827",
+      "size_bytes": 1649
     },
     {
       "name": "llm-endpoints.md",
       "rel_path": "llm-endpoints.md",
       "title": "LLM endpoints — snippets",
-      "summary": "---\nid: a49769db-3e4c-4a8b-95f7-c53c082602ff\n---\nSnippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.",
+      "summary": "Snippets for LLMEndpoint kinds (api_key, hub, device): credential location, completions, embeddings, model listing, probing, harness resolution, public loginless endpoints, and error behavior.",
       "content_hash": "6ab0b50b284ee3c838027fb91a42d81cd79af8182033c806f2f9beee3c57a8ba",
       "size_bytes": 14448
     },
@@ -219,6 +219,14 @@
       "size_bytes": 7470
     },
     {
+      "name": "relationship-pickers.md",
+      "rel_path": "relationship-pickers.md",
+      "title": "Relationship pickers in SDK viewers",
+      "summary": "SDK relationship candidate providers, dependent queries, search and pagination, ordered selections, readonly controls, and Dataset-owned validation and version conflicts.",
+      "content_hash": "1c08fb99780925f358b8743bb96f8e946c47638aa5aba7176cead77b45cbdffe",
+      "size_bytes": 2463
+    },
+    {
       "name": "scan-and-index.md",
       "rel_path": "scan-and-index.md",
       "title": "Scan and index — snippets",
@@ -238,9 +246,9 @@
       "name": "service-endpoints.md",
       "rel_path": "service-endpoints.md",
       "title": "Service endpoints — snippets",
-      "summary": "ServiceEndpoint examples covering deployment services, routing, web apps, cloud addressing, agent chat, and health checks.",
-      "content_hash": "ce6d93e0082a66e04b7668f4cab9dcd70613a8fb8edbfa38e0a9e1a77d6a8fea",
-      "size_bytes": 18022
+      "summary": "Deployment service endpoints, audience routes, protocol proxies, port ownership, cloud access grants, agent chat channels, and endpoint health checks.",
+      "content_hash": "5d95d826582402f0136504c42dd7060ae29595c06699aed6d80ef1ac818cfa0d",
+      "size_bytes": 18498
     },
     {
       "name": "stream-inbox-automations.md",
@@ -268,6 +276,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T09:19:50.046891+00:00",
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
   "latest_process_ref": ""
 }

@@ -9,3 +9,8 @@ from completed output; do not invent a local result protocol or shared status fi
 **Cloud deployments:** All Google Cloud deployments (VMs, Cloud Run, anything billable)
 MUST go to project `flowpad-playground`. Never deploy to any other project. The
 environment already sets `CLOUDSDK_CORE_PROJECT=flowpad-playground`; do not override it.
+
+For calls that outlive a request, use ComputeOp.start and retain the block identity
+and call_id for get_call. Admission is not output; consume only a completed
+record’s successful ReturnedValue with a present value. Do not replay interrupted
+or uncertain effectful calls automatically. Check installed SDK support first.

@@ -27,6 +27,11 @@ def hub_mirror(token: str, credential_name: str) -> dict[str, Any]:
     }
 
 
+def is_hub_mirror(value: Any) -> bool:
+    """Whether ``value`` is a local copy whose refresh authority is the hub."""
+    return isinstance(value, dict) and _MARKER in value
+
+
 async def resolve_hub_mirror(value: Any) -> tuple[Any, Any]:
     """Return (usable token, updated storage value), refusing stale copies.
 
@@ -35,7 +40,7 @@ async def resolve_hub_mirror(value: Any) -> tuple[Any, Any]:
     no polling: one resolution follows the existing hub credential read path.
     A different account or server must never refresh this account's copy.
     """
-    if not isinstance(value, dict) or _MARKER not in value:
+    if not is_hub_mirror(value):
         return value, value
     source = value[_MARKER]
     if (

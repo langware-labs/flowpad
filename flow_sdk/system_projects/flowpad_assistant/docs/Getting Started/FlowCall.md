@@ -96,3 +96,26 @@ optional references, not prerequisites for this shipped guide.
 The full runnable `call.py` and list-chain example is
 `docs/snippets/flowcall-blocks.md`, pinned by
 `tests/unit/test_flowcall_blocks_snippets.py` in a source checkout.
+
+## Durable calls
+
+Use `ComputeOp.start(input=..., approved=True)` in Python or
+`op.start(input, {approved: true})` in TypeScript when work must outlive a client
+request. Admission returns a private call record with `call_id` and
+`invocation_id`; retain the block identity and call ID. Read it with
+`ComputeOp.get_call(call_id)` / `op.get_call(callId)`. Reading never starts work.
+
+The record state is `running`, `completed`, `interrupted`, or `failed`.
+Only a completed record carries the tagged `ReturnedValue` in `result`; still
+check its outcome and value presence before chaining. A completed refusal is
+not successful output. Validation rejects invalid input before admission, and
+approval still precedes executable imports. Each start creates new work:
+invocation correlation is not an idempotency key and an uncertain request must
+not be silently retried.
+
+Records survive backend restarts. Unfinished work whose executor has stopped
+is reported interrupted without replay; this does not roll back prior effects.
+A surviving external agent is not, by itself, proof that its enclosing Python
+block can resume. Persisted executor information is for correlation, not a
+promise of checkpoint recovery. Awaited `call` and Wizard composition retain
+their existing contracts.

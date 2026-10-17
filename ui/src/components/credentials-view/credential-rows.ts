@@ -28,6 +28,8 @@ export interface CredentialRowVar {
   required: CredentialRequirement;
   present: boolean;
   warning: 'missing' | 'wrong-store' | 'unreachable' | null;
+  /** `ONE_OF`: the way it belongs to; empty = its own. */
+  way?: string;
 }
 
 export interface CredentialRow {
@@ -119,7 +121,7 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         scope: row.scope,
         store: row.value_store,
         state: row.state === 'connected' ? 'connected' : 'needs-values',
-        vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
+        vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning, way: v.way })),
         // An oauth credential the project declares is needed whole: there are no variables to weigh.
         required:
           row.kind === 'oauth' || row.vars.some(isRequired) || oneOfGroup(row.vars).length > 0

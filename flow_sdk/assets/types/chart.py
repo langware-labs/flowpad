@@ -72,6 +72,35 @@ def chart_asset_hash(ref: FSRef) -> int:
     return ts
 
 
+def chart_icon_problems(chart_dir: Path) -> list[str]:
+    """Why a sequence chart's participant icons will not render, one line each.
+
+    Every ``participants[].icon`` must resolve EXACTLY through the icon registry
+    -- the built-in packs plus the icon pack assets of every scope above the
+    chart (its project's ``agentic-assets/icon_pack/``). The view still draws a
+    fallback glyph; this is what tells the author it is one."""
+    import json  # noqa: PLC0415
+
+    from flow_sdk.icons.registry import icon_ref_problem, icons  # noqa: PLC0415
+
+    try:
+        doc = json.loads((chart_dir / CHART_JSON).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    participants = doc.get("participants") if isinstance(doc, dict) else None
+    if not isinstance(participants, list):
+        return []
+    icons.add_near(chart_dir)
+    problems: list[str] = []
+    for p in participants:
+        if not isinstance(p, dict):
+            continue
+        problem = icon_ref_problem(p.get("icon"))
+        if problem:
+            problems.append(f"participant {p.get('id') or p.get('label') or '?'}: {problem}")
+    return problems
+
+
 def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a chart folder into a Record. Replaces ``ChartRecord._from_fsref_sync``.
 
@@ -116,7 +145,14 @@ def extract_chart(ref: FSRef, resolved_id: str) -> list[FSRecord]:
         "status": "active",
         "content": content,
         "body": body,
+        # Row fields, not just metadata: the editor picks its view from the row's format
+        # and sends feedback to the row's session.
+        "format": chart_format(fm),
     }
+    if isinstance(fm.get("session"), str) and fm["session"]:
+        rec_kwargs["session"] = fm["session"]
+    if rec_kwargs["format"] == "sequence":
+        rec_kwargs["problems"] = chart_icon_problems(path)
     if description:
         rec_kwargs["description"] = description
     if fm:

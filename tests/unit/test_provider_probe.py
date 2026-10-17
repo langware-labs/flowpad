@@ -141,3 +141,20 @@ async def test_anthropic_profile_probe_reads_oauth_account(monkeypatch):
     assert result.ok is True
     assert result.identity == "user@example.test"
     assert result.account_key == "account-id"
+
+
+@pytest.mark.asyncio
+async def test_a_grant_the_first_endpoint_refuses_proves_itself_through_the_fallback(monkeypatch):
+    """A mail-only Google grant: Drive's ``about`` answers 403, the Gmail profile names the account."""
+    import httpx
+
+    def handler(request):
+        if "drive" in request.url.path:
+            return httpx.Response(403, json={"error": {"message": "insufficient scope"}})
+        return httpx.Response(200, json={"emailAddress": "me@gmail.com"})
+
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda *_a, **_kw: real_client(transport=httpx.MockTransport(handler)))
+    result = await run_probe("google", "ya29.token")
+
+    assert (result.ok, result.identity, result.account_key) == (True, "me@gmail.com", "me@gmail.com")

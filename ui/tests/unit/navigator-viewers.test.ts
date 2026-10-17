@@ -124,9 +124,9 @@ describe('navigator viewers', () => {
 
   it('the eval says in its own words why a right-looking pick is wrong', async () => {
     const el = document.createElement('div');
-    const e = { example_id: '1', prediction: gold, golds: [gold], verdict: 'wrong', score: 0.99, latency_ms: 5, error: null, labels: {}, slice: {}, title: 'open this source',
+    const e = { row_id: '1', prediction: gold, golds: [gold], verdict: 'wrong', score: 0.99, latency_ms: 5, error: null, labels: {}, slice: {}, title: 'open this source',
       note: 'It picked a target nothing can open, so the app hands the request to the assistant.' };
-    await ctx.render(el, { kind: 'eval.example', value: e, meta: { dataset_spec: 'navigator.dataset' } });
+    await ctx.render(el, { kind: 'eval.row', value: e, meta: { dataset_spec: 'navigator.dataset' } });
     expect(el.querySelector('.ev-note')?.textContent).toContain('nothing can open');
   });
 

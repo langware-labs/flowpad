@@ -16,7 +16,7 @@ import {
   type SetupNodeResult,
   type SetupTreeResult,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronDown, Info, Loader2, Package, Square, Undo2, type LucideIcon } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -274,13 +274,10 @@ export function ProjectSetupDialog({
       <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto" data-testid="project-setup-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Set up {projectName}</Trans>
+            <Trans>Project requirements</Trans>
           </DialogTitle>
           <DialogDescription>
-            <Trans>
-              What this project needs before it can run here. Close it any time — starting again picks up where it
-              stopped.
-            </Trans>
+            <Trans>Needed to run {projectName} on this computer.</Trans>
           </DialogDescription>
         </DialogHeader>
 
@@ -564,6 +561,9 @@ function RequirementRow({
   const { t } = useLingui();
   const Icon = iconOf(req);
   const name = namesItself(req) ? req.name : req.title || req.name;
+  const usedBy = req.used_by.join(', ');
+  // Unique per row: a credential and the data source using it can share a name.
+  const rowId = req.kind === 'pack' ? req.name : `${req.kind}-${req.name}`;
   const keyOpen = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && event.target === event.currentTarget) onOpen();
   };
@@ -577,7 +577,7 @@ function RequirementRow({
         'flex cursor-pointer flex-col gap-1 rounded border px-3 py-2 text-sm hover:bg-muted/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary',
         skipped && 'opacity-70',
       )}
-      data-testid={`project-setup-req-${req.name}`}
+      data-testid={`project-setup-req-${rowId}`}
       data-typeid={req.typeid}
     >
       <div className="flex items-center gap-2">
@@ -586,7 +586,7 @@ function RequirementRow({
             checked={selected}
             disabled={busy}
             aria-label={t`Select ${name}`}
-            data-testid={`project-setup-select-${req.name}`}
+            data-testid={`project-setup-select-${rowId}`}
             onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => event.stopPropagation()}
             onCheckedChange={(on) => onSelect(on === true)}
@@ -594,23 +594,26 @@ function RequirementRow({
         )}
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <span className="font-medium">{name}</span>
-        <div className="flex min-w-0 flex-1 items-center gap-1">
-          <span className="truncate text-xs text-muted-foreground" title={[req.title, req.note].filter(Boolean).join(' — ')}>
-            {skipped
-              ? req.required
-                ? t`required — it will not work here until it is set up`
-                : t`optional — skipped here`
-              : detailOf(req, t` or `)}
+        {skipped ? (
+          <span className="text-xs text-muted-foreground" data-testid={`project-setup-skipped-note-${rowId}`}>
+            {req.required ? t`Required — skipped on this machine` : t`Optional — skipped on this machine`}
           </span>
-          {!skipped && <JustificationInfo req={req} />}
-        </div>
+        ) : (
+          <span
+            className="rounded-full border px-2 text-xs text-muted-foreground"
+            data-testid={`project-setup-chip-${rowId}`}
+          >
+            {req.required ? t`Required` : t`Optional`}
+          </span>
+        )}
+        <div className="flex-1" />
         {busy && <Loader2 className="size-3 animate-spin" />}
         {!busy && !choosing && onExplain && (
           <Button
             variant="ghost"
             size="sm"
             className="h-6 px-2 text-xs"
-            data-testid={`project-setup-explain-${req.name}`}
+            data-testid={`project-setup-explain-${rowId}`}
             onClick={(event) => {
               event.stopPropagation();
               onExplain(event.currentTarget);
@@ -624,35 +627,60 @@ function RequirementRow({
             variant="ghost"
             size="sm"
             className="h-6 gap-1 px-2 text-xs"
-            data-testid={`project-setup-undo-${req.name}`}
+            data-testid={`project-setup-undo-${rowId}`}
             onClick={own(() => onUndo?.())}
           >
             <Undo2 className="size-3" />
             <Trans>Undo</Trans>
           </Button>
         )}
+        {!running && !busy && !skipped && (
+          <Button
+            size="sm"
+            className="h-6 px-2 text-xs"
+            data-testid={`project-setup-open-${rowId}`}
+            onClick={own(onOpen)}
+          >
+            <Trans>Set up</Trans>
+          </Button>
+        )}
         {!busy && !skipped && !choosing && onChoose && (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 text-xs"
-            data-testid={`project-setup-skip-${req.name}`}
+            className="h-6 gap-0.5 px-2 text-xs"
+            data-testid={`project-setup-skip-${rowId}`}
             onClick={own(() => onChoose(true))}
           >
             <Trans>Skip</Trans>
+            <ChevronDown className="size-3" />
           </Button>
         )}
       </div>
+      {/* The WHY, whole: one line a person reads to decide — never truncated. A skipped row says only that. */}
+      {!skipped && (
+        <div className="flex items-start gap-1 ps-6 text-xs text-muted-foreground">
+          <span data-testid={`project-setup-detail-${rowId}`} title={req.note || undefined}>
+            {detailOf(req, t` or `)}
+          </span>
+          <JustificationInfo req={req} />
+        </div>
+      )}
+      {!skipped && !!usedBy && (
+        <div className="ps-6 text-xs text-muted-foreground" data-testid={`project-setup-used-by-${rowId}`}>
+          <Trans>Used by: {usedBy}</Trans>
+        </div>
+      )}
       {choosing && !busy && (
-        <div className="flex items-center gap-2 ps-6 text-xs" data-testid={`project-setup-skip-choice-${req.name}`}>
+        <div className="flex items-center gap-2 ps-6 text-xs" data-testid={`project-setup-skip-choice-${rowId}`}>
           <SkipChoice
-            id={req.name}
+            id={rowId}
             whyNotAlways={req.can_skip_always ? '' : req.why_not_always || t`It cannot be removed from the project`}
             onSkip={(scope) => onSkip?.(scope)}
             onCancel={() => onChoose?.(false)}
           />
           {!req.can_skip_always && req.why_not_always && (
-            <span className="truncate text-muted-foreground" data-testid={`project-setup-why-not-always-${req.name}`}>
+            <span className="truncate text-muted-foreground" data-testid={`project-setup-why-not-always-${rowId}`}>
               {req.why_not_always}
             </span>
           )}

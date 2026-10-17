@@ -36,7 +36,7 @@ from pydantic import Field, ValidationError, create_model
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.schema.data_spec._namespace import loading, qualified
 from flow_sdk.schema.data_spec.data_schema_spec import DataSchemaDocSpec
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
 from flow_sdk.schema.data_spec.spec import (
     ENUM_PREFIX,
     KIND_UNION,
@@ -288,7 +288,7 @@ def _build(folder: Path) -> Optional[type]:
         _release(tag)  # the owner moved, was renamed or deleted: the kind is free
 
     record = doc.resolved_subkind == "record"
-    raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.examples or {})
+    raw = {name: f.shape for name, f in (doc.fields or {}).items()} if record else dict(doc.rows or {})
     forms = {name: _qualify(_normalize_form(form), read.ns, tag) for name, form in raw.items()}
     # What this record INCLUDES: other records' fields, rules and owners, as if written here. Each is
     # built first; a field named on both sides is refused (an include never silently overrides).
@@ -303,7 +303,7 @@ def _build(folder: Path) -> Optional[type]:
         if kind in _PENDING:
             _build_pending(kind)
         base = DataSpec.parse(kind)
-        if base is Any or not isinstance(getattr(base, "__authoring__", None), dict) or "examples" in base.__authoring__:
+        if base is Any or not isinstance(getattr(base, "__authoring__", None), dict) or "rows" in base.__authoring__:
             raise DeclareError(f"include {name!r}: no record kind of that name is defined")
         included.append((kind, base))
         for field_name, form in base.__authoring__.items():
@@ -341,7 +341,7 @@ def _build(folder: Path) -> Optional[type]:
                     for name, (annotation, default) in defs.items()
                 }
             else:
-                row = ExampleSpec[types["input"], types.get("output", DataSpec), types.get("context", DataSpec)]  # type: ignore[misc]
+                row = RowSpec[types["input"], types.get("output", DataSpec), types.get("context", DataSpec)]  # type: ignore[misc]
                 base, members = DatasetSpec[row], {}  # type: ignore[valid-type]
             cls = create_model(  # type: ignore[call-overload]
                 "Declared_" + re.sub(r"\W", "_", tag),
@@ -453,7 +453,8 @@ def load_root(root: Path) -> dict[Path, str]:
 def register_folder(folder: Path) -> str:
     """Register one data schema folder (indexing calls this); its error, or ``""``.
 
-    The definitions of its tree not read yet are pended first, so a definition indexed before
+    Definitions not built yet are pended first (name resolution may have only read them),
+    so a definition indexed before
     the kinds it names still resolves them.
     """
     folder = Path(folder)
@@ -463,7 +464,7 @@ def register_folder(folder: Path) -> str:
             if parent.name == AGENTIC_ASSETS_DIR:
                 top = parent.parent
         for other in data_schema_folders(top):
-            if other != folder and other not in _READ:
+            if other != folder and other not in _BUILT:
                 _pend(other)
         _settle(folder, _pend(folder))
         return _ERRORS.get(folder, "")

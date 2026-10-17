@@ -267,7 +267,8 @@ export function AppDisplayViewer({
       <ProjectLoadGate
         key={provider}
         projectId={provider}
-        asset={webappAsset(microAppId)}
+        // An artifact-addressed app is judged on the webapp serving it, not the whole project.
+        asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
       >
         {display}
       </ProjectLoadGate>

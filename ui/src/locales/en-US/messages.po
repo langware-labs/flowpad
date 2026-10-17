@@ -948,6 +948,10 @@ msgstr "{display} — renames in Flowpad only"
 msgid "{displayName} connection failed"
 msgstr "{displayName} connection failed"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{done} of {total} set up"
+msgstr "{done} of {total} set up"
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
 msgstr "{doneCount} records"
@@ -3921,7 +3925,7 @@ msgstr "Automation created"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
-#: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "Automations"
@@ -4203,6 +4207,7 @@ msgid "Boundary"
 msgstr "Boundary"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "Branch"
 
@@ -4983,6 +4988,10 @@ msgstr "Checking the app…"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "Checking the help desk files"
 msgstr "Checking the help desk files"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Checking the sign-in…"
+msgstr "Checking the sign-in…"
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
@@ -5874,6 +5883,10 @@ msgstr "Commit & Merge"
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit and push this file"
+msgstr "Commit and push this file"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
 msgstr "Commit Attribution"
@@ -6103,8 +6116,13 @@ msgstr "connected"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "Connected"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connected — {as}"
+msgstr "Connected — {as}"
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6250,6 +6268,7 @@ msgstr "Context list actions"
 msgid "context tokens"
 msgstr "context tokens"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
@@ -6489,18 +6508,32 @@ msgstr "Copy members' clone URL"
 msgid "Copy name"
 msgstr "Copy name"
 
-#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/pages/flow-page/display-history-button.tsx
-#: src/tabs/provider-meta.tsx
 msgid "Copy path"
 msgstr "Copy path"
 
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Copy path of {name}"
 msgstr "Copy path of {name}"
+
+#. placeholder {0}: file.path
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy path: {0}"
+msgstr "Copy path: {0}"
+
+#: src/components/spec-editor/SpecEditor.tsx
+#: src/pages/flow-page/display-history-button.tsx
+msgid "Copy path: {filePath}"
+msgstr "Copy path: {filePath}"
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+msgid "Copy path: {path}"
+msgstr "Copy path: {path}"
+
+#: src/tabs/provider-meta.tsx
+msgid "Copy path: {workdir}"
+msgstr "Copy path: {workdir}"
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -6536,8 +6569,8 @@ msgstr "Copy the terminal command: {0}"
 #~ msgstr "Copy the terminal command: flow asset install {0}"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Copy this file's path to the clipboard"
-msgstr "Copy this file's path to the clipboard"
+#~ msgid "Copy this file's path to the clipboard"
+#~ msgstr "Copy this file's path to the clipboard"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
@@ -6689,6 +6722,11 @@ msgstr "Could not check — {failed}"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "Could not check sign-in"
+
+#: src/hooks/use-git-share-gate.ts
+#: src/hooks/use-git-share-gate.ts
+msgid "Could not commit and push"
+msgstr "Could not commit and push"
 
 #~ msgid "Could not connect GitHub"
 #~ msgstr "Could not connect GitHub"
@@ -6980,6 +7018,10 @@ msgstr "Could not open skill"
 #: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Could not open the shared version"
+msgstr "Could not open the shared version"
 
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Could not open the sub-flow"
@@ -7813,6 +7855,11 @@ msgstr "Create New Project"
 #: src/components/quick-create/QuickCreateTile.tsx
 msgid "Create new…"
 msgstr "Create new…"
+
+#. placeholder {0}: shownUrl(field.help_url)
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Create one at {0}"
+msgstr "Create one at {0}"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
@@ -9295,6 +9342,7 @@ msgstr "done"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -9365,8 +9413,7 @@ msgstr "Download attachments"
 msgid "Download bundle"
 msgstr "Download bundle"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Download failed"
 msgstr "Download failed"
 
@@ -9384,7 +9431,6 @@ msgstr "Download message"
 msgid "Download sample CSV"
 msgstr "Download sample CSV"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
@@ -11094,8 +11140,8 @@ msgid "Files & Directories"
 msgstr "Files & Directories"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Files not available"
-msgstr "Files not available"
+#~ msgid "Files not available"
+#~ msgstr "Files not available"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
@@ -11921,6 +11967,11 @@ msgstr "Git"
 msgid "Git changes"
 msgstr "Git changes"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Git could not commit or push this file."
+msgstr "Git could not commit or push this file."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
 msgstr "Git is required to share files"
@@ -11960,6 +12011,11 @@ msgstr "Git repository"
 
 #~ msgid "Git setup finished, but the project still isn't ready to link."
 #~ msgstr "Git setup finished, but the project still isn't ready to link."
+
+#: src/components/assets/editor/GitShareBar.tsx
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Git share failed"
+msgstr "Git share failed"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git status of the working directory"
@@ -15704,6 +15760,10 @@ msgstr "Needed for"
 msgid "Needed for:"
 msgstr "Needed for:"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Needed to run {projectName} on this computer."
+msgstr "Needed to run {projectName} on this computer."
+
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Needs {0} sign-in"
@@ -17557,6 +17617,7 @@ msgstr "Not saved"
 msgid "Not saved: {0}"
 msgstr "Not saved: {0}"
 
+#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17619,6 +17680,10 @@ msgstr "Not sure, so no"
 #: src/components/automations/AutomationRow.tsx
 msgid "Not tested yet"
 msgstr "Not tested yet"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Not updated"
+msgstr "Not updated"
 
 #: src/components/credentials/DetectedKeys.tsx
 #~ msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
@@ -18003,8 +18068,8 @@ msgstr "On Disk"
 #~ msgstr "On file change"
 
 #: src/components/assets/ProjectDependencyDialog.tsx
-msgid "On hub"
-msgstr "On hub"
+#~ msgid "On hub"
+#~ msgstr "On hub"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -18436,6 +18501,7 @@ msgid "Open help desk"
 msgstr "Open help desk"
 
 #: src/components/links/LinkMenu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in"
 msgstr "Open in"
 
@@ -18487,6 +18553,7 @@ msgstr "Open in Files"
 
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in Finder/Explorer"
 msgstr "Open in Finder/Explorer"
 
@@ -18497,6 +18564,10 @@ msgstr "Open in Flowpad"
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "Open in FlowPad"
+
+#: src/tabs/doc-tab-card.tsx
+msgid "Open in Flowpad browser"
+msgstr "Open in Flowpad browser"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
@@ -18518,6 +18589,7 @@ msgstr "Open in Skills tab"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in terminal"
 msgstr "Open in terminal"
 
@@ -18979,6 +19051,7 @@ msgstr "optional"
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr "Optional"
 
@@ -18987,8 +19060,12 @@ msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "optional — skipped here"
-msgstr "optional — skipped here"
+#~ msgid "optional — skipped here"
+#~ msgstr "optional — skipped here"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Optional — skipped on this machine"
+msgstr "Optional — skipped on this machine"
 
 #: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
@@ -19363,6 +19440,7 @@ msgstr "Paste path of {0}"
 #~ msgid "path"
 #~ msgstr "path"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -20197,6 +20275,10 @@ msgstr "Project renamed"
 msgid "Project Required"
 msgstr "Project Required"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Project requirements"
+msgstr "Project requirements"
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
 msgstr "Project secrets on this machine"
@@ -20571,6 +20653,10 @@ msgstr "Push {folderName}"
 msgid "Push & notify"
 msgstr "Push & notify"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Push and share"
+msgstr "Push and share"
+
 #: src/components/assets/PushContextFolderDialog.tsx
 #~ msgid "Push failed"
 #~ msgstr "Push failed"
@@ -20726,6 +20812,10 @@ msgstr "Reader"
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "Reading"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "reading {account}"
+msgstr "reading {account}"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Reading dependencies…"
@@ -21666,12 +21756,17 @@ msgstr "required"
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr "Required"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "required — it will not work here until it is set up"
-msgstr "required — it will not work here until it is set up"
+#~ msgid "required — it will not work here until it is set up"
+#~ msgstr "required — it will not work here until it is set up"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Required — skipped on this machine"
+msgstr "Required — skipped on this machine"
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Requires a git repository with at least one commit"
@@ -21795,8 +21890,12 @@ msgstr "Restart"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "Restart required — {changedCount} {0} changed"
 
-#: src/components/terminal/interactive-terminal/RestartButton.tsx
-#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#. placeholder {0}: fields.join(', ')
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {0}"
+msgstr "Restart required — changed since start: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
 msgstr "Restart required — config changed since start"
 
@@ -23342,7 +23441,6 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
@@ -23420,6 +23518,10 @@ msgstr "Send invites to everyone"
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
 msgstr "Send message"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Send my edits back"
+msgstr "Send my edits back"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -23736,6 +23838,7 @@ msgstr "Set public"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23746,8 +23849,8 @@ msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Set up {projectName}"
-msgstr "Set up {projectName}"
+#~ msgid "Set up {projectName}"
+#~ msgstr "Set up {projectName}"
 
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #~ msgid "Set up {title}"
@@ -23947,6 +24050,7 @@ msgstr "Several contacts match — pick one from the list"
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
+#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -24064,6 +24168,14 @@ msgstr "Shared"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Shared by every place"
 msgstr "Shared by every place"
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Shared by Git — click to open the version that was shared"
+msgstr "Shared by Git — click to open the version that was shared"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+msgstr "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -24898,6 +25010,10 @@ msgstr "Someone"
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
 msgstr "Someone else changed the same thing. Let the assistant merge the two versions."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Someone else changed this file on the remote. Resolve the conflict in Git, then share again."
+msgstr "Someone else changed this file on the remote. Resolve the conflict in Git, then share again."
 
 #: src/lib/publish-state.ts
 #~ msgid "Someone else changed this too. Switch to Advanced view to merge."
@@ -26659,6 +26775,10 @@ msgstr "The value is stored in your operating system keychain and never readable
 msgid "the vault"
 msgstr "the vault"
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "The version that was shared with you"
+msgstr "The version that was shared with you"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The wizard could not run"
@@ -26826,6 +26946,10 @@ msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
+
+#: src/tabs/tab-row-item.tsx
+msgid "This asset is not part of this project"
+msgstr "This asset is not part of this project"
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this budget"
@@ -28303,6 +28427,11 @@ msgstr "Up to date"
 msgid "Update"
 msgstr "Update"
 
+#. placeholder {0}: status.behind
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Update ({0} newer)"
+msgstr "Update ({0} newer)"
+
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -28346,6 +28475,10 @@ msgstr "Updated"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Updated {0}"
 msgstr "Updated {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Updated to the latest version"
+msgstr "Updated to the latest version"
 
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
@@ -28556,6 +28689,10 @@ msgstr "Used assets"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "Used by"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Used by: {usedBy}"
+msgstr "Used by: {usedBy}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
@@ -28784,6 +28921,7 @@ msgstr "Verify the setup first."
 #~ msgid "Verify: {0}"
 #~ msgstr "Verify: {0}"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
 msgstr "Version"
@@ -29324,8 +29462,8 @@ msgid "What this project has published, and what it could."
 msgstr "What this project has published, and what it could."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
-msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "What this source places in the project is added to .gitignore — it may be private."
@@ -29651,6 +29789,7 @@ msgstr "working…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -30024,6 +30163,10 @@ msgstr "Your diagnosis request came back"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "Your display name"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Your edits were sent back"
+msgstr "Your edits were sent back"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr "Your FlowPad account"

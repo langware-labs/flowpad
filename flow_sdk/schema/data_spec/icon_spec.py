@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from typing import ClassVar
 
+from flow_sdk.schema.data_spec.frontmatter import AssetDocumentSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -152,4 +153,24 @@ class IconPackPayload(IconPackSpec):
     served: list[str] = []
 
 
-__all__ = ["IconPackPayload", "IconPackSpec", "IconSpec"]
+class IconPackDocSpec(AssetDocumentSpec):
+    """``icon_pack.json`` -- the document of an ``icon_pack`` ASSET
+    (``<scope>/agentic-assets/icon_pack/<name>/``).
+
+    The manifest fields of ``IconPackSpec`` minus ``base``: an asset pack's files
+    are served by the backend that indexed it, so the registry stamps the base
+    (see ``IconPackSpec``) and an author never writes one. ``extra="ignore"``
+    because the asset carries its ``id`` in its root. ``asset`` paths are
+    relative to the pack folder.
+    """
+
+    main_file: ClassVar[str | None] = "icon_pack.json"
+
+    version: int = 1
+    #: The pack's tag namespace -- every icon is ``<kind>.<icon kind>``.
+    kind: str
+    license: str = ""
+    icons: list[IconSpec] = []
+
+
+__all__ = ["IconPackDocSpec", "IconPackPayload", "IconPackSpec", "IconSpec"]

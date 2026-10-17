@@ -222,9 +222,9 @@ async def test_inject_routes_chain_and_run_completes(tmp_path):
 
 
 @async_context
-async def test_run_and_execution_records_are_example_shaped(tmp_path):
+async def test_run_and_execution_records_are_row_shaped(tmp_path):
     """The standardized I/O records: run input/output + inline execution dirs
-    + born-compatible example.json stamps."""
+    + born-compatible row.json stamps."""
 
     @graph_workflow_functions.register("v2_records")
     def _rec(event_name, data, ctx):
@@ -251,7 +251,7 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
     assert json.loads((exec_dir / "output" / "result.json").read_text()) == {"answer": 42}
     assert "hello record" in (exec_dir / "output" / "log.txt").read_text()
     # Born-compatible examples: deterministic id + provenance source block.
-    ex = json.loads((exec_dir / "example.json").read_text())["metadata"]
+    ex = json.loads((exec_dir / "row.json").read_text())["metadata"]
     assert ex["kind"] == "train"
     src = ex["source"]
     assert src["event_id"] == fe.id  # phase 7: envelope identity in provenance
@@ -259,7 +259,7 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
                                 "source_node", "hop")} == {
         "flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
         "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
-    run_ex = json.loads((run_dir / "execution" / "example.json").read_text())["metadata"]
+    run_ex = json.loads((run_dir / "execution" / "row.json").read_text())["metadata"]
     assert run_ex["source"]["node_id"] == "$run"
 
 
@@ -440,7 +440,7 @@ async def test_subprocess_function_records_and_auto_done(tmp_path):
     assert json.loads((exec_base / "input" / "event.json").read_text())["data"] == {"n": 7}
     assert "got go n=7" in (exec_base / "output" / "stdout.log").read_text()
     assert (exec_base / "output" / "artifact.txt").read_text() == "made this"
-    ex = json.loads((exec_base / "example.json").read_text())["metadata"]
+    ex = json.loads((exec_base / "row.json").read_text())["metadata"]
     assert ex["source"]["process_id"] == proc_id
 
 
@@ -1075,7 +1075,7 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     assert entry_row["actor"] == "user:u-42"
 
     exec_ex = _json.loads((run_record_dir(run_id) / "executions" / "1-a"
-                           / "example.json").read_text())["metadata"]["source"]
+                           / "row.json").read_text())["metadata"]["source"]
     assert exec_ex["event_id"] == env.id
     assert exec_ex["actor"] == "user:u-42"
 

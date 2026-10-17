@@ -2035,7 +2035,8 @@ class SQLiteDBDriver(DBDriver):
         a ``None`` source or a ``user`` source means "no scope" (single-user local store —
         all rows are the user's). For a non-user source, builds a recursive CTE over the
         ``is_child`` role edges rooted at the source and requires membership in it — one
-        SQL statement, instead of a per-row descendant walk.
+        SQL statement, instead of a per-row descendant walk. A ``project`` source also
+        matches rows whose ``project_id`` is the project (indexed assets carry no edge).
         """
         if source_entity is None or source_entity.type == "user":
             return None
@@ -2058,7 +2059,12 @@ class SQLiteDBDriver(DBDriver):
                 RelationshipSchema.is_child.is_(True),
             )
         )
-        return EntitySchema.id.in_(select(descendants.c.id))
+        in_tree = EntitySchema.id.in_(select(descendants.c.id))
+        if source_entity.type != "project":
+            return in_tree
+        # An indexed asset belongs to its project by ``project_id`` alone (no role
+        # edge), so a project's scope is its edge tree OR the rows stamped with it.
+        return or_(in_tree, func.json_extract(EntitySchema.data, "$.project_id") == source_entity.id)
 
     def _expr_to_sql(self, expr: ExpressionNode, counter: list) -> tuple:
         """Translate an ExpressionNode into a SQLAlchemy WHERE condition.

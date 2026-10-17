@@ -69,6 +69,34 @@ def _has_typed_ancestor(folder: Path, typed_dirs: frozenset[str] | None = None) 
         p = p.parent
 
 
+def _walked_folder_mains() -> frozenset[str]:
+    """Main-file names of every Folder-shaped type with a declared walk.
+
+    A folder holding one of these is that type's asset (a ``SKILL.md`` skill, a
+    ``CHART.md`` chart), so its markdown belongs to it, not to MARKDOWN.
+    """
+    from flow_sdk.assets.layout import Folder  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    mains: set[str] = set()
+    for type_name in SchemaRegistry.get_all_types():
+        info = SchemaRegistry.get(type_name)
+        if info is not None and info.walk and isinstance(info.shape, Folder) and info.shape.main:
+            mains.add(info.shape.main)
+    return frozenset(mains)
+
+
+def _in_claimed_folder(folder: Path, root: Path | None, mains: frozenset[str], cache: dict[Path, bool]) -> bool:
+    """True if ``folder`` or an ancestor below ``root`` holds a walked type's main file."""
+    if folder in cache:
+        return cache[folder]
+    claimed = any((folder / main).is_file() for main in mains)
+    if not claimed and folder != root and folder.parent != folder and (root is None or folder.is_relative_to(root)):
+        claimed = _in_claimed_folder(folder.parent, root, mains, cache)
+    cache[folder] = claimed
+    return claimed
+
+
 def markdown_in_folder_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
@@ -83,7 +111,9 @@ def markdown_in_folder_fn(
     project root) emit — see ``is_in_doc_dir``.
 
     Folders under a typed-record dir (see ``_typed_record_dirs``) are skipped so
-    a SKILL.md / agent .md / rules .md isn't double-indexed as MARKDOWN.
+    a SKILL.md / agent .md / rules .md isn't double-indexed as MARKDOWN, and so
+    is a folder (or its subtree) that a Folder-shaped type's walk claims by its
+    main file (``_walked_folder_mains``: a docs chart's CHART.md).
 
     Kept BESPOKE (not a declared ``Walk``): the typed-ancestor fence and the
     by-name skill-doc skip are cross-type rules — "every ``.md`` a different
@@ -92,6 +122,8 @@ def markdown_in_folder_fn(
     out: list[FSRef] = []
     seen: set[str] = set()
     typed_dirs = _typed_record_dirs()
+    mains = _walked_folder_mains()
+    claimed: dict[Path, bool] = {}
     for node in nodes:
         if node.record_type != RecordType.FOLDER:
             continue
@@ -101,6 +133,8 @@ def markdown_in_folder_fn(
         if not is_in_doc_dir(folder_path, Path(root.path) if root is not None else None):
             continue
         if _has_typed_ancestor(folder_path, typed_dirs):
+            continue
+        if _in_claimed_folder(folder_path, Path(root.path) if root is not None else None, mains, claimed):
             continue
         try:
             entries = sorted(folder_path.glob("*.md"))

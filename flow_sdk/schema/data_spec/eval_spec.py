@@ -1,8 +1,8 @@
-"""Evaluating a dataset: what an eval declares, what it says about each example, what a run records.
+"""Evaluating a dataset: what an eval declares, what it says about each row, what a run records.
 
 A dataset is evaluated by an EVAL -- a folder with ``eval.json`` (an ``EvalSpec``) and ``eval.py``,
-the dataset's own code. ``eval.py`` runs the official inference on each example's standard input
-and answers an ``ExampleEval``; the generic runner (``flow_sdk.evals``) collects them into an
+the dataset's own code. ``eval.py`` runs the official inference on each row's standard input
+and answers an ``RowEval``; the generic runner (``flow_sdk.evals``) collects them into an
 ``EvalRun`` and renders the report. Same shapes for every dataset, so every report reads the same.
 """
 
@@ -17,7 +17,7 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 
 
 class Verdict(StrEnum):
-    """What one example's run came to."""
+    """What one row's run came to."""
 
     CORRECT = "correct"  # matched a gold answer
     WRONG = "wrong"  # answered, and no gold matches
@@ -34,16 +34,16 @@ class EvalSpec(DataSpec):
     #: The dataset spec this eval reads (``navigator.dataset``): a dataset's nested eval, else any
     #: eval declaring its kind, evaluates it.
     dataset_kind: str
-    #: Which example roles a run covers by default.
+    #: Which row roles a run covers by default.
     kinds: list[str] = Field(default_factory=lambda: ["eval"])
-    #: The module beside ``eval.json`` that defines ``evaluate_example`` (and optionally ``aggregate``).
+    #: The module beside ``eval.json`` that defines ``evaluate_row`` (and optionally ``aggregate``).
     entry: str = "eval.py"
     #: Names of the metrics ``aggregate()`` returns, in report order.
     metrics: list[str] = Field(default_factory=list)
     #: Row paths a report groups by (``data.group``, ``input.here.view``).
     slices: list[str] = Field(default_factory=list)
     #: Each metric in plain words, for someone who is not an engineer: what it counts, over which
-    #: examples, and which way is good. A report or browser shows it as the metric's tooltip.
+    #: rows, and which way is good. A report or browser shows it as the metric's tooltip.
     explain: dict[str, str] = Field(default_factory=dict)
     description: str = ""
 
@@ -58,12 +58,12 @@ class EvalTrace(DataSpec):
     value: Any = None
 
 
-class ExampleEval(DataSpec):
-    """One example, evaluated -- the standard row every eval answers."""
+class RowEval(DataSpec):
+    """One row, evaluated -- the standard row every eval answers."""
 
-    spec_kind: ClassVar[str] = "eval.example"
+    spec_kind: ClassVar[str] = "eval.row"
 
-    example_id: str = ""  # filled by the runner
+    row_id: str = ""  # filled by the runner
     #: What the inference answered, as the dataset's output kind (JSON).
     prediction: Any = None
     golds: list[Any] = Field(default_factory=list)  # filled by the runner from the row
@@ -78,7 +78,7 @@ class ExampleEval(DataSpec):
     #: A one-line view of the input, for the report (filled by the runner when the eval leaves it).
     title: str = ""
     #: How the inference reached its answer (the model's full input and output) -- what makes a
-    #: wrong example debuggable. None when not recorded.
+    #: wrong row debuggable. None when not recorded.
     trace: Optional[EvalTrace] = None
     #: The eval's own word on this verdict, in plain words, when the verdict alone would mislead
     #: (a right pick nothing can open counts as wrong).
@@ -99,16 +99,16 @@ class EvalRun(DataSpec):
     eval_digest: str
     #: Whatever else decides the result (the endpoint used, a map hash) -- from ``versions()``.
     versions: dict[str, str] = Field(default_factory=dict)
-    #: The example roles judged (``["eval"]``, ``["test"]``): a dev run and a test run of one
+    #: The row roles judged (``["eval"]``, ``["test"]``): a dev run and a test run of one
     #: dataset are two scoreboards, compared each with its own past.
     kinds: list[str] = Field(default_factory=list)
     started_at: str
     finished_at: str = ""
-    examples: int = 0
+    rows: int = 0
     counts: dict[str, int] = Field(default_factory=dict)  # per verdict
     #: A count stays an int (``confident_wrong``); a ratio is a float -- a report tells them apart by type.
     metrics: dict[str, Optional[int | float]] = Field(default_factory=dict)
-    #: ``{path: {value: {"examples": n, "correct": n, ...counts, ...metrics}}}``.
+    #: ``{path: {value: {"rows": n, "correct": n, ...counts, ...metrics}}}``.
     slices: dict[str, Any] = Field(default_factory=dict)
 
     def count_metrics(self) -> list[str]:
@@ -117,4 +117,4 @@ class EvalRun(DataSpec):
         return sorted(k for k, v in self.metrics.items() if isinstance(v, int) and not isinstance(v, bool))
 
 
-__all__ = ["EvalRun", "EvalSpec", "EvalTrace", "ExampleEval", "Verdict"]
+__all__ = ["EvalRun", "EvalSpec", "EvalTrace", "RowEval", "Verdict"]

@@ -41,6 +41,6 @@ describe('DisplayHistoryButton', () => {
     render(<DisplayHistoryList stack={[OLD, newest]} onOpen={onOpen} />);
     expect(screen.getAllByTestId('display-history-row')).toHaveLength(1);
     expect(screen.getByText('/proj/old.md')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Copy path' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Copy path: / })).toBeTruthy();
   });
 });
