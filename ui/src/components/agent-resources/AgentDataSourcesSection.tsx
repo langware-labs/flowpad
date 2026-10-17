@@ -6,7 +6,7 @@ import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { isMessageDriverSpec, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { isKnowledgeSource, isMessageDriverSpec, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { statusStyle } from '@src/components/data-sources/status-style';
 import { healthStyle } from '@src/components/data-sources/health-style';
@@ -62,8 +62,7 @@ export function SourceDependencyRows({ states, sources, onOpen, isOpen, onRemove
     }).join(' → ');
     const provenance = path ? t`Via ${path}` : t`Added directly`;
     const status = source ? i18n._(source.isActive ? healthStyle(source.health).label : statusStyle(source.status).label) : '';
-    const resolution = state.state !== 'ready' ? state.reason || state.state
-      : source && !state.local_path ? t`Files not available` : '';
+    const resolution = state.state !== 'ready' ? state.reason || state.state : '';
     return <ResourceRow
       key={`${state.source}:${state.name}:${index}`}
       icon={source ? sourceIcon(specFor(source.provider), source.channel) : iconForType(DataSource.type)}
@@ -111,7 +110,7 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
       .finally(() => { if (alive.current) setLoading(false); });
     return () => { alive.current = false; generation.current += 1; };
   }, [project, agent]);
-  const pickable = candidates.filter((source) => !isMessageDriverSpec(specFor(source.provider)));
+  const pickable = candidates.filter((source) => isKnowledgeSource(source, specFor(source.provider)));
   const nothingToPick = !loading && !error && candidates.length === candidateIds.length && pickable.length === 0;
   useEffect(() => {
     // Nothing in the project to pick: go straight to connecting a new source, not an empty list.
