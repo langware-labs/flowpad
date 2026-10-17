@@ -3925,7 +3925,7 @@ msgstr "Automation created"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
-#: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr "Automations"
