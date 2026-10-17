@@ -45,3 +45,13 @@ describe('vfsEditorTarget', () => {
     expect(vfsEditorTarget(main, 'agent', agentShape).mainFileRef.path).toBe(main.path);
   });
 });
+
+describe('FSRef.parent on a Windows machine path', () => {
+  it("cuts at the last separator, so a folder asset's files resolve inside it", async () => {
+    const { FSRef } = await import('@sdk/fs/FSRef');
+    const { TypeId } = await import('@sdk');
+    const main = new FSRef('C:\\Users\\gwin\\.shared\\repo@abc\\docs\\network\\spora-hue\\CHART.md', new TypeId('compute_node', '@local'), 'file');
+    expect(main.parent.path).toBe('C:\\Users\\gwin\\.shared\\repo@abc\\docs\\network\\spora-hue');
+    expect(main.parent.child('chart.json').path).toBe('C:\\Users\\gwin\\.shared\\repo@abc\\docs\\network\\spora-hue/chart.json');
+  });
+});

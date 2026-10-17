@@ -172,6 +172,9 @@ interface AssetReviewDialogProps {
   /** A project reference with no MessageAttachment row: the popup shows the
    *  project branch alone. */
   project?: ProjectReviewRef;
+  /** Why opening the clicked attachment just failed (a 1-click git open), shown
+   *  inline beside its Retry. */
+  initialError?: string | null;
 }
 
 /**
@@ -226,6 +229,7 @@ function AttachmentReviewDialog({
   attachments,
   initialAttachmentId,
   attachmentProjectId,
+  initialError,
 }: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -499,7 +503,11 @@ function AttachmentReviewDialog({
               onDone={onClose}
             />
           ) : selectedIsGit ? (
-            <AssetInstallActions attachment={selected} conversationProjectId={attachmentProjectId} />
+            <AssetInstallActions
+              attachment={selected}
+              conversationProjectId={attachmentProjectId}
+              initialError={selected.id === initialAttachmentId ? initialError : null}
+            />
           ) : (
             <>
               {allProject ? (

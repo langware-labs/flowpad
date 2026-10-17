@@ -283,6 +283,17 @@ async def git_share_fix_action() -> ApiResponse:
     return ApiSuccessResponse(data=await git_share_fix(typeid.type, str(typeid.id), body.fix))
 
 
+async def _shared_file_body() -> "SharedFileRequest | ApiFailResponse":
+    """The ``{path}`` body both shared-file actions take, or the 400 to answer."""
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found", status_code=400)
+    try:
+        return SharedFileRequest.model_validate(await request_info.get_post_data() or {})
+    except ValidationError as e:
+        return ApiFailResponse(message=f"Invalid shared file: {e}", status_code=400)
+
+
 @action.post(action_name="shared-file-artifact", types=None)
 async def shared_file_artifact_action() -> ApiResponse:
     """The artifact that stands for one file being shared, when its kind of file
@@ -290,13 +301,9 @@ async def shared_file_artifact_action() -> ApiResponse:
     preflight, sharing it by git. ``type_id: null``: share the file itself."""
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
 
-    request_info = get_current_request_info()
-    try:
-        body = SharedFileRequest.model_validate(await request_info.get_post_data() or {}) if request_info else None
-    except ValidationError as e:
-        return ApiFailResponse(message=f"Invalid shared file: {e}", status_code=400)
-    if body is None:
-        return ApiFailResponse(message="No request info found", status_code=400)
+    body = await _shared_file_body()
+    if isinstance(body, ApiFailResponse):
+        return body
     try:
         artifact = await Artifact.for_shared_file(body.path)
     except FileNotFoundError as e:
@@ -305,3 +312,17 @@ async def shared_file_artifact_action() -> ApiResponse:
         # Not a page that travels as an artifact: the caller shares the file itself.
         return ApiSuccessResponse(data={"type_id": None, "name": None})
     return ApiSuccessResponse(data={"type_id": f"{artifact.type}-{artifact.id}", "name": artifact.name})
+
+
+@action.post(action_name="shared-file-artifact-at", types=None)
+async def shared_file_artifact_at_action() -> ApiResponse:
+    """The shared-file artifact a viewer's file path names, if any — read-only
+    (``shared-file-artifact`` registers one). Lets the page viewer show a
+    received page's git-share bar wherever the path was spelled."""
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+    body = await _shared_file_body()
+    if isinstance(body, ApiFailResponse):
+        return body
+    found = await Artifact.shared_file_at(body.path)
+    return ApiSuccessResponse(data={"type_id": f"{found.type}-{found.id}" if found else None})

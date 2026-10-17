@@ -123,3 +123,12 @@ describe('gitOriginWebUrl — the page a human opens', () => {
     );
   });
 });
+
+describe('gitOriginCloneUrl — self-hosted', () => {
+  it('keeps the scheme and port of a self-hosted remote', async () => {
+    const { gitOriginCloneUrl } = await import('@sdk/models/GitOrigin');
+    expect(
+      gitOriginCloneUrl({ kind: 'git', provider: 'git://localhost:9418', owner: 'spora', name: 'sapora-streams', branch: '', rel_path: '.' } as never),
+    ).toBe('git://localhost:9418/spora/sapora-streams');
+  });
+});
