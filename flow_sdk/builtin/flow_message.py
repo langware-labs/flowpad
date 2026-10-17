@@ -389,15 +389,21 @@ def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
         folder = shadow_dir_for(etype, eid)
         meta = folder / "metadata.json"
         if meta.exists():
-            if etype not in _BODY_BEARING_TYPE_IDS:
-                return folder
             import json  # noqa: PLC0415
 
-            # A metadata-only stub has no resolvable asset_ref → fall through
-            # to the staged check (a staged body still counts as downloaded).
-            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
-            if asset_ref and Path(asset_ref).exists():
-                return folder
+            record = json.loads(meta.read_text(encoding="utf-8")) or {}
+            # A row that is itself a RECEIVED git share pins someone's earlier
+            # version: it is not this message's — only this message's own staged
+            # pointer counts below (so a re-share is fetched and offers its version).
+            origin = record.get("origin")
+            if not (isinstance(origin, dict) and origin.get("head_commit")):
+                if etype not in _BODY_BEARING_TYPE_IDS:
+                    return folder
+                # A metadata-only stub has no resolvable asset_ref → fall through
+                # to the staged check (a staged body still counts as downloaded).
+                asset_ref = record.get("asset_ref")
+                if asset_ref and Path(asset_ref).exists():
+                    return folder
         if fm_id:
             from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, staged_git_entry_dir
 
