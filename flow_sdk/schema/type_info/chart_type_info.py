@@ -37,4 +37,7 @@ CHART = TypeInfo(
     scaffold_spec=ChartSpec,
     identity_carrier=frontmatter_identity(),
     asset_hash_fn=chart_asset_hash,
+    # A shared chart opens its sub-flows (sibling charts, by name) and draws
+    # vendor logos from icon packs — both from the shared checkout.
+    received_with=("chart", "icon_pack"),
 )

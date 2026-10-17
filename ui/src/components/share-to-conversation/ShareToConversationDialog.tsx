@@ -99,6 +99,29 @@ const MAX_CONVERSATIONS = 5;
 /** Sentinel for the "start a new conversation" row (never a real UUID). */
 const NEW_CONVERSATION = '__new__';
 
+/** Who the last share went to — prefilled the next time the dialog opens
+ *  without recipients. A per-viewer convenience: absent storage just means
+ *  an empty "To". */
+const LAST_PARTICIPANTS_KEY = 'flowpad.share.lastParticipants';
+
+function readLastParticipants(): ConversationParticipant[] {
+  try {
+    const raw = window.localStorage.getItem(LAST_PARTICIPANTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as ConversationParticipant[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberLastParticipants(participants: ConversationParticipant[]): void {
+  try {
+    window.localStorage.setItem(LAST_PARTICIPANTS_KEY, JSON.stringify(participants));
+  } catch {
+    /* storage unavailable: nothing to remember */
+  }
+}
+
 /** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
@@ -227,7 +250,8 @@ export function ShareToConversationDialog({
 
   useEffect(() => {
     if (!open) return;
-    setParticipants(initialParticipantsRef.current ?? []);
+    // No recipient given: share with whoever the last share went to.
+    setParticipants(initialParticipantsRef.current ?? readLastParticipants());
     setTitleInput('');
     setNote(defaultNoteRef.current ?? '');
     setFiles([]);
@@ -273,11 +297,18 @@ export function ShareToConversationDialog({
   // a manual toggle within one selection).
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
+  // Git is ON whenever the asset can travel by git (now, or after its one-click
+  // fix) — sharing a repo file is a git pointer by default — or the
+  // conversation already shares by git. The sender can still switch it off.
+  // Applied when the selection changes or the preflight first answers — never
+  // again after, so a sender's own "off" is not overridden by a refetch.
+  const gitEligibleRef = useRef(false);
+  gitEligibleRef.current = preflight.available || !!preflight.fix;
   useEffect(() => {
     if (!gitCapable) return;
     const conv = conversationsRef.current.find((c) => c.id === selected);
-    setGitSharing(selected === NEW_CONVERSATION ? false : (conv?.git_sharing_enabled ?? false));
-  }, [selected, gitCapable]);
+    setGitSharing(gitEligibleRef.current || (conv?.git_sharing_enabled ?? false));
+  }, [selected, gitCapable, preflight.answered]);
 
   // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
   // toggle stops the share entirely — we never silently downgrade to a copy.
@@ -485,6 +516,7 @@ export function ShareToConversationDialog({
             }
           }
         }
+        if (participants.length) rememberLastParticipants(participants);
         setSharedConversationId(convId);
         onShared?.(convId);
       }

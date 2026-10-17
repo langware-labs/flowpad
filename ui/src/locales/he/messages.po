@@ -6961,6 +6961,10 @@ msgstr "לא הצליח לפתוח כישור"
 msgid "Could not open the folder"
 msgstr ""
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Could not open the shared version"
+msgstr "לא ניתן היה לפתוח את הגרסה ששותפה"
+
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Could not open the sub-flow"
 msgstr "לא ניתן היה לפתוח את תת-הזרימה"
@@ -9343,6 +9347,7 @@ msgstr "הורד חבילה"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download failed"
 msgstr "ההורדה נכשלה"
 
@@ -23943,6 +23948,10 @@ msgstr "משותף"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Shared by every place"
 msgstr ""
+
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Shared by Git — click to open the version that was shared"
+msgstr "שותף דרך Git — לחץ כדי לפתוח את הגרסה ששותפה"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."

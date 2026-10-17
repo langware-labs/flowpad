@@ -70,6 +70,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
+import { useOpenGitShare } from './asset-review/use-open-git-share';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
 import type { ProcessCall, ReturnedValue } from '@sdk';
@@ -1048,6 +1049,7 @@ export function MessageEntityChip({
   const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { run: openGitShare } = useOpenGitShare(attachment, projectId);
    
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
@@ -1133,6 +1135,12 @@ export function MessageEntityChip({
       attachmentProjectId={projectId ?? null}
     />
   );
+  // A git share is a pointer that never touches the receiver's own checkout:
+  // one click installs AND opens it; a failure (said in a toast) opens the review.
+  const gitShare = attachment?.transfer_mode === 'git' && !handleFolderPull;
+  const onStagedClick =
+    handleFolderPull ??
+    (gitShare ? async () => void ((await openGitShare()) && setReviewOpen(true)) : () => setReviewOpen(true));
   if (state === 'staged') {
     return (
       <>
@@ -1140,7 +1148,8 @@ export function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
+            title={gitShare ? t`Shared by Git — click to open the version that was shared` : undefined}
+            onClick={() => void onStagedClick()}
           />
           {runButton}
         </span>
