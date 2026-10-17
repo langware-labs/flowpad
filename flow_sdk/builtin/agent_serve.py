@@ -579,8 +579,7 @@ async def _made_chat_source(driver, agent, deployment):
         driver.create_config(**{key: str(deployment.id)}),
         name=f"{agent.name or agent.id} chat",
         owner=agent.typeid,
-        answer_place=str(deployment.id),
-        account_key=f"deployment:{deployment.id}",
+        **_deployment_binding(deployment),
         status=SourceStatus.ACTIVE.value,
     )
     try:
@@ -591,6 +590,11 @@ async def _made_chat_source(driver, agent, deployment):
         if made is None:
             raise
         return made
+
+
+def _deployment_binding(deployment) -> dict[str, str]:
+    """The fields that tie a chat source to its placement: where it answers, and its account key."""
+    return {"answer_place": str(deployment.id), "account_key": f"deployment:{deployment.id}"}
 
 
 async def _adopt_chat_source(driver, agent, deployment):
@@ -616,8 +620,8 @@ async def _adopt_chat_source(driver, agent, deployment):
         return None
     source = candidates[0]
     source.config = {**source.config, key: str(deployment.id)}
-    source.answer_place = str(deployment.id)
-    source.account_key = f"deployment:{deployment.id}"
+    for name, value in _deployment_binding(deployment).items():
+        setattr(source, name, value)
     await source.save()
     return source
 
