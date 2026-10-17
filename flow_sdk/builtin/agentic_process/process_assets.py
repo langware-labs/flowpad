@@ -405,13 +405,17 @@ class ProcessAssets:
         Hook projection is a driver concern. Drivers predating this contract
         are harmless while no process hook is configured.
         """
-        instructions = await self._prepare_system_instruction_assets()
-        # A worker that reads skills from its own dot-dir under a mount cannot
-        # see a mounted folder that ships them the Claude way; the driver links
-        # them into the process's mounted assets dir, where it does look.
+        # Include CWD as well as context mounts: shared assets may have been
+        # authored for another harness. Project first, so even a skill-only
+        # process gets the assets mount when instruction layers are empty.
         link_skills = getattr(self.process.driver, "link_mounted_skills", None)
-        if link_skills is not None and instructions is not None:
-            link_skills(instructions.assets_dir, self.process.resolved_add_dirs)
+        if link_skills is not None:
+            directories = [*self.process.resolved_add_dirs]
+            if self.process.workdir:
+                directories.insert(0, self.process.workdir)
+            if link_skills(self._process_assets_path(), directories):
+                self.ensure_process_assets()
+        instructions = await self._prepare_system_instruction_assets()
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))
         if self.process.process_hook_events or supports_hooks:
