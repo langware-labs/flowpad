@@ -1577,7 +1577,9 @@ class DataSource(SetupSkippable, Entity):
     async def items_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
 
-        Body: ``{"limit"?}`` (default 20)."""
+        Body: ``{"limit"?}`` (default 20). Item bodies are 500-character previews;
+        ``body_truncated`` and ``full_body_length`` describe that preview, not storage.
+        GET each item's ``full_record_path`` for its complete stored body."""
         body = await self._body()
         return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
 
@@ -1591,7 +1593,15 @@ class DataSource(SetupSkippable, Entity):
             limit=max(limit, 0),
         )) or []
         fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
-        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
+        items = []
+        for row in rows:
+            body = str(getattr(row, "body", "") or "")
+            items.append({
+                **{field: getattr(row, field, None) for field in fields},
+                "body": body[:500], "body_truncated": len(body) > 500, "full_body_length": len(body),
+                "full_record_path": f"/api/v1/graph/source_item/{row.id}",
+            })
+        return items
 
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:

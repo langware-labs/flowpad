@@ -31,6 +31,7 @@ from flow_sdk.builtin import project_dependencies
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
 from tests.unit._project_names import unique_project_name
@@ -90,8 +91,8 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
     resp = await project.add_dependency_action(source=ctx)
     assert resp.status == "SUCCESS"
 
-    # Folder entity minted, deterministic id.
-    folder = await Folder.get_by_id(Folder.id_for_path(ctx))
+    # Folder entity minted and found by its origin natural key.
+    folder = await Folder.get_one({"origin_id": LocalOrigin(base=ctx).key()})
     assert folder is not None and folder.path == ctx
 
     # Linked privately (a per-machine cache) with the sidecar naming the dependency.
@@ -157,7 +158,7 @@ async def test_removing_a_dependency_unlinks_it(tmp_path):
     await project.remove_dependency(state.name)
     assert project.include_dirs == []
     assert project.context_of_type("folder", bucket="both") == []
-    folder_id = Folder.id_for_path(ctx)
+    folder_id = (await Folder.get_one({"origin_id": LocalOrigin(base=ctx).key()})).id
     assert project.get_context_entry_data((await Folder.get_by_id(folder_id)).typeid) is None
     assert "dependencies" not in json.loads((tmp_path / "ctx-proj" / "flow.json").read_text())
 

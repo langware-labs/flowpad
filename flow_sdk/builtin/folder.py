@@ -18,11 +18,9 @@ A Folder's LOCATION is an ``FSOrigin`` (the transportable source of truth):
 sender (the dir is local), and set on a receiver only after ``resolve_location``
 materializes the origin. It is the local view; ``origin`` is what travels.
 
-Identity: ``origin.key()`` for transportable (git) origins — byte-stable and
-machine-independent, so sender and receiver mint the SAME folder id and a shared
-context ref resolves. Local origins keep the legacy path-derived v5 id
-(``mint_uuid(canonical_posix_path(base))``), so existing local folders + their
-links are untouched (zero migration).
+Identity is a UUID; ``origin_id`` stores the origin's natural key for lookup.
+Legacy folders whose ids were UUID-shaped origin keys remain discoverable,
+so their existing links are untouched.
 """
 
 import logging
@@ -34,7 +32,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
 from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
 from flow_sdk.core import Entity, action
-from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
 
@@ -74,10 +72,10 @@ class Folder(Entity):
 
     @staticmethod
     def id_for_origin(origin: FSOrigin) -> str:
-        """Folder id = the origin's own key. Uniform across kinds: git →
-        machine-independent repo key (shared refs resolve); local →
-        ``local_origin_key`` == canonical path == ``id_for_path`` (byte-stable,
-        zero migration). No kind-branch — each origin owns its identity."""
+        """Legacy origin-derived handle; new folder identities come from mint_for_origin.
+
+        Only UUID-shaped handles were valid legacy entity ids.
+        """
         return origin.key()
 
     # ── Minting ──────────────────────────────────────────────────────────────
@@ -125,19 +123,22 @@ class Folder(Entity):
 
     @classmethod
     async def mint_for_origin(cls, origin: FSOrigin, *, local_path: Optional[str] = None) -> "Folder":
-        """Get-or-create the Folder for ``origin`` (idempotent, keyed by
-        ``id_for_origin``). ``local_path`` is the resolved local dir when known
-        (sender add-time); a bare received origin leaves it None until
-        ``resolve_location`` materializes it."""
-        folder_id = cls.id_for_origin(origin)
-        existing = await cls.get_by_id(folder_id)
+        """Find a folder by its origin handle, otherwise mint a UUID identity.
+
+        Legacy folders used UUID-shaped origin handles as ids; keep resolving
+        those rows without requiring every origin's natural key to be a UUID.
+        """
+        origin_key = origin.key()
+        existing = await cls.get_one({"origin_id": origin_key})
+        if existing is None and is_valid_entity_id(origin_key):
+            existing = await cls.get_by_id(origin_key)
         if existing is not None:
             return existing
         # ``path`` (local cache) is set when the caller knows the local dir
         # (sender add-time); a bare received origin leaves it None until
         # ``resolve_location`` materializes it.
         folder = cls(
-            id=folder_id,
+            origin_id=origin_key,
             origin=origin,
             path=local_path,
             name=cls.derive_name(origin, local_path),

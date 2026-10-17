@@ -495,6 +495,15 @@ class Deployment(Entity):
         return adopted
 
     @classmethod
+    def merge_hub_payload(cls, local: "Deployment", hub_payload: dict[str, Any]) -> dict[str, Any]:
+        merged = super().merge_hub_payload(local, hub_payload)
+        # Local node references stay private, including in share bundles. A cloud
+        # placement's address, however, is allocated and refreshed by the hub.
+        if local.target.provider != "local" and "origin" in hub_payload:
+            merged["origin"] = hub_payload["origin"]
+        return merged
+
+    @classmethod
     async def adopt_from_hub(cls, payload: Any, element: Optional[Entity] = None) -> Optional["Deployment"]:
         """Store a hub-created placement locally, AT THE HUB'S ID.
 
