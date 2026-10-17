@@ -7019,7 +7019,7 @@ msgstr "Could not open skill"
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
 
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Could not open the shared version"
 msgstr "Could not open the shared version"
 
@@ -9413,9 +9413,7 @@ msgstr "Download attachments"
 msgid "Download bundle"
 msgstr "Download bundle"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Download failed"
 msgstr "Download failed"
 
@@ -9433,7 +9431,6 @@ msgstr "Download message"
 msgid "Download sample CSV"
 msgstr "Download sample CSV"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "Downloaded"
@@ -11143,8 +11140,8 @@ msgid "Files & Directories"
 msgstr "Files & Directories"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Files not available"
-msgstr "Files not available"
+#~ msgid "Files not available"
+#~ msgstr "Files not available"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
