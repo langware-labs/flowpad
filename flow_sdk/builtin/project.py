@@ -1629,7 +1629,7 @@ class Project(SetupSkippable, Entity):
     async def publish_files_to_hub(self) -> HubRepoOrigin:
         """Put the project folder into this project's hub-hosted repository and make that
         the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        the hub's. Git ignore rules apply even when the folder is not a checkout."""
         from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
         from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
         from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
@@ -1637,8 +1637,6 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
         mount = Path(self.fs_storage_mount_path or "")
-        if not (mount / ".git").exists():
-            raise RuntimeError("Sharing through the hub repository needs the project folder to be a git checkout")
         repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")

@@ -615,7 +615,17 @@ async def _index_additional_dir(
         new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope=scope, read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
-        result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
+        # A scoped dependency may itself be an asset folder. Scope walkers
+        # discover children under mounts, so also seed that asset explicitly.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        roots = [new_root]
+        root_type = SchemaRegistry.type_for(p, placed_only=True)
+        info = SchemaRegistry.get(root_type) if root_type else None
+        if info is not None and not info.keyed_by_ref and info.claims(p) is None:
+            roots.append(FSRef(p, record_type=RecordType(root_type), parent=new_root,
+                               layout=info.layout_of(p, verify=True)))
+        result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
     except Exception:

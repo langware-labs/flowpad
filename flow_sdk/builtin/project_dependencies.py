@@ -288,8 +288,9 @@ async def _ref(
     from flow_sdk.dependencies.resolve import NotResolved, resolve_ref  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
-    async def fetch_project(project_id: str) -> None:
-        found = await _hub(FlowDependency(name=dep.name, source=f"hub:{project_id}"), project_id, fetch=True, update=False, cloned=False)
+    async def fetch_project(project_id: str, path: str) -> None:
+        # Index the published folder without activating sibling agent/channel definitions.
+        found = await _hub(FlowDependency(name=dep.name, source=f"hub:{project_id}", path=path), project_id, fetch=True, update=False, cloned=False)
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
 
         await _index_additional_dir(found.path, read_only=True, project_id=None)
@@ -712,6 +713,13 @@ async def _resolve(
     added = await _reconcile(project, desired)
     if index:
         await _index(project, [desired[tid] for tid in added])
+        if added and any(state.state != "ready" for state in states):
+            # References walked before indexing may now exist in the new roots.
+            # Complete their links and states locally; never fetch or index twice.
+            return await _resolve(
+                project, root, fetch=False, install=wanted_optionals, update=False, index=False,
+                asset=asset, declarations=declarations, declarers=declarers, own_entries=own_entries,
+            )
     return states
 
 
