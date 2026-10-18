@@ -16,6 +16,7 @@ prompt attachment (no body bundle) so the hub fans them out immediately.
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -40,7 +41,12 @@ PROMPTS_PER_SESSION = 10
 
 @pytest.mark.asyncio
 async def test_twenty_prompts_two_sessions_one_host(
-    hub_base_url, hub_login_payload, isolated_hub_keyring, monkeypatch, caplog, tmp_path,
+    hub_base_url,
+    hub_login_payload,
+    isolated_hub_keyring,
+    monkeypatch,
+    caplog,
+    tmp_path,
 ) -> None:
     from flow_sdk.app.actions import execute_prompt as ep
     from flow_sdk.builtin.conversation import Conversation
@@ -59,7 +65,7 @@ async def test_twenty_prompts_two_sessions_one_host(
         prompts_seen.append(text)
         await asyncio.sleep(0.005)
 
-    async def fake_capture(ap):
+    async def fake_capture(ap, on_line=None):
         last = prompts_seen[-1] if prompts_seen else ""
         return last.split("\n", 1)[0]  # echo the prompt's first line
 
@@ -71,13 +77,20 @@ async def test_twenty_prompts_two_sessions_one_host(
     host_root.mkdir()
     local_project = Project(name="live-session-stress-host", fs_storage_mount_path=str(host_root))
     await local_project.save(notify=False)
-    conv = Conversation(title=f"live-session-stress-{int(time.time())}-{uuid.uuid4().hex[:6]}",
-                        project_id=local_project.id)
+    conv = Conversation(
+        title=f"live-session-stress-{int(time.time())}-{uuid.uuid4().hex[:6]}", project_id=local_project.id
+    )
     await conv.share(recipients=[bob.email])
     assert conv.remote is True
     await conv.save(notify=False)
-    await assert_auto_assigned(hub_base_url, bob.token, entity_type="conversation", entity_id=conv.id,
-                               user_id=bob.user_id, expected_role="member")
+    await assert_auto_assigned(
+        hub_base_url,
+        bob.token,
+        entity_type="conversation",
+        entity_id=conv.id,
+        user_id=bob.user_id,
+        expected_role="member",
+    )
     alice_key = hub_login_payload.get("api_key") or hub_login_payload.get("token")
     headers_a = {"Authorization": f"Bearer {alice_key}", "Content-Type": "application/json"}
     async with httpx.AsyncClient(timeout=5.0) as h:
@@ -87,8 +100,9 @@ async def test_twenty_prompts_two_sessions_one_host(
             r = await h.post(f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join", headers=hdrs, json={})
             assert r.status_code < 300, r.text
 
-    grant = ContactPermission(contact_user_id=bob.user_id, project_id=None,
-                              allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value])
+    grant = ContactPermission(
+        contact_user_id=bob.user_id, project_id=None, allowed_actions=[PermissionAction.AUTO_APPROVE_SESSION.value]
+    )
     await grant.save(notify=False)
 
     # The server installs the bridge's inbound handler at startup; in-process
