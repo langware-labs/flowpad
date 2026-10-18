@@ -29,12 +29,12 @@ def built() -> list[dict]:
     return mod.build({})
 
 
-def test_two_hundred_rows_each_a_valid_navigator_example(built):
+def test_two_hundred_rows_each_a_valid_navigator_row(built):
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.schema.data_spec import declared
 
     declared.ensure_shipped()
-    row_type = SchemaRegistry.kind_type("navigator.dataset").example_type()
+    row_type = SchemaRegistry.kind_type("navigator.dataset").row_type()
     assert len(built) == 200 and sorted(r["data"]["n"] for r in built) == list(range(1, 201))
     for r in built:
         row_type.model_validate(r)

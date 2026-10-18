@@ -18,7 +18,7 @@ def kind_form(kind: str) -> dict | None:
     if not isinstance(shape, type) or not hasattr(shape, "model_fields"):
         return None
     if issubclass(shape, DatasetSpec):
-        row = shape.example_type()
+        row = shape.row_type()
         slots = {"input": row.input_type(), "output": row.output_type(), "context": row.context_type()}
         return {
             "kind": kind,

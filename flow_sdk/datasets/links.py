@@ -39,13 +39,13 @@ def row_kind(spec: Any) -> str:
         from flow_sdk.schema.data_spec.spec import spec_tag  # noqa: PLC0415
 
         try:
-            shape = DatasetSpec.parse(spec).example_type().input_type()
+            shape = DatasetSpec.parse(spec).row_type().input_type()
         except ValueError:
             return ""
         return spec_tag(shape) if isinstance(shape, type) else ""
     if isinstance(spec, dict):
-        examples = spec.get("examples")
-        first = examples[0] if isinstance(examples, list) and examples else examples
+        declared = spec.get("rows")
+        first = declared[0] if isinstance(declared, list) and declared else declared
         if isinstance(first, dict) and isinstance(first.get("input"), str):
             return first["input"].lstrip("?")
     return ""
@@ -156,12 +156,12 @@ def _is_scalar_form(form: Any) -> bool:
 
 
 def _row_ids(dataset_folder: Path) -> dict[str, str]:
-    """``{row id: key}`` for one dataset, reading only each row's ``example.json``."""
+    """``{row id: key}`` for one dataset, reading only each row's ``row.json``."""
     from flow_sdk.schema.data_spec.io.identity import FolderCapsule  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.layout import _example_dirs, row_id  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.layout import _row_dirs, row_id  # noqa: PLC0415
 
     dataset_id = FolderCapsule().read(dataset_folder) or ""
-    return {row_id(ex_dir, dataset_id): ex_dir.name for ex_dir in _example_dirs(dataset_folder)}
+    return {row_id(ex_dir, dataset_id): ex_dir.name for ex_dir in _row_dirs(dataset_folder)}
 
 
 def _row_index(kind: str, owner: Path | str, cache: dict) -> Optional[dict[str, tuple[Path, str]]]:
@@ -288,8 +288,8 @@ def _spec_forms(spec: Any) -> Optional[list]:
             spec = getattr(DatasetSpec.parse(spec), "__authoring__", None)
         except ValueError:
             return None
-    examples = spec.get("examples") if isinstance(spec, dict) else None
-    rows = examples if isinstance(examples, list) else [examples]
+    declared = spec.get("rows") if isinstance(spec, dict) else None
+    rows = declared if isinstance(declared, list) else [declared]
     if not rows or not all(isinstance(row, dict) for row in rows):
         return None
     return [form for row in rows for slot, form in row.items() if slot in SLOTS]

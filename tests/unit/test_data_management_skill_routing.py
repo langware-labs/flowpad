@@ -151,13 +151,13 @@ def test_probe_copy_renames_every_project_namespace_whichever_call_copied_it(tmp
     schema.mkdir(parents=True)
     (schema / "data_schema.json").write_text('{"type": "data_schema", "ns": "acme"}')
     ds = tmp_path / "real/agentic-assets/dataset/leads"
-    (ds / "examples/dana").mkdir(parents=True)
-    (ds / "dataset.json").write_text('{"id": "1", "metadata": {"spec": {"examples": [{"input": "--acme--.crm.lead"}]}}}')
+    (ds / "rows/dana").mkdir(parents=True)
+    (ds / "dataset.json").write_text('{"id": "1", "metadata": {"spec": {"rows": [{"input": "--acme--.crm.lead"}]}}}')
     dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(schema)], no_rows=False))
     out = dm_ctl.cmd_probe_copy(SimpleNamespace(root=str(root), src=[str(ds)], no_rows=True))   # a SECOND call
     manifest = json.loads((root / "agentic-assets/dataset/leads/dataset.json").read_text())
-    assert manifest["metadata"]["spec"]["examples"][0]["input"] == "--dmprobeabc--.crm.lead"
-    assert out["renamed_namespaces"] == ["acme"] and not (root / "agentic-assets/dataset/leads/examples").exists()
+    assert manifest["metadata"]["spec"]["rows"][0]["input"] == "--dmprobeabc--.crm.lead"
+    assert out["renamed_namespaces"] == ["acme"] and not (root / "agentic-assets/dataset/leads/rows").exists()
 
 
 def test_probe_drop_refuses_a_probe_whose_assets_carry_ids(tmp_path, monkeypatch):

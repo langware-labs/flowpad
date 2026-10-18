@@ -38,6 +38,8 @@ async def run_process_call(call: ProcessCall, *, workdir: Path) -> ReturnedValue
             workdir=workdir,
             timeout_seconds=exe.timeout(),
             remember_prompt=False,
+            # The sender's trace: the agent's own calls join that run, under this call.
+            context_data={"invocation_id": call.invocation_id or call.call_id, "call_id": call.call_id},
         )
         if not said.ok:
             return said

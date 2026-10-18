@@ -14,7 +14,7 @@ The source is connected and streaming (`modes/connect.md` passed its gates).
 Now the person says what they want *out of each item*. This mode turns that
 into a dataset bound to the source — rows are the item envelope
 (`ingest.source_item`), the output is the shape they chose — with at least one
-labelled example, so the rows are ready for inference, annotation and training.
+labelled row, so the rows are ready for inference, annotation and training.
 
 `DC` below means `python3 <this skill>/scripts/dataset_ctl.py`.
 
@@ -55,18 +55,18 @@ it must show `input: "ingest.source_item"` and the chosen output.
 
 **Passes when** `dropped` is empty and `spec` matches what the person chose.
 
-## Gate 4 — example
+## Gate 4 — row
 
 1. `DC promote <dataset> <item id> [<item id> …]` for the items shown in gate 1.
 2. Ask the person for the gold answer of ONE item, in the shape — or, if they
    said "you fill it", label it and say that you did.
-3. `DC annotate <dataset> <example id> '{<gold>}'`. A `schema` in the error
+3. `DC annotate <dataset> <row id> '{<gold>}'`. A `schema` in the error
    means the label does not fit the shape — show the person the schema, do not
    change the shape silently.
-4. `DC snapshot <dataset>` — `num_examples ≥ 1` and `num_annotated ≥ 1` is the
+4. `DC snapshot <dataset>` — `num_rows ≥ 1` and `num_annotated ≥ 1` is the
    evidence. Report both numbers.
 
-**Passes when** the snapshot shows ≥1 example and ≥1 label.
+**Passes when** the snapshot shows ≥1 row and ≥1 label.
 
 ## Gate 5 — view
 

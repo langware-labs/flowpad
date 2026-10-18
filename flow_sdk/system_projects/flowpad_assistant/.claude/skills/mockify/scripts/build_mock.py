@@ -39,6 +39,7 @@ def main() -> None:
     ap.add_argument("--template", action="append", default=[])
     ap.add_argument("--states", required=True)
     ap.add_argument("--key", required=True, help="the mock row key in the mocks dataset")
+    ap.add_argument("--project", required=True, help="the mock project id (mock_project.py ensure)")
     ap.add_argument("--origin", default="")
     ap.add_argument("--html-attrs", default='lang="en" class="dark"')
     ap.add_argument("--head", default="")
@@ -66,7 +67,7 @@ def main() -> None:
 <body>
 {body}
 {''.join(templates)}
-<script>window.MOCKIFY = {{key: {json.dumps(a.key)}}}; window.MOCK_BAR_AT = "bottom";</script>
+<script>window.MOCKIFY = {{key: {json.dumps(a.key)}, project: {json.dumps(a.project)}}}; window.MOCK_BAR_AT = "bottom";</script>
 <script>{states}</script>
 <script>{bar}</script>
 </body></html>"""

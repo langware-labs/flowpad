@@ -630,7 +630,7 @@ def _context_for(run: _Run, found: Resolved, child: Any):
     folder = folder or run.workdir
     if run.context is not None:
         return replace(run.context, asset_folder=folder, project=found.project or run.context.project,
-                       parent=child, shipped=found.trusted, call_id=str(mint_uuid()))
+                       parent=child, shipped=found.trusted)
     from flow_sdk.core.compute_op.context import CallContext
 
     return CallContext(asset_folder=folder, workdir=run.workdir, parent=child,

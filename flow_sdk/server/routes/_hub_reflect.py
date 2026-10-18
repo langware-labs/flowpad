@@ -234,6 +234,51 @@ async def proxy_to_hub(request: Request) -> Response:
         return Response(exc.reason.encode(), status_code=status, media_type="text/plain")
 
 
+async def read_hub_document(request: Request, entity: Entity, path: str) -> Response:
+    """Adapt the desktop document view to Hub's existing authoritative downloads."""
+    from pathlib import PurePosixPath
+
+    from flow_sdk.assets.document import read_document_bytes
+    from flow_sdk.assets.entity_document import read_entity_document_bytes
+    from flow_sdk.assets.serialization import entity_body_path
+    from flow_sdk.cloud_client import CloudProxy
+    from flow_sdk.cloud_client.transport.hub_http import hub_graph_url
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    async def download(relative: str):
+        response = await CloudProxy()(request, hub_graph_url(entity.type, entity.id, "fs", f"download/{relative}"))
+        if response.status_code != 200:
+            return response, b""
+        try:
+            raw = b"".join([chunk async for chunk in response.body_iterator])
+        finally:
+            if response.background:
+                await response.background()
+        return response, raw
+
+    response, raw = await download(path)
+    if response.status_code != 200:
+        return response
+    info = SchemaRegistry.get(entity.type)
+    body_path = path
+    if info is not None and info.is_entity_document and PurePosixPath(path).name == info.shape.main:
+        body = b""
+        if info.body_file is not None:
+            body_path = str(entity_body_path(PurePosixPath(path).parent, info.body_file))
+            body_response, body = await download(body_path)
+            if body_response.status_code == 404:
+                if body_response.background:
+                    await body_response.background()
+            elif body_response.status_code != 200:
+                return body_response
+        document = read_entity_document_bytes(raw, body, info)
+    else:
+        document = read_document_bytes(raw)
+    data = document.model_dump(mode="json")
+    data["body_ref"] = {"path": body_path, "type_id": str(entity.typeid), "ref_type": "text", "read_only": True}
+    return JSONResponse({"status": "OK", "data": data})
+
+
 async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
     """Mirror an entity-VFS upload to the hub, then let the local write proceed.
 

@@ -348,3 +348,4 @@ artifacts/
 
 # The architecture deck lives here locally; it is not part of the code.
 agentic-assets/deck/flowpad-architecture/
+.flow/dataset-rows.lock

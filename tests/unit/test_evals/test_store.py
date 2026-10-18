@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.evals import store
-from flow_sdk.schema.data_spec.eval_spec import EvalRun, ExampleEval
+from flow_sdk.schema.data_spec.eval_spec import EvalRun, RowEval
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -15,7 +15,7 @@ def _run(folder, run_id, started):
     d.mkdir(parents=True)
     run = EvalRun(run_id=run_id, dataset_id="d", dataset_spec="s", eval_name="e", eval_digest="x", started_at=started)
     (d / "run.json").write_text(run.model_dump_json())
-    (d / "examples.jsonl").write_text(ExampleEval(example_id="1", verdict="correct").model_dump_json() + "\n")
+    (d / "rows.jsonl").write_text(RowEval(row_id="1", verdict="correct").model_dump_json() + "\n")
 
 
 def test_runs_are_newest_first_and_a_broken_one_is_skipped(tmp_path):

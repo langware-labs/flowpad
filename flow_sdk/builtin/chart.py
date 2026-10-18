@@ -31,4 +31,6 @@ class Chart(Entity):
     format: str = APIField(default=DEFAULT_CHART_FORMAT)
     # The agentic process that builds the chart (CHART.md ``session``); feedback goes to it.
     session: Optional[str] = APIField(default=None)
+    #: What indexing found that will not render as authored -- an icon tag no pack resolves.
+    problems: list[str] = APIField(default_factory=list)
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)

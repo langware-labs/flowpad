@@ -39,7 +39,7 @@ class DatasetManifestSpec(FrontMatter):
         try:
             if isinstance(raw, str):
                 # A kind NAME is checked for its grammar only. Whether it resolves is a question for
-                # whoever reads the rows typed (``Dataset._example_type``): the walk reads a dataset
+                # whoever reads the rows typed (``Dataset._dataset_type``): the walk reads a dataset
                 # before the data schemas nested in it, so a name may not resolve YET -- and a name
                 # that does not resolve yet is not malformed.
                 normalize_tag(raw)

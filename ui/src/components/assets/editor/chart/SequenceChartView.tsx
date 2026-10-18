@@ -3,12 +3,15 @@ import { RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Chart, Project, QueryRequest, TypeId, type FSRef } from '@sdk';
+import { FlowIcon } from '@sdk/react/FlowIcon';
 import { Button } from '@src/components/ui/button';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from '@src/notifications';
 import { writeChartMermaid, autoNote } from './chartDoc';
 import { ChartFeedbackToolbar } from './ChartFeedbackToolbar';
+import { ChartHeading } from './ChartHeading';
 import {
   parseSequence,
   sequenceToMermaid,
@@ -66,6 +69,7 @@ const STYLES = `
 .cseq .p rect.head { fill: var(--surface-1); stroke: var(--hairline-strong); stroke-width: 1; }
 .cseq .p .name { fill: var(--text-primary); font-size: 13px; font-weight: 600; text-anchor: middle; }
 .cseq .p .meta { fill: var(--text-muted); font-size: 11px; text-anchor: middle; }
+.cseq .p .name.start, .cseq .p .meta.start { text-anchor: start; }
 .cseq .p .life { stroke: var(--hairline-strong); stroke-width: 1; }
 .cseq .p .act { fill: var(--surface-2); stroke: var(--hairline-strong); stroke-width: 1; }
 .cseq .m .line { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -139,11 +143,14 @@ interface Lane {
   p: SequenceParticipant;
   x: number;
   lines: string[];
+  /** Where the card's text sits, and how many characters of name / meta fit before the ellipsis. */
+  text: { x: number; anchor: 'start' | 'middle'; max: [number, number] };
   color: string;
   info: Info;
 }
 
-const first = (label: string) => label.split('\n')[0];
+/** A card line that fits its card: longer text ends in an ellipsis (the full text is in the tooltip). */
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** The diagram's geometry — the same constants and rules as the chartit template. */
 export function layoutSequence(value: SequenceValue) {
@@ -155,16 +162,23 @@ export function layoutSequence(value: SequenceValue) {
     color[p.id] = `var(${SLOTS[i] ?? '--s-other'})`;
     idx[p.id] = i;
   });
-  const COL = P.length > 5 ? 205 : 240;
+  const COL = P.length > 5 ? 214 : 240;
   const MARGIN = 40;
-  const HEAD_W = P.length > 5 ? 164 : 176;
+  const HEAD_W = P.length > 5 ? 184 : 196;
   const HEAD_H = 54;
+  // Card geometry, from the card's left edge: colour dot, icon, then the text column.
+  const DOT_X = 16;
+  const ICON_X = 28;
+  const ICON_SIZE = 20;
+  const TEXT_X = 54;
+  const NAME_CHAR_W = 7.6; // 13px name
+  const META_CHAR_W = 6.4; // 11px meta
   const TOP = 20;
   const ROW = 46;
   const SELF = 58;
   const END = 28;
   const cx = (id: string) => MARGIN + HEAD_W / 2 + idx[id] * COL;
-  const name = (id: string) => first(P[idx[id]].label);
+  const name = (id: string) => P[idx[id]].label;
 
   const items: Item[] = [];
   let y = TOP + HEAD_H + 34;
@@ -265,26 +279,52 @@ export function layoutSequence(value: SequenceValue) {
     y += self ? SELF + 10 : ROW;
   });
   const bottom = y + END;
-  const lanes: Lane[] = P.map((p) => ({
-    p,
-    x: cx(p.id),
-    lines: p.label.split('\n'),
-    color: color[p.id],
-    info: {
-      n: '',
-      label: p.label.replace('\n', ' '),
-      from: '',
-      to: '',
-      self: false,
+  const lanes: Lane[] = P.map((p) => {
+    const x = cx(p.id);
+    const lines = [p.label, p.sublabel].filter(Boolean) as string[];
+    const room = p.icon ? HEAD_W - TEXT_X - 10 : HEAD_W - 40;
+    return {
+      p,
+      x,
+      lines,
+      text: {
+        x: p.icon ? x - HEAD_W / 2 + TEXT_X : x + 6,
+        anchor: p.icon ? 'start' : 'middle',
+        max: [Math.floor(room / NAME_CHAR_W), Math.floor(room / META_CHAR_W)],
+      },
       color: color[p.id],
-      note: p.note,
-      participant: true,
-    },
-  }));
+      info: {
+        n: '',
+        label: lines.join(' · '),
+        from: '',
+        to: '',
+        self: false,
+        color: color[p.id],
+        note: p.note,
+        participant: true,
+      },
+    };
+  });
   const width = MARGIN * 2 + HEAD_W + Math.max(0, P.length - 1) * COL + 40;
   const laneOf = new Map(lanes.map((l) => [l.p.id, l]));
   const itemOf = new Map(items.map((i) => [i.target, i]));
-  return { lanes, items, laneOf, itemOf, width, height: bottom + 8, bottom, TOP, HEAD_W, HEAD_H, color, idx };
+  return {
+    lanes,
+    items,
+    laneOf,
+    itemOf,
+    width,
+    height: bottom + 8,
+    bottom,
+    TOP,
+    HEAD_W,
+    HEAD_H,
+    DOT_X,
+    ICON_X,
+    ICON_SIZE,
+    color,
+    idx,
+  };
 }
 
 /** Where the tooltip sits for a pointer at (x, y). */
@@ -382,13 +422,22 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
         const found = await Chart.query(
           new QueryRequest({ type: Chart.type, query: { match: { name: ref } }, scope, name: `chart-subflow-${ref}` }),
         );
-        const sameProject = found.filter((c) => !chart?.scope || c.scope === chart.scope);
-        const next = sameProject[0] ?? found[0];
+        // A name can repeat across folders: the chart beside this one wins.
+        const parentOf = (p?: string) => (p ?? '').replace(/\/+$/, '').replace(/\/[^/]*$/, '');
+        const here = parentOf(fsRef.path);
+        const next = found.find((c) => here && parentOf(c.asset_ref) === here) ?? found[0];
         if (!next) {
           notify.error({ title: t`No chart named “${ref}” in this project` });
           return;
         }
-        navigation.openDock(next.dockPointer);
+        // The same editor pointer a Charts tree row opens, kept on the project route so the
+        // project tree (the chart viewer) stays and its selection follows.
+        if (!next.asset_ref) {
+          navigation.openDock(next.dockPointer);
+          return;
+        }
+        const editor = DockPointer.forAssetEditor(Chart.type, next.asset_ref);
+        navigation.openDock(projectId ? DockPointer.rebaseAssetsOntoProject(editor, projectId) : editor);
       } catch (err) {
         notify.error({
           title: t`Could not open the sub-flow`,
@@ -396,7 +445,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
         });
       }
     },
-    [chart, navigation, projectId, t],
+    [fsRef, navigation, projectId, t],
   );
 
   const pick = useCallback((id: string) => {
@@ -421,7 +470,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
     );
   }
 
-  const { lanes, items, width, height, bottom, TOP, HEAD_W, HEAD_H } = layout;
+  const { lanes, items, width, height, bottom, TOP, HEAD_W, HEAD_H, DOT_X, ICON_X, ICON_SIZE } = layout;
   const tokens = resolvedTheme === 'dark' ? DARK : LIGHT;
   const moveTip = (target: string, info: Info, x: number, y: number) => {
     tipPos.current = { x, y };
@@ -450,7 +499,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
       fn();
     }
   };
-  const nameOf = (id: string) => first(layout.laneOf.get(id)?.p.label ?? id);
+  const nameOf = (id: string) => layout.laneOf.get(id)?.p.label ?? id;
   const colorOf = (id: string) => layout.color[id] ?? 'var(--s-other)';
 
   return (
@@ -483,9 +532,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
           <div className="mx-auto max-w-[1640px] px-4 pb-28 pt-5">
             <header className="mb-4 flex flex-wrap items-end gap-4">
               <div className="min-w-[240px] flex-1">
-                <h1 className="m-0 text-xl font-semibold" data-testid="chart-title">
-                  {value.title || chart?.name || folderName}
-                </h1>
+                <ChartHeading title={value.title || chart?.name || folderName} description={chart?.description} />
                 <p className="mt-1 text-[13px]" style={{ color: 'var(--text-secondary)' }}>
                   <Trans>
                     {value.participants.length} participants · {value.messages.length} messages
@@ -531,7 +578,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                   ref={svgRef}
                   xmlns="http://www.w3.org/2000/svg"
                   role="img"
-                  className={`mx-auto block${hot ? ' focusing' : ''}`}
+                  className={`mx-auto block${hot ? 'focusing' : ''}`}
                   width={width}
                   height={height}
                   viewBox={`0 0 ${width} ${height}`}
@@ -584,13 +631,32 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                             height={HEAD_H}
                             rx={10}
                           />
-                          <circle cx={lane.x - HEAD_W / 2 + 16} cy={TOP + HEAD_H / 2} r={5} fill={lane.color} />
-                          <text className="name" x={lane.x + 6} y={base}>
-                            {lane.lines[0]}
+                          <circle cx={lane.x - HEAD_W / 2 + DOT_X} cy={TOP + HEAD_H / 2} r={5} fill={lane.color} />
+                          {lane.p.icon && (
+                            // The participant's own mark (an IconSpec tag); identity still rides the dot.
+                            <foreignObject
+                              x={lane.x - HEAD_W / 2 + ICON_X}
+                              y={TOP + (HEAD_H - ICON_SIZE) / 2}
+                              width={ICON_SIZE}
+                              height={ICON_SIZE}
+                            >
+                              <FlowIcon icon={lane.p.icon} size={ICON_SIZE} title={lane.p.label} />
+                            </foreignObject>
+                          )}
+                          <text
+                            className={lane.text.anchor === 'start' ? 'name start' : 'name'}
+                            x={lane.text.x}
+                            y={base}
+                          >
+                            {clip(lane.lines[0], lane.text.max[0])}
                           </text>
                           {lane.lines[1] && (
-                            <text className="meta" x={lane.x + 6} y={base + 15}>
-                              {lane.lines[1]}
+                            <text
+                              className={lane.text.anchor === 'start' ? 'meta start' : 'meta'}
+                              x={lane.text.x}
+                              y={base + 15}
+                            >
+                              {clip(lane.lines[1], lane.text.max[1])}
                             </text>
                           )}
                           <rect className="act" x={lane.x - 4} y={bottom - 6} width={8} height={6} rx={2} />
@@ -662,7 +728,7 @@ export function SequenceChartView({ fsRef, chart, session, projectId, actions }:
                       return (
                         <g
                           key={item.key}
-                          className={`m${item.reply ? 'reply' : ''}${markClass(item.target)}`}
+                          className={`m${item.reply ? ' reply' : ''}${markClass(item.target)}`}
                           aria-label={`${item.n}. ${item.label}, from ${item.info.from} to ${item.info.to}`}
                           data-testid="chart-message"
                           {...common}

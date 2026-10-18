@@ -100,3 +100,52 @@ async def test_a_project_folder_is_published_as_git_sees_it_and_again_after_the_
     assert not (author / "secret.env").exists()
     # The project's own files replaced the repository's: what it does not hold is gone.
     assert not (author / "report.html").exists()
+
+
+async def test_non_git_project_publish_carries_agent_context_not_secrets(tmp_path, upstream):
+    project = tmp_path / "plain"
+    included = ["flow.json", ".agents/skills/check/SKILL.md", "docs/policy.md", "agentic-assets/mcp/tool/mcp.json", "agentic-assets/data_source/wa/data_source.json"]
+    excluded = [".env.local", ".flow/runtime.json", "node_modules/pkg/file", "private.txt", "nested/hidden.txt"]
+    for rel in [*included, *excluded, ".gitignore", "nested/.gitignore"]:
+        path = project / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("private.txt\n" if rel == ".gitignore" else "hidden.txt\n" if rel == "nested/.gitignore" else "fixture")
+    (project / "env-link").symlink_to(".env.local")
+    mirror = HubRepoMirror(root=tmp_path / "mirror", clone_url=upstream[0].as_uri(), branch="main", token="t")
+    await sync_project_with_hub(mirror=mirror, checkout=project, author=GitAuthor(name="t", email="t@t"), project_typeid="project-1")
+    assert all((mirror.root / rel).is_file() for rel in included)
+    assert all(not (mirror.root / rel).exists() for rel in excluded)
+    assert not (project / ".git").exists()
+    assert (mirror.root / "env-link").is_symlink()
+    assert not (mirror.root / "env-link").exists(), "publishing must not dereference a secret symlink"
+
+
+async def test_project_publish_preserves_declared_mcp_identity(tmp_path, upstream):
+    import json
+
+    from flow_sdk.schema.data_spec.io.identity import FolderCapsule, ensure_id
+
+    project = tmp_path / "portable"
+    server = project / "agentic-assets/mcp/calculator"
+    agent = project / "agentic-assets/agent/travel"
+    server.mkdir(parents=True)
+    agent.mkdir(parents=True)
+    server_id = ensure_id(server)
+    (server / "mcp.json").write_text(json.dumps({"name": "calculator", "command": "fastmcp", "args": ["run"], "entrypoint": "server.py"}))
+    (server / "server.py").write_text("# shared server\n")
+    (agent / "agent.json").write_text(json.dumps({"name": "travel", "mcp_servers": [f"mcp-{server_id}"]}))
+    excluded = [".flow/runtime.json", "agentic-assets/mcp/calculator/.flow/capsules/runtime.json",
+                ".flow/runtime/.flow/capsules/identity.json"]
+    for rel in excluded:
+        path = project / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("private runtime")
+    mirror = HubRepoMirror(root=tmp_path / "mirror", clone_url=upstream[0].as_uri(), branch="main", token="t")
+    await sync_project_with_hub(mirror=mirror, checkout=project, author=GitAuthor(name="t", email="t@t"), project_typeid="project-1")
+    received = tmp_path / "received"
+    _git(tmp_path, "clone", "-q", upstream[0].as_uri(), str(received))
+    received_id = FolderCapsule().read(received / server.relative_to(project))
+    declaration = json.loads((received / agent.relative_to(project) / "agent.json").read_text())["mcp_servers"]
+    assert received_id == server_id, "publishing must preserve the ID the agent's authored reference names"
+    assert declaration == [f"mcp-{received_id}"]
+    assert all(not (received / rel).exists() for rel in excluded)

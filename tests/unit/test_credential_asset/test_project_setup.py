@@ -286,7 +286,7 @@ async def test_a_typed_key_is_stored_never_printed_and_a_rerun_skips_it(project,
     assert code == 0, out.out
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN, "declared from its template, value in the project"
     assert TOKEN not in out.out + out.err, "a value is never printed"
-    assert cli["asked"] == [(cli["asked"][0][0], True)] and "Telegram" in cli["asked"][0][0]
+    assert cli["asked"] == [(cli["asked"][0][0], True)] and cli["asked"][0][0].startswith("Telegram bot: Bot token\n")
     assert "Bot token: answered" in out.out and "✓  Store Telegram bot: done" in out.out
     assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the value travels as env, never argv"
 

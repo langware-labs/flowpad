@@ -41,7 +41,7 @@ Propose two or three output shapes drawn from the sample (gate 2 of `define`),
 let the person pick or edit one, and write what they chose — never invent the
 final shape alone. Then create the dataset bound to the source, promote the
 sampled items, and get ONE gold label written (gates 3–4). Report
-`num_examples` and `num_annotated` from the snapshot, never from what you sent.
+`num_rows` and `num_annotated` from the snapshot, never from what you sent.
 
 Present the result with the source's editor:
 

@@ -221,3 +221,8 @@ def test_two_processes_with_one_command_are_told_apart_by_the_ports_they_declare
     assert of_app([page], Path(APP), command, [command], theirs=[3300]) == []
     assert of_app([page, api], Path(APP), command, [command], theirs=[3300]) == [api]
     assert of_app([page, api], Path(APP), command, [command], theirs=[8090]) == [page]
+
+
+def test_an_old_page_command_is_not_a_different_service_in_the_same_folder():
+    old_page = here(50211, command="node old-page.js --port 50211")
+    assert of_app([old_page], Path(APP), "bash run-emulators.sh", ["bash run-page.sh {port}"]) == []

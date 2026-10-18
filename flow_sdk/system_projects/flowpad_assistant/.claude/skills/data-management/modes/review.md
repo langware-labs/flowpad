@@ -34,7 +34,7 @@ ground rule 1 binds section 4. C1 and C2 then take their STATIC proof, and say s
 | --- | --- | --- |
 | C1 | Every kind applies: `flow schema apply <project>/agentic-assets/data_schema` exits 0, every `status: ok`. Static: every `data_schema.json` uses the shape forms of `references/shape-forms.md` and every rule path walks link fields | the command's output; or the files, marked "static" |
 | C2 | Every row the project holds fits: `DM ds-validate <ds>` → `problems: []` for every dataset. Static: read three rows per tracked dataset against their schema | the output per dataset; or the rows, marked "static" |
-| C3 | No code writes a dataset's files, computes a row id, or copies the key into the row | grep the code for `examples/`, `example.json`, `uuid5`, `data.key` |
+| C3 | No code writes a dataset's files, computes a row id, or copies the key into the row | grep the code for `rows/`, `row.json`, `uuid5`, `data.key` |
 | C4 | Datasets are found by kind (`Dataset.forKind` / `for_kind` / `DM ds-find`), never by a folder name or an id kept in code. (A `mirror.dataset` in `data_source.json` IS a folder name — that is its form) | the calls |
 | C5 | Links are fields typed by the target kind holding `<kind>.id.<uuid>`; no `{type, key}` stored; nothing in git links to rows kept out of git | the schemas; a row read back |
 | C6 | Every rule of the form "this link names the same row as that one" is a schema `rules` entry; other cross-row rules are written in the kinds' `description.md` and checked in every writer | the schemas; the writers |

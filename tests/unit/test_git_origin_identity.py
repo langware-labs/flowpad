@@ -42,3 +42,19 @@ def test_parse_unknown_host_uses_hostname_as_provider():
 @pytest.mark.parametrize("url", ["", "   ", "not-a-url", "https://github.com/"])
 def test_parse_rejects_unusable(url):
     assert parse_git_origin_url(url) is None
+
+
+def test_a_self_hosted_remote_keeps_its_scheme_and_port():
+    """A git daemon / on-prem server is reached by its own scheme and port:
+    the clone URL rebuilds exactly, never rewritten to https on port 443."""
+    from flow_sdk.utils.git_identity import git_origin_clone_url, parse_git_origin_url
+
+    for url, expect in [
+        ("git://localhost:9418/spora/sapora-streams.git", ("git://localhost:9418", "spora", "sapora-streams")),
+        ("http://gitlab.local:8080/team/sub/repo.git", ("http://gitlab.local:8080", "team/sub", "repo")),
+    ]:
+        parsed = parse_git_origin_url(url)
+        assert parsed == expect
+        assert git_origin_clone_url(*parsed) == url.removesuffix(".git")
+    # hosted providers are unchanged
+    assert parse_git_origin_url("https://github.com/Acme/Reflect.git") == ("github", "Acme", "Reflect")

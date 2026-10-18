@@ -135,7 +135,7 @@ class DiskSerializer:
                 # Rows are ARTIFACTS (paths, folders, cells) — never contents.
                 layout = coerce_dataset_enum(header_raw.get(info.rows_layout_field), DataLayoutEnum, DataLayoutEnum.CSV)
                 data[name] = dataset_layout_for(layout).read(
-                    root, DEFAULT_DATASET_SPEC.example_type(), dataset_id=entity_id or "",
+                    root, DEFAULT_DATASET_SPEC.row_type(), dataset_id=entity_id or "",
                     field_spec=header_raw.get("field_spec") or {}, delimiter=header_raw.get("delimiter") or ",",
                 )
         return data

@@ -20,6 +20,8 @@ already owns. After every deliverable, present it with `flow show` (see the
 
 ## FlowCall blocks
 
+Durable calls use ComputeOp.start/get_call with persisted call IDs, not shared status files. Test concurrent identity, real interruption without replay, and installed-runtime readiness before migrating a caller.
+
 For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
 
 ## Routing

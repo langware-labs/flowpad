@@ -32,6 +32,7 @@ import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { chartsRoot } from '@src/components/browseable-tree/adapters/chartsRoot';
 import { useMyEndpoints } from '@src/components/llm-endpoints/my-endpoints';
 import { requestsInScope, useMyDiagnosisRequests } from '@src/components/browseable-tree/adapters/diagnosisRequestRoot';
 import {
@@ -736,12 +737,16 @@ export function useAssetsModel() {
           onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
       }
-      return assetTypeRoot(t, {
-        indexType,
-        onNew: handleNew,
-        creatableTypes,
-        filter: effectiveFilter,
-      });
+      const typeDeps = { indexType, onNew: handleNew, creatableTypes, filter: effectiveFilter };
+      // A project's charts read as a tree: their folders, the assets that declare them, sub-flows.
+      if (t.type_name === 'chart' && scopeProject) {
+        return chartsRoot(t, {
+          ...typeDeps,
+          projectRoot: scopeProject.fs_storage_mount_path ?? '',
+          loadDeclarers: async () => (await scopeProject.dependencies({ declarers: true })).declarers ?? [],
+        });
+      }
+      return assetTypeRoot(t, typeDeps);
     });
     // Files — the scoped project's real on-disk tree, right below the Task
     // section. Rows address the Assets body's fs/ file manager (the same body
@@ -797,6 +802,7 @@ export function useAssetsModel() {
     isProjectView,
     scopeProjectId,
     hasScopeProject,
+    scopeProject,
     fsTypeId,
     fsLocatorTypeId,
     filesAnchor,

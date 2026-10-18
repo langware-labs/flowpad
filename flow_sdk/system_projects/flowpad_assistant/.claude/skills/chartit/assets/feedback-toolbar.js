@@ -146,7 +146,7 @@
     };
   };
   const loadChart = coalesced(async () => {
-    const row = (await data.chartsDs.rows({ match: { key: CFG.key } })).rows[0];
+    const row = (await data.chartsDs.query({ match: { key: CFG.key } })).rows[0];
     if (!row) throw new Error(`no chart row "${CFG.key}" in the charts dataset`);
     const changed = row.version !== data.chart?.version;
     data.chart = row;
@@ -154,7 +154,7 @@
   });
   const refresh = coalesced(async () => {
     if (!data.fbDs || !data.chart) return;
-    data.rows = (await data.fbDs.rows({ match: { 'input.chart': data.chart.ref }, order_by: { 'input.created': 'asc' } })).rows;
+    data.rows = (await data.fbDs.query({ match: { 'input.chart': data.chart.ref }, order_by: { 'input.created': 'asc' } })).rows;
     render();
   });
   async function boot() {

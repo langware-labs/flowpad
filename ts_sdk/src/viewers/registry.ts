@@ -36,6 +36,7 @@ export interface ViewerHost {
   /** What the app does when a viewer opens a part on its own (`ctx.open`) or an entity (`ctx.navigate`). */
   open?: ViewerContext['open'];
   navigate?: ViewerContext['navigate'];
+  candidates?: ViewerContext['candidates'];
 }
 
 export interface StoredValue {
@@ -155,6 +156,7 @@ export function createViewerContext(host: ViewerHost = {}): ViewerContext {
     generic: { single: genericSingle, collection: genericCollection },
     open: host.open,
     navigate: host.navigate,
+    candidates: host.candidates,
     render: async (el: HTMLElement, request: ViewRequest) => {
       const got = await dereference(request.value);
       if ('missing' in got) return missing(el, got);

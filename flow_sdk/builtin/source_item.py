@@ -346,7 +346,7 @@ class SourceItem(Entity):
         origin = origin if isinstance(origin, CloudOrigin) else CloudOrigin.model_validate(origin)
         return {**data, "origin_kind": origin.kind, "origin_namespace": origin.namespace, "origin_key": origin.key}
 
-    def as_example_input(self) -> "tuple[dict, dict]":
+    def as_row_input(self) -> "tuple[dict, dict]":
         """``(contents, provenance)`` for one dataset example row: this item's
         own envelope as ``input/item.json``, and where it came from. The
         ingest→dataset composition lives with the item, not with ``Dataset``."""

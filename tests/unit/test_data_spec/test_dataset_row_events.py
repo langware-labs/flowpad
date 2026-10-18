@@ -56,10 +56,10 @@ async def test_the_rows_version_moves_on_any_write_and_rides_on_a_read(tmp_path,
     await d.put("acme", {"input": {"name": "Acme"}})
     v1 = d.rows_version()
     assert v1 and d.rows_version() == v1                                           # stable while nothing moves
-    (d._folder() / "examples" / "acme" / "note.txt").write_text("by hand")        # a write by ANYONE, not just Flowpad
+    (d._folder() / "rows" / "acme" / "note.txt").write_text("by hand")        # a write by ANYONE, not just Flowpad
     v2 = d.rows_version()
     assert v2 != v1
-    (d._folder() / "examples" / "acme" / ".DS_Store").write_text("x")             # a hidden file is not the rows
+    (d._folder() / "rows" / "acme" / ".DS_Store").write_text("x")             # a hidden file is not the rows
     assert d.rows_version() == v2
     assert (await d.rows_version_action()).data == {"version": v2}
 

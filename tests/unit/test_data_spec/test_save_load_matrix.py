@@ -183,16 +183,16 @@ class Answer(DataSpec):
 
 def test_a_generic_parametrization_is_named_after_its_origin(tmp_path):
     """A parametrization inherits its origin's kind and does not register, so
-    its ``__name__`` is ``ExampleSpec[Question, Answer, DataSpec]`` — brackets,
+    its ``__name__`` is ``RowSpec[Question, Answer, DataSpec]`` — brackets,
     commas and spaces. None of that belongs in a filename."""
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec
+    from flow_sdk.schema.data_spec.dataset_spec import RowSpec
     from flow_sdk.schema.data_spec.io import names
 
-    parametrized = ExampleSpec[Question, Answer, DataSpec]
-    assert names.main_document(parametrized) == "examplespec.json"
+    parametrized = RowSpec[Question, Answer, DataSpec]
+    assert names.main_document(parametrized) == "rowspec.json"
 
 
-def test_an_example_saves_as_an_ordinary_spec(tmp_path):
+def test_a_row_saves_as_an_ordinary_spec(tmp_path):
     """**The readiness test for the unified-IO phase.**
 
     An execution's ``input``/``output`` must be ordinary fields of an ordinary
@@ -201,16 +201,16 @@ def test_an_example_saves_as_an_ordinary_spec(tmp_path):
     ``cannot write a Endpoint slot``) and its write→read was not identity. If
     this test passes, phase 2 is a migration; if it fails, nothing was prepared.
     """
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec
+    from flow_sdk.schema.data_spec.dataset_spec import RowSpec
 
-    example_type = ExampleSpec[Question, Answer, DataSpec]
-    example = example_type(
+    row_type = RowSpec[Question, Answer, DataSpec]
+    example = row_type(
         input=Question(prompt="what is 2+2?"),
         output=Answer(text="4", score=1.0),
         ground_truth=Answer(text="4", score=1.0),
     )
     save(example, tmp_path)
-    assert load(example_type, tmp_path) == example
+    assert load(row_type, tmp_path) == example
 
 
 def test_a_dataset_slot_may_be_any_shape_not_only_an_artifact(tmp_path):
@@ -219,11 +219,11 @@ def test_a_dataset_slot_may_be_any_shape_not_only_an_artifact(tmp_path):
     declarable and unwritable. Both ends now defer to the one walker, so a slot
     is an ordinary field and the round trip is identity three ways.
     """
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec
+    from flow_sdk.schema.data_spec.dataset_spec import RowSpec
     from flow_sdk.schema.data_spec.layout import FolderLayout
 
-    example_type = ExampleSpec[Question, Answer, DataSpec]
-    example = example_type(
+    row_type = RowSpec[Question, Answer, DataSpec]
+    example = row_type(
         input=Question(prompt="what is 2+2?"),
         output=Answer(text="4", score=1.0),
         ground_truth=Answer(text="4", score=1.0),
@@ -232,13 +232,13 @@ def test_a_dataset_slot_may_be_any_shape_not_only_an_artifact(tmp_path):
 
     written = sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*") if p.is_file())
     assert written == [
-        "examples/0001/example.json",
-        "examples/0001/ground_truth/answer.json",
-        "examples/0001/input/question.json",
-        "examples/0001/output/answer.json",
+        "rows/0001/ground_truth/answer.json",
+        "rows/0001/input/question.json",
+        "rows/0001/output/answer.json",
+        "rows/0001/row.json",
     ], "a slot is a folder of its shape; and it mints no identity of its own"
 
-    back = FolderLayout().read(tmp_path, example_type, dataset_id="ds")[0]
+    back = FolderLayout().read(tmp_path, row_type, dataset_id="ds")[0]
     assert (back.input, back.output, back.ground_truth) == (
         example.input, example.output, example.ground_truth,
     )
@@ -283,18 +283,18 @@ def test_a_declared_file_slot_comes_back_as_a_file_not_a_folder(tmp_path):
     """``write`` → ``read`` was NOT identity for an artifact slot: a ``FileRef``
     written under ``input/`` was read back as a ``FolderSpec`` holding it,
     because the scan classifies bytes and a file in a directory IS that. So a
-    declared ``ExampleSpec[FileRef, ...]`` could not even validate.
+    declared ``RowSpec[FileRef, ...]`` could not even validate.
 
     The scan is right about the bytes; only the spec knows which was meant.
     """
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec, FileRef
+    from flow_sdk.schema.data_spec.dataset_spec import RowSpec, FileRef
     from flow_sdk.schema.data_spec.layout import FolderLayout
 
-    example_type = ExampleSpec[FileRef, FileRef, DataSpec]
-    example = example_type(input=FileRef(path="input/q.txt"), output=FileRef(path="output/a.txt"))
+    row_type = RowSpec[FileRef, FileRef, DataSpec]
+    example = row_type(input=FileRef(path="input/q.txt"), output=FileRef(path="output/a.txt"))
     FolderLayout().write(tmp_path, [example], dataset_id="ds")
 
-    back = FolderLayout().read(tmp_path, example_type, dataset_id="ds")[0]
+    back = FolderLayout().read(tmp_path, row_type, dataset_id="ds")[0]
     assert (back.input, back.output) == (example.input, example.output)
 
 

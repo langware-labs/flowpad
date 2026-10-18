@@ -70,6 +70,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
+import { useOpenGitShare } from './asset-review/use-open-git-share';
 import type { WorkerType } from './conversation-session-constants';
 import { PromptCallCard } from './PromptCallCard';
 import type { ProcessCall, ReturnedValue } from '@sdk';
@@ -1048,6 +1049,8 @@ export function MessageEntityChip({
   const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
+  const { run: openGitShare } = useOpenGitShare(attachment, projectId);
+  const [openError, setOpenError] = useState<string | null>(null);
    
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
   // A project the message staged (its bundle carried it) is an ordinary
@@ -1127,12 +1130,31 @@ export function MessageEntityChip({
   const dialog = attachment && reviewOpen && (
     <AssetReviewDialog
       open={reviewOpen}
-      onClose={() => setReviewOpen(false)}
+      onClose={() => {
+        setReviewOpen(false);
+        setOpenError(null);
+      }}
       attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
       initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
+      initialError={openError}
     />
   );
+  // A git share is a pointer that never touches the receiver's own checkout:
+  // one click installs AND opens it; a failure (said in a toast) opens the review.
+  // A whole project is not a pointer: its review asks where it lands (Clone & Open, a taken name).
+  const gitShare = attachment?.transfer_mode === 'git' && attachment.asset_type !== 'project' && !handleFolderPull;
+  const onStagedClick =
+    handleFolderPull ??
+    (gitShare
+      ? async () => {
+          const failed = await openGitShare();
+          if (failed) {
+            setOpenError(failed);
+            setReviewOpen(true);
+          }
+        }
+      : () => setReviewOpen(true));
   if (state === 'staged') {
     return (
       <>
@@ -1140,7 +1162,8 @@ export function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
+            title={gitShare ? t`Shared by Git — click to open the version that was shared` : undefined}
+            onClick={() => void onStagedClick()}
           />
           {runButton}
         </span>

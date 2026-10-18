@@ -254,6 +254,14 @@ def _seq_id(value: Any) -> str:
     return "".join(ch if (ch.isalnum() or ch == "_") else "_" for ch in str(value))
 
 
+def _participant_lines(part: dict) -> list[str]:
+    """A participant's card lines: the label's first line, then an explicit
+    ``sublabel`` or the legacy ``"label\\nsecond"`` line."""
+    lines = str(part.get("label") or part.get("id") or "").splitlines()
+    sublabel = part.get("sublabel") or (lines[1] if len(lines) > 1 else "")
+    return [line for line in (lines[0] if lines else "", str(sublabel)) if line]
+
+
 def sequence_to_mermaid(data: Any) -> str:
     """Convert a ``chart.json`` sequence value into a mermaid ``sequenceDiagram``.
 
@@ -277,7 +285,7 @@ def sequence_to_mermaid(data: Any) -> str:
         pid = _seq_id(part.get("id", ""))
         if not pid:
             continue
-        label = _seq_text(part.get("label") or part.get("id"), line_break="<br/>")
+        label = _seq_text("\n".join(_participant_lines(part)), line_break="<br/>")
         lines.append(f"participant {pid} as {label}")
         if part.get("note"):
             lines.append(f"Note over {pid}: {_seq_text(part['note'])}")

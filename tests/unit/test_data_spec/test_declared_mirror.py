@@ -51,7 +51,7 @@ def project(tmp_path, monkeypatch):
 
 
 def _rows(tasks) -> dict:
-    return {row["key"]: {k: v for k, v in row["input"].items() if v is not None} for row in tasks.rows()["rows"]}
+    return {row["key"]: {k: v for k, v in row["input"].items() if v is not None} for row in tasks.query()["rows"]}
 
 
 # ── the declaration ──────────────────────────────────────────────────────────
@@ -259,7 +259,7 @@ def served(tmp_path, monkeypatch):
     deals = _dataset(root, "deals", f"--{ns}--.crm.deal")
     folder = root / "agentic-assets/dataset/tasks"                       # made by the save (``_seed``)
     tasks = Dataset(id=str(uuid.uuid4()), name="tasks", asset_ref=str(folder), data_layout="io_folder",
-                    spec={"examples": [{"input": f"--{ns}--.crm.task"}]})
+                    spec={"rows": [{"input": f"--{ns}--.crm.task"}]})
     store = _Store()
 
     class TaskData(RecordData):
@@ -358,7 +358,7 @@ async def _seed(served):
                        data=served.TaskData(title="Call Acme back", status="TODO", deal_ids=["OPP-1"]))
     served.store.keep(envelope_of(first, data_source_id=served.source.id, provider="crm"))
     await project_source(served.source)
-    return {row["key"]: row["ref"] for row in served.deals.rows()["rows"]}
+    return {row["key"]: row["ref"] for row in served.deals.query()["rows"]}
 
 
 async def test_an_owned_field_written_here_goes_to_the_outside_system_first(served):
@@ -368,26 +368,26 @@ async def test_an_owned_field_written_here_goes_to_the_outside_system_first(serv
     assert done.status_code == 200, done.text
     # only what changed goes out, in the outside system's own names -- a link as the id it stands for
     assert served.store.calls == [("update", "T-1", {"status": "DONE", "deal_ids": ["OPP-1", "OPP-2"]})]
-    got = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"]
+    got = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")["input"]
     assert (got["status"], got["deals"], got["notes"]) == ("DONE", [refs["acme"], refs["bolt"]], "ours")
     assert served.store.records["T-1"]["data"]["status"] == "DONE"            # kept here at once, not at the next sync
 
 
 async def test_two_writes_from_one_version_one_reaches_the_outside_system_and_the_other_is_refused(served):
     await _seed(served)
-    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
     put = lambda status: _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "status": status}},  # noqa: E731
                                                     "expected": row["version"]})
     done, waiting = await asyncio.gather(put("DONE"), put("WAITING"))
     assert sorted([done.status_code, waiting.status_code]) == [200, 409], (done.text, waiting.text)
     won = "DONE" if done.status_code == 200 else "WAITING"
     assert served.store.calls == [("update", "T-1", {"status": won})]          # the stale one never went out
-    assert next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"]["status"] == won
+    assert next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")["input"]["status"] == won
 
 
 async def test_a_change_and_a_delete_from_one_version_do_not_both_go_out(served):
     await _seed(served)
-    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
     put = _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "status": "DONE"}}, "expected": row["version"]})
     delete = _call(served, "delete-row", {"key": "t-1", "expected": row["version"]})
     done, gone = await asyncio.gather(put, delete)
@@ -400,7 +400,7 @@ async def test_a_new_row_is_a_new_record_and_takes_its_key_from_it(served):
     done = await _call(served, "append", {"rows": [{"input": {"title": "Send the deck", "status": "TODO", "deals": [refs["bolt"]], "notes": "ours"}}]})
     assert done.status_code == 200, done.text
     assert served.store.calls == [("create", {"title": "Send the deck", "status": "TODO", "deal_ids": ["OPP-2"]})]
-    got = {r["key"]: {k: v for k, v in r["input"].items() if v is not None} for r in served.tasks.rows()["rows"]}
+    got = {r["key"]: {k: v for k, v in r["input"].items() if v is not None} for r in served.tasks.query()["rows"]}
     # the row is keyed as the mirror keys the record (``T-2`` → ``t-2``): the app's own field rides along
     assert got["t-2"] == {"title": "Send the deck", "status": "TODO", "crm_id": "T-2", "deals": [refs["bolt"]], "notes": "ours"}
     assert done.json()["data"]["ids"] and set(got) == {"t-1", "t-2"}
@@ -416,7 +416,7 @@ async def test_a_record_made_with_a_warning_is_kept_and_the_warning_reaches_the_
     assert done.status_code == 200, done.text
     said = [{"error_code": "source_partial", "message": "crm: deal OPP-9 could not be linked", "key": "t-2"}]
     assert done.json()["data"]["warnings"] == said and done.json()["warnings"] == said
-    assert {r["key"] for r in served.tasks.rows()["rows"]} == {"t-1", "t-2"}
+    assert {r["key"] for r in served.tasks.query()["rows"]} == {"t-1", "t-2"}
 
 
 async def test_a_list_link_with_unresolved_ids_is_not_written_back(served):
@@ -432,7 +432,7 @@ async def test_a_list_link_with_unresolved_ids_is_not_written_back(served):
                       data=served.TaskData(title="Call Acme back", status="TODO", deal_ids=["OPP-1", "OPP-9"]))
     served.store.keep(envelope_of(both, data_source_id=served.source.id, provider="crm"))
     assert (await project_source(served.source)).get("unlinked") == [{"key": "t-1", "field": "deals", "value": "OPP-9"}]
-    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
     assert row["input"]["deals"] == [refs["acme"]]
 
     done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "deals": [refs["acme"], refs["bolt"]]}}})
@@ -450,7 +450,7 @@ async def test_a_delete_here_deletes_the_record_there(served):
     await _seed(served)
     done = await _call(served, "delete-row", {"key": "t-1"})
     assert done.status_code == 200, done.text
-    assert served.store.calls == [("delete", "T-1")] and served.tasks.rows()["rows"] == [] and served.store.records == {}
+    assert served.store.calls == [("delete", "T-1")] and served.tasks.query()["rows"] == [] and served.store.records == {}
 
 
 async def test_a_refusal_from_the_outside_system_writes_nothing(served):
@@ -459,7 +459,7 @@ async def test_a_refusal_from_the_outside_system_writes_nothing(served):
     done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {"title": "Call Acme back", "status": "DONE", "crm_id": "T-1", "deals": []}}})
     assert done.status_code == 400
     assert [d["code"] for d in done.json()["data"]["details"]] == ["source_refused"] and "needs an assignee" in done.text
-    assert served.tasks.rows()["rows"][0]["input"]["status"] == "TODO"
+    assert served.tasks.query()["rows"][0]["input"]["status"] == "TODO"
 
 
 async def test_a_field_that_cannot_go_back_is_refused_before_any_io(served):
@@ -485,7 +485,7 @@ async def test_the_mirror_itself_writes_as_the_outside_system_and_nothing_goes_o
 
 async def test_a_change_to_the_apps_own_fields_stays_here(served):
     await _seed(served)
-    row = next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")
+    row = next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")
     done = await _call(served, "put-row", {"key": "t-1", "row": {"input": {**row["input"], "notes": "ours"}}})
     assert done.status_code == 200 and served.store.calls == []
 
@@ -509,7 +509,7 @@ async def test_the_same_write_from_python_goes_out_too_but_only_the_server_can_s
     assert served.store.calls[-1] == ("update", "T-1", {"status": "TODO"})
     (made,) = await served.tasks.append([{"input": {"title": "Send the deck", "status": "TODO", "deals": []}}])
     assert served.store.calls[-1][0] == "create" and made
-    got = {r["key"]: r["input"] for r in served.tasks.rows()["rows"]}
+    got = {r["key"]: r["input"] for r in served.tasks.query()["rows"]}
     assert got["t-1"]["status"] == "TODO" and got["t-1"]["notes"] == "ours" and got["t-2"]["title"] == "Send the deck"
 
 
@@ -526,7 +526,7 @@ async def test_a_mirror_may_only_write_fields_the_schema_says_are_the_outside_sy
     assert refused.value.details[0]["code"] == "not_owned" and "notes" in str(refused.value)
     with pytest.raises(LinkError):
         await _project(source.id)
-    assert source.error_code == "mirror_failed" and "notes" in source.error_detail and not tasks.rows()["rows"]
+    assert source.error_code == "mirror_failed" and "notes" in source.error_detail and not tasks.query()["rows"]
 
 
 async def test_a_field_left_out_of_the_row_is_cleared_in_the_outside_system_too(served):
@@ -538,4 +538,4 @@ async def test_a_field_left_out_of_the_row_is_cleared_in_the_outside_system_too(
     cleared = await _call(served, "put-row", {"key": "t-1", "row": {"input": row}})          # no `label` at all
     assert cleared.status_code == 200, cleared.text
     assert served.store.calls == [("update", "T-1", {"label": "hot"}), ("update", "T-1", {"label": None})]
-    assert next(r for r in served.tasks.rows()["rows"] if r["key"] == "t-1")["input"].get("label") is None
+    assert next(r for r in served.tasks.query()["rows"] if r["key"] == "t-1")["input"].get("label") is None

@@ -239,11 +239,11 @@ class ProjectTree:
         # and still ``new`` does not hold the project up.
         verify = None
         if not before:
-            op = _op(f"{node_id}:verify", "Verify", "verify", kind="source_step")
+            op = _op(f"{node_id}:verify", "Check the sign-in", "verify", kind="source_step")
             self.ops[op.name] = op
             verify = WizardSpec.model_validate({
-                "name": op.name, "label": "Verify",
-                "steps": [{"id": "verify", "label": "Verify", "kind": "compute", "ref": op.name}],
+                "name": op.name, "label": "Check the sign-in",
+                "steps": [{"id": "verify", "label": "Check the sign-in", "kind": "compute", "ref": op.name}],
             })
         self.nodes[node_id] = SetupNode(
             id=node_id, label=str(source.name or source.provider), children=tuple([before] if before else needs),

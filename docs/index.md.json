@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "a2342ad0fb9c3b363b5331e18f394a3a4c9b47cd61a5e503a02b18b6f64102ae",
+  "inputs_hash": "260ac5c40061271ac69e896f6e82e5cc5e13c02ca306e7db4ff167fba8f88c06",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad architecture and terminology, including the FlowCall call-and-result contract, agents, data management, collaboration, navigation, deployment, runnable SDK examples, and proven debugging findings.",
@@ -62,7 +62,7 @@
       "name": "boot.md",
       "rel_path": "boot.md",
       "title": "Server Boot & Bootstrap Flows",
-      "summary": "---\nid: ca975db1-c883-4243-af94-da519bb8e1e0\n---\nBackend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.",
+      "summary": "Backend boot path from process start to serving requests: startup flows, detached tasks, the sub-100ms bootstrap budget, deferred info, shared lazy assets and measurements.",
       "content_hash": "75ea63358ebb6f46b82813a2637ab7d86bbb37ff3065aeec41259c02e986bc21",
       "size_bytes": 20214
     },
@@ -94,7 +94,7 @@
       "name": "cookie-gate.md",
       "rel_path": "cookie-gate.md",
       "title": "cookie-gate",
-      "summary": "---\nid: 1a70f9af-98c3-4063-bf19-0debaf9d302b\n---\nCookie-gate: optional pre-shared secret locking an instance to invited callers: arming rules, desktop refusal, hub-signed tickets and grants, gate exchange, revocation and cookie attributes.",
+      "summary": "Cookie-gate: optional pre-shared secret locking an instance to invited callers: arming rules, desktop refusal, hub-signed tickets and grants, gate exchange, revocation and cookie attributes.",
       "content_hash": "9d5c5e15d4150676a4382a871633bf991d30ebfa1c4bc588974185e58ff14436",
       "size_bytes": 12553
     },
@@ -102,9 +102,9 @@
       "name": "data-management.md",
       "rel_path": "data-management.md",
       "title": "Data Management",
-      "summary": "Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.",
-      "content_hash": "730ef3960bbf3727abb768b30469c90b5ebb878fd28ea2deb61fc4f4a778e64a",
-      "size_bytes": 38190
+      "summary": "Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite entities as queryable indexes, linking detailed subsystem documents.",
+      "content_hash": "49b52c5932830829808e3bf4eeb4050d1090af6ccafea45c3a501814e037d492",
+      "size_bytes": 38178
     },
     {
       "name": "debugMCP-setup.md",
@@ -142,9 +142,9 @@
       "name": "display-capabilities.md",
       "rel_path": "display-capabilities.md",
       "title": "Global Display Capabilities — Survey & Open Questions",
-      "summary": "---\nid: de59d706-124b-4c85-9f6c-2bad91cde7c4\n---\nSurvey of how Flowpad displays files, entities, webapps, artifacts and foreign HTML through dock pointers and flow show targets, with trust tiers, gaps, open questions.",
-      "content_hash": "f50a0ee5bdd701cdf4246962a67b30357820c39dad98f8a084b9e9656b5a6b3e",
-      "size_bytes": 23643
+      "summary": "Survey of how Flowpad displays files, entities, webapps, artifacts and foreign HTML through dock pointers and flow show targets, with trust tiers, gaps, open questions.",
+      "content_hash": "16c915cdb3a8c5f1d31f2d539e49ea7c7c0beafdc11981794a9a36cbfe03c582",
+      "size_bytes": 23791
     },
     {
       "name": "doc.md",
@@ -190,9 +190,9 @@
       "name": "flow-events.md",
       "rel_path": "flow-events.md",
       "title": "FlowEvents — the unified event bus (delivery worklog)",
-      "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope and laws, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset.rows.changed tags.",
-      "content_hash": "f87c1aba4e1dd99c93de499791219861c6f0753938655f3599c3eefad5b4506c",
-      "size_bytes": 42785
+      "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset change tags.",
+      "content_hash": "9031bef30832a1de90b5486326fa3334707db1e434c2dbcd415ee21cae7f040b",
+      "size_bytes": 42773
     },
     {
       "name": "flowcall-guidance-audit.md",
@@ -230,9 +230,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Crosswalk of Flowpad, Claude Code, and OpenClaw terminology, including FlowCall blocks, outcomes, runtime entities, assets, agent roles, and naming boundaries.",
-      "content_hash": "be2c5014cdfb9f9219fd51ba4f5a01789084e36d556634653842263c9f0ce6ee",
-      "size_bytes": 68293
+      "summary": "Crosswalk of Flowpad, Claude Code and OpenClaw terminology: FlowCall, kind/schema/value, row/record/item, workspaces, runtime entities, assets, agent roles and naming rules.",
+      "content_hash": "2d3d3da575e548a0ffb5e90055314b17123fa90debc47a756fc173acbcf53253",
+      "size_bytes": 69403
     },
     {
       "name": "icons.md",
@@ -245,7 +245,7 @@
     {
       "name": "intro.md",
       "rel_path": "intro.md",
-      "title": "Flowpad ",
+      "title": "Flowpad",
       "summary": "What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.",
       "content_hash": "962a7c27ff244b7a7627702f7dc1ea3207716010e534a9bdeec481869e382b47",
       "size_bytes": 1416
@@ -263,8 +263,8 @@
       "rel_path": "llm_wiki.md",
       "title": "Wiki namespaces and link graph — flowpad-oss",
       "summary": "Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.",
-      "content_hash": "0f9b815b1f04922a010806f03bd46cdcb14387e5c386f7f62687e6555f175550",
-      "size_bytes": 17605
+      "content_hash": "c28f45a60ae2e4c1061312d935f419ee8f49294af700567e6e2f0ed080d9f8d7",
+      "size_bytes": 17600
     },
     {
       "name": "local_patch.md",
@@ -278,7 +278,7 @@
       "name": "mcp-ui.md",
       "rel_path": "mcp-ui.md",
       "title": "MCP UI Architecture",
-      "summary": "---\nid: 48f1b9e5-e1fd-4fee-ac01-3252d20cc05e\n---\nMCP UI architecture in Vibe: the agent writes a .mcp.html file, the backend sandbox proxy hosts it, and the app's ui/message returns as a prompt.",
+      "summary": "MCP UI architecture in Vibe: the agent writes a .mcp.html file, the backend sandbox proxy hosts it, and the app's ui/message returns as a prompt.",
       "content_hash": "e57a376cdaeac5d46df1463fcb59845d703fe216d762662167a5822d405d1d62",
       "size_bytes": 8261
     },
@@ -326,7 +326,7 @@
       "name": "pty-sync.md",
       "rel_path": "pty-sync.md",
       "title": "PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)",
-      "summary": "---\nid: 5587ed56-23d1-44ca-a3f0-144e7d47a9f0\n---\nPTY line-synchronization model (PtySyncSession, VirtualTerminal, XtermAdapter eviction offset), annotation gutter row positioning, and scrollback recovery across frontend reload and backend restart.",
+      "summary": "PTY line-synchronization model (PtySyncSession, VirtualTerminal, XtermAdapter eviction offset), annotation gutter row positioning, and scrollback recovery across frontend reload and backend restart.",
       "content_hash": "8ed9992262cb3d3fc6334b06217718e4881036402da882c1f7834507fc733d07",
       "size_bytes": 28898
     },
@@ -334,7 +334,7 @@
       "name": "pty-terminal-spec.md",
       "rel_path": "pty-terminal-spec.md",
       "title": "PTY / xterm Terminal System Specification",
-      "summary": "---\nid: 05fae1eb-4e5a-4d06-8639-afcf9e36acba\n---\nPTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment, two renderers, startup budget.",
+      "summary": "PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment, two renderers, startup budget.",
       "content_hash": "3c196a6cb4c49ed43b0132ef46ad3d0d739d835f6f62ab30f6b59aa89478f25c",
       "size_bytes": 55431
     },
@@ -343,8 +343,8 @@
       "rel_path": "renderable-fences.md",
       "title": "Renderable code fences",
       "summary": "How a code fence opts into being drawn: the render-only NodeView over Milkdown code blocks, the renderer registry, and why markdown stays byte-identical.",
-      "content_hash": "6f79e0c5dc36b56913a535e14b3a0acdd37897cd31fabdf2b9414abbda369fa7",
-      "size_bytes": 10690
+      "content_hash": "21b88a59e684abab4d104e477f11cf46c37b29ed901bf0d2764222a728537db1",
+      "size_bytes": 10685
     },
     {
       "name": "secret_share.md",
@@ -382,7 +382,7 @@
       "name": "system_agents.md",
       "rel_path": "system_agents.md",
       "title": "System Agents",
-      "summary": "---\nid: 42a61552-2f8c-42a6-9e3d-c690ddc3b86a\n---\nSystem agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one, distinct from the launchable Agent entity.",
+      "summary": "System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one, distinct from the launchable Agent entity.",
       "content_hash": "2eb7873a9b779386e960035809204d59be36ac1a662717b08f24781876bbe31c",
       "size_bytes": 12413
     },
@@ -390,9 +390,9 @@
       "name": "tab-management.md",
       "rel_path": "tab-management.md",
       "title": "Tab Management",
-      "summary": "---\nid: 7e303015-b1d9-48fe-abbc-f662a4c6a142\n---\nTab entity as the one membership system for content and terminal tabs: pointer-hash ids, host tabs, SDK TabManager, client lifecycle states, and historical design record.",
-      "content_hash": "854aeee428a55ed6dc4e7d2da48534e832c2c6f8957a1b359665c3a1af0a209f",
-      "size_bytes": 70439
+      "summary": "Tab entity as the one membership system for content and terminal tabs: pointer-hash ids, host tabs, SDK TabManager, client lifecycle states, and historical design record.",
+      "content_hash": "8490185eca63667c118d39422cbd26712d20096c23efabf82d09ba13e352c5bb",
+      "size_bytes": 70424
     },
     {
       "name": "tags.md",
@@ -517,7 +517,7 @@
       "rel_path": "data-management/index.md",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "0ad9b12a82be0665c07c1bac44cbba40e578cae1189f7f59fcac403c72670203"
+      "child_inputs_hash": "87ef1d6232b1bdb930f0d695cc1fbc0220462c2c359c65eeeb61f6313bf69ed5"
     },
     {
       "name": "flows",
@@ -559,14 +559,14 @@
       "rel_path": "navigation/index.md",
       "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
       "child_typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
-      "child_inputs_hash": "dc4f1396605cdcf0c96bc096e0cb851bb04ca1efcea386fc4f89e211942ec515"
+      "child_inputs_hash": "3110f20bb8fefc700e51f00bdd666800f9ede8d0f1caa1689f38c4678a88c276"
     },
     {
       "name": "primitives",
       "rel_path": "primitives/index.md",
       "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
       "child_typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
-      "child_inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751"
+      "child_inputs_hash": "55a147cd9bf659e9d4447b9735c1f8c8b1c22516d488f8e0aed1c2dfbadc3625"
     },
     {
       "name": "reports",
@@ -585,9 +585,9 @@
     {
       "name": "snippets",
       "rel_path": "snippets/index.md",
-      "self_summary": "Runnable SDK examples with validating tests: FlowCall outcomes and returned values, ComputeOps, wizards, schemas, agents, channels, data sources, datasets, credentials, dependencies, deployment, activity, scanning, and RAG.",
+      "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "2ef3073f4f3a3e4a6de7cea01714adf80e08518a908397d9d76e9c7601ddbc7e"
+      "child_inputs_hash": "40befe51e1c1d30083e80a517df6a809554d80e06e8210563a1021c6a56e8591"
     },
     {
       "name": "tabs",
@@ -597,6 +597,6 @@
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-15T09:19:50.053732+00:00",
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
   "latest_process_ref": ""
 }

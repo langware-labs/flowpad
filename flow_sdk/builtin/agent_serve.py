@@ -581,8 +581,7 @@ async def _made_chat_source(driver, agent, deployment):
         # the project) must not take this one's place (FLOWPAD-2258).
         name=f"{agent.name or agent.id} chat {deployment.id}",
         owner=agent.typeid,
-        answer_place=str(deployment.id),
-        account_key=f"deployment:{deployment.id}",
+        **_deployment_binding(deployment),
         status=SourceStatus.ACTIVE.value,
     )
     try:
@@ -593,6 +592,40 @@ async def _made_chat_source(driver, agent, deployment):
         if made is None:
             raise
         return made
+
+
+def _deployment_binding(deployment) -> dict[str, str]:
+    """The fields that tie a chat source to its placement: where it answers, and its account key."""
+    return {"answer_place": str(deployment.id), "account_key": f"deployment:{deployment.id}"}
+
+
+async def _adopt_chat_source(driver, agent, deployment):
+    """Reuse the agent's imported chat when its original placement is not on this machine.
+
+    Project files carry the channel, but deployment rows are machine-local. A
+    re-key likewise leaves its old channel pointing at a placement that is gone.
+    Never take another existing placement's channel or guess between candidates.
+    """
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    key = driver.cls.identity_config_key
+    candidates = []
+    for source in await DataSource.find_owned(agent.typeid):
+        old_id = str((source.config or {}).get(key) or "")
+        if source.provider != driver.provider or not is_valid_entity_id(old_id):
+            continue
+        if await Deployment.get_by_id(old_id) is None:
+            candidates.append(source)
+    if len(candidates) != 1:
+        return None
+    source = candidates[0]
+    source.config = {**source.config, key: str(deployment.id)}
+    for name, value in _deployment_binding(deployment).items():
+        setattr(source, name, value)
+    await source.save()
+    return source
 
 
 def deployment_chat_driver():
@@ -629,7 +662,9 @@ async def ensure_chat_channel(agent, deployment):
     # Looked up and written under one lock: the supervisor and a box's expose-endpoints
     # both ensure it, and two lookups that each miss would mint two `chat` rows.
     async with keyed_loop_lock(_CHAT_LOCKS, str(deployment.id)):
-        source = await DataSource.find_for_account(driver.provider, key, str(deployment.id))
+        source = await DataSource.find_for_account(driver.provider, key, str(deployment.id), owner=agent.typeid)
+        if source is None:
+            source = await _adopt_chat_source(driver, agent, deployment)
         if source is None:
             source = await _made_chat_source(driver, agent, deployment)
         existing = await ServiceEndpoint.find_existing(str(deployment.typeid), CHAT)

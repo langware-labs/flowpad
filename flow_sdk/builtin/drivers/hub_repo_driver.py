@@ -55,6 +55,10 @@ class HubRepoOriginDriver:
         await HubRepoMirror(root=root, clone_url=clone_url, branch="main", token=hub_token).sync()
         return root, preferred_project_id
 
+    async def materialize_pinned(self, origin, **kwargs):
+        """No version to pin: a received share opens where it materializes."""
+        return await self.materialize(origin, **kwargs)
+
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
         return False
 
