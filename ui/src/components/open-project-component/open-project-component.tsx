@@ -16,7 +16,7 @@ import { Label } from '@src/components/ui/label';
 import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Info, Loader2, Search } from 'lucide-react';
 import { projectRecencyMs } from '@src/lib/project-recency';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -173,6 +173,7 @@ function CompactProjectSelectDialog({
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [search, setSearch] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const q = search.trim().toLowerCase();
 
   const title = trigger === 'map' ? t`Map remote project` : trigger === 'gate' ? t`Pick a project` : t`Switch Project`;
@@ -276,7 +277,20 @@ function CompactProjectSelectDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[80vh] overflow-hidden sm:max-w-sm">
+      <DialogContent
+        className="max-h-[80vh] overflow-hidden sm:max-w-sm"
+        onKeyDown={(e) => {
+          // Type-to-search: a printable key typed anywhere in the dialog goes into the search box.
+          const input = searchInputRef.current;
+          if (!input || e.target === input) return;
+          if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return;
+          const tag = (e.target as HTMLElement).tagName;
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) return;
+          e.preventDefault();
+          setSearch((s) => s + e.key);
+          input.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="text-base">{title}</DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
@@ -287,6 +301,7 @@ function CompactProjectSelectDialog({
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
+                ref={searchInputRef}
                 placeholder={t`Search projects…`}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
