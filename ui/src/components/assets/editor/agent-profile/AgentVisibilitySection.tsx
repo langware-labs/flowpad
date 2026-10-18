@@ -17,6 +17,8 @@ import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
+import { AgentPublishButton } from './AgentPublishButton';
+import { AgentVisitorDeploymentSection } from './AgentVisitorDeploymentSection';
 import { ShareAgentDialog } from './ShareAgentDialog';
 
 /**
@@ -32,15 +34,13 @@ export function agentLaunchLink(agent: Agent): string | null {
 }
 
 /**
- * Toggle the agent's public access for the `visitor` audience: Set public when that audience holds
- * no role, Remove public access when it does. The role is read on mount; until the hub reports one
- * — or when it cannot (not the owner, or a hub without the API) — the agent is shown as private.
+ * The role the `visitor` audience holds on the agent, read once for the whole section: "Set public" and
+ * "Visitor trials" write the same one stamp, so each must see what the other set. null until the hub
+ * reports one — an unread or unreadable grant (not the owner, or a hub without the API) shows as private.
+ * Not read until `published`: the stamp lives on the hub row, which an unpublished agent does not have.
  */
-function PublicAccessButton({ agent }: { agent: Agent }) {
-  const { t } = useLingui();
-  // null until the hub reports a role — an unread or unreadable grant shows as private.
+function useVisitorRole(agent: Agent, published: boolean): [string | null, (role: string | null) => void] {
   const [role, setRole] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   // Keyed on the id, not the entity: a re-render may hand over a fresh `Agent` for the same row.
   const agentRef = useRef(agent);
@@ -48,6 +48,7 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
   useEffect(() => {
     let cancelled = false;
     setRole(null);
+    if (!published) return;
     getPublicAccess(agentRef.current.typeId, 'visitor')
       // A hub without the public-access API answers this path with the agent row itself — no `audience`.
       .then((access) => !cancelled && access?.audience === 'visitor' && setRole(access.role ?? null))
@@ -55,7 +56,26 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
     return () => {
       cancelled = true;
     };
-  }, [agent.id]);
+  }, [agent.id, published]);
+
+  return [role, setRole];
+}
+
+/**
+ * Toggle the agent's public access for the `visitor` audience: Set public when that audience holds
+ * no role, Remove public access when it does (any role, the visitor-trial one included).
+ */
+function PublicAccessButton({
+  agent,
+  role,
+  setRole,
+}: {
+  agent: Agent;
+  role: string | null;
+  setRole: (role: string | null) => void;
+}) {
+  const { t } = useLingui();
+  const [busy, setBusy] = useState(false);
 
   const isPublic = role !== null;
 
@@ -67,7 +87,10 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
         : await setPublicAccess(agent.typeId, 'visitor', PUBLIC_VIEWER_ROLE);
       setRole(access.role ?? null);
       if (isPublic) {
-        notify.success({ title: t`Public access removed`, message: t`Only people you share with can view this agent.` });
+        notify.success({
+          title: t`Public access removed`,
+          message: t`Only people you share with can view this agent.`,
+        });
       } else {
         notify.success({ title: t`Agent is public`, message: t`Anyone with the link can view this agent.` });
       }
@@ -96,7 +119,7 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
       }
       data-testid="agent-public-access"
     >
-      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? ' animate-spin' : ''}`} />
+      <Icon className={`me-1.5 h-3.5 w-3.5${busy ? 'animate-spin' : ''}`} />
       {isPublic ? <Trans>Remove public access</Trans> : <Trans>Set public</Trans>}
     </Button>
   );
@@ -105,22 +128,39 @@ function PublicAccessButton({ agent }: { agent: Agent }) {
 /**
  * Share the agent by email (a hub role on the agent), make it public, and, once published, its
  * launch link. All need the agent on the hub: the invite and the public grant only land on a
- * published row.
+ * published row — so an unpublished agent is offered Publish here, the same control the deploy
+ * checklist uses. `onPublished` re-reads the version that decides `published`.
  */
-export function AgentVisibilitySection({ agent, version }: { agent: Agent; version: AgentVersionState | null }) {
+export function AgentVisibilitySection({
+  agent,
+  version,
+  onPublished,
+}: {
+  agent: Agent;
+  version: AgentVersionState | null;
+  onPublished?: () => void | Promise<void>;
+}) {
   const { t } = useLingui();
   const published = version?.published === true;
   const launchLink = published ? agentLaunchLink(agent) : null;
   const [shareOpen, setShareOpen] = useState(false);
+  const [visitorRole, setVisitorRole] = useVisitorRole(agent, published);
+  // Known only once set here: the flag lives on the hub row, which this page does not read.
+  const [visitorTrials, setVisitorTrials] = useState<boolean | null>(null);
 
   return (
     <section className="mt-4 border-t pt-4" data-testid="agent-visibility">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">
-          <Trans>Sharing</Trans>
+          <Trans>Visibility Settings</Trans>
         </h3>
         <div className="flex items-center gap-2">
-          {published && <PublicAccessButton agent={agent} />}
+          {published ? (
+            <PublicAccessButton agent={agent} role={visitorRole} setRole={setVisitorRole} />
+          ) : (
+            // Unknown (`version` unread) is not "unpublished": nothing is offered until it is known.
+            version && <AgentPublishButton agent={agent} onPublished={onPublished} testId="agent-visibility-publish" />
+          )}
           <ShareButton
             onClick={() => setShareOpen(true)}
             disabled={!published}
@@ -145,12 +185,25 @@ export function AgentVisibilitySection({ agent, version }: { agent: Agent; versi
             />
           </div>
           <p className="mt-1 text-xs text-muted-foreground" data-testid="agent-launch-link-hint">
-            <Trans>
-              Anyone its project is shared with can launch it from this link. Making the agent public lets everyone see
-              it; launching still needs the project shared with them.
-            </Trans>
+            {visitorRole === PUBLIC_VIEWER_ROLE && visitorTrials ? (
+              <Trans>Anyone with the link can try this agent in a sandbox of their own — no sign-in needed.</Trans>
+            ) : (
+              <Trans>
+                Anyone its project is shared with can launch it from this link. Making the agent public lets everyone
+                see it; launching still needs the project shared with them.
+              </Trans>
+            )}
           </p>
         </div>
+      )}
+      {published && (
+        <AgentVisitorDeploymentSection
+          agent={agent}
+          role={visitorRole}
+          setRole={setVisitorRole}
+          allowed={visitorTrials}
+          setAllowed={setVisitorTrials}
+        />
       )}
       <ShareAgentDialog open={shareOpen} onOpenChange={setShareOpen} agent={agent} />
     </section>

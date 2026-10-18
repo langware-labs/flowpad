@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
@@ -32,11 +32,11 @@ import { SendProgressNotice } from '@src/components/conversation/SendProgressNot
 import type { ShareSource } from '@src/hooks/share-sources';
 import { type CarriedEntity, DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
 import { GitignoredNotice } from '@src/components/share-to-conversation/GitignoredNotice';
-import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { runGitShareFix, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
-import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
+import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
@@ -99,6 +99,29 @@ const MAX_CONVERSATIONS = 5;
 /** Sentinel for the "start a new conversation" row (never a real UUID). */
 const NEW_CONVERSATION = '__new__';
 
+/** Who the last share went to — prefilled the next time the dialog opens
+ *  without recipients. A per-viewer convenience: absent storage just means
+ *  an empty "To". */
+const LAST_PARTICIPANTS_KEY = 'flowpad.share.lastParticipants';
+
+function readLastParticipants(): ConversationParticipant[] {
+  try {
+    const raw = window.localStorage.getItem(LAST_PARTICIPANTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) ? (parsed as ConversationParticipant[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberLastParticipants(participants: ConversationParticipant[]): void {
+  try {
+    window.localStorage.setItem(LAST_PARTICIPANTS_KEY, JSON.stringify(participants));
+  } catch {
+    /* storage unavailable: nothing to remember */
+  }
+}
+
 /** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
@@ -160,6 +183,10 @@ export function ShareToConversationDialog({
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const { handlePaste } = useFileStateAttach(setFiles, {
+    enabled: !busy && !!source.supportsFiles,
+    setText: setNote,
+  });
   const [attachTranscript, setAttachTranscript] = useState(true);
   // "Create bookmark" opt-in (default off): the receiver mints a favorite
   // pointing at the shared asset when it installs. Only offered for bookmarkable
@@ -223,7 +250,8 @@ export function ShareToConversationDialog({
 
   useEffect(() => {
     if (!open) return;
-    setParticipants(initialParticipantsRef.current ?? []);
+    // No recipient given: share with whoever the last share went to.
+    setParticipants(initialParticipantsRef.current ?? readLastParticipants());
     setTitleInput('');
     setNote(defaultNoteRef.current ?? '');
     setFiles([]);
@@ -269,16 +297,45 @@ export function ShareToConversationDialog({
   // a manual toggle within one selection).
   const conversationsRef = useRef(conversations);
   conversationsRef.current = conversations;
+  // Git is ON whenever the asset can travel by git (now, or after its one-click
+  // fix) — sharing a repo file is a git pointer by default — or the
+  // conversation already shares by git. The sender can still switch it off.
+  // Applied when the selection changes or the preflight first answers — never
+  // again after, so a sender's own "off" is not overridden by a refetch.
+  const gitEligibleRef = useRef(false);
+  gitEligibleRef.current = preflight.available || !!preflight.fix;
   useEffect(() => {
     if (!gitCapable) return;
     const conv = conversationsRef.current.find((c) => c.id === selected);
-    setGitSharing(selected === NEW_CONVERSATION ? false : (conv?.git_sharing_enabled ?? false));
-  }, [selected, gitCapable]);
+    setGitSharing(gitEligibleRef.current || (conv?.git_sharing_enabled ?? false));
+  }, [selected, gitCapable, preflight.answered]);
 
   // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
   // toggle stops the share entirely — we never silently downgrade to a copy.
   const gitMode = gitCapable && gitSharing && preflight.available;
   const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
+  // The one-click fix for a blocked Git share: commit + push only this asset, or
+  // push what is already committed. A conflict is reported, never forced.
+  const [fixBusy, setFixBusy] = useState(false);
+  const applyGitFix = useCallback(async () => {
+    const ref = source.gitPreflightRef;
+    if (!ref || !preflight.fix) return;
+    setFixBusy(true);
+    try {
+      const res = await runGitShareFix(ref, preflight.fix);
+      if (!res.ok) {
+        setLocalError(
+          res.kind === 'conflict'
+            ? t`Someone else changed this file on the remote. Resolve the conflict in Git, then share again.`
+            : res.message || t`Git could not commit or push this file.`,
+        );
+      }
+    } catch (e) {
+      setLocalError(errorMessage(e, t`Git could not commit or push this file.`));
+    } finally {
+      setFixBusy(false);
+    }
+  }, [source.gitPreflightRef, preflight.fix, t]);
   const canShareSelected = !gitBlocked && (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   // Subscribed only while THIS dialog's connect is pending, so an abandoned
@@ -459,6 +516,7 @@ export function ShareToConversationDialog({
             }
           }
         }
+        if (participants.length) rememberLastParticipants(participants);
         setSharedConversationId(convId);
         onShared?.(convId);
       }
@@ -614,6 +672,7 @@ export function ShareToConversationDialog({
                 <textarea
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+                  onPaste={handlePaste}
                   placeholder={t`Add a personal note…`}
                   rows={2}
                   disabled={busy}
@@ -662,11 +721,13 @@ export function ShareToConversationDialog({
                     aria-checked={gitSharing}
                     aria-label={t`Share using Git origin`}
                     onClick={() => {
-                      // Can turn OFF anytime; can only turn ON when eligible.
-                      if (!gitSharing && !preflight.available) return;
+                      // Can turn OFF anytime; can turn ON when eligible, or when a
+                      // one-click fix (commit / push) can make it eligible — turning
+                      // it on is what shows that fix.
+                      if (!gitSharing && !preflight.available && !preflight.fix) return;
                       setGitSharing((v) => !v);
                     }}
-                    disabled={busy || preflight.loading || (!preflight.available && !gitSharing)}
+                    disabled={busy || preflight.loading || (!preflight.available && !preflight.fix && !gitSharing)}
                     data-testid="share-git-toggle"
                     data-state={gitSharing ? 'on' : 'off'}
                     className={cn(
@@ -715,6 +776,24 @@ export function ShareToConversationDialog({
                       (preflight.reason ?? (
                         <Trans>This asset can't be shared with Git. Turn Git sharing off to send a copy.</Trans>
                       ))
+                    )}
+                    {!preflight.loading && preflight.fix && source.gitPreflightRef && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-2"
+                        data-testid={`share-git-fix-${preflight.fix}`}
+                        disabled={fixBusy}
+                        onClick={() => void applyGitFix()}
+                      >
+                        {fixBusy ? (
+                          <Trans>Working…</Trans>
+                        ) : preflight.fix === 'commit' ? (
+                          <Trans>Commit and push this file</Trans>
+                        ) : (
+                          <Trans>Push and share</Trans>
+                        )}
+                      </Button>
                     )}
                   </div>
                 )}

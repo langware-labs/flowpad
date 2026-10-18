@@ -73,20 +73,46 @@ function servedBy(proxies: ServiceEndpoint[], field: 'artifact_id' | 'webapp_id'
 }
 
 /**
+ * Every audience proxy's rows, `app` first (its route wins over `admin`'s), and whether any is still loading.
+ * One query per audience: `AUDIENCE_PROXIES` is a module constant, so the hook count never changes.
+ */
+function useServedApps(enabled: boolean): { proxies: ServiceEndpoint[]; loading: boolean } {
+  // eslint-disable-next-line react-hooks/rules-of-hooks -- a fixed-length module constant: same hooks every render
+  const results = AUDIENCE_PROXIES.map((request) => useEntitiesQuery<ServiceEndpoint>(request, { enabled }));
+  return {
+    proxies: [...results].reverse().flatMap((result) => result.data ?? []),
+    loading: results.some((result) => result.isLoading),
+  };
+}
+
+/**
+ * The webapp asset an app address names: the micro_app itself, or — for an artifact — the
+ * `webapp_id` of a route serving it. `loading` until the proxies answer; null when the artifact is
+ * served by no webapp asset. What a setup gate scopes its load to, so an app waits only for itself.
+ */
+export function useAppWebappId(artifactId: string | null, microAppId: string | null): { webappId: string | null; loading: boolean } {
+  const { proxies, loading } = useServedApps(!microAppId && !!artifactId);
+  if (microAppId) return { webappId: microAppId, loading: false };
+  if (!artifactId) return { webappId: null, loading: false };
+  const served = servedBy(proxies, 'artifact_id', artifactId);
+  return { webappId: served.find((app) => app.webapp_id)?.webapp_id ?? null, loading };
+}
+
+/**
  * The address a BROWSER loads a dev server at — resolved from its endpoint now,
  * never stored (`direct-url`: localhost on a desktop, the box's public host in a
  * sandbox). Re-resolved when the endpoint changes; '' until it answers.
  */
-function useDirectUrl(endpoint: ServedApp | null): string {
+function useDirectUrl(endpoint: ServedApp | null): { url: string; pending: boolean } {
   const port = endpoint?.backend?.type === 'proxy' ? endpoint.backend.port : null;
-  const { data } = useQuery({
+  const { data, isPending } = useQuery({
     // The port too: a restarted server keeps its mount and moves its address.
     queryKey: ['service_endpoint', endpoint?.id ?? null, 'direct-url', endpoint?.mount ?? null, port],
     queryFn: () => endpoint!.directUrl().catch(() => ''),
     enabled: !!endpoint,
     staleTime: Infinity,
   });
-  return endpoint ? (data ?? '') : '';
+  return { url: endpoint ? (data ?? '') : '', pending: !!endpoint && isPending };
 }
 
 /**
@@ -154,18 +180,11 @@ export function useAppDisplay(
     [endpointId],
   );
   const { data: addressed, isLoading: addressedLoading } = useEntity<ServiceEndpoint>(endpointTypeId);
-  const byApp = !endpointId && !!(artifactId || microAppId);
-  const { data: adminProxies = [], isLoading: adminLoading } = useEntitiesQuery<ServiceEndpoint>(AUDIENCE_PROXIES[0], {
-    enabled: byApp,
-  });
-  const { data: appProxies = [], isLoading: appLoading } = useEntitiesQuery<ServiceEndpoint>(AUDIENCE_PROXIES[1], {
-    enabled: byApp,
-  });
-  const loading = endpointId ? addressedLoading : adminLoading || appLoading;
+  const { proxies, loading: proxiesLoading } = useServedApps(!endpointId && !!(artifactId || microAppId));
+  const loading = endpointId ? addressedLoading : proxiesLoading;
 
   // An addressed endpoint shows ONE app: the mount named, or — a service of its own — itself.
   const addressedApp = addressed?.servedAt(route) ?? null;
-  const proxies = [...appProxies, ...adminProxies];
   const rows: ServedApp[] = endpointId
     ? addressedApp
       ? [addressedApp]
@@ -184,7 +203,8 @@ export function useAppDisplay(
   const held = `${devFound?.id ?? ''}/${devFound?.mount ?? ''}|${servedFound?.id ?? ''}/${servedFound?.mount ?? ''}`;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const [devEndpoint, servedEndpoint] = useMemo(() => [devFound, servedFound], [held]);
-  const devUrl = useDirectUrl(devEndpoint);
+  // An address not answered yet is not an idle app: until it is, nothing is chosen (no setup gate).
+  const { url: devUrl, pending: devUrlPending } = useDirectUrl(devEndpoint);
   const servedUrl = servedEndpoint ? servedEndpoint.serviceUrl() : '';
 
   return useMemo(() => {
@@ -198,7 +218,7 @@ export function useAppDisplay(
     const runtime = requested && available.includes(requested) ? requested : (available[0] ?? null);
 
     return {
-      loading,
+      loading: loading || devUrlPending,
       runtime,
       available,
       src: withQuery(runtime === 'served' ? servedUrl : runtime === 'dev' ? devUrl : '', appQuery),
@@ -208,5 +228,5 @@ export function useAppDisplay(
       view,
       setRuntime: setOverride,
     };
-  }, [appQuery, devUrl, devEndpoint, loading, override, preferred, servedEndpoint, servedUrl, theme, view]);
+  }, [appQuery, devUrl, devUrlPending, devEndpoint, loading, override, preferred, servedEndpoint, servedUrl, theme, view]);
 }

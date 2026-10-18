@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { dataContext, FSRef, Markdown, PageId, TypeId, Whiteboard, type APIEntity, type WikiResolveResult, type AnyEntity } from '@sdk';
+import { dataContext, FSRef, Markdown, PageId, TypeId, Chart, type APIEntity, type WikiResolveResult, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -35,7 +35,7 @@ interface WikiResolveViewProps {
   authority?: WikiAuthority;
 }
 
-type CreateAsType = 'markdown' | 'whiteboard';
+type CreateAsType = 'markdown' | 'chart';
 
 /**
  * Render a Wiki target at its Wiki Dock URL.
@@ -78,9 +78,10 @@ export function WikiResolveView({
   const handleCreate = useCallback(async () => {
     setCreating(true);
     try {
-      if (createAs === 'whiteboard') {
-        await Whiteboard.createInProject(dataContext.project ?? null, name);
-        notify.success({ title: t`Whiteboard created`, message: `[[${name}]]` });
+      if (createAs === 'chart') {
+        // A wiki page drawn freehand: the board format.
+        await Chart.createInProject(dataContext.project ?? null, name, 'excalidraw');
+        notify.success({ title: t`Chart created`, message: `[[${name}]]` });
       } else {
         await Markdown.createInProject(dataContext.project ?? null, name);
         notify.success({ title: t`Markdown created`, message: `[[${name}]]` });
@@ -159,9 +160,9 @@ export function WikiResolveView({
                   </Label>
                 </div>
                 <div className="flex items-center gap-2">
-                  <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
-                  <Label htmlFor="wiki-create-whiteboard">
-                    <Trans>Create as Whiteboard</Trans>
+                  <RadioGroupItem value="chart" id="wiki-create-chart" />
+                  <Label htmlFor="wiki-create-chart">
+                    <Trans>Create as Chart</Trans>
                   </Label>
                 </div>
               </RadioGroup>

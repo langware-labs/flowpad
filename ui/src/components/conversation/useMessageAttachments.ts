@@ -59,8 +59,13 @@ export function chipStateFor(
   // conversation branch needs it), so entity resolution would mark a staged
   // task installed before the user ever reviewed it. PROJECT likewise: a
   // hub-mirrored membership row resolves long before anything is cloned, so
-  // only the attachment's own install says it is installed here.
-  if (ma && (ma.asset_type === 'file' || ma.asset_type === 'task' || ma.asset_type === 'project')) {
+  // only the attachment's own install says it is installed here. A GIT share
+  // too: it names one version, and a row of an older share of the same asset
+  // resolving here does not mean THIS version is open.
+  if (
+    ma &&
+    (ma.asset_type === 'file' || ma.asset_type === 'task' || ma.asset_type === 'project' || ma.transfer_mode === 'git')
+  ) {
     return ma.installed ? 'installed' : 'staged';
   }
   if (entityResolved) return 'installed';

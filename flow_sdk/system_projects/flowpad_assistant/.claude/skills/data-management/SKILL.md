@@ -41,6 +41,11 @@ Typed data in Flowpad is three words, never mixed up:
 > **5. Schemas apply live:** `flow schema apply <folder>`. Never ask for a restart.
 > **6. Never widen a wait, a timeout or a retry to make something pass.**
 
+
+## FlowCall blocks
+
+For reusable typed processing, read the [FlowCall block recipe](../../../docs/Getting%20Started/FlowCall.md): `compute_op.json` declares input/output, a Python block uses `call.py:call`, and the answer is `ReturnedValue`. Whole-list transforms, explicit item mapping and Wizard-backed chaining share this contract.
+
 ## Modes (from the skill arg)
 
 The FIRST token, if it is exactly `schema`, `dataset`, `app`, `migrate` or `review`, selects
@@ -72,6 +77,13 @@ that needs a schema AND rows runs `schema`, then `dataset`).
 Then do it in the user's project and read it back the same way.
 
 ## Reference
+
+Before adding a driver for another external resource, check whether an existing driver can
+express it through configuration. For example, Twenty people, companies, members, tasks and
+opportunities are five configured sources of one `twenty` driver, sharing transport code.
+Different SDK families or fundamentally different transports can justify separate drivers;
+different endpoints or record fields alone do not. Implementation and migration guidance live
+in [connect-data-source's configurable-driver recipe](../connect-data-source/references/configurable-drivers.md).
 
 | When you need to… | Load |
 | --- | --- |
@@ -109,7 +121,7 @@ reasons (a 400 carries the validation `errors`).
 | a row's past values (history) | a date you will ask about is a FIELD (`stage_dates`); a dataset in git has its commits |
 
 Rows ARE queried across links, counted, searched, written in bulk and announced (`modes/app.md`):
-`ds.rows({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
+`ds.query({match, q, expand})` — a path follows a link (`input.persona.icp.key`) and `expand` brings
 the linked rows back beside; `ds.count({group_by: ["week:input.day"], metrics: {people:
 "distinct:input.email"}})`; `ds.usedBy()`; `putMany` / `deleteRows` / `sync` as one step;
 `ds.onRowsChanged(handler)` instead of polling. One import home in Python: `from flow_sdk.datasets

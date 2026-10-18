@@ -202,17 +202,17 @@ const ASSETS: AssetSpec[] = [
       return { id: p.id!, name: p.name ?? p.title };
     },
   },
-  // whiteboard: a folder-layout asset whose board.json + WHITE_BOARD.md
+  // chart (excalidraw format): a folder-layout asset whose board.json + CHART.md
   // materialize lazily on editor mount, NOT on create() — so a bare SDK create
   // ships nothing. Seed the two files the editor's first save would write (the
   // instances run on this host, so asset_ref is a real local path), then it
   // rides the identical file-backed family path as every other type.
   {
-    type: 'whiteboard',
-    mainSubdir: 'agentic-assets/whiteboard',
+    type: 'chart',
+    mainSubdir: 'agentic-assets/chart',
     create: async (sdk) => {
-      const name = testEntityName('whiteboard');
-      const wb = trackForCleanup(await sdk.Whiteboard.create(name));
+      const name = testEntityName('chart');
+      const wb = trackForCleanup(await sdk.Chart.create(name, 'excalidraw'));
       const assetRef = (wb as { asset_ref?: string }).asset_ref;
       if (assetRef) {
         const { promises: nodeFs } = await import('node:fs');
@@ -221,7 +221,7 @@ const ASSETS: AssetSpec[] = [
           `${assetRef}/board.json`,
           JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
         );
-        await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${name}\n`);
+        await nodeFs.writeFile(`${assetRef}/CHART.md`, `# ${name}\n`);
       }
       return { id: wb.id!, name: wb.name ?? wb.title };
     },
@@ -229,7 +229,7 @@ const ASSETS: AssetSpec[] = [
 ];
 
 // NOTE on coverage: these 7 types' on-disk asset_ref exercises the full family
-// path (pack → copy-to-project → index). whiteboard's source is seeded above
+// path (pack → copy-to-project → index). chart's source is seeded above
 // (its files materialize lazily on editor mount, not on create()). Two more
 // file-backed types ride the SAME generic handler but have no on-disk source to
 // seed in this harness, so they're tracked separately:

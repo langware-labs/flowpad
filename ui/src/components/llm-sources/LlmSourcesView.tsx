@@ -417,9 +417,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
           >
             <div className="font-medium">{sec === 'keys' ? t`API keys` : t`Hub endpoints`}</div>
             <div className="text-muted-foreground">
-              {sec === 'keys'
-                ? t`${keys.count} of ${keys.total} set`
-                : t`${hubCount} available`}
+              {sec === 'keys' ? t`${keys.count} of ${keys.total} set` : t`${hubCount} available`}
             </div>
           </button>
         ))}
@@ -451,7 +449,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
             // Not `status.sources` directly: the hub group is narrowed to the budgets allocated
             // to this person, so an owner does not have to read past their org's and their teams'
             // pools to find their own. See `visible-sources.ts` for what it refuses to hide.
-            const rows = visibleSources(status, focused, kind, record?.hub.user_typeid);
+            const rows = visibleSources(status, focused, kind);
             if (!rows.length) return null;
             return (
               <div key={kind}>

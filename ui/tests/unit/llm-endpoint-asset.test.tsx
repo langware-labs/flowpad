@@ -4,9 +4,9 @@
  * Two contracts, and both are about whose budget is on screen:
  *  - `myEndpoints` lists ONLY what the hub allocated to this person. An owner sees a great
  *    deal more than that — the org pool, its teams' pools, every allowance they minted for
- *    somebody else — and none of it is their budget. So the test is `holder_typeid ===
- *    user-<me>` (the hub's own "this allowance is theirs" edge), not "anything that isn't a
- *    group".
+ *    somebody else — and none of it is their budget. So the test is `is_mine`, the hub's own
+ *    answer off the `partof` edge to the holder, not "anything that isn't a group" and not
+ *    "anything I cannot change".
  *  - the view is READ-ONLY and shows the endpoint's own ceilings and models — never
  *    `member_default_limits`, which is the template an org hands its members and says
  *    nothing about this wallet — plus the same Test button the org page's rows carry.
@@ -74,7 +74,7 @@ function offer(over: Partial<LLMEndpointOffer> = {}): LLMEndpointOffer {
     models: {},
     invocable: true,
     base_url: '',
-    holder_typeid: 'user-abc',
+    is_mine: true,
     can_administer: null,
     filters: {
       models_allow: ['anthropic/claude-haiku-4.5'],
@@ -107,49 +107,48 @@ function offer(over: Partial<LLMEndpointOffer> = {}): LLMEndpointOffer {
 describe('myEndpoints', () => {
   const ME = 'user-abc';
 
-  it('lists what the hub says is held by this person, and falls back to "may only spend it"', () => {
-    const mine = offer({ id: 'mine', name: 'Mine', holder_typeid: ME });
-    const alsoMine = offer({ id: 'also', name: 'Also mine', holder_typeid: 'user:abc' });
-    // The hub could not be asked whose it is (older hub, failed read): the ONLY thing saying it is
-    // theirs is that they cannot change it. This is the row that used to vanish — a person's
+  it('lists exactly what the hub attributed to this person', () => {
+    const mine = offer({ id: 'mine', name: 'Mine', is_mine: true });
+    // Handed to them by an admin: still theirs, and the hub says so directly rather than being
+    // inferred from "you cannot change it". This is the row that used to vanish — a person's
     // entire Assets tree showed no LLM Endpoints at all.
-    const givenToMe = offer({ id: 'given', name: 'Bob +20', holder_typeid: null, can_administer: false });
+    const givenToMe = offer({ id: 'given', name: 'Bob +20', is_mine: true, can_administer: false });
     // Everything below is visible to an OWNER and is still not their budget.
-    const someoneElse = offer({ id: 'theirs', name: 'Bob +5', holder_typeid: 'user-bob', can_administer: true });
-    const iAdminister = offer({ id: 'admin', name: 'Bob +1', holder_typeid: null, can_administer: true });
-    const sharedRoot = offer({ id: 'root', name: 'Global root', holder_typeid: null, can_administer: null });
-    const org = offer({ id: 'org', name: 'Acme', holder_typeid: null, can_administer: true });
-    const team = offer({ id: 'team', name: 'Platform', holder_typeid: null, can_administer: true });
+    const someoneElse = offer({ id: 'theirs', name: 'Bob +5', is_mine: false, can_administer: true });
+    const iAdminister = offer({ id: 'admin', name: 'Bob +1', is_mine: false, can_administer: true });
+    const org = offer({ id: 'org', name: 'Acme', is_mine: false, can_administer: true });
+    const team = offer({ id: 'team', name: 'Platform', is_mine: false, can_administer: true });
+    // A catalog row carries no expansion, so the hub answered nothing about it.
+    const sharedRoot = offer({ id: 'root', name: 'Global root', is_mine: null, can_administer: null });
 
-    const kept = myEndpoints(
-      { available: [org, mine, team, someoneElse, iAdminister, sharedRoot, givenToMe, alsoMine] } as never,
-      ME,
-    );
+    const kept = myEndpoints({
+      available: [org, mine, team, someoneElse, iAdminister, sharedRoot, givenToMe],
+    } as never);
 
-    // Sorted by name; the colon spelling of the same id counts as mine.
-    expect(kept.map((e) => e.id)).toEqual(['also', 'given', 'mine']);
-    expect(isAllocatedToUser(someoneElse, ME)).toBe(false);
-    expect(isAllocatedToUser(iAdminister, ME)).toBe(false);
-    // Unknown is not a gift: the shared root reaches everyone without a role edge, and counting
-    // it would put the company pool in every personal list.
-    expect(isAllocatedToUser(sharedRoot, ME)).toBe(false);
-    expect(isAllocatedToUser(org, ME)).toBe(false);
-    expect(isAllocatedToUser(team, ME)).toBe(false);
+    expect(kept.map((e) => e.id)).toEqual(['given', 'mine']); // sorted by name
+    expect(isAllocatedToUser(someoneElse)).toBe(false);
+    expect(isAllocatedToUser(iAdminister)).toBe(false);
+    // Unanswered is not a gift: the shared root reaches everyone through a stamp rather than a
+    // role edge, and counting it would put the company pool in every personal list.
+    expect(isAllocatedToUser(sharedRoot)).toBe(false);
+    expect(isAllocatedToUser(org)).toBe(false);
+    expect(isAllocatedToUser(team)).toBe(false);
   });
 
   it('keeps a held wallet whatever the caller may do to it', () => {
-    // An admin CAN change their own allowance; the hub's holder edge is what makes it theirs, so
-    // the role question is never asked of a row the hub already attributed.
-    const mineAndEditable = offer({ holder_typeid: ME, can_administer: true });
-    expect(isAllocatedToUser(mineAndEditable, ME)).toBe(true);
+    // THE case the old `can_administer` guess got wrong. An admin CAN change their own allowance,
+    // and it is still theirs — so a rule of "if you cannot change it, it must be yours" dropped
+    // an admin's own budget out of their own list. The hub answers whose it is, and edit rights
+    // are never consulted.
+    const mineAndEditable = offer({ is_mine: true, can_administer: true });
+    expect(isAllocatedToUser(mineAndEditable)).toBe(true);
   });
 
-  it('claims nothing when the box cannot say who this person is', () => {
-    // Signed out (or an older backend that does not report it): "mine" is unprovable, and
-    // guessing would show somebody else's wallet.
-    const mine = offer({ holder_typeid: ME });
-    expect(myEndpoints({ available: [mine] } as never, null)).toEqual([]);
-    expect(myEndpoints(null, ME)).toEqual([]);
+  it('claims nothing the hub did not attribute', () => {
+    // An older hub, or a row read without the expansion: "mine" is unanswered, and guessing
+    // would show somebody else's wallet.
+    expect(myEndpoints({ available: [offer({ is_mine: null })] } as never)).toEqual([]);
+    expect(myEndpoints(null)).toEqual([]);
   });
 });
 

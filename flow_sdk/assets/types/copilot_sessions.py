@@ -12,7 +12,8 @@ COPILOT_EVENTS_FILENAME = "events.jsonl"
 
 
 def copilot_session_identity_key(ref: FSRef | Path) -> str:
-    """Stable, filesystem-safe **UUID** id for a Copilot transcript.
+    """Stable, filesystem-safe **UUID** id for a Copilot transcript: the ``session.start``
+    event's ``sessionId``; without one, the path:
 
     The two layouts carry the id in different places, and the filename says
     which one this is: Copilot's own store names the *directory*
@@ -24,6 +25,13 @@ def copilot_session_identity_key(ref: FSRef | Path) -> str:
     matches the DB id.
     """
     path = Path(getattr(ref, "_path", ref))
+    # The file says which session it is (``session.start``), wherever it was installed or
+    # whatever it was named — an install keeps ``events.jsonl``, whose parent is the type folder.
+    from flow_sdk.assets.types.store_sessions import iter_head_json  # noqa: PLC0415
+
+    for event in iter_head_json(path):
+        if event.get("type") == "session.start" and (sid := (event.get("data") or {}).get("sessionId")):
+            return str(sid)
     return path.parent.name if path.name == COPILOT_EVENTS_FILENAME else path.stem
 
 

@@ -77,7 +77,7 @@ export * from './user';
 export * from './visitor';
 export * from './web-domain';
 export * from './skill';
-export * from './whiteboard';
+export * from './chart';
 export * from './deck-template';
 export * from './mcp';
 export * from './deck';

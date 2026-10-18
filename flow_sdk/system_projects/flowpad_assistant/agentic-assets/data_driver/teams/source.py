@@ -53,6 +53,9 @@ from flow_sdk.sources.values.query import MessageQuery
 GRAPH_API_BASE = "https://graph.microsoft.com/v1.0"
 #: Conversations (roots) per page; Graph's ceiling for this collection is 50.
 MESSAGE_PAGE = 20
+#: Graph pages one backward read walks at most: Graph cannot filter by date, so an older page is
+#: found by reading newest-first pages and keeping what predates the bound.
+OLDER_PAGES = 5
 #: ``messageType`` values that are not something a person said.
 NOT_A_MESSAGE = frozenset({"systemEventMessage", "unknownFutureValue"})
 CHATS = "chats"
@@ -89,6 +92,7 @@ class TeamsSource(MessageSource):
     durable_cursor = True
     page_size = MESSAGE_PAGE
     pages_per_pass = 1
+    pages_backward = True
     #: A Teams source is ABOUT its channel, the composite ``{teamId}/{channelId}``.
     identity_config_key = "channel"
     connection = "microsoft"
@@ -162,11 +166,11 @@ class TeamsSource(MessageSource):
         container, root = self._where(conversation)
         if container == CHATS or root is not None:
             raise Unsupported("reading one Teams thread or chat is not supported")
-        since, newest, link = _start(query, cursor)
         team, channel = split_channel(container)
-        body = await self._graph("GET", link) if link else await self._graph(
-            "GET", f"teams/{team}/channels/{channel}/messages", params={"$top": str(limit), "$expand": "replies"}
-        )
+        if query.before is not None:
+            return await self._older(container, team, channel, query.before, limit)
+        since, newest, link = _start(query, cursor)
+        body = await self._page(team, channel, limit, link)
         items: list[MessageItem] = []
         for message_root in body.get("value") or []:
             for message in (message_root, *(message_root.get("replies") or [])):
@@ -181,6 +185,36 @@ class TeamsSource(MessageSource):
             items=tuple(items),
             next_cursor=_PAGE + json.dumps({"link": more, "since": since, "newest": newest}) if more else None,
             resume_cursor=_RESUME + newest if newest else None,
+        )
+
+    async def _older(self, container: str, team: str, channel: str, before: datetime, limit: int) -> ChangePage:
+        """One page of messages (roots and replies) created strictly before ``before``, newest first,
+        at most ``limit``. Graph has no date filter here, so this walks ``@odata.nextLink`` pages
+        (at most ``OLDER_PAGES``) and filters locally. Neither reads nor moves the forward cursor."""
+        found: dict[str, tuple[datetime, MessageItem]] = {}
+        link = ""
+        for _ in range(OLDER_PAGES):
+            body = await self._page(team, channel, limit, link)
+            for message_root in body.get("value") or []:
+                for message in (message_root, *(message_root.get("replies") or [])):
+                    created = _when(message.get("createdDateTime"))
+                    if created is None or created >= before or not message.get("id"):
+                        continue
+                    if message.get("messageType") not in NOT_A_MESSAGE:
+                        found[str(message["id"])] = (created, self._item(container, message_root, message))
+            link = str(body.get("@odata.nextLink") or "")
+            if len(found) >= limit or not link:
+                break
+        ordered = sorted(found.values(), key=lambda pair: pair[0], reverse=True)
+        return ChangePage(items=tuple(item for _, item in ordered[:limit]))
+
+    async def _page(self, team: str, channel: str, limit: int, link: str = "") -> dict:
+        """One Graph page of a channel's roots with their replies: ``link`` (a nextLink) when given,
+        else the newest ``limit``."""
+        if link:
+            return await self._graph("GET", link)
+        return await self._graph(
+            "GET", f"teams/{team}/channels/{channel}/messages", params={"$top": str(limit), "$expand": "replies"}
         )
 
     async def iterate(

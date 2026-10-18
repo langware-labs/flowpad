@@ -24,19 +24,20 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
-    FlowData,
-    FlowDataType,
-    FlowElementType,
-)
-from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
-from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
     LAUNCH_LOOKBACK,
     normalize_path,
     parse_iso_datetime,
     transcript_path_for_process,
 )
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataType,
+    FlowElementType,
+)
+from flow_sdk.fs_store.indexer.functions.codex_sessions import is_subagent_rollout, thread_source_of
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 def codex_transcript_path_for_process(process_id: str) -> Path:
@@ -60,6 +61,18 @@ def find_codex_session_jsonl(thread_id: str) -> Path | None:
         if p.name.endswith(suffix):
             return p
     return None
+
+
+def find_codex_resumable_session(thread_id: str) -> Path | None:
+    """The rollout for ``thread_id`` when it is a session ``codex resume`` accepts.
+
+    A sub-agent thread has a rollout under the same naming scheme, but codex
+    refuses to resume it, so it is never a process's session.
+    """
+    path = find_codex_session_jsonl(thread_id)
+    if path is None or is_subagent_rollout(path):
+        return None
+    return path
 
 
 def read_codex_rollout_meta(path: Path) -> dict:
@@ -91,7 +104,12 @@ def find_latest_codex_session_jsonl(
     cwd: str | None,
     started_at: str | datetime | None = None,
 ) -> Path | None:
-    """Find the newest rollout matching cwd and, when available, launch time."""
+    """Find the newest top-level rollout matching cwd and, when available, launch time.
+
+    A sub-agent thread's rollout shares the cwd and lands after its parent's
+    launch, but it is not a session: codex refuses to ``resume`` it, so a
+    process that adopted one fails every relaunch with exit 1.
+    """
     normalized_cwd = normalize_path(cwd)
     if not normalized_cwd:
         return None
@@ -106,6 +124,8 @@ def find_latest_codex_session_jsonl(
     for path in sessions_root.rglob("rollout-*.jsonl"):
         meta = read_codex_rollout_meta(path)
         if normalize_path(meta.get("cwd")) != normalized_cwd:
+            continue
+        if thread_source_of(meta) == "subagent":
             continue
         raw_dt = parse_iso_datetime(meta.get("_timestamp") or meta.get("timestamp"))
         if raw_dt is None:

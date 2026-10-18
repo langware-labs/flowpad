@@ -1,6 +1,6 @@
 """A dataset's eval runs, read back: the one reader the actions, the CLI and a browser share.
 
-Runs live in ``<dataset>/evals/<run_id>/`` (``run.json`` + ``examples.jsonl``), written by
+Runs live in ``<dataset>/evals/<run_id>/`` (``run.json`` + ``rows.jsonl``), written by
 ``flow_sdk.evals.run``. A run folder that does not read as ``eval.run`` is skipped with a warning --
 one broken run never hides the others.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from flow_sdk.evals.runner import RUNS_DIR
-from flow_sdk.schema.data_spec.eval_spec import EvalRun, ExampleEval
+from flow_sdk.schema.data_spec.eval_spec import EvalRun, RowEval
 
 logger = logging.getLogger(__name__)
 
@@ -37,16 +37,16 @@ def runs(folder: Path) -> list[EvalRun]:
     return sorted(out, key=lambda r: r.started_at, reverse=True)
 
 
-def load(folder: Path, run_id: str) -> tuple[EvalRun, list[ExampleEval]]:
-    """One run and its examples. ``LookupError`` for a run that is not a folder of ``evals/``."""
+def load(folder: Path, run_id: str) -> tuple[EvalRun, list[RowEval]]:
+    """One run and its rows. ``LookupError`` for a run that is not a folder of ``evals/``."""
     root = (Path(folder) / RUNS_DIR).resolve()
     run_dir = (root / run_id).resolve()
     if run_dir.parent != root or not (run_dir / "run.json").is_file():
         raise LookupError(f"no eval run {run_id!r}")
     run = EvalRun.model_validate_json((run_dir / "run.json").read_text(encoding="utf-8"))
-    examples_file = run_dir / "examples.jsonl"
-    lines = examples_file.read_text(encoding="utf-8").splitlines() if examples_file.is_file() else []
-    return run, [ExampleEval.model_validate_json(line) for line in lines if line.strip()]
+    rows_file = run_dir / "rows.jsonl"
+    lines = rows_file.read_text(encoding="utf-8").splitlines() if rows_file.is_file() else []
+    return run, [RowEval.model_validate_json(line) for line in lines if line.strip()]
 
 
 __all__ = ["explanations", "load", "runs"]

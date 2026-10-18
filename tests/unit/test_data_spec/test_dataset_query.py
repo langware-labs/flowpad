@@ -13,7 +13,7 @@ from typing import ClassVar, Optional
 import pytest
 
 from flow_sdk.datasets.query import count, expression, field_of, matches, order, select
-from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, ExampleSpec
+from flow_sdk.schema.data_spec.dataset_spec import DatasetSpec, RowSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 pytestmark = pytest.mark.timeout(5)
@@ -86,7 +86,7 @@ class Touch(DataSpec):
     person: Optional[str] = None
 
 
-class Touches(DatasetSpec[ExampleSpec[Touch, DataSpec, DataSpec]]):
+class Touches(DatasetSpec[RowSpec[Touch, DataSpec, DataSpec]]):
     spec_kind: ClassVar[str] = "unittest.rowquery.dataset"
 
 
@@ -117,7 +117,7 @@ async def test_query_answers_matching_rows_with_their_key_ref_and_version(tmp_pa
 
 async def test_a_filter_never_hides_a_row_that_does_not_fit(tmp_path):
     d = await _filled(tmp_path)
-    doc = next((tmp_path / "examples/t2/input").glob("*.json"))
+    doc = next((tmp_path / "rows/t2/input").glob("*.json"))
     doc.write_text(doc.read_text().replace('"sent"', "7"))
     got = d.query({"input.metric": "reply"})
     assert got["total"] == 3 and [p["key"] for p in got["problems"]] == ["t2"]

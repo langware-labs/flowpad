@@ -23,13 +23,13 @@ Three things are load-bearing:
   satisfied goal does nothing. Without one there is no "already done" state, so
   the op always runs — which is what a value-producing call is. Absent means
   *always execute*, never ``not_applicable``.
-* **The output is a NAMED shape.** ``output_spec_kind`` is a registered DataSpec
-  kind (or a primitive), resolved through the one ``SchemaRegistry`` and refused
-  at read when nobody registered it — rather than answering ``Any`` in silence.
+* **Input and output are declared shapes.** ``input`` and ``output`` use the
+  existing ShapeForm grammar; ``output_spec_kind`` remains the named-output
+  spelling. Named kinds resolve through the one ``SchemaRegistry`` and are
+  refused at read when unknown — rather than answering ``Any`` in silence.
 
-The per-OS ``commands`` map is legal only because ``CliOp`` declares a
-``spec_kind``: the authoring form has no map type, and ``to_authoring_form``
-short-circuits on a registered kind before it would reach the ``dict`` and fail.
+The per-OS ``commands`` map belongs to ``CliOp``'s registered shape:
+``to_authoring_form`` renders its kind rather than expanding those fields.
 Keys are ``sys.platform`` values (``darwin`` / ``linux`` / ``win32``), the same
 convention as ``CapabilitySpec.install_commands``.
 
@@ -41,10 +41,11 @@ from __future__ import annotations
 import sys
 from typing import Any, ClassVar, Literal, Optional, Union
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
 from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
@@ -95,6 +96,7 @@ class OpSubkind(StrEnum):
 
     NAVIGATE = "navigate"
     CLI = "cli"
+    PYTHON = "python"
     DECISION = "decision"
     PROMPT = "prompt"
     AGENT = "agent"
@@ -134,6 +136,7 @@ class ExeData(DataSpec):
     #: call whose value is its own plain answer (a decision's chosen option) — every
     #: other op's value is held to the kind it declared, or dropped.
     PLAIN_VALUE: ClassVar[bool] = False
+    INPUT_FOLDER: ClassVar[bool] = False
 
     def timeout(self, default: Optional[float] = None) -> float:
         """This call's budget: its own when set, else the role's default."""
@@ -142,9 +145,16 @@ class ExeData(DataSpec):
         return self.DEFAULT_TIMEOUT if default is None else default
 
 
+class PythonOp(ExeData):
+    """An approved asset's synchronous or asynchronous ``call.py:call``."""
+
+    spec_kind: ClassVar[str] = "compute_op.python"
+
+
 class CliOp(ExeData):
     """A shell one-liner, per OS. Also the shape of every completion check."""
 
+    INPUT_FOLDER: ClassVar[bool] = True
     spec_kind: ClassVar[str] = "compute_op.cli"
     ANSWER: ClassVar[type[ReturnedValue]] = CliResult
     VALUE_FROM_CHECK: ClassVar[bool] = True
@@ -208,6 +218,8 @@ class AgentOp(ExeData):
     spec_kind: ClassVar[str] = "compute_op.agent"
     DEFAULT_TIMEOUT: ClassVar[float] = AGENT_TIMEOUT
     ANSWER: ClassVar[type[ReturnedValue]] = PromptResult
+    #: The agent's own declared ``output`` is its contract: the launch already held the value to it.
+    PLAIN_VALUE: ClassVar[bool] = True
 
     #: The agent's name, resolved through ``get_agent_local_deployment``.
     agent: str
@@ -357,7 +369,8 @@ class AskChoiceSpec(DataSpec):
     """One way to answer a question that offers several (``AskOp.choices``).
 
     A value choice is typed (or picked, a ``file``); the answer is ``<value>=<what was given>``, one string.
-    A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
+    A ``fields`` choice is several values given together: one input per field, answered as newline-joined
+    ``<field value>=<what was given>`` lines. A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
     question closes by itself once its goal holds (``auto_continue``)."""
 
     spec_kind: ClassVar[str] = "compute_op.ask.choice"
@@ -366,10 +379,20 @@ class AskChoiceSpec(DataSpec):
     value: str
     label: str = ""
     hint: str = ""
+    #: Where to get the value — shown as a link under its input.
+    help_url: str = ""
+    #: The example shown in an empty input.
+    placeholder: str = ""
     secret: bool = False
     file: bool = False
     #: The command the person runs instead of giving a value, on this machine.
     command: str = ""
+    #: A sign-in through Flowpad instead of a value: the screen connects ``provider`` (covering ``scopes``) in the
+    #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
+    provider: str = ""
+    scopes: list[str] = []
+    #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
+    fields: list["AskChoiceSpec"] = []
 
 
 class AskItemSpec(DataSpec):
@@ -461,6 +484,7 @@ class AskOp(ExeData):
 
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.
 EXE_DATA: dict[OpSubkind, type[ExeData]] = {
+    OpSubkind.PYTHON: PythonOp,
     OpSubkind.NAVIGATE: NavigateOp,
     OpSubkind.CLI: CliOp,
     OpSubkind.DECISION: DecisionOp,
@@ -476,6 +500,23 @@ def known_kind(kind: str) -> bool:
     from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
 
     return kind in PRIMITIVES or SchemaRegistry.kind_type(kind) is not None
+
+
+def validate_shape(shape: Any) -> None:
+    """Strict kind preflight over the existing ShapeForm grammar; no coercion or I/O of values."""
+    from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, KIND_UNION, OPTIONAL_MARK  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
+
+    if isinstance(shape, (dict, list)):
+        for child in shape.values() if isinstance(shape, dict) else shape:
+            validate_shape(child)
+    elif isinstance(shape, str):
+        if shape.startswith(OPTIONAL_MARK):
+            validate_shape(shape[len(OPTIONAL_MARK):])
+        elif not shape.startswith(ENUM_PREFIX):
+            for kind in shape.split(KIND_UNION):
+                if not known_kind(kind_of(kind)):
+                    raise ValueError(f"unknown declared kind {kind!r}")
 
 
 def fields_of_kind(kind: Optional[str]) -> Any:
@@ -538,6 +579,29 @@ class Rung(DataSpec):
         return exe_data_by_subkind(data)
 
 
+class CallLogSpec(DataSpec):
+    """A block's call log (``core/compute_op/call_log``): each call a row of a dataset in temp."""
+
+    #: The rows' registered dataset kind -- the block's eval set kind, so its eval reads the log.
+    #: Absent: rows in the block's own ``input`` / ``output`` shapes.
+    dataset_kind: Optional[str] = None
+    #: Rows kept; past it the oldest go. A log, not a store.
+    max_rows: int = Field(default=500, gt=0)
+    #: A row's ``input`` or ``output`` over this many JSON bytes is not kept (an input: no row).
+    max_row_bytes: int = Field(default=65536, gt=0)
+    #: The log's folder in temp. Absent: ``call-log-<block>``.
+    name: str = ""
+    #: The log dataset's title. Absent: ``CallLog <block>``.
+    title: str = ""
+    #: An instance preference that turns the log on (``preferences.advanced.smart_navigation_log``).
+    #: Absent: always on.
+    enabled_by: str = ""
+    #: A function in the block's ``call.py``, ``(input, answer) -> row | None``, that writes the row
+    #: as ``dataset_kind`` holds it; ``None`` skips the call. The run's trace joins its ``data``.
+    #: Absent: the block's ``input`` / ``output`` as they are.
+    row: str = ""
+
+
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
@@ -552,7 +616,9 @@ class ComputeOpSpec(AssetDocumentSpec):
     description: str = ""
     subkind: OpSubkind = OpSubkind.CLI
     #: The call itself — the DataSpec ``compute_op.<subkind>``.
-    exe_data: Union[NavigateOp, CliOp, DecisionOp, PromptOp, AgentOp, AskOp]
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp]
+    input: Optional[ShapeForm] = None
+    output: Optional[ShapeForm] = None
     #: The kind of what this op RETURNS: a registered DataSpec kind, or a
     #: primitive (``string`` / ``int`` / ``float`` / ``bool``). Absent ⇒ no value.
     output_spec_kind: Optional[str] = None
@@ -580,9 +646,32 @@ class ComputeOpSpec(AssetDocumentSpec):
     setup: Text = ""
     #: How long an agent following ``setup`` gets (an ask's AI Assist). Unset: ``SETUP_TIMEOUT``.
     setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
+    #: Log every call of this block as a dataset row, with its run's trace. Absent: no log.
+    log: Optional[CallLogSpec] = None
 
     def setup_timeout(self) -> float:
         return self.setup_timeout_seconds or SETUP_TIMEOUT
+
+    @property
+    def output_shape(self) -> Any:
+        return self.output if self.output is not None else self.output_spec_kind
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler):
+        result = handler(self)
+        for field in ("input", "output", "log"):
+            if field not in self.model_fields_set and getattr(self, field) is None:
+                result.pop(field, None)
+        return result
+
+    @model_validator(mode="after")
+    def _declared_shapes(self) -> "ComputeOpSpec":
+        for shape in (self.input, self.output):
+            if shape is not None:
+                validate_shape(shape)
+        if self.output is not None and self.output_spec_kind is not None and self.output != self.output_spec_kind:
+            raise ValueError("output and output_spec_kind declare conflicting shapes")
+        return self
 
     @model_validator(mode="before")
     @classmethod
@@ -595,11 +684,11 @@ class ComputeOpSpec(AssetDocumentSpec):
             raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
         checked = self.completion_check is not None or bool(self.status_check)
         if getattr(self.exe_data, "auto_continue", False) and not (checked and (
-            (self.exe_data.recheck and self.output_spec_kind == ConfirmSpec.spec_kind)
+            (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
             or any(choice.command for choice in self.exe_data.choices)
         )):
             raise ValueError(
-                f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output_spec_kind "
+                f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output "
                 "confirm or a choice that is a command"
             )
         if self.exe_data.SELF_CHECKING and (self.completion_check is not None or self.status_check):
@@ -617,11 +706,11 @@ class ComputeOpSpec(AssetDocumentSpec):
                 f"unknown kind {self.output_spec_kind!r} — output_spec_kind must name a "
                 "registered DataSpec or a primitive"
             )
-        if self.subkind is OpSubkind.ASK and self.output_spec_kind is None:
+        if self.subkind is OpSubkind.ASK and self.output_shape is None:
             # Without a shape there is no field to draw and nothing to validate
             # the answer against — caught at read, not with a person waiting.
             raise ValueError(
-                f"{self.name or 'this op'} asks a person but declares no output_spec_kind — "
+                f"{self.name or 'this op'} asks a person but declares no output (or output_spec_kind) — "
                 "there is nothing to ask the person FOR"
             )
         return self

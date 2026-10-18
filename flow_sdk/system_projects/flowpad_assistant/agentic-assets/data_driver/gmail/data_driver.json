@@ -3,14 +3,15 @@
   "name": "gmail",
   "title": "Gmail",
   "icon_name": "Gmail",
-  "description": "A Gmail mailbox read over IMAP and sent through SMTP using an app password from the environment.",
+  "description": "A Gmail mailbox read over IMAP and sent through SMTP — signed in with Google, or with an app password.",
   "kind": "datasource.api.gmail",
   "featured": true,
   "auth": {
-    "env": [
-      "GMAIL_ADDRESS",
-      "GMAIL_APP_PASSWORD"
-    ]
+    "credential": "gmail",
+    "vars": {
+      "GMAIL_ADDRESS": "GMAIL_ADDRESS",
+      "GMAIL_APP_PASSWORD": "GMAIL_APP_PASSWORD"
+    }
   },
   "config": {
     "address": {
@@ -18,7 +19,7 @@
       "label": "Gmail address",
       "placeholder": "you@gmail.com",
       "account_key": true,
-      "hint": "Optional when GMAIL_ADDRESS is set. The app password is read only from GMAIL_APP_PASSWORD and is never stored on the source."
+      "hint": "Optional when the gmail credential's address is set. The sign-in or app password comes from the credential and is never stored on the source."
     },
     "imap_host": {
       "type": "text",

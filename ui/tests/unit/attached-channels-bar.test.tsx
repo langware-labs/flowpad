@@ -93,10 +93,11 @@ describe('AttachedChannelsBar', () => {
     expect(state([fake('a', 'disabled'), fake('b', 'disabled')])).toBe('off');
   });
 
-  it('while filtering, the controls give way to ×, which shows everything again', () => {
+  it('while filtering, the + turns into × in its place — nothing else on the line moves — and × shows everything again', () => {
     const onSelectedChange = mount([fake('a', 'active', 'gmail'), fake('b')], new Set(['gmail|gmail']));
     expect(screen.queryByTestId('attached-channels-add')).toBeNull();
-    expect(screen.queryByTestId('attached-channels-details')).toBeNull();
+    // The rest of the line stays, so the marks a person points at do not shift.
+    expect(screen.getByTestId('attached-channels-details')).toBeTruthy();
     const marks = screen.getAllByTestId('attached-channel');
     expect(marks.map((e) => e.getAttribute('aria-pressed'))).toEqual(['true', 'false']);
     fireEvent.click(screen.getByTestId('attached-channels-clear'));
@@ -122,7 +123,9 @@ describe('AttachedChannelsBar', () => {
     const owed = fake('s', 'setup', 'telegram', { setup_detail: 'Pair the phone.' });
     const held = fake('h', 'active', 'gmail', { health: 'ok', error_code: 'write_back_held', error_detail: 'a.md' });
     const verify = vi.spyOn(owed, 'verify').mockResolvedValue({ status: 'setup', ready: false, layer: 'setup', detail: '' });
-    const pollNow = vi.spyOn(held, 'pollNow').mockResolvedValue({ status: 'active', health: 'ok', detail: 'queued' });
+    const syncNow = vi
+      .spyOn(held, 'syncNow')
+      .mockResolvedValue({ ran: true, created: 0, updated: 0, unchanged: 1, health: 'ok', status: 'active' });
     const heldVerify = vi.spyOn(held, 'verify');
     mount([held, owed]);
     fireEvent.click(screen.getByTestId('attached-channels-details'));
@@ -130,7 +133,7 @@ describe('AttachedChannelsBar', () => {
     expect([heldReason.title, owedReason.title]).toEqual(['Pull: a.md', 'Setup: Pair the phone.']);
     fireEvent.click(heldReason);
     fireEvent.click(owedReason);
-    expect([pollNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 0]);
+    expect([syncNow.mock.calls.length, heldVerify.mock.calls.length, verify.mock.calls.length]).toEqual([1, 0, 0]);
     expect(useSourceSetupStore.getState()).toMatchObject({ open: true, payload: { source: owed } });
   });
 
@@ -199,8 +202,8 @@ describe('channel offers', () => {
     expect(screen.getByTestId('add-dialog').dataset.initial).toBe('flow_chat');
   });
 
-  it('hides the offers while the list is filtered', () => {
+  it('keeps the offers while the list is filtered — the line keeps its width', () => {
     mountOffers(new Set(['plain|plain']));
-    expect(screen.queryByTestId('channel-offer')).toBeNull();
+    expect(screen.queryAllByTestId('channel-offer').length).toBeGreaterThan(0);
   });
 });

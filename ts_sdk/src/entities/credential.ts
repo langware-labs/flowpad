@@ -24,7 +24,7 @@ export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof 
 /** What a variable's value IS: the value (`text`), a file's content kept as a file (`file`) — the
  *  variable then holds the file's path — or nothing stored at all (`cli`): a command-line tool
  *  holds the sign-in, and the variable only says how to sign in and how to check. */
-export type CredentialVarKind = 'text' | 'file' | 'cli';
+export type CredentialVarKind = 'text' | 'file' | 'cli' | 'oauth';
 
 /** A command per platform (`darwin` / `linux` / `win32`) — a `cli` variable's `login` and `check`. */
 export interface CredentialVarCommand {
@@ -48,6 +48,8 @@ export interface CredentialVar {
   secret?: boolean;
   /** Where to obtain THIS value; differs per member within one credential. */
   help_url?: string;
+  /** `ONE_OF`: the way this variable belongs to — members sharing one are given together. Empty: its own name. */
+  way?: string;
   /** Backend default is `text`. */
   kind?: CredentialVarKind;
   /** `cli` only: what the person runs to sign in, and the command whose exit 0 means signed in. */
@@ -74,14 +76,41 @@ export function isRequired(v: Weighed | undefined): boolean {
   return requirementOf(v) === CredentialRequirement.MUST;
 }
 
+/** A store keeps a value for it — not a sign-in (`cli`) or a grant (`oauth`), which live elsewhere. */
+export function holdsValue(v: { kind?: string }): boolean {
+  return v.kind !== 'cli' && v.kind !== 'oauth';
+}
+
 /** The either-or group: every `ONE_OF` variable of one credential. */
 export function oneOfGroup<T extends Weighed>(vars: readonly T[]): T[] {
   return vars.filter((v) => requirementOf(v) === CredentialRequirement.ONE_OF);
 }
-/** One member of the group is present — or there is no group to satisfy. */
-export function groupSatisfied(vars: readonly (Weighed & { present: boolean })[]): boolean {
+type Member = Weighed & { present: boolean; env_var?: string; way?: string };
+
+/** How a `ONE_OF` way of several variables is offered (`CredentialSpec.ways`, keyed by way name). */
+export interface CredentialWay {
+  label?: string;
+  hint?: string;
+}
+
+/** Every member of one way is present — or there is no group to satisfy. A way is the members sharing a `way`;
+ *  a member with none is a way by itself. Once a way is chosen on this machine (`choice`: the status row's
+ *  `setup_choice`, a way's name — a member's name counts as its way), that way alone. */
+export function groupSatisfied(vars: readonly Member[], choice = ''): boolean {
   const group = oneOfGroup(vars);
-  return group.length === 0 || group.some((v) => v.present);
+  if (group.length === 0) return true;
+  // The ways, grouped once: members sharing a `way`, else each member by itself.
+  const ways = new Map<string | Member, Member[]>();
+  for (const v of group) {
+    const key = v.way || v;
+    const members = ways.get(key);
+    if (members) members.push(v);
+    else ways.set(key, [v]);
+  }
+  const wayOf = (v: Member) => v.way || v.env_var || '';
+  const named = choice ? group.find((v) => v.env_var === choice) : undefined;
+  const chosen = named ? wayOf(named) : choice;
+  return [...ways.values()].some((members) => (!chosen || wayOf(members[0]) === chosen) && members.every((o) => o.present));
 }
 /**
  * What is still needed, one entry per need: each absent `MUST` variable by itself, then the group
@@ -112,6 +141,8 @@ export interface ICredential extends IEntity {
   /** The LLM API provider this credential's single key funds, if any. */
   lm_provider?: string;
   vars?: Record<string, CredentialVar>;
+  /** `ONE_OF`: how each way of several variables is offered, by way name. */
+  ways?: Record<string, CredentialWay>;
   manifest_schema?: number;
   /** `user` | `project` | `system` (a shipped template). */
   scope?: string | null;
@@ -137,6 +168,7 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   setup_timeout_seconds: number | null = null;
   lm_provider: string = '';
   vars: Record<string, CredentialVar> = {};
+  ways: Record<string, CredentialWay> = {};
   manifest_schema: number = 2;
 
   /**

@@ -199,7 +199,8 @@ class _FakeSlack:
             return self._ok(ts=ts, channel=channel)
         rows = sorted(self.channels[channel], key=lambda m: float(m["ts"]), reverse=True)
         if "latest" in params:
-            rows = [m for m in rows if float(m["ts"]) <= float(params["latest"])]
+            inclusive = params.get("inclusive") not in ("false", "0")
+            rows = [m for m in rows if float(m["ts"]) < float(params["latest"]) or (inclusive and float(m["ts"]) == float(params["latest"]))]
         if "oldest" in params:
             rows = [m for m in rows if float(m["ts"]) > float(params["oldest"])]
         start, limit = int(params.get("cursor") or 0), int(params.get("limit") or 100)
@@ -359,6 +360,30 @@ async def test_the_first_run_is_bounded_by_the_window(serve):
     slack = serve([{"ok": True, "messages": []}])
     await DataDriver.loaded("slack").traverse(_source(), _view(window_start="2026-08-01T00:00:00+00:00"))
     assert "oldest=1785542400.000000" in slack.requests[0]
+
+
+async def test_a_backward_read_asks_for_history_before_the_bound_newest_first(serve):
+    slack = serve([{"ok": True, "messages": [_message("150.000150", "middle"), _message("100.000100", "first")]}])
+    source = SlackSource(SourceBinding(account_key="T1", config={"channel": CHANNEL, "base_url": BASE},
+                                       credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test"))))
+    async with source:
+        page = await source.fetch(None, page_size=2, narrow={"before": datetime.fromtimestamp(200.0002, tz=timezone.utc)})
+    query = parse_qs(slack.requests[0].split("?", 1)[1])
+    assert query["latest"] == ["200.000200"] and query["inclusive"] == ["false"] and query["limit"] == ["2"]
+    assert "oldest" not in query and "cursor" not in query, "a backward read ignores the window and the forward cursor"
+    assert [i.data.text for i in page.items] == ["middle", "first"]
+    assert page.next_cursor is None and page.resume_cursor is None
+
+
+async def test_a_backward_read_over_the_double_lists_only_older_and_leaves_the_forward_read_alone(fake_slack):
+    source = SlackSource(_binding(fake_slack.base))
+    async with source:
+        forward = await source.fetch()
+        older = await source.fetch(None, page_size=5, narrow={"before": datetime.fromtimestamp(200.0002, tz=timezone.utc)})
+        again = await source.fetch()
+    assert [i.origin.key for i in older.items] == ["150.000150", "100.000100"]
+    assert [i.origin.key for i in again.items] == [i.origin.key for i in forward.items]
+    assert again.resume_cursor == forward.resume_cursor
 
 
 async def test_a_pass_reads_one_page_and_never_paginates(serve):

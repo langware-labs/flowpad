@@ -92,3 +92,22 @@ async def test_mark_all_read_in_the_users_stream_inbox_leaves_an_agents_mail_unr
 
     assert (await FlowMessage.get_by_id(mine)).is_read is True
     assert (await FlowMessage.get_by_id(theirs)).is_read is False, "the user's 'mark all read' must not read an agent's mail"
+
+
+@pytest.mark.asyncio
+async def test_archive_is_stamped_and_a_newer_message_revives_it():
+    """`archived` is `is_archived()` stored, so a paged stream inbox filters its views in the query."""
+    from datetime import UTC, datetime, timedelta
+
+    _, conv_id = await _received()
+    conv = await Conversation.get_by_id(conv_id)
+    conv.archived_at = datetime.now(UTC)
+    await conv.save(notify=False)
+    await recompute_unread("test")
+    assert (await Conversation.get_by_id(conv_id)).archived is True
+
+    conv = await Conversation.get_by_id(conv_id)
+    conv.archived_at = datetime(2026, 9, 17, 9, 0, tzinfo=UTC) - timedelta(days=1)  # older than its message
+    await conv.save(notify=False)
+    await recompute_unread("test")
+    assert (await Conversation.get_by_id(conv_id)).archived is False, "activity newer than the archive revives it"

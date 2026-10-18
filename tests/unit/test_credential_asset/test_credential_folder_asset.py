@@ -19,6 +19,7 @@ from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.credential_status_spec import ways
 from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 
 from tests.unit.test_credential_asset._shipped import shipped_credential_folders
@@ -159,9 +160,16 @@ def test_the_shipped_gmail_definition_is_valid():
     manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 
     assert manifest.name == "gmail"
-    assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
-    assert manifest.vars["GMAIL_ADDRESS"].secret is False
-    assert manifest.vars["GMAIL_APP_PASSWORD"].secret is True
+    assert list(manifest.vars) == ["GMAIL_GOOGLE", "GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
+    # Two ways: a Google sign-in covering full mail access (IMAP/SMTP over XOAUTH2, as the account that
+    # signed in), or an address with its app password, given together.
+    assert ways(manifest.vars) == {"google": ["GMAIL_GOOGLE"], "app_password": ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]}
+    google = manifest.vars["GMAIL_GOOGLE"]
+    assert google.is_oauth and (google.provider, google.scopes) == ("google", ["https://mail.google.com/"])
+    assert manifest.vars["GMAIL_ADDRESS"].secret is False and manifest.vars["GMAIL_APP_PASSWORD"].secret is True
+    # The app-password page belongs to the password alone, not the address beside it.
+    assert manifest.vars["GMAIL_APP_PASSWORD"].help_url and not manifest.vars["GMAIL_ADDRESS"].help_url
+    assert manifest.needed_for
 
 
 def test_a_credential_never_says_where_its_values_live():

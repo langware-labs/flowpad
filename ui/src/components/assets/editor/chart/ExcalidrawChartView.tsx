@@ -1,0 +1,517 @@
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { Trans } from '@lingui/react/macro';
+// Without this CSS the canvas inflates to ~2^25 px (unconstrained resize observer).
+import '@excalidraw/excalidraw/index.css';
+import { Button } from '@src/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@src/components/ui/dialog';
+import { downloadFile, FSRef, type Chart } from '@sdk';
+import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { excalidrawToMermaid } from './excalidrawToMermaid';
+import { writeChartMermaid, autoNote, readFileAsDataUrl } from './chartDoc';
+
+type LoadedExcalidrawLib = {
+  Excalidraw: React.ComponentType<ExcalidrawComponentProps>;
+  MainMenu: React.ComponentType<{ children?: React.ReactNode }> & {
+    DefaultItems: {
+      LoadScene: React.ComponentType<unknown>;
+      SaveAsImage: React.ComponentType<unknown>;
+      ClearCanvas: React.ComponentType<unknown>;
+      ToggleTheme?: React.ComponentType<unknown>;
+    };
+  };
+};
+
+let cachedLib: LoadedExcalidrawLib | null = null;
+const loadExcalidrawLib = (): Promise<LoadedExcalidrawLib> => {
+  if (cachedLib) return Promise.resolve(cachedLib);
+  return import('@excalidraw/excalidraw').then((m) => {
+    cachedLib = m as unknown as LoadedExcalidrawLib;
+    return cachedLib;
+  });
+};
+
+const ExcalidrawWithCustomMenu = lazy(() =>
+  loadExcalidrawLib().then((lib) => ({
+    default: (props: ExcalidrawComponentProps) => (
+      <lib.Excalidraw {...props}>
+        <lib.MainMenu>
+          <lib.MainMenu.DefaultItems.LoadScene />
+          <lib.MainMenu.DefaultItems.ClearCanvas />
+        </lib.MainMenu>
+      </lib.Excalidraw>
+    ),
+  })),
+);
+
+const DEBOUNCE_MS = 750;
+const AUTO_NOTE = autoNote('board.json');
+
+interface ExcalidrawComponentProps {
+  initialData?: unknown;
+  onChange?: (elements: unknown, appState: unknown, files: unknown) => void;
+  excalidrawAPI?: (api: ExcalidrawAPI) => void;
+  theme?: 'light' | 'dark';
+  UIOptions?: {
+    welcomeScreen?: boolean;
+    // Mirrors the subset of Excalidraw's `UIOptions.canvasActions` this editor
+    // sets. `export` is NOT a boolean toggle upstream: it is `false` to hide the
+    // action, or the export options object.
+    canvasActions?: {
+      toggleTheme?: boolean;
+      saveAsImage?: boolean;
+      export?: false | { saveFileToDisk?: boolean };
+    };
+  };
+  children?: React.ReactNode;
+}
+
+interface ExcalidrawAPI {
+  updateScene: (scene: { elements: unknown[] }) => void;
+  getSceneElements: () => unknown[];
+  getAppState: () => unknown;
+  getFiles: () => unknown;
+}
+
+interface WrappedBoard {
+  kind: 'excalidraw';
+  version: number;
+  data: { elements?: unknown[]; appState?: unknown; files?: unknown };
+}
+
+interface ExcalidrawChartViewProps {
+  /** FSRef to the chart folder. */
+  fsRef: FSRef;
+  /** Pre-resolved chart entity (passed by EntityResolutionGate). */
+  chart?: Chart;
+  /** Extra header actions from the format switch. */
+  actions?: React.ReactNode;
+}
+
+function ConnectingFallback() {
+  return (
+    <div
+      data-testid="chart-loading"
+      className="flex h-full items-center justify-center text-sm text-muted-foreground"
+    >
+      <RefreshCw className="me-2 h-4 w-4 animate-spin" />
+      <Trans>Loading chart…</Trans>
+    </div>
+  );
+}
+
+// `collaborators` is a Map at runtime — JSON-round-tripping turns it into `{}`,
+// then crashes Excalidraw's InteractiveCanvas on next mount. Strip on both load and save.
+function stripEphemeralAppState(appState: unknown): Record<string, unknown> {
+  const src = (appState ?? {}) as Record<string, unknown>;
+  const { collaborators: _drop, ...rest } = src as Record<string, unknown> & { collaborators?: unknown };
+  return rest;
+}
+
+// Bookkeeping Excalidraw stamps on (re)load — a scene restored on mount differs from the
+// file in these alone, and that must not read as an edit.
+const VOLATILE_ELEMENT_KEYS = new Set(['version', 'versionNonce', 'updated', 'seed', 'index']);
+
+/** Only durable canvas content counts as an edit; viewport/app-state changes do not. */
+function semanticBoardFingerprint(elements: unknown, files: unknown): string {
+  return JSON.stringify({
+    elements: (Array.isArray(elements) ? elements : []).map((el) =>
+      el && typeof el === 'object'
+        ? Object.fromEntries(Object.entries(el).filter(([k]) => !VOLATILE_ELEMENT_KEYS.has(k)))
+        : el,
+    ),
+    files: files ?? {},
+  });
+}
+
+/**
+ * Make freehand strokes safe for Excalidraw's renderer, in place.
+ *
+ * Its free-draw path does `points.map(([x, y], i) => [x, y, pressures[i]])` whenever
+ * `simulatePressure` is falsy, so a `freedraw` element that carries points but no
+ * matching `pressures` throws `Cannot read properties of undefined (reading '0')` and
+ * takes the whole board render down with it. A stroke drawn in the UI always has one
+ * of the two; a scene that did NOT come from the UI need not — and this editor
+ * deliberately accepts those: a plain Excalidraw scene "what agents and exported
+ * .excalidraw files write", and whatever `convertToExcalidrawElements` returns for a
+ * hand-built skeleton. Both entry points run through here.
+ */
+function normalizeFreedraw(elements: unknown): void {
+  if (!Array.isArray(elements)) return;
+  for (const el of elements as Array<Record<string, unknown>>) {
+    if (el?.type !== 'freedraw') continue;
+    const pressures = el.pressures;
+    const points = el.points;
+    if (!Array.isArray(pressures) || !Array.isArray(points) || pressures.length !== points.length) {
+      el.simulatePressure = true;
+    }
+  }
+}
+
+export function ExcalidrawChartView({ fsRef, chart, actions }: ExcalidrawChartViewProps) {
+  const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
+  const docRef = useMemo(() => fsRef.child('CHART.md'), [fsRef]);
+  const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
+
+  const { folderName, dirPath } = useMemo(() => {
+    const parts = (fsRef.path || '').split('/').filter(Boolean);
+    const tail = parts.pop() || 'chart';
+    return {
+      folderName: tail,
+      dirPath: parts.length ? '/' + parts.join('/') : '',
+    };
+  }, [fsRef]);
+
+  const handleOpenExternal = useCallback(() => {
+    void fsRef.open();
+  }, [fsRef]);
+  const handleRevealInFinder = useCallback(() => {
+    void fsRef.open({ select: true });
+  }, [fsRef]);
+
+  const { resolvedTheme } = useTheme();
+  const excalidrawTheme: 'light' | 'dark' = resolvedTheme === 'dark' ? 'dark' : 'light';
+
+  const uiOptions = useMemo(
+    () => ({
+      welcomeScreen: false,
+      canvasActions: {
+        toggleTheme: false,
+        saveAsImage: true,
+        export: { saveFileToDisk: true },
+      },
+    }),
+    [],
+  );
+
+  const [initialData, setInitialData] = useState<unknown>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importBusy, setImportBusy] = useState(false);
+  const apiRef = useRef<ExcalidrawAPI | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The serialized board.json bytes we last wrote. Excalidraw emits spurious
+  // onChange callbacks after mount (font-load / internal re-renders) that carry
+  // an identical scene; without this guard each one re-arms the debounce and
+  // re-writes byte-identical board.json, churning the file (and its mtime) with
+  // no real change. Skip the write when the payload matches the last one.
+  const lastWrittenRef = useRef<string | null>(null);
+  const lastSemanticRef = useRef<string | null>(null);
+  // Opening a chart never writes: Excalidraw fires onChange on mount with the loaded
+  // scene, and saving that once rewrote CHART.md (and created board.json) for a chart
+  // nobody touched. Only a change to the durable content arms the save.
+  const editedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        // A board that has never been saved has no `board.json`, and that is the
+        // ordinary first-open case — not an error. `read()`-and-catch emitted a
+        // browser-level `Failed to load resource: 404` on EVERY such open (39 of the
+        // console errors in one QA sweep came from this line) AND fell into the
+        // `catch` below, which calls `setLoadError(...)`, so a brand-new board
+        // opened showing a load-failure state it had no business showing.
+        const raw = await boardRef.readIfExists();
+        if (cancelled) return;
+        if (raw === null) {
+          lastSemanticRef.current = semanticBoardFingerprint([], {});
+          setInitialData({});
+          return;
+        }
+        const parsed: WrappedBoard = JSON.parse(raw);
+        // Accept BOTH shapes: the editor's `{kind, version, data}` envelope and
+        // a plain Excalidraw scene `{elements, appState}` (what agents and
+        // exported .excalidraw files write). Without the fallback a plain scene
+        // loaded as `{}` and the first autosave clobbered it with an empty board.
+        const data = (parsed?.data ??
+          (Array.isArray((parsed as unknown as { elements?: unknown[] })?.elements) ? parsed : {})) as {
+          elements?: unknown[];
+          appState?: unknown;
+          files?: unknown;
+        };
+        normalizeFreedraw(data.elements);
+        if (data.appState && typeof data.appState === 'object') {
+          data.appState = stripEphemeralAppState(data.appState);
+        }
+        lastSemanticRef.current = semanticBoardFingerprint(data.elements, data.files);
+        setInitialData(data);
+      } catch (err) {
+        if (cancelled) return;
+        setLoadError(err instanceof Error ? err.message : String(err));
+        lastSemanticRef.current = semanticBoardFingerprint([], {});
+        setInitialData({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [boardRef]);
+
+  const persist = useCallback(
+    async (elements: unknown[], appState: unknown, files: unknown) => {
+      const cleanAppState = stripEphemeralAppState(appState);
+      const data = { elements, appState: cleanAppState, files };
+      const wrapped: WrappedBoard = { kind: 'excalidraw', version: 1, data };
+      const serialized = JSON.stringify(wrapped, null, 2);
+      if (serialized === lastWrittenRef.current) return;
+      lastWrittenRef.current = serialized;
+      await boardRef.write(serialized);
+
+      // A sequence or mermaid chart's CHART.md block is its own source, not this board's mirror.
+      if (!chart || chart.format === 'excalidraw') {
+        await writeChartMermaid(docRef, chart, excalidrawToMermaid(data), AUTO_NOTE);
+      }
+
+      try {
+        const lib = await loadExcalidrawLib();
+        const exportToSvg = (
+          lib as unknown as {
+            exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
+          }
+        ).exportToSvg;
+        const svg = await exportToSvg({
+          elements,
+          appState: { ...cleanAppState, exportBackground: true },
+          files,
+        });
+        await thumbRef.write(new XMLSerializer().serializeToString(svg));
+      } catch {
+        // Thumbnail is best-effort.
+      }
+    },
+    [boardRef, docRef, thumbRef, chart],
+  );
+
+  const onChange = useCallback(
+    (elements: unknown, appState: unknown, files: unknown) => {
+      const els = Array.isArray(elements) ? (elements as unknown[]) : [];
+      const semanticFingerprint = semanticBoardFingerprint(els, files);
+      if (semanticFingerprint !== lastSemanticRef.current) {
+        lastSemanticRef.current = semanticFingerprint;
+        editedRef.current = true;
+        chart?.markEdit();
+      }
+      if (!editedRef.current) return;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        void persist(els, appState, files);
+      }, DEBOUNCE_MS);
+    },
+    [persist, chart],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, []);
+
+  const handleApi = useCallback(
+    (api: ExcalidrawAPI) => {
+      apiRef.current = api;
+      if (import.meta.env.DEV) {
+        const w = window as unknown as Record<string, unknown>;
+        w.__chartApi = api;
+        w.__chartOnChange = onChange;
+        void loadExcalidrawLib().then((lib) => {
+          w.__excalidrawLib = lib;
+        });
+      }
+    },
+    [onChange],
+  );
+
+  const downloadBlob = useCallback(async (blob: Blob, filename: string) => {
+    // Data URL (not blob:) — Chrome drops the download attr on blob: URLs
+    // created after an await (gesture context is stale). Exports are small (~10KB).
+    const dataUrl = await readFileAsDataUrl(blob);
+    const a = document.createElement('a');
+    a.href = dataUrl;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    void downloadFile;
+  }, []);
+
+  const baseFilename = useMemo(() => {
+    const name = (fsRef.path || 'chart').split('/').filter(Boolean).pop() || 'chart';
+    return name.replace(/\.\w+$/, '');
+  }, [fsRef]);
+
+  const exportAs = useCallback(
+    async (fmt: 'png' | 'svg') => {
+      if (!apiRef.current) return;
+      try {
+        const lib = await loadExcalidrawLib();
+        const elements = apiRef.current.getSceneElements();
+        const appState = { ...stripEphemeralAppState(apiRef.current.getAppState()), exportBackground: true };
+        const files = apiRef.current.getFiles();
+        let blob: Blob;
+        if (fmt === 'png') {
+          const exportToBlob = (
+            lib as unknown as {
+              exportToBlob: (opts: {
+                elements: unknown;
+                appState: unknown;
+                files: unknown;
+                mimeType: string;
+              }) => Promise<Blob>;
+            }
+          ).exportToBlob;
+          blob = await exportToBlob({ elements, appState, files, mimeType: 'image/png' });
+        } else {
+          const exportToSvg = (
+            lib as unknown as {
+              exportToSvg: (opts: { elements: unknown; appState: unknown; files: unknown }) => Promise<SVGElement>;
+            }
+          ).exportToSvg;
+          const svg = await exportToSvg({ elements, appState, files });
+          blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+        }
+        await downloadBlob(blob, `${baseFilename}.${fmt}`);
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [baseFilename, downloadBlob],
+  );
+
+  const handleImport = useCallback(async () => {
+    if (!importText.trim() || !apiRef.current) {
+      setImportOpen(false);
+      return;
+    }
+    setImportBusy(true);
+    try {
+      // parseMermaidToExcalidraw returns ElementSkeleton[] — must run through
+      // convertToExcalidrawElements to materialize bindings + text children,
+      // else rectangles render as "Untitled" and arrows lose endpoint bindings.
+      const mermaidMod = await import('@excalidraw/mermaid-to-excalidraw');
+      const parseMermaidToExcalidraw = (
+        mermaidMod as unknown as {
+          parseMermaidToExcalidraw: (text: string) => Promise<{ elements: unknown[]; files?: Record<string, unknown> }>;
+        }
+      ).parseMermaidToExcalidraw;
+      const result = await parseMermaidToExcalidraw(importText);
+
+      const excalMod = await loadExcalidrawLib();
+      const convertToExcalidrawElements = (
+        excalMod as unknown as {
+          convertToExcalidrawElements: (skel: unknown[]) => unknown[];
+        }
+      ).convertToExcalidrawElements;
+      const elements = convertToExcalidrawElements(result.elements);
+      normalizeFreedraw(elements);
+
+      apiRef.current.updateScene({ elements });
+      if (result.files && Object.keys(result.files).length > 0) {
+        const addFiles = (apiRef.current as unknown as { addFiles?: (files: unknown[]) => void }).addFiles;
+        if (typeof addFiles === 'function') {
+          addFiles(Object.values(result.files));
+        }
+      }
+      setImportOpen(false);
+      setImportText('');
+      const els = apiRef.current.getSceneElements();
+      const appState = apiRef.current.getAppState();
+      const files = apiRef.current.getFiles();
+      onChange(els, appState, files);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImportBusy(false);
+    }
+  }, [importText, onChange]);
+
+  if (initialData === null) {
+    return <ConnectingFallback />;
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-testid="chart-excalidraw">
+      <AssetEditorHeader
+        fileName={folderName}
+        dirPath={dirPath}
+        onOpenExternal={handleOpenExternal}
+        onRevealInFinder={handleRevealInFinder}
+        actions={
+          <>
+            {actions}
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} data-testid="open-import-mermaid">
+              <Trans>Import mermaid → board</Trans>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void exportAs('png')} data-testid="export-png">
+              <Trans>Export PNG</Trans>
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void exportAs('svg')} data-testid="export-svg">
+              <Trans>Export SVG</Trans>
+            </Button>
+            {loadError && (
+              <span className="text-xs text-destructive" data-testid="chart-error">
+                {loadError}
+              </span>
+            )}
+          </>
+        }
+      />
+      <div className="relative min-h-0 flex-1">
+        <Suspense fallback={<ConnectingFallback />}>
+          <div className="absolute inset-0">
+            <ExcalidrawWithCustomMenu
+              initialData={initialData}
+              onChange={onChange}
+              excalidrawAPI={handleApi}
+              theme={excalidrawTheme}
+              UIOptions={uiOptions}
+            />
+          </div>
+        </Suspense>
+      </div>
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              <Trans>Import mermaid → board</Trans>
+            </DialogTitle>
+            <DialogDescription>
+              <Trans>Paste Mermaid syntax to replace the current board.</Trans>
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            data-testid="mermaid-import-textarea"
+            className="min-h-[160px] w-full rounded border bg-background p-2 font-mono text-sm"
+            placeholder="flowchart TD&#10;  A[Foo] --> B[Bar]"
+            value={importText}
+            onChange={(e) => setImportText(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setImportOpen(false)} disabled={importBusy}>
+              <Trans>Cancel</Trans>
+            </Button>
+            <Button
+              onClick={() => void handleImport()}
+              disabled={importBusy || !importText.trim()}
+              data-testid="confirm-import-mermaid"
+            >
+              <Trans>Import</Trans>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export default ExcalidrawChartView;

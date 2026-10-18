@@ -25,6 +25,7 @@ import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { notify } from '@src/notifications';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
 /**
  * An action as AUTHORED in the RECORD_TYPE_NAV table: `name` is a lazy lingui
@@ -134,6 +135,15 @@ function assetEditorPointer(assetType: string, r: AssetRow): DockPointer | null 
  * not updated in lockstep with the editor registry. */
 function registeredAssetPointer(result: AssetRow): DockPointer | null {
   return editorForType(result.record_type) ? assetEditorPointer(result.record_type, result) : null;
+}
+
+/** A session row opened by reading its transcript file (no local process behind it). */
+function transcriptNav(worker: SessionWorker): RecordTypeNav {
+  return {
+    primaryAction: (r, navigation) => {
+      if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript(worker, r.asset_ref));
+    },
+  };
 }
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
@@ -377,6 +387,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       },
     ],
   },
+  // OpenCode/DeepAgents keep sessions in a store: a row is a shared snapshot with no
+  // local process to resume, so opening it means reading its transcript.
+  opencode_session: transcriptNav('opencode'),
+  deepagents_session: transcriptNav('deepagents'),
   copilot_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.record_id.replace(/^copilot_session-/, '');

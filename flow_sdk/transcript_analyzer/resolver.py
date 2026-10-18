@@ -73,9 +73,8 @@ def _validate_path_component(value: str, field: str) -> None:
 # this direction — anything needing "which entity type is a <worker> transcript"
 # reads it here rather than re-listing the three types. ``workflow`` has no
 # session entity (its journals are run artifacts), hence its absence.
-# Derived from ``VENDORS``: opencode has no row on purpose — it keeps sessions
-# in a SQLite store, so there is no per-session file to mint an entity from
-# (its transcripts are still resolvable by id: ``_resolve_opencode``).
+# Derived from ``VENDORS``. opencode/deepagents keep sessions in a store: their
+# type names the transcript FlowPad wrote, snapshotted when a session is shared.
 SESSION_TYPE_BY_WORKER: dict[str, str] = {v.key: v.session_entity_type for v in VENDORS if v.session_entity_type}
 
 

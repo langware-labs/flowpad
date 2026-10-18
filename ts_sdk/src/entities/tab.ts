@@ -162,6 +162,8 @@ export interface ITab extends IEntity {
   status?: string | null;
   is_disabled?: boolean;
   target_remote?: boolean;
+  /** The content target's own project (API-only); differs from `project_id` on a guest tab. */
+  target_project_id?: string | null;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -229,6 +231,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
   status: string | null = null;
   is_disabled: boolean = false;
   target_remote?: boolean;
+  target_project_id?: string | null;
 
   /** Computed DockPointer from the stored pointer. Parsed directly (SDK layer, no UI dependency). */
   get dockPointer(): IDockPointer | null {
@@ -517,6 +520,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
       const tab = cached ?? new Tab(t);
       Object.assign(tab, t);
       tab.target_remote = targetRemote;
+      tab.target_project_id = t.target_project_id ?? null;
       return tab;
     });
   }

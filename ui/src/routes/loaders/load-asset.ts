@@ -43,11 +43,14 @@ function mountContains(mount: string, path: string): boolean {
  * entity's stamped `project_id` names a different (e.g. nested or umbrella)
  * project. The switch is for crossing into a genuinely different project, not
  * for re-deriving ownership of a file the user is already working on.
+ *
+ * `keepProject`: the URL names a project — the user's decision, final. The
+ * entity opens as a guest of that project and never switches it.
  */
-async function setEntityContext(entity: ContextEntity | null): Promise<void> {
+async function setEntityContext(entity: ContextEntity | null, keepProject = false): Promise<void> {
   if (!entity) return;
   await dataContext.setActiveEntityTypeId(entity.typeId);
-  if (!entity.project_id || entity.project_id === dataContext.project?.id) return;
+  if (keepProject || !entity.project_id || entity.project_id === dataContext.project?.id) return;
   const currentMount = dataContext.project?.fs_storage_mount_path;
   if (currentMount && entity.asset_ref && mountContains(currentMount, entity.asset_ref)) return;
   await dataContext.setContextEntityTypeId(
@@ -68,11 +71,11 @@ EventBus.on('app.entity.created', (event) => {
 const pathHits = new Map<string, TypeId>();
 
 /** Warm the cache by typeid, then push the resolved entity into context. */
-async function ensureInContext(typeId: TypeId): Promise<void> {
+async function ensureInContext(typeId: TypeId, keepProject = false): Promise<void> {
   const entity = await dataManager.getByTypeId(typeId).catch(() => null);
   // Fall back to a typeId-only context set if the fetch missed, so active state
   // is still derived from the URL even when the entity isn't cacheable.
-  await setEntityContext((entity as ContextEntity | null) ?? { typeId });
+  await setEntityContext((entity as ContextEntity | null) ?? { typeId }, keepProject);
 }
 
 export async function loadAssetRoute(
@@ -80,6 +83,8 @@ export async function loadAssetRoute(
   options: {
     allowLocalWikiAlias?: boolean;
     wikiAuthority?: WikiAuthority;
+    /** The URL names a project: the asset never switches it (see `setEntityContext`). */
+    keepProject?: boolean;
   } = {},
 ): Promise<void> {
   if (!pointer) return; // assets list / no editor open — nothing to resolve.
@@ -113,7 +118,7 @@ export async function loadAssetRoute(
           authority,
         }));
       setWikiResolveResult(ptr.space, ptr.wikiName, result, authority);
-      if (result.kind === 'resolved') await ensureInContext(result.target_typeid);
+      if (result.kind === 'resolved') await ensureInContext(result.target_typeid, options.keepProject);
       return;
     }
 
@@ -121,7 +126,7 @@ export async function loadAssetRoute(
     if (ptr.editor && isFileOnlyEditor(ptr.editor)) return; // file-only (code/html/media…), no backing entity.
 
     if (ptr.method === AssetRoutingMethod.TYPEID) {
-      await ensureInContext(new TypeId(ptr.value));
+      await ensureInContext(new TypeId(ptr.value), options.keepProject);
       return;
     }
 
@@ -145,12 +150,12 @@ export async function loadAssetRoute(
         (known ? (dataManager.getByTypeIdFromCache(known) as unknown as ContextEntity | null) : null) ??
         (dataManager.findInCache((e) => (e as ContextEntity).asset_ref === machine) as ContextEntity | null);
       if (cached) {
-        await setEntityContext(cached);
+        await setEntityContext(cached, options.keepProject);
       } else if (!pathMisses.has(machine)) {
         const e = (await dataManager.getEntityByPath(machine).catch(() => null)) as ContextEntity | null;
         if (e) pathHits.set(machine, e.typeId);
         else pathMisses.add(machine);
-        await setEntityContext(e);
+        await setEntityContext(e, options.keepProject);
       }
     }
   } catch (e) {

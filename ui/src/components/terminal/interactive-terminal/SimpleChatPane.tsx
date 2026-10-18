@@ -151,7 +151,7 @@ export function SimpleChatPane({ process, className, focusAt = null }: SimpleCha
   const anchorIndex = useMemo(() => nearestGroup(turnGroups, focusAt), [turnGroups, focusAt]);
   const paneRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (anchorIndex === null) scrollRef.current?.scrollToBottom();
+    if (anchorIndex === null) scrollRef.current?.follow();
   }, [turnGroups.length, activity.active, anchorIndex]);
   // Focused: open at the moment asked for, once per moment — a live turn appending below must not
   // yank the reader back to it.

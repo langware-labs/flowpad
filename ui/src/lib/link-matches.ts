@@ -57,13 +57,16 @@ function trimTrail(value: string, trail: RegExp): string {
 const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
 /** Box-drawing and block glyphs: a table's or a panel's borders, never part of a name. */
 export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
-const TOKENS = new RegExp(`${QUOTED.join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
+// Prose brackets an absolute path whose folder has a space: `(/Users/me/Flowpad workspace/a.md)`.
+// It must end in a file name, so a bracketed aside (`(/tmp is shared)`) stays prose.
+const BRACKETED_PATH = String.raw`\(((?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2})\)`;
+const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
 
 export function fileLinkMatches(text: string): LinkMatch[] {
   const links: LinkMatch[] = [];
   const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
   for (const match of text.matchAll(TOKENS)) {
-    const quoted = match[1] ?? match[2] ?? match[3];
+    const quoted = match[1] ?? match[2] ?? match[3] ?? match[4];
     const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
     const value = quoted ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
     // webLinkMatches owns HTTP links, including their path portions.

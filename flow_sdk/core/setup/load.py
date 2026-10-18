@@ -38,13 +38,23 @@ class LoadTree:
     """The same dependency graph, with only operational wizards enabled.
 
     Keeping children is essential: project and app declarations live on child
-    nodes. Setup's prepare/run never leak into this phase.
+    nodes. Setup's prepare/run never leak into this phase. ``fix``: an op's agent
+    rung (the setup-fixer) and the rungs after it stay; a plain load never runs an
+    agent, only the load a setup run ends with does.
     """
 
-    def __init__(self, tree):
+    def __init__(self, tree, *, fix: bool = False):
         self.tree = tree
         self.root = tree.root
-        self.resolve_op = tree.resolve_op
+        self.fix = fix
+
+    async def resolve_op(self, name: str):
+        resolved = await self.tree.resolve_op(name)
+        rungs = list(getattr(resolved.spec, "attempts", None) or []) if resolved is not None else []
+        agent = next((at for at, rung in enumerate(rungs) if rung.subkind == "agent"), None)
+        if self.fix or agent is None:
+            return resolved
+        return dataclasses.replace(resolved, spec=resolved.spec.model_copy(update={"attempts": rungs[:agent]}))
 
     async def resolve_node(self, node_id: str) -> Optional[SetupNode]:
         node = await self.tree.resolve_node(node_id)
@@ -58,13 +68,17 @@ class LoadTree:
         return dataclasses.replace(node, prepare=None, run=node.on_load, children=children, record=None)
 
 
-def forget(project_id: str) -> None:
-    """Drop the provider's last verdict: what it was checked against has changed (a setup run of the
+def forget(project_id: str, asset: str = "") -> None:
+    """Drop the provider's last verdicts: what they were checked against has changed (a setup run of the
     project ended, one of its sources changed status), and nothing refreshes a kept one. With none,
-    ``load_state`` answers None and the next Load checks again. A RUNNING verdict stays: ``load_state``
-    settles it from its run."""
+    ``load_state`` answers None and the next Load checks again. ``asset``: what the run was rooted at. An
+    app stands beside its siblings, so a run of one app outdates that app and the project's own verdict —
+    never another app's; a run of anything else (a service, a credential) may be what every app stands
+    on. A RUNNING verdict stays: ``load_state`` settles it from its run."""
     pid = str(project_id)
-    for key in [k for k, v in _RESULTS.items() if k[0] == pid and v.state is not LoadState.RUNNING]:
+    app_only = asset.startswith("micro_app-")
+    for key in [k for k, v in _RESULTS.items()
+                if k[0] == pid and (not app_only or k[1] in ("", asset)) and v.state is not LoadState.RUNNING]:
         del _RESULTS[key]
 
 
@@ -83,7 +97,8 @@ def load_state(project_id: str, *, asset: str = "") -> Optional[LoadResult]:
     task = _RUNS.get((pid, root))
     if task is not None:
         if not task.done():
-            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid, root), display=display)
+            result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=setup_run_address(pid, root), display=display,
+                                phase=result.phase if result is not None else None)
         elif result is not None and result.state is LoadState.RUNNING:
             try:
                 answer = task.result()
@@ -141,6 +156,29 @@ def _unmet(result, target: str) -> str:
     return _leaf_failure(node) or (f"{node.label}: {node.detail}" if node.detail else f"{node.label} is not set up")
 
 
+async def validate(pid: str, target: str, display: str = "") -> Optional[LoadResult]:
+    """Phase one of an open: an app that answers where it runs opens as it is — no tree, no walk, no lock.
+    None: load it. A running app is shown whatever its setup says (that is the next load's business). A
+    display session needs this provider's READY for THAT display: its saved presentation is checked by a
+    load, never assumed."""
+    if not target.startswith("micro_app-"):
+        return None
+    kept = _RESULTS.get((pid, target))
+    if kept is not None and kept.state is not LoadState.READY:
+        return None
+    if display and (kept is None or kept.display != display):
+        return None
+    from flow_sdk.builtin.webapp_setup import answers_now  # noqa: PLC0415
+
+    try:
+        if not await answers_now(target):
+            return None
+    except Exception as exc:  # noqa: BLE001 — a failed check is a load, never an error
+        logger.debug("validate of %s failed: %s", target, exc)
+        return None
+    return kept or _keep(pid, target, LoadResult(state=LoadState.READY, project_id=pid, asset=target))
+
+
 async def load_project(project: Any, *, approved: bool = False, asset: Any = None, tree: Any = None,
                        ancestors: tuple[str, ...] = (), display: str = "") -> LoadResult:
     """Check or start a provider's lifecycle; approval is explicit and never inferred from Add/Open.
@@ -164,6 +202,9 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
             state=LoadState.FAILED, project_id=pid, asset=target,
             detail=f"{getattr(asset, 'name', None) or target}'s folder is gone: {asset.asset_ref}"))
         return gone
+    valid = await validate(pid, target, display) if not approved and not ancestors else None
+    if valid is not None:
+        return valid
     # Traverse before taking this provider's lock: opposite ends of a dependency
     # cycle may be loaded concurrently, and must never wait on each other's lock.
     try:
@@ -221,11 +262,41 @@ async def load_project(project: Any, *, approved: bool = False, asset: Any = Non
                     run = await start_setup(project, root=target, tree=tree if needs_setup else operational,
                                             load_after=needs_setup, providers=providers,
                                             dependency_approval=approved, ancestors=(*ancestors, pid))
-                    result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run)
+                    result = LoadResult(state=LoadState.RUNNING, project_id=pid, run=run,
+                                        phase="setup" if needs_setup else "load")
         except Exception as exc:
             logger.warning("load of project %s failed: %s", pid, exc, exc_info=True)
             result = LoadResult(state=LoadState.FAILED, project_id=pid, detail=str(exc))
         return _keep(pid, target, result.model_copy(update={"display": display or None, "asset": target or None}))
+
+
+async def bring_up(project: Any, *, asset: Any = None, display: str = "", wait: bool = False) -> LoadResult:
+    """THE way an asset comes up, whoever asks — a screen, ``flow app open``, an agent's auto-open:
+    validate (it answers: done) → load → setup when owed (one repair per failure) → the fixer when setup
+    still fails. An app's owed setup runs unasked: opening it is the person saying "make it work". The
+    project alone stops at SETUP_REQUIRED — its screen asks first. ``wait``: answer once the run it
+    started has settled (a caller that reads where the app runs right after)."""
+    from flow_sdk.builtin.project_setup import _RUNS  # noqa: PLC0415
+
+    pid = str(project.id)
+    last = load_state(pid, asset=str(asset.typeid) if asset is not None else "")
+    # A load that already failed with setup untried goes straight to setup, never round the load again.
+    result = last if last is not None and last.state is LoadState.FAILED and last.setup_available else (
+        await load_project(project, asset=asset, display=display))
+    owed = (result.state is LoadState.SETUP_REQUIRED and asset is not None) or (
+        result.state is LoadState.FAILED and result.setup_available)
+    if owed:
+        result = await load_project(project, approved=True, asset=asset, display=display)
+    if wait and result.state is LoadState.RUNNING:
+        target = result.asset or ""
+        task = _RUNS.get((pid, target)) or _RUNS.get((pid, ""))
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
+        result = load_state(pid, asset=target) or result
+        if result.state is LoadState.FAILED and result.setup_available:
+            # The load failed: setup is the next step (once — its failure goes to the fixer).
+            return await bring_up(project, asset=asset, display=display, wait=True)
+    return result
 
 
 async def load_asset(project: Any, asset: Any) -> LoadResult:
@@ -236,4 +307,4 @@ async def load_asset(project: Any, asset: Any) -> LoadResult:
     return await load_project(project, asset=asset)
 
 
-__all__ = ["LoadTree", "forget", "load_asset", "load_project", "load_state"]
+__all__ = ["LoadTree", "bring_up", "forget", "load_asset", "load_project", "load_state", "validate"]

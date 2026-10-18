@@ -445,6 +445,7 @@ _LAUNCH_OUTPUT_FIELDS: tuple[str, ...] = (
     "last_started_snapshot",
     "last_started_hash",
     "restart_required",
+    "restart_changed_fields",
     # Minted by helpers ``_perform_open`` DELEGATES to, not by its own body:
     # ``_record_worker_started_at`` (context_data) and ``_adopt_shell_tab_order``
     # (tab_order). A delegated write is exactly as invisible to the caller as an
@@ -614,7 +615,17 @@ async def _index_additional_dir(
         new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope=scope, read_only=read_only, project_id=project_id)
         # include_temp=True so /tmp / /var/folders paths aren't filtered out —
         # the user explicitly added this dir, so honor it regardless of location.
-        result = await get_shared_indexer().index(IndexerOptions(roots=(new_root,), verbose=False, include_temp=True))
+        # A scoped dependency may itself be an asset folder. Scope walkers
+        # discover children under mounts, so also seed that asset explicitly.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        roots = [new_root]
+        root_type = SchemaRegistry.type_for(p, placed_only=True)
+        info = SchemaRegistry.get(root_type) if root_type else None
+        if info is not None and not info.keyed_by_ref and info.claims(p) is None:
+            roots.append(FSRef(p, record_type=RecordType(root_type), parent=new_root,
+                               layout=info.layout_of(p, verify=True)))
+        result = await get_shared_indexer().index(IndexerOptions(roots=tuple(roots), verbose=False, include_temp=True))
         if strict and result.total_errors:
             raise RuntimeError(f"Context indexing reported {result.total_errors} error(s)")
     except Exception:
@@ -876,6 +887,13 @@ class AgenticProcess(Entity):
             "True iff a worker-relevant field changed since the last successful "
             "start_pty() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
             "Set automatically by the save-hook; can also be set externally via API."
+        ),
+    )
+    restart_changed_fields: list[str] = APIField(
+        default_factory=list,
+        description=(
+            "Names of the launch-config fields behind ``restart_required`` "
+            "(the ``restart-info`` diff). Empty when no restart is required."
         ),
     )
     start_failure: str | None = APIField(
@@ -1165,6 +1183,7 @@ class AgenticProcess(Entity):
         *,
         input: Any = None,
         output_spec: Any = None,
+        on_executor: Callable[[str], None] | None = None,
         **kwargs,
     ) -> "PromptResult":
         """One-shot: create → send → wait → answer → stop. Answers a ``PromptResult`` — ``text`` is the
@@ -1174,6 +1193,7 @@ class AgenticProcess(Entity):
         ``input`` / ``output_spec``: typed folder I/O — see ``process_io``. Headless by default
         (``pty_mode=True`` for the interactive transport); ``workdir`` defaults to the caller's cwd;
         an unnamed worker is the harness selected in settings.
+        ``on_executor`` receives the exact child identity before its first turn.
         """
         from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
             finish_io,
@@ -1193,6 +1213,8 @@ class AgenticProcess(Entity):
         proc = cls(workdir=workdir, **kwargs)
         prepare_io(proc, input=input, output_spec=spec)
         try:
+            if on_executor is not None:
+                on_executor(str(proc.typeid))
             if not proc.pty_mode:
                 return await take_turn(proc, instruction, spec)
             started = await proc.start_pty()
@@ -1838,6 +1860,7 @@ class AgenticProcess(Entity):
             self.last_started_snapshot = snapshot_payload
             self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
+            self.restart_changed_fields = []
             await self.save()
 
             # The worker is live with the queued prompt as its launch arg; the
@@ -2934,10 +2957,29 @@ class AgenticProcess(Entity):
         path = self.transcript_path
         if path is None or not path.exists():
             return ApiSuccessResponse(data={"type_id": None, "reason": "This process has no session yet."})
+        if vendor.transcript_owned_by_run:
+            path = self._snapshot_transcript(session_type, path)
         entity_id = await index_session_file(session_type, path)
         if entity_id is None:
             return ApiSuccessResponse(data={"type_id": None, "reason": "This session's transcript could not be read."})
         return ApiSuccessResponse(data={"type_id": f"{session_type}-{entity_id}", "reason": None})
+
+    def _snapshot_transcript(self, session_type: str, path: Path) -> Path:
+        """Copy a run-owned transcript to ``records_data/<type>/`` so the shared row outlives the
+        run. The name keeps the prefix that tells the file's format; one copy per session, kept
+        current (re-copied only when the run's file changed)."""
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        name = path.name if self.session_id and self.session_id in path.name else f"{path.stem}-{self.id}{path.suffix}"
+        dest = get_instance_settings().records_data_dir / session_type / name
+        src = path.stat()
+        if dest.exists() and (d := dest.stat()).st_size == src.st_size and d.st_mtime >= src.st_mtime:
+            return dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, dest)
+        return dest
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3921,6 +3963,11 @@ class AgenticProcess(Entity):
         apply_worker_env(env_vars, self)
         await apply_worker_secret_env(env_vars, self)
 
+        # A fork with no transcript of its own yet branches off its parent; once the
+        # first turn materialises it, ``resumable`` is true and it resumes itself.
+        fork_source = None
+        if not resumable and self.driver.pins_resume_cwd:
+            fork_source = (self.cli_config or {}).get("fork_session_id")
         context = _AgenticContext(
             workdir=self.workdir,
             env_vars=env_vars,
@@ -3929,7 +3976,8 @@ class AgenticProcess(Entity):
             effort=(self.cli_config or {}).get("effort"),
             add_dirs=list(self.resolved_add_dirs or []),
             session_id=self.session_id if (self.session_id and not resumable) else None,
-            resume_session_id=self.session_id if resumable else None,
+            resume_session_id=fork_source or (self.session_id if resumable else None),
+            fork_session=bool(fork_source),
             disallowed_tools=(self.cli_config or {}).get("disallowed_tools") or [],
             **self._process_asset_context_kwargs(process_assets),
         )
@@ -5237,6 +5285,12 @@ class AgenticProcess(Entity):
         descriptor = await asyncio.to_thread(lambda: self.transcript)
         if descriptor is None or not descriptor.session_id:
             return None
+        # Discovery can match by cwd and launch time, which finds a sibling's
+        # session as readily as our own. A session another process already
+        # owns is never ours.
+        owners = await AgenticProcess.local_owners_of_session(descriptor.session_id)
+        if any(owner.id != self.id for owner in owners):
+            return None
         await self._persist_transcript_session_id(descriptor)
         return self.session_id if self.session_id == descriptor.session_id else None
 
@@ -6298,7 +6352,13 @@ class AgenticProcess(Entity):
                 # already does the same recompute on session rotation — this is
                 # the same move for a process that has not rotated yet.
                 self.last_started_hash = reference
-            self.restart_required = self._restart_snapshot() != reference
+            payload = self._restart_snapshot_payload()
+            self.restart_required = self._restart_snapshot(payload) != reference
+            self.restart_changed_fields = (
+                sorted({c["field"] for c in self._diff_snapshot_fields(self.last_started_snapshot, payload)})
+                if self.restart_required
+                else []
+            )
         return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
@@ -8303,6 +8363,13 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
+
+    @classmethod
+    async def local_owners_of_session(cls, session_id: str) -> list["AgenticProcess"]:
+        """Every local process stamped with ``session_id`` (shared/forked sessions can have several)."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        return await cls.local_rows(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
 
     @classmethod
     async def get_by_session_id(cls, session_id: str) -> "AgenticProcess | None":

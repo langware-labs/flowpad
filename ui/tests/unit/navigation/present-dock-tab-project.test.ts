@@ -2,8 +2,8 @@
  * The seam a `flow show` placement's `project_id` crosses on the client: a raw
  * file no project owns is placed INSIDE the showing process's project, so the
  * mint (`Tab.resolveDockTarget`) stamps that project on the row and the
- * project's strip has a chip to light. A file that names its own entity keeps
- * its own project (no scope is forced on it).
+ * project's strip has a chip to light. Entity-backed assets are rebased onto a
+ * project dock; the backend preserves that presentation project on the tab.
  */
 import { describe, expect, it } from 'vitest';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';

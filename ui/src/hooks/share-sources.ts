@@ -92,7 +92,7 @@ function resolveOnce(
 }
 
 /**
- * Plain entity/doc (markdown, whiteboard, …): rides as a TYPE_ID attachment +
+ * Plain entity/doc (markdown, chart, …): rides as a TYPE_ID attachment +
  * shared context. No fork, no Task.
  */
 export function genericEntityShareSource(

@@ -132,3 +132,22 @@ async def test_the_run_a_test_started_is_one_call_away():
     await settle()
     failed = await Trigger.run(began.run_id)
     assert failed.status == "failed" and "the agent is not set up" in failed.error
+
+
+@async_context
+async def test_schedule_supplied_payload_reaches_its_command(tmp_path):
+    import shlex
+
+    output = tmp_path / "payload.txt"
+    command = 'printf "%s" "$FLOWPAD_WIZARD_INPUT_PAYLOAD" > ' + shlex.quote(str(output))
+    trigger = rule(TriggerType.SCHEDULE, then={
+        "steps": [{"id": "capture", "ref": "capture", "args": {"PAYLOAD": "payload"}}],
+        "ops": {"capture": {"subkind": "cli", "exe_data": {
+            "commands": {"darwin": command, "linux": command},
+        }}},
+    })
+    await trigger.save()
+    await run_once(trigger, {"payload": "literal $(no-execution); supplied"})
+    await settle()
+    assert output.read_text() == "literal $(no-execution); supplied"
+    assert history(trigger)[-1]["error"] is None

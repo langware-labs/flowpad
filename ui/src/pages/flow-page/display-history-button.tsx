@@ -60,7 +60,7 @@ export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps)
             {filePath && (
               <div className="flex items-start gap-1 px-2 pb-2 text-muted-foreground">
                 <span className="min-w-0 flex-1 break-all font-mono text-[11px] select-text">{filePath}</span>
-                <CopyButton value={filePath} title={t`Copy path`} className="shrink-0 rounded p-1 hover:bg-muted" />
+                <CopyButton value={filePath} title={t`Copy path: ${filePath}`} className="shrink-0 rounded p-1 hover:bg-muted" />
                 {fsRef?.localComputeNodeId && (
                   <button
                     type="button"

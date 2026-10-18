@@ -50,6 +50,12 @@ def staged_attachments_dir(record_id: str) -> Path:
     return default_data_dir(record_id) / UNPACKED_SUBDIR / "attachment"
 
 
+def staged_git_entry_dir(record_id: str, entry_key: str) -> Path:
+    """Staging dir of one GIT-mode entry: a pointer, so only its metadata is
+    staged (``unpacked/metadata/<key>``) — the bytes arrive by git on install."""
+    return default_data_dir(record_id) / UNPACKED_SUBDIR / "metadata" / entry_key
+
+
 def staged_entry_dir(record_id: str, entry_key: str) -> Path:
     """Staging dir of one bundle attachment entry (``<type>-@<id>`` key)."""
     return default_data_dir(record_id) / staged_entry_rel_path(entry_key)

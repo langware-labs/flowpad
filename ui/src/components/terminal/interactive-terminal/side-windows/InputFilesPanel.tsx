@@ -61,7 +61,7 @@ const CopyPathAction: React.FC<{ name: string; path: string }> = ({ name, path }
   return (
     <RowAction
       label={t`Copy path of ${name}`}
-      title={t`Copy path`}
+      title={t`Copy path: ${path}`}
       icon={copied ? Check : Copy}
       onClick={() => void copy(path)}
     />

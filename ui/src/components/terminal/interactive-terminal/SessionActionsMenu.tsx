@@ -46,6 +46,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EntityShareDialog } from './EntityShareDialog';
 import { SessionInfoPopover } from './SessionInfoPopover';
 import { useCommitMerge, useOpenInWorktree } from './use-worktree-actions';
+import { useRestartRequiredHint } from './useRestartRequiredHint';
 
 interface SessionActionsMenuProps {
   process: AgenticProcess;
@@ -89,7 +90,7 @@ export function SessionActionsMenu({
   const hasSession = !!process.session_id;
   const started = isProcessRunning(process.status);
   const workdir = process.workdir ?? '';
-  const restartHint = process.restart_required && started ? t`Restart required — config changed since start` : null;
+  const restartHint = useRestartRequiredHint(process);
   const commitMerge = useCommitMerge(process, onInjectPrompt);
   const worktree = useOpenInWorktree(process, { enabled: menuOpen && !embedded });
 

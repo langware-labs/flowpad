@@ -4,6 +4,7 @@ id: 91856acd-d005-470d-b3c8-0e762229408a
 
 # Claude Guidelines for flow-cli
 
+
 ## Quick Start
 
 ### Prerequisites (Windows)
@@ -171,6 +172,24 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
+
+## FlowCall — recognize the call-and-result contract
+
+**FlowCall** names Flowpad's mechanism for invoking work, receiving a structured
+outcome and value, and composing results. `ReturnedValue` is its answer contract;
+`ComputeOp`, `Wizard`, and `ProcessCall` are participating parts, not synonyms.
+For questions about FlowCall, ReturnedValue, or how work calls return and compose
+values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
+`flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
+before investigating `ActionInfo` or `ApiResponse` transport plumbing.
+Keep the architectural name distinct from existing code identifiers.
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
+
+Durable work uses `ComputeOp.start` and `get_call` with exact block/call IDs.
+Admission has no completed output; interrupted work is not replayed automatically.
+Check installed capabilities before migrating callers, and use `CallContext.attach_executor`
+to record a child executor rather than searching by process name or start time.
 
 ## Naming — check the glossary before inventing a noun
 

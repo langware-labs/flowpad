@@ -34,7 +34,7 @@ ground rule 1 binds section 4. C1 and C2 then take their STATIC proof, and say s
 | --- | --- | --- |
 | C1 | Every kind applies: `flow schema apply <project>/agentic-assets/data_schema` exits 0, every `status: ok`. Static: every `data_schema.json` uses the shape forms of `references/shape-forms.md` and every rule path walks link fields | the command's output; or the files, marked "static" |
 | C2 | Every row the project holds fits: `DM ds-validate <ds>` → `problems: []` for every dataset. Static: read three rows per tracked dataset against their schema | the output per dataset; or the rows, marked "static" |
-| C3 | No code writes a dataset's files, computes a row id, or copies the key into the row | grep the code for `examples/`, `example.json`, `uuid5`, `data.key` |
+| C3 | No code writes a dataset's files, computes a row id, or copies the key into the row | grep the code for `rows/`, `row.json`, `uuid5`, `data.key` |
 | C4 | Datasets are found by kind (`Dataset.forKind` / `for_kind` / `DM ds-find`), never by a folder name or an id kept in code. (A `mirror.dataset` in `data_source.json` IS a folder name — that is its form) | the calls |
 | C5 | Links are fields typed by the target kind holding `<kind>.id.<uuid>`; no `{type, key}` stored; nothing in git links to rows kept out of git | the schemas; a row read back |
 | C6 | Every rule of the form "this link names the same row as that one" is a schema `rules` entry; other cross-row rules are written in the kinds' `description.md` and checked in every writer | the schemas; the writers |
@@ -51,7 +51,7 @@ ground rule 1 binds section 4. C1 and C2 then take their STATIC proof, and say s
 | C17 | A field only a script may write has an owner — `"owned_by": "<word>"`, the script writes `by="<word>"` — so the app cannot change it and need not list it | the schema; the app |
 | C18 | The app LISTENS (`onRowsChanged`), never polls or re-reads on focus; it shows a write's `warnings` and a broken mirror (`DataSource.isMirrorBroken`) | grep `setInterval`, `visibilitychange`, `warnings`, `isMirrorBroken` |
 | C19 | A script a rule runs is `then.run_script` (a failed step is a failed run), finishes inside the step's budget or starts the work and returns; "run now" follows `Trigger.run(started.run_id)`, never a status file of its own. A pruning `sync` in a script refuses an empty answer it cannot tell from an outage | the trigger files; the scripts |
-| C20 | The driver side passes `connect-data-source` author mode's rules: it never invents a value for a field the system owns, every `Mutable` verb answers `warnings` for a part it could not set — a failed read-back included — and never raises after the record changed, and a listing that got no answer raises | each `data_driver/*/source.py` |
+| C20 | The driver side passes `connect-data-source` author mode's rules: it never invents a value for a field the system owns, every `Mutable` verb answers `warnings` for a part it could not set — a failed read-back included — and never raises after the record changed, and a listing that got no answer raises. Related resources reuse one configurable driver and shared transport; separate drivers have a concrete family/transport justification ([recipe](../../connect-data-source/references/configurable-drivers.md)) | driver manifests and helper modules as well as `source.py`; compare authentication, HTTP and pagination code across folders; report copied transport as Low unless it already causes a High/Medium failure |
 
 ## 3. Findings, ranked — a check FAILS only on a High or Medium finding
 

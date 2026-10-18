@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
+from flow_sdk.builtin.credential import write_setup_choice
 from flow_sdk.builtin.credential_files import credential_file, remove_credential_files, write_credential_file
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
@@ -52,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 _MANIFEST_FIELDS = (
     "title", "description", "needed_for", "justification", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider",
-    "kind", "provider", "scopes", "optional_scopes", "vars",
+    "kind", "provider", "scopes", "optional_scopes", "vars", "ways",
 )
 
 
@@ -122,7 +123,7 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
-    signed_in = sorted(name for name, v in values.items() if spec.vars[name].is_cli and v not in (None, ""))
+    signed_in = sorted(name for name, v in values.items() if not spec.vars[name].holds_value and v not in (None, ""))
     if signed_in:
         raise CredentialError(f"{', '.join(signed_in)} is a sign-in, not a value: nothing is stored for it")
     if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
@@ -376,16 +377,44 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 
 async def set_credential_by_name(
-    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None
+    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None,
+    choice: str = "",
 ) -> "Credential":
-    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed."""
+    """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed. ``choice`` names
+    the ONE_OF way set up here when it holds no value (a sign-in through Flowpad); a value given for exactly one
+    way chooses that way by itself."""
     project = await get_project(project_id)
     if project_id and project is None:
         raise CredentialError("project not found")
-    if not any(str(v or "") for v in (values or {}).values()):
+    has_values = any(str(v or "") for v in (values or {}).values())
+    if not has_values and not choice:
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    return await set_credential_values(str(spec.typeid), values, deployment_id)
+    stored = await set_credential_values(str(spec.typeid), values, deployment_id) if has_values else spec
+    # The way the values were given for: every ONE_OF value given names its way — one way, and it is the choice.
+    ways = sorted({way for var, value in (values or {}).items() if str(value or "") and (way := spec.way_of(var))})
+    if way := choice or (ways[0] if len(ways) == 1 else ""):
+        try:
+            await write_setup_choice(spec, way)
+        except ValueError as e:
+            raise CredentialError(str(e)) from e
+    await _reverify_waiting_sources(spec.name, project)
+    return stored
+
+
+async def _reverify_waiting_sources(name: str, project: Any) -> None:
+    """The project's sources still in setup that read credential ``name`` check again now: setting the credential
+    is what they waited on, and nothing else re-checks a source in setup (the poller runs active ones only)."""
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+
+    for source in await DataSource.get_all({"status": SourceStatus.SETUP.value}):
+        auth = source._auth()
+        if getattr(auth, "credential", "") != name or (project is not None and str(source.project_id) != str(project.id)):
+            continue
+        try:
+            await source.verify()
+        except Exception:  # noqa: BLE001 — storing the value succeeded; a failed re-check leaves the source as it was
+            logger.warning("credential %s: could not re-check source %s", name, source.id, exc_info=True)
 
 
 def shipped_provider_title(provider: str) -> str:

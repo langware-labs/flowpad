@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
@@ -389,21 +389,32 @@ def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
         folder = shadow_dir_for(etype, eid)
         meta = folder / "metadata.json"
         if meta.exists():
-            if etype not in _BODY_BEARING_TYPE_IDS:
-                return folder
             import json  # noqa: PLC0415
 
-            # A metadata-only stub has no resolvable asset_ref → fall through
-            # to the staged check (a staged body still counts as downloaded).
-            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
-            if asset_ref and Path(asset_ref).exists():
-                return folder
+            record = json.loads(meta.read_text(encoding="utf-8")) or {}
+            # A row that is itself a RECEIVED git share pins someone's earlier
+            # version: it is not this message's — only this message's own staged
+            # pointer counts below (so a re-share is fetched and offers its version).
+            origin = record.get("origin")
+            if not (isinstance(origin, dict) and origin.get("head_commit")):
+                if etype not in _BODY_BEARING_TYPE_IDS:
+                    return folder
+                # A metadata-only stub has no resolvable asset_ref → fall through
+                # to the staged check (a staged body still counts as downloaded).
+                asset_ref = record.get("asset_ref")
+                if asset_ref and Path(asset_ref).exists():
+                    return folder
         if fm_id:
-            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
+            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, staged_git_entry_dir
 
             staged = staged_entry_dir(fm_id, record_stem(etype, eid))
             if staged.exists():
                 return staged
+            # A git share stages its pointer (metadata only); the bytes come by
+            # git at install, so the pointer IS the downloaded attachment.
+            pointer = staged_git_entry_dir(fm_id, record_stem(etype, eid))
+            if (pointer / "metadata.json").exists():
+                return pointer
         return None
     except Exception:
         return None
@@ -621,6 +632,9 @@ class FlowMessage(Entity):
     # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
     # never blanks it, and never sent where the hub would drop it.
     reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
+    # like ``envelope``: re-derived here, so a hub refresh never blanks it.
+    mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

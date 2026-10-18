@@ -25,7 +25,7 @@ from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.schema.data_spec.channel_spec import ActionSpec
 from flow_sdk.sources import Acting
 from flow_sdk.sources.http import next_link, paginate
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import MessageData, MessageItem, MessageMarkSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.utils.serialization import iso_to_utc
 from flow_sdk.stream_inbox.projection import project_source_item
@@ -65,16 +65,21 @@ async def _source() -> DataSource:
     return src
 
 
-async def _land(src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False) -> SourceItem:
+async def _land(
+    src: DataSource, key: str, *, at: datetime | None = None, ends: bool = False, mark: MessageMarkSpec | None = None, outcomes: list | None = None,
+    text: str | None = None, item_changed: bool = False,
+) -> SourceItem:
     """One message from Dana in thread ``pr-7``, ingested and projected — no sync round."""
     origin = lambda k: CloudOrigin(kind=PROVIDER, namespace=src.account_key, key=k)  # noqa: E731
     data = MessageData(
-        text=key, sender=UserProfile(origin=origin(DANA), address=DANA), conversation=origin("pr-7"),
-        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends,
+        text=text or key, sender=UserProfile(origin=origin(DANA), address=DANA), conversation=origin("pr-7"),
+        sent_at=at or datetime.now(timezone.utc), ends_conversation=ends, mark=mark,
     )
     outcome = await ingest_item(envelope_of(MessageItem(origin=origin(key), data=data), data_source_id=str(src.id), provider=PROVIDER))
+    if outcomes is not None:
+        outcomes.append(outcome.status)
     row = await SourceItem.get_one({"id": outcome.entity_id})
-    await project_source_item(row, source=src, announce=False)
+    await project_source_item(row, source=src, announce=False, item_changed=item_changed)
     return row
 
 
@@ -154,6 +159,68 @@ async def test_an_ending_message_ends_the_conversation_and_a_later_one_reopens_i
     assert merged.model_dump(mode="json")["ended_at"], "ended_at reaches the local wire"
     assert backfill.ended_at is not None, "a message older than the end does not reopen it"
     assert reopened.ended_at is None
+
+
+@contextmanager
+def _pushed():
+    """Every entity op the local WebSocket would send, as its wire dict."""
+    from flow_sdk.core.network import resource_tracker  # noqa: PLC0415
+
+    frames: list[dict] = []
+
+    async def capture(op):
+        frames.append(resource_tracker._to_message_dict(op))
+
+    with patch.object(resource_tracker, "handle_entity_op", capture):
+        yield frames
+
+
+async def test_a_reopen_reaches_an_open_page_as_a_null_ended_at():
+    t0 = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=3)
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        chat = await _chat(src)
+        await _land(src, "merged", at=t0 + timedelta(hours=1), ends=True)
+        with _pushed() as frames:
+            await _land(src, "reopened", at=t0 + timedelta(hours=2))
+    updates = [f["data"] for f in frames if f.get("op") == "update" and f["data"].get("id") == str(chat.id)]
+    assert updates, "the reopened conversation is pushed"
+    assert "ended_at" in updates[-1] and updates[-1]["ended_at"] is None, "a merging client must see the clear"
+
+
+async def test_an_edited_message_reaches_an_open_page_with_its_new_text():
+    at = datetime.now(timezone.utc).replace(microsecond=0)
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        row = await _land(src, "c-1", at=at, text="before")
+        with _pushed() as frames:
+            await _land(src, "c-1", at=at, text="after", item_changed=True)
+    fm = await FlowMessage.get_one({"source_item_id": str(row.id)})
+    pushed = [f["data"] for f in frames if f.get("op") == "update" and f["data"].get("id") == str(fm.id)]
+    assert fm.text == "after"
+    assert pushed and pushed[-1]["text"] == "after", "the edit is pushed, not only stored"
+
+
+@scoped
+async def test_a_message_mark_reaches_the_message_row_and_a_new_mark_is_an_update():
+    at = datetime.now(timezone.utc).replace(microsecond=0)
+    approved = MessageMarkSpec(key="approved", label="Approved", tone="positive")
+    dismissed = MessageMarkSpec(key="dismissed", label="Dismissed")
+    statuses: list = []
+    with scripted_provider(PROVIDER, projected=True):
+        src = await _source()
+        row = await _land(src, "review-9", at=at, mark=approved, outcomes=statuses)
+        first = await FlowMessage.get_one({"source_item_id": str(row.id)})
+        await _land(src, "review-9", at=at, mark=approved, outcomes=statuses)
+        await _land(src, "review-9", at=at, mark=dismissed, outcomes=statuses)
+        later = await FlowMessage.get_one({"source_item_id": str(row.id)})
+        plain_row = await _land(src, "plain", at=at)
+        plain = await FlowMessage.get_one({"source_item_id": str(plain_row.id)})
+    assert first.mark == approved
+    assert first.model_dump(mode="json")["mark"] == {"key": "approved", "label": "Approved", "tone": "positive"}, "the mark reaches the wire the UI reads"
+    assert statuses == ["created", "unchanged", "updated"], "only the mark changed, and that is a change"
+    assert later.mark == dismissed
+    assert plain.mark is None
 
 
 def _pages(pages: dict[str, tuple[object, str]]) -> httpx.AsyncClient:

@@ -9,9 +9,8 @@ import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
-import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
+import { FileAttachmentPicker, useFileStateAttach } from '@src/components/conversation/FileAttachmentPicker';
 import { AttachMenu, AssetRefChips } from '@src/components/conversation/AttachMenu';
-import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -38,6 +37,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const { addFiles, handlePaste } = useFileStateAttach(setFiles, { enabled: !busy, setText: setInitialMessage });
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -215,6 +215,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
+              onPaste={handlePaste}
               placeholder={isRemote ? t`Say hi…` : t`Type your first message…`}
               data-testid="initial-message-input"
             />
@@ -229,17 +230,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               <AttachMenu
                 assetRefs={assetRefs}
                 onAssetRefsChange={setAssetRefs}
-                onFilesPicked={(picked) => {
-                  if (!picked) return;
-                  const next = [...files];
-                  for (const f of Array.from(picked)) {
-                    if (f.size > MAX_FILE_SIZE_BYTES) continue;
-                    if (!next.some((x) => x.name === f.name && x.size === f.size)) {
-                      next.push(f);
-                    }
-                  }
-                  setFiles(next);
-                }}
+                onFilesPicked={addFiles}
                 disabled={busy}
                 hideAssetList
               />

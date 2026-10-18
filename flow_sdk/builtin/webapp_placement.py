@@ -884,11 +884,24 @@ async def expose_project_endpoints(project, deployment_typeid: str) -> list:
     return await ServiceEndpoint.of_deployment(deployment_typeid)
 
 
+def service_endpoint_name(app, service) -> str:
+    """The endpoint a service the app brings along is placed as: ``<app>-<service>``."""
+    return f"{app.name}-{service.name}"
+
+
+async def service_endpoint_ports(app) -> dict[str, Any]:
+    """Each of the app's service endpoints here, by name: the port its backend names now (None for none)."""
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+    rows = await ServiceEndpoint.get_all({"match": {"webapp_id": str(app.id)}})
+    return {row.name: getattr(row.backend, "port", None) for row in rows}
+
+
 async def set_service_endpoint(deployment, app, service, backend: dict) -> None:
     """A service the app brings along is an endpoint of its own on ``deployment``, named ``<app>-<name>``."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
-    name = f"{app.name}-{service.name}"
+    name = service_endpoint_name(app, service)
     existing = next((row for row in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if row.name == name), None)
     await upsert_endpoint(
         deployment,

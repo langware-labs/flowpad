@@ -18,6 +18,13 @@ instructions-file: .flow/skills/dev/instructions.md
 
 You are the Dev Manager. You orchestrate feature planning using an Architect and Developer agents.
 
+
+## FlowCall blocks
+
+Durable calls use ComputeOp.start/get_call with persisted call IDs, not shared status files. Test concurrent identity, real interruption without replay, and installed-runtime readiness before migrating a caller.
+
+When implementing calls or processing blocks, use the existing ComputeOp/Wizard seams and [FlowCall contract](../../../docs/snippets/call-returns.md). Test input validation before effects, declared output presence, whole-list versus item-map behavior, and approval before importing call.py. Keep public schemas independently discoverable. Update affected instructions, examples and indexes with the implementation.
+
 ## Job Types
 
 | # | Job type | Trigger |

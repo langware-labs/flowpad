@@ -47,6 +47,8 @@ DEFAULT_JQL = "order by updated DESC"
 #: How far the high-water mark is moved back: JQL dates are the API user's local time.
 RESUME_MARGIN = timedelta(days=1)
 MAX_CURSOR_LENGTH = 4096
+#: Extra rows a backward read asks for, to absorb the bound's own minute cut on our side.
+BACKWARD_SLACK = 10
 _ORDER_BY = re.compile(r"\border\s+by\b", re.IGNORECASE)
 
 
@@ -56,6 +58,8 @@ class JiraQuery(RecordQuery):
     spec_kind: ClassVar[str] = "source.query.jira"
 
     jql: str = DEFAULT_JQL
+    #: Exclusive upper bound on ``updated`` for a one-page backward read; ``None`` reads forward.
+    before: Optional[AwareDatetime] = None
 
 
 class JiraIssueData(RecordData):
@@ -86,6 +90,7 @@ class JiraSource(RecordSource, CollectionSource):
     Config = JiraConfig
     provider = "jira"
     durable_cursor = True
+    pages_backward = True
     identity_config_key = "site"
     supported_queries = (JiraQuery,)
 
@@ -120,6 +125,8 @@ class JiraSource(RecordSource, CollectionSource):
         query = self.effective_query(narrow)
         self._check_query(query)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query.before is not None:
+            return await self._older(query, query.before, limit)
         owner = _query_token(query)
         token, since, mark = None, None, None
         if cursor is not None:
@@ -141,6 +148,18 @@ class JiraSource(RecordSource, CollectionSource):
             state = {"q": owner, "token": following, "since": _iso(since), "mark": _iso(mark)}
             return ChangePage(items=items, next_cursor=_encode(state))
         return ChangePage(items=items, resume_cursor=_encode({"q": owner, "resume": _iso(mark)}) if mark else None)
+
+    async def _older(self, query: JiraQuery, before: datetime, limit: int) -> ChangePage:
+        """One page of the newest issues updated strictly before ``before``, newest first. It owns
+        no cursor and leaves the forward one alone; JQL compares at the minute, so the bound is
+        rounded up and the exact cut is made here — over a few spare rows, so issues of the bound's
+        own minute (which JQL lets through) do not leave the page short."""
+        payload = await self._search(_jql_before(query.jql, before), limit + BACKWARD_SLACK, None)
+        issues = [issue for issue in payload.get("issues") or [] if isinstance(issue, dict) and issue.get("id")]
+        items = [self._item(str(issue["id"]), issue) for issue in issues]
+        older = [item for item in items if item.data.published_at is not None and item.data.published_at < before]
+        older.sort(key=lambda item: item.data.published_at, reverse=True)
+        return ChangePage(items=tuple(older[:limit]))
 
     async def _search(self, jql: str, limit: int, token: Optional[str]) -> dict:
         params: dict[str, Any] = {"jql": jql, "maxResults": min(limit, JIRA_MAX_RESULTS), "fields": FIELDS}
@@ -241,13 +260,19 @@ def _walk(node: Any, parts: list[str]) -> None:
         parts.append("\n")
 
 
+def _where(jql: str) -> tuple[str, str]:
+    """``jql`` split at its last ORDER BY into ``(restriction, order clause)``, both stripped;
+    a bare ``order by`` leaves an empty restriction."""
+    found = list(_ORDER_BY.finditer(jql))
+    cut = found[-1].start() if found else len(jql)
+    return jql[:cut].strip(), jql[cut:].strip()
+
+
 def _jql(jql: str, since: Optional[datetime]) -> str:
     """``jql`` narrowed to issues updated since ``since`` (less the margin). The ORDER BY clause
     stays last, where JQL requires it. The enhanced search refuses a query with no restriction at
     all, so a bare ``order by`` gets one that matches every issue."""
-    found = list(_ORDER_BY.finditer(jql))
-    cut = found[-1].start() if found else len(jql)
-    where, order = jql[:cut].strip(), jql[cut:].strip()
+    where, order = _where(jql)
     clauses = [f"({where})"] if where else []
     if since is not None:
         floor = (since - RESUME_MARGIN).astimezone(timezone.utc)
@@ -255,6 +280,16 @@ def _jql(jql: str, since: Optional[datetime]) -> str:
     if not clauses:
         clauses.append('updated >= "1970/01/01"')
     return " AND ".join(clauses) + (f" {order}" if order else "")
+
+
+def _jql_before(jql: str, before: datetime) -> str:
+    """``jql``'s restriction with ``updated < <before rounded up to the minute>``, newest first."""
+    where, _order = _where(jql)
+    bound = before.astimezone(timezone.utc)
+    if bound.second or bound.microsecond:
+        bound = bound.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    clauses = ([f"({where})"] if where else []) + [f'updated < "{bound.strftime("%Y/%m/%d %H:%M")}"']
+    return " AND ".join(clauses) + " ORDER BY updated DESC"
 
 
 def _query_token(query: JiraQuery) -> str:

@@ -1,0 +1,12 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "selector": {"shape": "string", "description": "A CSS selector that finds the element on its screen (from the screen's [data-step] section, or an id)."},
+    "label":    {"shape": "string", "description": "What the element says or is (its label, text or tag), as the reviewer saw it."},
+    "html":     {"shape": "?string", "description": "The element's HTML when it was picked (cut at 1500 characters)."},
+    "x":        {"shape": "float", "description": "Where the element was on the page, in CSS pixels (its top-right corner): the bubble's spot when the selector no longer finds it."},
+    "y":        {"shape": "float", "description": "As x, vertically."},
+    "w":        {"shape": "float", "description": "The element's width when picked, CSS pixels."},
+    "h":        {"shape": "float", "description": "The element's height when picked, CSS pixels."}
+  }
+}

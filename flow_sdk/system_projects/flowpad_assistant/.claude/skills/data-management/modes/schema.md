@@ -12,6 +12,11 @@
 `DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. The grammar is
 `references/shape-forms.md`; complete files are in `references/examples.md`.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## Gate 1 — the shape is the user's
 
 Ask what one value looks like, with a real example from them. Propose the kinds —

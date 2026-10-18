@@ -864,11 +864,13 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     @action.get(action_name="load-state")
-    async def load_state_action(self, asset: str = "") -> "ApiResponse":
-        """Observe the current provider lifecycle, without starting or approving anything."""
-        from flow_sdk.core.setup.load import load_state  # noqa: PLC0415
+    async def load_state_action(self, asset: str = "", validate: bool = False, display: str = "") -> "ApiResponse":
+        """Observe the current provider lifecycle, without starting or approving anything. ``validate``:
+        a READY verdict counts only while the app still answers where it runs (else none — load it)."""
+        from flow_sdk.core.setup import load as lifecycle  # noqa: PLC0415
 
-        result = load_state(str(self.id), asset=asset)
+        result = (await lifecycle.validate(str(self.id), asset, display) if validate
+                  else lifecycle.load_state(str(self.id), asset=asset))
         return ApiSuccessResponse(data=result.model_dump(mode="json") if result is not None else None)
 
     # ── the project's apps: which port each process declares, and where it runs now ────────
@@ -893,19 +895,42 @@ class Project(SetupSkippable, Entity):
         return ApiSuccessResponse(data={"ports": rows})
 
     @action.post(action_name="app-stop")
-    async def app_stop_action(self, app: str = "", restart: bool = False) -> "ApiResponse":
-        """Stop the app's processes on this machine, whoever started them; ``restart`` starts them again."""
+    async def app_stop_action(self, app: str = "", restart: bool = False, wait: bool = False) -> "ApiResponse":
+        """Stop the app's processes on this machine, whoever started them; ``restart`` brings them up again
+        (``app-start``)."""
+        return await self._run_apps(app, stop=True, start=restart, wait=wait)
+
+    @action.post(action_name="app-start")
+    async def app_start_action(self, app: str = "", wait: bool = False) -> "ApiResponse":
+        """Bring the app up the one way (``bring_up``): validate → load → setup → fix. Answers each app's
+        load verdict — a running one is followed through ``load-state``, or waited for (``wait``)."""
+        return await self._run_apps(app, stop=False, start=True, wait=wait)
+
+    async def _run_apps(self, app: str, *, stop: bool, start: bool, wait: bool = False) -> "ApiResponse":
         from flow_sdk.builtin import webapp_setup  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up, forget  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.asset_setup_spec import LoadState  # noqa: PLC0415
 
         found = await self._own_apps(app)
         if not found:
             return ApiFailResponse(message=f"This project has no web app named {app!r}", status_code=404)
         results = []
         for one in found:
-            answer = await webapp_setup.stop(str(one.id))
-            if restart and answer.ok:
-                answer = await webapp_setup.step(str(one.id), "start", check=False)
-            results.append({"app": one.name, "ok": answer.ok, "detail": answer.detail, "port": answer.value})
+            row: dict = {"app": one.name, "asset": str(one.typeid)}
+            if stop:
+                answer = await webapp_setup.stop(str(one.id))
+                # What it was checked against is gone: the next open asks again.
+                forget(str(self.id), str(one.typeid))
+                row.update(ok=answer.ok, detail=answer.detail)
+                if not answer.ok:
+                    results.append(row)
+                    continue
+            if start:
+                loaded = await bring_up(self, asset=one, wait=wait)
+                page = next((p for p in await webapp_setup.ports(str(one.id)) if p["process"] == "page"), {})
+                row.update(ok=loaded.state is not LoadState.FAILED, detail=loaded.detail,
+                           port=str(page["port"]) if page.get("port") else None, load=loaded.model_dump(mode="json"))
+            results.append(row)
         return ApiSuccessResponse(data={"apps": results})
 
     @action.get(action_name="setup-requirements")
@@ -1604,7 +1629,7 @@ class Project(SetupSkippable, Entity):
     async def publish_files_to_hub(self) -> HubRepoOrigin:
         """Put the project folder into this project's hub-hosted repository and make that
         the hub row's origin. The LOCAL row keeps its own git origin: only recipients read
-        the hub's. Needs a git checkout — what git tracks there is what travels."""
+        the hub's. Git ignore rules apply even when the folder is not a checkout."""
         from flow_sdk.assets.git_publish import GitAuthor  # noqa: PLC0415
         from flow_sdk.assets.hub_repo_sync import HubRepoMirror, mirror_root, sync_project_with_hub  # noqa: PLC0415
         from flow_sdk.builtin.asset_publishing import actor_author  # noqa: PLC0415
@@ -1612,8 +1637,6 @@ class Project(SetupSkippable, Entity):
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
 
         mount = Path(self.fs_storage_mount_path or "")
-        if not (mount / ".git").exists():
-            raise RuntimeError("Sharing through the hub repository needs the project folder to be a git checkout")
         repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
@@ -2910,8 +2933,10 @@ class Project(SetupSkippable, Entity):
         return [s.model_dump(mode="json") for s in states]
 
     @action.get(action_name="dependencies")
-    async def dependencies_action(self, asset: str = "") -> "ApiResponse":
-        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings."""
+    async def dependencies_action(self, asset: str = "", declarers: bool = False) -> "ApiResponse":
+        """`GET /project/<id>/dependencies` — every declared dependency, and the warnings.
+        ``?declarers=1`` adds ``declarers``: every asset whose own flow.json declares
+        dependencies, with all its entries (the walk above lists each dependency once)."""
         from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
         try:
@@ -2926,6 +2951,8 @@ class Project(SetupSkippable, Entity):
                 # True while the resolve opening the project started is still fetching: a
                 # ``missing`` dependency may be on its way — the caller should not warn yet.
                 "resolving": project_dependencies.is_resolving(str(self.id)),
+                **({"declarers": [d.model_dump(mode="json") for d in await project_dependencies.declarers(self)]}
+                   if declarers else {}),
             }
         )
 

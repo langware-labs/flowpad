@@ -70,6 +70,11 @@ class Source:
     page_size: ClassVar[int] = DEFAULT_PAGE_SIZE
     #: The source hands back a ``resume_cursor`` the application may persist across sessions.
     durable_cursor: ClassVar[bool] = False
+    #: The source reads BACKWARDS on demand: its query takes a ``before`` narrow and answers the page just
+    #: older than it, newest first — what a list paged past its oldest held row asks for. One page per ask (the
+    #: next ask moves ``before`` to the oldest it got; ``next_cursor`` may be None), never a backfill, and it never
+    #: moves the forward cursor. Undeclared, a ``before`` narrow is ``Unsupported``.
+    pages_backward: ClassVar[bool] = False
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
     #: A pass read from the start to the end lists the WHOLE collection (a table, a CRM object): a
@@ -129,6 +134,8 @@ class Source:
         query = self.query()
         if not narrow:
             return query
+        if "before" in narrow and not type(self).pages_backward:
+            raise Unsupported(f"{type(self).__name__} cannot read backwards")
         if query is None:
             raise ValueError(f"{type(self).__name__} lists without a query; nothing to narrow")
         unknown = sorted(set(narrow) - set(type(query).model_fields))

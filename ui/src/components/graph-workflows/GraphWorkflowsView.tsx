@@ -1,6 +1,6 @@
 /**
  * Graph Workflows v2 — the per-flow canvas editor/observatory (dock tab per
- * flow, whiteboard pattern). The dock pointer carries the entity
+ * flow, chart pattern). The dock pointer carries the entity
  * (`graph_workflow-<id>`); the view resolves it, builds the folder FSRef from
  * `asset_ref`, and reads/writes graph.json (semantic) + display.json (layout)
  * with debounced persistence. Liveness is push-driven off the unified event
@@ -33,7 +33,7 @@ const PANEL_TABS = ['palette', 'inject', 'runs'] as const;
 type PanelTab = (typeof PANEL_TABS)[number];
 const PERSIST_DEBOUNCE_MS = 750;
 
-/** Debounced last-write-wins persister for one folder file (whiteboard pattern). */
+/** Debounced last-write-wins persister for one folder file (chart pattern). */
 function useFilePersister(
   ref: FSRef | null,
   onWritten?: (ref: FSRef) => void,

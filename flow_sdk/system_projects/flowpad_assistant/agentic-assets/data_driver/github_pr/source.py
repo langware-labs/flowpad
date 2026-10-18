@@ -56,7 +56,7 @@ from flow_sdk.sources.errors import (
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.memory import check_outgoing
 from flow_sdk.sources.protocols import Verdict
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import MessageData, MessageItem, MessageMarkSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -84,6 +84,20 @@ SIGN_IN = "GitHub sign-in is missing or expired"
 
 _PR = re.compile(r"^[^/#\s]+/[^/#\s]+#\d+$")
 _MESSAGE = re.compile(r"^(comment|review-comment|review|event|commit|check)-[\w.-]+$")
+#: What a review or an ending DID, drawn as a chip before its line; a commenting review has none.
+_MARKS = {
+    "APPROVED": MessageMarkSpec(key="approved", label="Approved", tone="positive"),
+    "CHANGES_REQUESTED": MessageMarkSpec(key="changes_requested", label="Changes requested", tone="negative"),
+    "DISMISSED": MessageMarkSpec(key="dismissed", label="Dismissed", tone="neutral"),
+    "merged": MessageMarkSpec(key="merged", label="Merged", tone="positive"),
+    "closed": MessageMarkSpec(key="closed", label="Closed", tone="neutral"),
+}
+
+
+def _review_mark(state: Any) -> Optional[MessageMarkSpec]:
+    return _MARKS.get(str(state or "").upper())
+
+
 #: Timeline events that are messages; the rest (labels, mentions, renames) are bookkeeping.
 _EVENTS = frozenset({"assigned", "unassigned", "committed", "head_ref_force_pushed", "merged", "closed", "reopened"})
 #: What a PR's state says when it left the search without a timeline event to show for it.
@@ -125,6 +139,8 @@ class GithubPrSource(MessageSource):
     provider = "github_pr"
     connection = "github"
     durable_cursor = True
+    #: A ``before`` narrow reads one page of the newest messages older than it (``_older``).
+    pages_backward = True
     #: The account is the GitHub login (``account_key``), not a config field; each PR is its own
     #: conversation within it, so a reply is addressed to the PR, never to a person.
     identity_config_key = ""
@@ -133,8 +149,8 @@ class GithubPrSource(MessageSource):
     #: A reply lands in the PR (or the review thread); it never quotes.
     quotes = False
     actions: ClassVar[tuple[ActionSpec, ...]] = (
-        ActionSpec(id="approve", label="Approve", icon_name="CheckCircle"),
-        ActionSpec(id="request_changes", label="Request changes", icon_name="CircleAlert", needs_text=True),
+        ActionSpec(id="approve", label="Approve", icon_name="CheckCircle", done_mark="approved"),
+        ActionSpec(id="request_changes", label="Request changes", icon_name="CircleAlert", needs_text=True, done_mark="changes_requested"),
         ActionSpec(id="merge", label="Merge", icon_name="GitMerge", confirm="Merge this pull request into its base?", destructive=True),
         ActionSpec(id="close", label="Close", icon_name="Archive", confirm="Close this pull request?", destructive=True),
     )
@@ -206,6 +222,8 @@ class GithubPrSource(MessageSource):
         self._require_open()
         query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query is not None and query.before is not None:
+            return ChangePage(items=await self._older(query.before, limit))
         state: dict = {"page": 1, "skip": 0}
         if cursor is None:
             since = query.since if query is not None else None
@@ -215,13 +233,7 @@ class GithubPrSource(MessageSource):
 
         found = await self._get("/search/issues", q=self._search(since), sort="updated", order="asc", per_page=SEARCH_PAGE, page=state["page"])
         prs = _prs(found)
-        gate = asyncio.Semaphore(PR_CONCURRENCY)
-
-        async def gated(work):
-            async with gate:
-                return await work
-
-        items = [item for messages in await asyncio.gather(*(gated(self._messages(pr, since)) for pr in prs)) for item in messages]
+        items = await self._gather_messages(prs, since)
         top = max((s for s in (_stamp(state.get("top")), *(_parse_time(pr.get("updated_at")) for pr in prs)) if s is not None), default=None)
 
         # A pass starting from a resume cursor first ends the PRs that left the search since.
@@ -230,7 +242,7 @@ class GithubPrSource(MessageSource):
         if state.get("seen"):
             open_now = await self._open_keys(found if since is None else None)
             gone = [key for key in state["seen"] if key not in open_now]
-            ended = [item for found_ in await asyncio.gather(*(gated(self._ended(key)) for key in gone)) for item in found_]
+            ended = await _bounded_flat(self._ended(key) for key in gone)
 
         skip, limit_end = state["skip"], state["skip"] + limit
         handed = tuple(items[skip:limit_end]) + tuple(ended)
@@ -243,6 +255,22 @@ class GithubPrSource(MessageSource):
             open_now = await self._open_keys(found if since is None and state["page"] == 1 else None)
         newest = max((s for s in (top, since) if s is not None), default=None)
         return ChangePage(items=handed, resume_cursor=_fit(_iso(newest), open_now))
+
+    async def _older(self, before: datetime, limit: int) -> list[MessageItem]:
+        """The ``limit`` newest messages sent strictly before ``before``, newest first — one backward
+        page; the forward cursor is neither read nor moved. The search lists the PRs most recently
+        updated that were CREATED before the bound (a PR created after it holds nothing older, while
+        one updated after it still can), newest update first, ``limit`` of them."""
+        stamp = _gh_stamp(before)
+        found = await self._get("/search/issues", q=f"{self._search(None)} created:<{stamp}", sort="updated", order="desc", per_page=min(limit, SEARCH_PAGE))
+        everything = await self._gather_messages(_prs(found))
+        older = [item for item in everything if item.data.sent_at is not None and item.data.sent_at < before]
+        older.sort(key=lambda item: (item.data.sent_at, item.origin.key), reverse=True)
+        return older[:limit]
+
+    async def _gather_messages(self, prs: list[dict], since: Optional[datetime] = None) -> list[MessageItem]:
+        """Every message of ``prs``, PR by PR in order, read at most ``PR_CONCURRENCY`` at a time."""
+        return await _bounded_flat(self._messages(pr, since) for pr in prs)
 
     async def _open_keys(self, found: Optional[dict] = None) -> list[str]:
         """Every open PR the search lists now, as ``<owner>/<repo>#<n>``, oldest update first.
@@ -276,7 +304,7 @@ class GithubPrSource(MessageSource):
         state = "merged" if head.get("merged") or head.get("merged_at") else str(head.get("state") or "open")
         line = {"merged": "merged", "closed": "closed", "open": "You are no longer on this pull request"}.get(state, state)
         when = head.get("merged_at") or head.get("closed_at") or head.get("updated_at")
-        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True)]
+        return [self._item(f"ended-{key}-{state}", key, line, "", when, head.get("html_url"), raw=head, subject=title, ends=True, mark=_MARKS.get(state))]
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
@@ -292,7 +320,7 @@ class GithubPrSource(MessageSource):
     def _search(self, since: Optional[datetime]) -> str:
         terms = ["is:pr", "is:open", f"{FILTERS[self.filter]}:@me", *(f"repo:{r}" for r in self.repos)]
         if since is not None:
-            terms.append(f"updated:>={since.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}")
+            terms.append(f"updated:>={_gh_stamp(since)}")
         return " ".join(terms)
 
     async def _messages(self, pr: dict, since: Optional[datetime] = None) -> list[MessageItem]:
@@ -326,7 +354,7 @@ class GithubPrSource(MessageSource):
             if state == "PENDING" or (state == "COMMENTED" and not str(r.get("body") or "").strip()):
                 continue
             who = _login(r.get("user"))
-            add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r)
+            add(f"review-{r['id']}", who, str(r.get("body") or "") or _review_line(who, r.get("state")), r.get("submitted_at"), r.get("html_url"), r, mark=_review_mark(state))
         self._events(timeline, add, pr, head)
 
         sha = str((head.get("head") or {}).get("sha") or "")
@@ -341,11 +369,14 @@ class GithubPrSource(MessageSource):
         return out
 
     def _adder(self, out: list[MessageItem], key: str, title: Optional[str]):
-        """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False)`` appending
-        one message of PR ``key`` to ``out``."""
+        """``add(kind_id, sender, text, when, url, raw, in_reply_to=None, *, ends=False, mark=None)``
+        appending one message of PR ``key`` to ``out``."""
 
-        def add(kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *, ends: bool = False) -> None:
-            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends))
+        def add(
+            kind_id: str, sender: str, text: str, when: Any, url: Any, raw: dict, in_reply_to: Optional[str] = None, *,
+            ends: bool = False, mark: Optional[MessageMarkSpec] = None,
+        ) -> None:
+            out.append(self._item(kind_id, key, text, sender, when, url, raw=raw, subject=title, in_reply_to=in_reply_to, ends=ends, mark=mark))
 
         return add
 
@@ -401,7 +432,7 @@ class GithubPrSource(MessageSource):
             line = f"{kind} by {who}" if who else kind
         else:
             line = kind
-        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e, ends=self._ends(e))
+        add(f"event-{e['id']}", who, line, e.get("created_at"), pr.get("html_url"), e, ends=self._ends(e), mark=_MARKS.get(kind))
 
     def _profile(self, login: str) -> UserProfile:
         return UserProfile(origin=self.origin(login), name=login)
@@ -479,7 +510,7 @@ class GithubPrSource(MessageSource):
         if suffix != "/reviews" or not isinstance(body, dict) or not body.get("id"):
             return None
         who = _login(body.get("user"))
-        return self._item(f"review-{body['id']}", pr, str(body.get("body") or "") or _review_line(who, body.get("state")), who, body.get("submitted_at"), body.get("html_url"), raw=body)
+        return self._item(f"review-{body['id']}", pr, str(body.get("body") or "") or _review_line(who, body.get("state")), who, body.get("submitted_at"), body.get("html_url"), raw=body, mark=_review_mark(body.get("state")))
 
     async def _act(self, method: str, path: str, payload: dict, origin: CloudOrigin) -> Any:
         response = await self._request(method, path, json=payload, origin=origin, ok_statuses=(405, 409, 422))
@@ -504,6 +535,7 @@ class GithubPrSource(MessageSource):
     def _item(
         self, key: str, pr: str, text: Optional[str], sender: str, when: Any, url: Any, *,
         raw: Optional[dict] = None, subject: Optional[str] = None, in_reply_to: Optional[str] = None, ends: bool = False,
+        mark: Optional[MessageMarkSpec] = None,
     ) -> MessageItem:
         """One message of PR ``pr``, keyed ``key`` — the one shape ``fetch`` and a send's echo share."""
         data = GithubPrMessageData(
@@ -515,6 +547,7 @@ class GithubPrSource(MessageSource):
             in_reply_to=self.origin(in_reply_to, pr) if in_reply_to else None,
             raw=raw,
             ends_conversation=ends,
+            mark=mark,
         )
         origin = self.origin(key, pr)
         return MessageItem(origin=origin.model_copy(update={"url": str(url)}) if url else origin, data=data)
@@ -579,7 +612,7 @@ class GithubPrSource(MessageSource):
         rides in an object, as check runs do); ``since`` on the lists that take it."""
         params: dict = {"per_page": LIST_PAGE}
         if since is not None:
-            params["since"] = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            params["since"] = _gh_stamp(since)
         return [entry async for entry in http.paginate(
             self._client, f"{self.base_url}{path}", params=params, key=key, max_pages=MAX_LIST_PAGES, **self._wire(),
         ) if isinstance(entry, dict)]
@@ -678,6 +711,22 @@ def _parse_time(value: Any) -> Optional[datetime]:
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
     return value.isoformat() if value is not None else None
+
+
+def _gh_stamp(value: datetime) -> str:
+    """``value`` as GitHub's search/``since`` timestamp: UTC, whole seconds, ``Z``."""
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+async def _bounded_flat(works) -> list:
+    """Run the awaitables at most ``PR_CONCURRENCY`` at a time; their lists, flattened in order."""
+    gate = asyncio.Semaphore(PR_CONCURRENCY)
+
+    async def gated(work):
+        async with gate:
+            return await work
+
+    return [item for found in await asyncio.gather(*(gated(work) for work in works)) for item in found]
 
 
 def _stamp(value: Any) -> Optional[datetime]:

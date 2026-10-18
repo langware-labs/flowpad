@@ -40,7 +40,7 @@ class AssetEditor(StrEnum):
     AGENT = "agent"
     SKILL = "skill"
     TASK = "task"
-    WHITEBOARD = "whiteboard"
+    CHART = "chart"
     DECK_TEMPLATE = "deck_template"
     DECK = "deck"
     SPREADSHEET = "spreadsheet"  # CSV (editable) / XLSX (read-only) grid
@@ -94,7 +94,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.AGENT: [EntityType.AGENT],
     AssetEditor.SKILL: [EntityType.SKILL],
     AssetEditor.TASK: [EntityType.TASK],
-    AssetEditor.WHITEBOARD: [EntityType.WHITEBOARD],
+    AssetEditor.CHART: [EntityType.CHART],
     AssetEditor.DECK_TEMPLATE: [EntityType.DECK_TEMPLATE],
     AssetEditor.DECK: [EntityType.DECK],
     AssetEditor.SPREADSHEET: [EntityType.SPREADSHEET],

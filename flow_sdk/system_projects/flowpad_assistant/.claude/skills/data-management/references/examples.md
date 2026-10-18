@@ -2,6 +2,11 @@
 
 All of these were applied and round-tripped in a probe. Copy the shape, not the names.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## A family of kinds: one grouping folder, nested schemas
 
 ```
@@ -61,7 +66,7 @@ company while Dana still points at it. Renaming the company row keeps its id, so
     "title": "CRM leads",
     "description": "Every lead, one row each; the row key is a short slug of the name.",
     "data_layout": "io_folder",
-    "spec": {"examples": [{"input": "--acme--.crm.lead"}]}
+    "spec": {"rows": [{"input": "--acme--.crm.lead"}]}
   },
   "data": {}
 }
@@ -71,14 +76,14 @@ company while Dana still points at it. Renaming the company row keeps its id, so
 - Records only need `input`. Add `"output"` (and gold labels) only for a dataset that
   scores a model — then see `connect-data-source define` for labelling.
 - A dataset kind can be named instead of inlined: a schema folder with
-  `"examples": {"input": "crm.lead", "output": "crm.score"}` registers one, and the
+  `"rows": {"input": "crm.lead", "output": "crm.score"}` registers one, and the
   manifest says `"spec": "--acme--.crm.dataset"`.
 
 ## A row, as the SDK writes it
 
 ```
-examples/dana/                  ← the row's KEY
-  example.json                  {"metadata": {"id": "<the row's id>", "kind": "train"}, "data": {}}
+rows/dana/                  ← the row's KEY
+  row.json                  {"metadata": {"id": "<the row's id>", "kind": "train"}, "data": {}}
   input/lead.json               the scalar fields
   input/notes/0001/note.json    a list of a kind: one folder per element
   input/notes/0002/note.json

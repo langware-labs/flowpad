@@ -1,4 +1,4 @@
-"""Type metadata for GRAPH_WORKFLOW — folder-backed flow document (whiteboard model)."""
+"""Type metadata for GRAPH_WORKFLOW — folder-backed flow document (chart model)."""
 from flow_sdk.assets.identity import (
     folder_json_identity,
 )

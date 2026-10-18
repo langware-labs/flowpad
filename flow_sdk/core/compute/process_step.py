@@ -232,7 +232,7 @@ async def launch_step_process(
         process = await AgenticProcess.get_by_typeid(executor)
         if process is None:
             return PromptResult.not_yet(f"The agent process {executor} no longer exists.", ran=False)
-        return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+        return await _finish(process, await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status))
 
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
     from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
@@ -263,19 +263,24 @@ async def launch_step_process(
                 f"{getattr(worker_type, 'value', worker_type)} {NO_USABLE_LLM_SOURCE}: {refusal}", ran=False
             )
 
+    # The agent's declared ``output``: the run hands back a value of it, the way ``Agent.launch`` does.
+    output_shape = getattr(await deployment.agent(), "output", None)
     try:
         process = await deployment.create_process(
             prompt,
             worker_type=worker_type,
             name=name,
             workdir=str(workdir),
-            context_data={**(context_data or {}), **({"wizard_step_prompt": prompt} if remember_prompt else {})},
+            context_data={
+                **(context_data or {}),
+                **({"wizard_step_prompt": prompt} if remember_prompt else {}),
+                **({OUTPUT_SHAPE_KEY: output_shape} if output_shape is not None else {}),
+            },
             target_typeid_str=target_typeid_str,
         )
-        if input is not None:
-            from flow_sdk.builtin.agentic_process.process_io import prepare_io  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.process_io import declared_output_spec, prepare_io  # noqa: PLC0415
 
-            prepare_io(process, input=input)
+        prepare_io(process, input=input, output_spec=declared_output_spec(output_shape))
         if shared_context_entities:
             from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
@@ -288,7 +293,19 @@ async def launch_step_process(
         # Immediately: the row should move when the process exists, not two
         # seconds later when the first poll lands.
         on_status(ProcessProgress(text="starting the agent", executor=str(process.typeid)))
-    return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
+    return await _finish(process, await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status))
+
+
+#: The agent's declared ``output`` shape, kept on the process so a further turn reads its value back too.
+OUTPUT_SHAPE_KEY = "output_shape"
+
+
+async def _finish(process: Any, answer: PromptResult) -> PromptResult:
+    """In declared-output mode (the shape the launch kept on the process), the value the agent left in its
+    output folder (``finish_io``); else the answer. Every turn of the session reads it the same way."""
+    from flow_sdk.builtin.agentic_process.process_io import declared_output_spec, finish_io  # noqa: PLC0415
+
+    return await finish_io(process, answer, declared_output_spec((process.context_data or {}).get(OUTPUT_SHAPE_KEY)))
 
 
 async def _prompt_and_wait(

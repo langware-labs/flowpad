@@ -12,6 +12,12 @@ verb, and every harness renders it its own way (`--mcp-config` for claude,
 `-c mcp_servers.*` for codex, `--additional-mcp-config` for copilot, the
 generated config's `mcp` key for opencode).
 
+An agent-backed FlowCall block composes through the same declared value
+contract as a Python `call.py` block. Admission (`send_turn` or a nonwaiting
+launch) does not supply completed data; await the process result before chaining.
+Keep its executor and file evidence instead of converting it into a custom
+`ok/value/error` envelope. See [FlowCall blocks](flowcall-blocks.md).
+
 Every section runs as written on the mock worker in `tests/unit/test_processes_snippets.py`
 (its file actions read the run's input folder and write its output folder); the MCP legs are
 also pinned for real by `tests/long_tests/test_process_mcp_multi_vendor.py`, which makes a

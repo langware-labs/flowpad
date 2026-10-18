@@ -1,0 +1,19 @@
+{
+  "type": "agent",
+  "id": "d1bb8a3d-dd4b-47f8-8c1a-592d427ee52d",
+  "name": "PR agent",
+  "description": "",
+  "skills": [],
+  "mcp_servers": [],
+  "subagents": [],
+  "additional_dirs": [],
+  "load_flowpad_assistant": false,
+  "chief_of_staff": false,
+  "cli_options": {},
+  "enabled": true,
+  "intro": "",
+  "auto_launch": false,
+  "auto_launch_prompt": "",
+  "title": "PR",
+  "version": 3
+}

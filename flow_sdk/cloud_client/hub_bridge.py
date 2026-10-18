@@ -39,7 +39,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
         "subagent",
         "markdown",
         "spec",
-        "whiteboard",
+        "chart",
         "project",
     }
 )
@@ -47,7 +47,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / whiteboard).
+    asset entity (skill / agent / markdown / spec / chart).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a

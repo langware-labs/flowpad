@@ -25,6 +25,19 @@ LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
 }
 
 
+#: The kind of an artifact that stands for one shared file (see ``for_shared_file``).
+SHARED_FILE_KIND = "content.file.text"
+#: The standalone files that travel as an artifact (a git pointer the receiver
+#: opens and finds), rather than as a copied raw file.
+SHARED_FILE_SUFFIXES = frozenset({".html", ".htm"})
+
+
+def _is_single_file(origin) -> bool:
+    """A git origin that names one file (``docs/mock.html``), not a folder."""
+    rel = (getattr(origin, "rel_path", "") or "").strip()
+    return getattr(origin, "kind", None) == "git" and bool(Path(rel).suffix) and rel not in (".", "")
+
+
 class Artifact(Entity):
     """A provider-neutral logical component in an application composition.
 
@@ -203,13 +216,70 @@ class Artifact(Entity):
         }
         existing = await cls.get_one({"id": entity_id})
         if existing is not None and not overwrite:
-            if existing.origin is not None and existing.origin.key() == origin.key():
-                return True
-            raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+            same_share = existing.origin is not None and existing.origin.key() == origin.key()
+            if not same_share:
+                raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+            if getattr(existing.origin, "head_commit", None) == getattr(origin, "head_commit", None):
+                return True  # the same version again: nothing to do
+            # The same shared asset at a newer commit is a new VERSION of it: re-open below.
+        if _is_single_file(origin):
+            # A single shared file (an .html page) opens straight away, at the
+            # exact commit it was shared at — no setup wizard has anything to do.
+            from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+            from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
+
+            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(origin)
+            file = safe_join(root, origin.rel_path)
+            if file is None or not file.is_file():
+                raise FileNotFoundError(f"shared file not found: {root / origin.rel_path}")
+            payload["asset_ref"] = str(file)
+            if project_id:
+                payload["project_id"] = project_id
         artifact = cls.model_validate(payload)
         artifact.id = entity_id
         await artifact.save(owner_typeid)
         return True
+
+    @classmethod
+    async def shared_file_at(cls, path: str) -> "Artifact | None":
+        """The shared-file artifact whose file is at ``path``, in any spelling the
+        path reaches this machine in — a viewer's ``/Users/…`` is this Windows
+        machine's ``C:\\Users\\…`` (``asset_ref_spellings`` resolves it). Read-only."""
+        from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
+
+        for ref in asset_ref_spellings(path):
+            found = cls._first_matching_kind(await cls.get_all({"match": {"asset_ref": ref}}), SHARED_FILE_KIND)
+            if found is not None:
+                return found
+        return None
+
+    @classmethod
+    async def for_shared_file(cls, path: str) -> "Artifact":
+        """The artifact that stands for one file being shared (an .html page in a
+        repo), found by its path in its project or registered once. Sharing it
+        by git then sends a pointer to the file at a commit, which the receiver
+        opens and finds by name."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
+
+        file = Path(path).expanduser().resolve()
+        if not file.is_file():
+            raise FileNotFoundError(f"not a file: {file}")
+        if file.suffix.lower() not in SHARED_FILE_SUFFIXES:
+            raise ValueError(f"{file.name} is shared as a file, not as an artifact")
+        root = find_project_root(str(file.parent)) or str(file.parent)
+        project = await Project.recover_by_path(root)
+        project_id = project.id if project else None
+        kind = SHARED_FILE_KIND
+        # The address IS the file: one artifact per shared path, whatever project
+        # (if any) it sits in.
+        existing = cls._first_matching_kind(await cls.get_all({"match": {"asset_ref": str(file)}}), kind)
+        if existing is not None:
+            return existing
+        artifact = cls(name=file.name, kind=kind, path=str(file), asset_ref=str(file), project_id=project_id,
+                       description=f"Shared file {file.name}")
+        await artifact.save()
+        return artifact
 
     @classmethod
     def _first_matching_kind(cls, rows, kind: str | None, *, origin_path: str | None = None):
@@ -315,8 +385,8 @@ class Artifact(Entity):
         ``None`` when the folder declares none (or has no project to set it up in)."""
         from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
         from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
 
         folder = str(getattr(self, "path", "") or "").rstrip("/")
         if not folder or not project_id:
@@ -327,7 +397,8 @@ class Artifact(Entity):
         project = await Project.get_by_id(str(project_id)) if app is not None else None
         if project is None:
             return None
-        await start_setup(project, root=str(app.typeid))
+        # The one way an app comes up: validate → load → setup → fix.
+        await bring_up(project, asset=app)
         return _entity_payload(app)
 
 

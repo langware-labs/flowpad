@@ -5,10 +5,17 @@ id: 48fe7963-b589-4540-ae1d-6bf0b53fcb1c
 
 A ComputeOp is ONE call of one subkind — a shell one-liner (`cli`), a closed
 question to the Decision API (`decision`, [decisions](decisions.md) §9), a model
-(`prompt`), an agent with tools (`agent`), or a person (`ask`). It declares the
-kind it RETURNS, and it knows when it is already done — so running it twice does
-the work once. Every op answers with a `ReturnedValue`; the shapes, and every
-decision behind them, are on [call-returns](call-returns.md).
+(`prompt`), an agent with tools (`agent`), a person (`ask`), navigation, or
+Python processing (`python`, implemented by `call.py:call`). It declares what
+it consumes and returns. An optional completion check lets a goal skip work
+that is already done; an ordinary value-producing block needs no check.
+Every op participates in **FlowCall** and answers with a
+`ReturnedValue`; the shapes and their rationale are in the
+[FlowCall contract](call-returns.md).
+
+For typed inputs, whole lists and Python-backed blocks, start with the
+[executable FlowCall block recipe](flowcall-blocks.md). Its `chain` helper uses
+the Wizard runner; `map_calls` explicitly invokes once per item.
 
 Every fence on this page is pinned. The `jsonc` documents are validated against
 the real spec by `tests/unit/test_compute_ops_snippets.py`; the Python is the
@@ -44,9 +51,11 @@ and `output_spec_kind` is what the person provides:
 
 `output_spec_kind` names a REGISTERED kind — a primitive, or a DataSpec with a
 `spec_kind` — and an unknown one is refused when the document is read. An op
-cannot declare a shape of its OWN: this folder holds a JSON document and a
-markdown file, and a kind is registered by importing the module that declares
-it. See [ontology](../ontology.md) for what to do the day an op needs one.
+declares general shapes with `input` and `output`; these also accept lists and
+records. Public named schemas live in data-schema assets or SDK modules, so
+reading a schema never needs to execute an unapproved `call.py`. Python block
+imports run within their project's declared namespace. See
+[ontology](../ontology.md) for registration and ownership.
 
 The op raises the question and waits a bounded time. A live tab is sent to
 `win/`, the chrome-less layout where the routed view IS the window; with no tab
@@ -147,7 +156,7 @@ A caller can still continue an agent by hand: its answer names its process in
 `executor`, and `run_op(spec, …, executor=answer.executor)`
 (`flow_sdk/core/compute_op/runner.py`) runs the next op in that SAME session —
 the entity's `ComputeOp.run()` takes no `executor`. See
-[call-returns](call-returns.md) for the worked example.
+[FlowCall](call-returns.md) for the worked example.
 
 **Two ops sharing one check still work as a fallback in a wizard** — a wizard
 counts goals, not attempts, so a step that missed and a later step that reached

@@ -50,7 +50,7 @@ async def resolve_op(name: str) -> Any:
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
     spec = read_op(name)
-    return Resolved(spec, True) if spec is not None else None
+    return Resolved(spec, True, shipped_assets() / "compute_op" / name) if spec is not None else None
 
 
 async def resolve_wizard(name: str) -> Any:

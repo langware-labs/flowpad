@@ -1,6 +1,6 @@
 """The TypeScript eval contract (``ts_sdk/src/evals/types.ts``) names the same fields as the kinds.
 
-The Eval Browser reads runs through these types; a field added to ``EvalRun`` / ``ExampleEval`` in
+The Eval Browser reads runs through these types; a field added to ``EvalRun`` / ``RowEval`` in
 Python and not in TypeScript would silently never show.
 """
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.schema.data_spec.eval_spec import EvalRun, ExampleEval, Verdict
+from flow_sdk.schema.data_spec.eval_spec import EvalRun, RowEval, Verdict
 
 TYPES = (Path(__file__).resolve().parents[2] / "ts_sdk/src/evals/types.ts").read_text()
 
@@ -21,7 +21,7 @@ def _fields(interface: str) -> set[str]:
     return set(re.findall(r"^\s+(\w+)\??:", body, re.M))
 
 
-@pytest.mark.parametrize(("interface", "model"), [("ExampleEval", ExampleEval), ("EvalRun", EvalRun)])
+@pytest.mark.parametrize(("interface", "model"), [("RowEval", RowEval), ("EvalRun", EvalRun)])
 def test_the_ts_interface_names_every_field(interface, model):
     assert _fields(interface) == set(model.model_fields)
 

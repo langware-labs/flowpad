@@ -239,3 +239,21 @@ async def test_claude_reads_a_mounted_folder_natively_so_nothing_is_linked(no_sa
     prepared = await proc.asset_workspace.prepare_process_assets()
 
     assert not (prepared.instruction_assets.assets_dir / ".claude" / "skills" / "probe-mounted-skill").exists()
+
+
+@pytest.mark.parametrize('source_scope', ['workdir', 'additional_dir'])
+async def test_claude_launch_projects_shared_skills_into_native_process_mount(records_root, tmp_path, source_scope):
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    root = tmp_path / 'project'
+    skill = root / '.agents' / 'skills' / 'qa-shared-skill'
+    skill.mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('---\nname: qa-shared-skill\ndescription: QA skill\n---\nUse this skill.')
+    if source_scope == 'workdir':
+        proc.workdir = str(root)
+    else:
+        proc.additional_dirs = [str(root)]
+    prepared = await proc.prepare_process_assets()
+    assert prepared.instruction_assets is not None
+    link = prepared.instruction_assets.assets_dir / '.claude' / 'skills' / skill.name
+    assert link.is_symlink() and link.resolve() == skill.resolve()
+    assert not (root / '.claude').exists()

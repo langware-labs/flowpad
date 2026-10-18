@@ -60,6 +60,7 @@ import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/G
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
 import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
 import { schemaTreePointer } from '@src/components/schema-tree/schema-tree-pointer';
+import type { WorkerType } from '@src/hooks/use-transcript';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -272,6 +273,14 @@ function embedHostInProjectPointer(pointer: string | undefined, hostProcessId: s
  * asset editor reads it to point at the matching `translations[].ref`.
  */
 export const LANG_PARAM = 'lang';
+
+/**
+ * URL query-param key paging a conversation list backwards: the `updated_date` (ISO) the page
+ * shows conversations OLDER than. Absent = now — the latest page, live. Rides in `options`, so it
+ * is reload- and back-safe and never opens a tab. Pairs with `DockPointer.pageBefore` /
+ * `withPageBefore()`; the stream inbox reads it to build its page query.
+ */
+export const PAGE_BEFORE_PARAM = 'before';
 
 /**
  * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
@@ -686,6 +695,16 @@ export class DockPointer implements IDockPointer {
   /** Clone this dock pointed at a translated body, or back to the original with null. */
   withLang(lang: string | null): DockPointer {
     return this.withOption(LANG_PARAM, lang);
+  }
+
+  /** The `updated_date` a paged list shows rows older than, or null for now (the latest page). */
+  get pageBefore(): string | null {
+    return this.options?.[PAGE_BEFORE_PARAM] ?? null;
+  }
+
+  /** Clone this dock paged back to rows older than `before`, or back to now with null. */
+  withPageBefore(before: string | null): DockPointer {
+    return this.withOption(PAGE_BEFORE_PARAM, before);
   }
 
   /**
@@ -2175,7 +2194,7 @@ export class DockPointer implements IDockPointer {
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex' | 'copilot' | 'opencode' | 'workflow',
+    workerType: WorkerType,
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,

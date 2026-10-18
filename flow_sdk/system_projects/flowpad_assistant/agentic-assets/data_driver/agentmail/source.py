@@ -48,6 +48,9 @@ from flow_sdk.sources.values.query import MessageQuery
 DEFAULT_BASE_URL = "https://api.agentmail.to/v0"
 #: Messages per page; the resume cursor does the rest.
 PAGE_LIMIT = 25
+#: Listing pages one backward read walks at most (each ``MAX_PAGE_SIZE`` long): the listing has no
+#: date filter, so older mail is found by reading newest-first pages and keeping what predates the bound.
+OLDER_PAGES = 5
 #: AgentMail's own ceiling for one round-trip — never a retry budget.
 REQUEST_TIMEOUT_SECONDS = 30
 #: Where the application keeps the key: a MACHINE secret, because the inbox is account-bound and an
@@ -71,6 +74,9 @@ class AgentMailSource(EmailAddressing, MessageSource):
     provider = "agentmail"
     identity_config_key = "inbox"
     durable_cursor = True
+    #: A ``before`` narrow reads one page of older mail. The listing documents no ``before`` filter, so
+    #: the inbox is walked by ``page_token`` and filtered here.
+    pages_backward = True
     page_size = PAGE_LIMIT
     pages_per_pass = 1
     #: The send body carries the files base64-encoded; AgentMail takes a few MB a request.
@@ -119,6 +125,8 @@ class AgentMailSource(EmailAddressing, MessageSource):
         if query.conversation is not None:
             raise Unsupported("AgentMail lists an inbox; it does not read one thread")
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query.before is not None:
+            return await self._older(query.before, limit)
         floor, newest, token = _start(query, cursor)
         params: dict[str, Any] = {"limit": limit}
         if token:
@@ -139,6 +147,25 @@ class AgentMailSource(EmailAddressing, MessageSource):
             next_cursor=_PAGE + "|".join((more, floor or "", newest or "")) if more else None,
             resume_cursor=_RESUME + newest if newest else (cursor if isinstance(cursor, str) and cursor.startswith(_RESUME) else None),
         )
+
+    async def _older(self, before: datetime, limit: int) -> ChangePage:
+        """One page of the inbox's mail sent strictly before ``before``, newest first, at most ``limit``.
+        Walks at most ``OLDER_PAGES`` listing pages, and stops early once ``limit`` older messages
+        are held (the listing comes newest first, so later pages hold only older mail). Neither
+        reads nor moves the forward cursor."""
+        older: list[tuple[datetime, dict]] = []
+        token = ""
+        for _ in range(OLDER_PAGES):
+            params: dict[str, Any] = {"limit": MAX_PAGE_SIZE, **({"page_token": token} if token else {})}
+            body = await self._api("GET", f"/inboxes/{self.inbox}/messages", params=params)
+            for message in body.get("messages") or []:
+                when = _when(message.get("timestamp"))
+                if message.get("message_id") and when is not None and when < before:
+                    older.append((when, message))
+            if len(older) >= limit or not (token := str(body.get("next_page_token") or "")):
+                break
+        older.sort(key=lambda pair: pair[0], reverse=True)
+        return ChangePage(items=tuple(self._item(m) for _w, m in older[:limit]))
 
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
