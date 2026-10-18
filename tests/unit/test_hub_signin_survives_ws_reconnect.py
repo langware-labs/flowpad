@@ -42,6 +42,7 @@ class _Hub:
         self.main: list = []  # the manager's long-lived sockets, in connect order
         self.statuses: list[str] = []
         self.changed = asyncio.Condition()
+        self.principal = {"id": USER_ID}
 
     async def ui_broadcast(self, raw: str) -> None:
         msg = json.loads(raw)
@@ -55,8 +56,8 @@ class _Hub:
         if hub_ws_manager._connection_id and ws.request.path.endswith(hub_ws_manager._connection_id):
             self.main.append(ws)
         async for raw in ws:
-            if json.loads(raw).get("direct_resource_type") == "user":
-                reply = {"status": "success", "data": {"id": USER_ID}}
+            if json.loads(raw).get("action") == "current-user":
+                reply = {"status": "success", "data": self.principal}
                 await ws.send(json.dumps({"message_type": "response_msg", "content": reply}))
 
     async def wait_up_after(self, mark: int) -> None:
@@ -108,3 +109,19 @@ async def test_a_verified_box_stays_signed_in_across_a_hub_socket_reconnect(hub)
         "the socket reconnected with the same credentials, yet the box is no longer signed in "
         f"(hub_ws_verified={hub_ws_manager.is_verified}, status={hub_ws_manager.status_payload().get('hub_ws_status')})"
     )
+
+
+@pytest.mark.parametrize('identity', [False, True])
+async def test_verification_uses_authenticated_principal_for_humans_and_agents(hub, identity):
+    hub.principal = {'id': USER_ID, 'is_identity': identity}
+    result = await hub_ws_manager.verify_current_user()
+    assert result['hub_user_id'] == USER_ID
+    assert result['verified'] is True
+
+
+async def test_verification_rejects_a_different_authenticated_principal(hub):
+    from flow_sdk.cloud_client.ws_client import HubWebSocketVerificationError
+    hub.principal = {'id': 'bd49e041-a751-46b6-9fb3-ae06b3ec713e', 'is_identity': True}
+    with pytest.raises(HubWebSocketVerificationError, match='user mismatch'):
+        await hub_ws_manager.verify_current_user()
+    assert not hub_ws_manager.is_verified
