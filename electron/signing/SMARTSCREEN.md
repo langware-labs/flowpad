@@ -73,7 +73,7 @@ Verification Root CA 2020; Windows-side `Status: Valid` still needs a Windows ru
 | Issuing CA | **alternates**: `Microsoft ID Verified CS EOC CA 03` (v0.2.28, .37, .39, .40, .41) and `Microsoft ID Verified CS AOC CA 03` (v0.2.31–.36, .38) |
 | Leaf certificate | new every release (3-day validity; same leaf reused within a 3-day window, e.g. v0.2.31–.36 all on one leaf) |
 | RFC 3161 timestamp | present on every release, TSA chain Microsoft Public RSA Timestamping CA 2020 (timestamp.acs.microsoft.com) |
-| Signing account / profile | `langware-signing` / `langware-public` per CI config; cannot be read from the binary, but the identical durable OID implies the same certificate profile identity throughout |
+| Signing account / profile | the signing account / certificate profile named in the private CI config; cannot be read from the binary, but the identical durable OID implies the same certificate profile identity throughout |
 
 So: **same organisation identity, same publisher CN, same durable OID, same account, on
 every release**. The only variation is Microsoft's issuing CA, which alternates between two
@@ -124,8 +124,8 @@ Product / version:           Flowpad <version>
 Installer:                   Flowpad-Setup.exe
 SHA-256:                     <from release/signing-report.json>
 Download URL:                https://github.com/langware-labs/flowpad/releases/download/<tag>/Flowpad-Setup.exe
-Artifact Signing account:    langware-signing   (endpoint https://eus.codesigning.azure.net/)
-Certificate profile:         langware-public    (Public Trust)
+Artifact Signing account:    <signing account>  (endpoint https://eus.codesigning.azure.net/)
+Certificate profile:         <certificate profile>   (Public Trust)
 Publisher / subject:         CN=Langware INC., O=Langware INC., L=Wilmington, ST=Delaware, C=US
 Durable identity OID:        1.3.6.1.4.1.311.97.426392453.944483782.46922171.284290401
 Chain:                       Langware INC. ← Microsoft ID Verified CS {AOC|EOC} CA 03 ← Microsoft ID Verified Code Signing PCA 2021 ← Microsoft Identity Verification Root CA 2020

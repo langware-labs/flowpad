@@ -75,14 +75,6 @@
       "size_bytes": 8069
     },
     {
-      "name": "compute_node_action_audit.md",
-      "rel_path": "compute_node_action_audit.md",
-      "title": "ComputeNode action surface — pre-refactor STATUS",
-      "summary": "Pre-refactor audit of the hub ComputeNode action surface: clean delegations, envelope problems, provider-bound actions, abstraction failures, two box transports, proposed one-liner surface, test plan.",
-      "content_hash": "1d610e76c7b6d2ebf231ffef8a5972701c2dac0abd2ac1a9a1c6b42ad232c935",
-      "size_bytes": 36520
-    },
-    {
       "name": "contributing.md",
       "rel_path": "contributing.md",
       "title": "Contributing to Flowpad",
@@ -193,14 +185,6 @@
       "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset change tags.",
       "content_hash": "9031bef30832a1de90b5486326fa3334707db1e434c2dbcd415ee21cae7f040b",
       "size_bytes": 42773
-    },
-    {
-      "name": "flowcall-guidance-audit.md",
-      "rel_path": "flowcall-guidance-audit.md",
-      "title": "FlowCall guidance audit",
-      "summary": "FlowCall guidance coverage across canonical docs, prompts, skills, agents, instruction mirrors, GTM migration and external repository boundaries, with verification evidence.",
-      "content_hash": "6431a4bffe006c95f0ed1ec02812b24024a12f844291d0db8c46a3fdf7472f12",
-      "size_bytes": 52450
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -371,14 +355,6 @@
       "size_bytes": 11125
     },
     {
-      "name": "staging-oauth-validation.md",
-      "rel_path": "staging-oauth-validation.md",
-      "title": "Staging OAuth validation — 2026-09-12",
-      "summary": "2026-09-12 staging OAuth validation: provider-by-provider results on the local app and staging hub with verified identities.",
-      "content_hash": "b993e8d456286913281e5d35a7d854164e9c056d80e949686b2cad839e4e571a",
-      "size_bytes": 3487
-    },
-    {
       "name": "system_agents.md",
       "rel_path": "system_agents.md",
       "title": "System Agents",
@@ -473,14 +449,6 @@
       "summary": "How-to for connecting to the UTM Windows test VM over ssh, copying files, and installing a locally built Flowpad dev wheel on it.",
       "content_hash": "9e3a9739d4b376737743387455b9baa36e387856071ab6ab78ee615726bbf2cd",
       "size_bytes": 3125
-    },
-    {
-      "name": "initech_box.md",
-      "rel_path": "initech_box.md",
-      "title": "initech box",
-      "summary": "Sketch of the initech box demo: sharing a sandbox by email link and opening it in vibe, then the template variant carrying an asset package.",
-      "content_hash": "68e7ac6c8bb048e171634da541c6a8d8e645f83ddd4769c01933c99ebd9d2040",
-      "size_bytes": 425
     }
   ],
   "subfolders": [
