@@ -386,6 +386,47 @@ async def test_direct_url_is_refused_when_unsupported_static_or_not_a_browser_do
     assert (await client.get(_direct(service))).status_code == 409, "a machine service is reached through the hub"
 
 
+async def test_direct_url_on_a_box_the_hub_placed_is_the_hubs_answer(client, monkeypatch):
+    """A hub-placed box (E2B or GCP, sandbox or agent) does not build its own address: the hub holds the row at
+    the same id and knows the provider's door for it now — a published door, or its relaying audience host."""
+    import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.cloud_client.transport import hub_http
+
+    asked = []
+
+    async def hub_get(entity_type, entity_id=None, action=None, sub_path=None, **kwargs):
+        asked.append((str(entity_type), entity_id, action, kwargs.get("params")))
+        return {"url": "https://app--d.flowpad.app/shop/"}
+
+    monkeypatch.setattr(
+        runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
+    )
+    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    users = await _app_proxy()
+    resp = await client.get(_direct(users, "?route=shop"))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["url"] == "https://app--d.flowpad.app/shop/"
+    assert asked == [("service_endpoint", users.id, "direct-url", {"route": "shop"})]
+
+
+async def test_direct_url_of_a_placement_the_hub_never_made_is_answered_on_the_box(client, monkeypatch):
+    """A hub-placed box also has placements of its own (a project the hub never placed): the hub holds no row for
+    them, so the box answers as it did before instead of failing the display."""
+    import flow_sdk.instance_settings.runtime as runtime
+    from flow_sdk.cloud_client.transport import hub_http
+
+    async def hub_get(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(
+        runtime, "get_assigned_compute_node", lambda: "compute_node-00000000-0000-4000-8000-000000000001"
+    )
+    monkeypatch.setattr(hub_http, "hub_get", hub_get)
+    resp = await client.get(_direct(await _app_proxy()))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["url"] == "http://localhost:8765"
+
+
 async def test_direct_url_inside_a_sandbox_is_the_boxs_door_never_the_port(client, monkeypatch):
     """On a box whose ports are public, the process's port would be a door with no lock: the browser is sent to
     the audience door (``AUDIENCE_PORTS``), which admits it by its grant and reaches the process over loopback."""
