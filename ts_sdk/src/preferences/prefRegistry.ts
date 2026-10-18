@@ -31,6 +31,8 @@ export enum PrefKey {
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
   SHARE_MESSAGE_STATUS = 'preferences.notifications.share_message_status',
+  /** Optional cloud-link reminder when sharing: 'ask' | 'skip'. */
+  SHARE_CLOUD_LINK = 'preferences.notifications.share_cloud_link',
   /** Signed out, a search-line request asks whether to sign in for smart navigation: 'ask' | 'skip'.
    *  The prompt's "Don't ask again" writes 'skip' (ui/src/navigation/smart-ask.ts). */
   SMART_NAVIGATION_SIGNIN = 'preferences.notifications.smart_navigation_signin',
@@ -295,6 +297,19 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Let other participants see when messages are delivered or read.',
     dataType: PrefDataType.BOOL,
     defaultValue: true,
+  },
+  [PrefKey.SHARE_CLOUD_LINK]: {
+    key: PrefKey.SHARE_CLOUD_LINK,
+    surfaced: true,
+    category: 'notifications',
+    label: 'Cloud link prompt when sharing',
+    description: 'Ask to link an unlinked project to cloud before sharing its assets.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'ask',
+    options: [
+      { value: 'ask', label: 'Ask every time' },
+      { value: 'skip', label: "Don't ask" },
+    ],
   },
   [PrefKey.SMART_NAVIGATION_SIGNIN]: {
     key: PrefKey.SMART_NAVIGATION_SIGNIN,

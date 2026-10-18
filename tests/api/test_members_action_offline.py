@@ -24,6 +24,13 @@ async def test_members_get_returns_cache_but_mutations_409_offline(bootstrapped_
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"] == []
 
+    # A sharing suggestion must not infer non-membership from that stale cache.
+    resp = await bootstrapped_client.get(
+        f"/api/v1/graph/bookmark/{bid}/members", params={"require_authoritative": "true"}
+    )
+    assert resp.status_code == 409, resp.text
+    assert "could not be confirmed" in resp.text
+
     # Every mutation fails loudly (409) — no local membership store, nothing reflected.
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/bookmark/{bid}/members",

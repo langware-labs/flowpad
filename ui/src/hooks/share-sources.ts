@@ -13,7 +13,15 @@
  * `prepare()` is resolve-once: its result is cached, so a click → error → retry
  * reuses the same payload instead of re-resolving.
  */
-import { ActionInfo, AgenticProcess, Artifact, dataManager, fsManager, TypeId, type ConversationSendPayload } from '@sdk';
+import {
+  ActionInfo,
+  AgenticProcess,
+  Artifact,
+  dataManager,
+  fsManager,
+  TypeId,
+  type ConversationSendPayload,
+} from '@sdk';
 
 export interface SharePrepPayload {
   /** Serialized TypeIds → TYPE_ID attachments on the FlowMessage. */
@@ -45,6 +53,10 @@ export interface SharePrepOptions {
 export interface ShareSource {
   /** Chip text in the dialog header. */
   label: string;
+  /** Canonical entity whose project owns this share (never the active project). */
+  ownerRef?: TypeId;
+  /** Exact entity references that can be removed without preparing the source. */
+  previewAssets?: { ref: TypeId; label: string }[];
   /** Short type badge (e.g. "SESSION", "PLAN"). */
   typeLabel?: string;
   /** Default new-conversation / Task title when the source supplies one. */
@@ -105,6 +117,8 @@ export function genericEntityShareSource(
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
     bookmarkable: true,
+    ownerRef: typeId,
+    previewAssets: [{ ref: typeId, label: opts.label ?? ref }],
     // File-backed assets may be shared by their Git origin — the dialog's Git
     // toggle preflights this ref; eligibility is decided backend-side.
     gitPreflightRef: typeId,
@@ -128,10 +142,7 @@ export function genericEntityShareSource(
  * and render as a chip that resolves to nothing. It travels as shared context,
  * and the files travel by Git origin as they always have.
  */
-export function projectShareSource(
-  typeId: TypeId,
-  opts: { label?: string } = {},
-): ShareSource {
+export function projectShareSource(typeId: TypeId, opts: { label?: string } = {}): ShareSource {
   const ref = typeId.toString();
   return {
     label: opts.label ?? ref,
@@ -195,6 +206,8 @@ export function artifactShareSource(
     typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     bookmarkable: true,
+    ownerRef: artifact.typeId,
+    previewAssets: [{ ref: artifact.typeId, label: opts.label ?? artifact.displayName ?? ref }],
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by
     // the backend preflight against this ref, not the artifact's cached origin.
     gitPreflightRef: artifact.typeId,
