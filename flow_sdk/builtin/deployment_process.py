@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from typing import IO, Optional
 
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import quote_powershell_literal
+
 #: The environment variable that tells the loop which deployment it runs (the shell carries it).
 DEPLOYMENT_ENV = "FLOW_DEPLOYMENT_ID"
 
@@ -185,7 +187,7 @@ def command_of(deployment) -> str:
     (as ``flow_command``)."""
     exe, file = sys.executable, str(file_of(deployment))
     if sys.platform == "win32":
-        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in (exe, file))
+        quoted = " ".join(quote_powershell_literal(a) for a in (exe, file))
         return f"& {quoted} {deployment.id}"
     return f"{shlex.quote(exe)} {shlex.quote(file)} {deployment.id}"
 
