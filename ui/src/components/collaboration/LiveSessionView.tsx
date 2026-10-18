@@ -422,6 +422,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   )}
                 </p>
                 <MessageComposer
+                  key={sessionId}
                   conversationId={conversationId}
                   liveSessionId={sessionId}
                   onSent={onSent}

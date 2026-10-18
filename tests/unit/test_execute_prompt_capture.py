@@ -28,7 +28,12 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text, _last_turn_error_text
+from flow_sdk.app.actions.execute_prompt import (
+    _api_retry_notice,
+    _last_turn_assistant_text,
+    _last_turn_ended_in_error,
+    _last_turn_error_text,
+)
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
 from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry, SystemEntry, UserMessageEntry
 
@@ -139,7 +144,9 @@ def test_last_turn_error_text_reads_the_systementrys_own_message():
         _error("e1", "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72"),
     ]
 
-    assert _last_turn_error_text(entries) == "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72"
+    assert (
+        _last_turn_error_text(entries) == "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Alice 72"
+    )
 
 
 def test_last_turn_error_text_only_the_latest_turn():
@@ -163,3 +170,104 @@ def test_last_turn_error_text_empty_when_the_turn_has_no_error():
 
 def test_last_turn_error_text_no_entries_is_empty_not_an_error():
     assert _last_turn_error_text([]) == ""
+
+
+# ── a provider's refusal is the turn's error, never its reply ──
+
+
+def _claude_turn(api_error_row: dict) -> list:
+    from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser  # noqa: PLC0415
+
+    parser = ClaudeParser("s1")
+    user_row = {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "run the tests"}}
+    return parser.feed(user_row, 0) + parser.feed(api_error_row, 1)
+
+
+@pytest.mark.parametrize(
+    ("row", "reason"),
+    [
+        (
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "isApiErrorMessage": True,
+                "apiErrorStatus": 429,
+                "error": "rate_limit",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "API Error: 429 out of credits"}],
+                },
+            },
+            "API Error: 429 out of credits",
+        ),
+        (
+            {
+                "type": "assistant",
+                "uuid": "a1",
+                "isApiErrorMessage": True,
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Credit balance is too low"}]},
+            },
+            "Credit balance is too low",
+        ),
+    ],
+)
+def test_a_claude_api_error_is_the_turns_error_not_its_reply(row, reason):
+    entries = _claude_turn(row)
+
+    assert _last_turn_assistant_text(entries) == ""
+    assert _last_turn_error_text(entries) == reason
+
+
+def test_a_turn_cut_off_by_the_provider_ended_in_its_error_despite_the_narration():
+    """The real 429 shape: a few "Let me check…" lines, then the refusal. The
+    narration is not an answer — the turn ended on the error."""
+    entries = [
+        _user("u1", "diagnose flowpad"),
+        _assistant("a1", "Let me check the logs:"),
+        _entry(AssistantMessageEntry, id="a2", text="API Error: Request rejected (429)", is_api_error=True),
+    ]
+
+    assert _last_turn_assistant_text(entries) == "Let me check the logs:"
+    assert _last_turn_ended_in_error(entries) == "API Error: Request rejected (429)"
+
+
+def test_an_error_the_agent_recovered_from_is_not_how_the_turn_ended():
+    entries = [_user("u1", "q"), _error("e1", "transient"), _assistant("a1", "here is the answer")]
+
+    assert _last_turn_ended_in_error(entries) == ""
+
+
+# ── _api_retry_notice — the reason, at the FIRST retry rather than after the last ──
+
+#: A real Claude 2.1.302 retry line for a 429 (credits exhausted).
+_RETRY_LINE = {
+    "type": "system",
+    "subtype": "api_error",
+    "level": "error",
+    "error": {
+        "message": '429 {"type":"error","error":{"type":"rate_limit_error","message":"Your credit balance is too low"}}'
+    },
+    "retryInMs": 1000,
+    "retryAttempt": 1,
+    "maxRetries": 10,
+    "timestamp": "2026-10-18T16:54:50.163Z",
+}
+
+
+def test_a_retry_line_names_the_providers_reason_and_the_attempt():
+    assert _api_retry_notice(_RETRY_LINE, since="2026-10-18T16:54:00.000Z") == (
+        "API Error 429 · Your credit balance is too low — retrying (attempt 1 of 10)"
+    )
+
+
+def test_a_retry_line_from_an_earlier_turn_is_not_this_turns():
+    assert _api_retry_notice(_RETRY_LINE, since="2026-10-18T17:00:00.000Z") == ""
+
+
+def test_an_unparsed_error_body_is_kept_whole():
+    line = {**_RETRY_LINE, "error": {"message": "socket hang up"}}
+    assert _api_retry_notice(line, since="").startswith("API Error · socket hang up — retrying")
+
+
+def test_other_lines_are_no_retry():
+    assert _api_retry_notice({"type": "assistant", "timestamp": "2026-10-18T16:54:50.163Z"}, since="") == ""
