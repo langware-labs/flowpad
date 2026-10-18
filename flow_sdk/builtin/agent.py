@@ -956,11 +956,20 @@ class Agent(Entity):
         return await AgentMailbox.allocate(self, **options)
 
     async def channels(self) -> "list[DataSource]":
-        """Every message channel this agent owns — a source on a channel whose driver can send."""
+        """Every message channel this agent owns — a source on a channel whose driver can send.
+
+        Each source's driver is resolved first: a project's own driver registers only when asked
+        for by name, and a fresh process — a local deployment's — has asked for none, so its
+        channels would read as sources that cannot send.
+        """
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
         from flow_sdk.stream_inbox.agent_scope import is_message_source  # noqa: PLC0415
 
-        return [s for s in await DataSource.find_owned(self.typeid) if is_message_source(s)]
+        owned = await DataSource.find_owned(self.typeid)
+        for provider in {s.provider for s in owned if s.provider}:
+            await DataDriver.find(provider)
+        return [s for s in owned if is_message_source(s)]
 
     async def channel(self, kind: str) -> "DataSource":
         """This agent's one channel of *kind* (``"whatsapp"``, ``"telegram"``, ``"email"``, …).
