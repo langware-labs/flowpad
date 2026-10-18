@@ -216,7 +216,7 @@ async def test_the_supervisor_makes_the_chat_of_a_running_deployment(worker, use
 async def test_a_deployment_starts_when_the_project_carries_another_machines_chat_channel(worker, user):
     """FLOWPAD-2258: the project arrives holding the chat channel of the agent's deployment on ANOTHER machine
     (``<agent> chat``, answered by a deployment that does not exist here). This machine's deployment of the
-    same agent still gets a chat channel of its own — and so starts."""
+    same agent adopts that channel — now answered here — and so starts."""
     from flow_sdk.builtin.agent_serve import deployment_chat_driver
 
     agent = Agent(name=f"shipped-chat-{time.monotonic_ns()}", worker_type="claude")
@@ -234,7 +234,9 @@ async def test_a_deployment_starts_when_the_project_carries_another_machines_cha
         await AgentServer(run_processes=False).reconcile()
 
         chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
-        assert chat is not None and chat.backend.data_source_id != str(shipped.id)
+        assert chat is not None and chat.backend.data_source_id == str(shipped.id)
+        adopted = await DataSource.get_by_id(shipped.id)
+        assert adopted.answer_place == str(deployment.id)
     finally:
         await agent.delete()
 
