@@ -349,3 +349,11 @@ artifacts/
 # The architecture deck lives here locally; it is not part of the code.
 agentic-assets/deck/flowpad-architecture/
 .flow/dataset-rows.lock
+
+# Never commit credentials or local agent settings (FLOWPAD-2264)
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+secrets.json
+.claude/settings.local.json
