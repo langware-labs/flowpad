@@ -106,6 +106,25 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
         logger.warning("[message_attachment] bookmark mint failed for %s", ma.asset_id, exc_info=True)
 
 
+async def _shared_file_target(ma: MessageAttachment) -> dict | None:
+    """A received shared FILE (an .html page riding as an artifact) opens as the
+    file itself, at the checkout it was opened in — there is nothing to set up."""
+    from flow_sdk.builtin.artifact import SHARED_FILE_KIND, Artifact  # noqa: PLC0415
+    from flow_sdk.core.display_target import resolve_display_target  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+    if ma.asset_type != EntityType.ARTIFACT.value:
+        return None
+    art = await Artifact.get_one({"id": ma.asset_id})
+    if art is None or art.kind != SHARED_FILE_KIND or not art.asset_ref:
+        return None
+    try:
+        return await resolve_display_target(path=art.asset_ref)
+    except Exception:
+        logger.debug("[message_attachment] shared file target for %s failed", ma.asset_id, exc_info=True)
+        return None
+
+
 async def _setup_after_install(
     ma: MessageAttachment,
     installed_root: str | None,
@@ -123,6 +142,9 @@ async def _setup_after_install(
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
+    shared_file = await _shared_file_target(ma)
+    if shared_file is not None:
+        return shared_file
     info = SchemaRegistry.get(ma.asset_type)
     if not auto_run or info is None or not getattr(info, "setup_skill", None):
         return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
@@ -504,6 +526,7 @@ async def handle_attachment_install(
     (idempotent on byte-identical; 409 asset_conflict on a genuine collision —
     retry with overwrite=true) + the scoped reindex + git-origin stamping.
     """
+    from flow_sdk.builtin.drivers.git_driver import GitShareError  # noqa: PLC0415
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
         ReceivedAsset,
@@ -675,6 +698,15 @@ async def handle_attachment_install(
             message="asset already exists — overwrite?",
             status_code=409,
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
+        )
+    except GitShareError as e:
+        # The shared version could not be opened here (no access, offline,
+        # rewritten history, no git): say which, with its code, and leave the
+        # attachment staged so a retry can still install it.
+        return ApiFailResponse(
+            message=str(e),
+            status_code=424,
+            data={"git_share_error": e.code},
         )
 
     # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)

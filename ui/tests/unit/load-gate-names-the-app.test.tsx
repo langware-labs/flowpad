@@ -19,6 +19,9 @@ const app = `micro_app-${appId}`;
 vi.mock('@sdk/react/hooks', () => ({
   useEntity: () => ({ data: { project_id: projectId, displayName: 'Service' }, isLoading: false }),
 }));
+vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', () => ({
+  useProcessesForTarget: () => ({ processes: [] }),
+}));
 
 afterEach(() => {
   cleanup();

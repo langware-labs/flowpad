@@ -22,7 +22,7 @@ from _ctl_common import post as _post
 
 #: Every scalar a caller needs about a dataset — spelled once, used by `list`
 #: and `snapshot` so the two never drift.
-DATASET_FIELDS = ("id", "name", "title", "source_id", "data_layout", "num_examples", "num_annotated", "kind_counts", "spec", "asset_ref")
+DATASET_FIELDS = ("id", "name", "title", "source_id", "data_layout", "num_rows", "num_annotated", "kind_counts", "spec", "asset_ref")
 
 
 def _dataset(ref: str) -> dict:
@@ -63,7 +63,7 @@ def cmd_create(args) -> dict:
         "type": "dataset", "data_layout": "io_folder", "source_id": source["id"],
         # The declaration, never a literal: a rename of the item envelope's kind
         # must not leave this script writing a spec nothing accepts.
-        "spec": {"examples": [{"input": SourceItemSpec.spec_kind, "output": output}]},
+        "spec": {"rows": [{"input": SourceItemSpec.spec_kind, "output": output}]},
         **payload,
     }
     new_id, row, dropped = create_and_verify(
@@ -87,7 +87,7 @@ def cmd_promote(args) -> dict:
 
 def cmd_annotate(args) -> dict:
     ds = _dataset(args.dataset)
-    out = _post(f"/graph/dataset/{ds['id']}/annotate", {"example_id": args.example, "ground_truth": _json_arg(args.json)}) or {}
+    out = _post(f"/graph/dataset/{ds['id']}/annotate", {"row_id": args.row, "ground_truth": _json_arg(args.json)}) or {}
     return {"id": ds["id"], **out}
 
 
@@ -102,7 +102,7 @@ VERBS = {
     "create": (cmd_create, [("json", {"help": "JSON payload, or - for stdin"})]),
     "list": (cmd_list, [("--source", {})]),
     "promote": (cmd_promote, [("dataset", {}), ("item", {"nargs": "+"})]),
-    "annotate": (cmd_annotate, [("dataset", {}), ("example", {}), ("json", {"help": "ground truth JSON, or - for stdin"})]),
+    "annotate": (cmd_annotate, [("dataset", {}), ("row", {}), ("json", {"help": "ground truth JSON, or - for stdin"})]),
     "snapshot": (cmd_snapshot, [("dataset", {})]),
 }
 

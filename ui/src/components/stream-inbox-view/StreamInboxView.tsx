@@ -17,6 +17,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
+import { pullNow } from '@src/components/data-sources/source-parts';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
 import {
@@ -68,9 +69,13 @@ import {
   attentionAmong,
   channelKeyOf,
   channelsOwnerFor,
-  sourceConversationsRequest,
-  streamInboxConversationsRequest,
+  type ConversationScope,
+  conversationsByIdsRequest,
+  conversationsPageRequest,
+  STREAM_INBOX_PAGE_SIZE,
+  type StreamInboxViewMode,
 } from './channel-owner';
+import { StreamInboxPager } from './StreamInboxPager';
 import { useContext } from '@src/hooks/useContext';
 import {
   conversationFacets,
@@ -110,8 +115,6 @@ function formatGmailTime(iso?: string | Date | null): string {
 // ── Conversation list row (Gmail thread row) ────────────────────────────────
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
-
-type StreamInboxViewMode = 'all' | 'unread' | 'archived';
 
 // ── Column filters ──────────────────────────────────────────────────────────
 // One filter per row column, typed into the header line above that column:
@@ -161,15 +164,6 @@ interface ConversationListRowProps {
   automationMark?: AgenticProcess;
   conv: Conversation;
   isFocused: boolean;
-  /** Active stream inbox view:
-   *  - 'all'      → hide archived rows (default)
-   *  - 'unread'   → show only non-archived rows whose latest FlowMessage is unread
-   *  - 'archived' → show ONLY archived rows */
-  viewMode: StreamInboxViewMode;
-  /** Text search is engaged — the parent already narrowed the list to
-   *  matching conversations, so the row must NOT apply the per-mode hide
-   *  rule (search spans archived/read rows regardless of the active pill). */
-  searchActive: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
    *  arrives. */
@@ -218,8 +212,6 @@ interface ConversationListRowProps {
 export function ConversationListRow({
   conv,
   isFocused,
-  viewMode,
-  searchActive,
   onArchive,
   onUnarchive,
   onToggleRead,
@@ -250,7 +242,14 @@ export function ConversationListRow({
   const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
   const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
-  const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
+  const { data: resolvedLatest } = useEntity<FlowMessage>(latestTypeId);
+  // A row IS its conversation; its preview loading never hides it. When a new message moves the
+  // latest pointer, the row keeps the message it last showed until the new one resolves — only a
+  // row that has never shown one waits hidden (`inLoadingState`).
+  const shownLatest = useRef<{ convId: string; message: FlowMessage } | null>(null);
+  if (resolvedLatest) shownLatest.current = { convId: conv.id ?? '', message: resolvedLatest };
+  const latestMessage =
+    resolvedLatest ?? (latestTypeId && shownLatest.current?.convId === (conv.id ?? '') ? shownLatest.current.message : undefined);
 
   const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
   const invitationId = invitationTypeId?.id ?? null;
@@ -291,13 +290,9 @@ export function ConversationListRow({
       ? t`Delete for everyone — permanent`
       : t`Leave conversation`;
 
-  // The facets are intrinsic to the conversation; the *hide* rule combines them
-  // with the active view + search (view-state, not category):
-  //   - 'all'       → hide archived rows (default)
-  //   - 'archived'  → show ONLY archived rows
-  //   - 'unread'    → only non-archived unread rows
-  //   - search      → span everything; only half-materialized rows stay hidden
-  // ``inLoadingState`` keeps a row whose FlowMessage hasn't landed from rendering blank.
+  // Which rows a view holds is the page query's answer (`viewMatch`, search by id); a row only hides
+  // itself while it cannot render: ``inLoadingState`` keeps one whose FlowMessage hasn't landed from
+  // rendering blank.
   //
   // Invitation rows are exempt: invitation-ness is driven by the FIRST message
   // (``facets.isInvitation`` ⇐ ``firstMessage``), which IS materialized, and the
@@ -308,16 +303,7 @@ export function ConversationListRow({
   // must still render. See RCA debug_log.md #14 (receiver artifact-materialization
   // is a separate follow-up). Preview text may still show a loading affordance.
   const inLoadingState = !isInvitationRow && !!lastPtr && !latestMessage;
-  let isHidden: boolean;
-  if (searchActive) {
-    isHidden = inLoadingState;
-  } else if (viewMode === 'archived') {
-    isHidden = !facets.isArchived || inLoadingState;
-  } else if (viewMode === 'unread') {
-    isHidden = facets.isArchived || !facets.isUnread || inLoadingState;
-  } else {
-    isHidden = facets.isArchived || inLoadingState;
-  }
+  let isHidden = inLoadingState;
   // The channel filter narrows on the latest message's source; a row whose
   // message is not loaded yet cannot claim a channel, so it waits hidden.
   if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
@@ -639,7 +625,7 @@ export function StreamInboxView({
   // The channel filter: source ids the list is narrowed to. Local like the text
   // search, and empty means everything.
   const channelsOwner = useMemo(() => channelsOwnerFor(agentId, localUserId), [agentId, localUserId]);
-  const { rows: ownerChannels, specFor, offers: channelOffers } = useAttachedChannels(channelsOwner);
+  const { rows: ownerChannels, specFor, offers: channelOffers, loading: channelsLoading } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
     (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
@@ -716,39 +702,6 @@ export function StreamInboxView({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selDeleteOpen, setSelDeleteOpen] = useState(false);
 
-  // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
-  // user's never load each other's rows (see `streamInboxConversationsRequest`).
-  // Owned-by strings, not TypeId instances, key the memo: `channelsOwner` is rebuilt
-  // whenever its inputs change identity, and a fresh request re-subscribes.
-  const ownerKey = channelsOwner?.toString() ?? '';
-  const request = useMemo(
-    () =>
-      sourceId
-        ? sourceConversationsRequest(sourceId)
-        : channelsOwner
-          ? streamInboxConversationsRequest(channelsOwner)
-          : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
-    [ownerKey, sourceId],
-  );
-  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
-  const {
-    data: conversations = [],
-    refetch,
-    isLoading,
-    isSuccess,
-  } = useEntitiesQuery<Conversation>(request ?? idleRequest, { enabled: request !== null });
-
-  // Only the FIRST load gets the full-screen "Loading…" state. Every
-  // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
-  // back to true while KEEPING the previous ``data`` — so gating the row list
-  // on raw ``isLoading`` blanks the whole list to the spinner and back on every
-  // refetch, which is the on-open flicker. Once we've loaded successfully once,
-  // a background refetch keeps the existing rows on screen.
-  const hasLoadedOnce = useRef(false);
-  if (isSuccess) hasLoadedOnce.current = true;
-  const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
-
   // Text search over message bodies — server-side, via the `stream-inbox-search`
   // action rather than a `$LIKE` entity query: under the reference model a
   // channel message's body lives on its SourceItem (the FlowMessage row stores
@@ -773,11 +726,50 @@ export function StreamInboxView({
     };
   }, [agentId, needle, searchActive]);
 
+  // Scoped by the backend: the query names the owner, so an agent's stream inbox and the
+  // user's never load each other's rows. Owned-by strings, not TypeId instances, key the memo:
+  // `channelsOwner` is rebuilt whenever its inputs change identity, and a fresh request re-subscribes.
+  // One PAGE, not the whole stream inbox: the view's latest N (`before` null = now, live) or the N older
+  // than the dock URL's `before`. A body search lists its hits instead.
+  const { navigation, currentDock } = useDockNavigation();
+  const pageBefore = currentDock?.pageBefore ?? null;
+  const ownerKey = channelsOwner?.toString() ?? '';
+  const scope = useMemo<ConversationScope | null>(
+    () => (sourceId ? { sourceId } : channelsOwner ? { owner: channelsOwner } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the owner's string form
+    [ownerKey, sourceId],
+  );
+  const request = useMemo(() => {
+    if (!scope) return null;
+    if (searchActive) return conversationsByIdsRequest(scope, [...matchIds]);
+    return conversationsPageRequest(scope, viewMode, pageBefore);
+  }, [scope, searchActive, matchIds, viewMode, pageBefore]);
+  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
+  const {
+    data: conversations = [],
+    refetch,
+    isLoading,
+    isSuccess,
+  } = useEntitiesQuery<Conversation>(request ?? idleRequest, { enabled: request !== null });
+
+  // Only the FIRST load gets the full-screen "Loading…" state. Every
+  // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
+  // back to true while KEEPING the previous ``data`` — so gating the row list
+  // on raw ``isLoading`` blanks the whole list to the spinner and back on every
+  // refetch, which is the on-open flicker. Once we've loaded successfully once,
+  // a background refetch keeps the existing rows on screen.
+  const hasLoadedOnce = useRef(false);
+  if (isSuccess) hasLoadedOnce.current = true;
+  const initialLoading = (isLoading || request === null) && !hasLoadedOnce.current;
+
+
   const sorted = useMemo(() => {
-    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
+    // Sorted here too: a live push appends a newly matching row without re-sorting or trimming
+    // the page, so the page is cut back to its size after the sort.
+    const list = [...conversations];
     list.sort(compareConversationsByRecency);
-    return list;
-  }, [conversations, searchActive, matchIds]);
+    return list.slice(0, STREAM_INBOX_PAGE_SIZE);
+  }, [conversations]);
 
   // ── Batch-hydrate the per-row first+latest FlowMessages (X2) ────────────────
   // Each ``ConversationListRow`` resolves its first + latest FlowMessage by id
@@ -820,15 +812,26 @@ export function StreamInboxView({
   // Unread pip/badge: backend-owned (StreamInboxManager.unread, reflected live via
   // the entity channel) — no client-side recount here anymore.
 
+  // Refresh = read every channel of this stream inbox NOW (the same `pullNow` a source's own ↻ runs), then the list.
+  // A channel waiting on setup or paused is not read; it says so on its own strip.
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
+      const runnable = ownerChannels.filter((source) => source.status === 'active' || source.status === 'new');
+      const answers = await Promise.all(
+        runnable.map(async (source) => ({ name: source.name || source.provider, ...(await pullNow(source)) })),
+      );
       await fetchConversations(agentId);
       void refetch();
+      if (answers.length) {
+        const line = answers.map((a) => `${a.name}: ${a.text}`).join(' · ');
+        if (answers.every((a) => a.ok)) notify.success({ title: t`Checked for new messages`, message: line });
+        else notify.error({ title: t`Some channels could not be checked`, message: line });
+      }
     } finally {
       setFetching(false);
     }
-  }, [agentId, refetch]);
+  }, [agentId, refetch, ownerChannels, t]);
 
   const handleArchive = useCallback(
     async (convId: string) => {
@@ -869,8 +872,8 @@ export function StreamInboxView({
     void refetch();
   }, [agentId, refetch]);
 
-  // Compute the bulk-delete bucket breakdown from the locally-known
-  // archived conversations. Drives the BulkConfirmDialog summary and the
+  // Compute the bulk-delete bucket breakdown from the archived
+  // conversations on this page. Drives the BulkConfirmDialog summary and the
   // hub-reachability gate. Mirrors the server-side classification in
   // ``handle_conversation_delete_archived``.
   const archivedConvs = useMemo(() => conversations.filter((c) => c.archived_at), [conversations]);
@@ -1140,7 +1143,9 @@ export function StreamInboxView({
       setSelectedIds(new Set());
       return next;
     });
-  }, []);
+    // A page is a page of ONE view: another view starts at now.
+    if (currentDock?.pageBefore) navigation.openDock(currentDock.withPageBefore(null));
+  }, [currentDock, navigation]);
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
@@ -1357,8 +1362,9 @@ export function StreamInboxView({
                   size="icon"
                   className="h-7 w-7"
                   onClick={() => void handleRefresh()}
-                  disabled={fetching}
-                  title={t`Fetch new messages from hub`}
+                  // A press before the channels load would read none of them, silently.
+                  disabled={fetching || channelsLoading}
+                  title={t`Check for new messages`}
                 >
                   <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 </Button>
@@ -1513,8 +1519,6 @@ export function StreamInboxView({
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
-              viewMode={viewMode}
-              searchActive={searchActive}
               onArchive={(convId) => void handleArchive(convId)}
               onUnarchive={(convId) => void handleUnarchive(convId)}
               onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
@@ -1535,6 +1539,9 @@ export function StreamInboxView({
               automationMark={conv.id ? automationMarks.get(conv.id) : undefined}
             />
           ))}
+        {!initialLoading && !searchActive && scope && (
+          <StreamInboxPager scope={scope} view={viewMode} rows={sorted} />
+        )}
       </div>
 
       {!agentId && <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />}

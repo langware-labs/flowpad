@@ -1283,12 +1283,12 @@ class Entity(DBEntity):
         dispatches to the registered ``from_disk_fn`` — the SAME cold-path parser the indexer runs
         (e.g. ``extract_dataset``) — and builds the entity generically from the
         returned ``FSRecord``. Only that parser (and, for datasets, the
-        ``iter_examples`` it reaches via ``Dataset.examples``) is type-specific;
+        ``iter_rows`` it reaches via ``Dataset.rows``) is type-specific;
         everything here is generic and registry-driven.
 
         Distinct from the async ``from_record``: no ``await``, no ``save()``, no
         DB row. A missing asset id may be minted and persisted. Use it to load a folder-backed entity and call its on-disk
-        accessors (``Dataset.examples`` etc.). Returns ``None`` when ``ref`` is
+        accessors (``Dataset.rows`` etc.). Returns ``None`` when ``ref`` is
         not a record of the resolved type (the parser yields nothing).
         """
         from flow_sdk.schema.type_info import register_all  # noqa: PLC0415

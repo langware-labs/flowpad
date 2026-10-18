@@ -135,6 +135,8 @@ async def clean_db():
         RecordType.CLAUDE_SESSION,
         "codex_session",
         "copilot_session",
+        "opencode_session",
+        "deepagents_session",
         RecordType.PROJECT,
         RecordType.PLAN,
         "agentic_process",
@@ -649,14 +651,36 @@ async def test_session_transcript_action_names_the_workers_transcript(
     assert row is not None
 
 
-@pytest.mark.asyncio
-async def test_session_transcript_action_says_why_a_worker_has_none(clean_db) -> None:
-    """A worker whose sessions live in a store (opencode) has no transcript entity
-    to attach: the share gets a reason, not a mis-typed ref."""
-    resp = await AgenticProcess(worker_type="opencode")._http_session_transcript()
+_OPENCODE_STREAM = Path(__file__).parents[1] / "resources" / "transcripts" / "opencode_stream_hello.jsonl"
 
-    assert resp.data["type_id"] is None
-    assert "opencode" in resp.data["reason"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("worker", "session_type", "transcript"),
+    [
+        ("opencode", "opencode_session", _OPENCODE_STREAM.read_text(encoding="utf-8")),
+        ("deepagents", "deepagents_session", json.dumps({"type": "init", "session_id": str(uuid.uuid4())}) + "\n"),
+    ],
+)
+async def test_a_store_backed_workers_transcript_is_shared_as_a_snapshot(
+    tmp_path: Path, clean_db, monkeypatch, worker, session_type, transcript
+) -> None:
+    """OpenCode/DeepAgents keep sessions in a store; their transcript is FlowPad's own file in the
+    run's records, deleted with the run. Shared, the row points at a copy that outlives it."""
+    run_file = tmp_path / "records" / f"{worker}_transcript.jsonl"
+    run_file.parent.mkdir()
+    run_file.write_text(transcript, encoding="utf-8")
+    monkeypatch.setattr(AgenticProcess, "transcript_path", property(lambda self: run_file))
+
+    resp = await AgenticProcess(worker_type=worker)._http_session_transcript()
+
+    type_id = resp.data["type_id"]
+    assert type_id.startswith(f"{session_type}-")
+    row = await SchemaRegistry.get_entity_cls(session_type).get_one({"id": type_id.split("-", 1)[1]})
+    snapshot = Path(str(row.asset_ref))
+    assert snapshot != run_file and snapshot.name.startswith(f"{worker}_transcript")
+    run_file.unlink()
+    assert snapshot.read_text(encoding="utf-8") == transcript
 
 @pytest.mark.asyncio
 async def test_index_single_skill_creates_row(tmp_path: Path, clean_db) -> None:

@@ -101,6 +101,34 @@ export interface ProjectDependencies {
   /** True while the background resolve that opening the project started is still
    *  running — `missing` may only mean "not fetched yet". */
   resolving: boolean;
+  /** Only with `{ declarers: true }`: every asset whose own flow.json declares
+   *  dependencies, with ALL its entries — `dependencies` above lists each once. */
+  declarers?: DependencyDeclarer[];
+}
+
+/** One entry of an asset's own flow.json, as written. */
+export interface DeclaredDependency {
+  key: string;
+  source: string;
+  /** The id an id entry names; null for a location. */
+  typeid: string | null;
+  name: string;
+  /** How the dependency it names stands here, if the walk reached it. */
+  state: DependencyState['state'] | null;
+}
+
+/** An asset whose own flow.json declares dependencies; `name` is its own folder name. */
+export interface DependencyDeclarer {
+  asset: string | null;
+  name: string;
+  type: string | null;
+  /** Its folder, relative to the project root when inside it. */
+  path: string | null;
+  /** The entry label that reached it, for one reached through another asset. */
+  label: string | null;
+  /** How the walk reached it: `[]` for one of the project's own assets. */
+  via_path: string[];
+  dependencies: DeclaredDependency[];
 }
 
 /** What `adoptHelpdeskFromGit` found after attaching the repo.
@@ -850,12 +878,17 @@ export class Project extends APIEntity<Project> {
   /** Every dependency declared in this project's `flow.json`, as it stands on
    *  this machine, plus the warnings (required, not here, not dismissed). Never
    *  fetches: a dependency not on this machine yet reads `missing`. */
-  async dependencies(options: { asset?: string } = {}): Promise<ProjectDependencies> {
-    const response = await this.get<Partial<ProjectDependencies> | null>('dependencies', options);
+  async dependencies(options: { asset?: string; declarers?: boolean } = {}): Promise<ProjectDependencies> {
+    const { declarers, ...params } = options;
+    const response = await this.get<Partial<ProjectDependencies> | null>(
+      'dependencies',
+      declarers ? { ...params, declarers: '1' } : params,
+    );
     return {
       dependencies: response?.dependencies ?? [],
       warnings: response?.warnings ?? [],
       resolving: response?.resolving === true,
+      ...(declarers ? { declarers: response?.declarers ?? [] } : {}),
     };
   }
 
@@ -1143,6 +1176,14 @@ export class Project extends APIEntity<Project> {
     const result = (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
     notifyProjectLoad(result);
     return result;
+  }
+
+  /** Phase one of an open: the app's last READY verdict, only while it still answers where it runs —
+   *  else null (load it). Never starts anything. */
+  static async validateLoad(projectId: string, asset: string, display = ''): Promise<ProjectLoadResult | null> {
+    const actionInfo = new ActionInfo('load-state', Project.type, projectId, 'GET');
+    actionInfo.queryParameters = { asset, validate: 'true', ...(display ? { display } : {}) };
+    return (await dataManager.callAction<void, ProjectLoadResult>(actionInfo)) ?? null;
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),

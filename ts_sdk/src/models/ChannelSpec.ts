@@ -24,6 +24,9 @@ export interface IActionSpec {
   destructive?: boolean;
   /** When the action is offered: on an open conversation (default), an ended one, or always. */
   when?: 'open' | 'ended' | 'any';
+  /** The message mark key that says it is done: when the newest message the signed-in account sent
+   *  carries it, the action is drawn as done instead of a button. Empty: never done. */
+  done_mark?: string;
 }
 
 export interface IChannelSpec {

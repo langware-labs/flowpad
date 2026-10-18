@@ -23,6 +23,11 @@ id: c6dd1677-6502-4d36-95e8-5036b01e58bc
 Code calls this agent like a function: a value in, a value out. The caller passes an
 `input`, the agent writes an `output` of a declared shape, and the call returns it.
 
+
+## FlowCall integration
+
+Use this agent recipe when model reasoning is the work. For a deterministic function, routing, or list transformation, use the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md): a ComputeOp with declared shapes and call.py. ComputeOp.call supports typed input through the existing TypeScript run action; the Agent.run prompt-only limitation below is specific to that API. Consume completed declared output, not launch admission or reply text parsed as JSON.
+
 ## Ask
 
 - What goes in? Name each field and its type.

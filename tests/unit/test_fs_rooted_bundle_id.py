@@ -1,6 +1,6 @@
 """FS-rooted bundle capsule transport.
 
-Workflow + whiteboard are filesystem-primary assets whose indexer ids are
+Workflow + chart are filesystem-primary assets whose indexer ids are
 path/name-derived. Existing-source bundles copy the asset and its identity
 capsule verbatim; they never rewrite a conflicting id during pack. Source-less
 rendering persists the proposed entry id through TypeInfo separately.
@@ -23,12 +23,12 @@ ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
 SOURCE_ID = "11111111-2222-4333-8444-555555555555"
 
 
-def test_agent_and_whiteboard_are_file_backed():
+def test_agent_and_chart_are_file_backed():
     # The unified packer routes by the FAMILY predicate (TypeInfo.main_subdir is
     # not None), not a hardcoded type set — else their bytes never ride the
     # bundle and the receiver has nothing to materialize.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    for t in (EntityType.SUBAGENT.value, EntityType.WHITEBOARD.value):
+    for t in (EntityType.SUBAGENT.value, EntityType.CHART.value):
         info = SchemaRegistry.get(t)
         assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
 
@@ -130,7 +130,7 @@ def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
 #
 # The two tests below drive the REAL ``_pack_file_backed_attachment`` (not the
 # copy primitives in isolation) for both shapes of the file-backed
-# family: a FOLDER asset (whiteboard/skill) and SINGLE-FILE assets (a workflow
+# family: a FOLDER asset (chart/skill) and SINGLE-FILE assets (a workflow
 # ``.md`` vs. a dynamic_workflow ``.js``). The real packer routes through
 # ``_resolve_file_backed_source`` → real ``TypeInfo`` (layout / main_subdir /
 # main_file / main_ext) → ``shutil.copytree(ignore=_ASSET_PACK_IGNORE)``.
@@ -170,12 +170,12 @@ def _stub_file_backed_lookup(monkeypatch, asset_ref: str, name: str = "asset"):
 
 @pytest.mark.asyncio
 async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
-    # FOLDER asset (whiteboard): a real on-disk folder with the main doc + a
+    # FOLDER asset (chart): a real on-disk folder with the main doc + a
     # noise dir (.venv / __pycache__). The bundle must keep the real files and
     # capsule, and drop ignored trees via the real _ASSET_PACK_IGNORE.
     src = tmp_path / "src" / "my-board"
     src.mkdir(parents=True)
-    (src / "WHITE_BOARD.md").write_text("---\nname: my-board\n---\n\n# Board\n", encoding="utf-8")
+    (src / "CHART.md").write_text("---\nname: my-board\n---\n\n# Board\n", encoding="utf-8")
     (src / "scene.excalidraw").write_text("{}", encoding="utf-8")  # real asset file
     capsule_bytes = ("{\n  \"version\": 1,\n  \"data\": {\n"
                      f"    \"id\": \"{SOURCE_ID}\"\n  }}\n}}\n").encode()
@@ -193,15 +193,15 @@ async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
 
     attachment_dir = tmp_path / "bundle"
     attachment_dir.mkdir()
-    await _pack_file_backed_attachment(EntityType.WHITEBOARD.value, ENTITY_ID, attachment_dir)
+    await _pack_file_backed_attachment(EntityType.CHART.value, ENTITY_ID, attachment_dir)
 
     base = (
         attachment_dir
-        / f"{EntityType.WHITEBOARD.value}-{ENTITY_ID}"
-        / "agentic-assets" / "whiteboard" / "my-board"
+        / f"{EntityType.CHART.value}-{ENTITY_ID}"
+        / "agentic-assets" / "chart" / "my-board"
     )
     # Real source preserved.
-    assert (base / "WHITE_BOARD.md").exists()
+    assert (base / "CHART.md").exists()
     assert (base / "scene.excalidraw").exists()
     # Ignored trees dropped — proven through the real packer, not a bare copytree.
     assert not (base / ".venv").exists()
@@ -209,7 +209,7 @@ async def test_pack_folder_asset_copies_capsule_verbatim(tmp_path, monkeypatch):
     assert not list(base.rglob("*.pyc"))
     # Existing source bytes are never rewritten during packing.
     from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
-    fields = _yaml_load(_extract_frontmatter((base / "WHITE_BOARD.md").read_text(encoding="utf-8")))
+    fields = _yaml_load(_extract_frontmatter((base / "CHART.md").read_text(encoding="utf-8")))
     assert "id" not in fields
     assert fields["name"] == "my-board"  # other frontmatter preserved
     assert (base / ".flow" / "capsules" / "identity.json").read_bytes() == capsule_bytes

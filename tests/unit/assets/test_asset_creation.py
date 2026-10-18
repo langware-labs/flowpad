@@ -77,14 +77,14 @@ def test_scaffold_foreign_identity_rejects_before_writing_defaults(tmp_path):
     assert not (path / "graph.json").exists()
 
 
-def test_whiteboard_creation_and_missing_document_repair_preserve_authored_board(tmp_path):
+def test_chart_creation_and_missing_document_repair_preserve_authored_board(tmp_path):
     from flow_sdk.assets.document import read_document
-    from flow_sdk.assets.types.whiteboard_spec import WhiteboardSpec
+    from flow_sdk.assets.types.chart_spec import ChartSpec
 
-    path = tmp_path / 'agentic-assets' / 'whiteboard' / 'legacy'
-    spec = WhiteboardSpec(name='Legacy board', description='Authored canvas')
-    asset = Asset.create(path, type=EntityType.WHITEBOARD, spec=spec)
-    main = path / 'WHITE_BOARD.md'
+    path = tmp_path / 'agentic-assets' / 'chart' / 'legacy'
+    spec = ChartSpec(name='Legacy board', description='Authored canvas')
+    asset = Asset.create(path, type=EntityType.CHART, spec=spec)
+    main = path / 'CHART.md'
     assert read_document(main).fields['name'] == 'Legacy board'
     canvas = b'{"kind":"excalidraw","data":{"elements":[{"id":"existing"}]}}'
     (path / 'board.json').write_bytes(canvas)
@@ -94,6 +94,31 @@ def test_whiteboard_creation_and_missing_document_repair_preserve_authored_board
     assert (path / 'board.json').read_bytes() == canvas
     main.write_bytes(main.read_bytes() + b'Custom prose\n')
     authored = main.read_bytes()
-    ensure_asset_scaffold(path, asset.typeid, WhiteboardSpec(name='Different'))
+    ensure_asset_scaffold(path, asset.typeid, ChartSpec(name='Different'))
     assert main.read_bytes() == authored
     assert (path / 'board.json').read_bytes() == canvas
+
+
+@pytest.mark.parametrize(
+    ("fmt", "source", "absent"),
+    [("sequence", "chart.json", "board.json"), ("excalidraw", "board.json", "chart.json"), ("mermaid", None, None)],
+)
+def test_chart_scaffold_writes_the_formats_source(tmp_path, fmt, source, absent):
+    import json
+
+    from flow_sdk.assets.document import read_document
+    from flow_sdk.assets.types.chart_spec import ChartSpec
+
+    path = tmp_path / 'agentic-assets' / 'chart' / fmt
+    spec = ChartSpec(name=fmt, format=fmt)
+    asset = Asset.create(path, type=EntityType.CHART, spec=spec)
+    ensure_asset_scaffold(path, asset.typeid, spec)
+    main = path / 'CHART.md'
+    assert read_document(main).fields['format'] == fmt
+    assert 'session' not in read_document(main).fields
+    if source:
+        json.loads((path / source).read_text())
+        assert not (path / absent).exists()
+    else:
+        assert '```mermaid\n' in main.read_text()
+        assert sorted(p.name for p in path.iterdir()) == ['CHART.md']

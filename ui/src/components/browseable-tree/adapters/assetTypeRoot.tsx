@@ -97,7 +97,7 @@ function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shr
  * mirrors the URL construction inside useAssetSearch but without the
  * debounce/pagination machinery (we want a single flat list for the tree).
  */
-async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: number): Promise<SearchResult[]> {
+export async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: number): Promise<SearchResult[]> {
   const urlParams = new URLSearchParams();
   urlParams.set('record_type', typeName);
   urlParams.set('offset', '0');

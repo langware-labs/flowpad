@@ -78,7 +78,9 @@ export class FSRef {
   }
 
   get parent(): FSRef {
-    const idx = this.path.lastIndexOf('/');
+    // A Windows machine path separates with `\` (`C:\Users\…\CHART.md`): cut at
+    // whichever separator comes last, or a Windows asset's parent becomes `/`.
+    const idx = Math.max(this.path.lastIndexOf('/'), this.path.lastIndexOf('\\'));
     const parentPath = idx > 0 ? this.path.slice(0, idx) : '/';
     return new FSRef(parentPath, this.typeId, 'folder', this.readOnly);
   }

@@ -21,7 +21,7 @@ class FieldKind(str, Enum):
     FOLDER_SPEC = "folder"       # a directory of files — disk only
     SUB_ASSET = "sub_asset"      # a nested asset type (has its own TypeInfo.asset_spec) — disk only
     SUB_ASSET_LIST = "sub_asset_list"
-    ROWS = "rows"                # list[ExampleSpec] — written by a DatasetLayout; disk only
+    ROWS = "rows"                # list[RowSpec] — written by a DatasetLayout; disk only
     BODY = "body"                # the main document's markdown body; a plain str on every other medium
     FREE_SECTION = "free_section"  # the JSON manifest's free ``data`` section; a plain dict elsewhere
 
@@ -101,7 +101,7 @@ def field_persistence(annotation: Any) -> FieldKind:
     """The persistence class of one annotation (a FULL annotation — for a
     pydantic field pass ``field.rebuild_annotation()``, which re-wraps the
     ``Annotated`` extras pydantic moved into ``FieldInfo.metadata``)."""
-    from flow_sdk.schema.data_spec.dataset_spec import ExampleSpec, FileRef, FolderSpec  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.dataset_spec import RowSpec, FileRef, FolderSpec  # noqa: PLC0415
 
     # A ``Text`` IS a ``str`` and a ``FreeForm`` IS a ``dict``, so both would
     # fall through to ``SCALAR`` if asked later. The type says what the field
@@ -120,7 +120,7 @@ def field_persistence(annotation: Any) -> FieldKind:
     if get_origin(ann) is list:
         (ann,) = get_args(ann) or (Any,)
         ann = unwrap_annotation(ann)
-        if isinstance(ann, type) and issubclass(ann, ExampleSpec):
+        if isinstance(ann, type) and issubclass(ann, RowSpec):
             return FieldKind.ROWS
     if isinstance(ann, type):
         if issubclass(ann, FolderSpec):

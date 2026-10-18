@@ -147,22 +147,23 @@ async def materialize_remote_organization(
     return await materialize_remote_membership_entity(Organization, data, someone_typeid, notify=notify)
 
 
-async def sync_remote_teams(someone_typeid: str | None = None) -> int:
-    """Mirror every hub team the signed-in user is in, as ``remote=True`` rows.
+async def sync_remote_memberships(someone_typeid: str | None = None) -> int:
+    """Mirror every hub organization and team the signed-in user is in, as ``remote=True`` rows.
 
-    A team otherwise reaches the desk only through a live membership push, and
-    the hub never replays one — a team created on the web, on another machine, or
-    while this box was offline never arrives, so the share pickers (which read
-    local rows only) never offer it. The catch-up transitions call this to close
-    that hole. Upsert only: a hub delete still arrives as its own push. Returns
-    the number of teams mirrored; ``0`` when the hub is unreachable.
+    A container otherwise reaches the desk only through a live membership push (or,
+    for one organization, the login payload), and the hub never replays one — an
+    organization or team created on the web, on another machine, or while this box
+    was offline never arrives, so the surfaces that read local rows only (the share
+    pickers, People & teams) never show it. The catch-up transitions call this to
+    close that hole. Upsert only: a hub delete still arrives as its own push. Returns
+    the number of rows mirrored; ``0`` when the hub is unreachable.
     """
     from flow_sdk.builtin.team import Team  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import hub_get, rows_of  # noqa: PLC0415
 
-    rows = rows_of(await hub_get(Team.get_type()))
     mirrored = 0
-    for row in rows:
-        if await materialize_remote_membership_entity(Team, row, someone_typeid, notify=True) is not None:
-            mirrored += 1
+    for cls in (Organization, Team):
+        for row in rows_of(await hub_get(cls.get_type())):
+            if await materialize_remote_membership_entity(cls, row, someone_typeid, notify=True) is not None:
+                mirrored += 1
     return mirrored

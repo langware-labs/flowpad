@@ -31,6 +31,7 @@ from flow_sdk.core.flow_command import flow_command
 from flow_sdk.request_context.detached import add_detached_done_callback, create_detached_task
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.project_setup_spec import (
     ONE_OF_INPUT,
     REQUIREMENT_DEPENDENCY,
@@ -118,6 +119,15 @@ def _why(credential: "CredentialStatusRowSpec | Credential") -> dict[str, str]:
     return {"needed_for": credential.needed_for, "justification": credential.justification}
 
 
+def _setup_var(env_var: str, var: Any, *, login: str, present: bool = False) -> SetupVarSpec:
+    """One value as the person is asked for it, from a declaration (``CredentialVarSpec``) or a status row's var."""
+    return SetupVarSpec(
+        env_var=env_var, label=var.label, hint=var.hint, help_url=var.help_url, placeholder=var.placeholder,
+        pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE, present=present,
+        required=var.required, kind=var.kind, login=login, provider=var.provider, scopes=list(var.scopes), way=var.way,
+    )
+
+
 def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Project") -> SetupRequirementSpec:
     always = _pack_always(project, row, used_by)
     if row.kind == "oauth":
@@ -135,36 +145,38 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str], project: "Proj
     return SetupRequirementSpec(
         typeid=row.typeid, kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup,
         help_url=row.help_url, setup_timeout_seconds=row.setup_timeout_seconds, **_why(row),
-        vars=[
-            SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
-                         pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
-                         present=v.present, required=v.required, kind=v.kind, login=v.login)
-            for v in (must or row.vars)
-        ],
+        vars=[_setup_var(v.env_var, v, login=v.login, present=v.present) for v in (must or row.vars)],
+        setup_choice=row.setup_choice, ways=dict(row.ways),
         satisfied=row.state == "connected", used_by=used_by, required=bool(must),
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
         skipped=row.setup_skipped, **always,
     )
 
 
-def _from_template(template: "Credential", used_by: list[str]) -> SetupRequirementSpec:
+def _project_skip_key(req: SetupRequirementSpec) -> str:
+    """Where a local skip lives when it is kept in the PROJECT's own map: a dependency's under its name, a shipped
+    template's under ``credential:<name>`` — the template's record is every project's, so a mark there would skip
+    it everywhere."""
+    return req.name if req.kind == REQUIREMENT_DEPENDENCY else f"credential:{req.name}"
+
+
+def _from_template(template: "Credential", used_by: list[str], skips: Optional[dict] = None) -> SetupRequirementSpec:
     required = {name for name, var in (template.vars or {}).items() if var.is_must or var.is_one_of}
     setup = str(getattr(template, "setup", "") or "")
-    return SetupRequirementSpec(
+    req = SetupRequirementSpec(
         typeid=str(template.typeid), required=bool(required),
         why_not_always="a shipped template, not in this project yet: skip it locally",
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
         setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
         help_url=template.help_url or "", declared=False, **_why(template), satisfied=False, used_by=used_by,
         vars=[
-            SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
-                         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE,
-                         required=var.required, kind=var.kind,
-                         login=var.login_command)
+            _setup_var(name, var, login=var.login_command)
             for name, var in (template.vars or {}).items() if name in required
         ],
+        ways=dict(getattr(template, "ways", None) or {}),
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
     )
+    return req.model_copy(update={"skipped": (skips or {}).get(_project_skip_key(req))})
 
 
 async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
@@ -248,11 +260,12 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
 
     out: list[SetupRequirementSpec] = []
     by_template = {str(t.name): t for t in templates}
+    skips = getattr(project, "setup_skipped", None) or {}
     for name, used_by in packs.items():
         if name in rows:
             out.append(_from_row(rows[name], used_by, project))
         elif name in by_template:
-            out.append(_from_template(by_template[name], used_by))
+            out.append(_from_template(by_template[name], used_by, skips))
         else:
             out.append(SetupRequirementSpec(
                 kind=REQUIREMENT_GAP, name=name, used_by=used_by,
@@ -264,7 +277,6 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
     # A dependency has no row of its own here (flow.json declares it), so the project carries its skip mark.
     from flow_sdk.builtin import project_dependencies  # noqa: PLC0415
 
-    skips = getattr(project, "setup_skipped", None) or {}
     dependencies = []
     for dep in await project.dependencies():
         if dep.state not in ("missing", "unreachable", "not_found"):
@@ -291,9 +303,30 @@ def _cli(*args: str) -> dict[str, dict[str, str]]:
 
 
 def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
-    lines = [f"{req.title or req.name}: {var.label or var.env_var}"]
-    lines += [text for text in (var.hint, var.help_url or req.help_url) if text]
+    """The question: the value's label (named for its credential unless it already says it) on the first line, then its hint and its OWN help link.
+    The credential's help page is not this value's — glued under an address it sent the person to the
+    app-password page. Why the credential is needed rides as the question's detail (``needed_for``)."""
+    name, label = req.title or req.name, var.label or var.env_var
+    lines = [label if name.lower() in label.lower() else f"{name}: {label}"]
+    lines += [text for text in (var.hint, var.help_url) if text]
     return "\n".join(lines)
+
+
+def _var_choice(var: SetupVarSpec) -> dict[str, Any]:
+    return {"value": var.env_var, "label": var.label or var.env_var, "hint": var.hint, "help_url": var.help_url,
+            "placeholder": var.placeholder, "secret": var.secret, "file": var.file, "command": var.login, "provider": var.provider,
+            "scopes": list(var.scopes)}
+
+
+def _way_choice(way: str, members: list[SetupVarSpec], offer: Optional[CredentialWaySpec] = None) -> dict[str, Any]:
+    """One way of a ONE_OF group as a choice: a single variable is the choice itself; several are one choice
+    named by the way (offered as the credential's ``ways`` says), with a field each (answered together)."""
+    if len(members) == 1:
+        return _var_choice(members[0])
+    label = (offer.label if offer else "") or way.replace("_", " ").capitalize()
+    hint = offer.hint if offer else ""
+    return {"value": way, "label": label, "hint": hint, "secret": any(v.secret for v in members),
+            "fields": [_var_choice(v) for v in members]}
 
 
 def compile_setup(
@@ -341,38 +374,43 @@ def compile_setup(
             # answers the question — the person's other way to give the value, not a step of its own.
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
-            ways = [v for v in req.missing if v.is_one_of]  # asked together, as one choice
+            # The ONE_OF ways, asked FIRST as one choice; a way of several values is one choice with a field each.
+            one_of = {v.env_var: v for v in req.missing if v.is_one_of}
+            # A sign-in with no command for this OS is not a way here.
+            offered = {way: [one_of[m] for m in members] for way, members in ways(one_of).items()
+                       if all(v.login or v.kind is not CredentialVarKind.CLI for v in (one_of[m] for m in members))}
+            if offered:
+                # One question for the whole group: the person picks ONE way. A value way is answered
+                # ``<VAR>=<value>`` (newline-joined, one line per field of a several-value way) and stored by
+                # the next step; a sign-in way (cli) is done in a terminal, and the question closes by itself
+                # once the credential's check holds; an oauth way is the screen's own Sign in (its provider and
+                # scopes ride the choice), answered ``<VAR>`` once granted — the store step records the way
+                # picked on the credential's row (``setup_choice``).
+                add({
+                    "name": f"ask-{req.name}-one-of", "label": f"{req.title or req.name}: choose one way",
+                    "subkind": "ask", "output_spec_kind": "string",
+                    "exe_data": {
+                        "prompt": f"How should Flowpad sign in to {req.title or req.name}?", "detail": req.needed_for,
+                        "secret": True, "auto_continue": any(v.login for vs in offered.values() for v in vs),
+                        "choices": [_way_choice(way, members, req.ways.get(way)) for way, members in offered.items()],
+                    },
+                    "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
+                    "completion_check": check,
+                }, bind=input_name(req.name, ONE_OF_INPUT))
             for var in req.missing:
-                if var in ways:
+                if var.is_one_of:
                     continue
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
-                    "exe_data": {"prompt": _ask_prompt(req, var), "secret": var.secret, "file": var.file,
-                                 "assist_agent": assist},
+                    "exe_data": {"prompt": _ask_prompt(req, var), "detail": req.needed_for, "secret": var.secret,
+                                 "file": var.file, "assist_agent": assist},
                     # The credential's own guide rides the question: the person sees how to obtain the
                     # value where they are asked for it.
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
                     "completion_check": check,
                 }, bind=input_name(req.name, var.env_var))
-            # A sign-in with no command for this OS is not a way here.
-            if ways := [v for v in ways if v.login or v.kind is not CredentialVarKind.CLI]:
-                # One question for the whole group: the person picks ONE way. A value way is answered
-                # ``<VAR>=<value>`` and stored by the next step; a sign-in way (cli) is done in a terminal,
-                # and the question closes by itself once the credential's check holds.
-                add({
-                    "name": f"ask-{req.name}-one-of", "label": f"{req.title or req.name}: choose one way",
-                    "subkind": "ask", "output_spec_kind": "string",
-                    "exe_data": {
-                        "prompt": f"{req.title or req.name}: choose one way",
-                        "secret": True, "auto_continue": any(v.login for v in ways),
-                        "choices": [{"value": v.env_var, "label": v.label or v.env_var, "hint": v.hint,
-                                     "secret": v.secret, "file": v.file, "command": v.login} for v in ways],
-                    },
-                    "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
-                    "completion_check": check,
-                }, bind=input_name(req.name, ONE_OF_INPUT))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
                 "description": f"{req.name} has every value it needs in {where}.",
@@ -420,7 +458,7 @@ async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectRe
     """What the footer warning reads: ready, or what is left and what nobody can set up here."""
     requirements = await collect_requirements(project, deployment_id)
     if not deployment_id:  # what runs HERE: a source in setup, a web app that does not answer
-        requirements += await _running_here(project)
+        requirements += _beyond_credentials(await _running_here(project), requirements)
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
         project_id=str(project.id), ready=not left, to_do=left,
@@ -428,6 +466,15 @@ async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectRe
         skipped=[r for r in requirements if r.skipped is not None and r.kind != REQUIREMENT_GAP],
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
     )
+
+
+def _beyond_credentials(running: list[SetupRequirementSpec],
+                        listed: list[SetupRequirementSpec]) -> list[SetupRequirementSpec]:
+    """One row per need: a source still in setup because a credential (or connection) it uses is not set up is
+    that credential's row ("Used by: <source>"), not a second row of its own. A source shows only when it owes
+    something beyond what is listed."""
+    owed_by = {who for req in listed if req.kind == REQUIREMENT_PACK and unsatisfied(req) for who in req.used_by}
+    return [r for r in running if not (r.kind == REQUIREMENT_SOURCE and r.name in owed_by)]
 
 
 async def _running_here(project: "Project") -> list[SetupRequirementSpec]:
@@ -529,7 +576,8 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
                     # The setup's own verdict stays the answer when it fell short.
                     from flow_sdk.core.setup.load import LoadTree  # noqa: PLC0415
 
-                    operational = LoadTree(tree)
+                    # The load a setup run ends with keeps the fixer: this run is the person's "make it work".
+                    operational = LoadTree(tree, fix=True)
                     loaded = await execute_setup(
                         root or tree.root, resolve_node=operational.resolve_node, resolve_op=operational.resolve_op,
                         subject_entity=f"project-{pid}", cwd=Path(mount) if mount else None,
@@ -548,7 +596,7 @@ async def start_setup(project: "Project", *, ai: bool = True, root: str = "", tr
         task = create_detached_task(run_setup(), name=f"project-setup:{pid}:{root}")
         add_detached_done_callback(task, _log_failure)
         add_detached_done_callback(task, functools.partial(_release_control, key, control))
-        add_detached_done_callback(task, functools.partial(_forget_load, pid))
+        add_detached_done_callback(task, functools.partial(_forget_load, pid, root))
         _RUNS[key] = task
     return setup_run_address(pid, root)
 
@@ -670,11 +718,11 @@ def _release_control(key: tuple[str, str], control: Any, _task: "asyncio.Task") 
         del _CONTROLS[key]
 
 
-def _forget_load(project_id: str, _task: "asyncio.Task") -> None:
-    """A run of the project ended, whichever node it was for: its load verdict is out of date."""
+def _forget_load(project_id: str, root: str, _task: "asyncio.Task") -> None:
+    """A run of the project ended: the load verdicts it outdates go (``load.forget`` decides which)."""
     from flow_sdk.core.setup.load import forget  # noqa: PLC0415
 
-    forget(project_id)
+    forget(project_id, root)
 
 
 def _log_failure(task: "asyncio.Task") -> None:
@@ -735,6 +783,11 @@ async def requirement_of(project: "Project", typeid: str, name: str = "") -> Set
     raise SkipRefused(f"{name or typeid} is not something this project's setup lists")
 
 
+def _undeclared(req: SetupRequirementSpec) -> bool:
+    """A shipped credential template this project does not declare yet: its record is not the project's."""
+    return req.kind == REQUIREMENT_PACK and not req.declared
+
+
 async def _record_of(req: SetupRequirementSpec):
     from flow_sdk.core import Entity  # noqa: PLC0415
 
@@ -771,8 +824,8 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     if scope != SKIP_LOCAL:
         raise SkipRefused(f"skip {scope!r}? it is {SKIP_LOCAL!r} or {SKIP_ALWAYS!r}")
     mark = SetupSkipSpec(at=time.time(), by=by, note=note.strip())
-    if req.kind == REQUIREMENT_DEPENDENCY:
-        await write_setup_skip(project, {**(project.setup_skipped or {}), req.name: mark})
+    if req.kind == REQUIREMENT_DEPENDENCY or _undeclared(req):
+        await write_setup_skip(project, {**(project.setup_skipped or {}), _project_skip_key(req): mark})
     else:
         await write_setup_skip(await _record_of(req), mark)
     _skip_live(project, req, skip_detail(mark))
@@ -793,8 +846,9 @@ async def unskip_requirement(project: "Project", typeid: str, *, name: str = "")
     from flow_sdk.core.setup.skip_mark import write_setup_skip  # noqa: PLC0415
 
     req = await requirement_of(project, typeid, name)
-    if req.kind == REQUIREMENT_DEPENDENCY:
-        await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != req.name})
+    if req.kind == REQUIREMENT_DEPENDENCY or _undeclared(req):
+        key = _project_skip_key(req)
+        await write_setup_skip(project, {k: v for k, v in (project.setup_skipped or {}).items() if k != key})
     else:
         await write_setup_skip(await _record_of(req), None)
 

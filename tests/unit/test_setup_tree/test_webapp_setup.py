@@ -642,6 +642,21 @@ async def test_the_ports_of_an_app_are_listed_declared_and_live(app):
 
 
 @pytest.mark.asyncio
+async def test_a_page_and_a_service_started_by_one_command_each_keep_their_port(app):
+    """Both ``python -m http.server {port}`` in one folder: the command cannot tell them apart, the ports
+    they declare do. Found on a real cloud box: the page's server was taken for the API on a wrong port,
+    so a restart never brought the API back."""
+    page, api = _free(), _free()
+    app.make(ports={"port": page}, services=[_service(api, command=SERVER)])
+    for _ in range(2):
+        assert (await webapp_setup.step("a1", "start", check=False)).ok
+        rows = {row["process"]: (row["state"], row["port"]) for row in await webapp_setup.ports("a1")}
+        assert rows == {"page": ("running", page), "api": ("running", api)}
+        assert (await webapp_setup.stop("a1")).ok
+        assert not dev_server.port_open(page) and not dev_server.port_open(api)
+
+
+@pytest.mark.asyncio
 async def test_a_declared_install_is_judged_by_its_check_or_by_the_app_running(app):
     """A declared install had no way to read as done: an installed, running app stayed "Setup required"."""
     app.make(install_cmd=f"{sys.executable} -c \"open('deps','w')\"", install_check="deps")

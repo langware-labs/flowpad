@@ -9,6 +9,7 @@ import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { SessionWorker } from '@src/hooks/use-transcript';
 
 /**
  * Minimal shape we need to render an entity as a clickable label. Covers the
@@ -254,8 +255,10 @@ export function buildDockPointer(
       return DockPointer.forConversation(resolved.id);
     case 'claude_session':
     case 'codex_session':
-    case 'copilot_session': {
-      const worker = workerFromSessionType(resolved.type) as 'claude' | 'codex' | 'copilot';
+    case 'copilot_session':
+    case 'opencode_session':
+    case 'deepagents_session': {
+      const worker = workerFromSessionType(resolved.type) as SessionWorker;
       // Transcripts are the ONLY type addressed by location rather than by
       // TypeId (they have no asset-editor entry — they open through the lens,
       // which takes a worker + a file). So unlike every other case here, a bare
@@ -275,7 +278,7 @@ export function buildDockPointer(
       return null;
     }
     default: {
-      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // Asset-editor types (markdown family, agent, skill, workflow, chart)
       // open by their TypeId — no asset_ref needed; the loader resolves the
       // entity. This is why the chip never has to defer on an unresolved path.
       const editor = editorForType(resolved.type);

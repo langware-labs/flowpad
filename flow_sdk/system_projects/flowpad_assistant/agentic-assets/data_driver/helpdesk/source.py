@@ -26,6 +26,7 @@ stamp moved.
 """
 from __future__ import annotations
 
+import heapq
 import json
 from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Protocol
@@ -82,6 +83,8 @@ class HelpdeskSource(MessageSource):
     provider = "helpdesk"
     origin_kind = CHANNEL
     durable_cursor = True
+    #: A ``before`` narrow reads one page of older ticket messages, filtered here over the pool.
+    pages_backward = True
     #: Strangers are the point: an empty allowlist admits every requester.
     open_inbound = True
     identity_config_key = "desk_project_id"
@@ -174,6 +177,9 @@ class HelpdeskSource(MessageSource):
         self._require_open()
         query = self.effective_query(narrow)
         limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query is not None and query.before is not None:
+            only = self._ticket_of(query.conversation) if query.conversation is not None else None
+            return await self._older(query.before, limit, only)
         state = _DeskCursor.decode(cursor)
         only = self._ticket_of(query.conversation) if query is not None and query.conversation is not None else None
         since = query.since if query is not None else None
@@ -214,6 +220,37 @@ class HelpdeskSource(MessageSource):
         token = state.encode()
         return ChangePage(items=tuple(items), next_cursor=token if more else None, resume_cursor=token)
 
+    async def _older(self, before: datetime, limit: int, only: Optional[str]) -> ChangePage:
+        """One page of the desk's messages sent strictly before ``before``, newest first, at most
+        ``limit``. The hub has no ``before`` on a ticket's messages, so each ticket is read and filtered
+        here; the pool walks newest activity first, and once ``limit`` are held, a ticket whose last
+        activity is older than the oldest held cannot better the page, so the walk stops. Neither reads
+        nor moves the desk cursor."""
+        # A bounded min-heap of the ``limit`` newest, keyed ``(sent, -arrival)``: its root is the one
+        # to drop next — the oldest, and of equal times the latest read — so ties keep read order.
+        held: list[tuple[datetime, int, MessageItem]] = []
+        arrival = 0
+        if only is not None:
+            self._desk_required()
+            tickets = [(only, "", "")]  # one conversation: read it directly, not via the pool
+        else:
+            tickets = await self._pool()
+        for ticket, _stamp, updated_at in tickets:
+            active = _when(updated_at)
+            if len(held) >= limit and active is not None and active < held[0][0]:
+                break
+            for fm in _rows_of(await self.hub.get("conversation", ticket, "flow_message")):
+                sent = _when(fm.get("created_date"))
+                if str(fm.get("id") or "").strip() and sent is not None and sent < before:
+                    arrival -= 1
+                    entry = (sent, arrival, self._item(ticket, fm))
+                    if len(held) < limit:
+                        heapq.heappush(held, entry)
+                    elif entry[:2] > held[0][:2]:
+                        heapq.heapreplace(held, entry)
+        held.sort(key=lambda entry: entry[:2], reverse=True)
+        return ChangePage(items=tuple(item for _w, _a, item in held))
+
     async def iterate(
         self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
     ) -> AsyncGenerator[MessageItem, None]:
@@ -225,11 +262,14 @@ class HelpdeskSource(MessageSource):
             if (cursor := page.next_cursor) is None:
                 return
 
+    def _desk_required(self) -> None:
+        if not self.desk:
+            raise Rejected("This help-desk source needs its desk (config.desk_project_id).")
+
     async def _pool(self) -> list[tuple[str, str, str]]:
         """``(ticket, change token, updated_at)`` for every ticket in the pool, picked up or not,
         newest activity first."""
-        if not self.desk:
-            raise Rejected("This help-desk source needs its desk (config.desk_project_id).")
+        self._desk_required()
         rows = _rows_of(await self.hub.get("project", self.desk, "helpdesk_conversations"))
         pool = []
         for row in rows:

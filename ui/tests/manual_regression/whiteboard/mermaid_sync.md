@@ -10,7 +10,7 @@ tags: [whiteboard, mermaid]
 
 ## Prerequisites
 
-* A whiteboard exists with the dev-hooks (`window.__excalidrawLib`, `window.__whiteboardApi`, `window.__whiteboardOnChange`) populated. Create one via C1 if needed.
+* A whiteboard exists with the dev-hooks (`window.__excalidrawLib`, `window.__chartApi`, `window.__chartOnChange`) populated. Create one via C1 if needed.
 
 ## Steps
 
@@ -21,7 +21,7 @@ tags: [whiteboard, mermaid]
 
 ### M2: Human content preserved outside markers
 * Edit WHITE_BOARD.md via Bash (heredoc) to insert prose ABOVE the BEGIN marker and BELOW the END marker, plus a `[[wiki link]]` in the post-content. Keep stale content INSIDE markers.
-* Trigger another save (inject one more element + call `__whiteboardOnChange`). Wait 1500ms.
+* Trigger another save (inject one more element + call `__chartOnChange`). Wait 1500ms.
 * `cat <folder>/WHITE_BOARD.md` → prose above + below MUST survive. `[[wiki link]]` MUST be intact. The content inside the BEGIN/END block MUST be replaced (no longer stale).
 
 ### M3: Degenerate (freehand-only) board still emits valid mermaid
@@ -44,7 +44,7 @@ tags: [whiteboard, mermaid]
   ```
 * Click `[data-testid="confirm-import-mermaid"]`.
 * Wait 1500ms past debounce.
-* Validate `window.__whiteboardApi.getSceneElements().length` includes new rectangles labelled "Foo" and "Bar".
+* Validate `window.__chartApi.getSceneElements().length` includes new rectangles labelled "Foo" and "Bar".
 * WHITE_BOARD.md mermaid block now reflects the imported elements (contains `Foo` and `Bar` tokens).
 
 ## Pass criteria

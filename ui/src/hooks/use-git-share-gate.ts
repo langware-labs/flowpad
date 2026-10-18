@@ -2,8 +2,7 @@ import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
 import { TypeId, launchWizard, type Project } from '@sdk';
 import { notify } from '@src/notifications';
-import { invalidateGitPreflight, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
-import { useGitPush } from '@src/hooks/use-git-push';
+import { invalidateGitPreflight, runGitShareFix, useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { useProjectDependencies } from '@src/hooks/use-project-dependencies';
 import { gitShareGateState, type GitShareGateState } from '@src/components/share-to-conversation/git-share-gate-state';
 import type { DependencyFolderTarget } from '@src/hooks/use-dependency-for-rel';
@@ -39,17 +38,23 @@ export function useGitShareGate(
   const ref = useMemo(() => (folder?.typeid ? new TypeId(folder.typeid) : undefined), [folder?.typeid]);
   const preflight = useGitSharePreflight(ref, enabled);
 
-  // `push` owns its own busy state and re-entrancy guard — don't shadow it.
-  const { push, busy: pushBusy } = useGitPush(
-    folder?.computeNodeId ?? '@local',
-    folder?.workdir ?? null,
-    preflight.refetch,
-  );
-
-  // ONE action: stage-all → commit → pull --rebase → push. The receiver clones
-  // the origin, so an unpushed commit is unreachable — a commit without the
-  // push would leave the share just as broken.
-  const runCommit = useCallback(() => push(), [push]);
+  // ONE action, scoped to the shared folder: commit + push only its path (or
+  // push what is already committed). The person's other work in the repo is
+  // never swept in, and nothing is forced — a conflict is reported back.
+  const [pushBusy, setPushBusy] = useState(false);
+  const runCommit = useCallback(async () => {
+    if (!ref) return;
+    setPushBusy(true);
+    try {
+      const res = await runGitShareFix(ref, preflight.fix ?? 'commit');
+      if (!res.ok) notify.error({ title: t`Could not commit and push`, message: res.message });
+    } catch (e) {
+      notify.error({ title: t`Could not commit and push`, message: String(e) });
+    } finally {
+      setPushBusy(false);
+      preflight.refetch();
+    }
+  }, [ref, preflight]);
 
   const runSetup = useCallback(async () => {
     if (!folder || !project) return;

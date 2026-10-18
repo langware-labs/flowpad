@@ -5,7 +5,7 @@ import { IEntity, EntityMerge } from '../IEntity';
  * GraphWorkflow — a folder-backed flow document (backend:
  * flow_sdk/builtin/graph_workflow.py). graph.json (semantic) + display.json
  * (layout) live in the folder at `asset_ref`; read/write them via the
- * folder FSRef (whiteboard pattern). Runs + injection go through the
+ * folder FSRef (chart pattern). Runs + injection go through the
  * graphWorkflows service.
  */
 export interface IGraphWorkflow extends IEntity {

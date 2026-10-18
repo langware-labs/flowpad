@@ -305,9 +305,14 @@ def touch(reason: str) -> None:
         logger.debug("[stream-inbox] touch(%s) skipped — no running event loop", reason)
 
 
+def _stamped(conv) -> tuple[bool, int, bool]:
+    """What the recompute last stamped on ``conv``: ``(is_unread, unread_count, archived)``."""
+    return bool(conv.is_unread), int(conv.unread_count or 0), bool(conv.archived)
+
+
 async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "StreamInboxManager":
-    """Recompute unread from canonical rows and publish what changed: each conversation
-    whose ``is_unread`` flipped, and ``StreamInboxManager.unread`` iff the count moved.
+    """Recompute unread (and the stored ``archived``) from canonical rows and publish what changed: each
+    conversation whose ``is_unread``, ``unread_count`` or ``archived`` moved, and ``StreamInboxManager.unread`` iff the count moved.
     Cheap when nothing changed — no save, no broadcast. Mutation call sites should use
     :func:`touch` instead — this awaited form is for callers that need the fresh value."""
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
@@ -321,16 +326,20 @@ async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "Strea
         for conv in conversations:
             flag = projection.by_conversation[conv.id]
             count = projection.counts[conv.id]
-            if bool(conv.is_unread) == flag and int(conv.unread_count or 0) == count:
+            if _stamped(conv) == (flag, count, conv.is_archived()):
                 continue
             # Stamp a FRESH read, never the snapshot the count was taken from: between that
             # load and this save another writer may have archived, repointed or deleted the
             # row, and saving the snapshot would undo the first two and resurrect the third.
             fresh = await Conversation.get_by_id(conv.id)
-            if fresh is None or (bool(fresh.is_unread) == flag and int(fresh.unread_count or 0) == count):
+            if fresh is None:
+                continue
+            archived = fresh.is_archived()
+            if _stamped(fresh) == (flag, count, archived):
                 continue
             fresh._set_projection("is_unread", flag, PROJECTION_SENTINEL)
             fresh._set_projection("unread_count", count, PROJECTION_SENTINEL)
+            fresh._set_projection("archived", archived, PROJECTION_SENTINEL)
             await fresh.save(None, notify=True)
         if manager.unread != projection.total:
             logger.info("[stream-inbox] unread %d -> %d (%s)", manager.unread, projection.total, reason)

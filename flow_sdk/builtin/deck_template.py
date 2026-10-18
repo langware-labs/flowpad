@@ -46,7 +46,7 @@ class DeckTemplate(Entity):
     created_at: Optional[datetime] = APIField(None)
 
     # Absolute path of the template folder on disk, stamped by the indexer /
-    # ``Entity.from_fs_ref``. A plain string, mirrors DATASET/WHITEBOARD.
+    # ``Entity.from_fs_ref``. A plain string, mirrors DATASET/CHART.
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     def layout_html(self, name: str) -> Optional[str]:

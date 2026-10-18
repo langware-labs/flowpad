@@ -73,4 +73,6 @@ def test_session_type_by_worker_covers_every_session_worker():
         "claude": "claude_session",
         "codex": "codex_session",
         "copilot": "copilot_session",
+        "opencode": "opencode_session",
+        "deepagents": "deepagents_session",
     }

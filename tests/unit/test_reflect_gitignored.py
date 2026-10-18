@@ -40,18 +40,18 @@ def _repo(tmp_path: Path) -> Path:
 
 def test_a_folder_is_excluded_by_a_line_beside_it_and_git_confirms(tmp_path):
     repo = _repo(tmp_path)
-    target = repo / "ds" / "examples"
+    target = repo / "ds" / "rows"
     target.mkdir()
 
     assert git_ignore.ignore_status(target) == git_ignore.NOT_IGNORED
     assert git_ignore.ensure_ignored(target) == git_ignore.IGNORED
     assert git_ignore.ensure_ignored(target) == git_ignore.IGNORED
-    assert (repo / "ds" / ".gitignore").read_text() == "/examples/\n", "written once, beside the folder"
+    assert (repo / "ds" / ".gitignore").read_text() == "/rows/\n", "written once, beside the folder"
 
 
 def test_a_tracked_folder_is_reported_tracked_and_no_line_is_written(tmp_path):
     repo = _repo(tmp_path)
-    target = repo / "ds" / "examples"
+    target = repo / "ds" / "rows"
     target.mkdir()
     (target / "row.json").write_text("{}")
     _git(repo, "add", "-A")
@@ -62,7 +62,7 @@ def test_a_tracked_folder_is_reported_tracked_and_no_line_is_written(tmp_path):
 
 
 def test_outside_a_repository_nothing_is_written(tmp_path):
-    target = tmp_path / "plain" / "examples"
+    target = tmp_path / "plain" / "rows"
     target.mkdir(parents=True)
 
     assert git_ignore.ensure_ignored(target) == git_ignore.NOT_A_REPO
@@ -72,14 +72,14 @@ def test_outside_a_repository_nothing_is_written(tmp_path):
 
 def test_ignored_under_names_a_whole_ignored_folder_once_and_the_root_when_it_is_ignored(tmp_path):
     repo = _repo(tmp_path)
-    (repo / "ds" / "examples" / "a").mkdir(parents=True)
-    (repo / "ds" / "examples" / "a" / "input.json").write_text("{}")
+    (repo / "ds" / "rows" / "a").mkdir(parents=True)
+    (repo / "ds" / "rows" / "a" / "input.json").write_text("{}")
     (repo / "ds" / "dataset.json").write_text("{}")
-    (repo / "ds" / ".gitignore").write_text("/examples/\n")
+    (repo / "ds" / ".gitignore").write_text("/rows/\n")
 
-    assert git_ignore.ignored_under(repo / "ds") == {(repo / "ds" / "examples").resolve()}
-    assert git_ignore.ignored_under(repo / "ds" / "examples") == {(repo / "ds" / "examples").resolve()}
-    assert git_ignore.is_under(repo / "ds" / "examples" / "a" / "input.json", git_ignore.ignored_under(repo / "ds"))
+    assert git_ignore.ignored_under(repo / "ds") == {(repo / "ds" / "rows").resolve()}
+    assert git_ignore.ignored_under(repo / "ds" / "rows") == {(repo / "ds" / "rows").resolve()}
+    assert git_ignore.is_under(repo / "ds" / "rows" / "a" / "input.json", git_ignore.ignored_under(repo / "ds"))
 
 
 # ── the source field ──────────────────────────────────────────────────────────
@@ -111,19 +111,19 @@ async def _reread(src) -> DataSource:
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_copy_source_keeps_its_target_out_of_git_before_placing(tmp_path):
     repo = _repo(tmp_path)
-    src = await _copy_source(repo / "ds" / "examples")
+    src = await _copy_source(repo / "ds" / "rows")
     DataDriver.register(_FakeType(Pass(cursor="c1"), is_object=True))
 
     await sync_source(src, now=NOW)
 
-    assert (repo / "ds" / ".gitignore").read_text() == "/examples/\n"
+    assert (repo / "ds" / ".gitignore").read_text() == "/rows/\n"
     assert (await _reread(src)).health == SourceHealth.OK.value
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_tracked_target_refuses_the_pass_before_traversing(tmp_path):
     repo = _repo(tmp_path)
-    target = repo / "ds" / "examples"
+    target = repo / "ds" / "rows"
     target.mkdir()
     (target / "row.json").write_text("{}")
     _git(repo, "add", "-A")
@@ -143,7 +143,7 @@ async def test_a_tracked_target_refuses_the_pass_before_traversing(tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_source_that_opts_out_leaves_gitignore_alone(tmp_path):
     repo = _repo(tmp_path)
-    src = await _copy_source(repo / "ds" / "examples", gitignored=False)
+    src = await _copy_source(repo / "ds" / "rows", gitignored=False)
     DataDriver.register(_FakeType(Pass(cursor="c1"), is_object=True))
 
     await sync_source(src, now=NOW)
@@ -160,11 +160,11 @@ def test_a_relative_target_is_under_the_scope_holding_the_source_and_never_the_c
 
     own = tmp_path / "proj" / "agentic-assets" / "data_source" / "research-drive"
     own.mkdir(parents=True)
-    held = DataSource(provider="gdrive", name="r", reflect="copy", reflect_into="agentic-assets/dataset/x/examples", asset_ref=str(own))
-    loose = DataSource(provider="gdrive", name="r2", reflect="copy", reflect_into="agentic-assets/dataset/x/examples")
+    held = DataSource(provider="gdrive", name="r", reflect="copy", reflect_into="agentic-assets/dataset/x/rows", asset_ref=str(own))
+    loose = DataSource(provider="gdrive", name="r2", reflect="copy", reflect_into="agentic-assets/dataset/x/rows")
     escaping = DataSource(provider="gdrive", name="r3", reflect="copy", reflect_into="../elsewhere", asset_ref=str(own))
 
-    assert _target_root(held) == tmp_path / "proj" / "agentic-assets" / "dataset" / "x" / "examples"
+    assert _target_root(held) == tmp_path / "proj" / "agentic-assets" / "dataset" / "x" / "rows"
     assert _target_root(loose) is None, "no scope: refused, not resolved against the working directory"
     assert _target_root(escaping) is None
     assert _target_root(DataSource(provider="gdrive", name="r4", reflect="copy", reflect_into=str(tmp_path / "abs"))) == tmp_path / "abs"
@@ -193,11 +193,11 @@ def test_a_file_source_shows_the_folder_it_places_into_else_its_own_tree(tmp_pat
 
     own = tmp_path / "proj" / "agentic-assets" / "data_source" / "r"
     own.mkdir(parents=True)
-    copy = make_data_source("gdrive", reflect="copy", reflect_into="agentic-assets/dataset/x/examples", asset_ref=str(own))
+    copy = make_data_source("gdrive", reflect="copy", reflect_into="agentic-assets/dataset/x/rows", asset_ref=str(own))
     in_place = make_data_source("folder", reflect="none", config={"root": str(tmp_path / "tree")})
     record = make_data_source("rss")
 
-    assert copy.files_root == str(tmp_path / "proj" / "agentic-assets" / "dataset" / "x" / "examples")
+    assert copy.files_root == str(tmp_path / "proj" / "agentic-assets" / "dataset" / "x" / "rows")
     assert in_place.files_root == str((tmp_path / "tree").resolve())
     assert record.files_root is None
     assert "files_root" not in copy._hub_body(), "this machine's path never leaves it"

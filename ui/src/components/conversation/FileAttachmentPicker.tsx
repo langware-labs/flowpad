@@ -194,6 +194,24 @@ export function useAnnotatedImagePaste(
 }
 
 /**
+ * For a dialog that keeps its own `files` state (rendered by a controlled
+ * `FileAttachmentPicker`): `addFiles` merges picked files in through
+ * `mergePickedFiles`, and `handlePaste` routes clipboard images through the
+ * annotator into the same list (see `useAnnotatedImagePaste`).
+ */
+export function useFileStateAttach(
+  setFiles: React.Dispatch<React.SetStateAction<File[]>>,
+  paste: Parameters<typeof useAnnotatedImagePaste>[1],
+) {
+  const addFiles = useCallback(
+    (picked: FileList | File[] | null) => setFiles((prev) => mergePickedFiles(prev, picked).files),
+    [setFiles],
+  );
+  const handlePaste = useAnnotatedImagePaste(addFiles, paste);
+  return { addFiles, handlePaste };
+}
+
+/**
  * The "+" attach trigger: a `<label htmlFor>` over a hidden file input, so a
  * real native click opens the OS picker reliably — even inside a Radix Dialog
  * portal where a synthetic onClick sometimes doesn't reach the input.

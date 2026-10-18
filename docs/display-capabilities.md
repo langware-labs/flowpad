@@ -96,7 +96,7 @@ overlay rather than navigation and no caller mounts its own.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
-Whiteboards have **no** `.excalidraw` extension handling — they are
+Charts have **no** `.excalidraw` extension handling — they are
 folder-backed entities opened by TypeId. Folders are browsed
 (`ViewType.ASSETS` folder/fs pointers), never "opened". Entities always win
 over extensions: a path that resolves to an entity opens its type's editor.
@@ -110,7 +110,7 @@ of (1), pinned to it by a shared fixture rather than by hand (see [§9](#9-deep-
 1. **`EDITOR_TYPES` / `TYPE_TO_EDITOR`** (`ts_sdk/src/models/asset-editor.ts:24-47`)
    — record type → AssetEditor. Editors: code, markdown (markdown, claude_md,
    claude_memory, claude_rules, command, plan, prompt), agent, skill, task,
-   workflow, whiteboard, agent_trace, dynamic_workflow, usage_report,
+   workflow, chart, agent_trace, dynamic_workflow, usage_report,
    asset_cleanup_report, mcp. Rendered by `AssetEditorRouter`.
 2. **Per-entity `dockPointer` getters** (SDK) — `APIEntity.dockPointer`
    default is `ViewType.HOME` (`APIEntity.ts:481`); asset types override via
@@ -150,7 +150,7 @@ diagnosis, home. Every route has a chrome-less `/win/` twin (same tabHash).
   by a served app's `initSdk`) folds that into the guest's own `document.hidden`
   / `visibilityState` and fires `visibilitychange`, so a parked app's timers and
   polls rest like a hidden page's.
-- `flow app open` → discovers/starts a dev server → `register-webapp-artifact`
+- `flow app open` → a project app (`webapp.json`) comes up through `bring_up` (validate → load → setup → fix, `flow_sdk/core/setup/load.py`); a folder with no `webapp.json` is discovered/started ad hoc → `register-webapp-artifact`
   action (creates/updates a project-scoped WEBAPP `Artifact`, `show:true` by
   default) — artifacts drive `WebappViewer`'s selector/restart chrome.
 - `flow artifact file|entity|webapp` registers a deliverable as an `Artifact`

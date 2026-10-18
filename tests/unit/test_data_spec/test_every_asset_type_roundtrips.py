@@ -70,7 +70,7 @@ VALID: dict[str, dict] = {
     "data_schema": {
         "subkind": "record",
         "fields": {"utterance": {"shape": "string", "description": "what was typed"}},
-        "examples": None,
+        "rows": None,
         "ns": "acme",
         # a rule is ONE of `same` / `unique`, never both filled
         "rules": [{"same": ["persona.icp", "icp"], "description": "the persona is one of the row's ICP's"},
@@ -81,6 +81,8 @@ VALID: dict[str, dict] = {
         "subkind": "cli",
         "exe_data": {"commands": {"linux": "true"}},
         "output_spec_kind": "string",
+        # a declared `output` must agree with `output_spec_kind`: one shape, said twice at most
+        "output": "string",
         "status_check": None,
     },
     # a source has ONE credential lifetime, not four at once; `reflect` is closed;
@@ -111,7 +113,7 @@ VALID: dict[str, dict] = {
     # `lm_provider` is a closed set, and an lm_provider credential is one key
     "credential": {"lm_provider": "anthropic", "manifest_schema": 2,
                    # an env credential (it funds an LLM); an oauth one's fields round-trip in test_oauth_credential
-                   "kind": "env", "provider": "", "scopes": [], "optional_scopes": []},
+                   "kind": "env", "provider": "", "scopes": [], "optional_scopes": [], "ways": {}},
 }
 
 #: Fields the disk deliberately does not give back, and why. Each entry is a
@@ -141,7 +143,9 @@ DERIVED: dict[str, dict[str, str]] = {
 OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
 # A credential variable carries `login`/`check` only when it is a `cli` one, which an lm_provider credential
 # (the sample above) cannot hold; a cli variable's round trip is in test_credential_asset/test_one_of.py.
-OVERRIDES[CredentialVarSpec] = {"login": None, "check": None}
+# Likewise `provider`/`scopes` belong to an `oauth` variable alone, and `way` to a ONE_OF one (round trips in
+# test_one_of.py).
+OVERRIDES[CredentialVarSpec] = {"login": None, "check": None, "provider": "", "scopes": [], "way": ""}
 # A data schema's rule names exactly TWO paths -- a pairing the sampler's one-element list cannot make.
 OVERRIDES[DataSchemaRule] = {"same": ["persona.icp", "icp"]}
 

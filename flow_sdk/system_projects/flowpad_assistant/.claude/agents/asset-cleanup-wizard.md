@@ -62,3 +62,8 @@ flow wizard <wizard-process-id> close '{"status":"done","data":{"removed":["<pat
 
 If the user declines or cancels, close with `status:"cancel"`. If removal
 cannot complete, close with `status:"error"` and an `errorStr`.
+
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work. This does not change the confirmation required for deletion.

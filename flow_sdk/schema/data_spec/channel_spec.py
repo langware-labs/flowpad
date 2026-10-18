@@ -47,6 +47,9 @@ class ActionSpec(DataSpec):
     destructive: bool = False
     #: Which conversations offer it: an open one (approve), an ended one (reopen), or ``any``.
     when: Literal["open", "ended", "any"] = "open"
+    #: The ``MessageMarkSpec.key`` that says it is done: when the newest message the signed-in account
+    #: sent carries it, the surface draws the action as done instead of a button. Empty: never done.
+    done_mark: str = ""
 
 
 class ChannelSpec(DataSpec):

@@ -267,11 +267,12 @@ coerces `config` by the spec's field types, and re-derives `origin` via the
 type's `origin_for`.
 
 **Operator controls** (`core_action`s on `DataSource`; all asynchronous — they
-make the source due, the heartbeat does the work within a minute):
+make the source due, the heartbeat does the work within a minute — except `sync`, which runs the cycle now):
 
 | Verb | Does | Note |
 |---|---|---|
-| `poll_now` | make due | **the only un-latch** for `config_error` besides `replay` (`_make_due`) |
+| `sync` | **one cycle NOW**, reported (`created/updated/unchanged/removed`, `ran`) | what a person's Pull / ↻ runs, for every family; un-latches `config_error` like `poll_now`; a source in `setup` or `disabled` is not read (`ran: false`, the `poll_refusal` sentence). Shares the per-source cycle lock with the poller |
+| `poll_now` | make due | **the only un-latch** for `config_error` besides `replay` (`_make_due`); for automation that should only queue |
 | `request_poll` | make due, arm the fast lane | never un-latches, never wakes `disabled`/`setup` — see *Attention* |
 | `reset` | clear `cursor`, `manifest` and `high_water`, keep the records | alone it is invisible: the digest gate suppresses re-delivery. `last_synced_at` survives |
 | `purge_items` | destroy the source's `SourceItem`s and their stream inbox projection | rebuilt rows are **new** entities; `read`/`starred` are lost |

@@ -99,12 +99,12 @@ describe('recent activity projection', () => {
 
 describe('recent activity navigation coverage', () => {
   it('uses the central asset-editor registry fallback for newly editable types', async () => {
-    const result = entity('whiteboard', 300);
+    const result = entity('chart', 300);
     const pointer = getDockPointerForResult(result);
     const openDock = vi.fn();
 
     expect(isResultNavigable(result)).toBe(true);
-    expect(pointer?.toUrl()).toContain('/editor/whiteboard/typeid/whiteboard-');
+    expect(pointer?.toUrl()).toContain('/editor/chart/typeid/chart-');
 
     await navigateToResult(result, { openDock } as never);
     expect(openDock).toHaveBeenCalledWith(pointer);

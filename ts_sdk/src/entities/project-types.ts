@@ -92,6 +92,8 @@ export interface ProjectLoadResult {
   setup_available?: boolean;
   /** What the check found, for a `setup_required` load: the tree as it stands before anything runs. */
   tree?: SetupTreeResult | null;
+  /** What a `running` load is doing: `load` only starts what is set up, `setup` sets up first. */
+  phase?: 'load' | 'setup' | null;
 }
 
 /** Where a declared dependency stands on THIS machine. */

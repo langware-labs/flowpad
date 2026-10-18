@@ -10,7 +10,7 @@
  * plain payloads now, not WS frames.
  *
  * graph.json / display.json read+write go through the flow entity's folder
- * FSRef (the whiteboard pattern) — this service carries only the runtime
+ * FSRef (the chart pattern) — this service carries only the runtime
  * surfaces.
  */
 

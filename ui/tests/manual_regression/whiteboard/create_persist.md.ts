@@ -30,7 +30,7 @@ async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
   // Wait for the excalidraw dev hooks to populate.
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -40,25 +40,25 @@ async function openEditor(page: Page, id: string) {
 // updateScene serializes a stale/empty scene).
 async function injectAndSave(page: Page, skeleton: unknown[]) {
   // The editor can remount between openEditor() and here (a data-load re-render),
-  // which clears window.__whiteboardApi. Re-wait for the live hook right before
+  // which clears window.__chartApi. Re-wait for the live hook right before
   // using it — a concrete-signal wait, not a fixed delay.
   await page.waitForFunction(
-    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+    () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
     null,
     { timeout: 15_000 },
   );
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     const els = lib.convertToExcalidrawElements(skel);
     api.updateScene({ elements: els });
   }, skeleton);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     const scene = api.getSceneElements();
-    (window as any).__whiteboardOnChange(scene, api.getAppState(), api.getFiles());
+    (window as any).__chartOnChange(scene, api.getAppState(), api.getFiles());
   });
 }
 
@@ -206,7 +206,7 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     await openEditor(page, id);
     await page.waitForTimeout(2_000);
 
-    const sceneLen = await page.evaluate(() => (window as any).__whiteboardApi.getSceneElements().length);
+    const sceneLen = await page.evaluate(() => (window as any).__chartApi.getSceneElements().length);
     expect(sceneLen, 'scene elements preserved after reload').toBeGreaterThanOrEqual(2);
 
     // No React error boundary (the appState.collaborators Map regression surfaces here).

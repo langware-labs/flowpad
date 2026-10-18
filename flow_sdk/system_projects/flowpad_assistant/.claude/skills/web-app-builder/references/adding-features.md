@@ -1,5 +1,10 @@
 # Adding features
 
+
+## FlowCall integration
+
+In a Flowpad SDK app, reusable processing belongs in a ComputeOp and is called with its SDK action; see the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md). The standalone Next/FastAPI endpoint recipes below still apply to standalone apps. Do not duplicate block result validation or invent a shared request/status-file protocol in the UI.
+
 ## Adding a page
 
 Next.js App Router: a folder under `frontend/app/` with a `page.tsx`.

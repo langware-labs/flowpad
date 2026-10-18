@@ -8,6 +8,36 @@ Written once so it isn't re-litigated. The axis that matters here is **who owns 
 concept**: some of our entities *mirror a provider's* on-disk format, and some are ours.
 Names should make that obvious.
 
+## FlowCall — the call-and-result mechanism
+
+**FlowCall** is Flowpad’s own contract for invoking work, receiving a structured outcome and value, and composing that result into further work.
+It names one mechanism implemented by cooperating parts, not a class, entity,
+or universal request object. The contract is specified in
+[FlowCall — calls, outcomes, and returned values](snippets/call-returns.md).
+
+| Term | Role in FlowCall |
+|---|---|
+| `ComputeOp` / FlowCall block | A reusable definition of work, typed input/output, implementation and optional completion check; the entity type remains `compute_op` |
+| `ReturnedValue` | The common answer; specialized results extend it |
+| `ExitCode` | The shared outcome vocabulary for Python, TypeScript, and the CLI |
+| `Wizard` | Composition of calls, binding returned values into later inputs |
+| `ProcessCall` | A message-carried call correlated with its returned answer |
+| `call.py:call` | The conventional entry of a Python-backed block; other variants need no Python wrapper |
+| `CollectionResult` | An explicit per-item map's answer, retaining each reached item's index/key and ReturnedValue |
+
+Say **FlowCall** for the mechanism, **a call** for one invocation, **answer** for
+its `ReturnedValue`, and **value** for `answer.value`. Preserve the code names.
+FlowCall does not mean every SDK method, HTTP response, or event. Transport
+success and the operation's outcome are separate; acceptance and completion
+are separate outcomes too.
+
+A list is one value unless the caller explicitly maps it. `chain` composes
+blocks through Wizard; it does not name another runtime. `invocation_id`
+is the trace id of one top-level run: every call in it, across agents and
+messages, carries it, and `parent_call_id` names the call that made each one. It
+is not a block ID or an idempotency key. `value_present` distinguishes nullable output from no output.
+See [FlowCall blocks](snippets/flowcall-blocks.md).
+
 ## Cross-walk
 
 | Flowpad | Claude Code | OpenClaw |
@@ -17,7 +47,7 @@ Names should make that obvious.
 | `SubAgent` + `AgentOptions` together | — | **`agent`** |
 | `Agent` (launchable identity + bundle) | — | closest analogue: `agent` |
 | `AgenticProcess` (one run) | session | session |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | transcript | — |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` / `OpencodeSession` / `DeepagentsSession` | transcript | — |
 | `Skill` (`SKILL.md`) | skill | skill |
 | `Mcp` + `McpServer` + `Command` | **tool** | **tool** |
 | `DynamicWorkflow` + `WorkflowRun` | workflow (script) | — |
@@ -64,8 +94,8 @@ configured in a vendor's own files (`~/.claude.json`, `.codex/config.toml`, `~/.
 …); it records a *definition site* we cannot write, which is why its id stays path-derived. Discovery
 reads `MCP_SERVER`; attaching writes `MCP`.
 
-**We have nine `*SESSION` types** where the ecosystem has one: `claude_session`,
-`codex_session`, `copilot_session`, `skillit_session`, `remote_worker_session`,
+**We have eleven `*SESSION` types** where the ecosystem has one: `claude_session`,
+`codex_session`, `copilot_session`, `opencode_session`, `deepagents_session`, `skillit_session`, `remote_worker_session`,
 `active_session`, `active_sessions`, `session_analysis`, `session_classification`. Ours are
 provider *transcripts*; the thing that actually runs is `AgenticProcess`.
 
@@ -77,11 +107,17 @@ Keep these apart when naming anything new:
 |---|---|
 | `DynamicWorkflow` (`.claude/workflows/*.js`) | `GraphWorkflow` (`agentic-assets/graph_workflow/`) |
 | `WorkflowRun` (`wf_<runId>.json`, read-only) | `GraphWorkflowRun` |
-| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess` |
+| `ClaudeSession` / `CodexSession` / `CopilotSession` | `AgenticProcess`; `OpencodeSession` / `DeepagentsSession` (FlowPad's own transcript of a store-backed worker, snapshotted when shared) |
 | `SubAgent` (`.claude/agents/`), `Skill`, `Command`, `ClaudeMd` | `Agent` (`agentic-assets/agent/`), `Project`, `Task`, `Spec`, `Journey`, `Deck` |
 
 A provider mirror is read-only-ish and its format is not ours to change. A native asset is
 a `AssetClass.REPO` folder under `agentic-assets/<family>/`.
+
+**Chart** (`flow_sdk/builtin/chart.py`, `agentic-assets/chart/<name>/`) is ours: ONE visual
+asset whose `format` (`sequence` / `excalidraw` / `mermaid`) says which source file it keeps
+(`chart.json` / `board.json` / the ```mermaid``` block of `CHART.md`). It replaced the
+WHITEBOARD entity (a whiteboard is an excalidraw chart; migrated in 0.2.215). Not a
+data-viz chart over a dataset, and not the `graph-view`.
 
 ## Contexts — three different things
 
@@ -140,14 +176,15 @@ mechanism: [`ontology.md`](ontology.md).
   schemas, instances are values. (`data_schema.json` is itself a value — of the kind
   `data_schema`, whose schema is `DataSchemaDocSpec`.)
 
-## row · example · record · item (2026-10-11)
+## row · record · item (2026-10-11, one word since 2026-10-15)
 
-Four words were used for neighbours. Say which:
+Three words were used for neighbours. Say which:
 
-- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. THE
-  public word (`rows`, `put-row`, `delete_rows`, `usedBy`).
-- **example** — the same thing as eval data and on disk (`examples/<key>/`, `ExampleSpec`, `kind:
-  train|eval|test`). Older names keep it (`example()`, `example_id`); new ones say row / `id`.
+- **row** — one value kept in a **dataset**, with a `key`, an `id`, a `ref` and a `version`. The
+  ONE word, in the API (`query`, `put-row`, `delete_rows`, `usedBy`), on disk (`rows/<key>/row.json`),
+  in types (`RowSpec`, `RowKind` `train|eval|test`) and in evals (`RowEval`, `eval.row`,
+  `rows.jsonl`). "Example" is not an identifier anywhere: in prose, the eval set is the rows
+  whose kind is `eval`.
 - **record** — an entity the instance keeps and indexes (a task, a session, a source item):
   found with record search, never a dataset row. (`subkind: record` in a data schema is a third,
   unrelated use: "a schema with fields".)
@@ -161,7 +198,8 @@ Four words were used for neighbours. Say which:
 - **`GraphWorkflow` always carries the full prefix.** Bare `Graph*` collides with
   `GRAPH_CONTEXT`, `ui/src/components/graph-view/`, the entity graph, and the hub org
   graph. Bare `Workflow*` collides with the two Claude Code mirrors.
-- **`Flow` is still ambiguous** and should not be used for anything new. It survives in
+- **`FlowCall` is the explicit compound for the call-and-result mechanism above.**
+  Bare **`Flow` is still ambiguous** and should not be used for anything new. It survives in
   `FlowMessage` (a chat message), `FlowEvent` (the bus envelope), `FlowFile`,
   `flow_sdk/core/flow/`, and `ui/src/pages/flow-page/` — all unrelated to workflows.
   Renaming `AgenticFlow` removed most of the *workflow* sense, but one spelling is
@@ -174,6 +212,12 @@ Four words were used for neighbours. Say which:
   capsule on a failing test pointing at its rules doc (`breadcrumb.test.*`),
   written by the `tagit` skill and read by `tag-context`. It is not a trace tag
   and never belongs in the toplog catalog.
+- **icon pack** — a namespace of icons (`IconPackSpec`): its `kind` is the tag's parent
+  segment, so `acme-vendors.sonos` is the `sonos` icon of the `acme-vendors` pack. Built-in
+  packs ship under `flow_sdk/server/icons/`; an **icon pack asset** (`icon_pack` type,
+  `<scope>/agentic-assets/icon_pack/<name>/icon_pack.json` + SVGs) is the same thing authored in
+  any scope, registered when indexed and served at `/icon-packs/<kind>/`. Ours, not a provider
+  mirror. Two packs with one `kind` is an error, never a precedence.
 - **`harness` and `worker` are two names for one axis.** `HarnessType`
   (`assets/placement.py`) picks the dot-directory; `WorkerType` is the runtime driver.
   They're deliberately distinct and bridged by the `VENDORS` table (`Vendor.harness`), but the
@@ -355,7 +399,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 | Hub merge deny-set | `_hub_reflect._merge_skip_fields(entity)`; `wiki_cache._cache_payload` | Derived from the `Sharing` declarations (`fields_not_accepted_from_hub()` + hub wire aliases from `APIField(hub_name=…)`; `fields_not_in_bundle()`), not hand lists. The three ALLOW lists (`_FM_FIELDS`, `hub_bridge._LOCAL_FIELDS`, `membership_sync._MIRRORED_FIELDS`) are wire-format subsets and stay declared. |
 
 | `data-integrations` | ours | The `kind: vibe` persona that guides connect → sample → define; mechanics in `connect-data-source` |
-| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes an example row; a gold label is written against the dataset's output shape |
+| `promote` / `annotate` | ours | `Dataset` actions: a `SourceItem` becomes a row; a gold label is written against the dataset's output shape |
 | asset editor | ours | Not a mechanism of its own: a **webapp asset nested inside the asset it edits** (`<asset>/agentic-assets/webapp/<name>/`), marked `kind: application.web.editor`. Discovered by the ordinary repo walker, served by the `static` route indexing gives it, addressed at `/dock/app/micro_app-<id>` — so its breadcrumb reads `Project / <parent> / <name>`. Finding one is a containment query (`useAssetApps`), never a registry. An editor that ships on its own declares `edits` (kinds or type names) and is matched by `flow_sdk/builtin/faas/editors.py`: nested first, then kind, then type. |
 | `data_schema` | ours | A SCHEMA defined by a folder, not code: `agentic-assets/data_schema/<full.kind>/` (`data_schema.json` + `description.md`); the folder name is its kind. Indexing registers it under its project's namespace; nests at any depth; subkind `record` / `dataset` optional (read from the body). Python: `DataSchema` (the row), `DataSchemaDocSpec` (the document). Named `data_spec` until 2026-10-07; a folder still under that name is not read; the asset scan reports it as an issue naming the rename (`TypeInfo.retired_families`). |
 | `micro_app` (family `webapp`) | ours | The DEFINITION of a webapp: a REPO folder asset whose `webapp.json` declares `kind` / `build` / `mounts` (which audience, where) / `services` (APIs it brings along); `asset_ref` is the app folder. It serves nothing: indexing it gives it a `static` route (`<asset_ref>/<build>`, `webapp_id` = this row) on its project's placement's `app` or `admin` proxy, and that route is what a display loads. On the hub, a builtin app's row is the same: its `hub`-provider placement's `app` proxy routes its bundles. |

@@ -21,3 +21,8 @@ You own ONE task someone delegated to you. The task is your whole job and your o
 
 You never message the person, never create tasks for others, and never claim what you have not
 done. The task-management skill explains the ledger in full.
+
+
+## FlowCall blocks
+
+For processing calls or their results, follow the [FlowCall guide](../../docs/Getting%20Started/FlowCall.md). A block is a ComputeOp; its outcome and validated value travel in ReturnedValue. Distinguish admission, completion, skips and missing output before reporting success or starting dependent work.

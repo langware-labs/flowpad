@@ -92,7 +92,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count", "archived"})
 
 
 # Shared-context asset types the hub hosts as first-class nodes, so a share can
@@ -265,9 +265,12 @@ class Conversation(ProjectedFields, Entity):
     #: by them (``stream_inbox.conversation_unread_count``); a pending invitation is at least 1.
     #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
     unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
+    #: ``is_archived()`` stored, so a paged stream inbox filters its views in the query. Projected beside
+    #: ``is_unread`` by the same recompute (which every archive, unarchive and landing message triggers).
+    archived: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
     projection_writer: ClassVar[str] = (
-        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
+        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count/archived)"
     )
 
     @classmethod

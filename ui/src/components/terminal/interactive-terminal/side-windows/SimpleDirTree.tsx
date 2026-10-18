@@ -22,7 +22,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { fileShareSource } from '@src/hooks/share-sources';
+import { useFileShareSource } from '@src/hooks/use-file-share-source';
 import { useFS } from '@src/hooks/useFS';
 
 interface SimpleDirTreeProps {
@@ -194,10 +194,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const [filterQuery, setFilterQuery] = useState('');
   // Absolute node path of the file being shared; non-null opens the dialog.
   const [sharePath, setSharePath] = useState<string | null>(null);
-  const shareSource = useMemo(
-    () => (sharePath ? fileShareSource({ computeNodeTypeId, absPath: sharePath }) : null),
-    [computeNodeTypeId, sharePath],
-  );
+  const shareSource = useFileShareSource(computeNodeTypeId, sharePath);
 
   // Reset filter when navigating between directories — a query that fit the
   // old listing rarely fits the next one, and a stale filter that hides

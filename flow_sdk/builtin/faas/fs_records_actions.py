@@ -1967,7 +1967,7 @@ class FsRecordsActionsMixin:
 
     async def _index_system_assets(self) -> None:
         """Startup pass: index the SDK-shipped Flowpad Assistant system project
-        (docs/markdown, skills, agents, whiteboards) at the **live install
+        (docs/markdown, skills, agents, charts) at the **live install
         location**, emitting progress to the footer like any index.
 
         Hash-gated, so it's near-instant after the first run; combined with

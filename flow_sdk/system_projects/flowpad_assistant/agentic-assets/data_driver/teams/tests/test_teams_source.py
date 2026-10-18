@@ -207,6 +207,34 @@ async def test_messages_already_seen_are_not_ingested_again(serve):
     assert result.cursor == TeamsSource.resume_after("2026-09-01T11:00:00Z")
 
 
+def _open_source() -> TeamsSource:
+    return TeamsSource(SourceBinding(config={"channel": CONTAINER}, credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("t"))))
+
+
+async def test_a_backward_read_lists_only_older_newest_first_trimmed(serve):
+    from datetime import datetime, timezone
+
+    late = _message("300", "late", created="2026-09-01T13:00:00Z")
+    late["replies"] = [dict(_message("301", "old reply", created="2026-09-01T09:30:00Z"), replyToId="300")]
+    first = {"value": [late, _message("200", "mid", created="2026-09-01T11:00:00Z")]}
+    second = {"value": [_message("100", "early", created="2026-09-01T10:00:00Z"), _message("50", "earliest", created="2026-09-01T08:00:00Z")]}
+    graph = serve([(200, first), (200, second)])
+    first["@odata.nextLink"] = f"{teams_source.GRAPH_API_BASE}/next"
+    async with _open_source() as source:
+        page = await source.fetch(None, page_size=3, narrow={"before": datetime(2026, 9, 1, 12, tzinfo=timezone.utc)})
+    assert [i.data.text for i in page.items] == ["mid", "early", "old reply"]
+    assert page.next_cursor is None and page.resume_cursor is None
+    assert len(graph.requests) == 2
+
+
+async def test_a_forward_read_is_unchanged_by_backward_support(serve):
+    serve([(200, {"value": [_message("200", "later", created="2026-09-01T12:00:00Z"), _message("100", "earlier", created="2026-09-01T10:00:00Z")]})])
+    async with _open_source() as source:
+        page = await source.fetch(None)
+    assert {i.data.text for i in page.items} == {"later", "earlier"}
+    assert page.resume_cursor == TeamsSource.resume_after("2026-09-01T12:00:00Z")
+
+
 async def test_system_events_are_not_messages_but_move_the_cursor(serve):
     event = _message("100", "", created="2026-09-01T10:00:00Z", messageType="systemEventMessage")
     event["from"] = None

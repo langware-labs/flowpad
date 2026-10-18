@@ -2349,6 +2349,72 @@ async def stream_inbox_search() -> ApiResponse:
         return ApiFailResponse(message=f"Search failed: {str(e)}")
 
 
+async def load_older(*, before: datetime, page_size: int, agent_id: Optional[str] = None, source_id: Optional[str] = None) -> dict:
+    """Ask a stream inbox's sources for their page of messages older than ``before`` — the step a paged
+    list takes past its oldest held row. ``source_id`` asks that one source; ``agent_id`` the Agent's
+    (its resolved scope); else the local user's. Only a source that reads backwards is asked.
+    ``exhausted``: no source has anything older to give."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus  # noqa: PLC0415
+    from flow_sdk.ingest.sync import read_older  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import default_owner, owner_of  # noqa: PLC0415
+
+    if source_id:
+        rows = [row for row in [await DataSource.get_by_id(source_id)] if row is not None]
+    elif scope := await _optional_agent_stream_inbox_scope(agent_id):
+        rows = [row for sid in sorted(scope.source_ids) if (row := await DataSource.get_by_id(sid)) is not None]
+    else:
+        mine = str(await default_owner() or "")
+        rows = [
+            row for row in await DataSource.get_all({"status": SourceStatus.ACTIVE.value}) or []
+            if str(await owner_of(row) or "") == mine
+        ]
+    backward = {}
+    for provider in {row.provider for row in rows}:
+        driver = await DataDriver.find(provider)
+        backward[provider] = driver is not None and driver.cls.pages_backward
+    sources = [row for row in rows if backward[row.provider]]
+    answers = await asyncio.gather(*(read_older(row, before, page_size) for row in sources), return_exceptions=True)
+    fetched, exhausted = 0, True
+    for row, answer in zip(sources, answers):
+        if isinstance(answer, BaseException):
+            # A source that failed may still hold older messages: never report the list as exhausted for it.
+            logger.warning("[stream-inbox] load-older %s failed: %s", row.id, answer)
+            exhausted = False
+            continue
+        fetched += answer[0]
+        exhausted = exhausted and answer[1]
+    if fetched:
+        stream_inbox.touch("stream-inbox-load-older")
+    return {"fetched": fetched, "exhausted": exhausted}
+
+
+@action.post(action_name="stream-inbox-load-older", types=None)
+async def stream_inbox_load_older() -> ApiResponse:
+    """One page older than ``before`` from the stream inbox's sources. Body: ``{"before": "<iso>",
+    "agent_id"?: "<id>", "source_id"?: "<id>", "page_size"?: n}`` → ``{"fetched": n, "exhausted": bool}``."""
+    from flow_sdk.sources.values.page import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE  # noqa: PLC0415
+
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        before = iso_to_utc(body.get("before")) if body.get("before") else None
+        if before is None:
+            return ApiFailResponse(message="'before' (an ISO time) is required", status_code=400)
+        page_size = min(max(int(body.get("page_size") or DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE)
+        return ApiSuccessResponse(data=await load_older(
+            before=before, page_size=page_size, agent_id=body.get("agent_id") or None,
+            source_id=body.get("source_id") or None,
+        ))
+    except AgentStreamInboxScopeError as e:
+        return ApiFailResponse(message=str(e), status_code=e.status_code)
+    except Exception as e:
+        logger.error("[flow_message_action] stream-inbox-load-older error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Load older failed: {str(e)}")
+
+
 @action.post(action_name="stream-inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
 async def stream_inbox_update() -> ApiResponse:
     """Update is_read / is_archived on a single FlowMessage."""

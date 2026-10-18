@@ -2,13 +2,13 @@
   "schema_version": 1,
   "typeid": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
   "parent_ref": "",
-  "vault_root": "docs",
+  "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "126f934ff28653c32bdcab0a73565fc817ccba59d9a56533ec5526eb864460f2",
+  "inputs_hash": "260ac5c40061271ac69e896f6e82e5cc5e13c02ca306e7db4ff167fba8f88c06",
   "template_version": 1,
   "prompt_version": 1,
-  "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
+  "self_summary": "Flowpad architecture and terminology, including the FlowCall call-and-result contract, agents, data management, collaboration, navigation, deployment, runnable SDK examples, and proven debugging findings.",
   "files": [
     {
       "name": "CLAUDE.md",
@@ -22,9 +22,9 @@
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess Architecture",
-      "summary": "Architecture of the AgenticProcess entity representing an agent run, including its transport and visibility axes, worker CLI configuration, session history and terminal runtime.",
-      "content_hash": "a5b0f646dc92c99087779a99d746dc3013f461389c622a262a17a7814b98a86e",
-      "size_bytes": 20261
+      "summary": "AgenticProcess architecture across headless and PTY modes: durable identity, worker drivers, status, reconnect, replay, actions, and frontend integration.",
+      "content_hash": "4f7fb2135daf06587e05d8740ba506b79e366ebeb94f323540a35e0a4e0abc0b",
+      "size_bytes": 20432
     },
     {
       "name": "agentic_process_outputs.md",
@@ -38,8 +38,8 @@
       "name": "agents-management.md",
       "rel_path": "agents-management.md",
       "title": "Agent Management",
-      "summary": "Top-level index of agent management: the Agent, Deployment and AgenticProcess model, agent.json authoring bundle, intro and auto-launch keys, PTY versus CLI modes, linked subject docs.",
-      "content_hash": "50b68b52f867d4dd662f7181816f2c63d31b525b3811ec93377497e6fd273a42",
+      "summary": "Agent management overview separating Agent definitions, Deployment placement, and AgenticProcess runs, with authoring bundles and focused interface references.",
+      "content_hash": "479a3c20f662aedfb3ee30188fdc5e06ea192f809d6cfc383d959f0b1a4b92fa",
       "size_bytes": 10736
     },
     {
@@ -102,9 +102,9 @@
       "name": "data-management.md",
       "rel_path": "data-management.md",
       "title": "Data Management",
-      "summary": "Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite database entities as queryable indexes, linking to detailed subsystem documents.",
-      "content_hash": "730ef3960bbf3727abb768b30469c90b5ebb878fd28ea2deb61fc4f4a778e64a",
-      "size_bytes": 38190
+      "summary": "Overview of the two-layer data model, filesystem FSRecords as source of truth plus SQLite entities as queryable indexes, linking detailed subsystem documents.",
+      "content_hash": "49b52c5932830829808e3bf4eeb4050d1090af6ccafea45c3a501814e037d492",
+      "size_bytes": 38178
     },
     {
       "name": "debugMCP-setup.md",
@@ -126,9 +126,9 @@
       "name": "desktop-install-test-scenarios.md",
       "rel_path": "desktop-install-test-scenarios.md",
       "title": "Desktop install — test scenarios",
-      "summary": "Manual and scripted desktop install test scenarios for the Python pin, in-app Retry panel and clean-room release gate",
-      "content_hash": "67fa59fc9b823bd6d34f9552f267b2cf68d0f54cb0bc107be4edfa9447bcb301",
-      "size_bytes": 13776
+      "summary": "Desktop installation test scenarios for Python version selection, retryable startup failures, clean-room release validation, and upgrade regressions.",
+      "content_hash": "ca49b3d51bc77e0ea74c2acff69919f106b7ba1a923ba6d07c50b2cc4455c7d7",
+      "size_bytes": 13757
     },
     {
       "name": "dev_setup.md",
@@ -143,8 +143,8 @@
       "rel_path": "display-capabilities.md",
       "title": "Global Display Capabilities — Survey & Open Questions",
       "summary": "Survey of how Flowpad displays files, entities, webapps, artifacts and foreign HTML through dock pointers and flow show targets, with trust tiers, gaps, open questions.",
-      "content_hash": "f50a0ee5bdd701cdf4246962a67b30357820c39dad98f8a084b9e9656b5a6b3e",
-      "size_bytes": 23643
+      "content_hash": "16c915cdb3a8c5f1d31f2d539e49ea7c7c0beafdc11981794a9a36cbfe03c582",
+      "size_bytes": 23791
     },
     {
       "name": "doc.md",
@@ -158,9 +158,9 @@
       "name": "electron-structure.md",
       "rel_path": "electron-structure.md",
       "title": "The `electron/` directory — structure, flows, and next steps",
-      "summary": "Structure of the electron/ desktop shell: UvManager installing the PyPI engine, main-process modules, startup, update and recovery flows, watchdog limits, and unimplemented next steps.",
-      "content_hash": "f7bd5986b924418859def21b7c21b2953d8a4fc4c1d9339025ddf19ce6ed8b7f",
-      "size_bytes": 15626
+      "summary": "Electron shell layout, independent engine updates, startup and upgrade flows, state files, logs, IPC channels, and remaining implementation work.",
+      "content_hash": "8f79deab2e872e76c5d241d7c8c472e2c77607a948087ac4fa85014d4453a799",
+      "size_bytes": 16080
     },
     {
       "name": "electron.md",
@@ -190,9 +190,17 @@
       "name": "flow-events.md",
       "rel_path": "flow-events.md",
       "title": "FlowEvents — the unified event bus (delivery worklog)",
-      "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope and laws, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset.rows.changed tags.",
-      "content_hash": "f87c1aba4e1dd99c93de499791219861c6f0753938655f3599c3eefad5b4506c",
-      "size_bytes": 42785
+      "summary": "Delivery worklog for the unified FlowEvent bus: normative envelope, phase-by-phase status with dated logs, plus app.ready, app.tab.ready, wizard triggers and dataset change tags.",
+      "content_hash": "9031bef30832a1de90b5486326fa3334707db1e434c2dbcd415ee21cae7f040b",
+      "size_bytes": 42773
+    },
+    {
+      "name": "flowcall-guidance-audit.md",
+      "rel_path": "flowcall-guidance-audit.md",
+      "title": "FlowCall guidance audit",
+      "summary": "FlowCall guidance coverage across canonical docs, prompts, skills, agents, instruction mirrors, GTM migration and external repository boundaries, with verification evidence.",
+      "content_hash": "6431a4bffe006c95f0ed1ec02812b24024a12f844291d0db8c46a3fdf7472f12",
+      "size_bytes": 52450
     },
     {
       "name": "frontend-debug-cheatsheet.md",
@@ -222,9 +230,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Glossary cross-walking Flowpad nouns to Claude Code and OpenClaw terms, separating provider mirrors from native entities, with naming rules for agents, sources, endpoints, credentials, setup.",
-      "content_hash": "e8455c9c7d16b8fce95ea13fe2354d82a571c206187014fc84f439528050b4af",
-      "size_bytes": 64921
+      "summary": "Crosswalk of Flowpad, Claude Code and OpenClaw terminology: FlowCall, kind/schema/value, row/record/item, workspaces, runtime entities, assets, agent roles and naming rules.",
+      "content_hash": "2d3d3da575e548a0ffb5e90055314b17123fa90debc47a756fc173acbcf53253",
+      "size_bytes": 69403
     },
     {
       "name": "icons.md",
@@ -255,16 +263,16 @@
       "rel_path": "llm_wiki.md",
       "title": "Wiki namespaces and link graph — flowpad-oss",
       "summary": "Wiki namespaces and the link graph: wiki-link syntax, edge extraction on sync, page resolution, the edge store schema, cleanup paths, and API surface.",
-      "content_hash": "0f9b815b1f04922a010806f03bd46cdcb14387e5c386f7f62687e6555f175550",
-      "size_bytes": 17605
+      "content_hash": "c28f45a60ae2e4c1061312d935f419ee8f49294af700567e6e2f0ed080d9f8d7",
+      "size_bytes": 17600
     },
     {
       "name": "local_patch.md",
       "rel_path": "local_patch.md",
       "title": "Local Patch Runbook",
-      "summary": "Runbook for running your local checkout on the installed flowpad: the one supported stamped +local deployment, and why site-packages overlays broke.",
-      "content_hash": "6910c2546cf71339fd3b02a74f7e922dac6837f93cba7743bab38d8e7e44b94d",
-      "size_bytes": 29357
+      "summary": "Local deployment runbook for stamped SDK wheels and Electron patches, including verification, rollback, versioning, and macOS pitfalls.",
+      "content_hash": "c15c59a607493d0930843bb58129b9620182662bacf43e9ef3679749569af253",
+      "size_bytes": 29334
     },
     {
       "name": "mcp-ui.md",
@@ -278,9 +286,9 @@
       "name": "ontology.md",
       "rel_path": "ontology.md",
       "title": "Ontology — type, subkind, kind",
-      "summary": "Ontology of type, subkind and kind: closed entity types, per-type variants, open dot-path kinds naming schemas, plus namespaces, how kinds are minted and loaded.",
-      "content_hash": "3cbdfcf9cb2cace021ea18b92c71e474eee174f18f4963b562056be9c74f55dc",
-      "size_bytes": 16065
+      "summary": "Flowpad architectural ontology: entities, assets, schema discovery, typed values, FlowCall blocks, runtimes, ownership boundaries, graph relationships, and implementation placement.",
+      "content_hash": "15e0a7204736f176cf6ae1437d6edf9424034e4c9d4ac299cf3326dff8a77dd4",
+      "size_bytes": 16458
     },
     {
       "name": "playwright-usage.md",
@@ -302,9 +310,9 @@
       "name": "prompt_queue.md",
       "rel_path": "prompt_queue.md",
       "title": "Prompt Queue",
-      "summary": "The prompt queue: on-disk format, components, launch and follow-up drain flows, UI reflection, the readiness decision, entry lifecycle, and concurrency.",
-      "content_hash": "476650aae87a1bee922f4dcad6536e57d966e83995bfe7d1876f9af657e1f3f8",
-      "size_bytes": 10430
+      "summary": "Backend-owned prompt FIFO: persistence, action-based mutation, readiness gates, draining, queue lifecycle, concurrency, testing, and debugging.",
+      "content_hash": "e22cacd3ffebd86863e98bfc51d88698fe7097894a2e64ad27cce7d6a2f6149f",
+      "size_bytes": 10907
     },
     {
       "name": "pty-scroll.md",
@@ -335,8 +343,8 @@
       "rel_path": "renderable-fences.md",
       "title": "Renderable code fences",
       "summary": "How a code fence opts into being drawn: the render-only NodeView over Milkdown code blocks, the renderer registry, and why markdown stays byte-identical.",
-      "content_hash": "6f79e0c5dc36b56913a535e14b3a0acdd37897cd31fabdf2b9414abbda369fa7",
-      "size_bytes": 10690
+      "content_hash": "21b88a59e684abab4d104e477f11cf46c37b29ed901bf0d2764222a728537db1",
+      "size_bytes": 10685
     },
     {
       "name": "secret_share.md",
@@ -383,8 +391,8 @@
       "rel_path": "tab-management.md",
       "title": "Tab Management",
       "summary": "Tab entity as the one membership system for content and terminal tabs: pointer-hash ids, host tabs, SDK TabManager, client lifecycle states, and historical design record.",
-      "content_hash": "854aeee428a55ed6dc4e7d2da48534e832c2c6f8957a1b359665c3a1af0a209f",
-      "size_bytes": 70439
+      "content_hash": "8490185eca63667c118d39422cbd26712d20096c23efabf82d09ba13e352c5bb",
+      "size_bytes": 70424
     },
     {
       "name": "tags.md",
@@ -446,9 +454,9 @@
       "name": "viewmodes.md",
       "rel_path": "viewmodes.md",
       "title": "View Modes — Vibe / Standard / Advanced / Dev \"skin\" system",
-      "summary": "Vibe/Standard/Advanced/Dev view-mode system, now per session tab: the skin-layer rule, session transport exception, AdvancedOnly/DevOnly/ViewSwap toolkit, and testing recipe.",
-      "content_hash": "3b6a6c41aa07274b8ff651c19da30c6cb9e20fa65c1adbfad9268438998c8df1",
-      "size_bytes": 17327
+      "summary": "ViewMode skins, shared terminal and chat rendering, transport-switch exceptions, readiness guards, toolkit slots, context, and common integration mistakes.",
+      "content_hash": "d1fed45ce7d8b942d5d9f80527e8860a7340d09537e3360c5b4b01b928947163",
+      "size_bytes": 18209
     },
     {
       "name": "wikitip.md",
@@ -478,117 +486,117 @@
   "subfolders": [
     {
       "name": "agent",
-      "rel_path": "agent",
-      "self_summary": "The agent layer up close: the AgenticProcess four-axis status model and its interface card (fields, actions, TypeScript surface), the one composer that layers a worker's system prompt, and Chief of Staff agents that answer fast and hand longer work to SubAgent staff through the task ledger.",
+      "rel_path": "agent/index.md",
+      "self_summary": "The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.",
       "child_typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
-      "child_inputs_hash": "eaac3c54e7c1e3330bb372a97c6042ecb4044320f85e6234a88b56e0d3b412df"
+      "child_inputs_hash": "90cc507a9cd10900845495e75df34aa84462873c127302b738f4386520801b57"
     },
     {
       "name": "agent-management",
-      "rel_path": "agent-management",
+      "rel_path": "agent-management/index.md",
       "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
       "child_typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
-      "child_inputs_hash": "6c210cb3880b199d0942f83b21395d168ba8360ba1ec3c0f7715f51351723a21"
+      "child_inputs_hash": "822589af883834226ebcadbf518e7c84ae6c774c9b69bd4e312ceaa5c2daa735"
     },
     {
       "name": "breadcrumbs",
-      "rel_path": "breadcrumbs",
+      "rel_path": "breadcrumbs/index.md",
       "self_summary": "Proven root causes, one per page: a rule established by debugging, why the obvious reading was wrong, and the lever that shows it. Read the one matching your symptom before re-deriving it — personas, composer readiness, live frames, port picking, login state.",
       "child_typeid": "markdown_index-bd7ef5f5-cf38-55ee-b3c9-b1549c57f267",
-      "child_inputs_hash": "84923e1358e8f7dbff2c41356579779f29ea17f49cda29dfbf001df7a85dee36"
+      "child_inputs_hash": "b68b48e13aa101fdc26a981fa855f513bc1cf7c67962da2c840ddcb5423c120a"
     },
     {
       "name": "collab",
-      "rel_path": "collab",
+      "rel_path": "collab/index.md",
       "self_summary": "",
       "child_typeid": "markdown_index-ae7e9b29-8b0e-510b-91bf-6ce537d39c35",
       "child_inputs_hash": ""
     },
     {
       "name": "data-management",
-      "rel_path": "data-management",
+      "rel_path": "data-management/index.md",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "3039734354d3649fbc6b8d8f666d1dacd156a36cc4cc0d3d405d8b47441b6b31"
+      "child_inputs_hash": "87ef1d6232b1bdb930f0d695cc1fbc0220462c2c359c65eeeb61f6313bf69ed5"
     },
     {
       "name": "flows",
-      "rel_path": "flows",
+      "rel_path": "flows/index.md",
       "self_summary": "Cross-subsystem flows — the path a feature actually takes end to end across several entities and skills, as opposed to the per-entity API references in interface/. Currently covers the trace-analysis and skill-improvement cycle.",
       "child_typeid": "markdown_index-6d64a9cf-5d30-586e-9d52-b1ada8bebd41",
       "child_inputs_hash": "a160371f3bc51454e28f73e7523133ba0465b91f02c9288b24c26905e2c5d2fa"
     },
     {
       "name": "historical",
-      "rel_path": "historical",
+      "rel_path": "historical/index.md",
       "self_summary": "Retired design documents, kept for provenance rather than guidance. The stack and loaders they describe have since moved; read them to understand how a decision was reached, not how the system works now.",
       "child_typeid": "markdown_index-dd704676-0ed2-54f5-b428-c5a87a43ce40",
       "child_inputs_hash": "1ac8099865a56ed141d21850141709b9b03ecc552d257e15355a3bebbab968f9"
     },
     {
       "name": "interface",
-      "rel_path": "interface",
+      "rel_path": "interface/index.md",
       "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
       "child_typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
-      "child_inputs_hash": "5e5890ee98d330bb56de2d02aa323db34079406bf4d03f2ae6023730c614ac5c"
+      "child_inputs_hash": "148df96da87fd48e3398513decc845796183e0d8350a721ffef2697d4af6b64f"
     },
     {
       "name": "mockups",
-      "rel_path": "mockups",
+      "rel_path": "mockups/index.md",
       "self_summary": "Interface mockups. Empty for now.",
       "child_typeid": "markdown_index-5b9f0a97-5a77-5c30-908d-c988dddc394f",
       "child_inputs_hash": "37ccad137bb783214c9e2d92540a123aa77a8c55ae5e95653ee87a095da7e7ee"
     },
     {
       "name": "modes",
-      "rel_path": "modes",
+      "rel_path": "modes/index.md",
       "self_summary": "The workspace modes. Vibe is the creator-first one: a side chat beside a live display, with the rules that keep the display authoritative.",
       "child_typeid": "markdown_index-816a84f6-dd60-5ab1-9afc-dd620668e009",
       "child_inputs_hash": "54512e8d5301db3dacffd605aef6838beb4fc6ec1e8870136eda9993967e021e"
     },
     {
       "name": "navigation",
-      "rel_path": "navigation",
+      "rel_path": "navigation/index.md",
       "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
       "child_typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
-      "child_inputs_hash": "1723a9d033623b559b0456fbc24db7541c5ba64869dd2b3c5f1e01c1b070df25"
+      "child_inputs_hash": "3110f20bb8fefc700e51f00bdd666800f9ede8d0f1caa1689f38c4678a88c276"
     },
     {
       "name": "primitives",
-      "rel_path": "primitives",
+      "rel_path": "primitives/index.md",
       "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
       "child_typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
-      "child_inputs_hash": "ccca09d768b25ba5170403aeff3d17c3f0cedeb8b198fe426c2cb2bdd2bd2751"
+      "child_inputs_hash": "55a147cd9bf659e9d4447b9735c1f8c8b1c22516d488f8e0aed1c2dfbadc3625"
     },
     {
       "name": "reports",
-      "rel_path": "reports",
+      "rel_path": "reports/index.md",
       "self_summary": "Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.",
       "child_typeid": "markdown_index-9c3569a1-3e91-5616-8025-d0b68c0a610d",
       "child_inputs_hash": "b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2"
     },
     {
       "name": "sdk-site",
-      "rel_path": "sdk-site",
-      "self_summary": "The public Flow SDK guide: DataSpec schemas and values, AgenticProcess, and an executable workflow of agents answering channel messages, built into the SDK site.",
+      "rel_path": "sdk-site/index.md",
+      "self_summary": "The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.",
       "child_typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
-      "child_inputs_hash": "faea95917418034c0315bac7b5ddb65aee4c88b5a0b290bd21fecdc090116e22"
+      "child_inputs_hash": "8df85aade3216e270726fc41b14192cbc24acb4fbb13e1db17660c5e22ff2e47"
     },
     {
       "name": "snippets",
-      "rel_path": "snippets",
-      "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email, chat and help-desk channels, channel webhook routing, message threads, stream inbox automations, LLM endpoints, processes, workflows, compute ops, wizards, decisions, RAG, project and asset dependencies and the one call-return contract.",
+      "rel_path": "snippets/index.md",
+      "self_summary": "Runnable SDK recipes for typed data, FlowCall invocation and composition, agent processes and deployments, messaging channels, sources and durable consumers, datasets, credentials, decisions, indexing, and project dependencies. Examples link to their verification tests and distinguish local contracts from live-provider behavior.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "80da085fe199ec13481937145fef23bac833aa71f3a36ebebad58c9e5669d2e2"
+      "child_inputs_hash": "40befe51e1c1d30083e80a517df6a809554d80e06e8210563a1021c6a56e8591"
     },
     {
       "name": "tabs",
-      "rel_path": "tabs",
+      "rel_path": "tabs/index.md",
       "self_summary": "The Display pane as an address: how `flow show` navigates a URL-owned target and why the display stack belongs to the router rather than to component state.",
       "child_typeid": "markdown_index-7c234c43-b48e-5e33-99b2-84e907274387",
       "child_inputs_hash": "6e40d1287746f8513502ef604206fe7d8a55168b2c3196f4361c4b402b64303f"
     }
   ],
-  "generated_at": "2026-10-13T12:04:14Z",
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
   "latest_process_ref": ""
 }

@@ -281,3 +281,46 @@ class TestGetAllSkipsUnreadableRows:
         warnings = [r for r in caplog.records if "unreadable" in r.getMessage()]
         assert len(warnings) == 1
         assert "skipped 25 unreadable row(s)" in warnings[0].getMessage()
+
+
+class TestProjectScopeMatchesProjectId:
+    """A project's scope covers rows stamped with its ``project_id``.
+
+    Indexed assets (charts, docs, …) carry ``project_id`` but no role edge, so
+    ``GET /api/v1/graph/project/<id>/chart`` used to answer ``[]``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_project_source_lists_rows_with_its_project_id(self, driver):
+        import uuid
+
+        from flow_sdk.fs_store.type_id import TypeId
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        project_id, other_id = str(uuid.uuid4()), str(uuid.uuid4())
+        mine = AgenticProcess(session_id="mine", project_id=project_id)
+        theirs = AgenticProcess(session_id="theirs", project_id=other_id)
+        await driver.save(mine)
+        await driver.save(theirs)
+
+        rows = await driver.get_all(
+            QueryFilter(type=AgenticProcess.get_type()),
+            source_entity=TypeId(type="project", id=project_id),
+        )
+        assert [r.session_id for r in rows] == ["mine"]
+
+    @pytest.mark.asyncio
+    async def test_non_project_source_ignores_project_id(self, driver):
+        import uuid
+
+        from flow_sdk.fs_store.type_id import TypeId
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        shared_id = str(uuid.uuid4())
+        await driver.save(AgenticProcess(session_id="x", project_id=shared_id))
+
+        rows = await driver.get_all(
+            QueryFilter(type=AgenticProcess.get_type()),
+            source_entity=TypeId(type="group", id=shared_id),
+        )
+        assert rows == []

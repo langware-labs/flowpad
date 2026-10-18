@@ -86,7 +86,8 @@ def hub(monkeypatch):
 
 @pytest.mark.parametrize("check", checks_for(HelpdeskSource), ids=str)
 async def test_conformance(check):
-    fake = _Hub(pool=POOL, messages=[{**MSG, "id": f"m{n}", "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)])
+    fake = _Hub(pool=POOL, messages=[{**MSG, "id": f"m{n}", "created_date": f"2026-09-06T10:0{n}:00+00:00",
+                                      "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)])
     binding = SourceBinding(config={"desk_project_id": DESK})
     probe = HelpdeskSource(binding, hub=fake)
     await check.run(Subject(
@@ -298,3 +299,35 @@ class TestChoices:
         offered = await DataDriver.loaded("helpdesk").choices(_row(), "desk_project_id")
         assert offered and isinstance(offered[0], Choice) and offered[0].id == DESK
         assert await DataDriver.loaded("helpdesk").choices(_row(), "other") == []
+
+
+class TestReadingBackwards:
+    """``narrow={"before": t}``: one page of what was sent strictly before ``t``, newest first, trimmed,
+    with the desk cursor untouched."""
+
+    @staticmethod
+    def _desk():
+        mine = [{**MSG, "id": f"m{n}", "created_date": f"2026-09-06T10:0{n}:00+00:00", "updated_date": f"2026-09-06T10:0{n}:00+00:00"} for n in (1, 2, 3)]
+        return _Desk({TICKET: mine, OTHER: [OTHER_MSG]}, [{**POOL[0], "updated_at": "2026-09-06T10:03:00+00:00"}, OTHER_ROW])
+
+    async def test_only_older_newest_first_and_trimmed(self):
+        from datetime import datetime  # noqa: PLC0415
+
+        bound = datetime.fromisoformat("2026-09-06T10:03:00+00:00")
+        async with HelpdeskSource(SourceBinding(config={"desk_project_id": DESK}), hub=self._desk()) as source:
+            page = await source.fetch(None, page_size=10, narrow={"before": bound})
+            assert [i.origin.key for i in page.items] == ["m2", "m1", OTHER_MSG["id"]]
+            assert page.next_cursor is None and page.resume_cursor is None
+            trimmed = await source.fetch(None, page_size=2, narrow={"before": bound})
+            assert [i.origin.key for i in trimmed.items] == ["m2", "m1"]
+
+    async def test_the_forward_read_is_unchanged(self):
+        from datetime import datetime  # noqa: PLC0415
+
+        desk = self._desk()
+        async with HelpdeskSource(SourceBinding(config={"desk_project_id": DESK}), hub=desk) as source:
+            before = await source.fetch(None)
+            await source.fetch(None, narrow={"before": datetime.fromisoformat("2026-09-06T10:02:00+00:00")})
+            after = await source.fetch(None)
+        assert [i.origin.key for i in before.items] == [i.origin.key for i in after.items]
+        assert before.resume_cursor == after.resume_cursor

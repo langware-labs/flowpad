@@ -70,6 +70,16 @@ const worldRows: Row[] = [
     name: 'project: a markdown asset opened from a terminal link (the 2026-09-27 repro)',
     url: `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md`,
   },
+  {
+    // A chart is a folder-layout asset: the editor URL names the folder, the format picks the view.
+    name: 'project: a chart asset folder',
+    url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/agentic-assets/chart/login-flow`,
+  },
+  {
+    // A chart found under docs/ (a CHART.md folder) opens through the same editor route.
+    name: 'project: a chart asset folder under docs/',
+    url: `/dock/project/${P}/editor/chart/vfs/compute_node-%40local/w/p/docs/network/acme-net`,
+  },
   { name: 'project: the project page', url: `/dock/project/${P}` },
   { name: 'vibe: an agentic process as the Vibe host (aligned to its project)', url: `/dock/vibe/agentic_process-${PROC}` },
   {

@@ -55,6 +55,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: How much of an item body `recent_items` shows; the rest is at `full_record_path`.
+PREVIEW_CHARS = 500
+
 #: The heartbeat ticks once a minute, and every provider floor we care about is
 #: at least that. A source may ask for less frequent polling, never more.
 MIN_POLL_INTERVAL_SECONDS = 60
@@ -1577,7 +1580,9 @@ class DataSource(SetupSkippable, Entity):
     async def items_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/items — this source's records, newest first.
 
-        Body: ``{"limit"?}`` (default 20)."""
+        Body: ``{"limit"?}`` (default 20). Item bodies are ``PREVIEW_CHARS``-character previews;
+        ``body_truncated`` and ``full_body_length`` describe that preview, not storage.
+        GET each item's ``full_record_path`` for its complete stored body."""
         body = await self._body()
         return ApiSuccessResponse(data={"items": await self.recent_items(int(body.get("limit") or 20))})
 
@@ -1591,22 +1596,40 @@ class DataSource(SetupSkippable, Entity):
             limit=max(limit, 0),
         )) or []
         fields = ("id", "external_id", "kind", "name", "thread_key", "author_external_id", "author_display", "occurred_at")
-        return [{**{f: getattr(r, f, None) for f in fields}, "body": str(getattr(r, "body", "") or "")[:500]} for r in rows]
+        items = []
+        for row in rows:
+            body = str(getattr(row, "body", "") or "")
+            items.append({
+                **{field: getattr(row, field, None) for field in fields},
+                "body": body[:PREVIEW_CHARS], "body_truncated": len(body) > PREVIEW_CHARS, "full_body_length": len(body),
+                "full_record_path": f"/api/v1/graph/source_item/{row.id}",
+            })
+        return items
 
     @core_action.post(action_name="sync")
     async def sync_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/sync — one sync cycle NOW, reported. Unlike ``poll_now``
         this waits for the cycle: it is what a person or an agent runs to see a source work. Like
         ``poll_now`` it un-latches ``config_error`` first: someone asking for a sync after fixing a
-        credential means to try again."""
+        credential means to try again.
+
+        A source that is not runnable — waiting on a setup step, or paused by a person — is not fetched: the
+        answer says why (``poll_refusal``, the one author of that sentence) with ``ran: false``. Whatever the
+        family (messages, files, records), a person's Pull answers the same way."""
         await self._make_due()
         await self.save_runtime()
+        if self.status in (SourceStatus.SETUP.value, SourceStatus.DISABLED.value):
+            return ApiSuccessResponse(data={
+                "ran": False, "created": 0, "updated": 0, "unchanged": 0, "removed": 0,
+                "health": self.health, "status": self.status, "error_detail": None, "detail": self.poll_refusal(),
+            })
         report = await self.sync()
         # The cycle writes health through its own row handle; read what it left.
         refreshed = await type(self).get_one({"id": self.id}) or self
         return ApiSuccessResponse(data={
             "created": report.created, "updated": report.updated, "unchanged": report.unchanged, "removed": report.removed,
             "health": refreshed.health, "status": refreshed.status, "error_detail": refreshed.error_detail,
+            "ran": True, "detail": "",
         })
 
     @core_action.post(action_name="set_enabled")

@@ -41,17 +41,21 @@ const specsQuery = new QueryRequest({
 const EMPTY: DataDriver[] = [];
 
 export function useSourceSpecs(options?: { enabled?: boolean }) {
-  const { data: specs = EMPTY } = useEntitiesQuery<DataDriver>(specsQuery, options);
+  const { data: specs = EMPTY, isLoading: loading } = useEntitiesQuery<DataDriver>(specsQuery, options);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
   const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);
   const specFor = useCallback((provider: string) => byName.get(provider), [byName]);
-  return { specs, specFor };
+  return { specs, specFor, loading };
 }
 
 /** A MessageSource's spec: its driver can push a reply back (`IngestDriver.sends`).
  *  The one client-side spelling of `agent_scope.is_message_source`'s driver half. */
 export const isMessageDriverSpec = (spec: DataDriver | undefined | null): boolean => !!spec?.sends;
+
+/** Read-only sources are knowledge dependencies even when their driver also supports sending. */
+export const isKnowledgeSource = (source: Pick<DataSource, 'read_only'>, spec: DataDriver | undefined | null): boolean =>
+  !!source.read_only || !isMessageDriverSpec(spec);
 
 /** A driver whose items are files (the `object` family): its page shows those files. */
 export const isObjectDriverSpec = (spec: DataDriver | undefined | null): boolean => spec?.family === 'object';

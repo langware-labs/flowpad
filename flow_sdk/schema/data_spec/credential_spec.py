@@ -18,6 +18,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.compute_op_spec import CliOp
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialWaySpec, ways
 from flow_sdk.schema.data_spec.credential_contract import (
     CredentialKind,
     CredentialRequirement,
@@ -65,15 +66,22 @@ class CredentialVarSpec(DataSpec):
     account_key: bool = False
     #: Masks the input. Defaults TRUE — the safe direction to be wrong in.
     secret: bool = True
-    #: ``text`` (the value), ``file`` (a file's content, kept as a file; the variable holds its path) or
-    #: ``cli`` (a sign-in a command-line tool holds: no value, ``login`` and ``check`` instead).
+    #: ``text`` (the value), ``file`` (a file's content, kept as a file; the variable holds its path),
+    #: ``cli`` (a sign-in a command-line tool holds: no value, ``login`` and ``check`` instead) or
+    #: ``oauth`` (a grant from ``provider`` covering ``scopes``: no value, the connection holds it).
     kind: CredentialVarKind = CredentialVarKind.TEXT
     #: cli: the command a person runs to sign in, per OS.
     login: Optional[CliOp] = None
     #: cli: the command that exits 0 when the sign-in is there, per OS.
     check: Optional[CliOp] = None
+    #: oauth: the connection provider the grant is from, and the scopes it must cover.
+    provider: str = ""
+    scopes: list[str] = Field(default_factory=list)
     #: Where to get this particular value.
     help_url: str = ""
+    #: ONE_OF: the way this variable belongs to. ONE_OF variables sharing a ``way`` are given together
+    #: (an address and its app password); empty — the variable is a way of its own, named after itself.
+    way: str = ""
 
     @property
     def is_must(self) -> bool:
@@ -88,6 +96,15 @@ class CredentialVarSpec(DataSpec):
         return self.kind is CredentialVarKind.CLI
 
     @property
+    def is_oauth(self) -> bool:
+        return self.kind is CredentialVarKind.OAUTH
+
+    @property
+    def holds_value(self) -> bool:
+        """A store keeps a value for it — not a sign-in (``cli``) or a grant (``oauth``), which live elsewhere."""
+        return not (self.is_cli or self.is_oauth)
+
+    @property
     def login_command(self) -> str:
         """cli: the sign-in command for this machine's OS; empty when there is none."""
         return (self.login.command_for() or "") if self.login is not None else ""
@@ -98,7 +115,20 @@ class CredentialVarSpec(DataSpec):
             raise ValueError("a cli variable declares its login and its check")
         if not self.is_cli and (self.login is not None or self.check is not None):
             raise ValueError("login and check belong to a cli variable (kind: cli)")
+        if self.is_oauth and not self.provider:
+            raise ValueError("an oauth variable names its provider")
+        if not self.is_oauth and (self.provider or self.scopes):
+            raise ValueError("provider and scopes belong to an oauth variable (kind: oauth)")
+        if self.is_oauth and not self.is_one_of:
+            raise ValueError("an oauth variable is one way of a ONE_OF group (required: ONE_OF)")
+        if self.way and not self.is_one_of:
+            raise ValueError("a way belongs to a ONE_OF variable (required: ONE_OF)")
         return self
+
+    @field_validator("provider")
+    @classmethod
+    def _provider_name(cls, value: str) -> str:
+        return str(value or "").strip().lower()
 
 
 class CredentialSpec(DataSpec):
@@ -149,6 +179,9 @@ class CredentialSpec(DataSpec):
     optional_scopes: list[str] = Field(default_factory=list)
     #: The variables, keyed by env var NAME. Required for ``env``; an ``oauth`` credential needs none.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
+    #: ONE_OF: how each way of several variables is offered (its title and one line under it), by way name.
+    #: A way of one variable is offered by that variable's own label and hint.
+    ways: dict[str, CredentialWaySpec] = Field(default_factory=dict)
     #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
     #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
     setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
@@ -209,9 +242,15 @@ class CredentialSpec(DataSpec):
                 raise ValueError("a credential declares at least one variable")
             if self.provider or self.scopes or self.optional_scopes:
                 raise ValueError("provider and scopes belong to an oauth credential (kind: oauth)")
-            if len([v for v in self.vars.values() if v.is_one_of]) == 1:
-                raise ValueError("ONE_OF is a choice: a credential declares at least two ONE_OF variables, or none")
-            if self.lm_provider and any(v.is_one_of or v.is_cli for v in self.vars.values()):
+            grouped = ways(self.vars)
+            for way, members in grouped.items():
+                if len(members) > 1 and any(not self.vars[m].holds_value for m in members):
+                    raise ValueError(f"way {way!r}: a sign-in (cli or oauth) variable is alone in its way")
+            if len(grouped) == 1:
+                raise ValueError("ONE_OF is a choice: a credential declares at least two ONE_OF ways, or none")
+            if unknown := sorted(set(self.ways) - set(grouped)):
+                raise ValueError(f"ways {unknown} name no ONE_OF way of this credential")
+            if self.lm_provider and any(v.is_one_of or not v.holds_value for v in self.vars.values()):
                 raise ValueError("an lm_provider credential is one stored key (no ONE_OF, no cli variable)")
         return self
 

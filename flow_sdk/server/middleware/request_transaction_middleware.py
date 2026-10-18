@@ -24,8 +24,10 @@ async def _get_local_user_cached():
     if _LOCAL_USER_CACHE is not None:
         return _LOCAL_USER_CACHE
     from flow_sdk.builtin.user import User
+
     try:
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
         user = await get_or_create_local_user()
     except Exception:
         user = await User.get_one({"uname": "local"})
@@ -68,6 +70,10 @@ class RequestTransactionMiddleware:
                         f"[Middleware] No entity_model registered for type={req_info.target_entity_typeid.type!r} "
                         f"(target id={req_info.target_entity_typeid.id})"
                     )
+                elif entity_model._hub_only:
+                    # No local row exists by design; the router forwards the whole
+                    # request to the hub (``_hub_reflect.hub_only_type``).
+                    pass
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
@@ -79,9 +85,8 @@ class RequestTransactionMiddleware:
                         from flow_sdk.server.routes.graph import (  # noqa: PLC0415
                             _try_self_heal_missing_entity,
                         )
-                        target_entity = await _try_self_heal_missing_entity(
-                            req_info.request, req_info
-                        )
+
+                        target_entity = await _try_self_heal_missing_entity(req_info.request, req_info)
                     if target_entity is None:
                         # A small set of actions owns missing-target recovery
                         # (for example, wiki/reindex can index a supplied body
@@ -95,10 +100,7 @@ class RequestTransactionMiddleware:
                             req_info.action or "",
                             req_info.target_entity_typeid.type,
                         )
-                        allow_missing_target = bool(
-                            registered_action
-                            and registered_action.allow_missing_target
-                        )
+                        allow_missing_target = bool(registered_action and registered_action.allow_missing_target)
                         if req_info.action == "open" or allow_missing_target:
                             logging.debug(
                                 "[Middleware] missing-target-capable action "
@@ -137,6 +139,7 @@ class RequestTransactionMiddleware:
 
         # Set up minimal policies (required even for su mode)
         from flow_sdk.core.policy import PolicyResolver
+
         req_info.policies = PolicyResolver()
         return None
 
@@ -199,9 +202,12 @@ class RequestTransactionMiddleware:
 
         # Log the request info that was set up
         from flow_sdk.request_context import get_current_request_info
+
         req_info = get_current_request_info()
         if req_info:
-            logging.debug(f"[Middleware] RequestInfo: action={req_info.action}, resource={req_info.resource_type}, target={req_info.target_entity_typeid}")
+            logging.debug(
+                f"[Middleware] RequestInfo: action={req_info.action}, resource={req_info.resource_type}, target={req_info.target_entity_typeid}"
+            )
 
             # For local minihub, set up auth to allow all requests
             early_response = await self._setup_local_auth(req_info)

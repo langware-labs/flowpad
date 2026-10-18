@@ -82,7 +82,7 @@ the write too, as defence in depth.
 ## The three renderers
 
 **`mermaid`** draws diagrams, lazily importing a heavy dependency and
-re-rendering on theme change. The whiteboard editor already writes these blocks
+re-rendering on theme change. The chart editor already writes these blocks
 into documents, so this closes a loop the app was half-way through.
 
 **`interface`** renders an API/function-signature card from YAML, with inline

@@ -20,6 +20,11 @@ flow app serve "<App Name>"
 `flow app serve` registers the app (Artifact + WebApp) and shows it in the
 display. Re-run it after renaming; plain edits need only a refresh.
 
+
+## FlowCall integration
+
+When integrating Flowpad processing, load the shipped FlowCall guide through the docs-browse skill. A FlowCall block is a ComputeOp with declared input/output and, for Python work, call.py:call. Use the entity SDK call, preserve ReturnedValue outcomes and explicit output presence, and correlate each invocation independently. Standalone app endpoints retain their own contracts.
+
 ## The three rules
 
 **1. Get the SDK from `/sdk/flowpad-sdk.js`.** Never bundle a copy, never write

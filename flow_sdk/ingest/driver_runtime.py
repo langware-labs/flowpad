@@ -582,6 +582,16 @@ class DriverRuntime:
             whole = cls.lists_everything and complete and cursor is None and narrow is None
             return self._records(row, kept, carried, moved_on=carried != started_at, listed=items if whole else None)
 
+    async def read_before(self, row: Any, before: datetime, page_size: int) -> Pass:
+        """One page of what the source held BEFORE ``before``, newest first: a list paged past its oldest held
+        row asks for this. No cursor and no window: the forward position is not read and the Pass carries
+        none, so placing it never moves the row's position. Only a ``pages_backward`` source is asked."""
+        source = await self.open(row)
+        async with source:
+            page = await source.fetch(None, page_size=page_size, narrow={"before": before})
+            kept = await self._stage(row, source, list(page.items))
+            return self._records(row, kept, None, moved_on=False)
+
     def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool, listed: Optional[list] = None) -> Pass:
         messages, reactions = split_reactions(items)
         kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)

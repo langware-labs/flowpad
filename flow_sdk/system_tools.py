@@ -549,7 +549,7 @@ async def clear_all_data() -> ClearAllResult:
         # Rebuild the shipped system content through the same canonical pass as
         # process startup. The bootstrap() route handler above only restores the
         # @local graph; a factory reset also deletes the indexed system agents,
-        # skills, whiteboards, and docs. Restoring only the project/markdown rows
+        # skills, charts, and docs. Restoring only the project/markdown rows
         # leaves callers such as Vibe unable to resolve their bundled agent until
         # the whole process restarts.
         #

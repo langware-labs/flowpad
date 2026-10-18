@@ -24,12 +24,16 @@ class ObjectQuery(DataQuery):
 
 
 class MessageQuery(DataQuery):
-    """Messages of one conversation, optionally only those sent at or after ``since``."""
+    """Messages of one conversation, optionally only those sent at or after ``since`` and, read backwards,
+    only those sent before ``before``. ``before`` is honoured only by a source declaring ``pages_backward``."""
 
     spec_kind: ClassVar[str] = "source.query.message"
 
     conversation: Optional[CloudOrigin] = None
     since: Optional[AwareDatetime] = None
+    #: Exclusive upper bound — the page OLDER than what the application already holds. Pages under it run
+    #: newest first, so the first page is the one just older than the bound.
+    before: Optional[AwareDatetime] = None
 
 
 class RecordQuery(DataQuery):

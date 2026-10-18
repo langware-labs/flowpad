@@ -12,6 +12,11 @@
 `DM` is the shell function `DM() { "${FLOWPAD_PYTHON:-$(flow instance python)}" "<this skill>/scripts/dm_ctl.py" "$@"; }`. A dataset of a source's
 items with gold labels is `connect-data-source define`, not this mode.
 
+
+## FlowCall integration
+
+ComputeOp input/output use this same ShapeForm grammar; registered kinds must resolve before execution. A list is one value, not an implicit dataset write or item loop. Named list entries may be ValueRefs; resolution is explicit. Follow the [FlowCall block recipe](../../../../docs/Getting%20Started/FlowCall.md) for call.py, typed results and chaining, while preserving dataset ownership, write and reference rules here.
+
 ## Gate 1 — the row kind exists
 
 `DM kind "--<ns>--.<kind>"` answers the fields. If not, run `modes/schema.md` first.
@@ -66,7 +71,7 @@ pulled — report it, never overwrite it.
 
 `<ds>` is the dataset's folder path, id, or exact name. Bulk data (a CSV, a JSON
 export): turn it into rows in a script and `ds-append` them in one call (`ds-sync` when the
-script runs again and again) — never copy files into `examples/`, and never loop `ds-put` /
+script runs again and again) — never copy files into `rows/`, and never loop `ds-put` /
 `ds-delete` over hundreds of rows: the bulk verbs take the lock and read the links once.
 
 ## Gate 4 — probe, then for real

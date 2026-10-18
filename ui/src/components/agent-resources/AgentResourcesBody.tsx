@@ -16,7 +16,7 @@ import {
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
-import { isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+import { isKnowledgeSource, isMessageDriverSpec, sourcesQuery, useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 import { sourceIcon } from '@src/components/data-sources/source-icon';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useSourceDelete } from '@src/components/data-sources/use-source-delete';
@@ -173,7 +173,7 @@ export function AgentResourcesBody() {
   const { channelRows, dataSourceRows } = useMemo(() => {
     const channels: typeof sourceRows = [];
     const data: typeof sourceRows = [];
-    for (const row of sourceRows) (isMessageDriverSpec(specFor(row.source.provider)) ? channels : data).push(row);
+    for (const row of sourceRows) (isKnowledgeSource(row.source, specFor(row.source.provider)) ? data : channels).push(row);
     return { channelRows: channels, dataSourceRows: data };
   }, [sourceRows, specFor]);
   const renderSourceRows = (rows: typeof sourceRows, section: ChildSection) =>
