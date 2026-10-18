@@ -175,12 +175,13 @@ class _Smtp:
 @pytest.fixture(autouse=True)
 def credentials(monkeypatch):
     """The ``gmail`` credential, resolved — read here from ``GMAIL_*`` variables a test sets (``GMAIL_CHOICE``
-    names the way, ``GMAIL_TOKEN`` is a Google sign-in's token). A test with a double patches over it."""
+    names the way, ``GMAIL_TOKEN`` is a Google sign-in's token, ``GMAIL_IDENTITY`` who signed in). A test with a double patches over it."""
 
     async def resolve(_row):
         values = {k: SecretStr(v) for k in ("GMAIL_ADDRESS", "GMAIL_APP_PASSWORD") if (v := os.environ.get(k))}
         token = SecretStr(os.environ["GMAIL_TOKEN"]) if os.environ.get("GMAIL_TOKEN") else None
-        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values, token=token, choice=os.environ.get("GMAIL_CHOICE", ""))
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values=values, token=token, choice=os.environ.get("GMAIL_CHOICE", ""),
+                               identity=os.environ.get("GMAIL_IDENTITY", ""))
 
     monkeypatch.delenv("GMAIL_ADDRESS", raising=False)
     monkeypatch.setattr(DataDriver.loaded("gmail"), "credentials_for", resolve)
@@ -248,7 +249,7 @@ def test_gmail_is_a_registered_message_source_read_with_the_gmail_credential():
 async def test_the_google_way_logs_in_with_xoauth2_for_imap_and_smtp(gmail, monkeypatch):
     monkeypatch.delenv("GMAIL_APP_PASSWORD")
     monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_GOOGLE")
+    monkeypatch.setenv("GMAIL_CHOICE", "google")
     gmail.deliver(_raw(), "9988", uid=7)
     result = await DataDriver.loaded("gmail").traverse(_row(), _view())
     assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
@@ -257,17 +258,27 @@ async def test_the_google_way_logs_in_with_xoauth2_for_imap_and_smtp(gmail, monk
     assert ("SMTP AUTH", "XOAUTH2") in gmail.calls and len(gmail.sent) == 1
 
 
+async def test_the_google_way_needs_no_address_it_is_the_account_that_signed_in(gmail, monkeypatch):
+    monkeypatch.delenv("GMAIL_APP_PASSWORD")
+    monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
+    monkeypatch.setenv("GMAIL_CHOICE", "google")
+    monkeypatch.setenv("GMAIL_IDENTITY", ADDRESS)
+    gmail.deliver(_raw(), "9988", uid=7)
+    result = await DataDriver.loaded("gmail").traverse(_row(address=""), _view())
+    assert [i.external_id for i in result.items] == ["<incoming@gmail.test>"] and ("AUTHENTICATE", "XOAUTH2") in gmail.calls
+
+
 async def test_the_way_chosen_wins_over_a_value_that_is_also_there(gmail, monkeypatch):
     monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
-    monkeypatch.setenv("GMAIL_CHOICE", "GMAIL_APP_PASSWORD")
+    monkeypatch.setenv("GMAIL_CHOICE", "app_password")
     gmail.deliver(_raw(), "9988", uid=7)
     await DataDriver.loaded("gmail").traverse(_row(), _view())
     assert ("AUTHENTICATE", "XOAUTH2") not in gmail.calls
 
 
-@pytest.mark.parametrize("way", ["GMAIL_GOOGLE", "GMAIL_APP_PASSWORD"])
+@pytest.mark.parametrize("way", ["google", "app_password"])
 async def test_verify_holds_with_either_way(gmail, monkeypatch, way):
-    if way == "GMAIL_GOOGLE":
+    if way == "google":
         monkeypatch.delenv("GMAIL_APP_PASSWORD")
         monkeypatch.setenv("GMAIL_TOKEN", TOKEN)
     monkeypatch.setenv("GMAIL_CHOICE", way)

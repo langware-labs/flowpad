@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { inScope, readState, writeState } from '../../../ts_sdk/src/apps/eval-browser';
 import { byCause, columnHelp, formatMetric, issueGroups } from '../../../ts_sdk/src/viewers/eval';
 import { goldDiff } from '../../../ts_sdk/src/viewers/generic';
-import type { EvalExampleRow, Verdict } from '../../../ts_sdk/src/evals/types';
+import type { EvalRow, Verdict } from '../../../ts_sdk/src/evals/types';
 
-const ex = (id: string, verdict: Verdict, labels: Record<string, string> = {}, slice: Record<string, string> = {}): EvalExampleRow => ({
-  example_id: id,
+const ex = (id: string, verdict: Verdict, labels: Record<string, string> = {}, slice: Record<string, string> = {}): EvalRow => ({
+  row_id: id,
   prediction: null,
   golds: [],
   verdict,
@@ -40,20 +40,20 @@ describe('drill-down state lives in the URL', () => {
 
 describe('scope and issues', () => {
   it('a slice and a verdict narrow the examples', () => {
-    expect(inScope(EXAMPLES, { slice: 'data.group=B' }).map((e) => e.example_id)).toEqual(['c', 'd']);
-    expect(inScope(EXAMPLES, { verdict: 'wrong' }).map((e) => e.example_id)).toEqual(['b', 'c']);
+    expect(inScope(EXAMPLES, { slice: 'data.group=B' }).map((e) => e.row_id)).toEqual(['c', 'd']);
+    expect(inScope(EXAMPLES, { verdict: 'wrong' }).map((e) => e.row_id)).toEqual(['b', 'c']);
   });
 
   it('groups the issues by each label they carry, biggest first; a correct example is no issue', () => {
     const groups = issueGroups(EXAMPLES);
     expect(groups[0]).toMatchObject({ cause: 'did=/dock/tasks' });
-    expect(groups[0].examples.map((e) => e.example_id)).toEqual(['b', 'c']);
+    expect(groups[0].rows.map((e) => e.row_id)).toEqual(['b', 'c']);
     expect(groups.map((g) => g.cause).sort()).toEqual(['did=/dock/tasks', 'feasible=no', 'opens=yes']);
   });
 
   it('a cause selects its issues; no cause is every issue', () => {
-    expect(byCause(EXAMPLES, 'feasible=no').map((e) => e.example_id)).toEqual(['d']);
-    expect(byCause(EXAMPLES).map((e) => e.example_id)).toEqual(['b', 'c', 'd']);
+    expect(byCause(EXAMPLES, 'feasible=no').map((e) => e.row_id)).toEqual(['d']);
+    expect(byCause(EXAMPLES).map((e) => e.row_id)).toEqual(['b', 'c', 'd']);
   });
 });
 

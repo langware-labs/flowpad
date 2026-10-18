@@ -1,6 +1,6 @@
-"""``python -m flow_sdk.evals <dataset>[:kinds] [<dataset>[:kinds] ...] [--eval NAME] [--limit N] [--compare-last] [--quiet-examples]``
+"""``python -m flow_sdk.evals <dataset>[:kinds] [<dataset>[:kinds] ...] [--eval NAME] [--limit N] [--compare-last] [--quiet-rows]``
 
-Each dataset (``:eval``, ``:test`` or ``:eval,test`` picks the example roles) is run and gets one
+Each dataset (``:eval``, ``:test`` or ``:eval,test`` picks the row roles) is run and gets one
 scoreboard row. ``--compare-last`` pairs each run with the last one over the same roles and lists what
 it fixed and broke; ``scoreboard.md`` is written next to each run.
 """
@@ -46,13 +46,13 @@ async def _one(folder: Path, kinds, args) -> tuple[list[str], str, str]:
     before = previous(folder, record) if args.compare_last else None
     diff = compare(load(folder, before.run_id), load(folder, record.run_id)) if before else None
     cells = [f"{_cell(record.metrics.get(c))}{_delta(diff.deltas.get(c)) if diff else ''}" for c in columns]
-    row = f"| {record.dataset_title} [{','.join(record.kinds)}] | {record.examples} | {record.counts.get('error', 0)} | " + " | ".join(cells) + " |"
+    row = f"| {record.dataset_title} [{','.join(record.kinds)}] | {record.rows} | {record.counts.get('error', 0)} | " + " | ".join(cells) + " |"
     detail = [f"run {record.run_id} · {' · '.join(f'{k} {v}' for k, v in record.versions.items())}"]
     if diff:
         unjudged = f", {diff.unjudged} not judged: an error on one side" if diff.unjudged else ""
         detail.append(f"vs {before.run_id}: {len(diff.fixed)} fixed, {len(diff.broken)} broken, {diff.still_wrong} still wrong ({diff.paired} paired{unjudged})")
         # A held-out set is scored, never read row by row: counts only.
-        if not args.quiet_examples and "test" not in record.kinds:
+        if not args.quiet_rows and "test" not in record.kinds:
             detail += [f"  + {e.title}" for e in diff.fixed] + [f"  - {e.title}" for e in diff.broken]
     (out / "scoreboard.md").write_text(f"{_header(columns)}\n{row}\n\n" + "\n".join(detail) + "\n")
     return columns, row, "\n".join(detail)
@@ -70,10 +70,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="python -m flow_sdk.evals")
     ap.add_argument("datasets", nargs="+", help="dataset folders, each optionally :kinds (e.g. medium:test)")
     ap.add_argument("--eval", dest="eval_name")
-    ap.add_argument("--kinds", help="example roles for every dataset without its own :kinds")
+    ap.add_argument("--kinds", help="row roles for every dataset without its own :kinds")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--compare-last", action="store_true", help="pair each run with the last one over the same roles")
-    ap.add_argument("--quiet-examples", action="store_true", help="counts only, no fixed/broken titles (always so for kinds that include test)")
+    ap.add_argument("--quiet-rows", action="store_true", help="counts only, no fixed/broken titles (always so for kinds that include test)")
     results = asyncio.run(_all(ap.parse_args()))
     shown = None
     for columns, row, _ in results:

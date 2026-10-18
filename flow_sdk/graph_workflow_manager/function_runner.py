@@ -196,8 +196,11 @@ class GraphWorkflowCtx:
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue, TaggedValue
         from flow_sdk.schema.data_spec.spec import Tagged
 
+        from flow_sdk.utils.environment import inherited_trace
+
         target = compute_op_id(ref)
-        body = {"approved": approved, "answer_tagged": True}
+        # A worker spawned by a call joins that call's run (``apply_worker_env``).
+        body = {"approved": approved, "answer_tagged": True, **inherited_trace()}
         if input is not MISSING:
             body["input"] = TypeAdapter(TaggedValue).dump_python(input, mode="json")
         payload = await asyncio.to_thread(local_client.graph_post, f"compute_op/{target}/run", body)

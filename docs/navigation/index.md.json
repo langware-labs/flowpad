@@ -5,7 +5,7 @@
   "vault_root": "/Users/alice/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "navigation",
   "folder_name": "navigation",
-  "inputs_hash": "dc4f1396605cdcf0c96bc096e0cb851bb04ca1efcea386fc4f89e211942ec515",
+  "inputs_hash": "3110f20bb8fefc700e51f00bdd666800f9ede8d0f1caa1689f38c4678a88c276",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
@@ -23,8 +23,8 @@
       "rel_path": "navigation-sentences.md",
       "title": "Navigation sentences — the whole Flowpad UX surface",
       "summary": "Two hundred navigation requests mapped to screens, entities, files, URLs, logs, or assistant actions for classifier coverage.",
-      "content_hash": "0b6ddfa0171140da14cd96f576819f1b40f0f9f90cf38e5b9c498f1c7cf838de",
-      "size_bytes": 13001
+      "content_hash": "20b7d439c22c4292135bd825ba1f727ab71640be2ab367be31b408fbdac7e32f",
+      "size_bytes": 12981
     },
     {
       "name": "navigation-spec.md",
@@ -52,6 +52,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-10-15T06:44:33.280599+00:00",
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
   "latest_process_ref": ""
 }

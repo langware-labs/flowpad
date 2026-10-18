@@ -102,7 +102,7 @@ export const WorkdirLine: React.FC<{ workdir: string; className?: string }> = ({
       </p>
       <CopyButton
         value={workdir}
-        title={t`Copy path`}
+        title={t`Copy path: ${workdir}`}
         testId="tab-workdir-copy"
         stopPropagation
         className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"

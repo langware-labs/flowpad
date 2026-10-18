@@ -4,6 +4,7 @@ Callers supply sources and destinations; process persistence is outside this mod
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from pydantic import ConfigDict
@@ -170,3 +171,36 @@ def embedded_assets(ref_paths) -> list[Asset]:
             raise AssetIdentityMismatch(f"Attached asset {ref} was replaced by {asset.typeid} at {path}")
         found.setdefault(asset.path, asset)
     return list(found.values())
+
+
+def link_mounted_skills(assets_dir: Path, directories: Sequence[str], *, native_mount: str) -> bool:
+    """Project shared skills into a worker's process-local native mount.
+
+    Native and explicitly embedded skills win by name. Authored folders stay untouched.
+    """
+    from flow_sdk.assets.placement import AssetClass, scan_mounts
+
+    assets_root = assets_dir.resolve()
+    mounts = tuple(mount for mount in scan_mounts(AssetClass.SHARED, None, "skills") if mount != native_mount)
+    target = assets_dir / native_mount
+    for link in target.iterdir() if target.is_dir() else ():
+        if link.is_symlink() and not link.exists():
+            link.unlink()
+    for directory in dict.fromkeys(directories):
+        mounted = Path(directory).resolve()
+        if mounted == assets_root:
+            continue
+        native = mounted / native_mount
+        for mount in mounts:
+            source = mounted / mount
+            if not source.is_dir():
+                continue
+            for skill in sorted(source.iterdir()):
+                link = target / skill.name
+                if not (skill / "SKILL.md").is_file() or (native / skill.name / "SKILL.md").is_file():
+                    continue
+                if link.exists() or link.is_symlink():
+                    continue
+                target.mkdir(parents=True, exist_ok=True)
+                link.symlink_to(skill, target_is_directory=True)
+    return target.is_dir() and any((skill / "SKILL.md").is_file() for skill in target.iterdir())

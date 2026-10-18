@@ -22,7 +22,7 @@ DATASET = TypeInfo(
     # marker gate (a dataset folder must carry it). asset_ref stays the folder
     # so this only names the marker/body file.
     rows_layout_field="data_layout",
-    rows_field="examples",
+    rows_field="rows",
     derive_fields_fn=derive_dataset,
     asset_spec=DatasetManifestSpec,
     fts_content=("title", "description"),

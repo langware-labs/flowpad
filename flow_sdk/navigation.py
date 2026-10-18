@@ -1,9 +1,11 @@
 """The smart navigator, as the public SDK: what was typed (and where) in, a dock OR a prompt out.
 
-    from flow_sdk.navigation import decide
-    outcome = await decide({"utterance": "open data sources", "here": {"view": "home"}})
+    from flow_sdk.navigation import call
+    answer = await call({"utterance": "open data sources", "here": {"view": "home"}})
+    answer.value   # the navigation.outcome; answer.reason / answer.run: how it was decided
 
-``request`` is a ``navigator.request``; the answer a ``navigation.outcome``. ``decide_run`` also
+``call`` is the FlowCall way in -- the shipped ``smart-navigator`` block, answering a ``NavigatorResult``.
+``request`` is a ``navigator.request``; the outcome a ``navigation.outcome``. ``decide_run`` also
 answers the engine's own ``navigator.route``, whose ``run`` is how the model decided (``navigator.run``:
 its full request and response) -- what a log or an eval keeps to debug a decision. ``candidates`` replays a
 recorded set of search matches instead of searching -- what an eval does. The implementation lives
@@ -11,7 +13,7 @@ in ``flow_sdk.core.navigation_decision``; callers outside the core (a dataset's 
 """
 
 from flow_sdk.core.navigation_decision import address_of as _address_of
-from flow_sdk.core.navigation_decision import decide, decide_run
+from flow_sdk.core.navigation_decision import call, decide, decide_run
 from flow_sdk.core.navigation_decision import same_place as _same_place
 from flow_sdk.core.navigator import MIN_CONFIDENCE  # below this the navigator does not act
 from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget
@@ -39,6 +41,7 @@ def code_version() -> str:
         "core/navigator.py",
         "core/navigation.py",
         "core/navigation_decision.py",
+        "system_projects/flowpad_assistant/agentic-assets/compute_op/smart-navigator/call.py",
         "core/dock_address.py",
         "core/ui_actions.json",
         "db/drivers/sqlite/sqlite_driver.py",
@@ -47,4 +50,4 @@ def code_version() -> str:
     return digest.hexdigest()[:12]
 
 
-__all__ = ["MIN_CONFIDENCE", "address_of", "code_version", "decide", "decide_run", "same_place"]
+__all__ = ["MIN_CONFIDENCE", "address_of", "call", "code_version", "decide", "decide_run", "same_place"]

@@ -17,6 +17,12 @@ export interface GitSharePreflight {
   /** Stable machine code for the state (tests / branching). */
   code: string | null;
   /**
+   * The one-click fix the backend offers for `code`: `commit` (commit + push
+   * ONLY this asset's path) or `push` (push the commits already made, staging
+   * nothing). Null when there is none.
+   */
+  fix: GitShareFix | null;
+  /**
    * The repo this asset comes from, when one could be derived — present even
    * when `available` is false (a dirty tree still has an origin). Null only
    * when there is genuinely no repo/remote to name.
@@ -37,10 +43,13 @@ export interface GitSharePreflight {
   refetch: () => void;
 }
 
+export type GitShareFix = 'commit' | 'push';
+
 interface PreflightResponse {
   available: boolean;
   reason: string | null;
   code: string | null;
+  fix?: GitShareFix | null;
   git_origin: Record<string, unknown> | null;
 }
 
@@ -101,6 +110,7 @@ const IDLE: PreflightState = {
   available: false,
   reason: null,
   code: null,
+  fix: null,
   origin: null,
   answered: false,
 };
@@ -109,6 +119,7 @@ const FAILED: PreflightState = {
   available: false,
   reason: 'Could not check Git eligibility.',
   code: 'status-failure',
+  fix: null,
   origin: null,
   answered: true,
 };
@@ -163,6 +174,7 @@ export function useGitSharePreflight(
           available: !!res.available,
           reason: res.reason ?? null,
           code: res.code ?? null,
+          fix: res.fix ?? null,
           origin: toOrigin(res.git_origin),
           answered: true,
         });
@@ -179,4 +191,27 @@ export function useGitSharePreflight(
   }, [refKey, enabled, nonce]);
 
   return { ...state, refetch };
+}
+
+/** What `git_share_fix` answers: the push outcome, then the fresh preflight. */
+export interface GitShareFixResult {
+  ok: boolean;
+  kind: string;
+  message: string;
+  conflicted: string[];
+}
+
+/**
+ * Apply the backend's one-click fix for `ref` (see `GitSharePreflight.fix`),
+ * then tell every preflight looking at `ref` to ask again. A conflict comes
+ * back as `kind: 'conflict'` with its paths — never forced.
+ */
+export async function runGitShareFix(ref: TypeId, fix: GitShareFix): Promise<GitShareFixResult> {
+  const action = new ActionInfo('git_share_fix', ref.type, ref.id, 'POST');
+  action.bodyParameters = { fix };
+  try {
+    return await dataManager.callAction<{ fix: GitShareFix }, GitShareFixResult>(action);
+  } finally {
+    invalidateGitPreflight(ref);
+  }
 }

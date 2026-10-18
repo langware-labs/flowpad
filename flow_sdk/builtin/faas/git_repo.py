@@ -1392,24 +1392,49 @@ class GitRepo:
             committed = True
             sha = (await self._git("rev-parse", "HEAD")).stdout.strip() or None
 
-        # 5. Sync with the remote first (rebase) so the push is fast-forward.
-        #    --autostash: a scoped push leaves the rest of the tree dirty.
+        # 5–6. Sync with the remote, then push.
+        return result(*await self._sync_and_push(branch, has_upstream, scoped=paths is not None))
+
+    async def push_commits(self) -> GitPushResult:
+        """Push the commits already made — stage and commit NOTHING.
+
+        The share's "push" fix: the shared asset is committed but not on the
+        remote, and the rest of the tree may hold the person's unrelated work,
+        which must not be swept in. Same sync + push as :meth:`push`.
+        """
+        if not await self.is_init():
+            return GitPushResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
+        branch = await self.get_branch() or "HEAD"
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitPushResult(ok=False, kind="conflict", branch=branch, message=self._still_open(stuck),
+                                 conflicted=stuck.paths)
+        has_upstream = (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok
+        kind, msg, conflicted = await self._sync_and_push(branch, has_upstream, scoped=True)
+        sha = (await self._git("rev-parse", "HEAD")).stdout.strip() or None
+        return GitPushResult(ok=kind in ("pushed", "nothing"), kind=kind, branch=branch, message=msg,
+                             conflicted=conflicted, sha=sha)
+
+    async def _sync_and_push(self, branch: str, has_upstream: bool, *, scoped: bool) -> tuple[PushKind, str, list[str]]:
+        """Rebase onto the remote (so the push fast-forwards), then push —
+        never forced. ``scoped``: the rest of the tree may be dirty, so the
+        autostash may have something to put back."""
+        # --autostash: a scoped push leaves the rest of the tree dirty.
         if has_upstream:
             pulled = await self._git("pull", "--rebase", "--autostash", "origin", branch)
             if not pulled.ok and "couldn't find remote ref" not in _said(pulled):
-                return result(*await self._sync_failure(pulled, "Could not sync with the remote"))
+                return await self._sync_failure(pulled, "Could not sync with the remote")
             # Only a scoped push leaves anything for the autostash to put back.
-            clash = await self._autostash_clash("the remote's changes") if paths is not None else None
+            clash = await self._autostash_clash("the remote's changes") if scoped else None
             if clash:
-                return result("conflict", *clash)
+                return ("conflict", *clash)
 
-        # 6. Push (set upstream when the branch is new on the remote).
+        # Push (set upstream when the branch is new on the remote).
         push_args = ["push", "origin", branch] if has_upstream else ["push", "-u", "origin", branch]
         pushed = await self._git(*push_args)
         if not pushed.ok:
-            return result(*await self._sync_failure(pushed, "Push failed"))
-
-        return result("pushed", "Pushed")
+            return await self._sync_failure(pushed, "Push failed")
+        return ("pushed", "Pushed", [])
 
     # ------------------------------------------------------------------
     # Remote side: fetch (refresh `behind`) and pull

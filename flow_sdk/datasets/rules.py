@@ -55,7 +55,7 @@ class _Rows:
         if folder not in self.datasets:
             self.datasets[folder] = Dataset.at(folder)
         try:
-            row = self.datasets[folder].example(key)
+            row = self.datasets[folder].row(key)
         except Exception:  # noqa: BLE001 -- a row that does not read answers nothing; it is reported on its own
             return None
         return (row or {}).get("input")

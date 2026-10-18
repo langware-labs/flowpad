@@ -10,6 +10,7 @@ from typing import Any, ClassVar, Literal, Optional
 from pydantic import PrivateAttr
 
 from flow_sdk.schema.data_spec.decision_spec import DecisionRun
+from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: ``action`` names something to START (``new-chat:claude_code``, ``dialog:settings``,
@@ -68,3 +69,17 @@ class NavigatorRoute(DataSpec):
     @property
     def run(self) -> Optional[NavigatorRun]:
         return self._run
+
+
+class NavigatorResult(ReturnedValue):
+    """What the ``smart-navigator`` block answered: ``value`` is the ``navigation.outcome``; the rest is
+    how it was decided -- what a log or an eval keeps. Opening a dock and handing the request to the
+    assistant are both ``OK``: the assistant is a valid answer, not a failure."""
+
+    spec_kind: ClassVar[str] = "compute.returned.navigator"
+
+    #: ``NavigatorRoute.reason``: ``rule``, ``decision``, ``unsure``, ``no_endpoint``, a decision API error...
+    reason: str = ""
+    latency_ms: float = 0.0
+    #: How it was decided, the model's request and response included when one was asked.
+    run: Optional[NavigatorRun] = None

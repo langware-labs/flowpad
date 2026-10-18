@@ -700,6 +700,9 @@ async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     if stored is not None and getattr(stored, "transportable", False):
         return stored
     path = getattr(ent, "path", None)
+    if not path and callable(getattr(ent, "local_origin_path", None)):
+        # An artifact keeps no path of its own; its LOCAL origin is where it is.
+        path = ent.local_origin_path()
     if not path:
         return None
     live = await asyncio.to_thread(GitOrigin.for_asset_path, str(path), repo_cache)
@@ -1273,7 +1276,9 @@ async def _restore_git_transfer_entry(
     # pull/reuse-local; local = resolve an existing mount). Everything below is
     # origin-kind-agnostic — it operates only on the returned local_root + the
     # universal rel_path.
-    local_root, project_id = await get_origin_driver(origin.kind).materialize(
+    # A received share opens EXACTLY the shared version and never touches the
+    # receiver's own checkout (``materialize_pinned``).
+    local_root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
         origin,
         preferred_root=preferred_project_root,
         preferred_project_id=preferred_project_id,
@@ -1291,7 +1296,13 @@ async def _restore_git_transfer_entry(
             same_asset = existing_asset.resolve() == asset_ref.resolve()
         except OSError:
             same_asset = str(existing_asset) == str(asset_ref)
-        if not same_asset:
+        # The same shared asset (same repo + path) arriving at a newer commit is
+        # a new VERSION of what the receiver has, not a clash with their work.
+        existing_origin = getattr(existing, "origin", None)
+        same_share = existing_origin is not None and getattr(existing_origin, "key", None) is not None and (
+            existing_origin.key() == origin.key()
+        )
+        if not same_asset and not same_share:
             raise FlowMessageExistsError(
                 [
                     {
@@ -1302,12 +1313,11 @@ async def _restore_git_transfer_entry(
                 ]
             )
 
-    scope = _git_origin_index_scope(local_root, origin.rel_path, info)
     try:
-        record_type = RecordType(entry_type)
+        RecordType(entry_type)
     except ValueError:
         return False
-    await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(record_type,), project_id=project_id)
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
     await _apply_git_transfer_metadata(
         tmp_root,
         transfer,
@@ -1318,7 +1328,68 @@ async def _restore_git_transfer_entry(
         owner_typeid=owner_typeid,
     )
     await _stamp_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    # The walk persists with notify=False: announce the row, as the copy path
+    # does, so a receiver UI that already asked for it (and cached the miss)
+    # sees it without a reload.
+    await _notify_received_assets({(entry_type, entry_id)})
     return True
+
+
+#: (checkout, commit) pairs whose ``received_with`` companions are already
+#: indexed: a checkout at a commit never changes, so re-opening it skips the walk.
+_COMPANIONS_INDEXED: set[tuple[str, str]] = set()
+
+
+async def _index_git_checkout(entry_type: str, local_root: Path, origin, info, project_id: str | None) -> None:
+    """Index the asset of a git share from the checkout it was opened in, and
+    what its type declares it needs from the same checkout (``received_with``)
+    — in ONE walk over the checkout when the asset's own type is among those."""
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    companions = tuple(dict.fromkeys(info.received_with)) if info is not None else ()
+    seen = (str(local_root), getattr(origin, "head_commit", None) or "")
+    if entry_type not in companions:
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+    elif seen in _COMPANIONS_INDEXED:
+        # The companions are indexed; the asset itself may be new at this commit.
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+        return
+    if companions and seen not in _COMPANIONS_INDEXED:
+        await _reindex_root(local_root, RecordType.REAL_PROJECT_CWD, types=tuple(RecordType(t) for t in companions), project_id=project_id)
+        if seen[1]:
+            _COMPANIONS_INDEXED.add(seen)
+
+
+async def reopen_git_share(entry_type: str, entry_id: str, origin, local_root: Path, project_id: str | None) -> Path:
+    """Point an already-received git share at another checkout of it (a newer
+    commit): index it there and stamp the origin with that commit. Answers the
+    asset's new path."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    asset_ref = _asset_ref_for_git_origin(local_root, origin.rel_path, info)
+    if asset_ref is None or not asset_ref.exists():
+        raise FileNotFoundError(f"shared asset not found: {local_root / origin.rel_path}")
+    # The row already exists (it was received before), so a walk alone does not
+    # move it: point its record and row at the new checkout first, then index there.
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    patch = {"type": entry_type, "id": entry_id, "asset_ref": str(asset_ref)}
+    if project_id:
+        patch["project_id"] = project_id
+    record = FSRecord(type=entry_type, id=entry_id)
+    record.asset_ref = str(asset_ref)
+    await asyncio.to_thread(record.save_metadata, patch)
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    ent = await cls.get_one({"id": entry_id}) if cls is not None else None
+    if ent is not None:
+        await _overlay_fields_on_row(ent, patch, None, label=f"{entry_type}-@{entry_id} (git update)")
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
+    await _stamp_origins({(entry_type, entry_id)}, {_entry_key(entry_type, entry_id): origin.model_dump(mode="python")}, None)
+    await _notify_received_assets({(entry_type, entry_id)})
+    return asset_ref
 
 
 async def _restore_git_reference_entity_entry(

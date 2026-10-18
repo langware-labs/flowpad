@@ -112,12 +112,12 @@ async def test_the_same_send_with_include_gitignored_goes_through(records_root):
 async def test_a_folder_reports_what_git_excludes_but_not_what_the_packer_drops_anyway(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     ds = repo / "ds"
-    (ds / "examples" / "a").mkdir(parents=True)
-    (ds / "examples" / "a" / "input.json").write_text("{}")
+    (ds / "rows" / "a").mkdir(parents=True)
+    (ds / "rows" / "a" / "input.json").write_text("{}")
     (ds / "node_modules" / "x").mkdir(parents=True)
     (ds / "node_modules" / "x" / "i.js").write_text("")
     (ds / "dataset.json").write_text("{}")
-    (ds / ".gitignore").write_text("/examples/\nnode_modules/\n")
+    (ds / ".gitignore").write_text("/rows/\nnode_modules/\n")
     _git(repo, "init", "-q")
 
     async def _root(tid):
@@ -125,7 +125,7 @@ async def test_a_folder_reports_what_git_excludes_but_not_what_the_packer_drops_
 
     monkeypatch.setattr(flow_message_bundle, "_local_copy_root", _root)
     tid = flow_message_bundle.TypeId(f"dataset-{uuid.uuid4()}")
-    assert await flow_message_bundle.attachments_holding_gitignored([tid]) == [(tid, ["examples"])]
+    assert await flow_message_bundle.attachments_holding_gitignored([tid]) == [(tid, ["rows"])]
 
 
 async def test_an_export_asks_first_and_packs_whole_on_confirm(records_root):

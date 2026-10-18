@@ -14,12 +14,13 @@ import { CompactIconAction } from '@src/components/entity-actions/CompactIconAct
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { useRestartRequiredHint } from './useRestartRequiredHint';
 
 export function RestartButton({ process }: { process: AgenticProcess }) {
   const { t } = useLingui();
   const [isRestarting, setIsRestarting] = useState(false);
   const started = isProcessRunning(process.status);
-  const restartRequired = !!process.restart_required && started;
+  const restartHint = useRestartRequiredHint(process);
 
   const handleRestart = async () => {
     if (isRestarting) return;
@@ -36,17 +37,9 @@ export function RestartButton({ process }: { process: AgenticProcess }) {
       icon={isRestarting ? Loader2 : RotateCcw}
       iconClassName={isRestarting ? 'animate-spin' : undefined}
       testId="process-toolbar-restart-button"
-      label={
-        isRestarting
-          ? t`Restarting…`
-          : !started
-            ? t`Session is not running`
-            : restartRequired
-              ? t`Restart required — config changed since start`
-              : t`Restart session`
-      }
+      label={isRestarting ? t`Restarting…` : !started ? t`Session is not running` : (restartHint ?? t`Restart session`)}
       disabled={isRestarting || !started}
-      attention={restartRequired}
+      attention={!!restartHint}
       onClick={() => void handleRestart()}
     />
   );

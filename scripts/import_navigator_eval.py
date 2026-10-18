@@ -84,9 +84,9 @@ def row(case: dict) -> dict:
 async def main(cases_path: Path, folder: Path) -> None:
     from flow_sdk.builtin.dataset import Dataset
     from flow_sdk.schema.data_spec import declared
-    from flow_sdk.schema.data_spec.layout import _example_dirs
+    from flow_sdk.schema.data_spec.layout import _row_dirs
 
-    if _example_dirs(folder):
+    if _row_dirs(folder):
         raise SystemExit(f"{folder} already holds examples; refusing to duplicate them")
     errors = {str(f): e for f, e in declared.load_root(folder).items() if e}
     if errors:

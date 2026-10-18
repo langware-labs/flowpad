@@ -168,7 +168,7 @@ def cmd_probe_copy(args) -> dict:
     * every entity id is dropped (``"id"`` in the asset documents, ``id:`` in a ``description.md``
       front matter) -- applying the probe mints its own, so it can never take over the real
       project's index rows (and ``probe-drop`` can never delete them). Row ids in
-      ``examples/*/example.json`` stay: links between the copied rows name them;
+      ``rows/*/row.json`` stay: links between the copied rows name them;
     * every project namespace becomes the probe's: each ``"ns"`` and each ``--<ns>--.`` prefix in the
       copied JSON, whichever call copied the folder that declared it -- a kind not copied then
       fails loudly in the probe instead of resolving to the real project's.
@@ -187,7 +187,7 @@ def cmd_probe_copy(args) -> dict:
         dest = root / "agentic-assets" / family / src.name
         if dest.exists():
             shutil.rmtree(dest)
-        ignore = shutil.ignore_patterns(".flow", *(["examples"] if args.no_rows and family == "dataset" else []))
+        ignore = shutil.ignore_patterns(".flow", *(["rows"] if args.no_rows and family == "dataset" else []))
         shutil.copytree(src, dest, ignore=ignore)
         copied.append(str(dest))
     rewritten, foreign = 0, set()
@@ -362,7 +362,7 @@ def cmd_ds_sync(args) -> dict:
 
 
 def cmd_ds_row(args) -> dict:
-    return {"row": _ds(args, f"example/{quote(args.key, safe='')}", "GET")}
+    return {"row": _ds(args, f"row/{quote(args.key, safe='')}", "GET")}
 
 
 def cmd_ds_append(args) -> dict:

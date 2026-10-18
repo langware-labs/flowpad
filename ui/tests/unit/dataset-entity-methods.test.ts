@@ -11,10 +11,11 @@ import type { KindForm, KindRule } from '@sdk/viewers/contract';
 import { settle } from './watch_test_utils';
 
 describe('a dataset built from a wire row keeps its actions', () => {
-  it('a wire `examples` field does not hide listing the examples', () => {
-    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', examples: [] } as never);
-    expect(typeof ds.listExamples).toBe('function');
-    expect(typeof ds.example).toBe('function');
+  it('a wire `rows` field does not hide reading the rows', () => {
+    const ds = new Dataset({ id: '6d1a2b3c-4d5e-4f6a-8b7c-9d0e1f2a3b4c', name: 'n', rows: [] } as never);
+    expect(typeof ds.query).toBe('function');
+    expect(typeof ds.rowIndex).toBe('function');
+    expect(typeof ds.row).toBe('function');
     expect(typeof ds.annotate).toBe('function');
   });
 });
@@ -32,7 +33,7 @@ describe('the row actions a dataset client calls', () => {
 
   it('rows() with no query asks for every row, with no filter at all', async () => {
     const call = spy({ rows: [], total: 0, problems: [] });
-    await ds().rows();
+    await ds().query();
     expect(sent(call).name).toBe('rows');
     expect(sent(call).method).toBe('GET');
     expect(sent(call).queryParameters).toEqual({});
@@ -41,20 +42,20 @@ describe('the row actions a dataset client calls', () => {
   it('rows(query) sends match, order and paging as ONE filter parameter', async () => {
     const call = spy({ rows: [], total: 0, problems: [] });
     const match = { op: '$AND', operands: [{ 'input.metric': 'em_reply' }, { op: '$GE', operands: ['input.day', '2026-09-01'] }] };
-    await ds().rows({ match: match as never, order_by: { 'input.day': 'desc' }, limit: 50, offset: 100 });
+    await ds().query({ match: match as never, order_by: { 'input.day': 'desc' }, limit: 50, offset: 100 });
     const filter = JSON.parse((sent(call).queryParameters as Record<string, string>).filter);
     expect(filter).toEqual({ match, order_by: { 'input.day': 'desc' }, limit: 50, offset: 100 });
   });
 
   it('rows() keeps limit 0 and offset 0 (they are values, not "unset")', async () => {
     const call = spy({ rows: [], total: 0, problems: [] });
-    await ds().rows({ limit: 0, offset: 0 });
+    await ds().query({ limit: 0, offset: 0 });
     expect(JSON.parse((sent(call).queryParameters as Record<string, string>).filter)).toEqual({ limit: 0, offset: 0 });
   });
 
   it('rows() serialises an ExpressionNode match', async () => {
     const call = spy({ rows: [], total: 0, problems: [] });
-    await ds().rows({ match: new ExpressionNode({ op: '$LIKE', operands: ['input.person', 'levi'] }) });
+    await ds().query({ match: new ExpressionNode({ op: '$LIKE', operands: ['input.person', 'levi'] }) });
     expect(JSON.parse((sent(call).queryParameters as Record<string, string>).filter)).toEqual({
       match: { op: '$LIKE', operands: ['input.person', 'levi'] },
     });
@@ -78,7 +79,7 @@ describe('the row actions a dataset client calls', () => {
   });
 
   it('putMany() posts the rows, and `expected` only when given', async () => {
-    const call = spy({ example_ids: ['a'], keys: ['acme'], num_examples: 1 });
+    const call = spy({ ids: ['a'], keys: ['acme'], num_rows: 1 });
     const rows = [{ key: 'acme', input: { name: 'Acme' } }];
     await ds().putMany(rows);
     expect(sent(call).name).toBe('put-rows');
@@ -89,7 +90,7 @@ describe('the row actions a dataset client calls', () => {
   });
 
   it('deleteRows() posts the keys, and `expected` only when given', async () => {
-    const call = spy({ keys: ['a', 'b'], num_examples: 0 });
+    const call = spy({ keys: ['a', 'b'], num_rows: 0 });
     await ds().deleteRows(['a', 'b']);
     expect(sent(call).name).toBe('delete-rows');
     expect(sent(call).bodyParameters).toEqual({ keys: ['a', 'b'] });
@@ -116,7 +117,7 @@ describe('the row actions a dataset client calls', () => {
   });
 
   it('sync() posts the rows; prune and match travel only when set', async () => {
-    const done = { created: ['c'], updated: [], unchanged: ['a'], deleted: ['b'], num_examples: 2 };
+    const done = { created: ['c'], updated: [], unchanged: ['a'], deleted: ['b'], num_rows: 2 };
     const call = spy(done);
     const rows = [{ key: 'a', input: { name: 'A' } }, { key: 'c', input: { name: 'C' } }];
     expect(await ds().sync(rows)).toEqual(done);
@@ -238,12 +239,12 @@ describe('hearing that rows changed', () => {
     it('a version read with rows() counts as seen, whichever came first', async () => {
       const ds = new Dataset({ id: ID, name: 'n' } as never);
       const read = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ rows: [], total: 0, problems: [], version: 'v2' } as never);
-      await ds.rows(); // read first, then a write lands, then the listener's baseline sees v3
+      await ds.query(); // read first, then a write lands, then the listener's baseline sees v3
       read.mockRestore();
       const { call, heard } = await listen(ds, 'v3');
       expect(heard).toEqual([{ op: 'sync', keys: [], count: 0, version: 'v3' }]); // the write between
       call.mockResolvedValue({ rows: [], total: 0, problems: [], version: 'v4' } as never);
-      await ds.rows(); // the page re-read: v4 is seen
+      await ds.query(); // the page re-read: v4 is seen
       call.mockResolvedValue({ version: 'v4' } as never);
       await reconnect();
       expect(heard).toHaveLength(1); // nothing moved since the read
@@ -357,7 +358,7 @@ describe('asking more of rows and count', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('rows() sends link paths to expand inside the filter, and q beside it', async () => {
-    await ds().rows({ match: { 'input.persona.icp.key': 'fintech' }, expand: ['input.persona', 'input.messages.*'], q: 'pricing objection' });
+    await ds().query({ match: { 'input.persona.icp.key': 'fintech' }, expand: ['input.persona', 'input.messages.*'], q: 'pricing objection' });
     expect(JSON.parse(sent().queryParameters.filter)).toEqual({
       match: { 'input.persona.icp.key': 'fintech' },
       expand: ['input.persona', 'input.messages.*'],
@@ -368,9 +369,9 @@ describe('asking more of rows and count', () => {
   it('a join on a value travels as a sub-query the server answers', async () => {
     const replied = { op: '$PROP', operands: ['input.email', { 'input.metric': 'em_reply' }] };
     const match = { op: '$AND', operands: [{ 'input.metric': 'em_mtg' }, { op: '$IN', operands: ['input.email', replied] }] };
-    await ds().rows({ match: match as never });
+    await ds().query({ match: match as never });
     expect(JSON.parse(sent().queryParameters.filter)).toEqual({ match });
-    await ds().rows({ match: new ExpressionNode(match) });                       // ... and as an ExpressionNode
+    await ds().query({ match: new ExpressionNode(match) });                       // ... and as an ExpressionNode
     expect(JSON.parse(sent(1).queryParameters.filter).match.operands[1].operands[1]).toEqual({
       op: '$PROP',
       operands: ['input.email', { op: '$EQ', operands: ['input.metric', 'em_reply'] }],
@@ -380,11 +381,11 @@ describe('asking more of rows and count', () => {
   it('rows() answers the linked rows the server put beside', async () => {
     const linked = { 'crm.co.id.1': { dataset_id: 'd', key: 'acme', row: { key: 'acme', input: { name: 'Acme' } } } };
     call.mockResolvedValue({ rows: [], total: 0, problems: [], linked } as never);
-    expect((await ds().rows({ expand: ['input.company'] })).linked).toEqual(linked);
+    expect((await ds().query({ expand: ['input.company'] })).linked).toEqual(linked);
   });
 
   it('a blank q and an empty expand are not sent', async () => {
-    await ds().rows({ q: '   ', expand: [] });
+    await ds().query({ q: '   ', expand: [] });
     expect(sent().queryParameters).toEqual({});
   });
 

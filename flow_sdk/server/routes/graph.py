@@ -175,6 +175,11 @@ async def handle_request(
     if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
         entity_for_early_fs_proxy = request_info.auth_result.target
     if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
+        sub_path = request_info.sub_path or ""
+        if request.method == "GET" and sub_path.startswith("document/"):
+            from flow_sdk.server.routes._hub_reflect import read_hub_document
+
+            return await read_hub_document(request, entity_for_early_fs_proxy, sub_path.removeprefix("document/"))
         return await proxy_to_hub(request)
 
     request_params = request_info.request_parameters

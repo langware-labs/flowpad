@@ -9,7 +9,7 @@ import { Dialog } from '@src/components/ui/dialog';
 import { SteppedDialogContent } from '@src/components/ui/stepped-dialog';
 import { AskForm } from '@src/components/ask/AskForm';
 import { useSourceSetupRun } from '@src/components/project-setup/use-setup-run';
-import { SetupTreeView } from '@src/components/project-setup/SetupTreeView';
+import { countDrawn, SetupTreeView } from '@src/components/project-setup/SetupTreeView';
 import { useSourceSetupStore } from './source-setup-store';
 
 /**
@@ -18,8 +18,9 @@ import { useSourceSetupStore } from './source-setup-store';
  * The run is the source's own node of its project's setup tree (`POST data_source/<id>/setup`): what its
  * driver needs (a connection to grant, credential values to type), then the driver's setup stages, or
  * Verify when it declares none. Nothing here knows a driver — the tree is derived from what the driver
- * declares. It starts on open (a run already going is joined), draws each question in place, and closes
- * itself once the run it followed ends with everything set up.
+ * declares. It starts on open (a run already going is joined), draws each question in place, and once the
+ * run it followed ends with everything set up says so — "Connected", in the source's own words when its check
+ * said who it reads — with a Done that closes it.
  */
 export function SourceSetupDialog({ source, onClose }: { source: DataSource; onClose: () => void }) {
   const { t } = useLingui();
@@ -86,6 +87,8 @@ export function SourceSetupPanel({
   const [refused, setRefused] = useState('');
   const followed = useRef(false);
   const begun = useRef(false);
+  /** The run this screen watched ended with everything set up. */
+  const [finished, setFinished] = useState(false);
 
   const begin = () => {
     setRefused('');
@@ -100,14 +103,19 @@ export function SourceSetupPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Close on the end of a run this screen watched — never on the tree an earlier run left behind.
-  // In the add dialog (`lead`) it stays open on "listening" — the person presses Done.
+  // Finished on the end of a run this screen watched — never on the tree an earlier run left behind. The
+  // person presses Done. In the add dialog (`lead`) it says "listening" instead, and its host has the Done.
   useEffect(() => {
     if (running) followed.current = true;
-    else if (followed.current && tree?.state === 'done' && !lead) onDone();
-  }, [running, tree, onDone, lead]);
+    else if (followed.current && tree?.state === 'done' && !lead) setFinished(true);
+  }, [running, tree, lead]);
 
   const stopped = !running && !setup.starting && tree !== null && tree.state !== 'done';
+  const checking = checkingSelf(tree);
+  // While a question is open the tree can only be the last run's (its nodes read set up while this run still
+  // asks) — the question is what the person looks at. While the source's own check runs, the running line says
+  // it all — the tree would only repeat it.
+  const showTree = !finished && !(running && checking) && !setup.questionId;
   // A sign-in the run stopped on: the person signs in HERE, in their browser; the run only checked it.
   const signIn = !running && !setup.starting ? pendingConnection(tree, source.setup_needs) : null;
   const name = source.name || source.provider;
@@ -174,7 +182,7 @@ export function SourceSetupPanel({
       {(running || setup.starting) && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="source-setup-running">
           <Loader2 className="size-4 animate-spin" />
-          <Trans>Setting things up</Trans>
+          {checking ? <Trans>Checking the sign-in…</Trans> : <Trans>Setting things up</Trans>}
         </div>
       )}
       {refused && (
@@ -190,7 +198,8 @@ export function SourceSetupPanel({
           <AskForm questionId={setup.questionId} showOp={false} onSettled={setup.settleQuestion} />
         </div>
       )}
-      <SetupTreeView tree={tree} waiting={signIn ? `connection:${signIn.provider}` : ''} />
+      {finished && <SourceSetupFinished tree={tree} account={source.account_key ?? ''} onDone={onDone} />}
+      {showTree && <SetupTreeView tree={tree} waiting={signIn ? `connection:${signIn.provider}` : ''} />}
       {(stopped || refused) && !signIn && (
         <div>
           <Button data-testid="source-setup-retry" onClick={begin}>
@@ -198,6 +207,62 @@ export function SourceSetupPanel({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The source's own check is what runs now: everything it needs is set up, and its node is running. */
+export function checkingSelf(tree: SetupTreeResult | null): boolean {
+  const root = tree?.root;
+  return (
+    !!root &&
+    root.state === 'running' &&
+    root.children.every((child) => child.state === 'done' || child.state === 'skipped')
+  );
+}
+
+/** What the source's own check said when it passed ("Reading you@x.com."), as the tail of "Connected — …";
+ *  empty when it said nothing of its own. */
+export function connectedAs(tree: SetupTreeResult | null): string {
+  const run = tree?.root?.run;
+  const steps = Object.values(run?.steps ?? {});
+  const said = (steps.at(-1)?.detail ?? '').trim().replace(/\.$/, '');
+  if (!said || said === 'verified') return '';
+  return said.charAt(0).toLowerCase() + said.slice(1);
+}
+
+/** `account`: the account the source reads (its `account_key`) — said when the check itself said nothing (a
+ *  source a stored credential already turned active). */
+function SourceSetupFinished({
+  tree,
+  account,
+  onDone,
+}: {
+  tree: SetupTreeResult | null;
+  account: string;
+  onDone: () => void;
+}) {
+  const { t } = useLingui();
+  const as = connectedAs(tree) || (account ? t`reading ${account}` : '');
+  const nodes = tree?.root ? [tree.root] : [];
+  const { done, total } = countDrawn(nodes);
+  return (
+    <div className="flex flex-col gap-3" data-testid="source-setup-finished">
+      <p className="flex items-center gap-2 text-sm text-emerald-600">
+        <CheckCircle2 className="size-4" />
+        <Trans>
+          {done} of {total} set up
+        </Trans>
+      </p>
+      <p className="flex items-center gap-2 text-sm text-emerald-600" data-testid="source-setup-connected">
+        <CheckCircle2 className="size-4" />
+        {as ? <Trans>Connected — {as}</Trans> : <Trans>Connected</Trans>}
+      </p>
+      <div className="flex justify-end">
+        <Button onClick={onDone} data-testid="source-setup-done">
+          <Trans>Done</Trans>
+        </Button>
+      </div>
     </div>
   );
 }

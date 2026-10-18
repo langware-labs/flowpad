@@ -38,7 +38,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
-import { fileShareSource } from '@src/hooks/share-sources';
+import { useFileShareSource } from '@src/hooks/use-file-share-source';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
 import { FilterName } from './filters';
 import { formatBytes } from '@src/utils/format-bytes';
@@ -282,10 +282,7 @@ export function SimpleFileManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
-  const shareSource = useMemo(
-    () => (sharePath ? fileShareSource({ computeNodeTypeId: typeidObj, absPath: sharePath }) : null),
-    [sharePath, typeidObj],
-  );
+  const shareSource = useFileShareSource(typeidObj, sharePath);
 
   // Use shared browse cache from fsStore
   const fs = useFS(typeidObj);

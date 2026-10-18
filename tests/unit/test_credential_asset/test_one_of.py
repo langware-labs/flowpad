@@ -341,7 +341,7 @@ async def test_the_oauth_way_is_a_sign_in_choice_and_the_way_is_remembered(proje
     await save_credential(manifest=mail(), scope="project", project_id=project.id)
     wizard, ops = project_setup.compile_setup(project.id, await project_setup.collect_requirements(project))
 
-    assert [s.id for s in wizard.steps] == ["ask-mailbox-GMAIL_ADDRESS", "ask-mailbox-one-of", "store-mailbox"]
+    assert [s.id for s in wizard.steps] == ["ask-mailbox-one-of", "ask-mailbox-GMAIL_ADDRESS", "store-mailbox"], "the way first"
     choices = ops["ask-mailbox-one-of"].exe_data.choices
     assert [(c.value, c.provider, c.scopes, c.command) for c in choices] == [
         (GOOGLE, "google", [MAIL], ""), (APP_PASSWORD, "", [], ""),
@@ -373,8 +373,12 @@ async def test_the_source_is_handed_the_chosen_way(project, templates, monkeypat
     async def owner(_row):
         return project
 
+    async def identity(_provider, _token):
+        return "me@gmail.com"
+
     monkeypatch.setattr(provider_registry, "token_for", token_for)
     monkeypatch.setattr(resolver, "owner_project", owner)
+    monkeypatch.setattr(resolver, "_identity", identity)
     spec = await save_credential(manifest=mail(), scope="project", project_id=project.id)
     await credential_service.set_credential_values(str(spec.typeid), {ADDRESS: "me@gmail.com", APP_PASSWORD: "abcd"})
     auth = AuthSpec(credential="mailbox", vars={ADDRESS: ADDRESS, APP_PASSWORD: APP_PASSWORD})
@@ -387,6 +391,82 @@ async def test_the_source_is_handed_the_chosen_way(project, templates, monkeypat
     google = await resolver.resolve_credentials(auth, row)
     assert google.choice == GOOGLE and google.token.get_secret_value() == "ya29.token"
     assert google.value(ADDRESS) == "me@gmail.com", "a MUST value always rides along"
+    assert google.identity == "me@gmail.com", "the sign-in says who signed in"
+
+
+# ── a way of several values ──────────────────────────────────────────────────
+
+
+def paired() -> dict:
+    """Gmail's shape: a Google sign-in, OR an address with its app password — given together."""
+    return {
+        "name": "mailbox", "setup": "Sign in with Google, or an address and an app password.",
+        "vars": {
+            GOOGLE: {"required": "ONE_OF", "way": "google", "kind": "oauth", "provider": "google", "scopes": [MAIL],
+                     "secret": False},
+            ADDRESS: {"required": "ONE_OF", "way": "app_password", "secret": False},
+            APP_PASSWORD: {"required": "ONE_OF", "way": "app_password"},
+        },
+    }
+
+
+async def test_a_way_is_its_members_and_a_sign_in_is_alone_in_its_way():
+    from flow_sdk.schema.data_spec.credential_status_spec import ways
+
+    spec = CredentialSpec.model_validate({**paired(), "schema": 2})
+    assert ways(spec.vars) == {"google": [GOOGLE], "app_password": [ADDRESS, APP_PASSWORD]}
+    with pytest.raises(ValidationError, match="at least two ONE_OF ways"):
+        _spec({"A": {"required": "ONE_OF", "way": "w"}, "B": {"required": "ONE_OF", "way": "w"}})
+    with pytest.raises(ValidationError, match="alone in its way"):
+        _spec({**paired()["vars"], GOOGLE: {**paired()["vars"][GOOGLE], "way": "app_password"}})
+    with pytest.raises(ValidationError, match="belongs to a ONE_OF"):
+        _spec({"A": {"way": "w"}})
+
+
+async def test_a_way_of_several_values_is_asked_first_as_one_choice_with_a_field_each(project, templates, monkeypatch):
+    _granted(monkeypatch, scopes=None)
+    await save_credential(manifest=paired(), scope="project", project_id=project.id)
+    wizard, ops = project_setup.compile_setup(project.id, await project_setup.collect_requirements(project))
+
+    assert [s.id for s in wizard.steps] == ["ask-mailbox-one-of", "store-mailbox"], "no MUST left to ask alone"
+    google, app_password = ops["ask-mailbox-one-of"].exe_data.choices
+    assert (google.value, google.provider, google.fields) == (GOOGLE, "google", [])
+    assert app_password.value == "app_password" and [f.value for f in app_password.fields] == [ADDRESS, APP_PASSWORD]
+    assert [f.secret for f in app_password.fields] == [False, True]
+
+
+async def test_a_way_of_several_values_is_answered_in_lines_and_stored_as_that_way(project, templates):
+    from flow_sdk.builtin.credential import Credential
+
+    def env(answer) -> dict:
+        return input_env({input_name("mailbox", ONE_OF_INPUT): answer})
+
+    values, way = from_inputs("mailbox", env(f"{ADDRESS}=me@gmail.com\n{APP_PASSWORD}=abcd"))
+    assert (values, way) == ({ADDRESS: "me@gmail.com", APP_PASSWORD: "abcd"}, "")
+
+    await save_credential(manifest=paired(), scope="project", project_id=project.id)
+    await credential_service.set_credential_by_name("mailbox", values, project_id=str(project.id))
+    stored = await Credential.get("mailbox", project)
+    assert stored.chosen == "app_password", "the values given name their way"
+    row = next(r for r in (await credentials_status(project)).credentials if r.name == "mailbox")
+    assert row.state == "connected" and row.setup_choice == "app_password"
+
+
+async def test_half_a_way_does_not_hold_the_group(project, templates):
+    await save_credential(manifest=paired(), scope="project", project_id=project.id)
+    await credential_service.set_credential_by_name("mailbox", {ADDRESS: "me@gmail.com"}, project_id=str(project.id))
+    row = next(r for r in (await credentials_status(project)).credentials if r.name == "mailbox")
+    assert row.state != "connected" and APP_PASSWORD in row.missing
+
+
+async def test_a_choice_stored_by_a_member_name_still_names_its_way(project, templates):
+    from flow_sdk.builtin.credential import Credential, write_setup_choice
+
+    spec = await save_credential(manifest=paired(), scope="project", project_id=project.id)
+    await write_setup_choice(spec, APP_PASSWORD)
+    stored = await Credential.get("mailbox", project)
+    assert stored.setup_choice == "app_password" and stored.chosen == "app_password"
+    assert stored.way_of(GOOGLE) == "google" and stored.is_way("google") and not stored.is_way("nope")
 
 
 async def test_a_connect_wants_every_declared_sign_in_ways_scopes(project, templates, monkeypatch):

@@ -2,12 +2,13 @@
 
 `journey-bar.js` is pasted inline, last in `<body>`, in every mock. It is the reviewer's control strip:
 
-**⟲ Restart · ‹ Back · <step title / app trail · n of N> · Next › · ☰ screens · 💬 feedback (n) · Submit (n) · –**
+**🎯 · ⟲ Restart · ‹ Back · <step title / app trail · n of N> · Next › · ☰ screens · 💬 feedback (n) · Review & send (n) · –**
 
 ## What the page defines (before the script)
 
 ```js
-window.MOCKIFY = { key: 'github-prs' };   // the mock's row key in the project's `mocks` dataset
+window.MOCKIFY = { key: 'github-prs',   // the mock's row key in the mock project's `mocks` dataset
+                   project: '<id>' };    // the mock project's id (mock_project.py ensure → project_id)
 window.mockGo = (id) => { location.hash = id; location.reload(); };   // real mode only
 window.MOCK_BAR_AT = 'bottom';            // real mode: start bottom-right (build_mock.py sets it)
 ```
@@ -38,8 +39,13 @@ The bar imports `/sdk/flowpad-sdk.js` (the page must be served by Flowpad — `f
 | reviewer does | the bar writes |
 |---|---|
 | 💬 → text (+ decision chip, + 📎 / pasted image) → **Save** | `append` one `mockify.feedback` row: `mock` = the mock row's `ref`, `step`, `text`, `decision?`, `screenshot?` (a `data:image/…;base64` URL — stored as `input/screenshot.png`), `status: open`, `created`; key `<mock>-<step>-<base36 time>` |
+| 🎯 → point at an element (hover outlines it, Esc cancels) → the feedback box opens on it → **Save** | the same row, plus `anchor` (`mockify.anchor`: a `selector` from the screen's `[data-step]` or an id, the element's `label`, its `html`, its position `x y w h`) and `element_shot` (the element drawn through an SVG `foreignObject`, best effort: no picture for a big subtree or a cross-origin image) |
 | ✕ on an open comment | `deleteRow(key, {expected: version})` |
-| **Submit (n)** | `putMany` the open rows to `submitted` (with their versions), the mock row to `status: submitted`, then **one prompt queued** to the mock's `session` (`AgenticProcess.enqueue`, works for terminal and chat sessions): the mock ref + a line per screen |
+| **Review & send (n)** | nothing yet: opens the review panel — the open comments as ONE markdown document (screen by screen in journey order; each with its decision, the element it is on and its selector, and the paths of its images under the mock-feedback dataset folder), with **📁 Open folder** (the mock row's `folder`, shown in Finder / Explorer through the compute node), **⧉ Copy** and **Send ▶** |
+| **Send to <session> ▶** | uploads **that same markdown** as a file into the mock's `session` input folder and queues ONE line pointing at it ("File <name>.md is available here: <path>" — a multi-line prompt typed into a terminal session sits unsubmitted in its input box); `Send again` re-delivers the already-sent markdown the same way. Then, for new comments, `putMany` the open rows to `submitted` (with their versions) and the mock row to `status: submitted` |
+
+A comment on an element shows as a numbered **bubble** at that element (at its saved spot when the selector no
+longer finds it; grey once submitted); a click on the bubble opens the comment and outlines the element.
 
 The bar reads the mock's comments in one query (`match: {input.mock: <ref>}`) — the badge counts the
 `open` ones, the panel lists this screen's — and reads again on `onRowsChanged`, never on a timer or a
@@ -49,8 +55,10 @@ step change.
 
 **Restart** goes to the first screen. **Back / Next** and ←/→ follow the **main path** (branches are
 skipped; from a branch Next rejoins the path); ☰ reaches every screen (branches as "↳ when — title");
-browser Back/Forward walk the screens visited; arrows are ignored while typing. Drag by ⋮⋮ (kept on
-screen, panels open upward when the bar sits low); – minimises to `MOCK · n of N` (+ restores). Position
+browser Back/Forward walk the screens visited; arrows are ignored while typing. Every panel (screens, feedback) closes with its ✕ or Esc;
+the comment typed so far stays until Save, and a successful Save folds the box
+away and shows the saved entry, highlighted, in the panel (＋ New comment brings the box back). Drag by ⋮⋮ (kept on
+screen, panels open upward when the bar sits low); – minimises to `🎯 · n of N` (+ restores). Position
 and minimised state survive reloads (sessionStorage, guarded). The bar **contrasts with the screen behind
 it** (it samples the real background: light bar on a dark screen, dark on a light one), re-checked on
 every step, drag and resize. Hidden `[data-step]` sections stay hidden even if styled `display:flex`.

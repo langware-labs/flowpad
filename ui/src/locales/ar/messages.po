@@ -945,6 +945,10 @@ msgstr ""
 msgid "{displayName} connection failed"
 msgstr ""
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "{done} of {total} set up"
+msgstr ""
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "{doneCount} records"
 msgstr "{doneCount} سجل"
@@ -1522,6 +1526,10 @@ msgstr "🤖 الموجِّه"
 msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 الموجِّه - الاستعلام من الذكاء الاصطناعي (Claude Haiku)"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "$ per visitor"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "$/day"
 msgstr ""
@@ -1747,6 +1755,10 @@ msgstr ""
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr "يتصل الجذر بمزوّد باستخدام مفتاحه الخاص."
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "A sandbox of your own, ready in about a minute."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 msgid "A schedule needs a prompt"
@@ -3116,9 +3128,21 @@ msgstr ""
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "يمكن لأي شخص لديه حق الوصول فتح {entityType} مباشرة من خلال الرابط أدناه."
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Anyone with the launch link gets a sandbox of their own, up to ${capUsd} each."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Anyone with the launch link gets a sandbox of their own, using their own LLM access."
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
 msgstr "يمكن لأي شخص لديه الرابط الانضمام كعضو. تم نسخه إلى حافظتك — لا يمكن عرضه مرة أخرى."
+
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Anyone with the link can try this agent in a sandbox of their own — no sign-in needed."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Anyone with the link can view this agent — remove to make it private again"
@@ -3864,7 +3888,7 @@ msgstr ""
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/BusView.tsx
 #: src/components/automations/MessageRulePage.tsx
-#: src/components/top-nav-bar/TopNavBar.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/types/ViewType.ts
 msgid "Automations"
 msgstr ""
@@ -4143,6 +4167,7 @@ msgid "Boundary"
 msgstr "حد فاصل"
 
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Branch"
 msgstr "الفرع"
 
@@ -4924,6 +4949,10 @@ msgstr "Checking the app…"
 msgid "Checking the help desk files"
 msgstr "جارٍ التحقق من ملفات مكتب المساعدة"
 
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Checking the sign-in…"
+msgstr ""
+
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "Checking the tag index…"
 msgstr "جاري التحقق من فهرس الوسوم…"
@@ -5008,6 +5037,10 @@ msgstr "اختيار artifact لفتحه"
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Choose an endpoint…"
 msgstr "اختر نقطة نهاية…"
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Choose an LLM source…"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
 msgid "Choose another worker"
@@ -5801,6 +5834,10 @@ msgstr "الالتزام والدمج"
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "الالتزام بجميع التغييرات ودمج الفرع الحالي مع الفرع الأصل. سيغادر Claude بيئة العمل عند الانتهاء."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit and push this file"
+msgstr "نفّذ commit و push لهذا الملف"
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
 msgstr "إسناد الالتزام"
@@ -6028,8 +6065,13 @@ msgstr "متصل"
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 msgid "Connected"
 msgstr "متصل"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "Connected — {as}"
+msgstr ""
 
 #. placeholder {0}: partners.length
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6173,6 +6215,7 @@ msgstr "إجراءات قائمة السياق"
 msgid "context tokens"
 msgstr "رموز السياق"
 
+#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
@@ -6412,17 +6455,31 @@ msgstr ""
 msgid "Copy name"
 msgstr "نسخ الاسم"
 
-#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
-#: src/components/top-nav-bar/CopyPathButton.tsx
-#: src/pages/flow-page/display-history-button.tsx
-#: src/tabs/provider-meta.tsx
 msgid "Copy path"
 msgstr "نسخ المسار"
 
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Copy path of {name}"
+msgstr ""
+
+#. placeholder {0}: file.path
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Copy path: {0}"
+msgstr ""
+
+#: src/components/spec-editor/SpecEditor.tsx
+#: src/pages/flow-page/display-history-button.tsx
+msgid "Copy path: {filePath}"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+#: src/components/top-nav-bar/CopyPathButton.tsx
+msgid "Copy path: {path}"
+msgstr ""
+
+#: src/tabs/provider-meta.tsx
+msgid "Copy path: {workdir}"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -6459,8 +6516,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-msgid "Copy this file's path to the clipboard"
-msgstr "نسخ مسار هذا الملف إلى الحافظة"
+#~ msgid "Copy this file's path to the clipboard"
+#~ msgstr "نسخ مسار هذا الملف إلى الحافظة"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
@@ -6608,6 +6665,11 @@ msgstr "تعذّر التحقق — {failed}"
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Could not check sign-in"
 msgstr "تعذر التحقق من تسجيل الدخول"
+
+#: src/hooks/use-git-share-gate.ts
+#: src/hooks/use-git-share-gate.ts
+msgid "Could not commit and push"
+msgstr "تعذّر تنفيذ commit و push"
 
 #~ msgid "Could not connect GitHub"
 #~ msgstr "تعذر الاتصال بـ GitHub"
@@ -6792,6 +6854,10 @@ msgstr ""
 msgid "Could not launch the deployment"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Could not let visitors try this agent"
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 msgid "Could not link asset to cloud"
 msgstr "تعذّر ربط الأصل بالسحابة"
@@ -6895,6 +6961,10 @@ msgstr "تعذّر فتح المهارة"
 msgid "Could not open the folder"
 msgstr ""
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Could not open the shared version"
+msgstr "تعذّر فتح النسخة التي شوركت"
+
 #: src/components/assets/editor/chart/SequenceChartView.tsx
 msgid "Could not open the sub-flow"
 msgstr "تعذّر فتح التدفق الفرعي"
@@ -6911,7 +6981,7 @@ msgstr "تعذر الإيقاف المؤقت"
 msgid "Could not pause the cloud machine"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr ""
@@ -7300,6 +7370,10 @@ msgstr ""
 msgid "Could not stop the snippet"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Could not stop visitor trials"
+msgstr ""
+
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Could not switch source"
 msgstr "تعذّر تبديل المصدر"
@@ -7533,6 +7607,7 @@ msgstr "تعذر إعداد المشروع"
 
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
+#: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't set up the sandbox."
 msgstr ""
 
@@ -7540,6 +7615,10 @@ msgstr ""
 #. placeholder {1}: f.message
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't share with {0}: {1}"
+msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Couldn't start a sandbox."
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -7713,6 +7792,11 @@ msgstr "إنشاء مشروع جديد"
 #: src/components/quick-create/QuickCreateTile.tsx
 msgid "Create new…"
 msgstr "إنشاء جديد…"
+
+#. placeholder {0}: shownUrl(field.help_url)
+#: src/components/ask/AskChoiceBlock.tsx
+msgid "Create one at {0}"
+msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1> frontmatter into a docs folder and running <2>flow record index <path></2>."
@@ -9190,6 +9274,7 @@ msgstr "تم"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -9260,8 +9345,7 @@ msgstr ""
 msgid "Download bundle"
 msgstr "تنزيل الحزمة"
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/use-open-git-share.ts
 msgid "Download failed"
 msgstr "فشل التحميل"
 
@@ -9279,7 +9363,6 @@ msgstr "تنزيل الرسالة"
 msgid "Download sample CSV"
 msgstr ""
 
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Downloaded"
 msgstr "تم التحميل"
@@ -10972,8 +11055,8 @@ msgid "Files & Directories"
 msgstr "الملفات والمجلدات"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Files not available"
-msgstr ""
+#~ msgid "Files not available"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
@@ -11780,6 +11863,11 @@ msgstr "Git"
 msgid "Git changes"
 msgstr "تغييرات Git"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Git could not commit or push this file."
+msgstr "تعذّر على Git تنفيذ commit أو push لهذا الملف."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
 msgstr "Git مطلوب لمشاركة الملفات"
@@ -11819,6 +11907,11 @@ msgstr "مستودع Git"
 
 #~ msgid "Git setup finished, but the project still isn't ready to link."
 #~ msgstr "تم إعداد Git، لكن المشروع ما زال غير جاهز للربط."
+
+#: src/components/assets/editor/GitShareBar.tsx
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Git share failed"
+msgstr "فشلت المشاركة عبر Git"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git status of the working directory"
@@ -13884,6 +13977,14 @@ msgstr "يمكن لوكيل تقييم التقدم وملء الحقول الن
 msgid "Let an agent follow the steps above and answer for you."
 msgstr "دع وكيلًا ينفّذ الخطوات أعلاه ويجيب بدلًا منك."
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Each visitor spends up to the cap, from an LLM endpoint you administer."
+#~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Let anyone with the launch link try this agent in a sandbox of their own — no sign-in needed. Fund them from an LLM endpoint you administer, up to a cap each, or let them bring their own LLM access."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Let anyone with the link view this agent — its files stay private"
 msgstr ""
@@ -15514,6 +15615,10 @@ msgstr "مطلوب من أجل"
 msgid "Needed for:"
 msgstr "مطلوب من أجل:"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Needed to run {projectName} on this computer."
+msgstr ""
+
 #. placeholder {0}: p.sign_in_title
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Needs {0} sign-in"
@@ -16035,6 +16140,10 @@ msgstr "لا توجد علامات مرجعية بعد"
 
 #: src/components/token-plan/TokenPlanChip.tsx
 msgid "no budget"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "No budget — visitors bring their own"
 msgstr ""
 
 #: src/components/token-plan/BudgetHero.tsx
@@ -17339,6 +17448,7 @@ msgstr ""
 msgid "Not saved: {0}"
 msgstr "لم يُحفظ: {0}"
 
+#: src/components/assets/editor/GitShareBar.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Not sent"
@@ -17401,6 +17511,10 @@ msgstr ""
 #: src/components/automations/AutomationRow.tsx
 msgid "Not tested yet"
 msgstr ""
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Not updated"
+msgstr "لم يُحدَّث"
 
 #~ msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
 #~ msgstr ""
@@ -17746,6 +17860,10 @@ msgstr "تشغيل"
 msgid "On"
 msgstr "مفعّل"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "On — anyone with the launch link can try it"
+msgstr ""
+
 #~ msgid "On a machine with Flowpad already running and signed in, the last line alone is enough."
 #~ msgstr ""
 
@@ -17776,8 +17894,8 @@ msgstr "على القرص"
 #~ msgstr "عند تغيير الملف"
 
 #: src/components/assets/ProjectDependencyDialog.tsx
-msgid "On hub"
-msgstr "على Hub"
+#~ msgid "On hub"
+#~ msgstr "على Hub"
 
 #: src/components/assets/editor/asset-setup/AssetSetupViewer.tsx
 msgid "On load — each time it is shown"
@@ -17910,6 +18028,10 @@ msgstr "توجد هنا إدخالات Harness فقط — يمكن تفعيل \"
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "Only people you share with can use this agent."
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Only people you share with can view this agent."
@@ -18202,6 +18324,7 @@ msgid "Open help desk"
 msgstr ""
 
 #: src/components/links/LinkMenu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in"
 msgstr ""
 
@@ -18253,6 +18376,7 @@ msgstr "فتح في الملفات"
 
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in Finder/Explorer"
 msgstr ""
 
@@ -18263,6 +18387,10 @@ msgstr ""
 #: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "افتح في FlowPad"
+
+#: src/tabs/doc-tab-card.tsx
+msgid "Open in Flowpad browser"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
@@ -18284,6 +18412,7 @@ msgstr "فتح في تبويب المهارات"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/diagnose/open-in-terminal-button.tsx
+#: src/tabs/doc-tab-card.tsx
 msgid "Open in terminal"
 msgstr "فتح في المحطة الطرفية"
 
@@ -18692,6 +18821,10 @@ msgstr "تم فتح مقارنة الأصول."
 msgid "Opened existing project"
 msgstr "تم فتح المشروع الموجود"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Opening {name}…"
+msgstr ""
+
 #: src/components/webapp-display/WebappSetupGate.tsx
 msgid "Opening app…"
 msgstr "Opening app…"
@@ -18716,6 +18849,10 @@ msgstr "Opening your agent…"
 msgid "Opening your project…"
 msgstr "جاري فتح المشروع…"
 
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "Opening your sandbox…"
+msgstr ""
+
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "OpenRouter"
 msgstr ""
@@ -18736,6 +18873,7 @@ msgstr ""
 #: src/components/assets/dependency-sources.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Optional"
 msgstr ""
 
@@ -18744,7 +18882,11 @@ msgid "Optional — leave blank for home"
 msgstr "اختياري — يُستخدم المجلد الرئيسي إذا تُرك فارغاً"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "optional — skipped here"
+#~ msgid "optional — skipped here"
+#~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Optional — skipped on this machine"
 msgstr ""
 
 #: src/components/credentials-view/CredentialView.tsx
@@ -19115,6 +19257,7 @@ msgstr ""
 #~ msgid "path"
 #~ msgstr "المسار"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -19945,6 +20088,10 @@ msgstr "تم إعادة تسمية المشروع"
 msgid "Project Required"
 msgstr "مشروع مطلوب"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Project requirements"
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
 msgstr "أسرار المشروع على هذه الآلة"
@@ -20181,7 +20328,7 @@ msgstr ""
 msgid "Public repos are already open to everyone."
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
 msgstr ""
@@ -20190,7 +20337,7 @@ msgstr ""
 msgid "Publish {name} to the cloud before inviting people — invitees get the project from there."
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 msgid "Publish failed."
 msgstr ""
 
@@ -20208,8 +20355,8 @@ msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهاز
 #~ msgid "published"
 #~ msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#: src/components/assets/editor/agent-profile/AgentPublishButton.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/components/project-home/ProjectPublishedButton.tsx
 #: src/lib/publish-state.ts
@@ -20315,6 +20462,10 @@ msgstr "دفع {folderName}"
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push & notify"
 msgstr "إرسال وإخطار"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Push and share"
+msgstr "نفّذ push وشارك"
 
 #~ msgid "Push failed"
 #~ msgstr "فشل الإرسال"
@@ -20470,6 +20621,10 @@ msgstr ""
 #: src/components/entity-execution-panel/current-activity.ts
 msgid "Reading"
 msgstr "يقرأ"
+
+#: src/components/setup-wizard/SourceSetupDialog.tsx
+msgid "reading {account}"
+msgstr ""
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
 msgid "Reading dependencies…"
@@ -21403,11 +21558,16 @@ msgstr ""
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/credentials/VariableDetails.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Required"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "required — it will not work here until it is set up"
+#~ msgid "required — it will not work here until it is set up"
+#~ msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Required — skipped on this machine"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
@@ -21531,8 +21691,12 @@ msgstr "إعادة تشغيل"
 msgid "Restart required — {changedCount} {0} changed"
 msgstr "يلزم إعادة التشغيل — تغيّر {changedCount} {0}"
 
-#: src/components/terminal/interactive-terminal/RestartButton.tsx
-#: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
+#. placeholder {0}: fields.join(', ')
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
+msgid "Restart required — changed since start: {0}"
+msgstr "إعادة التشغيل مطلوبة — تغيّر منذ البدء: {0}"
+
+#: src/components/terminal/interactive-terminal/useRestartRequiredHint.ts
 msgid "Restart required — config changed since start"
 msgstr "يجب إعادة التشغيل — تغيرت الإعدادات منذ البدء"
 
@@ -23065,7 +23229,6 @@ msgstr "شريط أدوات التحديد"
 msgid "Self-Summary"
 msgstr "الملخص الذاتي"
 
-#: src/components/ask/AskChoiceBlock.tsx
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
@@ -23142,6 +23305,10 @@ msgstr ""
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
 msgid "Send message"
 msgstr "إرسال الرسالة"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Send my edits back"
+msgstr "أرسل تعديلاتي"
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 msgid "Send one minimal call through this endpoint"
@@ -23452,9 +23619,11 @@ msgstr "تعيين المشروع"
 msgid "Set public"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23465,8 +23634,8 @@ msgid "Set up (runs an agentic process)"
 msgstr "إعداد (يشغّل عملية ذاتية التنفيذ)"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Set up {projectName}"
-msgstr ""
+#~ msgid "Set up {projectName}"
+#~ msgstr ""
 
 #~ msgid "Set up {title}"
 #~ msgstr ""
@@ -23663,6 +23832,7 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
+#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -23780,6 +23950,14 @@ msgstr "مشترك"
 msgid "Shared by every place"
 msgstr ""
 
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "Shared by Git — click to open the version that was shared"
+msgstr "تمت المشاركة عبر Git — انقر لفتح النسخة التي شوركت"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Shared by Git — Download opens exactly the version that was shared, without touching your own checkout."
+msgstr "تمت المشاركة عبر Git — التنزيل يفتح النسخة التي شوركت بالضبط، دون المساس بنسختك."
+
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Shared Context"
@@ -23806,8 +23984,8 @@ msgid "Shared with {0}"
 msgstr "تمت المشاركة مع {0}"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
-msgid "Sharing"
-msgstr ""
+#~ msgid "Sharing"
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
@@ -24609,6 +24787,10 @@ msgstr ""
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
 msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Someone else changed this file on the remote. Resolve the conflict in Git, then share again."
+msgstr "غيّر شخص آخر هذا الملف في المستودع البعيد. حُلّ التعارض في Git ثم شارك مجددًا."
 
 #~ msgid "Someone else changed this too. Switch to Advanced view to merge."
 #~ msgstr "غيّر شخص آخر هذا أيضًا. يمكنك التبديل إلى العرض المتقدم للدمج."
@@ -26018,16 +26200,16 @@ msgid "The file may have been removed, or it was never created — a session wit
 msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not repair this setup. Open the process to see what it found."
-msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
+#~ msgid "The fixer could not repair this setup. Open the process to see what it found."
+#~ msgstr "تعذّر إصلاح هذا الإعداد. افتح العملية لترى ما وُجد."
 
 #: src/components/project-setup/use-setup-fix.ts
-#~ msgid "The fixer could not repair this setup. The step above says what it found."
-#~ msgstr ""
+msgid "The fixer could not repair this setup. The step above says what it found."
+msgstr ""
 
 #: src/components/project-setup/use-setup-fix.ts
-msgid "The fixer could not start."
-msgstr "تعذّر بدء الإصلاح."
+#~ msgid "The fixer could not start."
+#~ msgstr "تعذّر بدء الإصلاح."
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
@@ -26093,6 +26275,8 @@ msgid "The hub makes this call itself, down this endpoint's chain. A vendor OAut
 msgstr "ينفّذ الـ Hub هذا الاستدعاء بنفسه عبر سلسلة نقطة النهاية. لا يُستخدم لذلك أبدًا تسجيل دخول OAuth لمزوّد أو مفتاح API محفوظ على هذا الجهاز — وبلا جذر يحمل مفتاحًا يفشل الاختبار بدل الرجوع إلى بديل."
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 msgid "The hub refused the change."
 msgstr ""
 
@@ -26349,6 +26533,10 @@ msgstr "تُخزَّن القيمة في نظام Keychain الخاص بنظام
 msgid "the vault"
 msgstr ""
 
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "The version that was shared with you"
+msgstr "النسخة التي شوركت معك"
+
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "The wizard could not run"
@@ -26513,6 +26701,10 @@ msgstr "لا يمكن مشاركة هذا المورد عبر Git. يُرجى إ
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
 msgstr "لا يوجد مسار ملف لهذا الأصل."
+
+#: src/tabs/tab-row-item.tsx
+msgid "This asset is not part of this project"
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this budget"
@@ -27684,6 +27876,7 @@ msgstr "مدة الدور"
 msgid "Turn failed"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/automations/AutomationPage.tsx
 #: src/components/automations/MessageRulePage.tsx
 msgid "Turn off"
@@ -27978,9 +28171,15 @@ msgstr "محدث"
 msgid "Up to date"
 msgstr "محدّث"
 
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Update"
 msgstr "تحديث"
+
+#. placeholder {0}: status.behind
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Update ({0} newer)"
+msgstr "حدّث ({0} أحدث)"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -28025,6 +28224,10 @@ msgstr "آخر تحديث"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Updated {0}"
 msgstr "تم تحديث {0}"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Updated to the latest version"
+msgstr "تم التحديث إلى أحدث نسخة"
 
 #. placeholder {0}: data.generated
 #: src/pages/live-status/LiveStatus.tsx
@@ -28234,6 +28437,10 @@ msgstr "الأصول المستخدمة"
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Used by"
 msgstr "تُستخدم بواسطة"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Used by: {usedBy}"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Used in transcript"
@@ -28459,6 +28666,7 @@ msgstr "يجب التحقق من الإعداد أولاً."
 #~ msgid "Verify: {0}"
 #~ msgstr "التحقق: {0}"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-card/entity-card-rows.ts
 msgid "Version"
 msgstr "الإصدار"
@@ -28645,6 +28853,10 @@ msgstr "بكسل منفذ العرض"
 msgid "viewport row"
 msgstr "صف منفذ العرض"
 
+#: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
+msgid "Visibility Settings"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "visible"
 msgstr "مرئي"
@@ -28652,6 +28864,26 @@ msgstr "مرئي"
 #: src/i18n/type-labels.ts
 msgid "Visitor"
 msgstr "زائر"
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor LLM source"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor trials"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitor trials stopped"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitors can no longer start a sandbox of this agent."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+msgid "Visitors can try this agent"
+msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
@@ -28965,8 +29197,8 @@ msgid "What this project has published, and what it could."
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
-msgstr ""
+#~ msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+#~ msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "What this source places in the project is added to .gitignore — it may be private."
@@ -29291,6 +29523,7 @@ msgstr "يعمل…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -29426,6 +29659,10 @@ msgstr "أنت"
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "You administer no LLM endpoint to allocate from, so this agent spends your capped default."
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
+#~ msgid "You administer no LLM endpoint to fund visitors from."
+#~ msgstr ""
 
 #. placeholder {0}: person?.name || person?.email
 #. placeholder {1}: alreadyAsked.task.title
@@ -29658,6 +29895,10 @@ msgstr "عاد طلب التشخيص الخاص بك"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Your display name"
 msgstr "اسمك المعروض"
+
+#: src/components/assets/editor/GitShareBar.tsx
+msgid "Your edits were sent back"
+msgstr "أُرسلت تعديلاتك"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr ""

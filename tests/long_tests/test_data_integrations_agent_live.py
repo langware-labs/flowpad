@@ -109,6 +109,6 @@ async def test_persona_connects_samples_and_defines(run_workdir):
 
             ds = await _until(labelled, budget_s=200)
             assert ds, "no dataset with a gold label bound to the source"
-            assert ds["spec"]["examples"][0]["input"] == "ingest.source_item"
-            assert ds["spec"]["examples"][0]["output"] == {"sentiment": "string"}
+            assert ds["spec"]["rows"][0]["input"] == "ingest.source_item"
+            assert ds["spec"]["rows"][0]["output"] == {"sentiment": "string"}
             assert (run_workdir / "agentic-assets" / "dataset").is_dir()

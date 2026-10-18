@@ -15,7 +15,7 @@ it. Switching projects switches that whole context at once.
 - **A working folder.** The project's files live in a real directory on disk;
   agents run there, and edits are ordinary file changes you can inspect, commit,
   or open in any other tool.
-- **Assets.** Documents, whiteboards, decks, skills, and other entities you
+- **Assets.** Documents, charts, decks, skills, and other entities you
   create are indexed under the project so they're searchable and linkable.
 - **Tabs and sessions.** Open tabs and agent (Claude Code) sessions belong to the
   project, so returning to it restores what you were doing.

@@ -150,3 +150,36 @@ def test_extract_sequence_chart_never_writes(tmp_path: Path) -> None:
     [rec] = extract_chart(FSRef(folder), "00000000-0000-4000-8000-000000000002")
     assert (folder / "CHART.md").read_text(encoding="utf-8") == doc
     assert rec.metadata["session"] == "proc-1"
+
+
+def _seed_docs_chart(project: Path) -> Path:
+    chart = project / "docs" / "network" / "x"
+    chart.mkdir(parents=True)
+    (chart / "CHART.md").write_text("---\nname: x\n---\n\n# x\n", encoding="utf-8")
+    (chart / "notes.md").write_text("# chart notes\n", encoding="utf-8")
+    (project / "docs" / "network" / "readme.md").write_text("# network\n", encoding="utf-8")
+    return chart
+
+
+@pytest.mark.asyncio
+async def test_docs_chart_indexes_once_as_chart_not_markdown(tmp_path: Path) -> None:
+    """A folder with CHART.md under ``docs/**`` is a chart; the markdown walk
+    fences it, so neither its CHART.md nor its sibling .md is a MARKDOWN doc —
+    while ``agentic-assets/chart/`` keeps indexing and plain docs stay markdown."""
+    from flow_sdk.fs_store.indexer import build_default_indexer
+
+    project = tmp_path / "proj"
+    chart = _seed_docs_chart(project)
+    repo_chart = _seed_board(project, "Repo Board")
+
+    refs = await build_default_indexer().scan(IndexerOptions(
+        verbose=False,
+        roots=(FSRef(project, record_type=RecordType.REAL_PROJECT_CWD, scope="project"),),
+        gitignore=True,
+    ))
+
+    charts = sorted(Path(r.path).resolve() for r in refs if r.record_type == RecordType.CHART)
+    assert charts == sorted([chart.resolve(), repo_chart.resolve()])
+    markdown = {Path(r.path).resolve() for r in refs if r.record_type == RecordType.MARKDOWN}
+    assert (project / "docs" / "network" / "readme.md").resolve() in markdown
+    assert not any(p.is_relative_to(chart.resolve()) for p in markdown)

@@ -1,12 +1,12 @@
-"""Dataset value models — ``ExampleSpec``, ``DatasetSpec``, and the three leaves.
+"""Dataset value models — ``RowSpec``, ``DatasetSpec``, and the three leaves.
 
 ``Spec`` is the suffix for a VALUE model: not an entity, never a row of its own.
 The one entity is ``Dataset`` (``flow_sdk/builtin/dataset.py``); everything here
 lives inside it or on disk as JSON.
 
-Generics type the slots. ``ExampleSpec[I, O, C]`` says what one example's
+Generics type the slots. ``RowSpec[I, O, C]`` says what one row's
 ``input`` / ``output`` / ``context`` are; ``DatasetSpec[E]`` says what every row
-is. ``DatasetSpec[MyExample]`` validates rows as ``MyExample`` — a dataset can be
+is. ``DatasetSpec[MyRow]`` validates rows as ``MyRow`` — a dataset can be
 typed by the agent that produced it. A PARAMETRIZATION inherits its origin's
 ``spec_kind`` and deliberately does not register; only a named subclass does.
 
@@ -27,14 +27,14 @@ from flow_sdk.schema.data_spec.spec import DataSpec, to_authoring_form
 
 
 class DataLayoutEnum(StrEnum):
-    """How a dataset's examples are physically stored on disk."""
+    """How a dataset's rows are physically stored on disk."""
 
-    CSV = "csv"               # one delimited file; each row is an example
-    IO_FOLDER = "io_folder"   # a folder of per-example input/output/ground_truth slots
+    CSV = "csv"               # one delimited file; each row is a row
+    IO_FOLDER = "io_folder"   # a folder of per-row input/output/ground_truth slots
 
 
-class ExampleKind(StrEnum):
-    """Per-example role. 'The eval set' = examples whose kind == EVAL."""
+class RowKind(StrEnum):
+    """Per-row role. 'The eval set' = rows whose kind == EVAL."""
 
     TRAIN = "train"
     EVAL = "eval"
@@ -44,7 +44,7 @@ class ExampleKind(StrEnum):
 # ── the leaves ────────────────────────────────────────────────────────────────
 
 class FileRef(DataSpec):
-    """A file: its example-relative POSIX path. Resolved by the layout, never here."""
+    """A file: its row-relative POSIX path. Resolved by the layout, never here."""
 
     model_config = ConfigDict(frozen=True)
     spec_kind = "file_ref"
@@ -52,7 +52,7 @@ class FileRef(DataSpec):
 
 
 class FolderSpec(DataSpec):
-    """A folder of files: its own example-relative path and its members, recursively."""
+    """A folder of files: its own row-relative path and its members, recursively."""
 
     model_config = ConfigDict(frozen=True)
     spec_kind = "folder"
@@ -74,11 +74,11 @@ Artifact = Union[FileRef, FolderSpec, TextSpec]
 FolderSpec.model_rebuild()
 
 
-# ── one example ───────────────────────────────────────────────────────────────
+# ── one row ───────────────────────────────────────────────────────────────
 
 #: A slot's shape. Deliberately UNBOUND: ``bound=DataSpec`` advertised a
 #: restriction that does not exist — Python never checks a TypeVar bound at
-#: runtime, so ``ExampleSpec[int, int, DataSpec]`` was always accepted and
+#: runtime, so ``RowSpec[int, int, DataSpec]`` was always accepted and
 #: worked — and it contradicted the authoring grammar, where ``"int"`` is a
 #: reserved primitive and a perfectly good slot shape.
 InputSpecT = TypeVar("InputSpecT")
@@ -89,7 +89,7 @@ ContextSpecT = TypeVar("ContextSpecT")
 def _generic_args(cls: type) -> tuple:
     """The type arguments of ``cls``'s parametrization -- its own, else the nearest base's.
 
-    A NAMED subclass (``class NavDataset(DatasetSpec[NavExample]): spec_kind = ...``) is how a
+    A NAMED subclass (``class NavDataset(DatasetSpec[NavRow]): spec_kind = ...``) is how a
     shape becomes a registered kind, and pydantic gives that subclass empty generic args: the
     arguments live on the parametrized base it extends. Reading only the class's own metadata
     answered "no slot types" for every named dataset kind, so ``Dataset.input_shape`` was None.
@@ -101,8 +101,8 @@ def _generic_args(cls: type) -> tuple:
     return ()
 
 
-class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
-    """One example: ``input`` + ``output`` + ``context``, plus the gold answer.
+class RowSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
+    """One row: ``input`` + ``output`` + ``context``, plus the gold answer.
 
     ``output`` and ``ground_truth`` share a shape — that is what makes scoring a
     structural diff. Either may be absent: gold only (hand-authored, not yet
@@ -116,14 +116,14 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
     model_config = ConfigDict(frozen=True)
 
     id: str = ""                                 # layout-assigned
-    key: str = ""                                # layout-assigned: the example folder's name
+    key: str = ""                                # layout-assigned: the row folder's name
     version: str = ""                            # layout-assigned: digest of the row's files (put/delete ``expected``)
-    kind: ExampleKind = ExampleKind.TRAIN
+    kind: RowKind = RowKind.TRAIN
     input: InputSpecT
     output: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
     ground_truth: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
     context: Optional[ContextSpecT] = None
-    metadata: dict[str, Any] = Field(default_factory=dict)  # example.json metadata ∪ sidecars by filename
+    metadata: dict[str, Any] = Field(default_factory=dict)  # row.json metadata ∪ sidecars by filename
     data: dict[str, Any] = Field(default_factory=dict)
 
     @property
@@ -152,27 +152,27 @@ class ExampleSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
 
 # ── the dataset ───────────────────────────────────────────────────────────────
 
-ExampleSpecT = TypeVar("ExampleSpecT", bound=ExampleSpec)
+RowSpecT = TypeVar("RowSpecT", bound=RowSpec)
 
 
-class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
-    """A dataset: a list of examples of one shape."""
+class DatasetSpec(DataSpec, Generic[RowSpecT]):
+    """A dataset: a list of rows of one shape."""
 
     model_config = ConfigDict(frozen=True)
 
-    examples: list[ExampleSpecT]
+    rows: list[RowSpecT]
 
     @classmethod
-    def example_type(cls) -> type:
+    def row_type(cls) -> type:
         """The ``E`` of a parametrization."""
-        (e,) = _generic_args(cls) or (ExampleSpec,)
+        (e,) = _generic_args(cls) or (RowSpec,)
         return e
 
     @classmethod
     def parse(cls, data: Any) -> type:
-        """The keyword authoring form → ``DatasetSpec[ExampleSpec[I, O, C]]``.
+        """The keyword authoring form → ``DatasetSpec[RowSpec[I, O, C]]``.
 
-            {"examples": [{"input": <shape>, "output": <shape>, "context"?: <shape>}]}
+            {"rows": [{"input": <shape>, "output": <shape>, "context"?: <shape>}]}
 
         One row describes every row (the list carries exactly one element).
         ``output`` and ``ground_truth`` share ``O``; if both are authored they
@@ -188,24 +188,24 @@ class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
             if not (isinstance(found, type) and issubclass(found, DatasetSpec)):
                 raise ValueError(f"{data!r} is not a registered dataset shape")
             return found
-        if not isinstance(data, dict) or set(data) != {"examples"}:
-            raise ValueError('a dataset shape is {"examples": [<one example shape>]}')
-        rows = data["examples"]
+        if not isinstance(data, dict) or set(data) != {"rows"}:
+            raise ValueError('a dataset shape is {"rows": [<one row shape>]}')
+        rows = data["rows"]
         if not isinstance(rows, list) or len(rows) != 1:
-            raise ValueError("a dataset shape carries exactly one example shape — the shape every row has")
+            raise ValueError("a dataset shape carries exactly one row shape — the shape every row has")
         row = rows[0]
         if not isinstance(row, dict) or "input" not in row:
-            raise ValueError('an example shape needs at least "input"')
+            raise ValueError('a row shape needs at least "input"')
         extra = set(row) - {"input", "output", "ground_truth", "context"}
         if extra:
-            raise ValueError(f"unknown example slots: {sorted(extra)}")
+            raise ValueError(f"unknown row slots: {sorted(extra)}")
         out_form = row.get("output", row.get("ground_truth"))
         if "output" in row and "ground_truth" in row and row["output"] != row["ground_truth"]:
             raise ValueError("output and ground_truth share one shape")
         i = _slot_type("input", row["input"])
         o = _slot_type("output", out_form) if out_form is not None else DataSpec
         c = _slot_type("context", row["context"]) if "context" in row else DataSpec
-        hit = DatasetSpec[ExampleSpec[i, o, c]]  # type: ignore[valid-type]   (Pydantic caches parametrizations)
+        hit = DatasetSpec[RowSpec[i, o, c]]  # type: ignore[valid-type]   (Pydantic caches parametrizations)
         if hit.__authoring__ is None:
             # Remember the form, so `to_authoring_form` — the ONE serializer — can
             # emit it back; a parametrization has no spec_kind and no fields to describe.
@@ -214,7 +214,7 @@ class DatasetSpec(DataSpec, Generic[ExampleSpecT]):
                 form["output"] = to_authoring_form(o)
             if c is not DataSpec:
                 form["context"] = to_authoring_form(c)
-            hit.__authoring__ = {"examples": [form]}
+            hit.__authoring__ = {"rows": [form]}
         return hit
 
 
@@ -236,4 +236,4 @@ def _slot_type(slot: str, form: Any) -> Any:
 
 
 #: What an un-spec'd dataset validates with.
-DEFAULT_DATASET_SPEC = DatasetSpec[ExampleSpec[Artifact, Artifact, DataSpec]]  # type: ignore[valid-type]
+DEFAULT_DATASET_SPEC = DatasetSpec[RowSpec[Artifact, Artifact, DataSpec]]  # type: ignore[valid-type]
