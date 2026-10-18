@@ -24,3 +24,26 @@ async def test_preview_reports_full_length_and_keeps_full_record(length):
     assert preview["full_body_length"] == length
     assert preview["full_record_path"] == f"/api/v1/graph/source_item/{item.id}"
     assert (await SourceItem.get_by_id(item.id)).body == body
+
+
+def test_items_help_full_record_example_uses_available_instance_transport(monkeypatch):
+    from flow_sdk.cli.commands import _common, source_cmd
+
+    command = next(c for c in source_cmd.source_app.registered_commands if c.name == 'items')
+    example = command.help.split('\b\n', 1)[1]
+    calls = []
+    expected = {'name': 'Original...', 'body': 'complete body'}
+    monkeypatch.setattr(_common, 'discover_port', lambda: 49123)
+
+    def capture(url, *, on_error):
+        calls.append(url)
+        assert on_error is _common.server_error
+        return expected
+
+    monkeypatch.setattr(_common, 'get_graph_json', capture)
+    scope = {}
+    exec(compile(example, '<source items help>', 'exec'), scope)
+    assert calls == ['http://127.0.0.1:49123/api/v1/graph/source_item/ITEM_ID']
+    assert scope['record'] == expected
+    assert 'name is complete' in command.help
+    assert 'only body is previewed' in command.help
