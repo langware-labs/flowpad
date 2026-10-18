@@ -22,12 +22,16 @@ vi.mock('@src/components/image-annotator/annotate-files', () => ({
 
 import { sendReply } from '@sdk/entities/notifications';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
+import { resetComposerDrafts } from '@src/components/entity-execution-panel/composer-drafts';
 
 const CONV = 'c0c0c0c0-0000-4000-8000-000000000005';
 const host = { userId: 'a0a0a0a0-0000-4000-8000-000000000002', name: 'Sam' };
 
 describe('MessageComposer session toggle', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetComposerDrafts();
+  });
   afterEach(() => cleanup());
 
   it('no sessionHost → no toggle, a plain send has no prompt extras', async () => {
@@ -63,6 +67,19 @@ describe('MessageComposer session toggle', () => {
     expect(screen.getByTestId('composer-session-toggle').getAttribute('title')).toBe(
       "Open the live session on Sam's machine",
     );
+  });
+
+  it('a live-session prompt draft survives unmount, per session', () => {
+    const first = render(<MessageComposer conversationId={CONV} liveSessionId="sid-1" variant="terminal" />);
+    fireEvent.change(screen.getByTestId('live-session-input'), { target: { value: 'half a prompt' } });
+    first.unmount();
+
+    render(<MessageComposer conversationId={CONV} liveSessionId="sid-1" variant="terminal" />);
+    expect(screen.getByTestId<HTMLTextAreaElement>('live-session-input').value).toBe('half a prompt');
+    cleanup();
+
+    render(<MessageComposer conversationId={CONV} liveSessionId="sid-2" variant="terminal" />);
+    expect(screen.getByTestId<HTMLTextAreaElement>('live-session-input').value).toBe('');
   });
 
   it('the terminal variant is a ❯ prompt line with the cursor waiting in it', () => {

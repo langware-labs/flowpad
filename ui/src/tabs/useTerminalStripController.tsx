@@ -211,13 +211,10 @@ export function useTerminalStripController({
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
   // "New Vibe": the tabless Vibe home, whose prompt opens the next Vibe tab.
-  const handleNewVibe = useCallback(
-    () => {
-      const home = DockPointer.root().withViewMode(ViewMode.Vibe);
-      return navigation.openDock(spawnProjectId ? home.withScopeFilter(projectScope(spawnProjectId)) : home);
-    },
-    [navigation, spawnProjectId],
-  );
+  const handleNewVibe = useCallback(() => {
+    const home = DockPointer.root().withViewMode(ViewMode.Vibe);
+    return navigation.openDock(spawnProjectId ? home.withScopeFilter(projectScope(spawnProjectId)) : home);
+  }, [navigation, spawnProjectId]);
 
   // "Open Context" — freeze the current global context (the ContextEntitiesEnum
   // slots) into a new GraphContext entity and open it in a tab. URL-first: we
@@ -442,8 +439,8 @@ export function useTerminalStripController({
                 });
                 return;
               }
-              // History from the strip reopens as a terminal (PTY), like its openers.
-              await navigation.openShellProcess(processId, { viewMode: ViewMode.Advanced });
+              // No mode: the session reopens in the one it was last shown in (`last_mode`).
+              await navigation.openShellProcess(processId);
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);
             }
