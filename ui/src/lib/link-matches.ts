@@ -30,11 +30,13 @@ const TEST_ID = /(?:::[\w[\].-]+)+$/;
 const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
 export const HAS_RTL = new RegExp(`[${RTL}]`);
 // Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
-const LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-)*`);
+// Claude Code glues an attachment's label to its absolute path: `[image]/private/tmp/a.png`.
+const LABEL = String.raw`\[(?:image|file|pdf)\](?=/)`;
+const LEAD = new RegExp(`^(?:${LABEL}|[([{]|[${RTL}]+-)*`, 'i');
 // A Claude Code row on Windows is pre-reversed into visual order (see terminalConfig.ts), so in a
 // row carrying RTL text the sentence's `.`/`:` and a glued Hebrew prefix land at the path's START
 // / END instead. `./` and `../` stay paths.
-const RTL_LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`);
+const RTL_LEAD = new RegExp(`^(?:${LABEL}|[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`, 'i');
 const TRAIL = new RegExp(`(?:[.,;:!?]|-[${RTL}]+)+$`);
 const OPENER: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
 
