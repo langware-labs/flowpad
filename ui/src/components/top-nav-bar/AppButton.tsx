@@ -38,6 +38,24 @@ export function AppButton({ project }: { project?: Project | null }) {
   const shownId = appDockAddress(currentDock ?? null)?.microAppId ?? null;
   const open = (entry: ProjectApp) => navigation.openDock(projectAppDock(entry, projectId));
 
+  const tooltipContent = (
+    <div className="space-y-1">
+      <div className="font-medium">{t`Apps and agents`}</div>
+      {[
+        ...apps.map(({ app }) => ({ id: app.id, type: app.type, name: app.name })),
+        ...agents.map((agent) => ({ id: agent.id, type: agent.type, name: agent.displayName })),
+      ].map((entry) => {
+        const Icon = iconForType(entry.type);
+        return (
+          <div key={`${entry.type}-${entry.id}`} className="flex items-center gap-2">
+            <Icon className="size-4 shrink-0" aria-hidden />
+            <span>{entry.name}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   if (apps.length === 1 && !agents.length) {
     const [only] = apps;
     const showing = only.app.id === shownId;
@@ -47,6 +65,8 @@ export function AppButton({ project }: { project?: Project | null }) {
         label={t`Apps and agents`}
         onClick={() => open(only)}
         disabled={showing}
+        tooltipContent={tooltipContent}
+        tooltipDelay={1500}
         testId="top-nav-app"
       />
     );
@@ -54,7 +74,7 @@ export function AppButton({ project }: { project?: Project | null }) {
 
   return (
     <DropdownMenu>
-      <Tooltip>
+      <Tooltip delayDuration={1500}>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
@@ -70,7 +90,7 @@ export function AppButton({ project }: { project?: Project | null }) {
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs">
-          {t`Apps and agents`}
+          {tooltipContent}
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="min-w-56">
