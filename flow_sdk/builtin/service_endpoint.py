@@ -257,14 +257,16 @@ class ServiceEndpoint(Entity):
         """``GET service_endpoint/<id>/direct-url`` — the service's own address, resolved now.
 
         Never stored: an address names the machine as it is at this moment. A
-        cloud row asks the hub, which wakes the machine it runs on. A row on this
-        machine answers ``localhost`` on a desktop and the box's public host inside
-        a sandbox (the viewer is not at the box). ``supports_direct_access`` is the
+        cloud row asks the hub, which wakes the machine it runs on. A row on a box the
+        hub placed asks the hub too (a published door, or the hub's relaying audience
+        host); a placement the hub never made, and a desktop's rows, are answered here:
+        ``localhost`` on a desktop, the box's public host inside a sandbox. ``supports_direct_access`` is the
         endpoint's claim that a client may use this — it grants nothing. On an audience proxy,
         ``route`` names the mount whose process is asked for.
         """
         from fastapi.responses import RedirectResponse  # noqa: PLC0415
 
+        from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if not self.supports_direct_access:
@@ -280,8 +282,11 @@ class ServiceEndpoint(Entity):
                 return ApiFailResponse(message="only an audience proxy has a browser address", status_code=409)
             if route and self.route(route) is None:
                 return ApiFailResponse(message="no such route on this endpoint", status_code=404)
-            url = local_direct_url(self, route)
-            if url is None:
+            # A box the hub placed asks the hub, which holds this row at the same id and knows the
+            # provider's address for it now (a published door, or its own relaying host). A placement
+            # the hub never made (one this box made for itself) has no row there: addressed here.
+            url = await self._direct_url_from_hub(route) if get_assigned_compute_node() else None
+            if (url := url or local_direct_url(self, route)) is None:
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
                 )
