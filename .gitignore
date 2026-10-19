@@ -321,7 +321,8 @@ flow_sdk/server/static/
 .claude/scheduled_tasks.lock
 
 # internal artifacts — never track
-.flow/skills/agentic-qa/debug_log.md
+# the QA logbook lives in the private langware-os repo (docs/flowpad/agentic-qa); never commit it here
+.flow/skills/agentic-qa/
 /private/
 
 # agent-trace skill scratch (skeletons, annotations, payloads — regenerable)
