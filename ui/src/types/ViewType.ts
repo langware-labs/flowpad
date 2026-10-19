@@ -373,6 +373,13 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     hostsTabs: true,
   },
+  // Inbound routing (page=hub AND desk): the hub's webhook claims and where each one's messages go. No pointer.
+  [ViewType.INBOUND]: {
+    title: msg`Inbound`,
+    iconName: 'Webhook',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

@@ -148,6 +148,9 @@ export enum ViewType {
   // nested child tabs). `DockPointer.tabHash` folds it onto the process's shell
   // identity, so one process is one Tab row whichever of the two it is shown as.
   VIBE = 'vibe', // /dock/vibe/agentic_process-<id>
+  // Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each
+  // one's messages go. Rendered on the hub page AND the desk (one component, the hub decides).
+  INBOUND = 'inbound', // /dock/<hub|desk>/inbound
 }
 
 /**

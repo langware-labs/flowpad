@@ -189,6 +189,9 @@ class ViewType(StrEnum):
     # its nested child tabs). Folds onto the process's shell tab identity, so one
     # process is one Tab row whichever of the two it is shown as.
     VIBE = "vibe"  # /dock/vibe/agentic_process-<id>
+    # Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each one's
+    # messages go. Rendered on the hub page AND the desk.
+    INBOUND = "inbound"  # /dock/<hub|desk>/inbound
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -731,6 +734,12 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.ASSISTANT: _m(_NONE, chrome="fullbleed", label="Flowpad Assistant", aliases=("assistant chat", "help chat")),
     # Pointer REQUIRED: the host is a process; a bare /dock/vibe addresses nothing.
     ViewType.VIBE: _m(_REQ, label="Vibe", aliases=("vibe workspace", "vibe session"), provides=("process",)),
+    ViewType.INBOUND: _m(
+        _NONE,
+        label="Inbound routing",
+        aliases=("webhooks", "inbound webhooks", "message routing"),
+        pages=("hub", "desk"),
+    ),
 }
 
 
