@@ -19136,9 +19136,12 @@ msgstr ""
 
 #: src/components/conversation/ConversationAutomationChip.tsx
 #: src/components/conversation/MessageBubble.tsx
-#: src/components/workers/WorkerToolbar.tsx
 msgid "Open the session"
 msgstr "פתח את הסשן"
+
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open the session started from this message"
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "Open the sign-in page"
