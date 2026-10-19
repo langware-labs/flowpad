@@ -124,7 +124,7 @@ export function HelpdeskLoadDialog({ open, onClose, onNoPortal }: HelpdeskLoadDi
     if (ensured.adopted) {
       // `status` explicitly: `patch` merges a partial and does not mark a
       // step done — only `run` does, and there is no work here to run.
-      patch('fetch', { status: 'success', detail: t`kept current as a dependency` });
+      patch('fetch', { status: 'success', detail: t`kept current as a package` });
       patch('index', { status: 'success', detail: t`indexed with the project` });
       await run('open', () => {
         navigation.openDock(DockPointer.forHelpdesk(portalProjectId));

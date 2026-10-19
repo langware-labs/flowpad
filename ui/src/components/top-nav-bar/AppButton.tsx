@@ -105,7 +105,7 @@ export function AppButton({ project }: { project?: Project | null }) {
             >
               <Icon className="size-4 shrink-0" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{entry.app.name}</span>
-              {entry.providerProjectId !== projectId && <Badge variant="outline">{t`Dependency`}</Badge>}
+              {entry.providerProjectId !== projectId && <Badge variant="outline">{t`Package`}</Badge>}
               <Badge variant="secondary">{entry.app.audience === 'admin' ? t`Admin` : t`User`}</Badge>
               <Check
                 className={entry.app.id === shownId ? 'size-3.5' : 'invisible size-3.5'}

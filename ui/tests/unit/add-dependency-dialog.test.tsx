@@ -35,14 +35,26 @@ describe('AddDependencyDialog', () => {
     expect(screen.queryByTestId('add-dependency-hub')).not.toBeInTheDocument();
   });
 
-  it('adds a required dependency by default', async () => {
+  it('adds a local package by default, with Local the first choice', async () => {
     const user = userEvent.setup();
     const { onPick, onOpenChange } = renderDialog();
-    expect(screen.getByTestId('add-dependency-kind-required')).toHaveAttribute('aria-checked', 'true');
+    const kinds = screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
+    expect(kinds).toEqual(['add-dependency-kind-local', 'add-dependency-kind-required', 'add-dependency-kind-optional']);
+    expect(screen.getByTestId('add-dependency-kind-local')).toHaveAttribute('aria-checked', 'true');
 
     await user.click(screen.getByTestId('add-dependency-browse'));
 
     expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onPick).toHaveBeenCalledWith('browse', 'local');
+  });
+
+  it('passes Required when chosen', async () => {
+    const user = userEvent.setup();
+    const { onPick } = renderDialog();
+
+    await user.click(screen.getByTestId('add-dependency-kind-required'));
+    await user.click(screen.getByTestId('add-dependency-browse'));
+
     expect(onPick).toHaveBeenCalledWith('browse', 'required');
   });
 
