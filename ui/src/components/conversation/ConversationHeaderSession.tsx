@@ -1,3 +1,4 @@
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { useCallback } from 'react';
 import { Conversation, type Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -57,6 +58,7 @@ export function ConversationHeaderSession({
         onOpen={open}
         onLaunch={launch}
         openTitle="Open the conversation session"
+        sessionName={conversationProcess ? resolveProcessDisplayName(conversationProcess) : undefined}
         testIdPrefix={testIdPrefix}
       />
       <OpenProjectComponent {...dialogProps} />

@@ -7,6 +7,7 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskChips, type TaskPeople } from './task-it';
 import { MessageActionsMenu } from './MessageActionsMenu';
+import { OpenSessionButton } from '@src/components/workers/WorkerToolbar';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { CHIP_LAYOUT } from './EntityChip';
 import { messageFavoriteRef } from '@src/components/favorites/favorite-target';
@@ -46,6 +47,8 @@ interface MessageBubbleProps {
   onForwardMessage?: () => void;
   /** Start a worker pinned to this message (⋮ menu, the header's launch bar). */
   onLaunchWorker?: (worker: WorkerType) => void;
+  /** The session started from this message, if any: an Open button with its name on the header row. */
+  messageSession?: { name: string; onOpen: () => void } | null;
   /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
    *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null; people?: TaskPeople };
@@ -249,6 +252,7 @@ export function MessageBubble({
   onDeleteMessage,
   onForwardMessage,
   onLaunchWorker,
+  messageSession,
   taskIt,
   onAutomate,
   automation,
@@ -415,6 +419,16 @@ export function MessageBubble({
                 onAutomate={onAutomate}
                 onEditName={!isBot && onEditName ? startEdit : undefined}
                 onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
+              />
+            </span>
+          )}
+          {!editing && messageSession && (
+            <span className="self-center">
+              <OpenSessionButton
+                onOpen={messageSession.onOpen}
+                name={messageSession.name}
+                title={t`Open the session started from this message`}
+                testIdPrefix={`message-${flowMessageId}`}
               />
             </span>
           )}
