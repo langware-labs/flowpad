@@ -302,6 +302,7 @@ class ClaudeParser:
             main = AssistantMessageEntry(
                 text=text,
                 thinking=thinking,
+                is_api_error=bool(raw.get("isApiErrorMessage")),
                 model=model,
                 **envelope,
                 **base,
