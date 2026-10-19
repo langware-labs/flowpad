@@ -18618,6 +18618,7 @@ msgid "Open in Flowpad browser"
 msgstr "Open in Flowpad browser"
 
 #: src/components/conversation/AttachmentChip.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
@@ -27013,6 +27014,10 @@ msgstr "This app is no longer available."
 #: src/pages/flow-page/app-display-viewer.tsx
 msgid "This app is not installed here. Add its project again from the project that uses it."
 msgstr "This app is not installed here. Add its project again from the project that uses it."
+
+#: src/pages/flow-page/app-display-viewer.tsx
+msgid "This app is served externally via Flowpad. Open it in a new tab."
+msgstr "This app is served externally via Flowpad. Open it in a new tab."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
