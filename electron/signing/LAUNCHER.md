@@ -10,11 +10,11 @@ production release is the first to ship it. Deactivation is deleting the two var
 | | |
 | --- | --- |
 | pre-release | [`launcher-v2`](https://github.com/langware-labs/flowpad/releases/tag/launcher-v2) in langware-labs/flowpad (prerelease, never "latest") |
-| file | `Flowpad-Setup.exe`, 956,696 bytes, built from app commit `102354aa` (PR #586, the tip merged into `release/v0.2`) by [build-launcher.yml run 37871979125](https://github.com/langware-labs/flowpad-desktop/actions/runs/37871979125) |
+| file | `Flowpad-Setup.exe`, 956,696 bytes, built from app commit `102354aa` (PR #586, the tip merged into `release/v0.2`) by build-launcher.yml run 37871979125 (private flowpad-desktop pipeline) |
 | manifest | embedded `RT_MANIFEST`: `requestedExecutionLevel=asInvoker` — see "Why v2" below |
 | signature | Valid, `CN=Langware INC.`, RFC 3161 timestamped |
 | pin | SHA-256 `d00468a3115541721d0b9c465b08d6d3a1bd68395f6a869a7a42a6592c546c9d` (CI `SHA256SUMS` = independent local download) |
-| variables (flowpad-desktop) | `LAUNCHER_VERSION=2`, `LAUNCHER_SHA256=<pin>`, set 2026-10-09 01:59 UTC; copy in 1Password (Employee, "flowpad-desktop launcher pin") |
+| variables (flowpad-desktop) | `LAUNCHER_VERSION=2`, `LAUNCHER_SHA256=<pin>`, set 2026-10-09 01:59 UTC; copy kept in the team's secret store |
 | provenance | `LAUNCHER-SOURCE.txt` on the release: source commit + LF-normalized SHA-256 over the five launcher inputs (`f99ab4ed…`); the release workflow compares it to the release's source and prints a notice on drift (never fails) |
 | still to verify | the first production release (asset names, pinned hash attached, `latest.yml` pointing at the versioned installer, drift step "unchanged"), a browser download on a real Windows PC (SmartScreen yes, UAC no), the in-app updater |
 

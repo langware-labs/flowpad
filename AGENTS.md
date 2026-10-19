@@ -205,7 +205,7 @@ to record a child executor rather than searching by process name or start time.
 - Use the existing Chrome extension connection (`debugMcp` browser tools) for browser validation. Do not ask the user to enable Chrome remote debugging or switch to the real-browser CLI when the extension is available.
 - The installed ChatGPT extension is reachable through the bundled browser client in `mcp__node_repl__js`: import `browser-client.mjs`, assign the result of `setupBrowserRuntime()` to `agent`, and select the extension browser with profile `langware.ai`. `debugMcp` may instead be configured for CDP; inspect its configuration before calling it an extension connection. If browser actions report a missing Codex executable, check `CODEX_CLI_PATH` against the installed app's `codex-cli/bin/codex` path.
 
-- The real hub repository is `/Users/alice/Documents/dev/test_flowpad/FlowPad`; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
-- Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in as `alice@example.com`.
+- The real hub repository is the private `flowpad-hub` checkout next to this one; inspect its `flowpad/hub/app/actions/oauth/` implementation for OAuth work.
+- Validate OAuth against `https://staging.flowpad.ai`, using Chrome profile `langware.ai` signed in with a `@langware.ai` staff account.
 - Validate both the deployed cloud UI and the OSS local app against staging, including connected-state updates without a browser refresh. A local hub or local frontend alone does not prove staging deployment or local-backend synchronization.
 - User-facing UI belongs in `flowpad-oss`, never the hub repo’s legacy `flowpad/ui`. Read the hub repository guidance before changing hub code.
