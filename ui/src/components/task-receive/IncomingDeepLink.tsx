@@ -15,6 +15,8 @@ import {
 } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect, useRef, useState } from 'react';
+import { useFirstRunFlowActive, startFirstRunFlow } from '@src/components/first-run-flow/first-run-flow-store';
+import { useFirstRunGate } from '@src/components/project-setup/first-run-gate';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 import { LaunchDialog } from './LaunchDialog';
@@ -153,6 +155,13 @@ export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
+  // An invitation is a project setup that starts with a dialog: the dialog waits for the first-run flow (the
+  // wizard, and what Skip leads to) to end with the gate open, and shows only then. Nothing else shows meanwhile.
+  const gate = useFirstRunGate();
+  const flowActive = useFirstRunFlowActive();
+  useEffect(() => {
+    if (pendingProject && gate.state === 'closed') startFirstRunFlow('invitation');
+  }, [pendingProject, gate.state]);
   const launchPlan = useLaunchStore((state) => state.payload);
   // A launch is fetching its own projects: nothing is offered until it is done, so what it
   // set up is already here when the offers are looked at.
@@ -267,10 +276,10 @@ export function IncomingDeepLink() {
 
   return (
     <>
-      {launchPlan && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
+      {launchPlan && !flowActive && <LaunchDialog plan={launchPlan} onClose={closeLaunch} />}
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
-      {pendingTask && (
+      {pendingTask && !flowActive && (
         <IncomingTaskDialog
           open={!!pendingTask}
           taskId={pendingTask.taskId}
@@ -282,7 +291,7 @@ export function IncomingDeepLink() {
       )}
 
       {/* Incoming project dialog — clone a shared/linked repo into a Project */}
-      {pendingProject && (
+      {pendingProject && gate.state === 'open' && !flowActive && (
         <IncomingProjectDialog
           open={!!pendingProject}
           gitOrigin={pendingProject.gitOrigin}

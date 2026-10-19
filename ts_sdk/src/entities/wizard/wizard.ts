@@ -84,6 +84,9 @@ export interface IWizard extends IEntity {
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
   run_state?: WizardRunState;
+  /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
+   *  is done (all green, or the person chose to go on without it) and never again false. A computed field. */
+  first_run_gate_open?: boolean;
   /** Why this wizard has no steps, or `''`. The reader deliberately swallows a
    *  malformed `wizard.json` (one bad document must not wedge an indexer
    *  walking a hundred assets), which made "I saved it and my wizard
@@ -131,6 +134,9 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
    *  entity's `system` flag, which is a different fact and reads false here. */
   shipped?: boolean;
   run_state?: WizardRunState;
+  /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
+   *  is done (all green, or the person chose to go on without it) and never again false. A computed field. */
+  first_run_gate_open?: boolean;
   document_error?: string;
   activity_path?: string;
 
@@ -149,6 +155,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;
+    this.first_run_gate_open = entity.first_run_gate_open;
     this.document_error = entity.document_error;
     this.activity_path = entity.activity_path;
   }
@@ -238,6 +245,16 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   async start(): Promise<{ llm_source: ReturnedValue | null; wizard: WizardResult }> {
     return await dataManager.callAction<void, { llm_source: ReturnedValue | null; wizard: WizardResult }>(
       new ActionInfo('start', Wizard.type, this.id, 'POST'),
+    );
+  }
+
+  /**
+   * Go on without finishing this wizard: opens the first-run gate for good, so a project can be set up
+   * though an install was declined or blocked. Only the first-run wizard gates anything (400 for another).
+   */
+  async continueWithoutSetup(): Promise<{ first_run_gate_open: boolean }> {
+    return await dataManager.callAction<void, { first_run_gate_open: boolean }>(
+      new ActionInfo('continue-without-setup', Wizard.type, this.id, 'POST'),
     );
   }
 }

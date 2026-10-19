@@ -951,7 +951,10 @@ class Project(SetupSkippable, Entity):
         questions come to the app. ``root`` sets up one node of the tree and what it needs (a source, a web
         app). Answers at once with the run's address, which a screen claims to draw them in place."""
         from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import first_run_block  # noqa: PLC0415
 
+        if (blocked := await first_run_block()) is not None:
+            return blocked
         return ApiSuccessResponse(data={"run": await start_setup(self, root=root)})
 
     @action.post(action_name="setup-stop")
@@ -2037,6 +2040,10 @@ class Project(SetupSkippable, Entity):
     @action.post(action_name="setup-from-git")
     async def setup_from_git(self) -> ApiResponse:
         """Materialize a remote project's transmitted GitOrigin locally."""
+        from flow_sdk.core.wizard.first_run import first_run_block  # noqa: PLC0415
+
+        if (blocked := await first_run_block()) is not None:
+            return blocked
         try:
             return ApiSuccessResponse(data=await self.setup_from_git_origin())
         except Exception as exc:  # noqa: BLE001

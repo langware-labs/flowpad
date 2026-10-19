@@ -1,3 +1,6 @@
+---
+id: df8f6224-058a-4489-84fc-fb7178d54a4b
+---
 # Relationship pickers in SDK viewers
 
 `ViewerHost.candidates` supplies relationship values; `ViewerHost.choices`

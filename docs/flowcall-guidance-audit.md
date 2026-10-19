@@ -1,3 +1,6 @@
+---
+id: 7b994ff0-71da-4c52-983e-7aa01e01e227
+---
 # FlowCall guidance audit
 
 This ledger records the instruction/document sources covered by the FlowCall block implementation. It includes hidden skill/agent roots, independent mirrors, entry routes with no old FlowCall keyword, the shipped base prompt, canonical docs, and external repository boundaries. “Keep” preserves a valid existing contract; it does not claim that all external applications were migrated. Generated indexes are rebuilt by their owning planner/renderer.

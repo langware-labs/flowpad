@@ -1,3 +1,6 @@
+---
+id: 547f0a90-ab0c-4524-a49b-2a6efeffb5db
+---
 # Benchmark results (FIXED unless a benchmark is rerun)
 
 13 independent units, each: Python SDK path measured in-process, a throwaway Rust CLI built in

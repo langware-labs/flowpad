@@ -7,6 +7,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
+import { FIRST_RUN_BLOCKED, FirstRunWaiting, useFirstRunGate, useFirstRunResume } from './first-run-gate';
 import { useProjectLoad } from './use-project-load';
 import { openProjectLoad, useProjectLoadStore, type ProjectLoadPayload } from './project-load-store';
 
@@ -37,6 +38,10 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
   const state = load.result?.state;
   const fix = useSetupFix(projectId, load.result, load.error, (approved) => load.load(approved));
   const needsSetup = state === 'setup_required';
+  // Refused because the first-run wizard is not done: a wait with a way on, begun again once it is.
+  const gate = useFirstRunGate();
+  const blocked = load.result?.blocked === FIRST_RUN_BLOCKED;
+  useFirstRunResume(blocked, gate, () => void load.load(true));
   // Set up and ready: there is nothing left to say. Only a run this dialog watched closes it.
   const watched = useRef(false);
   if (state === 'running') watched.current = true;
@@ -67,6 +72,7 @@ function ProjectLoadDialog({ projectId, projectName, initial, onClose }: Project
             {load.error}
           </p>
         )}
+        {blocked && <FirstRunWaiting />}
         {load.questionId && <AskForm questionId={load.questionId} showOp={false} onSettled={load.settleQuestion} />}
         {/* Before Set up: what it would do, one level deep. */}
         {!load.questionId && <SetupTreeView tree={load.tree} hideRoot={needsSetup} overview={needsSetup} />}

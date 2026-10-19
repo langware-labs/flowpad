@@ -416,12 +416,17 @@ async def _start_system_content_index() -> None:
         from flow_sdk.fs_store.indexer.auto_index import own_index_task
         from flow_sdk.server.routes.bootstrap import index_system_content
 
+        from flow_sdk.core.wizard.first_run import indexing_finished, indexing_started
+
         global _system_content_index_task
+        # The first-run gate is closed until the shipped wizard's row exists, i.e. until this pass ends.
+        indexing_started()
         # Owned like an auto-index: a factory reset arriving while this pass is
         # still walking must cancel it, not let it write through the wipe.
         _system_content_index_task = own_index_task(
             _asyncio.create_task(index_system_content(), name="system-content-index")
         )
+        _system_content_index_task.add_done_callback(lambda _task: indexing_finished())
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")
@@ -958,6 +963,9 @@ server.add_router(data_source_webhook_router)
 from flow_sdk.server.routes.tasks import router as task_ledger_router  # noqa: E402
 
 server.add_router(task_ledger_router)
+from flow_sdk.server.routes.first_run import router as first_run_router  # noqa: E402
+
+server.add_router(first_run_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(debug_router)

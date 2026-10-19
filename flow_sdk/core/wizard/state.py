@@ -184,6 +184,11 @@ def reset_run(wizard_id: str) -> Optional[dict[str, Any]]:
         fresh: dict[str, Any] = {}
         if previous.get("approved"):
             fresh["approved"] = True
+        # The first-run facts are about the INSTANCE, not about one run: forgetting a run must not
+        # re-close the gate it opened (see ``core/wizard/first_run``).
+        for kept in FIRST_RUN_KEYS:
+            if previous.get(kept):
+                fresh[kept] = previous[kept]
         write_json_atomic(path, fresh)
         # `_mutate` owns the only other invalidation, and we deliberately did
         # not go through it.
@@ -248,6 +253,24 @@ def read_tree(run: str) -> "Optional[SetupTreeResult]":
         return SetupTreeResult.model_validate(raw)
     except Exception:  # noqa: BLE001 — an unreadable record is "no run", not a crash
         return None
+
+
+#: ``first_run_done``: the first-run wizard finished (all green, or the person chose to go on without it)
+#: and project setup may begin. ``first_run_tracked``: a run began under a version that writes the former, so
+#: a result on disk is no longer proof of an older finished run. Both survive ``reset_run``.
+FIRST_RUN_DONE = "first_run_done"
+FIRST_RUN_TRACKED = "first_run_tracked"
+FIRST_RUN_KEYS = (FIRST_RUN_DONE, FIRST_RUN_TRACKED)
+
+
+def mark_first_run_done(wizard_id: str) -> None:
+    """Record, durably, that the first-run wizard is done. Idempotent; never cleared by a later run."""
+    _mutate(wizard_id, lambda _state: {FIRST_RUN_DONE: True})
+
+
+def mark_first_run_tracked(wizard_id: str) -> None:
+    """Record that a run began under a version that writes ``first_run_done``. Idempotent."""
+    _mutate(wizard_id, lambda _state: {FIRST_RUN_TRACKED: True})
 
 
 #: Step fields that carry OUTPUT rather than a verdict — what `strip_heavy` drops.

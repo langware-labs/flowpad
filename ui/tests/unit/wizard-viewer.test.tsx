@@ -78,6 +78,7 @@ vi.mock('@src/lib/minimize-to-element', () => ({
 }));
 
 import { openWizardPopup, useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard-popup-store';
+import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
 import { WizardViewer } from '@src/components/assets/editor/wizard/WizardViewer';
 
 const wizard = (runState: Record<string, unknown>, shipped = false) =>
@@ -279,6 +280,17 @@ describe('a fully finished run', () => {
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
   });
 
+  it('in the first-run flow, "Go to homepage" waits for the gate instead of reading as Skip (window 2)', () => {
+    useFirstRunFlowStore.getState().start('project_setup');
+    const firstRun = { ...(withMessage(finished) as Record<string, unknown>), name: 'llm-setup' } as never;
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={firstRun} />);
+
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+
+    expect(useFirstRunFlowStore.getState().minimized).toBe(true);
+    useFirstRunFlowStore.getState().end();
+  });
+
   it('says nothing about being finished while the run is still going, or has not run at all', () => {
     const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(stillGoing)} />);
@@ -390,10 +402,25 @@ describe('a popup wizard', () => {
     expect(screen.queryByTestId('wizard-viewer-shell')).toBeNull();
   });
 
-  it('minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+  it('before Start there is nothing to minimize: X closes it, with no flight to the footer chip', async () => {
     act(() => openWizardPopup('wizard-x'));
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+
+    expect(screen.queryByTestId('wizard-minimize')).toBeNull();
+    fireEvent.click(screen.getByTestId('wizard-close'));
+
+    expect(minimize.toProcessChip).not.toHaveBeenCalled();
+    expect(useWizardPopupStore.getState().open).toBe(false);
+    expect(nav.goHome).not.toHaveBeenCalled();
+  });
+
+  it('once a run is going, minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+    act(() => openWizardPopup('wizard-x'));
+    const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={started} />);
+
     fireEvent.click(screen.getByTestId('wizard-minimize'));
+
     expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
     expect(useWizardPopupStore.getState().open).toBe(false);
     expect(nav.goHome).not.toHaveBeenCalled();
@@ -417,13 +444,34 @@ describe('a popup wizard', () => {
     expect(screen.getByTestId('wizard-start')).toBeTruthy();
   });
 
-  it('Start calls the wizard′s own `start` action, which the backend waits for, then gets out of the way', async () => {
+  it('Start calls the wizard′s own `start` action, which the backend waits for', async () => {
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     fireEvent.click(screen.getByTestId('wizard-start'));
     expect(h.start).toHaveBeenCalledTimes(1);
-    // Nothing left for it to do once the call is accepted — the run's own
-    // live state takes over, the same way it does for any other run.
-    await waitFor(() => expect(screen.queryByTestId('wizard-start')).toBeNull());
+  });
+
+  it('between Start and the first step going live the screen says so -- it never goes blank', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+
+    // The block stays, disabled, saying it is starting and what is going on: seconds of silence read as broken.
+    const button = screen.getByTestId('wizard-start');
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Starting');
+    expect(screen.getByTestId('wizard-starting').textContent).toContain('Checking what is already installed');
+  });
+
+  it('...and gets out of the way once the run has begun reporting', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+    expect(screen.getByTestId('wizard-starting')).toBeTruthy();
+    cleanup();
+
+    const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={started} />);
+
+    expect(screen.queryByTestId('wizard-start')).toBeNull();
+    expect(screen.queryByTestId('wizard-starting')).toBeNull();
   });
 
   it('offers no Start once a run already exists — nothing left to wait for', async () => {

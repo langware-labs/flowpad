@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.compute.llm_source import settle_llm_source
+from flow_sdk.core.wizard.first_run import begin_first_run, finish_first_run
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.wizard import Wizard
@@ -164,6 +165,7 @@ async def _start_wizard(
         # Until it has unwound: its `execute_wizard` releases the run lock on the
         # way out, and `reset_run` below refuses while that lock is held.
         await asyncio.wait({previous})
+    begin_first_run(wizard)
     await (show_wizard_fresh(wizard) if shown else _clear_last_run(wizard))
     spec = wizard.spec()
     source = None
@@ -175,6 +177,8 @@ async def _start_wizard(
     result = await wizard.run(unattended=unattended)
     if spec is not None and spec.requires_llm_source:
         source = await _settle_after_install(source)
+    # Only now: the sign-in above may still have put a chooser on screen, and project setup must not start under it.
+    finish_first_run(wizard, result)
     return source, result
 
 

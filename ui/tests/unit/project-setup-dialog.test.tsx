@@ -109,6 +109,24 @@ describe('ProjectSetupDialog', () => {
     await waitFor(() => expect(screen.getByTestId('ask-input-value-file')).toBeInTheDocument());
   });
 
+  it('a start the backend refuses until the first-run wizard is done waits for the first-run flow -- not an error', async () => {
+    vi.spyOn(Project, 'setupRequirements').mockResolvedValue(NOT_READY);
+    vi.spyOn(Project, 'setupRun').mockResolvedValue({ run: RUN, running: false, tree: null });
+    const start = vi
+      .spyOn(Project, 'startSetup')
+      .mockRejectedValue({ response: { status: 412, data: { data: { blocked: 'first_run_setup' } } } });
+    render(<ProjectSetupDialog projectId="p1" projectName="acme" open onOpenChange={() => undefined} />);
+    await screen.findByTestId('project-setup-req-google-cloud');
+
+    act(() => {
+      fireEvent.click(screen.getByTestId('project-setup-start'));
+    });
+
+    expect(await screen.findByTestId('first-run-waiting')).toBeInTheDocument();
+    expect(start).toHaveBeenCalled();
+    expect(screen.queryByTestId('project-setup-running')).toBeNull();
+  });
+
   it('says so when there is nothing to set up', async () => {
     vi.spyOn(Project, 'setupRequirements').mockResolvedValue({ ...NOT_READY, ready: true, to_do: [] });
 
