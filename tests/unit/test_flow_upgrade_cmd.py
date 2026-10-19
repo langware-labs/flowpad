@@ -44,6 +44,22 @@ def test_it_installs_the_latest_release_as_a_pin_and_says_what_changed(monkeypat
     assert f"flowpad upgraded: {__version__} -> 999.0.0." in out.output
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows installs detached -- covered in test_version_install_compat")
+def test_a_release_that_rejects_the_managing_desktop_is_rolled_back(monkeypatch, ran):
+    """A desktop-managed backend must not keep a release whose ``min_desktop_version`` the running
+    desktop fails -- the same invariant POST /version/install enforces."""
+    monkeypatch.setattr(self_update, "latest_release", lambda: "999.0.0")
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: "needs Desktop 0.2.60")
+
+    out = CliRunner().invoke(app, ["upgrade"])
+
+    assert out.exit_code == 1
+    assert [cmd[-1] for cmd in ran] == ["flowpad==999.0.0", f"flowpad=={__version__}"], "installed, then put back"
+    assert "not compatible with the running desktop" in out.output and "0.2.60" in out.output
+    assert f"flowpad {__version__} has been restored." in out.output
+    assert "flowpad upgraded:" not in out.output
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="the detached relay exists only on Windows")
 def test_on_windows_the_install_runs_detached_after_this_command_exits(monkeypatch, ran):
     """Windows cannot replace the running ``flow.exe``, so ``flow upgrade`` must NOT install

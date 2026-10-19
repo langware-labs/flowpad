@@ -58,29 +58,36 @@ class CompatVerdict(NamedTuple):
     reasons: list
 
 
-def load_backend_compat(path: Path = COMPAT_FILE) -> dict:
-    """The backend compat declaration as a dict; ``{}`` when the file is absent (legacy).
+def parse_compat_text(text: str, source: str = "compat.json") -> dict:
+    """A compat declaration's text as a dict. Raises :class:`CompatError` unless it is a JSON object --
+    a broken declaration must be seen, never read as "no constraint"."""
+    try:
+        data = json.loads(text)
+    except ValueError as exc:
+        raise CompatError(f"{source} is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CompatError(f"{source} must be a JSON object, got {type(data).__name__}")
+    return data
 
-    Raises :class:`CompatError` when the file exists but is not a JSON object —
-    a broken declaration must be seen, not treated as "no constraint".
-    """
+
+def declared_floor(data: dict, key: str) -> Optional[str]:
+    """The non-empty string floor under *key*, or ``None`` (absent / not a string = no constraint)."""
+    value = data.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def load_backend_compat(path: Path = COMPAT_FILE) -> dict:
+    """The declaration at *path* as a dict; ``{}`` when the file is absent (legacy)."""
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return {}
-    try:
-        data = json.loads(text)
-    except ValueError as exc:
-        raise CompatError(f"{path} is not valid JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise CompatError(f"{path} must be a JSON object, got {type(data).__name__}")
-    return data
+    return parse_compat_text(text, str(path))
 
 
 def backend_min_desktop_version(path: Path = COMPAT_FILE) -> Optional[str]:
     """This backend's declared desktop floor, or ``None`` (no file / no key = no constraint)."""
-    value = load_backend_compat(path).get("min_desktop_version")
-    return value if isinstance(value, str) and value else None
+    return declared_floor(load_backend_compat(path), "min_desktop_version")
 
 
 def meets_floor(version: Optional[str], floor: Optional[str]) -> Optional[bool]:
@@ -133,8 +140,8 @@ def check_pair(
             )
         elif not ok:
             reasons.append(
-                f"FlowPad Desktop requires Backend {min_backend_version} or newer "
-                f"(backend: {backend_version})"
+                f"FlowPad Desktop{f' {desktop_version}' if desktop_version else ''} requires "
+                f"Backend {min_backend_version} or newer (backend: {backend_version})"
             )
     return CompatVerdict(compatible=not reasons, reasons=reasons)
 

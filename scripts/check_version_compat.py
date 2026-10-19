@@ -29,24 +29,37 @@ checkout of this repo (it needs no installed flowpad and no third-party deps).
 from __future__ import annotations
 
 import argparse
-import importlib.util
+import functools
+import importlib
 import io
 import json
 import sys
 import time
+import types
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PYPI_JSON = "https://pypi.org/pypi/flowpad/json"
+WHEEL_HOST = "files.pythonhosted.org"
 MAX_CANDIDATES = 5
 
-# The shared semver module, loaded from its file so this script needs no installed
-# flow_sdk (and never triggers flow_sdk/__init__'s imports).
-_spec = importlib.util.spec_from_file_location("_compat_semver", REPO / "flow_sdk" / "utils" / "semver.py")
-semver = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(semver)
+
+def _load_contract():
+    """``flow_sdk.utils.compat`` and ``.semver`` -- THE contract, executed from their files. The parent
+    packages are stubs so ``flow_sdk/__init__`` (auth, claude_env, ...) never runs and this script needs no
+    installed flowpad; a second copy of the rules here would be the one that drifts silently."""
+    if "flow_sdk" not in sys.modules:
+        for name, rel in (("flow_sdk", "flow_sdk"), ("flow_sdk.utils", "flow_sdk/utils")):
+            stub = types.ModuleType(name)
+            stub.__path__ = [str(REPO / rel)]
+            sys.modules[name] = stub
+    return importlib.import_module("flow_sdk.utils.compat"), importlib.import_module("flow_sdk.utils.semver")
+
+
+compat, semver = _load_contract()
 
 
 def fail(msg: str) -> None:
@@ -55,16 +68,14 @@ def fail(msg: str) -> None:
 
 
 def load_floor(path: Path, key: str) -> str:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
+    """The floor *key* in *path*: a missing file, broken JSON or an unparseable version fails the gate."""
+    if not path.exists():
         fail(f"{path} is missing")
-    except ValueError as exc:
-        fail(f"{path} is not valid JSON: {exc}")
-    if not isinstance(data, dict):
-        fail(f"{path} must be a JSON object")
-    floor = data.get(key)
-    if not isinstance(floor, str) or semver.string2semver(floor) is None:
+    try:
+        floor = compat.declared_floor(compat.load_backend_compat(path), key)
+    except compat.CompatError as exc:
+        fail(str(exc))
+    if floor is None or semver.string2semver(floor) is None:
         fail(f"{path} must declare a semver-parseable {key} (got {floor!r})")
     return floor
 
@@ -81,16 +92,11 @@ def backend_version() -> str:
     raise AssertionError  # unreachable
 
 
-def meets(version: str, floor: str) -> bool:
-    v, f = semver.string2semver(version), semver.string2semver(floor)
-    return v is not None and f is not None and semver.compare_semver(v, f) >= 0
-
-
 def validate_files() -> tuple[str, str]:
     min_backend = load_floor(REPO / "electron" / "engine-compat.json", "min_backend_version")
     min_desktop = load_floor(REPO / "flow_sdk" / "compat.json", "min_desktop_version")
     version = backend_version()
-    if not meets(version, min_backend):
+    if compat.meets_floor(version, min_backend) is not True:
         fail(
             f"this backend ({version}) is below the desktop floor it bundles "
             f"(min_backend_version={min_backend}) — an impossible release"
@@ -101,24 +107,31 @@ def validate_files() -> tuple[str, str]:
     return min_backend, min_desktop
 
 
+def trusted_wheel_url(url: object) -> bool:
+    """Only PyPI's own file host, over https: the URL comes out of a JSON document, not out of this repo."""
+    if not isinstance(url, str):
+        return False
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.hostname == WHEEL_HOST
+
+
 def wheel_min_desktop(url: str) -> "str | None":
     """`min_desktop_version` read out of a wheel's flow_sdk/compat.json — a zip member
     read, no code from the package ever runs. None = the release predates the contract."""
-    with urllib.request.urlopen(url, timeout=120) as resp:  # noqa: S310 — files.pythonhosted.org, from PyPI's own index
+    with urllib.request.urlopen(url, timeout=120) as resp:  # noqa: S310 — host checked by trusted_wheel_url
         data = resp.read()
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         try:
             raw = zf.read("flow_sdk/compat.json")
         except KeyError:
             return None
-    parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError("flow_sdk/compat.json in the wheel is not a JSON object")
-    floor = parsed.get("min_desktop_version")
-    return floor if isinstance(floor, str) and floor else None
+    declared = compat.parse_compat_text(raw.decode("utf-8"), "flow_sdk/compat.json in the wheel")
+    return compat.declared_floor(declared, "min_desktop_version")
 
 
 def resolve(desktop_version: str, min_backend: str) -> None:
+    """Walk PyPI newest-first (the same order as electron/engine-compat.js selectCompatibleRelease, over fewer
+    candidates -- CI downloads whole wheels) for a release both floors accept."""
     if semver.string2semver(desktop_version) is None:
         print(f"usage: --desktop-version {desktop_version!r} is not a parseable version", file=sys.stderr)  # noqa: T201
         raise SystemExit(2)
@@ -130,14 +143,16 @@ def resolve(desktop_version: str, min_backend: str) -> None:
     candidates = []
     for version, files in (doc.get("releases") or {}).items():
         parsed = semver.string2semver(version)
-        if parsed is None or not isinstance(files, list) or not files:
+        if parsed is None or not isinstance(files, list) or compat.meets_floor(version, min_backend) is not True:
             continue
-        if all(f.get("yanked") for f in files):
-            continue
-        wheel = next((f for f in files if str(f.get("filename", "")).endswith(".whl")), None)
-        if wheel and meets(version, min_backend):
+        # A partly-yanked release still has its un-yanked wheel; a yanked wheel is never the one we read.
+        wheel = next(
+            (f for f in files if str(f.get("filename", "")).endswith(".whl") and not f.get("yanked") and trusted_wheel_url(f.get("url"))),
+            None,
+        )
+        if wheel:
             candidates.append((parsed, version, wheel["url"]))
-    candidates.sort(key=lambda c: semver._cmp_key(c[0]), reverse=True)
+    candidates.sort(key=functools.cmp_to_key(lambda a, b: semver.compare_semver(a[0], b[0])), reverse=True)
     if not candidates:
         fail(f"no PyPI release satisfies the desktop floor {min_backend}")
     for _, version, url in candidates[:MAX_CANDIDATES]:
@@ -146,10 +161,14 @@ def resolve(desktop_version: str, min_backend: str) -> None:
         except Exception as exc:  # noqa: BLE001 — a broken candidate is skipped, not fatal
             print(f"skip {version}: could not read its metadata ({exc})", file=sys.stderr)  # noqa: T201
             continue
-        if floor is None or meets(desktop_version, floor):
+        verdict = compat.check_pair(
+            desktop_version=desktop_version, backend_version=version,
+            min_desktop_version=floor, min_backend_version=min_backend,
+        )
+        if verdict.compatible:
             print(f"ok: desktop {desktop_version} resolves backend {version} (min_desktop_version={floor or 'none (legacy)'})")  # noqa: T201
             return
-        print(f"skip {version}: it requires desktop {floor} or newer")  # noqa: T201
+        print(f"skip {version}: {'; '.join(verdict.reasons)}")  # noqa: T201
     fail(
         f"none of the newest {MAX_CANDIDATES} eligible PyPI releases is compatible with "
         f"desktop {desktop_version} — do not publish this desktop release"

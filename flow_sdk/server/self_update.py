@@ -26,7 +26,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult
@@ -128,6 +128,28 @@ def verify_installed_against_desktop() -> "str | None":
             f"but Desktop {desktop_version} is running"
         )
     return None
+
+
+class PairRollback(NamedTuple):
+    """An install that left an incompatible pair, and what happened to the previous version."""
+
+    reason: str
+    restored: bool
+    #: What to run by hand when the automatic restore failed.
+    manual_command: str
+
+
+def rollback_if_incompatible(previous_version: str) -> "PairRollback | None":
+    """After an in-place reinstall: ``None`` when the backend now on disk accepts the managing
+    desktop; otherwise put *previous_version* back and say why (the one place ``flow upgrade``,
+    ``POST /version/install`` and the Windows relay agree on what an incompatible result means)."""
+    reason = verify_installed_against_desktop()
+    if reason is None:
+        return None
+    logger.warning("[self-update] the installed release is incompatible with the running desktop: %s -- restoring %s", reason, previous_version)
+    restore = reinstall_version(previous_version)
+    manual = " ".join(str(part) for part in build_install_command(previous_version))
+    return PairRollback(reason=reason, restored=restore.ok, manual_command=manual)
 
 
 def is_valid_version(version: str) -> bool:
@@ -277,6 +299,8 @@ def _wait_for_exit(pids: list[int], timeout: float) -> None:
 def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
     """The Windows half of ``flow upgrade``: install *version* once *pids* (the ``flow.exe`` that
     asked, and its Python) have exited, writing what happened to *log*. Run detached."""
+    from flow_sdk import __version__ as previous  # noqa: PLC0415 -- read now: the install below replaces it on disk
+
     _wait_for_exit(pids, timeout=60)
     with launchers_set_aside(wait_s=60) as free:
         if not free:
@@ -288,6 +312,12 @@ def upgrade_after_exit(version: str, pids: list[int], log: Path) -> int:
             return 1
         result = subprocess.run(build_install_command(version), capture_output=True, text=True)
     tail = "\n".join((result.stdout + result.stderr).strip().splitlines()[-15:])
+    if result.returncode == 0:
+        rolled = rollback_if_incompatible(previous)
+        if rolled is not None:
+            kept = f"flowpad {previous} was restored." if rolled.restored else f"restoring {previous} failed -- run: {rolled.manual_command}"
+            log.write_text(f"{tail}\nflowpad {version} is not compatible with the running desktop: {rolled.reason}; {kept}\n", encoding="utf-8")
+            return 1
     verdict = f"flowpad upgraded to {version}." if result.returncode == 0 else f"flow upgrade failed (exit {result.returncode})."
     log.write_text(f"{tail}\n{verdict}\n", encoding="utf-8")
     return result.returncode

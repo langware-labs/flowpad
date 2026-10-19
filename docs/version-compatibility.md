@@ -33,20 +33,34 @@ the contract never declared one. An **unparseable** version against a *declared*
 rejected, with one deliberate exception: invalid metadata found in an already-installed engine
 only logs a warning (it must not brick startup); upgrades to such a release are refused.
 
-Logic lives in `electron/engine-compat.js` and `flow_sdk/utils/compat.py` (twins). Both floors
-currently sit at `0.2.0`, so nothing changes until release engineering raises one.
+Logic lives in `electron/engine-compat.js` and `flow_sdk/utils/compat.py` (twins, with matching
+failure wording). Both floors currently sit at `0.2.0`, so nothing changes until release
+engineering raises one.
+
+`compat.json` is deliberately **not** a `DataSpec` schema: it travels inside a wheel and must be
+readable as plain data by the desktop (JavaScript, before any Python runs) and by a stdlib-only CI
+script, without importing `flow_sdk`. That is the constraint behind the exception to the "every shape
+that travels is a `DataSpec`" rule; the contract above is the whole schema.
 
 ## How each flow enforces it
 
 **Desktop installing/upgrading the engine** (`electron/uv-manager.js`):
 
-1. Candidates come from the PyPI JSON `releases` map, newest first, filtered to parseable,
-   non-yanked versions that meet the desktop's `min_backend_version`.
-2. A candidate's `min_desktop_version` is read **without executing package code**:
-   `uv pip install --no-deps --target <tmp> flowpad==X` unpacks just the flowpad wheel (wheels
-   run nothing at install time) and `flow_sdk/compat.json` is read from it. The wheel lands in
-   uv's cache, so the activation install does not download it again. Results are cached per
-   session (`resolveCompatibleEngineVersion`, `_readCandidateMinDesktop`).
+1. Candidates come from the PyPI JSON `releases` map, newest first, filtered to release-shaped
+   (`isInstallableVersion` — anchored, because the version later becomes a `flowpad==X`
+   argument), non-yanked versions that meet the desktop's `min_backend_version`. A release with no
+   files left counts as withdrawn, exactly as the backend's own release list treats it.
+2. A candidate's `min_desktop_version` is read **without executing package code** and, normally,
+   without downloading the wheel: `electron/wheel-compat.js` asks the wheel's file host
+   (`files.pythonhosted.org`, https only) for its end-of-central-directory record, the central
+   directory, and just the bytes of `flow_sdk/compat.json` with HTTP Range requests — tens of KB,
+   CRC-checked, so the pre-start update check never waits on a whole-wheel download. When that cannot
+   be done (no Range support, ZIP64, an unexpected wheel URL) it falls back to
+   `uv pip install --no-deps --target <tmp> flowpad==X`, which unpacks only that wheel (wheels run
+   nothing at install time) and leaves it in uv's cache for the activation install. A wheel without
+   `compat.json` is a pre-contract release (legacy). Results are cached per session
+   (`resolveCompatibleEngineVersion`, `_readCandidateMinDesktop`). Integrity rests on TLS plus the
+   post-install check in step 4; PyPI's whole-file digest cannot cover a partial read.
 3. The newest release passing both directions is installed with the existing pinned
    `uv tool install flowpad==X` path — all existing recovery machinery (interrupted-install
    marker, failed-upgrade restore, tool-dir lock handling) is unchanged.
@@ -58,8 +72,14 @@ currently sit at `0.2.0`, so nothing changes until release engineering raises on
    incompatible and nothing newer than the installed engine is, no update is offered.
 6. At startup, `main.js` checks the installed pair (`installedPairIssue`) — a desktop
    downgrade or a hand-moved engine is repaired by installing the newest compatible release,
-   under the same `engineChangePolicy` gate as every other engine change. If repair is
-   impossible (offline, held for a pending desktop update), the app starts what is installed
+   under the same `engineChangePolicy` gate as every other engine change. The repair has a
+   **direction**: when the *engine* is the old side (below the desktop's floor) it is a plain
+   upgrade and is done silently; when the *desktop* is the old side (the engine demands a newer
+   desktop) the repair would move the engine backward — a newer engine may already have written
+   state an older one cannot read — so the user is asked first ("Keep the current engine" is the
+   default). Normally a newer desktop is already on offer in that case and the engine is held for
+   it; the question appears only when the update feed says "current" while the engine disagrees.
+   If repair is impossible or declined (offline, held, "Keep"), the app starts what is installed
    and warns, retrying next launch.
 7. If PyPI answered and **no** release is compatible, the install/upgrade aborts with an
    actionable error and the existing installation is preserved.
@@ -78,8 +98,10 @@ pre-contract behaviour is kept — install `latest` — and step 4 has the last 
   running desktop (`verify_installed_against_desktop`); on failure the previous version is
   reinstalled and the endpoint reports `backend_requires_newer_desktop` — an incompatible pair
   is never scheduled to boot.
-- Known gap: the detached Windows half of `flow upgrade` (`upgrade_after_exit`) cannot
-  post-verify; the desktop's startup pair check repairs that case on the next launch.
+- `flow upgrade` applies the same pre-check and the same post-install verify→rollback
+  (`self_update.rollback_if_incompatible`, shared by the route, the CLI and the detached Windows
+  relay `upgrade_after_exit`, which records the outcome in its log file). The desktop's startup
+  pair check remains the backstop for anything that slips past.
 
 **CLI check** (works against a staged install, no server, no network):
 
@@ -93,7 +115,11 @@ flow compat --desktop-version 0.2.45 [--desktop-min-backend 0.2.50] [--json]
 - **Raising a floor** is a one-line edit to the owning file, in the same PR as the change that
   needs it (e.g. a breaking `flow start` contract change → bump `min_desktop_version`).
   Never hardcode the floors anywhere else.
-- `scripts/check_version_compat.py` is the release gate (stdlib-only):
+- `scripts/check_version_compat.py` is the release gate:
+  - It loads the contract itself (`flow_sdk/utils/compat.py`, from its file, under stub parent
+    packages so no installed flowpad is needed) — it holds no second copy of the rules, so the
+    gate cannot drift from the code it guards. Wheel URLs are accepted only on
+    `files.pythonhosted.org` over https, and a yanked wheel is never the one read.
   - no flags: both files parse, floors are semver-parseable, and the backend version satisfies
     the desktop floor it bundles. Runs in `scripts/deploy_to_github.sh` right after the version
     bump, before anything is committed, tagged or published. `tests/unit/test_version_compat.py`

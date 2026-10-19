@@ -76,3 +76,70 @@ async def test_headless_backends_are_not_constrained(monkeypatch, installable):
     resp = await version_route._install_version(InstallVersionRequest(version="0.0.1"))
 
     assert resp.success, "no desktop env → no floor, the install proceeds"
+
+
+# ── the shared verify→rollback helper (route, `flow upgrade`, Windows relay) ─────────────────
+
+def test_rollback_helper_is_silent_for_a_compatible_pair(monkeypatch, installable):
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: None)
+
+    assert self_update.rollback_if_incompatible("0.2.40") is None
+    assert installable.installed == []
+
+
+def test_rollback_helper_restores_the_previous_version_and_says_why(monkeypatch, installable):
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: "needs Desktop 0.2.60")
+
+    rolled = self_update.rollback_if_incompatible("0.2.40")
+
+    assert rolled.reason == "needs Desktop 0.2.60" and rolled.restored
+    assert installable.installed == ["0.2.40"]
+    assert rolled.manual_command.endswith("flowpad==0.2.40")
+
+
+def test_rollback_helper_reports_a_failed_restore_with_the_manual_command(monkeypatch, installable):
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: "needs Desktop 0.2.60")
+    monkeypatch.setattr(
+        self_update, "reinstall_version",
+        lambda v, timeout=180.0: SimpleNamespace(ok=False, detail="boom", stdout="", stderr=""),
+    )
+
+    rolled = self_update.rollback_if_incompatible("0.2.40")
+
+    assert not rolled.restored and "flowpad==0.2.40" in rolled.manual_command
+
+
+def test_the_windows_relay_rolls_back_an_incompatible_install(monkeypatch, installable, tmp_path):
+    """``upgrade_after_exit`` is the detached half of ``flow upgrade`` on Windows: it must apply the same
+    verify→rollback as the route, and say so in its log (the only place the user can read the outcome)."""
+    import contextlib
+    import subprocess
+
+    monkeypatch.setattr(self_update, "_wait_for_exit", lambda pids, timeout: None)
+    monkeypatch.setattr(self_update, "launchers_set_aside", lambda wait_s=0.0: contextlib.nullcontext(True))
+    monkeypatch.setattr(self_update, "build_install_command", lambda v: ["uv", "tool", "install", f"flowpad=={v}"])
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "installed", ""))
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: "needs Desktop 0.2.60")
+    log = tmp_path / "upgrade.log"
+
+    code = self_update.upgrade_after_exit("999.0.0", [1], log)
+
+    assert code == 1
+    assert installable.installed == [__version__], "the previous version is put back"
+    text = log.read_text(encoding="utf-8")
+    assert "not compatible with the running desktop" in text and "0.2.60" in text and f"{__version__} was restored" in text
+
+
+def test_the_windows_relay_keeps_a_compatible_install(monkeypatch, installable, tmp_path):
+    import contextlib
+    import subprocess
+
+    monkeypatch.setattr(self_update, "_wait_for_exit", lambda pids, timeout: None)
+    monkeypatch.setattr(self_update, "launchers_set_aside", lambda wait_s=0.0: contextlib.nullcontext(True))
+    monkeypatch.setattr(self_update, "build_install_command", lambda v: ["uv", "tool", "install", f"flowpad=={v}"])
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, "installed", ""))
+    monkeypatch.setattr(self_update, "verify_installed_against_desktop", lambda: None)
+    log = tmp_path / "upgrade.log"
+
+    assert self_update.upgrade_after_exit("999.0.0", [1], log) == 0
+    assert installable.installed == [] and "flowpad upgraded to 999.0.0." in log.read_text(encoding="utf-8")

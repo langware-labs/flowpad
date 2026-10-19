@@ -30,6 +30,16 @@ const { string2semver, compareSemver } = require('./semver');
 // The desktop's own declaration, shipped in the asar next to this module (native-deps.json pattern).
 const DESKTOP_COMPAT = Object.freeze(require('./engine-compat.json'));
 
+// A version that may become a `flowpad==<version>` argument (uv on Windows runs through cmd.exe, whose
+// quoting only covers whitespace). Anchored on purpose: semver.js's SEMVER_RE finds a triple ANYWHERE in a
+// string, so it parses -- but does not sanitize. Same shape as engineVersionFromInstallArgs in uv-manager.js.
+const INSTALLABLE_VERSION_RE = /^[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*$/;
+
+/** True when `version` is safe to place in an install argument. */
+function isInstallableVersion(version) {
+  return typeof version === 'string' && INSTALLABLE_VERSION_RE.test(version);
+}
+
 /** The oldest engine this desktop build accepts, or null (no constraint declared). */
 function desktopMinBackendVersion(compat = DESKTOP_COMPAT) {
   const v = compat && compat.min_backend_version;
@@ -81,7 +91,7 @@ function checkPair({ desktopVersion, engineVersion, minDesktopVersion = null, mi
     if (ok === null) {
       reasons.push(`cannot compare engine version ${JSON.stringify(engineVersion)} with the desktop's minimum backend version ${JSON.stringify(minBackendVersion)}`);
     } else if (!ok) {
-      reasons.push(`FlowPad Desktop ${desktopVersion} requires Backend ${minBackendVersion} or newer (engine: ${engineVersion})`);
+      reasons.push(`FlowPad Desktop ${desktopVersion} requires Backend ${minBackendVersion} or newer (backend: ${engineVersion})`);
     }
   }
   return { compatible: reasons.length === 0, reasons };
@@ -108,13 +118,13 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
   const candidates = (releases || [])
     .filter((r) => r && !r.yanked)
     .map((r) => ({ version: r.version, parsed: string2semver(r.version) }))
-    .filter((r) => r.parsed && meetsFloor(r.version, minBackendVersion) === true)
+    .filter((r) => r.parsed && isInstallableVersion(r.version) && meetsFloor(r.version, minBackendVersion) === true)
     .sort((a, b) => compareSemver(b.parsed, a.parsed)); // newest first
 
   let interrogated = 0;
   for (const candidate of candidates) {
     if (interrogated >= limit) {
-      log(`[compat] gave up after ${limit} candidates — no compatible engine release found among them`);
+      log(`[compat] checked the newest ${limit} candidate releases and none is compatible — stopped looking (older ones were not checked)`);
       return null;
     }
     interrogated += 1;
@@ -131,11 +141,14 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
   return null;
 }
 
-/** The user-facing text for an engine release this desktop cannot run. */
-function incompatibleMessage({ desktopVersion, engineVersion, minDesktopVersion }) {
+/**
+ * The user-facing text for a pair the contract forbids, built from the verdict's own `reasons`
+ * (checkPair) so it names whichever direction actually failed -- never a floor that was not declared.
+ */
+function incompatibleMessage({ desktopVersion, engineVersion, reasons }) {
   return (
     `FlowPad Desktop ${desktopVersion} is not compatible with FlowPad Backend ${engineVersion}.\n\n` +
-    `This backend requires Desktop ${minDesktopVersion} or newer.\n\n` +
+    `${(reasons || []).join('\n')}\n\n` +
     'Your existing installation has been preserved.'
   );
 }
@@ -144,6 +157,7 @@ module.exports = {
   DESKTOP_COMPAT,
   desktopMinBackendVersion,
   meetsFloor,
+  isInstallableVersion,
   parseEngineCompat,
   checkPair,
   selectCompatibleRelease,
