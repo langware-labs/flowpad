@@ -21,31 +21,33 @@ from pathlib import Path, PureWindowsPath
 def source_unreachable(path: Path | str) -> bool:
     """True when we CANNOT TELL whether ``path`` is deleted or merely out of reach.
 
-    The orphan predicates ask "does this file still exist"; a bare stat answers
-    that question with ``False`` in two very different situations — the file was
-    deleted, or the filesystem it lives on went away (an unmounted volume, a
-    disconnected network share, a remote mount whose cache was evicted). Only the
-    first is a deletion, and treating the second as one reaps every row beneath
-    that root.
-
-    The rule is the parent directory: **a missing file whose parent still exists
-    is genuinely gone; a missing file whose parent is ALSO gone tells us nothing.**
-    One stat, no roots registry, no mount-table parsing.
-
-    The deliberate trade is that deleting a whole directory now leaves its rows
-    behind as garbage rather than reaping them. That is the safe direction — a
-    stale row is recoverable, a wrongly-deleted entity is not — and the default
-    ``OrphanAction.INDEX`` only counts orphans anyway.
+    A bare stat says ``False`` both when a file was deleted and when the volume it
+    lives on went away (an unmounted drive, a disconnected share). Only the first
+    is a deletion. The rule: walk up to the nearest ancestor that exists. When that
+    is a filesystem root or a top-level folder (``/``, ``/Volumes``, ``C:\\``) the
+    volume itself is gone and we cannot tell. Anywhere deeper the file — or the
+    whole folder it was in — was deleted. A stat that errors (permission, stale
+    handle) is also "cannot tell".
     """
     try:
-        # os.path, not pathlib: both call sites already hold a str and this runs
-        # once per missing row during a sweep, where the Path object would be
-        # allocated and discarded immediately (measured ~2.3x the cost).
-        return not os.path.exists(os.path.dirname(str(path)))
+        current = os.path.dirname(os.path.abspath(str(path)))
+        while not os.path.exists(current):
+            parent = os.path.dirname(current)
+            if parent == current:
+                return True
+            current = parent
+        parent = os.path.dirname(current)
+        return parent == current or os.path.dirname(parent) == parent
     except OSError:
-        # A stale handle or a permission error on the parent is the same answer:
-        # we could not look, so we do not know.
         return True
+
+
+def source_gone(ref: Path | str) -> bool:
+    """A declared source that is deleted: absent, and not merely out of reach (see ``source_unreachable``)."""
+    try:
+        return bool(ref) and not os.path.exists(str(ref)) and not source_unreachable(ref)
+    except OSError:
+        return False
 
 
 def canonical_posix_path(p: Path | str) -> str:
@@ -76,11 +78,6 @@ def asset_ref_spellings(p: Path | str) -> list[str]:
         if candidate not in out:
             out.append(candidate)
     return out
-
-
-def source_gone(ref: Path | str) -> bool:
-    """A declared source that is deleted: absent, and not merely out of reach (see ``source_unreachable``)."""
-    return bool(ref) and not Path(ref).exists() and not source_unreachable(ref)
 
 
 def asset_refs_under(root: Path | str) -> list[str]:

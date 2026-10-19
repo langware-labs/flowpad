@@ -1306,39 +1306,15 @@ class FSIndexer:
             )
 
         # ----- Orphan handling -----
-        # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
-        # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
-        # condition is independent of which materializations remain — DB
-        # row only, fs_record dir only, or both. We detect by looking at
-        # BOTH known materializations and asking the same question for each:
-        # was this id seen during the scan (meaning Layer 1 still exists)?
+        # DEFINITION: a record is orphan iff its own source file is deleted
+        # (``source_gone``). Candidates are the ids this walk did not see, across
+        # both materializations (DB rows and record homes on disk); each one is then
+        # stat-checked, so a record outside the walked roots is never removed.
+        # ``opts.scope_filter`` narrows which orphans are reported and acted on.
         #
-        #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
-        #
-        # ``opts.scope_filter`` is applied on top: orphan-ness is determined
-        # globally (so a cross-scope reference still rescues a record), but
-        # only orphans whose (scope, project_id) match the filter are
-        # reported and acted on. The callers wiring this on top MUST walk
-        # every source — the all-projects root set (USER_HOME + one
-        # REAL_PROJECT_CWD per project), NOT default_roots() — so
-        # ``seen_ids`` is global; otherwise records under a project tree
-        # that wasn't walked would falsely appear orphan. (See the
-        # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
-        #
-        # SAFETY GUARD: a destructive orphan_action with a narrowed walk
-        # (custom roots) and no scope_filter would silently wipe records
-        # referenced from outside the walked subtree. Refuse — fall back
-        # to INDEX (non-destructive) and emit a warning. The caller's
-        # ScopeFilter-aware wrapper is responsible for either widening the
-        # walk to global or supplying a scope_filter.
+        # A candidate is acted on only once ``_source_gone_orphans`` confirms its own
+        # file is deleted, so a narrowed walk cannot remove a record it did not visit.
         effective_orphan_action = opts.orphan_action
-        if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
-            logging.warning(
-                "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
-                "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
-                effective_orphan_action,
-            )
-            effective_orphan_action = OrphanAction.INDEX
         orphan_records: dict[RecordType, list[str]] = {}
         orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
         # Disk walks (records-root iterdir, per-type dir enumeration) run
