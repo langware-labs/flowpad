@@ -34,6 +34,25 @@ export function buildProtocolUrl(apiKey: string | null, openTargetPath: string):
 const HANDOFF_WINDOW_MS = 1500;
 
 /**
+ * Safari answers a top-level navigation to an unregistered scheme with a modal
+ * "address is invalid" alert, which blurs the page and reads as a hand-off. Fired
+ * from a hidden iframe the same link opens a registered app but fails silently.
+ */
+const IS_SAFARI = /^((?!chrome|chromium|crios|fxios|edg|android).)*safari/i.test(navigator.userAgent);
+
+function navigateToDeepLink(url: string): void {
+  if (!IS_SAFARI) {
+    window.location.href = url;
+    return;
+  }
+  const frame = document.createElement('iframe');
+  frame.style.display = 'none';
+  frame.src = url;
+  document.body.appendChild(frame);
+  window.setTimeout(() => frame.remove(), HANDOFF_WINDOW_MS);
+}
+
+/**
  * Fire the deep link and report whether the browser appears to have handed it
  * off: the page lost focus, was hidden, or is still unfocused when the window
  * ends. `false` means nothing reacted, i.e. no app is registered for `flowpad://`.
@@ -55,7 +74,7 @@ export function fireDeepLink(url: string): Promise<boolean> {
     window.addEventListener('blur', onHandoff);
     window.addEventListener('pagehide', onHandoff);
     document.addEventListener('visibilitychange', onVisibility);
-    window.location.href = url;
+    navigateToDeepLink(url);
   });
 }
 
