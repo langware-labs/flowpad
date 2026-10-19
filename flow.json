@@ -1,5 +1,3 @@
 {
-  "dependencies": {
-    "flowpad-hub": "git+https://github.com/langware-labs/flowpad-hub"
-  }
+  "dependencies": {}
 }
