@@ -1,12 +1,12 @@
 ---
 type: markdown_index
-id: markdown_index-66704284-b246-51c2-849b-cf3c916f33de
-inputs_hash: 87ef1d6232b1bdb930f0d695cc1fbc0220462c2c359c65eeeb61f6313bf69ed5
+id: markdown_index-f8c2dd24-51c7-5d6b-9374-e56547a6d0b0
+inputs_hash: 014b3732876ee97676d59ba3542140691495f3804384063a946c3adcdb1e05ba
 template_version: 1
 prompt_version: 1
-parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-10-15T17:55:38.057586+00:00'
+parent_ref: markdown_index-0909616b-4692-5d1d-a02e-a155e2fe2bbb
+vault_root: /Users/tzahi/_dev/langware/github/flowpad-open-source/docs
+generated_at: '2026-10-19T19:19:46.039045+00:00'
 latest_process_ref: ''
 file_count: 32
 subfolder_count: 0
@@ -15,38 +15,38 @@ subfolder_count: 0
 # data-management
 
 ## Self-Summary
-> How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the one schema system (kind, schema, value) with its kind registry, data sources and datasets, mirroring a system of record, evals, records, search and the SQLite layer underneath.
+> How Flowpad stores, discovers and indexes data: filesystem-backed records and assets, the SchemaRegistry, DataSpec schemas and datasets, data sources and their ingest contract, the SQLite entity index and full-text search, folder indexing, invalidation, and measured disk-IO benchmarks and interface proposals.
 
 ## Files
-- [Asset capsules](asset-capsules.md) — Asset capsules: named JSON metadata stored in folders, Markdown comments and source-file comments, with read, write, remove operations, identity carriers and typed errors.
-- [Asset management](asset-management.md) — flow_sdk.assets: filesystem asset discovery, identity resolution, install, removal, projection, usage matching and inventory, built on frozen Asset and AssetFolder values.
-- [ComputeNode `fs-records` Action](compute-node-fs-records.md) — The fs-records CRUD action on ComputeNode over disk-backed typed records: type and path routing, the write path, and when to prefer the Entity API.
-- [Data source assets](data-source-asset.md) — Data driver and source asset folders: manifest, source.py, webhooks; an authored source settles to setup if its driver has verify(), else active, new until loaded.
-- [Data Sources UI (Frontend)](data-sources-ui.md) — Data Sources UI components, entity actions, URL-first navigation, health rendering, setup verification, and channels awaiting connection.
-- [Data sources](data-sources.md) — DataSource lifecycle, source contracts, polling health, account identity, change envelopes, driver registration, and curated Dataset integration.
-- [DataSpec — schemas as Pydantic, the schema as the layout](data-spec.md) — DataSpec schemas, runtime schema compilation, typed RowSpec and DatasetSpec values, DatasetLayout on disk, TypeInfo integration, and folder-defined schemas.
-- [Database Architecture](database.md) — SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.
-- [Dataset Layout (Authoring Guide)](datasets.md) — Dataset authoring guide: dataset.json manifest, csv and io_folder layouts, typed rows, row verbs, queries, source curation, mirroring, editors and the schema tree.
-- [diskio — measured results](diskio-benchmarks.md) — Measured diskio performance comparing baseline, Python, and Rust implementations, with correctness checks and shadow-folder migration results.
-- [Benchmark results (FIXED unless a benchmark is rerun)](diskio-design-benchmarks.md) — Design benchmarks comparing thirteen filesystem and parsing operations across Python and Rust, including parity, timings, and implementation recommendations.
-- [Interface proposal — v6 — FINAL (iteration 6)](diskio.md) — Disk-I/O kernel contracts: eight protocol pieces, Python and Rust backends, scanning hierarchy, shared value and transport rules, conformance kit, and implementation scope.
-- [Entity Index Sync](entity-index-sync.md) — How filesystem Records and the SQLite Entity index stay linked by a shared (type, id), what sync_to_db does, and when to query which layer.
-- [Evals — a dataset's own eval, standard results, one report](evals.md) — Dataset evals: eval.json spec, eval.py contract, row and run kinds, verdicts, versioned values, the runner and its report, and the SmartNavigator eval.
-- [On-Disk Folder Layout](folder-layout.md) — Per-instance Flowpad storage layout, records, provider directories, type-to-folder mapping, source extractors, and configuration-file security rules.
-- [Filesystem Discovery Benchmark](fs_find.md) — Cross-platform filesystem discovery benchmarks comparing Python walkers, native walkers, and OS indexes, including bootstrap latency findings and scale-dependent tradeoffs.
-- [Gitignore-Aware Filesystem Walk](gitignore-walk.md) — Shared gitignore-aware discovery walk, traversal and skip policies, backend selection, indexer options, and consumers.
-- [Content Invalidation (file change → reindex → refresh)](invalidation.md) — File-change invalidation through reindexing, entity notifications, and frontend content refresh, including triggers, change tokens, and failure modes.
-- [Items & origins](items_origins.md) — Items and origins: FSOrigin value objects (git, local) locating asset bytes, contrasted with CloudOrigin, plus driver registry and shape.
-- [Listen Action and CRUD Event Pipeline](listen-action.md) — Webhook POST to frontend cache update: listen_action, the two webhook types, _reflect_entity, DataOpMessage broadcast, recipient resolution, and the TypeScript subscription layer.
-- [The LLM Folder-Index Pipeline](llm-index.md) — The index.md folder-index pipeline: LLMIndexer's hash-cache-assemble Merkle build, the on-disk artifacts, and the MarkdownIndex entity that indexes them.
-- [MCP Server Operations](mcp-operations.md) — The flow_sdk MCP server Claude Code spawns over stdio: how it launches, its FastMCP and raw-debug modes, and the entity, tag, context and session tools.
-- [Meeting sources — Zoom, Teams, Google Meet](meeting-sources.md) — Research comparing Zoom, Teams and Google Meet recordings, transcripts and AI notes as data sources, covering auth, permissions, push mechanisms and driver-model fit.
-- [Mirroring a system of record](mirroring-a-system-of-record.md) — How-to for mirroring an outside system of record into typed dataset rows: the source's declared mirror map, write-through of owned fields, record-driver rules, failure modes.
-- [Record Model](record-model.md) — The FSRecord class and flow_sdk/fs_store: disk as source of truth, per-type behaviour on TypeInfo, meta models, and what the lean rewrite deliberately dropped.
-- [Record Search (FTS5/SQLite)](record-search.md) — Record search on SQLite FTS5: how FSRecord.sync_to_db indexes entries, how Entity.search and the search route query them, and how bulk reindexing runs.
-- [Scan and Discovery](scan-and-discovery.md) — Filesystem record discovery through FSIndexer walkers, per-type parsing and freshness slots, session lookup, RecordQuery filtering, explicit indexing, HTTP endpoints, and performance.
-- [Schema Registry](schema-registry.md) — SchemaRegistry as the single source of type metadata: TypeInfo authoring, registration, kind binding to DataSpec schemas, and the EntityType enum.
-- [The source contract and the sync runtime](source-contract-boundary.md) — Boundary between the flow_sdk.sources contract (open, fetch, iterate, send, react, notify) and the sync runtime, with dependency direction rules.
-- [Stream inbox projection — ingested messages become conversations](stream-inbox-projection.md) — Design of the one-way projection from ingested source items into stream inbox conversations, using reference-row messages, looked-up identity, dedupe locks and reindex repair.
-- [System Tools Service (Frontend)](system-tools.md) — SystemToolsService, the frontend service for backup, archive, restore, clear, scan and index, and the compute-node action paths it calls through apiClient.
-- [Transcript Indexing](transcript-indexing.md) — The opt-in transcript indexer that parses a session JSONL and runs handlers for side effects only, versus the FSIndexer that walks the filesystem.
+- [Asset capsules](asset-capsules.md) — Asset capsules: named JSON metadata stored in folders, markdown comments, or source-file line comments, with read/write carriers and identity carriers
+- [Asset management](asset-management.md) — The flow_sdk.assets API for filesystem asset discovery, identity resolution, install, removal, projection, usage matching and inventory, using Asset and AssetFolder handles.
+- [ComputeNode `fs-records` Action](compute-node-fs-records.md) — ComputeNode fs-records action: type-based and path-based CRUD routes for filesystem-backed records, query parameters, entity sync, WebSocket broadcast, errors.
+- [Data source assets](data-source-asset.md) — Data source asset folder format: data_driver.json manifest fields, source.py, DataSource config files, runtime state, setup status, ownership and inbound access rules.
+- [Data Sources UI (Frontend)](data-sources-ui.md) — Frontend Data Sources screen: components, dataManager queries and actions, URL-first navigation, status and health rendering, and channels still to connect
+- [Data sources](data-sources.md) — DataSource model for ingesting feeds, mailboxes and channels into the graph: pipeline, source contract, health status, identity, change envelope, adding a source, known gaps.
+- [DataSpec — schemas as Pydantic, the schema as the layout](data-spec.md) — Design of DataSpec, the Pydantic base for schemas: spec_kind registration, parsing schemas that arrive as data, RowSpec and DatasetSpec generics, DatasetLayout, and schema-as-asset-layout
+- [Database Architecture](database.md) — SQLite database architecture after the async refactor: single engine, pooling, pragmas, BEGIN IMMEDIATE, per-request transactions, session resolution, and fixes for database-is-locked errors
+- [Dataset Layout (Authoring Guide)](datasets.md) — Authoring guide for dataset folder layout: dataset.json manifest, csv versus io_folder row layouts, slots and sidecars, typed rows, parser output and checklist
+- [diskio — measured results](diskio-benchmarks.md) — Measured diskio benchmark results comparing base, python and rust backends: methodology, per-operation speedups, what did not improve, correctness checks, and the shadow-folder rename migration
+- [Benchmark results (FIXED unless a benchmark is rerun)](diskio-design-benchmarks.md) — Benchmark results comparing Python SDK disk-IO paths (walk, gitignore, frontmatter, hashing, git, session stats) against throwaway Rust implementations, with speedups and verdicts per unit.
+- [Interface proposal — v6 — FINAL (iteration 6)](diskio.md) — Final v6 interface proposal for the flow_sdk diskio kernel: eight Protocol pieces (walker, scanner, reader, hasher), Python and Rust backends, rules, open decisions, excluded I/O.
+- [Entity Index Sync](entity-index-sync.md) — How filesystem Records sync into the queryable SQLite Entity index and FTS5 search: sync_to_db algorithm, indexer orchestration, staleness, DataOpMessage notifications, and query trade-offs.
+- [Evals — a dataset's own eval, standard results, one report](evals.md) — Dataset evals: EvalSpec folder with eval.json and eval.py, RowEval and EvalRun result kinds, the evaluate_row contract, how to run, and the SmartNavigator eval
+- [On-Disk Folder Layout](folder-layout.md) — On-disk layout of per-instance Flowpad home, record shadow folders, Claude Code directories, RecordType constants, source-file extractors and config filename whitelist.
+- [Filesystem Discovery Benchmark](fs_find.md) — Cross-platform benchmark of filesystem discovery methods (Python walkers, find, plocate, mdfind, Everything) prompted by slow markdown discovery during bootstrap, with methodology and per-OS setup.
+- [Gitignore-Aware Filesystem Walk](gitignore-walk.md) — The shared gitignore_walk() directory walker: pre-order scandir contract, two-stage skip (hardcoded denylist, nested .gitignore stack), .claude force-include, indexer option and consumers.
+- [Content Invalidation (file change → reindex → refresh)](invalidation.md) — Content invalidation loop from out-of-band file change to reindex, updated_date change token, and frontend body re-read, covering triggers, gotchas, and key files.
+- [Items & origins](items_origins.md) — FSOrigin and origin value objects: shape, kind-keyed driver registry, dedup key semantics, wire contract, bundle, and how to add a new origin kind.
+- [Listen Action and CRUD Event Pipeline](listen-action.md) — Pipeline from webhook POST through listen_action, hook_op and agent_hook handling, entity reflection, DataOpMessage WebSocket broadcast and recipient resolution to frontend cache updates
+- [The LLM Folder-Index Pipeline](llm-index.md) — LLMIndexer pipeline that builds Merkle-tree index.md folder indexes with cached LLM summaries, plus the MarkdownIndex entity, rebuild process, server routes, and contrast with FSIndexer
+- [MCP Server Operations](mcp-operations.md) — The flow_sdk MCP server: launch paths, tool registration, the registered tools (ping, entity CRUD, tag, context, session analysis), .mcp.json configuration and logging.
+- [Meeting sources — Zoom, Teams, Google Meet](meeting-sources.md) — Research comparing Zoom, Teams and Google Meet recordings, transcripts, AI notes, auth, webhooks and plan limits as data sources, with fit to the driver model.
+- [Mirroring a system of record](mirroring-a-system-of-record.md) — Mirroring typed rows from an external system of record such as a CRM: credential, driver, source and dataset roles, field ownership, failure handling, deliberate gaps.
+- [Record Model](record-model.md) — FSRecord class and fs_store infrastructure: on-disk record layout, identity, save/load, DB sync, SchemaRegistry and TypeInfo, RecordList, RecordQuery and CollectionManifest.
+- [Record Search (FTS5/SQLite)](record-search.md) — SQLite FTS5 record search: indexing via sync_to_db, FTS table, TypeInfo index_fields, Entity.search, HTTP search and reindex endpoints, and performance notes
+- [Scan and Discovery](scan-and-discovery.md) — FSIndexer depth-first disk walker design: roots, walker registration, per-type dispatch, RecordQuery, when indexing runs, scan/index API endpoints, error records, performance and known issues.
+- [Schema Registry](schema-registry.md) — SchemaRegistry and TypeInfo as the single source of per-type metadata: declarative registration, merge semantics, persistence, scan/index orchestration, index logs, HTTP endpoints, and usage examples.
+- [The source contract and the sync runtime](source-contract-boundary.md) — Boundary between the flow_sdk.sources contract (source sessions, frozen values, capabilities, errors) and the ingest sync runtime (polling, cursors, idempotent writes, health parking).
+- [Stream inbox projection — ingested messages become conversations](stream-inbox-projection.md) — One-way projection of ingested cloud messages into stream inbox conversations as reference FlowMessage rows: identity lookup, timestamp rules, reindex healing, lanes, and purge behavior.
+- [System Tools Service (Frontend)](system-tools.md) — Frontend SystemToolsService reference: backup, archive, restore, clear, scan and index operations, backend actions used, progress events, conflict detection, useSystemTools hook, methods and callers.
+- [Transcript Indexing](transcript-indexing.md) — Opt-in TranscriptIndexer that parses session JSONL transcripts into side-effect handlers, contrasted with FSIndexer, including its timestamp-based freshness check and idempotent forced reindex.
