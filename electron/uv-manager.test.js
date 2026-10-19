@@ -2132,6 +2132,35 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(await m._wheelUrl('0.2.83'), null, 'an sdist is not a wheel');
     }
 
+    // #2: invalid metadata is refused after an install exactly as it is before one -- but never bricks a startup.
+    {
+      const { venv, flowBin } = makeVenv('0.2.70', 'not json');
+      const m = mk('0.2.45');
+      eq(m.installedPairIssue(flowBin), null, 'startup, an engine already on disk: lenient (legacy)');
+      const issue = m.installedPairIssue(flowBin, { strict: true });
+      ok(issue && /invalid compatibility metadata/.test(issue.message), 'right after an install: refused, with a sentence a user can read');
+      ok(!/null|undefined/.test(issue.message), 'and no "null" in it');
+
+      const installs = [];
+      m._flowBin = flowBin;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._uvToolInstallForce = async (args) => { installs.push(args.join(' ')); };
+      m._resolveFlowBin = async () => flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('0.2.50'), /invalid compatibility metadata/); passed++;
+      eq(installs, ['tool install flowpad==0.2.50 --python 3.11 --force'], 'and the previous release is put back');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+
+    // #4: the "nothing compatible" error says what was really looked at.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: Object.fromEntries(Array.from({ length: 14 }, (_, i) => [`0.2.${70 - i}`, [{}]])) });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: '9.9.9' });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /checked the newest 10, older ones were not looked at/); passed++;
+      m._getPypiData = async () => ({ info: { version: '0.2.70' }, releases: { '0.2.70': [{}], '0.2.69': [{}] } });
+      await assert.rejects(() => m.resolveCompatibleEngineVersion(), /checked the newest 2\)/); passed++;
+    }
+
     // #6: a version that is not release-shaped never reaches an install command.
     {
       const m = mk('0.2.45');

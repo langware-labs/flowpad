@@ -111,10 +111,11 @@ function checkPair({ desktopVersion, engineVersion, minDesktopVersion = null, mi
  *        read failed → candidate ACCEPTED as legacy; the post-install verification is the
  *        authoritative gate and rolls back if this optimism was wrong)
  * @param {number} [o.limit]   how many candidates to interrogate before giving up
+ * @param {{checked?: number, stoppedAtLimit?: boolean}} [o.stats]  filled in: how many were interrogated, and whether the limit ended the walk
  * @param {(msg: string) => void} [o.log]
  * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>} null = no compatible release
  */
-async function selectCompatibleRelease({ releases, desktopVersion, minBackendVersion, readEngineCompat, limit = 10, log = () => {} }) {
+async function selectCompatibleRelease({ releases, desktopVersion, minBackendVersion, readEngineCompat, limit = 10, log = () => {}, stats = {} }) {
   const candidates = (releases || [])
     .filter((r) => r && !r.yanked)
     .map((r) => ({ version: r.version, parsed: string2semver(r.version) }))
@@ -122,12 +123,16 @@ async function selectCompatibleRelease({ releases, desktopVersion, minBackendVer
     .sort((a, b) => compareSemver(b.parsed, a.parsed)); // newest first
 
   let interrogated = 0;
+  stats.checked = 0;
+  stats.stoppedAtLimit = false;
   for (const candidate of candidates) {
     if (interrogated >= limit) {
+      stats.stoppedAtLimit = true;
       log(`[compat] checked the newest ${limit} candidate releases and none is compatible — stopped looking (older ones were not checked)`);
       return null;
     }
     interrogated += 1;
+    stats.checked = interrogated;
     const compat = await readEngineCompat(candidate.version);
     if (compat === 'invalid') {
       log(`[compat] ${candidate.version}: invalid compatibility metadata — skipping it`);
