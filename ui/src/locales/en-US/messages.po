@@ -1398,6 +1398,15 @@ msgstr "{used} of {limit} {windowText}"
 msgid "{value}"
 msgstr "{value}"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} asks for access to <0>{where}</0>"
+msgstr "{who} asks for access to <0>{where}</0>"
+
+#. placeholder {0}: detail.project_name ?? '—'
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
+msgstr "{who} has this conversation in project {0}, which is not a checkout of <0>{where}</0>"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "{worker} session info"
 #~ msgstr "{worker} session info"
@@ -1483,6 +1492,11 @@ msgstr "<0/>Hard refresh"
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "<0>{0}</0> already exists in the workspace."
 msgstr "<0>{0}</0> already exists in the workspace."
+
+#. placeholder {0}: source.label
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "<0>{0}</0> has changes. Commit before share?"
+msgstr "<0>{0}</0> has changes. Commit before share?"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
@@ -5101,8 +5115,8 @@ msgid "Checking access…"
 msgstr "Checking access…"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Checking Git eligibility…"
-msgstr "Checking Git eligibility…"
+#~ msgid "Checking Git eligibility…"
+#~ msgstr "Checking Git eligibility…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
@@ -5618,6 +5632,10 @@ msgstr "Clone a git repo (or reuse a local clone) as a new project"
 #~ msgid "Clone a git repo (or reuse a local clone) as context"
 #~ msgstr "Clone a git repo (or reuse a local clone) as context"
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Clone as project"
+msgstr "Clone as project"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone failed."
@@ -6032,13 +6050,17 @@ msgstr "Commit & continue"
 msgid "Commit & Merge"
 msgstr "Commit & Merge"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Commit & share"
+msgstr "Commit & share"
+
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 msgid "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 msgstr "Commit all changes and merge back to the parent branch. Claude will exit the worktree when done."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Commit and push this file"
-msgstr "Commit and push this file"
+#~ msgid "Commit and push this file"
+#~ msgstr "Commit and push this file"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Commit Attribution"
@@ -7485,6 +7507,10 @@ msgstr "Could not save the rule code"
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not save the snippet"
 msgstr "Could not save the snippet"
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Could not send"
+msgstr "Could not send"
 
 #: src/components/automations/BusView.tsx
 msgid "Could not send it"
@@ -9544,6 +9570,7 @@ msgstr "done"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
@@ -9555,6 +9582,10 @@ msgstr "done"
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Done"
 msgstr "Done"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Done — access given"
+msgstr "Done — access given"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Done!"
@@ -11955,6 +11986,7 @@ msgstr "Format"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/ShareReplyCard.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
@@ -12232,6 +12264,10 @@ msgstr "git"
 msgid "Git"
 msgstr "Git"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Git access to {repo} is set. Open {file} again."
+msgstr "Git access to {repo} is set. Open {file} again."
+
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "Git changes"
@@ -12271,6 +12307,10 @@ msgstr "Git repository"
 
 #~ msgid "Git repository ready"
 #~ msgstr "Git repository ready"
+
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Git request access"
+msgstr "Git request access"
 
 #~ msgid "Git setup cancelled"
 #~ msgstr "Git setup cancelled"
@@ -16969,6 +17009,10 @@ msgstr "No folders yet. Add one and it will be indexed on the next pass."
 msgid "No future run."
 msgstr "No future run."
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "No Git access — opened the copy"
+msgstr "No Git access — opened the copy"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No GitHub repos linked"
 msgstr "No GitHub repos linked"
@@ -18656,6 +18700,7 @@ msgstr "Only the steps below"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -19235,6 +19280,10 @@ msgstr "Open the automation to fix it"
 #: src/components/conversation/LiveSessionActivity.tsx
 msgid "Open the chat this session runs in"
 msgstr "Open the chat this session runs in"
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "Open the copy"
+msgstr "Open the copy"
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "Open the data source"
@@ -20263,6 +20312,10 @@ msgstr "Play a sound when an agent is waiting for me"
 msgid "Plays each time an agentic process becomes ready for your input."
 msgstr "Plays each time an agentic process becomes ready for your input."
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "Please check the shared repo"
+msgstr "Please check the shared repo"
+
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Please choose an image file"
 msgstr "Please choose an image file"
@@ -21142,8 +21195,8 @@ msgid "Push & notify"
 msgstr "Push & notify"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Push and share"
-msgstr "Push and share"
+#~ msgid "Push and share"
+#~ msgstr "Push and share"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #~ msgid "Push failed"
@@ -21472,12 +21525,16 @@ msgid "Recently edited items and chat sessions"
 msgstr "Recently edited items and chat sessions"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Recipients are project members — they get a live link to the file in git."
-msgstr "Recipients are project members — they get a live link to the file in git."
+#~ msgid "Recipients are project members — they get a live link to the file in git."
+#~ msgstr "Recipients are project members — they get a live link to the file in git."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Recipients get a copy."
 msgstr "Recipients get a copy."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients with access to the repo open it from Git; everyone else gets a copy."
+msgstr "Recipients with access to the repo open it from Git; everyone else gets a copy."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -22222,6 +22279,10 @@ msgstr "Repository URL:"
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Request"
 msgstr "Request"
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Request access"
+msgstr "Request access"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Request status"
@@ -24151,6 +24212,10 @@ msgstr "Sent along"
 msgid "Sent to {to}"
 msgstr "Sent to {to}"
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Sent to the sharer"
+msgstr "Sent to the sharer"
+
 #: src/components/install/InstallButton.tsx
 msgid "Sent to your desktop — confirm it there."
 msgstr "Sent to your desktop — confirm it there."
@@ -24658,6 +24723,10 @@ msgstr "Share {projectName}"
 msgid "Share anyway"
 msgstr "Share anyway"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share as is"
+msgstr "Share as is"
+
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
@@ -24721,8 +24790,8 @@ msgstr "Share to conversation"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Share using Git origin"
-msgstr "Share using Git origin"
+#~ msgid "Share using Git origin"
+#~ msgstr "Share using Git origin"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Share with team"
@@ -26672,6 +26741,10 @@ msgstr "Teams in this organization"
 msgid "Teams inside this team"
 msgstr "Teams inside this team"
 
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "Tell sender"
+msgstr "Tell sender"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
 msgstr "Temperature ≤"
@@ -27261,6 +27334,10 @@ msgstr "The provider rejected the stored token."
 msgid "The query failed"
 msgstr "The query failed"
 
+#: src/components/conversation/ShareReplyCard.tsx
+msgid "The receiver"
+msgstr "The receiver"
+
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "The recipient will see a PROMPT to approve."
 msgstr "The recipient will see a PROMPT to approve."
@@ -27561,8 +27638,8 @@ msgstr "This app is served externally via Flowpad. Open it in a new tab."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
-msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
+#~ msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
+#~ msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "This asset has no file path."
@@ -27641,6 +27718,10 @@ msgstr "This conversation is still saved, but part of it could not be read, so t
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
 msgstr "This conversation no longer exists or is unavailable."
+
+#: src/components/conversation/asset-review/use-open-git-share.ts
+msgid "This conversation's project is not a checkout of the shared repo"
+msgstr "This conversation's project is not a checkout of the shared repo"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This could not be prepared for download."
@@ -30056,8 +30137,8 @@ msgid "What is an optional package?"
 msgstr "What is an optional package?"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "What is Git sharing?"
-msgstr "What is Git sharing?"
+#~ msgid "What is Git sharing?"
+#~ msgstr "What is Git sharing?"
 
 #: src/components/voice/CallControls.tsx
 msgid "What is the call for? (optional)"
@@ -30478,7 +30559,6 @@ msgstr "working…"
 #: src/components/conversation/ConversationActions.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/SessionActionsMenu.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -30700,6 +30780,10 @@ msgstr "You don’t belong to an organization yet. Organizations are set up in F
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "You don't have permission for this action. Contact your admin if this seems wrong."
 
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "You don't have this repo yet."
+msgstr "You don't have this repo yet."
+
 #: src/pages/entry/entry-shell.tsx
 msgid "You have access to this {label}."
 msgstr "You have access to this {label}."
@@ -30715,6 +30799,10 @@ msgstr "You have no budget you can hand out."
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
 msgstr "You have no projects in the cloud. Paste a repository URL — or launch in your desktop and pick a project there."
+
+#: src/components/conversation/asset-review/SharedOpenPanel.tsx
+msgid "You have this repo in more than one project. Open it in:"
+msgstr "You have this repo in more than one project. Open it in:"
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
