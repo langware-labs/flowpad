@@ -141,20 +141,37 @@ def resolve(desktop_version: str, min_backend: str) -> None:
     with urllib.request.urlopen(f"{PYPI_JSON}?t={time.time_ns()}", timeout=60) as resp:  # noqa: S310
         doc = json.load(resp)
     candidates = []
+    excluded: dict[str, int] = {}
+
+    def exclude(why: str) -> None:
+        excluded[why] = excluded.get(why, 0) + 1
+
     for version, files in (doc.get("releases") or {}).items():
         parsed = semver.string2semver(version)
-        if parsed is None or not isinstance(files, list) or compat.meets_floor(version, min_backend) is not True:
+        if parsed is None or not isinstance(files, list):
+            exclude("have an unparseable version or no file list")
+            continue
+        if compat.meets_floor(version, min_backend) is not True:
+            exclude(f"are below the desktop's floor {min_backend}")
+            continue
+        wheels = [f for f in files if str(f.get("filename", "")).endswith(".whl")]
+        if not wheels:
+            exclude("have no wheel")
             continue
         # A partly-yanked release still has its un-yanked wheel; a yanked wheel is never the one we read.
-        wheel = next(
-            (f for f in files if str(f.get("filename", "")).endswith(".whl") and not f.get("yanked") and trusted_wheel_url(f.get("url"))),
-            None,
-        )
-        if wheel:
-            candidates.append((parsed, version, wheel["url"]))
+        live = [f for f in wheels if not f.get("yanked")]
+        if not live:
+            exclude("have only yanked wheels")
+            continue
+        wheel = next((f for f in live if trusted_wheel_url(f.get("url"))), None)
+        if wheel is None:
+            exclude(f"have no wheel on {WHEEL_HOST}")
+            continue
+        candidates.append((parsed, version, wheel["url"]))
     candidates.sort(key=functools.cmp_to_key(lambda a, b: semver.compare_semver(a[0], b[0])), reverse=True)
     if not candidates:
-        fail(f"no PyPI release satisfies the desktop floor {min_backend}")
+        why = "; ".join(f"{n} release(s) {reason}" for reason, n in sorted(excluded.items())) or "PyPI listed no releases"
+        fail(f"no PyPI release is eligible to run with desktop {desktop_version} ({why})")
     for _, version, url in candidates[:MAX_CANDIDATES]:
         try:
             floor = wheel_min_desktop(url)
