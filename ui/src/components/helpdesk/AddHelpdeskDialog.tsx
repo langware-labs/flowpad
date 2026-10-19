@@ -64,7 +64,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
 
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState<string | null>(null);
-  const [kind, setKind] = useState<DependencyKind>('required');
+  const [kind, setKind] = useState<DependencyKind>('local');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AdoptHelpdeskResult | null>(null);
@@ -77,7 +77,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
     if (!open) return;
     setUrl('');
     setBranch(null);
-    setKind('required');
+    setKind('local');
     setBusy(false);
     setError(null);
     setResult(null);
@@ -165,10 +165,10 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
       await project.removeDependency(result.dependency);
       await onAdded?.();
       onOpenChange(false);
-      notify.success({ title: t`Dependency removed` });
+      notify.success({ title: t`Package removed` });
     } catch (err) {
       notify.error({
-        title: t`Could not remove the dependency`,
+        title: t`Could not remove the package`,
         message: errorMessage(err, t`Unknown error`),
       });
     } finally {
@@ -301,7 +301,7 @@ export function AddHelpdeskDialog({ open, onOpenChange, project, onAdded }: AddH
 
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
-                <Trans>Dependency</Trans>
+                <Trans>Package</Trans>
               </span>
               <DependencyKindChips kind={kind} onChange={setKind} />
             </div>
@@ -427,7 +427,7 @@ function HelpdeskResult({
               </span>
               <span className="text-xs text-muted-foreground">
                 <Trans>
-                  It was added as an ordinary dependency instead, so agents can still read it. Remove it if
+                  It was added as an ordinary package instead, so agents can still read it. Remove it if
                   that is not what you wanted.
                 </Trans>
               </span>
@@ -469,7 +469,7 @@ function HelpdeskResult({
         {result.outcome === 'no_manifest' && (
           <Button variant="outline" onClick={onRemove} disabled={removing} data-testid="add-helpdesk-remove">
             {removing && <Loader2 className="me-1.5 h-3.5 w-3.5 animate-spin" />}
-            <Trans>Remove dependency</Trans>
+            <Trans>Remove package</Trans>
           </Button>
         )}
         {result.portal_project_id && (
