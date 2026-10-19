@@ -3327,11 +3327,15 @@ msgstr "מאושר לסשן הזה"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
 
-#: src/components/top-nav-bar/AppButton.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "אפליקציות"
+
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Apps and agents"
+msgstr ""
 
 #: src/components/asset-counters/app-counters.tsx
 msgid "Apps in {projectName} with a deployment"
@@ -4010,8 +4014,8 @@ msgid "Back to stream inbox"
 msgstr "חזרה לדואר הנכנס"
 
 #: src/components/top-nav-bar/TopNavBar.tsx
-msgid "Back to tabs"
-msgstr ""
+#~ msgid "Back to tabs"
+#~ msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -17962,6 +17966,7 @@ msgid "On the schedule {expr}"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr ""
 
@@ -18144,7 +18149,6 @@ msgid "open {name}"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "פתיחת {name}"
@@ -24321,8 +24325,8 @@ msgid "Show value"
 msgstr ""
 
 #: src/components/top-nav-bar/AppButton.tsx
-msgid "Showing {name}"
-msgstr "מוצג: {name}"
+#~ msgid "Showing {name}"
+#~ msgstr "מוצג: {name}"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -24727,8 +24731,8 @@ msgid "Skip it…"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "Skip on this machine only — undo any time"
-msgstr ""
+#~ msgid "Skip on this machine only — undo any time"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip Permissions Warmup"
