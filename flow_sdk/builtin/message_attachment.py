@@ -30,6 +30,7 @@ class AttachmentScope(StrEnum):
 class TransferMode(StrEnum):
     COPY = "copy"   # bytes ride in the bundle; install = copy from staging
     GIT = "git"     # git-transfer entry; install = clone/pull via metadata
+    BOTH = "both"   # git pointer AND bytes; install tries git, falls back to the bytes
 
 
 class MessageAttachment(Entity):

@@ -49,7 +49,7 @@ export interface IMessageAttachment extends IEntity {
   /** Whether "Install global" (user scope) is offered — schema-derived and
    *  stamped backend-side at stage time (single source of the policy). */
   user_scope_allowed?: boolean;
-  transfer_mode?: 'copy' | 'git';
+  transfer_mode?: 'copy' | 'git' | 'both';
   origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
@@ -63,6 +63,17 @@ export interface IMessageAttachment extends IEntity {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface MessageAttachment extends EntityMerge<IMessageAttachment> {}
 
+/** What `openShared` answers. */
+export interface OpenSharedResult {
+  show?: ReceiveShowTarget | null;
+  project_id?: string;
+  mismatch?: boolean;
+  needs?: 'choice' | 'placement';
+  candidates?: { id: string; name: string; path: string }[];
+  git_share_error?: string;
+  git_share_message?: string;
+}
+
 @registerEntity
 export class MessageAttachment extends APIEntity<MessageAttachment> implements IMessageAttachment {
   static type: string = 'message_attachment';
@@ -75,7 +86,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   description?: string | null;
   unpacked_path?: string;
   user_scope_allowed?: boolean;
-  transfer_mode?: 'copy' | 'git';
+  transfer_mode?: 'copy' | 'git' | 'both';
   origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
@@ -159,6 +170,35 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     if (!this.id) throw new Error('runSetup requires this.id');
     const res = await this.post<{ entity?: unknown; show?: ReceiveShowTarget | null }>('setup');
     return res?.show ?? null;
+  }
+
+  /**
+   * Open a received share (Git pointer + copy) in the right place. With no
+   * choice the backend picks the receiver's project; when it cannot, `needs`
+   * says what to ask: `choice` (2+ checkouts, see `candidates`) or `placement`
+   * (none: clone the repo, or open the copy). `git_share_error` is set when it
+   * opened from the copy because Git could not open it here.
+   */
+  async openShared(opts: { projectId?: string; choice?: 'clone' | 'copy' } = {}): Promise<OpenSharedResult> {
+    if (!this.id) throw new Error('openShared requires this.id');
+    const action = new ActionInfo('open-shared', MessageAttachment.type, this.id, 'POST');
+    action.bodyParameters = {
+      ...(opts.projectId ? { project_id: opts.projectId } : {}),
+      ...(opts.choice ? { choice: opts.choice } : {}),
+    };
+    return (await dataManager.callAction<unknown, OpenSharedResult>(action)) ?? {};
+  }
+
+  /** Ask the sharer for Git access to this share's repo ("Git request access" in the conversation). */
+  async requestGitAccess(): Promise<void> {
+    if (!this.id) throw new Error('requestGitAccess requires this.id');
+    await this.post<unknown>('request-git-access');
+  }
+
+  /** Tell the sharer this conversation's project is not a checkout of the shared repo. */
+  async reportShareMismatch(): Promise<void> {
+    if (!this.id) throw new Error('reportShareMismatch requires this.id');
+    await this.post<unknown>('report-share-mismatch');
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */
