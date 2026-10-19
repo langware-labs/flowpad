@@ -1293,6 +1293,10 @@ msgstr "{s}s"
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} selected"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{senderName} has shared {sharedThing}"
+msgstr "{senderName} has shared {sharedThing}"
+
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} sessions"
@@ -6480,6 +6484,7 @@ msgstr "Converted to an Excalidraw board"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/components/webapp-viewer.tsx
@@ -6525,6 +6530,7 @@ msgstr "Copilot tab"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/markdown-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/ui/media-lightbox.tsx
@@ -7138,6 +7144,10 @@ msgstr "Could not move the project"
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not open {0}"
 msgstr "Could not open {0}"
+
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Could not open in Finder"
+msgstr "Could not open in Finder"
 
 #: src/navigation/NavigationActions.ts
 msgid "Could not open link"
@@ -14451,6 +14461,7 @@ msgid "Lines"
 msgstr "Lines"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
 msgstr "Link"
 
@@ -18872,6 +18883,10 @@ msgstr "Open in external terminal"
 msgid "Open in Files"
 msgstr "Open in Files"
 
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Open in Finder"
+msgstr "Open in Finder"
+
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -21328,6 +21343,14 @@ msgstr "Recent Transcripts"
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Recently edited items and chat sessions"
 msgstr "Recently edited items and chat sessions"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients are project members — they get a live link to the file in git."
+msgstr "Recipients are project members — they get a live link to the file in git."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients get a copy."
+msgstr "Recipients get a copy."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -23927,6 +23950,10 @@ msgstr "Send this code from your phone to link it:"
 msgid "Send this from your phone to Flowpad's {title} account:"
 msgstr "Send this from your phone to Flowpad's {title} account:"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send this link to anyone you want to give access. It is shown only once."
+msgstr "Send this link to anyone you want to give access. It is shown only once."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "Send this to the person you support — they run it in their terminal:"
@@ -25428,6 +25455,7 @@ msgstr "Some things need attention."
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Someone"
 msgstr "Someone"
 
@@ -27152,6 +27180,10 @@ msgstr "The session is still connecting — try again in a moment."
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "The setup wizard is not installed."
 msgstr "The setup wizard is not installed."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The share was sent, but a link could not be created."
+msgstr "The share was sent, but a link could not be created."
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "The sign-in did not finish."
@@ -30759,23 +30791,3 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
-
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "{senderName} has shared {sharedThing}"
-msgstr "{senderName} has shared {sharedThing}"
-
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "The share was sent, but a link could not be created."
-msgstr "The share was sent, but a link could not be created."
-
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Send this link to anyone you want to give access. It is shown only once."
-msgstr "Send this link to anyone you want to give access. It is shown only once."
-
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Recipients are project members — they get a live link to the file in git."
-msgstr "Recipients are project members — they get a live link to the file in git."
-
-#: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "Recipients get a copy."
-msgstr "Recipients get a copy."

@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@sdk';
 import { projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 const mocks = vi.hoisted(() => ({ roster: vi.fn(), roles: vi.fn(), invite: vi.fn() }));
-vi.mock('@sdk', () => ({ membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles } }));
+vi.mock('@sdk', () => ({
+  membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles },
+  Role: { GUEST: 'guest', ANONYMOUS_VIEWER: 'anonymous_viewer' },
+}));
 const project = {
   id: 'p',
   typeId: { type: 'project', id: 'p' },

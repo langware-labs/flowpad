@@ -260,8 +260,7 @@ class Artifact(Entity):
         to the file at a commit, which the receiver opens and finds by name;
         otherwise it travels as a copy."""
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.roots import deepest_project_id_for_path, load_project_mounts  # noqa: PLC0415
-        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import owning_project_id  # noqa: PLC0415
         from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
 
         file = Path(path).expanduser().resolve()
@@ -269,7 +268,7 @@ class Artifact(Entity):
             raise FileNotFoundError(f"not a file: {file}")
         # The project that holds the file — any folder, git or not. Only a repo
         # nobody opened as a project yet gets one, rooted at the repo.
-        project_id = deepest_project_id_for_path(canonical_posix_path(str(file)), await load_project_mounts())
+        project_id = await owning_project_id(file)
         if project_id is None:
             root = find_project_root(str(file.parent))
             project = await Project.recover_by_path(root) if root else None
