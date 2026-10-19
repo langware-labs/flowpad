@@ -147,7 +147,7 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) onClose(); }}>
     <SteppedDialogContent
       crumbs={[{ label: t`Add data source`, onClick: selected && !busy ? back : undefined }, ...(selected ? [{ label: selected.name }] : [])]}
-      description={selected ? t`Included through this source's dependencies. Changes apply to new sessions.` : t`Choose a data source from this project by name.`}
+      description={selected ? t`Included through this source's packages. Changes apply to new sessions.` : t`Choose a data source from this project by name.`}
       footer={<>
         <Button variant="ghost" onClick={onClose} disabled={busy}><Trans>Cancel</Trans></Button>
         {selected ? <Button onClick={() => void add()} disabled={!preview || busy} data-testid="agent-source-confirm-add"><Trans>Add to agent</Trans></Button>
@@ -155,7 +155,7 @@ function AddProjectSourceDialog({ project, agent, onClose, onConnect, onAdded }:
       </>}
     >
       {error && <p role="alert" className="mb-3 rounded bg-destructive/10 p-2 text-sm">{error}</p>}
-      {selected ? preview ? <SourceDependencyRows states={preview} sources={previewSources} onOpen={() => {}} isOpen={() => false} /> : !error && <Empty><Trans>Reading dependencies…</Trans></Empty>
+      {selected ? preview ? <SourceDependencyRows states={preview} sources={previewSources} onOpen={() => {}} isOpen={() => false} /> : !error && <Empty><Trans>Reading packages…</Trans></Empty>
         : <>
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t`Search data sources`} aria-label={t`Search data sources`} />
           {loading ? <Empty><Trans>Loading data sources…</Trans></Empty> : !candidateIds.length && !error ? <Empty><Trans>No data sources in this project yet</Trans></Empty> : null}
@@ -196,7 +196,7 @@ export function AgentDataSourcesSection({ project, agent, ownedSources, sourcesL
   return <>
     <NavigatorSection scope="agent-resources" id="data-sources" label={t`Data sources`} isLoading={sourcesLoading || deps.isLoading} itemCount={sourceStates.length + legacy.length}
       action={<IconButton icon={Plus} label={t`Add data source`} onClick={() => project && agent ? setAdding(true) : setConnecting(true)} testId="agent-resource-add-data-source" />}
-      emptyState={<Empty><Trans>Add a project data source to include its dependencies</Trans></Empty>}
+      emptyState={<Empty><Trans>Add a project data source to include its packages</Trans></Empty>}
     >
       <SourceDependencyRows states={sourceStates} sources={attached} onOpen={onOpen} isOpen={isOpen} onRemove={(name) => void remove(name)} removing={removing} />
       {legacy.map((source) => <ResourceRow key={source.id} icon={sourceIcon(specFor(source.provider), source.channel)} label={source.name} selected={isOpen(source.typeId.toString())} onOpen={() => onOpen(source.typeId.toString())} testId={`agent-resource-row-${source.typeId.toString()}`}
