@@ -247,6 +247,8 @@ interface FlowMessageBubbleProps {
   /** The conversation's other participant — the machine a prompt call I send runs on. */
   callPeerName?: string | null;
 }
+  /** Same sender as the bubble above, moments later — drawn without avatar and name. */
+  continuation?: boolean;
 
 export function FlowMessageBubble({
   messageId,
@@ -278,6 +280,7 @@ export function FlowMessageBubble({
   promptCall = null,
   callPeerName = null,
   showEmailHeaders = false,
+  continuation = false,
   channelTraits = null,
   lifecycle = null,
   onAutomate,
@@ -847,6 +850,7 @@ export function FlowMessageBubble({
         onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
       />
+        continuation={continuation}
       {lifecycle && <MessageLifecycle lifecycle={lifecycle} />}
       {reactError && (
         <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
