@@ -379,14 +379,6 @@
       "size_bytes": 12595
     },
     {
-      "name": "tart.md",
-      "rel_path": "tart.md",
-      "title": "Fresh-Mac QA with Tart",
-      "summary": "Fresh-Mac QA using Tart VMs: why a vanilla image matters, one-time setup, the verified baseline, running a session, gotchas, and cost.",
-      "content_hash": "a3f255c839d3450de2d669a16f0933c9a00a2c42da809f89402c202d868d4251",
-      "size_bytes": 5967
-    },
-    {
       "name": "test_md.md",
       "rel_path": "test_md.md",
       "title": "hi\\\\",
@@ -441,14 +433,6 @@
       "summary": "WikiTip, the bidirectional link between a home-feed card and a wiki page: a real FeedEntry, its hover preview, and the highlight round-trip back.",
       "content_hash": "f94718e39597b7dafa0e7581ca6c74dc4d320b5e9973e026514b7e48c273190a",
       "size_bytes": 9747
-    },
-    {
-      "name": "windows-test-vm.md",
-      "rel_path": "windows-test-vm.md",
-      "title": "Windows test VM",
-      "summary": "How-to for connecting to the UTM Windows test VM over ssh, copying files, and installing a locally built Flowpad dev wheel on it.",
-      "content_hash": "9e3a9739d4b376737743387455b9baa36e387856071ab6ab78ee615726bbf2cd",
-      "size_bytes": 3125
     }
   ],
   "subfolders": [

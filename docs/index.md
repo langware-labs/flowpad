@@ -64,7 +64,6 @@ subfolder_count: 16
 - [System Agents](system_agents.md) — System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one, distinct from the launchable Agent entity.
 - [Tab Management](tab-management.md) — Tab entity as the one membership system for content and terminal tabs: pointer-hash ids, host tabs, SDK TabManager, client lifecycle states, and historical design record.
 - [Tags — the unified event bus](tags.md) — Tags, the unified event bus: a tag is an opaque dot-separated string the bus never interprets, with one grammar owner and two match semantics.
-- [Fresh-Mac QA with Tart](tart.md) — Fresh-Mac QA using Tart VMs: why a vanilla image matters, one-time setup, the verified baseline, running a session, gotchas, and cost.
 - [hi\\](test_md.md) — Near-empty scratch markdown fixture holding only a heading; no content of its own.
 - [Toplog — tag-based runtime logging](toplog.md) — Toplog, tag-keyed debug logging: sprinkling silent log points, toggling tags at runtime from backend or frontend, and the Python and TypeScript APIs.
 - [TraceGutter - FlowData Trace Events in the Terminal Left Gutter](trace-gutter.md) — The terminal left gutter showing FlowData trace events: sources, the TraceEvent model, the frontend hook chain, row mapping, and the backend flow.
@@ -72,7 +71,6 @@ subfolder_count: 16
 - [VFS Path Specification](vfs.md) — The vfs:// URI scheme for addressing files under any entity: the type-id path format, the four accepted id formats, and per-entity storage roots.
 - [View Modes — Vibe / Standard / Advanced / Dev "skin" system](viewmodes.md) — ViewMode skins, shared terminal and chat rendering, transport-switch exceptions, readiness guards, toolkit slots, context, and common integration mistakes.
 - [WikiTip](wikitip.md) — WikiTip, the bidirectional link between a home-feed card and a wiki page: a real FeedEntry, its hover preview, and the highlight round-trip back.
-- [Windows test VM](windows-test-vm.md) — How-to for connecting to the UTM Windows test VM over ssh, copying files, and installing a locally built Flowpad dev wheel on it.
 
 ## Subfolders
 - [agent-management/](agent-management/index.md) — Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.
