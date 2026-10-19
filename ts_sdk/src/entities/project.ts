@@ -938,9 +938,30 @@ export class Project extends APIEntity<Project> {
       );
       this.adoptContext(response);
       if (!response?.dependency) throw new Error('add-dependency returned no dependency');
-      for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
+      // The backend fetches, indexes and loads it in the background — announce it once that lands.
+      if (!options.asset) void this.announceWhenResolved(response.dependency.name);
+      else for (const listener of dependencyLoadListeners) listener(response.dependency, this.id);
       return response.dependency;
     });
+  }
+
+  /** Wait (without holding the caller) for the background add to finish, then tell
+   *  the dependency listeners and refresh the dependency list. */
+  private async announceWhenResolved(name: string): Promise<void> {
+    try {
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const { dependencies, resolving } = await this.dependencies();
+        if (resolving) continue;
+        const dependency = dependencies.find((d) => d.name === name && !d.via);
+        if (dependency) for (const listener of dependencyLoadListeners) listener(dependency, this.id);
+        return;
+      }
+    } catch (err) {
+      console.warn('[project] dependency announce failed', err);
+    } finally {
+      notifyDependenciesChanged(this.id);
+    }
   }
 
   /** Run a dependency verb, then tell every listener for this project
