@@ -1,5 +1,5 @@
 import React from 'react';
-import { FolderOpen, GitBranch, PackageCheck, PackagePlus } from 'lucide-react';
+import { FolderOpen, GitBranch, HardDrive, PackageCheck, PackagePlus } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiButton } from '@src/components/wiki-tip';
@@ -92,18 +92,25 @@ export function DependencyKindChips({
     buttonLabel: string;
   }[] = [
     {
+      value: 'local',
+      icon: <HardDrive className="h-3 w-3" />,
+      label: <Trans>Local</Trans>,
+      tip: t`Only on this device. It is never saved in the project or committed, and the project doesn't say it exists.`,
+      buttonLabel: t`What is a local package?`,
+    },
+    {
       value: 'required',
       icon: <PackageCheck className="h-3 w-3" />,
       label: <Trans>Required</Trans>,
       tip: t`Fetched automatically wherever this project opens — Flowpad warns when it can't be.`,
-      buttonLabel: t`What is a required dependency?`,
+      buttonLabel: t`What is a required package?`,
     },
     {
       value: 'optional',
       icon: <PackagePlus className="h-3 w-3" />,
       label: <Trans>Optional</Trans>,
       tip: t`Listed with the project, but fetched only when someone clicks Install.`,
-      buttonLabel: t`What is an optional dependency?`,
+      buttonLabel: t`What is an optional package?`,
     },
   ];
 

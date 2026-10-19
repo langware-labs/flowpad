@@ -49,7 +49,7 @@ function SourceTile({
  * `useDependencySources`), required or optional.
  */
 export function AddDependencyDialog({ open, onOpenChange, onPick }: AddDependencyDialogProps): React.ReactElement {
-  const [kind, setKind] = useState<DependencyKind>('required');
+  const [kind, setKind] = useState<DependencyKind>('local');
   const sources = useDependencySources();
 
   return (
@@ -57,7 +57,7 @@ export function AddDependencyDialog({ open, onOpenChange, onPick }: AddDependenc
       <DialogContent className="sm:max-w-md" data-testid="add-dependency-dialog">
         <DialogHeader>
           <DialogTitle>
-            <Trans>Add dependency</Trans>
+            <Trans>Add package</Trans>
           </DialogTitle>
           <DialogDescription>
             <Trans>Point this project at another folder, repository or hub project it expects in its context.</Trans>
