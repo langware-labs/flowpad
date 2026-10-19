@@ -13,6 +13,8 @@
 
 /** Every icon slot on the DESK rail — the ids RAIL_ITEMS may place. */
 export type RailItemId =
+  /** The process tabs (Standard/terminal) or the last chat (Vibe). */
+  | 'chats'
   | 'stream_inbox'
   | 'automations'
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
@@ -41,7 +43,7 @@ export type HubRailItemId =
 /**
  * The rail, top to bottom.
  *
- * Only the three screens used constantly ride the rail. Every other screen —
+ * Only the four screens used constantly ride the rail. Every other screen —
  * data sources, search indexes, runs, hooks, LLM sources and the
  * developer ones — is opened by asking for it in the top bar (the smart
  * navigator), which reaches each of them by name. `home`, `files`, `bookmarks`
@@ -51,4 +53,4 @@ export type HubRailItemId =
  * the user back in, and Connections is where the FIRST connection is made — a
  * gate on "one exists" would hide each in the one state where it matters most.
  */
-export const RAIL_ITEMS: readonly RailItemId[] = ['stream_inbox', 'automations', 'credentials'];
+export const RAIL_ITEMS: readonly RailItemId[] = ['chats', 'stream_inbox', 'automations', 'credentials'];

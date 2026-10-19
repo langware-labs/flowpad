@@ -2141,8 +2141,12 @@ msgid "Add a personal note…"
 msgstr "Add a personal note…"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Add a project data source to include its dependencies"
-msgstr "Add a project data source to include its dependencies"
+#~ msgid "Add a project data source to include its dependencies"
+#~ msgstr "Add a project data source to include its dependencies"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add a project data source to include its packages"
+msgstr "Add a project data source to include its packages"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Add a source"
@@ -2247,8 +2251,8 @@ msgstr "Add data source"
 #: src/components/assets/AddDependencyDialog.tsx
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Add dependency"
-msgstr "Add dependency"
+#~ msgid "Add dependency"
+#~ msgstr "Add dependency"
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
@@ -2279,13 +2283,18 @@ msgstr "Add Git (optional — linking to the cloud doesn't need it)"
 
 #: src/hooks/use-add-dependency.tsx
 #: src/hooks/use-add-dependency.tsx
-msgid "Add Git dependency"
-msgstr "Add Git dependency"
+#~ msgid "Add Git dependency"
+#~ msgstr "Add Git dependency"
 
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
 #~ msgid "Add Git folder"
 #~ msgstr "Add Git folder"
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Add Git package"
+msgstr "Add Git package"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -2325,6 +2334,12 @@ msgstr "Add New Hook"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add note"
 msgstr "Add note"
+
+#: src/components/assets/AddDependencyDialog.tsx
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Add package"
+msgstr "Add package"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Add people"
@@ -3715,8 +3730,12 @@ msgstr "Assets"
 #~ msgstr "Assets in folders added to this run"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
-msgid "Assets in the project's dependencies and folders added to this run"
-msgstr "Assets in the project's dependencies and folders added to this run"
+#~ msgid "Assets in the project's dependencies and folders added to this run"
+#~ msgstr "Assets in the project's dependencies and folders added to this run"
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in the project's packages and folders added to this run"
+msgstr "Assets in the project's packages and folders added to this run"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "Assets the worker brings with it (plugins, bundled extras)"
@@ -5009,6 +5028,7 @@ msgid "Chat with this deployed agent"
 msgstr "Chat with this deployed agent"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "Chats"
 
@@ -7007,8 +7027,12 @@ msgid "could not fetch — showing local copy"
 msgstr "could not fetch — showing local copy"
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not fetch the dependencies"
-msgstr "Could not fetch the dependencies"
+#~ msgid "Could not fetch the dependencies"
+#~ msgstr "Could not fetch the dependencies"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not fetch the packages"
+msgstr "Could not fetch the packages"
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "Could not fix {key}"
@@ -7036,8 +7060,12 @@ msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not install the dependency"
-msgstr "Could not install the dependency"
+#~ msgid "Could not install the dependency"
+#~ msgstr "Could not install the dependency"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not install the package"
+msgstr "Could not install the package"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -7273,8 +7301,8 @@ msgstr "Could not remove the budget"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not remove the dependency"
-msgstr "Could not remove the dependency"
+#~ msgid "Could not remove the dependency"
+#~ msgstr "Could not remove the dependency"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #~ msgid "Could not remove the folder"
@@ -7287,6 +7315,11 @@ msgstr "Could not remove the help desk files"
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not remove the key"
 msgstr "Could not remove the key"
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not remove the package"
+msgstr "Could not remove the package"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
@@ -8875,17 +8908,17 @@ msgstr "Deny"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Dependencies"
-msgstr "Dependencies"
+#~ msgid "Dependencies"
+#~ msgstr "Dependencies"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
-msgid "Dependency"
-msgstr "Dependency"
+#~ msgid "Dependency"
+#~ msgstr "Dependency"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Dependency removed"
-msgstr "Dependency removed"
+#~ msgid "Dependency removed"
+#~ msgstr "Dependency removed"
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
@@ -10783,26 +10816,39 @@ msgid "Failed to add comment"
 msgstr "Failed to add comment"
 
 #: src/hooks/use-add-dependency.tsx
-msgid "Failed to add dependency"
-msgstr "Failed to add dependency"
+#~ msgid "Failed to add dependency"
+#~ msgstr "Failed to add dependency"
 
 #: src/components/assets/useAssetsModel.tsx
 #~ msgid "Failed to add files to context folder"
 #~ msgstr "Failed to add files to context folder"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to add files to dependency folder"
-msgstr "Failed to add files to dependency folder"
+#~ msgid "Failed to add files to dependency folder"
+#~ msgstr "Failed to add files to dependency folder"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to add files to package folder"
+msgstr "Failed to add files to package folder"
 
 #: src/hooks/use-add-dependency.tsx
 #: src/hooks/use-add-dependency.tsx
-msgid "Failed to add Git dependency"
-msgstr "Failed to add Git dependency"
+#~ msgid "Failed to add Git dependency"
+#~ msgstr "Failed to add Git dependency"
 
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
 #~ msgid "Failed to add Git folder"
 #~ msgstr "Failed to add Git folder"
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add Git package"
+msgstr "Failed to add Git package"
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add package"
+msgstr "Failed to add package"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to add vibe agent"
@@ -10921,8 +10967,12 @@ msgid "Failed to generate API key"
 msgstr "Failed to generate API key"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to install dependency"
-msgstr "Failed to install dependency"
+#~ msgid "Failed to install dependency"
+#~ msgstr "Failed to install dependency"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to install package"
+msgstr "Failed to install package"
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
 msgid "Failed to launch"
@@ -11022,12 +11072,16 @@ msgid "Failed to open project"
 msgstr "Failed to open project"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to remove dependency"
-msgstr "Failed to remove dependency"
+#~ msgid "Failed to remove dependency"
+#~ msgstr "Failed to remove dependency"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to remove image"
 msgstr "Failed to remove image"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to remove package"
+msgstr "Failed to remove package"
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to remove vibe agent"
@@ -13301,8 +13355,12 @@ msgstr "Include this file in the next commit (git add)"
 #~ msgstr "Include this session's transcript"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Included through this source's dependencies. Changes apply to new sessions."
-msgstr "Included through this source's dependencies. Changes apply to new sessions."
+#~ msgid "Included through this source's dependencies. Changes apply to new sessions."
+#~ msgstr "Included through this source's dependencies. Changes apply to new sessions."
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Included through this source's packages. Changes apply to new sessions."
+msgstr "Included through this source's packages. Changes apply to new sessions."
 
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
 msgid "Index (seq)"
@@ -13485,8 +13543,8 @@ msgid "Install as this name"
 msgstr "Install as this name"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Install dependency"
-msgstr "Install dependency"
+#~ msgid "Install dependency"
+#~ msgstr "Install dependency"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
@@ -13520,6 +13578,10 @@ msgstr "Install global"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "Install in project"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Install package"
+msgstr "Install package"
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install project"
@@ -13823,8 +13885,12 @@ msgstr "It shows up in Runs as a test."
 #~ msgstr "It was added as an ordinary context folder instead, so agents can still read it. Remove it if that is not what you wanted."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
-msgstr "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgstr "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
+msgstr "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 
 #: src/components/task-receive/use-shared-project-warnings.ts
 msgid "It was shared with you, but its files are not here yet."
@@ -13951,8 +14017,12 @@ msgstr "Kept (cannot or should not be removed): {0}"
 #~ msgstr "kept current as a context folder"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
-msgid "kept current as a dependency"
-msgstr "kept current as a dependency"
+#~ msgid "kept current as a dependency"
+#~ msgstr "kept current as a dependency"
+
+#: src/components/helpdesk/HelpdeskLoadDialog.tsx
+msgid "kept current as a package"
+msgstr "kept current as a package"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
 msgid "Kept in the project"
@@ -15025,6 +15095,11 @@ msgstr "Loading..."
 msgid "Loading…"
 msgstr "Loading…"
 
+#: src/components/assets/DependencyChips.tsx
+msgid "local"
+msgstr "local"
+
+#: src/components/assets/dependency-sources.tsx
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Local"
 msgstr "Local"
@@ -15723,8 +15798,12 @@ msgid "Missing attachments"
 msgstr "Missing attachments"
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
-msgid "Missing dependencies"
-msgstr "Missing dependencies"
+#~ msgid "Missing dependencies"
+#~ msgstr "Missing dependencies"
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Missing packages"
+msgstr "Missing packages"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Missing: {0}"
@@ -17768,8 +17847,12 @@ msgstr "Not connected — press Connect"
 #~ msgstr "Not copied into context folder"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Not copied into dependency folder"
-msgstr "Not copied into dependency folder"
+#~ msgid "Not copied into dependency folder"
+#~ msgstr "Not copied into dependency folder"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Not copied into package folder"
+msgstr "Not copied into package folder"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
@@ -18536,6 +18619,10 @@ msgstr "Only harness entries here — enable “Show all” to view them."
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
 msgstr "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
+msgstr "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
 #~ msgid "Only people you share with can use this agent."
@@ -19634,8 +19721,22 @@ msgstr "Owner"
 msgid "Pack keys into credentials"
 msgstr "Pack keys into credentials"
 
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Package"
+msgstr "Package"
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Package removed"
+msgstr "Package removed"
+
 #~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
 #~ msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Packages"
+msgstr "Packages"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -21183,8 +21284,12 @@ msgid "reading {account}"
 msgstr "reading {account}"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Reading dependencies…"
-msgstr "Reading dependencies…"
+#~ msgid "Reading dependencies…"
+#~ msgstr "Reading dependencies…"
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Reading packages…"
+msgstr "Reading packages…"
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Reading the history…"
@@ -21665,8 +21770,8 @@ msgstr "Remove budget"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Remove dependency"
-msgstr "Remove dependency"
+#~ msgid "Remove dependency"
+#~ msgstr "Remove dependency"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -21748,6 +21853,13 @@ msgstr "Remove number"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "Remove option"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Remove package"
+msgstr "Remove package"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Remove public access"
@@ -27840,8 +27952,12 @@ msgid "This project isn't shared with you, so it can't be launched."
 msgstr "This project isn't shared with you, so it can't be launched."
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
-msgid "This project needs these dependencies, and they are not on this computer."
-msgstr "This project needs these dependencies, and they are not on this computer."
+#~ msgid "This project needs these dependencies, and they are not on this computer."
+#~ msgstr "This project needs these dependencies, and they are not on this computer."
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "This project needs these packages, and they are not on this computer."
+msgstr "This project needs these packages, and they are not on this computer."
 
 #~ msgid "This project stops using it and the stored value is deleted."
 #~ msgstr "This project stops using it and the stored value is deleted."
@@ -29865,8 +29981,8 @@ msgstr "What is {0}?"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "What is a dependency?"
-msgstr "What is a dependency?"
+#~ msgid "What is a dependency?"
+#~ msgstr "What is a dependency?"
 
 #: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -29874,21 +29990,39 @@ msgstr "What is a dependency?"
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
 
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a local package?"
+msgstr "What is a local package?"
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a package?"
+msgstr "What is a package?"
+
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "What is a private context folder?"
 #~ msgstr "What is a private context folder?"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "What is a required dependency?"
-msgstr "What is a required dependency?"
+#~ msgid "What is a required dependency?"
+#~ msgstr "What is a required dependency?"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a required package?"
+msgstr "What is a required package?"
 
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "What is a shared context folder?"
 #~ msgstr "What is a shared context folder?"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "What is an optional dependency?"
-msgstr "What is an optional dependency?"
+#~ msgid "What is an optional dependency?"
+#~ msgstr "What is an optional dependency?"
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is an optional package?"
+msgstr "What is an optional package?"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
@@ -30679,10 +30813,6 @@ msgstr "Your business number in your own Meta app. Meta calls the hub's webhook 
 msgid "your Claude Code"
 msgstr "your Claude Code"
 
-#: src/pages/entry/InstallLanding.tsx
-msgid "Your CloudNSite workspace is ready"
-msgstr "Your CloudNSite workspace is ready"
-
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
 msgstr "Your diagnosis request came back"
@@ -30761,6 +30891,10 @@ msgstr "Your session has expired. Sign in again to launch."
 
 #~ msgid "Your teams"
 #~ msgstr "Your teams"
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your workspace is ready"
+msgstr "Your workspace is ready"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

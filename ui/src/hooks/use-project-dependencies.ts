@@ -8,9 +8,9 @@ import {
   type ProjectContextDirInfo,
 } from '@sdk';
 
-/** Whether a dependency about to be added is required (fetched automatically)
- *  or optional (fetched only on Install). */
-export type DependencyKind = 'required' | 'optional';
+/** Whether a package about to be added is local (this device only, recorded in no
+ *  project file), required (fetched automatically) or optional (fetched only on Install). */
+export type DependencyKind = 'local' | 'required' | 'optional';
 
 interface UseProjectDependenciesOptions {
   /** Read/write this asset's own flow.json rather than the project declaration. */
@@ -144,17 +144,17 @@ export function useProjectDependencies(
    *  `git+…` / `hub:…` / `file:…` source, a local folder or a bare git URL.
    *  Rejects with the backend's message on a bad source. */
   const add = useCallback(
-    async (source: string, kind: DependencyKind = 'required', options: { name?: string; path?: string } = {}) => {
+    async (source: string, kind: DependencyKind = 'local', options: { name?: string; path?: string } = {}) => {
       const p = projectRef.current;
       if (!p) return null;
-      return p.addDependency(source, { ...options, optional: kind === 'optional', ...(assetRef.current ? { asset: assetRef.current } : {}) });
+      return p.addDependency(source, { ...options, optional: kind === 'optional', ...(assetRef.current ? { asset: assetRef.current } : { local: kind === 'local' }) });
     },
     [],
   );
 
   /** Add each given absolute folder path as a dependency. */
   const addPaths = useCallback(
-    async (paths: string[], kind: DependencyKind = 'required') => {
+    async (paths: string[], kind: DependencyKind = 'local') => {
       for (const path of paths) {
         if (path) await add(path, kind);
       }
@@ -164,7 +164,7 @@ export function useProjectDependencies(
 
   /** Native folder picker → add. No-op without a compute node. */
   const pickAndAdd = useCallback(
-    async (kind: DependencyKind = 'required') => {
+    async (kind: DependencyKind = 'local') => {
       const computeNode = dataContext.computeNode;
       if (!projectRef.current || !computeNode) return;
       const picked = await computeNode.openPathDialog();
