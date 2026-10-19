@@ -66,6 +66,8 @@ export interface IWizard extends IEntity {
    *  Set on the document (`WizardSpec.popup`) for a wizard someone glances
    *  at and can set aside; it is started from its own Start button. */
   popup?: boolean;
+  /** Project setup begins only after this wizard is done (`WizardSpec.gates_project_setup`): the first-run wizard. */
+  gates_project_setup?: boolean;
   /** Said under the steps when a run passes; empty says nothing. From the document. */
   success_message?: string;
   /** Said when a run ended short (a failed or declined step); empty says nothing. */
@@ -119,6 +121,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   description?: string;
   label?: string;
   popup?: boolean;
+  gates_project_setup?: boolean;
   success_message?: string;
   failure_message?: string;
   restart_label?: string;
@@ -149,6 +152,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     // from here. The UI mirrors it, the backend owns it.
     this.label = entity.label;
     this.popup = entity.popup;
+    this.gates_project_setup = entity.gates_project_setup;
     this.success_message = entity.success_message;
     this.failure_message = entity.failure_message;
     this.restart_label = entity.restart_label;

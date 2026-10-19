@@ -36,7 +36,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
-import { FIRST_RUN_WIZARD } from '@src/components/setup-incomplete/open-setup-wizard';
 import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
 import { closeWizardPopup } from './wizard-popup-store';
 import { rungWord, useBackendText } from './wizard-texts';
@@ -264,7 +263,7 @@ function WizardViewerBody({
   // the animation itself.
   const isPopup = presentation === 'popup';
   // Window 1 of the first-run flow: X leads on to window 2 (`first-run-flow`); minimize does not.
-  const inFirstRunFlow = useFirstRunFlowStore((state) => state.step === 'wizard') && wizard.name === FIRST_RUN_WIZARD;
+  const inFirstRunFlow = useFirstRunFlowStore((state) => state.step === 'wizard') && Boolean(wizard.gates_project_setup);
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const setFlowMinimized = useFirstRunFlowStore((state) => state.setMinimized);
   const minimizeAndLeave = useCallback(() => {
