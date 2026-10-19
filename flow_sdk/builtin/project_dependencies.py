@@ -323,6 +323,7 @@ def _sidecar(found: _Found, dep: FlowDependency, via: Optional[str], own: bool) 
         "via": via,
         "own": own,
         "required": dep.required,
+        "local": dep.local,
         "cloned": found.cloned,
         "read_only": found.transportable,
     }
@@ -412,6 +413,40 @@ def undeclared_use(
 def _links(project: "Project") -> dict[str, dict]:
     """The project's folder links: typeid → sidecar."""
     return {str(tid): dict(project.get_context_entry_data(tid) or {}) for tid in project.context_of_type("folder", bucket="both")}
+
+
+_LOCAL_KEY = "local_packages"
+
+
+def local_packages(project_id: str) -> list[FlowDependency]:
+    """The packages only this device uses. They live in the per-device state, never in
+    ``flow.json`` or any file of the project, so nothing a teammate or a clone sees mentions them."""
+    from flow_sdk.project_device_state import read_project_device_state  # noqa: PLC0415
+
+    table = read_project_device_state(project_id).get(_LOCAL_KEY) or {}
+    return [
+        FlowDependency(name=name, source=entry["source"], path=entry.get("path", "."), required=False, local=True,
+                       label=entry.get("label"), description=entry.get("description"))
+        for name, entry in table.items()
+    ]
+
+
+def save_local_package(project_id: str, dep: FlowDependency) -> None:
+    from flow_sdk.project_device_state import read_project_device_state, update_project_device_state  # noqa: PLC0415
+
+    table = dict(read_project_device_state(project_id).get(_LOCAL_KEY) or {})
+    table[dep.name] = {"source": dep.source, "path": dep.path, "label": dep.label, "description": dep.description}
+    update_project_device_state(project_id, **{_LOCAL_KEY: table})
+
+
+def drop_local_package(project_id: str, name: str) -> bool:
+    from flow_sdk.project_device_state import read_project_device_state, update_project_device_state  # noqa: PLC0415
+
+    table = dict(read_project_device_state(project_id).get(_LOCAL_KEY) or {})
+    if table.pop(name, None) is None:
+        return False
+    update_project_device_state(project_id, **{_LOCAL_KEY: table})
+    return True
 
 
 def _installed_optionals(project: "Project") -> set[str]:
@@ -629,7 +664,8 @@ async def _resolve(
         # A broken file declares nothing — but it must not tear down what resolved before.
         return [DependencyState(name="flow.json", source="", state="invalid", reason=str(exc))]
     spec = spec or flow_json.FlowJsonSpec()
-    wanted_optionals = _installed_optionals(project) | set(install)
+    locals_ = [] if asset or read_only else local_packages(str(project.id))
+    wanted_optionals = _installed_optionals(project) | set(install) | {d.name for d in locals_}
     pid, root_canon = str(project.id), canonical_posix_path(str(root))
 
     states: list[DependencyState] = []
@@ -639,7 +675,7 @@ async def _resolve(
     rows: dict = {}   # dataset rows, read once for every value id this walk resolves
     # (entry, base, own, via_path): ``own`` = declared by this project — its root file or one of its
     # own assets — so its optional entries count; a dependency's own optionals never do.
-    queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in spec.entries())
+    queue: deque[tuple[FlowDependency, Path, bool, list[str]]] = deque((d, root, True, []) for d in [*spec.entries(), *locals_])
     own = own_entries if own_entries is not None else ([] if asset else _own_asset_entries(root))
     for label, entries, problem, _folder in own:
         if problem:
@@ -656,7 +692,7 @@ async def _resolve(
 
         def state(name: str, **kw: Any) -> DependencyState:
             return DependencyState(
-                name=dep.name, source=dep.source, required=dep.required, path=dep.path, via=via, state=name,
+                name=dep.name, source=dep.source, required=dep.required, local=dep.local, path=dep.path, via=via, state=name,
                 via_path=list(via_path), label=dep.label, description=dep.description, **kw,
             )
 

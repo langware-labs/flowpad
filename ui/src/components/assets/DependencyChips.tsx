@@ -57,11 +57,11 @@ export function DependencyStateChip({ dependency }: { dependency: Pick<Dependenc
   );
 }
 
-/** Required / Optional, as a small chip. */
-export function DependencyKindChip({ required }: { required: boolean }) {
+/** Local / Required / Optional, as a small chip. */
+export function DependencyKindChip({ required, local = false }: { required: boolean; local?: boolean }) {
   return (
     <span className={`${CHIP} border-border text-muted-foreground`} data-testid="dependency-kind">
-      {required ? i18n._(msg`required`) : i18n._(msg`optional`)}
+      {local ? i18n._(msg`local`) : required ? i18n._(msg`required`) : i18n._(msg`optional`)}
     </span>
   );
 }

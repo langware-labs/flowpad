@@ -54,16 +54,16 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
       <div className="mb-3 flex items-center gap-2">
         <Package className="h-4 w-4 text-muted-foreground" />
         <h3 className="text-sm font-medium">
-          <Trans>Dependencies</Trans>
+          <Trans>Packages</Trans>
         </h3>
-        <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a dependency?`} />
+        <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a package?`} />
         {warnings.length > 0 && (
           <Button
             variant="outline"
             size="sm"
             className="ms-auto h-7 gap-1.5 text-xs"
             disabled={busy !== null}
-            onClick={() => void run('*', () => resolve(), t`Could not fetch the dependencies`)}
+            onClick={() => void run('*', () => resolve(), t`Could not fetch the packages`)}
             data-testid="dependency-resolve"
           >
             {busy === '*' ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
@@ -158,14 +158,14 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
               {(dep.state !== 'ready' || !dep.lifecycle || dep.lifecycle.state === 'ready') && (
                 <DependencyStateChip dependency={dep} />
               )}
-              <DependencyKindChip required={dep.required} />
+              <DependencyKindChip required={dep.required} local={dep.local} />
               {installable(dep) && (
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 gap-1.5 text-xs"
                   disabled={busy !== null}
-                  onClick={() => void run(dep.name, () => install(dep.name), t`Could not install the dependency`)}
+                  onClick={() => void run(dep.name, () => install(dep.name), t`Could not install the package`)}
                   data-testid="dependency-install"
                 >
                   {rowBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
@@ -178,9 +178,9 @@ export const ProjectDependenciesCard: React.FC<ProjectDependenciesCardProps> = (
                   size="icon"
                   className="h-7 w-7"
                   disabled={busy !== null}
-                  aria-label={t`Remove dependency`}
-                  title={t`Remove dependency`}
-                  onClick={() => void run(dep.name, () => remove(dep.name), t`Could not remove the dependency`)}
+                  aria-label={t`Remove package`}
+                  title={t`Remove package`}
+                  onClick={() => void run(dep.name, () => remove(dep.name), t`Could not remove the package`)}
                   data-testid="dependency-remove"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

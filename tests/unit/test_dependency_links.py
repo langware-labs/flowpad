@@ -106,6 +106,7 @@ async def test_a_folder_dependency_is_a_private_link_with_its_sidecar(tmp_path):
         "via": None,
         "own": True,
         "required": True,
+        "local": False,
         "cloned": False,
         "read_only": False,
     }
