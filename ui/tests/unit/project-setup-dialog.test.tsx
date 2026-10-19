@@ -130,7 +130,11 @@ describe('ProjectSetupDialog — skipping', () => {
     };
     const skip = vi.spyOn(Project, 'skipSetup').mockResolvedValue(after);
 
-    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud')));
+    fireEvent.click(screen.getByTestId('project-setup-skip-google-cloud'));
+    // The row's Skip opens the same bar as a selection: Locally | Always | Cancel.
+    expect(screen.getByTestId('project-setup-selection-bar')).toHaveTextContent('1 selected');
+    expect(screen.getByTestId('project-setup-skip-always-selected')).toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByTestId('project-setup-skip-local-selected')));
 
     expect(skip).toHaveBeenCalledWith('p1', GCP_TYPEID, 'local', { name: 'google-cloud' });
     const skipped = await screen.findByTestId('project-setup-skipped');
