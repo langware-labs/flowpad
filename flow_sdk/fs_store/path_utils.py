@@ -161,6 +161,24 @@ def _same_or_under(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip("/") + "/")
 
 
+#: The folders inside ``<instances>/<name>/`` that hold the user's own content for a
+#: non-prod instance — its projects, its workspaces, its user-scope assets.
+INSTANCE_USER_DIRS = frozenset({"workspace", "workspaces", "home"})
+
+
+def _in_instance_user_dir(path: str, instances_root: str) -> bool:
+    """Whether *path* is strictly INSIDE ``<instances>/<name>/<user dir>/`` — a project there.
+
+    The user dir itself stays protected (it is a workspace root); so does everything
+    else under ``flow_home`` (DBs, records, other instance internals).
+    """
+    prefix = instances_root.rstrip("/") + "/"
+    if not path.startswith(prefix):
+        return False
+    parts = path[len(prefix):].split("/")
+    return len(parts) >= 3 and parts[1] in INSTANCE_USER_DIRS and all(parts[:3])
+
+
 def _temp_root_keys(flavour: str) -> frozenset[str]:
     raw_roots = (
         tempfile.gettempdir(),
@@ -256,6 +274,10 @@ def _is_protected_keyed(path: Path | str, keyed: tuple[str, str, str] | None) ->
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)
+    raw_instances = getattr(settings, "instances_root", None) if settings is not None else None
+    instances = _root_key(raw_instances, flavour) if raw_instances else None
+    if instances and _in_instance_user_dir(candidate, instances):
+        return False
     for raw_root in internal_roots:
         root = _root_key(raw_root, flavour)
         if root and _same_or_under(candidate, root):
