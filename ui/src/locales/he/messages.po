@@ -1121,6 +1121,10 @@ msgstr "לפני {m} דק׳"
 msgid "{messageCount, plural, one {# message} other {# messages}}"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "{misroutes} misroutes"
+msgstr ""
+
 #: src/components/automations/automation-words.ts
 msgid "{ms} ms"
 msgstr ""
@@ -1277,6 +1281,10 @@ msgstr ""
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} נבחרו"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{senderName} has shared {sharedThing}"
+msgstr "{senderName} שיתף/ה את {sharedThing}"
+
 #: src/components/cost-dashboard/CostDashboard.tsx
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} סשנים"
@@ -1311,6 +1319,18 @@ msgstr ""
 
 #~ msgid "{title} — {0} items"
 #~ msgstr "{title} — {0} פריטים"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Connected"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Flowpad's number"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "{title} › Your own number"
+msgstr ""
 
 #: src/components/data-sources/source-attention.ts
 msgid "{title} sign-in needs renewing"
@@ -1400,6 +1420,7 @@ msgstr "→ {0} (סטה)"
 #~ msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "+ Add rule"
 msgstr ""
 
@@ -1434,6 +1455,10 @@ msgstr "+{hiddenCount} עוד…"
 
 #: src/pages/hub-home/SharedProjectsBanner.tsx
 msgid "+{more} more — find them under Select Project"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "+972 54-123 4567"
 msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
@@ -1575,6 +1600,14 @@ msgstr "שבוע אחד"
 msgid "1. Copy this code"
 msgstr "1. יש להעתיק את הקוד הזה"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "1. The hub proves the number is yours: it asks your server for this phone number ID using the access token. Only an answer naming the same ID passes."
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "120363…@g.us"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "15 minutes"
 msgstr "15 דקות"
@@ -1595,6 +1628,10 @@ msgstr "שבוע"
 msgid "2. Copy & open the sign-in page"
 msgstr "2. העתיקו ופתחו את עמוד ההתחברות"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "2. You get a webhook URL. Your server sends every message there, signed with the app secret — unsigned messages are refused."
+msgstr ""
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "24 hours"
@@ -1611,6 +1648,10 @@ msgstr "24+ שעות בטלה"
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "3 days"
 msgstr "3 ימים"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "3. Each message goes to the rule that matches it, or to the fallback below. Replies go out through your server with the same token."
+msgstr ""
 
 #: src/components/harness-login/HarnessSignInDialog.tsx
 msgid "3. Your browser will show a code — paste it here"
@@ -1659,6 +1700,10 @@ msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "A deployment"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "A desktop instance or a machine, and a channel id on it"
 msgstr ""
 
 #: src/components/automations/KindGallery.tsx
@@ -1722,6 +1767,10 @@ msgstr "שם בטווח, או ערך מילולי"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "A new project folder — everything you create is scoped to it"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "A place and channel by hand…"
 msgstr ""
 
 #: src/components/assets/dependency-sources.tsx
@@ -1810,6 +1859,10 @@ msgstr "לפני זמן מה"
 msgid "a wizard name"
 msgstr "שם של אשף"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "A word you choose. When you save the webhook URL on your server, it calls the URL once with this word; the hub answers only if it matches — proof the URL is yours."
+msgstr ""
+
 #: src/components/workspace/workspace-switcher.tsx
 msgid "A workspace is a folder of related projects. It starts empty."
 msgstr ""
@@ -1894,6 +1947,10 @@ msgstr ""
 #: src/components/connections-manager.tsx
 msgid "Access requested"
 msgstr "בקשת הרשאה נשלחה"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Access token"
+msgstr ""
 
 #: src/components/data-sources/DataSourceDialog.tsx
 msgid "Account key"
@@ -2060,7 +2117,11 @@ msgid "Add a personal note…"
 msgstr "הוסף הערה אישית…"
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Add a project data source to include its dependencies"
+#~ msgid "Add a project data source to include its dependencies"
+#~ msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Add a project data source to include its packages"
 msgstr ""
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
@@ -2162,8 +2223,8 @@ msgstr "הוספת מקור נתונים"
 #: src/components/assets/AddDependencyDialog.tsx
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "Add dependency"
-msgstr ""
+#~ msgid "Add dependency"
+#~ msgstr ""
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
@@ -2194,11 +2255,16 @@ msgstr ""
 
 #: src/hooks/use-add-dependency.tsx
 #: src/hooks/use-add-dependency.tsx
-msgid "Add Git dependency"
-msgstr ""
+#~ msgid "Add Git dependency"
+#~ msgstr ""
 
 #~ msgid "Add Git folder"
 #~ msgstr "הוספת תיקיית Git"
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Add Git package"
+msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
@@ -2239,6 +2305,12 @@ msgstr "הוסף Hook חדש"
 msgid "Add note"
 msgstr ""
 
+#: src/components/assets/AddDependencyDialog.tsx
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Add package"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Add people"
 msgstr ""
@@ -2254,6 +2326,11 @@ msgstr "הוספת פרויקט"
 #: src/components/llm-endpoints/AliasesEditor.tsx
 msgid "Add row"
 msgstr "הוספת שורה"
+
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Add rule"
+msgstr ""
 
 #: src/components/agent-resources/AgentSchedulesSection.tsx
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
@@ -2608,6 +2685,11 @@ msgstr "הכל"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
 msgstr "הכל"
+
+#. placeholder {0}: numbers.length
+#: src/components/inbound/InboundView.tsx
+msgid "All {0}"
+msgstr ""
 
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
@@ -3042,6 +3124,10 @@ msgstr "הערות"
 msgid "Announcements shown at startup"
 msgstr "הודעות מוצגות בהפעלה"
 
+#: src/components/inbound/InboundView.tsx
+msgid "Another computer"
+msgstr ""
+
 #: src/components/data-sources/MessageChannelsList.tsx
 msgid "Another Flowpad instance"
 msgstr ""
@@ -3114,6 +3200,10 @@ msgstr "כל תרשים שנכתב כטקסט mermaid"
 
 #: src/components/automations/RunsView.tsx
 msgid "Any result"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Any server that speaks Meta's WhatsApp API and webhook format. The hub proves the number on that server and replies through it."
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -3256,6 +3346,10 @@ msgstr "דף האפליקציה"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "App runtime"
 msgstr "זמן ריצה של האפליקציה"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "App secret"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
@@ -3601,7 +3695,11 @@ msgstr "נכסים"
 #~ msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
-msgid "Assets in the project's dependencies and folders added to this run"
+#~ msgid "Assets in the project's dependencies and folders added to this run"
+#~ msgstr ""
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in the project's packages and folders added to this run"
 msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
@@ -3982,6 +4080,7 @@ msgstr "אזור AWS עבור Bedrock"
 #: src/components/automations/AutomationPage.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/journey/JourneyTray.tsx
@@ -4554,6 +4653,9 @@ msgstr ""
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -4732,6 +4834,7 @@ msgid "Chain"
 msgstr "שרשרת"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Change"
 msgstr "שנה"
@@ -4739,6 +4842,11 @@ msgstr "שנה"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Change avatar"
 msgstr "החלפת תמונה"
+
+#: src/components/inbound/AddRuleDialog.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "Change destination"
+msgstr ""
 
 #: src/components/footer/LanguageSelector.tsx
 #: src/components/footer/LanguageSelector.tsx
@@ -4801,8 +4909,16 @@ msgstr ""
 msgid "Channel"
 msgstr "ערוץ"
 
+#: src/components/inbound/use-inbound.ts
+msgid "channel {name}"
+msgstr ""
+
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
+msgstr ""
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Channel id (data source id there)"
 msgstr ""
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
@@ -4872,6 +4988,7 @@ msgid "Chat with this deployed agent"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "שיחות"
 
@@ -4907,6 +5024,11 @@ msgstr ""
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "בדוק הודעות חדשות"
+
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "Check route"
+msgstr ""
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "Check the address, or try opening it in your browser."
@@ -5486,6 +5608,7 @@ msgstr "משבוט…"
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
+#: src/components/inbound/RouteCheck.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
@@ -5612,6 +5735,10 @@ msgstr ""
 #: src/notifications/ingest.ts
 msgid "Cloud access denied"
 msgstr "הגישה לענן נדחתה"
+
+#: src/components/inbound/use-inbound.ts
+msgid "Cloud box {place}"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -5945,6 +6072,10 @@ msgstr "מזהה צומת חישוב:"
 msgid "Compute Op"
 msgstr "פעולת חישוב"
 
+#: src/components/inbound/DestinationPicker.tsx
+msgid "compute_node-…"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Computing diff…"
 msgstr "חישוב הבדלים…"
@@ -6034,6 +6165,11 @@ msgstr ""
 
 #~ msgid "Connect a data source to make it available here"
 #~ msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+#: src/components/inbound/InboundView.tsx
+msgid "Connect a number"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
@@ -6329,6 +6465,7 @@ msgstr "הומר ללוח Excalidraw"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/components/webapp-viewer.tsx
@@ -6374,6 +6511,7 @@ msgstr "כרטיסיית Copilot"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/links/LinkMenu.tsx
 #: src/components/markdown-view.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/ui/media-lightbox.tsx
@@ -6556,8 +6694,8 @@ msgstr ""
 #~ msgstr "העתקת נתיב הקובץ הזה ללוח"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
-msgstr ""
+#~ msgid "Copy this project's files to its cloud repository, so it can be opened on another machine or in a sandbox"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/SessionInfoPopover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -6850,7 +6988,11 @@ msgid "could not fetch — showing local copy"
 msgstr "לא ניתן להוריד — מוצג עותק מקומי"
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not fetch the dependencies"
+#~ msgid "Could not fetch the dependencies"
+#~ msgstr ""
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not fetch the packages"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
@@ -6879,7 +7021,11 @@ msgid "Could not give this project access to {0}."
 msgstr "לא ניתן להעניק לפרויקט זה גישה ל-{0}."
 
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not install the dependency"
+#~ msgid "Could not install the dependency"
+#~ msgstr ""
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not install the package"
 msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -6986,6 +7132,10 @@ msgstr ""
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not open {0}"
 msgstr "לא ניתן היה לפתוח את {0}"
+
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Could not open in Finder"
+msgstr ""
 
 #: src/navigation/NavigationActions.ts
 msgid "Could not open link"
@@ -7110,8 +7260,8 @@ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Could not remove the dependency"
-msgstr ""
+#~ msgid "Could not remove the dependency"
+#~ msgstr ""
 
 #~ msgid "Could not remove the folder"
 #~ msgstr ""
@@ -7123,6 +7273,11 @@ msgstr "לא היה ניתן להסיר את קבצי העזרה"
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not remove the key"
 msgstr "לא ניתן היה להסיר את המפתח"
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Could not remove the package"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
@@ -7294,8 +7449,8 @@ msgid "Could not send report to the Flowpad team"
 msgstr "לא ניתן לשלוח את הדוח לצוות Flowpad"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Could not send the files"
-msgstr ""
+#~ msgid "Could not send the files"
+#~ msgstr ""
 
 #: src/components/install/InstallButton.tsx
 msgid "Could not send the install"
@@ -7688,6 +7843,10 @@ msgstr "ספירה"
 #: src/components/hooks-manager/index.tsx
 msgid "Count: {counter}"
 msgstr "ספירה: {counter}"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Counted live while this page is open — not stored"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileFields.tsx
 msgid "Country code"
@@ -8251,6 +8410,10 @@ msgstr "ברירת מחדל"
 msgid "Default"
 msgstr "ברירת מחדל"
 
+#: src/components/inbound/use-inbound.ts
+msgid "Default — the number's fallback"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Default ({defaultDbPath})"
 msgstr "ברירת מחדל ({defaultDbPath})"
@@ -8699,17 +8862,17 @@ msgstr "דחייה"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Dependencies"
-msgstr ""
+#~ msgid "Dependencies"
+#~ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/top-nav-bar/AppButton.tsx
-msgid "Dependency"
-msgstr "תלות"
+#~ msgid "Dependency"
+#~ msgstr "תלות"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "Dependency removed"
-msgstr ""
+#~ msgid "Dependency removed"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Deploy"
@@ -8842,6 +9005,10 @@ msgstr "עצבו דף תמחור"
 #: src/types/ViewType.ts
 msgid "Desktop"
 msgstr "שולחן עבודה"
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Desktop instance"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
@@ -9322,6 +9489,7 @@ msgstr "הושלם"
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
 #: src/components/harness-login/HarnessSignInDialog.tsx
+#: src/components/inbound/ConnectNumberDialog.tsx
 #: src/components/setup-wizard/SourceSetupDialog.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
@@ -9539,6 +9707,10 @@ msgstr "לדוגמה, \"Read\", \"Edit|Write\", \"*\" (השאר ריק עבור 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "לדוגמה, /path/to/script.sh או if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "Each hop, without sending a message."
+msgstr ""
 
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Each person gets their own budget drawn from this team. Leave the amount blank for no limit. Someone already on this team has their amount updated instead of being added twice."
@@ -10234,6 +10406,10 @@ msgstr ""
 msgid "Every minute"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Every number, bot and app that sends you messages — and where each message goes. Agents and deployments only receive."
+msgstr ""
+
 #~ msgid "Every open tab and running process of this project will be closed. The project folder is then moved and indexed again at its new location."
 #~ msgstr ""
 
@@ -10311,6 +10487,10 @@ msgstr ""
 
 #~ msgid "Everything available is already connected."
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "Everything else to this number"
+msgstr ""
 
 #: src/components/automations/BusView.tsx
 msgid "Everything Flowpad announces, who listens, and what they do. Counts are since the app started."
@@ -10556,6 +10736,7 @@ msgid "Extracting…"
 msgstr ""
 
 #: src/components/footer/activity-words.ts
+#: src/components/inbound/RouteCheck.tsx
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
@@ -10572,23 +10753,36 @@ msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
 #: src/hooks/use-add-dependency.tsx
-msgid "Failed to add dependency"
-msgstr ""
+#~ msgid "Failed to add dependency"
+#~ msgstr ""
 
 #~ msgid "Failed to add files to context folder"
 #~ msgstr "הוספת קבצים לתיקיית ההקשר נכשלה"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to add files to dependency folder"
+#~ msgid "Failed to add files to dependency folder"
+#~ msgstr ""
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to add files to package folder"
 msgstr ""
 
 #: src/hooks/use-add-dependency.tsx
 #: src/hooks/use-add-dependency.tsx
-msgid "Failed to add Git dependency"
-msgstr ""
+#~ msgid "Failed to add Git dependency"
+#~ msgstr ""
 
 #~ msgid "Failed to add Git folder"
 #~ msgstr "הוספת תיקיית Git נכשלה"
+
+#: src/hooks/use-add-dependency.tsx
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add Git package"
+msgstr ""
+
+#: src/hooks/use-add-dependency.tsx
+msgid "Failed to add package"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to add vibe agent"
@@ -10707,7 +10901,11 @@ msgid "Failed to generate API key"
 msgstr "הייתה שגיאה ביצירת מפתח API"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to install dependency"
+#~ msgid "Failed to install dependency"
+#~ msgstr ""
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to install package"
 msgstr ""
 
 #: src/components/assets/editor/dynamic-workflow/DynamicWorkflowAssetEditor.tsx
@@ -10807,12 +11005,16 @@ msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Failed to remove dependency"
-msgstr ""
+#~ msgid "Failed to remove dependency"
+#~ msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to remove image"
 msgstr "הסרת התמונה נכשלה"
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Failed to remove package"
+msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "Failed to remove vibe agent"
@@ -10927,6 +11129,18 @@ msgstr "העלאת התמונה נכשלה"
 
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 msgid "Failed."
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "fallback"
+msgstr ""
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "Fallback — everything else"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Fallback — everything no rule matches goes to"
 msgstr ""
 
 #: src/components/llm-endpoints/ChainTree.tsx
@@ -11111,8 +11325,8 @@ msgid "Files on disk not yet in the DB"
 msgstr "קבצים בדיסק שעדיין לא בDB"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Files sent to cloud"
-msgstr ""
+#~ msgid "Files sent to cloud"
+#~ msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Files: {files}"
@@ -11335,6 +11549,10 @@ msgstr "הופעלה במהלך השמעה חוזרת (לפני התחברות)"
 #~ msgid "Firing…"
 #~ msgstr "בשיגור…"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "first delivery received"
+msgstr ""
+
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "First indexed"
 msgstr "אונדקס לראשונה"
@@ -11438,6 +11656,10 @@ msgstr "Flowpad"
 #~ msgid "FlowPad"
 #~ msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Flowpad agent"
+msgstr ""
+
 #: src/components/api-keys-view/FlowPadApiKeyPanel.tsx
 msgid "FlowPad API Key"
 msgstr "מפתח API של FlowPad"
@@ -11537,6 +11759,10 @@ msgstr "Flowpad עובד הכי טוב עם כמה כלים במחשב שלך: C
 #: src/components/powered-by.tsx
 msgid "Flowpad.ai Logo"
 msgstr "לוגו Flowpad.ai"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Flowpad's number · linked sender"
+msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/NodePanel.tsx
@@ -11875,6 +12101,10 @@ msgstr "בתהליך יצירה: {0}"
 msgid "Generating…"
 msgstr "מייצר קישור…"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Generic Meta-API webhook"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Generic options"
 msgstr "אפשרויות כלליות"
@@ -12130,6 +12360,10 @@ msgstr ""
 msgid "Go up"
 msgstr "עלה כיוון למעלה"
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Goes to"
+msgstr ""
+
 #: src/components/conversation/PromptCallCard.tsx
 msgid "good"
 msgstr ""
@@ -12163,6 +12397,10 @@ msgstr "הקשר גרף"
 msgid "Graph presentation"
 msgstr "אופן הצגת הגרף"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Graph server"
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/organization/organization-page.tsx
@@ -12187,10 +12425,12 @@ msgstr "הרצה בגרף הזרימה"
 msgid "Graph Workflows"
 msgstr "זרימות עבודה גרפיות"
 
+#: src/components/inbound/InboundView.tsx
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "group"
 msgstr ""
 
+#: src/components/inbound/AddRuleDialog.tsx
 #: src/i18n/type-labels.ts
 msgid "Group"
 msgstr "קבוצה"
@@ -12636,6 +12876,10 @@ msgstr ""
 msgid "How do I get it?"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "How do messages reach the hub?"
+msgstr ""
+
 #: src/components/data-sources/GroupChoice.tsx
 msgid "How do you want to connect {group}?"
 msgstr ""
@@ -12996,6 +13240,16 @@ msgstr "לא פעיל"
 msgid "inactive copy"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+#: src/pages/hub-home/HubHome.tsx
+#: src/types/ViewType.ts
+msgid "Inbound"
+msgstr ""
+
+#: src/components/connections-manager.tsx
+msgid "Inbound routing"
+msgstr ""
+
 #~ msgid "Include another folder in this project's context."
 #~ msgstr "הוספת תיקייה נוספת להקשר של הפרויקט."
 
@@ -13023,7 +13277,11 @@ msgstr "הכללת הקובץ הזה ב-commit הבא (git add)"
 #~ msgstr ""
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Included through this source's dependencies. Changes apply to new sessions."
+#~ msgid "Included through this source's dependencies. Changes apply to new sessions."
+#~ msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Included through this source's packages. Changes apply to new sessions."
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/DebugMenu.tsx
@@ -13205,8 +13463,8 @@ msgid "Install as this name"
 msgstr "התקינו בשם הזה"
 
 #: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
-msgid "Install dependency"
-msgstr ""
+#~ msgid "Install dependency"
+#~ msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
@@ -13240,6 +13498,10 @@ msgstr "התקנה גלובלית"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "התקנה בפרויקט"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+msgid "Install package"
+msgstr ""
 
 #: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install project"
@@ -13291,6 +13553,10 @@ msgstr "מתקין והפעלת Flowpad מחדש... זה עשוי להימשך �
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing…"
 msgstr "מתקין…"
+
+#: src/components/inbound/DestinationPicker.tsx
+msgid "Instance id"
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "instead?"
@@ -13538,7 +13804,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
-msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgid "It was added as an ordinary dependency instead, so agents can still read it. Remove it if that is not what you wanted."
+#~ msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "It was added as an ordinary package instead, so agents can still read it. Remove it if that is not what you wanted."
 msgstr ""
 
 #: src/components/task-receive/use-shared-project-warnings.ts
@@ -13665,7 +13935,11 @@ msgstr "נשמרו (אי אפשר או אסור להסיר): {0}"
 #~ msgstr "נשמר מעודכן כתיקיית הקשר"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
-msgid "kept current as a dependency"
+#~ msgid "kept current as a dependency"
+#~ msgstr ""
+
+#: src/components/helpdesk/HelpdeskLoadDialog.tsx
+msgid "kept current as a package"
 msgstr ""
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
@@ -13722,6 +13996,10 @@ msgstr ""
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Keys on this computer"
 msgstr "מפתחות במחשב הזה"
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "keyword / time — not supported"
+msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
@@ -13790,6 +14068,7 @@ msgid "Language"
 msgstr "שפה"
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "lapsed"
 msgstr ""
 
@@ -13830,6 +14109,11 @@ msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
+msgstr ""
+
+#. placeholder {0}: clockTime(last)
+#: src/components/inbound/InboundView.tsx
+msgid "last delivery {0}"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -14153,8 +14437,9 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
-msgstr ""
+msgstr "קישור"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/links/link-handlers.ts
@@ -14178,6 +14463,10 @@ msgstr ""
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Link to cloud"
 msgstr "קשרו לענן"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "linked"
+msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -14251,6 +14540,10 @@ msgstr ""
 
 #~ msgid "Live · {guest}'s session"
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "live · {received} received since {since}"
+msgstr ""
 
 #: src/components/milkdown-editor/plugins/fence-render/renderers/breadcrumb.ts
 msgid "live · stale"
@@ -14698,6 +14991,11 @@ msgstr "טוען..."
 msgid "Loading…"
 msgstr "טוען…"
 
+#: src/components/assets/DependencyChips.tsx
+msgid "local"
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Local"
 msgstr "מקומי"
@@ -14834,6 +15132,8 @@ msgstr ""
 
 #: src/components/entity-card/entity-card-rows.ts
 #: src/components/hub/AddMachineDialog.tsx
+#: src/components/inbound/DestinationPicker.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/types/ViewType.ts
 msgid "Machine"
 msgstr "מכונה"
@@ -14997,6 +15297,10 @@ msgstr "מסכה:"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Masked"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Match"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -15238,6 +15542,10 @@ msgstr "קובץ מצורף להודעה"
 msgid "Message downloaded"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Message Flowpad's own {title} account. Nothing to set up — link your phone once with a code."
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
 msgstr "ההודעה לא נוספה לתור"
@@ -15288,6 +15596,10 @@ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "messages on"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Meta official Cloud API"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -15347,6 +15659,11 @@ msgstr "Mis-Sc"
 msgid "misrouted"
 msgstr ""
 
+#. placeholder {0}: row.misroutes
+#: src/components/inbound/RouteCheck.tsx
+msgid "Misroutes ×{0}: the place answered 404 — that channel is not there any more. Pick another destination."
+msgstr ""
+
 #: src/components/assets/DependencyChips.tsx
 #: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
@@ -15373,7 +15690,11 @@ msgid "Missing attachments"
 msgstr "קבצים מצורפים חסרים"
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
-msgid "Missing dependencies"
+#~ msgid "Missing dependencies"
+#~ msgstr ""
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "Missing packages"
 msgstr ""
 
 #~ msgid "Missing: {0}"
@@ -16383,6 +16704,10 @@ msgstr "אין נתונים."
 msgid "no dataset"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "no delivery yet"
+msgstr ""
+
 #: src/components/webapp-viewer/webapp-deployments-tab.tsx
 msgid "No deployments observed yet"
 msgstr "עדיין לא נצפו פריסות"
@@ -16748,6 +17073,10 @@ msgstr "אין מודלים."
 msgid "No narrowing — everything the roots allow."
 msgstr "ללא צמצום — כל מה שהשורשים מאפשרים."
 
+#: src/components/inbound/InboundView.tsx
+msgid "No numbers yet. Connect one: messages arrive at the hub and go where its rules — or its fallback — say."
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxPager.tsx
 msgid "No older conversations"
 msgstr ""
@@ -16806,6 +17135,10 @@ msgstr ""
 
 #~ msgid "no place"
 #~ msgstr ""
+
+#: src/components/inbound/use-inbound.ts
+msgid "No place of its own: it falls through to \"everything else\""
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No plugins installed"
@@ -17383,7 +17716,11 @@ msgstr ""
 #~ msgstr "לא הועתקו לתיקיית ההקשר"
 
 #: src/components/assets/useAssetsModel.tsx
-msgid "Not copied into dependency folder"
+#~ msgid "Not copied into dependency folder"
+#~ msgstr ""
+
+#: src/components/assets/useAssetsModel.tsx
+msgid "Not copied into package folder"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
@@ -17493,6 +17830,7 @@ msgid "Not pushed yet"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
+#: src/components/inbound/RouteCheck.tsx
 msgid "not reachable"
 msgstr "לא נגיש"
 
@@ -17875,17 +18213,30 @@ msgstr ""
 msgid "Now listening."
 msgstr "מאזין עכשיו."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Now send your messages to the hub. Paste these into your server's webhook settings:"
+msgstr ""
+
 #. placeholder {0}: landed?.name ?? source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Now using {0}"
 msgstr "עכשיו בשימוש: {0}"
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Nowhere yet"
 msgstr ""
 
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "number"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "number proven"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Numbers and bots that message you, and where each message goes."
 msgstr ""
 
 #: src/components/connections-manager/sign-in-method.tsx
@@ -17915,9 +18266,18 @@ msgstr "כבוי"
 msgid "Off on this place"
 msgstr ""
 
+#: src/components/inbound/RouteCheck.tsx
+msgid "offline"
+msgstr ""
+
 #: src/components/harness-login/funding-pill.ts
 msgid "Offline"
 msgstr "לא מקוון"
+
+#: src/components/inbound/RouteCheck.tsx
+#: src/components/inbound/RouteCheck.tsx
+msgid "ok"
+msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
@@ -18000,7 +18360,6 @@ msgid "On the schedule {expr}"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr ""
 
@@ -18038,6 +18397,10 @@ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 msgid "One decision, nothing runs."
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "One group"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -18083,6 +18446,10 @@ msgstr "אחד בכל שורה. ריק פירושו כל מה שהמקורות �
 msgid "One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records you can search, read and build flows on."
 msgstr "מקור אחד לכל הזנה חיצונית או חשבון. המנגנון מסנכרן כל מקור בהתאם לקצב הפעימות והופך את הממצאים לרשומות שניתן לחפש, לקרוא ולבנות איתן זרימות עבודה."
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "One sender"
+msgstr ""
+
 #: src/components/stream-inbox-view/AgentStreamInboxView.tsx
 msgid "one@example.com"
 msgstr ""
@@ -18110,6 +18477,10 @@ msgstr "כאן מוצגים רק ערכי רתמה — יש להפעיל את \"
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
+msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "Only on this device. It is never saved in the project or committed, and the project doesn't say it exists."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisitorDeploymentSection.tsx
@@ -18456,6 +18827,10 @@ msgstr "פתח בטרמינל חיצוני"
 msgid "Open in Files"
 msgstr "פתחו בקבצים"
 
+#: src/components/simple-file-manager/SimpleFileManager.tsx
+msgid "Open in Finder"
+msgstr ""
+
 #: src/components/terminal/project-list-menu.tsx
 #: src/components/terminal/project-list-menu.tsx
 #: src/tabs/doc-tab-card.tsx
@@ -18475,6 +18850,7 @@ msgid "Open in Flowpad browser"
 msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
+#: src/pages/flow-page/app-display-viewer.tsx
 msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
 
@@ -18992,6 +19368,10 @@ msgstr "הודעה לבעלים (אופציונלי)…"
 msgid "Or copy an invite link"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "or open the link on your phone"
+msgstr ""
+
 #: src/components/help/AskForHelpDialog.tsx
 msgid "Or pick a person, or type an email"
 msgstr ""
@@ -19192,8 +19572,22 @@ msgstr "בעלים"
 msgid "Pack keys into credentials"
 msgstr ""
 
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Package"
+msgstr ""
+
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+msgid "Package removed"
+msgstr ""
+
 #~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
 #~ msgstr "ארוז שיתוף זה לקובץ <0>.flowmsg</0> נייד שנמענים יכולים לייבא."
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Packages"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -19488,6 +19882,10 @@ msgstr "מספר טלפון"
 msgid "Phone number — recorded on the agent's card, not yet used to route messages"
 msgstr "מספר טלפון — נשמר בכרטיס הסוכן, עדיין לא משמש לניתוב הודעות"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Phone number ID"
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr "בחרו איש קשר או הזינו כתובת אימייל"
@@ -19499,6 +19897,10 @@ msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Pick a contacts group or people"
 msgstr "יש לבחור קבוצת אנשי קשר או אנשים"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Pick a fallback — until then nothing no rule matches is delivered"
+msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Pick a group in any conversation to add all its members at once."
@@ -20337,8 +20739,20 @@ msgstr "מוגן"
 msgid "Protocol"
 msgstr "פרוטוקול"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Prove and connect"
+msgstr ""
+
 #~ msgid "Proved by"
 #~ msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "proven"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Proves the number: the hub calls GET <server>/<phone number id> with it. Stored write-only."
+msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/connections-manager.tsx
@@ -20710,7 +21124,11 @@ msgid "reading {account}"
 msgstr ""
 
 #: src/components/agent-resources/AgentDataSourcesSection.tsx
-msgid "Reading dependencies…"
+#~ msgid "Reading dependencies…"
+#~ msgstr ""
+
+#: src/components/agent-resources/AgentDataSourcesSection.tsx
+msgid "Reading packages…"
 msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
@@ -20870,6 +21288,14 @@ msgstr "תמלילים אחרונים"
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Recently edited items and chat sessions"
 msgstr "פריטים שנערכו לאחרונה ושיחות צ'אט"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients are project members — they get a live link to the file in git."
+msgstr "הנמענים חברים בפרויקט — הם יקבלו קישור חי לקובץ ב-git."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients get a copy."
+msgstr "הנמענים יקבלו עותק."
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
@@ -21117,6 +21543,9 @@ msgstr "סשן עובד מרוחק"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
+#: src/components/inbound/InboundView.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -21179,8 +21608,8 @@ msgstr ""
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/project-home/ProjectDependenciesCard.tsx
-msgid "Remove dependency"
-msgstr ""
+#~ msgid "Remove dependency"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -21254,9 +21683,20 @@ msgstr ""
 msgid "Remove new variable {0}"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Remove number"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Remove option"
 msgstr "הסרת אפשרות"
+
+#: src/components/browseable-tree/adapters/assetContextFoldersRoot.tsx
+#: src/components/helpdesk/AddHelpdeskDialog.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/project-home/ProjectDependenciesCard.tsx
+msgid "Remove package"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Remove public access"
@@ -21268,6 +21708,7 @@ msgid "Remove row"
 msgstr "הסרת שורה"
 
 #: src/components/graph-view/ui/AccessTab.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "Remove rule"
 msgstr ""
 
@@ -21302,8 +21743,17 @@ msgstr "הסרת הקובץ הזה מה-commit הבא (git restore --staged)"
 msgid "Remove this message from Flowpad?"
 msgstr ""
 
+#. placeholder {0}: removing.rules
+#: src/components/inbound/InboundView.tsx
+msgid "Remove this number and its {0} rules? The hub stops taking its traffic now; your server will get 404 until you point it elsewhere. The agents and their channels stay."
+msgstr ""
+
 #: src/pages/discover-page/discover-page.tsx
 msgid "Remove this row from the manifest"
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "Remove this? The hub stops routing its messages now. The agents and their channels stay."
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -22119,6 +22569,12 @@ msgstr "טווח זמן שורה"
 msgid "Rows"
 msgstr "שורות"
 
+#. placeholder {0}: i + 1
+#. placeholder {1}: claimTitle(r)
+#: src/components/inbound/RouteCheck.tsx
+msgid "Rule {0} · {1}"
+msgstr ""
+
 #: src/components/automations/AutomationPage.tsx
 msgid "Rule code saved"
 msgstr ""
@@ -22134,6 +22590,10 @@ msgstr ""
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "חוקים"
+
+#: src/components/inbound/InboundView.tsx
+msgid "Rules — the most specific wins: sender › group › everything else"
+msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
 #: src/components/assets/editor/compute-op/ComputeOpViewer.tsx
@@ -22544,6 +23004,7 @@ msgstr "סנדבוקסים"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/inbound/AddRuleDialog.tsx
 #: src/components/llm-endpoints/CredentialField.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-sources/LlmKeysSection.tsx
@@ -23133,6 +23594,10 @@ msgstr "סוד נשמר"
 msgid "Secrets"
 msgstr "סודות"
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Secrets are stored write-only on the hub — nobody can read them back."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
 msgstr "סודות מופעלים"
@@ -23385,8 +23850,8 @@ msgid "Send failed."
 msgstr "השליחה נכשלה."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Send files to cloud"
-msgstr ""
+#~ msgid "Send files to cloud"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Send invite"
@@ -23408,6 +23873,18 @@ msgstr "שלח את השינויים שלי בחזרה"
 msgid "Send one minimal call through this endpoint"
 msgstr "שליחת קריאה מינימלית אחת דרך נקודת הקצה הזו"
 
+#: src/components/inbound/InboundView.tsx
+msgid "Send this code from your phone to link it:"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Send this from your phone to Flowpad's {title} account:"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send this link to anyone you want to give access. It is shown only once."
+msgstr "שלחו את הקישור הזה למי שתרצו לתת לו גישה. הוא מוצג פעם אחת בלבד."
+
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestView.tsx
 msgid "Send this to the person you support — they run it in their terminal:"
 msgstr "שלחו את זה לאדם שאתם תומכים בו — הוא יריץ את זה בטרמינל שלו:"
@@ -23420,13 +23897,21 @@ msgstr ""
 msgid "Send without the session"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "sender"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "Sender"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "Sender refused"
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Sending failed."
-msgstr ""
+#~ msgid "Sending failed."
+#~ msgstr ""
 
 #. placeholder {0}: channelSpec?.title
 #: src/components/conversation/ConversationView.tsx
@@ -23925,7 +24410,6 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
 #: src/components/entity-actions/ShareButton.tsx
-#: src/components/html-preview/HtmlPreview.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -23933,6 +24417,7 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/top-nav-bar/PageShareButton.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Share"
 msgstr "שתף"
@@ -24633,6 +25118,10 @@ msgstr "מתחבר…"
 msgid "Signing out…"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Signs every delivery (x-hub-signature-256). Stored write-only."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Simple actions — click to show all git operations"
 msgstr "פעולות פשוטות — לחץ להצגת כל פעולות ה-git"
@@ -24891,8 +25380,9 @@ msgstr ""
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Someone"
-msgstr ""
+msgstr "מישהו"
 
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
@@ -26342,6 +26832,10 @@ msgstr "תמונת המימון זמינה רק במופע שולחני."
 msgid "The GitHub connection didn't complete."
 msgstr "החיבור ל-GitHub לא הושלם."
 
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "The group's id as the vendor sends it. Already claimed by someone else → refused."
+msgstr ""
+
 #: src/components/conversation/SessionCard.tsx
 msgid "the guest"
 msgstr "האורח"
@@ -26398,6 +26892,10 @@ msgstr "ה-Hub דחה את ההתחברות השמורה ל-FlowPad"
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "ה-Hub דחה את הלקוח הזה."
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "The id Meta's API uses for the number (not the phone number itself)."
+msgstr ""
 
 #: src/components/ui/media-lightbox.tsx
 msgid "The image could not be copied to the clipboard."
@@ -26552,6 +27050,10 @@ msgstr "לא ניתן היה למצוא את הסוכן המבוקש."
 msgid "The run could not be reset"
 msgstr "לא ניתן היה לאפס את ההרצה"
 
+#: src/components/inbound/InboundView.tsx
+msgid "The same screen as on the hub: it lists the hub's claims you own; \"This computer\" is just one of the places."
+msgstr ""
+
 #: src/components/schema-tree/SchemaTreeView.tsx
 msgid "The schemas could not be read."
 msgstr ""
@@ -26566,6 +27068,10 @@ msgstr "לפרויקט הנבחר אין תיקייה במחשב זה"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "the sender is still staging it"
+msgstr ""
+
+#: src/components/inbound/AddRuleDialog.tsx
+msgid "The sender's number as the vendor sends it. Already claimed by someone else → refused."
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -26583,6 +27089,10 @@ msgstr "הסשן עדיין מתחבר — יש לנסות שוב בעוד רג�
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "The setup wizard is not installed."
 msgstr "אשף ההגדרה אינו מותקן."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The share was sent, but a link could not be created."
+msgstr "השיתוף נשלח, אבל לא ניתן היה ליצור קישור."
 
 #: src/components/ask/AskChoiceBlock.tsx
 msgid "The sign-in did not finish."
@@ -26625,6 +27135,11 @@ msgstr ""
 
 #~ msgid "The terminal is not ready yet"
 #~ msgstr ""
+
+#. placeholder {0}: made.claim?.key
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "the token acts as {0}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -26805,6 +27320,10 @@ msgstr "האפליקציה הזו כבר אינה זמינה."
 msgid "This app is not installed here. Add its project again from the project that uses it."
 msgstr ""
 
+#: src/pages/flow-page/app-display-viewer.tsx
+msgid "This app is served externally via Flowpad. Open it in a new tab."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
@@ -26843,6 +27362,7 @@ msgstr "חדר השיתוף הזה כבר לא קיים או אינו זמין."
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/use-inbound.ts
 msgid "This computer"
 msgstr ""
 
@@ -27170,8 +27690,8 @@ msgid "This project"
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "This project can now be opened from the cloud."
-msgstr ""
+#~ msgid "This project can now be opened from the cloud."
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "This project can only be opened from its share."
@@ -27226,7 +27746,11 @@ msgid "This project isn't shared with you, so it can't be launched."
 msgstr ""
 
 #: src/components/project-home/MissingDependenciesDialog.tsx
-msgid "This project needs these dependencies, and they are not on this computer."
+#~ msgid "This project needs these dependencies, and they are not on this computer."
+#~ msgstr ""
+
+#: src/components/project-home/MissingDependenciesDialog.tsx
+msgid "This project needs these packages, and they are not on this computer."
 msgstr ""
 
 #~ msgid "This project stops using it and the stored value is deleted."
@@ -28791,6 +29315,14 @@ msgstr "אימות"
 msgid "Verify the setup first."
 msgstr "יש לאמת את ההגדרה תחילה."
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Verify token"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Verify token: when you save the URL, your server calls it once with this word and the hub echoes back a challenge only if the word matches. It proves you own the URL; it is not a password for messages — those are checked with the app secret."
+msgstr ""
+
 #~ msgid "Verify: {0}"
 #~ msgstr "אימות: {0}"
 
@@ -29038,7 +29570,12 @@ msgid "Waiting for sign-in"
 msgstr ""
 
 #: src/components/data-sources/MessageChannelsList.tsx
+#: src/components/inbound/InboundView.tsx
 msgid "waiting for the code"
+msgstr ""
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "waiting for the first signed delivery…"
 msgstr ""
 
 #: src/components/ask/AskChoiceBlock.tsx
@@ -29064,6 +29601,14 @@ msgstr "ממתין שתבחר מקור LLM"
 
 #~ msgid "Waiting for you…"
 #~ msgstr "ממתין לך…"
+
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "waiting for your message…"
+msgstr ""
+
+#: src/components/inbound/InboundView.tsx
+msgid "waiting to be proven"
+msgstr ""
 
 #: src/components/ask/AskForm.tsx
 #: src/journey/JourneyTray.tsx
@@ -29141,6 +29686,10 @@ msgstr "מצב אפליקציית הרשת"
 msgid "Webhook"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Webhook URL"
+msgstr ""
+
 #: src/components/cost-dashboard/constants.ts
 msgid "Week"
 msgstr "שבוע"
@@ -29204,6 +29753,10 @@ msgstr "מה ש־Flowpad מצא כשבדק את הגדרות Git בפרויקט 
 msgid "What happened, what you expected, what you already tried (optional)"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "What happens"
+msgstr ""
+
 #. placeholder {0}: tile.label
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "What is {0}?"
@@ -29215,8 +29768,8 @@ msgstr "מה זה {0}?"
 #: src/components/project-home/ProjectDependenciesCard.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "What is a dependency?"
-msgstr ""
+#~ msgid "What is a dependency?"
+#~ msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -29224,18 +29777,36 @@ msgstr ""
 msgid "What is a Flowpad project?"
 msgstr "מה זה פרויקט Flowpad?"
 
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a local package?"
+msgstr ""
+
+#: src/components/project-home/ProjectDependenciesCard.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is a package?"
+msgstr ""
+
 #~ msgid "What is a private context folder?"
 #~ msgstr "מה זו תיקיית קשר פרטית?"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "What is a required dependency?"
+#~ msgid "What is a required dependency?"
+#~ msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is a required package?"
 msgstr ""
 
 #~ msgid "What is a shared context folder?"
 #~ msgstr "מהי תיקיית ההקשר המשותפת?"
 
 #: src/components/assets/dependency-sources.tsx
-msgid "What is an optional dependency?"
+#~ msgid "What is an optional dependency?"
+#~ msgstr ""
+
+#: src/components/assets/dependency-sources.tsx
+msgid "What is an optional package?"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -29456,12 +30027,20 @@ msgstr ""
 #~ msgid "Where this desk lives"
 #~ msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Where your server answers Meta's API. https only."
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Which engine does the heavy file scanning: Python (built in), or Rust (a bundled binary, much faster on large projects). Falls back to Python automatically when the Rust binary is unavailable. Takes effect on the next scan."
 msgstr "איזה מנוע מבצע את סריקת הקבצים הכבדה: Python (מובנה), או Rust (קובץ בינארי מצורף, מהיר בהרבה בפרויקטים גדולים). חוזר אוטומטית ל-Python כשהקובץ הבינארי של Rust אינו זמין. נכנס לתוקף בסריקה הבאה."
 
 #: src/components/task-receive/LaunchDialog.tsx
 msgid "Which project should it work on?"
+msgstr ""
+
+#: src/components/inbound/RouteCheck.tsx
+msgid "While it is offline, the hub answers 503 and your server retries — nothing is lost and nothing is stored. Messages from other senders keep flowing."
 msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
@@ -30011,13 +30590,13 @@ msgstr ""
 msgid "your budget: {short}"
 msgstr ""
 
+#: src/components/inbound/ConnectNumberDialog.tsx
+msgid "Your business number in your own Meta app. Meta calls the hub's webhook URL."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "your Claude Code"
 msgstr "ה-Claude Code שלך"
-
-#: src/pages/entry/InstallLanding.tsx
-msgid "Your CloudNSite workspace is ready"
-msgstr "סביבת העבודה CloudNSite שלך מוכנה"
 
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
@@ -30059,6 +30638,10 @@ msgstr "קוד החד-פעמי שלך נמצא להלן. לחץ על <0>העתק
 msgid "Your own assets, shared by every project"
 msgstr ""
 
+#: src/components/inbound/InboundView.tsx
+msgid "Your own number"
+msgstr ""
+
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
 msgstr "הפרויקטים שלך"
@@ -30091,6 +30674,10 @@ msgstr ""
 
 #~ msgid "Your teams"
 #~ msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your workspace is ready"
+msgstr "סביבת העבודה שלך מוכנה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"

@@ -18,7 +18,7 @@ let passed = 0;
 const ok = (c, m) => { assert.ok(c, m); passed++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); passed++; };
 
-const KEY = 'fp_live_4q1jc6x9r3muybmgh05xhgx5';
+const KEY = 'fp_live_fakefakefakefakefakefake';
 const NEXT = '%2F%3Faction%3Dopen%26setup_git%3D1%26project_id%3D5b1dcd12-6eb6-4395-90f3-6aba7d56335d';
 const DEEP = `flowpad://auth/login_callback?flowpad-api-key=${KEY}&next=${NEXT}`;
 

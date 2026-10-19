@@ -45,7 +45,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
         await onAdded?.();
       } catch (err) {
         notify.error({
-          title: t`Failed to add dependency`,
+          title: t`Failed to add package`,
           message: err instanceof Error ? err.message : undefined,
         });
       }
@@ -70,7 +70,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
       setGitKind(null);
       try {
         const result = await launchWizard<{ path?: string; newProjectId?: string }>('git-dependency', {
-          title: t`Add Git dependency`,
+          title: t`Add Git package`,
           targetTypeId: projectTypeId?.toString(),
           payload: { projectId, optional, ...input },
           prompt:
@@ -81,7 +81,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
               : `Create a new git repository named "${input.name}" and add it as a dependency of this project.`,
         });
         if (result.status === 'error') {
-          notify.error({ title: t`Failed to add Git dependency`, message: result.errorStr ?? undefined });
+          notify.error({ title: t`Failed to add Git package`, message: result.errorStr ?? undefined });
         }
         if (result.status === 'done') {
           // The wizard mutated the project via its own calls — force a fresh
@@ -91,7 +91,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
         }
       } catch (err) {
         notify.error({
-          title: t`Failed to add Git dependency`,
+          title: t`Failed to add Git package`,
           message: err instanceof Error ? err.message : undefined,
         });
       }
@@ -112,7 +112,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
   const handleProjectsSubmit = useCallback(
     async (sources: string[]) => {
       // Throws to the dialog, which shows the backend's reason in place.
-      for (const source of sources) await add(source, projectPickerKind ?? 'required');
+      for (const source of sources) await add(source, projectPickerKind ?? 'local');
       await onAdded?.();
     },
     [add, projectPickerKind, onAdded],
@@ -133,7 +133,7 @@ export function useAddDependency({ project, onAdded }: UseAddDependencyOptions) 
       <GitTargetDialog
         open={gitKind !== null}
         onOpenChange={(next) => !next && setGitKind(null)}
-        title={<Trans>Add Git dependency</Trans>}
+        title={<Trans>Add Git package</Trans>}
         description={<Trans>Add a git repository this project depends on.</Trans>}
         submitLabel={<Trans>Add</Trans>}
         testIdPrefix="add-git-dependency"

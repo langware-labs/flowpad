@@ -17,9 +17,9 @@ const stable = vi.hoisted(() => ({
   auth: { cloudUser: null },
   user: { localUser: { id: 'u1', name: 'Me' } },
   gate: () => Promise.resolve({ ok: true as const }),
-  sender: { send: () => undefined, busy: false, error: null, resetDraft: () => undefined },
+  sender: { send: vi.fn(), busy: false, error: null, resetDraft: () => undefined },
   matches: { conversations: [] as never[] },
-  preflight: { available: false, loading: false, reason: null },
+  preflight: { available: false, loading: false, reason: null as string | null, answered: true },
   entity: { data: null },
   owner: { project: null as Project | null, loading: false },
   preferences: { isLoaded: true, version: 0, get: vi.fn(() => 'ask'), set: vi.fn() },
@@ -28,6 +28,7 @@ const stable = vi.hoisted(() => ({
     status: 'idle',
     error: null as string | null,
     nonMembers: [] as string[],
+    outsiders: [] as string[],
     roles: [] as string[],
     refresh: vi.fn(),
     invite: vi.fn(),
@@ -103,7 +104,9 @@ beforeEach(() => {
   stable.membership.status = 'idle';
   stable.membership.error = null;
   stable.membership.nonMembers = [];
+  stable.membership.outsiders = [];
   stable.membership.roles = [];
+  stable.preflight.available = false;
   stable.membership.invite.mockResolvedValue(undefined);
   vi.spyOn(dataManager, 'callAction').mockResolvedValue({ unshippable: [], gitignored: [] });
 });
@@ -219,4 +222,44 @@ it('keeps an existing recipient’s None choice when another recipient is added'
   stable.membership.nonMembers = ['bob@example.com', 'alice@example.com'];
   fireEvent.change(screen.getByTestId('test-recipients'), {target: {value: 'bob@example.com,alice@example.com'}});
   expect((screen.getAllByTestId('share-project-role') as HTMLSelectElement[]).map((choice) => choice.value)).toEqual(['guest', 'guest']);
+});
+
+describe('sharing a thing', () => {
+  // An asset share: a new conversation titled for it, git only when every recipient
+  // is inside the project, and a link to hand out at the end.
+  const thing: ShareSource = { ...source, bookmarkable: true, shareAsThing: true, gitPreflightRef: REF };
+  beforeEach(() => {
+    stable.owner.project = new Project({ id: 'bbbbbbbb-bbbb-4bbb-8bbb-000000000002', name: 'P', remote: true });
+    stable.membership.status = 'ready';
+    stable.preflight.available = true;
+  });
+
+  it('titles the conversation for the shared thing and sends members a git link', () => {
+    show({ source: thing, commit: undefined });
+    expect(screen.getByTestId('share-title-input').getAttribute('placeholder')).toBe('Me has shared Design');
+    expect(screen.getByTestId('share-transfer-mode').getAttribute('data-mode')).toBe('git');
+    expect(screen.queryByTestId('share-git-toggle')).toBeNull();
+  });
+
+  it('sends everyone a copy when one recipient is outside the project', () => {
+    stable.membership.outsiders = ['bob@example.com'];
+    stable.membership.nonMembers = ['bob@example.com'];
+    stable.membership.roles = ['guest'];
+    show({ source: thing, commit: undefined });
+    expect(screen.getByTestId('share-transfer-mode').getAttribute('data-mode')).toBe('copy');
+    // Sharing a file never adds someone to the project on the side.
+    expect((screen.getByTestId('share-project-role') as HTMLSelectElement).value).toBe('none');
+  });
+
+  it('shows the invite link to the new conversation once shared', async () => {
+    stable.sender.send.mockResolvedValue('cccccccc-cccc-4ccc-8ccc-000000000003');
+    vi.spyOn(dataManager, 'callAction').mockImplementation(async (info: { subpath?: string }) =>
+      info.subpath === 'link' ? { url: 'https://hub.example/invite/fpinv_x' } : { unshippable: [], gitignored: [] },
+    );
+    show({ source: thing, commit: undefined });
+    fireEvent.click(screen.getByTestId('share-submit'));
+    const url = (await screen.findByTestId('share-link-url')) as HTMLInputElement;
+    expect(url.value).toBe('https://hub.example/invite/fpinv_x');
+    expect(stable.sender.send.mock.calls[0][0]).toMatchObject({ kind: 'new', params: { title: 'Me has shared Design' } });
+  });
 });

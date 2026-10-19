@@ -278,7 +278,7 @@ export function ProjectSetupDialog({
       busy={busy.has(rowKey(req))}
       selected={selected.has(rowKey(req))}
       onSelect={skipped ? undefined : (on) => select(req, on)}
-      onSkip={selecting ? undefined : () => void skip([req], 'local')}
+      onSkip={selecting ? undefined : () => setSelected(new Set([rowKey(req)]))}
       onUndo={() => void unskip(req)}
       onOpen={() => openRow(req)}
       onExplain={assistant ? (button) => explain(req, button) : undefined}
@@ -546,8 +546,8 @@ function SkipChoice({
 
 /**
  * One requirement: the whole row opens its page (role=link, Enter too); its checkbox selects it for the
- * selection bar, and while any row is selected no row offers its own Skip (no ``onSkip``). Skip is one click
- * (this machine only) — removing it from the project for good (Always) is the selection bar's; a skipped row says what will not work and offers Undo.
+ * selection bar, and while any row is selected no row offers its own Skip (no ``onSkip``). Skip selects just this
+ * row, so it gets the same Locally | Always | Cancel bar as a multi-row selection; a skipped row says what will not work and offers Undo.
  */
 function RequirementRow({
   req,
@@ -654,7 +654,6 @@ function RequirementRow({
             size="sm"
             className="h-6 px-2 text-xs"
             data-testid={`project-setup-skip-${rowId}`}
-            title={t`On this machine only — undo any time`}
             onClick={own(onSkip)}
           >
             <Trans>Skip</Trans>

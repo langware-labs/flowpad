@@ -99,6 +99,8 @@ const LlmEndpointsView = lazy(() =>
 const LlmSetupView = lazy(() =>
   import('@src/components/llm-setup/LlmSetupView').then((m) => ({ default: m.LlmSetupView })),
 );
+// Lazy like its neighbours: one screen (hub page and desk alike) most sessions never open.
+const InboundView = lazy(() => import('@src/components/inbound/InboundView').then((m) => ({ default: m.InboundView })));
 const TokenPlanView = lazy(() =>
   import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
 );
@@ -324,6 +326,12 @@ function ContentPanelBody({
             <TokenPlanView pointer={currentDock?.pointer} />
           </Suspense>
         );
+      case ViewType.INBOUND:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <InboundView />
+          </Suspense>
+        );
       case ViewType.HOME:
       default:
         return <HubHome />;
@@ -420,6 +428,13 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <LlmSetupView />
+          </Suspense>
+        );
+      // The same screen as the hub page's: every claim is the hub's, "This computer" is one more place.
+      case ViewType.INBOUND:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <InboundView />
           </Suspense>
         );
       case ViewType.AI_CONFIG:
