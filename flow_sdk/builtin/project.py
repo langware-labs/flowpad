@@ -1119,6 +1119,7 @@ class Project(SetupSkippable, Entity):
                         "typeid": str(tid),
                         "dependency": str(entry.get("dependency") or ""),
                         "required": bool(entry.get("required", True)),
+                        "local": bool(entry.get("local", False)),
                         "via": str(entry.get("via") or ""),
                     }
                 )
