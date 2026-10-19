@@ -98,6 +98,20 @@ afterAll(async () => {
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
 
+/** Add a dependency and wait until the SDK announces it loaded: the add answers at once and its
+ *  fetch, index and Load run in the background; the announcement also refreshes include_dirs. */
+async function addAndSettle(project: any, source: string): Promise<any> {
+  const loaded = new Promise<any>((resolve) => {
+    const stop = sdk.onDependencyLoaded((dependency: any, consumer: string) => {
+      if (consumer !== project.id) return;
+      stop();
+      resolve(dependency);
+    });
+  });
+  await project.addDependency(source);
+  return loaded;
+}
+
 describe('project dependencies (include_dirs)', () => {
   it('addDependency persists include_dirs and surfaces the skill as context_dir', async () => {
     // 1. Create a project.
@@ -107,15 +121,7 @@ describe('project dependencies (include_dirs)', () => {
 
     // 2. Add the dependency via the real HTTP action. It answers at once; the fetch, index and
     //    Load run in the background, and the SDK announces the dependency when they land.
-    const loaded = new Promise<any>((resolve) => {
-      const stop = sdk.onDependencyLoaded((dependency: any, consumer: string) => {
-        if (consumer !== project.id) return;
-        stop();
-        resolve(dependency);
-      });
-    });
-    await project.addDependency(contextDir);
-    const dep = await loaded;
+    const dep = await addAndSettle(project, contextDir);
     expect(dep.state).toBe('ready');
     // The announcement read the listing, which carries the resolved context.
     expect(project.include_dirs).toContain(contextDir);
@@ -173,7 +179,7 @@ describe('project dependencies (include_dirs)', () => {
     // A folder inside git is declared as its repository. The local repository
     // and synthetic remote exercise real git-origin detection; this checkout is
     // the one the dependency resolves to, so no network I/O.
-    const dep = await project.addDependency(sharedDir);
+    const dep = await addAndSettle(project, sharedDir);
     expect(dep.source.startsWith('git+')).toBe(true);
     expect(project.include_dirs).toContain(sharedDir);
     const reloaded = await sdk.Project.getById(project.id);

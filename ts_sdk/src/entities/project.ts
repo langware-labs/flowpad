@@ -918,7 +918,8 @@ export class Project extends APIEntity<Project> {
    *  `hub:<project-id>` or `file:<path>` string — or a plain local folder (a
    *  folder inside a git checkout is written as its repo) or a bare git URL.
    *  `path` points at a sub-folder of the source; `optional` files it under
-   *  `optionalDependencies` (and installs it now); `label` / `description` are
+   *  `optionalDependencies` (and installs it now); `local` keeps it on this device
+   *  only — written to no file of the project; `label` / `description` are
    *  the entry's human-friendly name; `asset` (a TypeId) declares it in that
    *  asset's own `flow.json` (ids only). Rejects with the backend's message on a
    *  bad source. */
@@ -928,6 +929,7 @@ export class Project extends APIEntity<Project> {
       name?: string;
       path?: string;
       optional?: boolean;
+      local?: boolean;
       label?: string;
       description?: string;
       asset?: string;
