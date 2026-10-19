@@ -172,6 +172,73 @@ describe('terminal links', () => {
     }
   });
 
+  // A wrapper that stops short of the edge: its own wrap width, padding in a box, or a
+  // right-hand column it keeps for a size, a timing or a count.
+  describe('a path or URL broken short of the edge', () => {
+    const cols = 80;
+    const P = 'src/components/terminal/interactive-terminal/very-long-folder-name/another-level/terminal-links.ts';
+    const U = 'https://github.com/langware-labs/flowpad/pull/1234/files#diff-abcdef0123456789abcdef';
+    /** The link under a cell of a terminal showing `rows`, one per buffer row. */
+    const linksIn = async (rows: string[], width = cols) => {
+      const terminal = new HeadlessTerminal({ cols: width, rows: 6, allowProposedApi: true });
+      await new Promise<void>((resolve) => terminal.write(rows.map((row, i) => `\x1b[${i + 1};1H${row}`).join(''), resolve));
+      const at = (x: number, y: number) => linkAtCell(terminal as unknown as Terminal, x, y);
+      return { at, dispose: () => terminal.dispose() };
+    };
+    const [p1, p2] = [P.slice(0, 60), P.slice(60)];
+    const [t1, t2] = [P.slice(0, 50), P.slice(50)];
+    const [u1, u2] = [U.slice(0, 55), U.slice(55)];
+    it.each<[string, string[], string]>([
+      ['a timing on the right', [`  ⎿ ${p1}`.padEnd(cols - 6) + '(2.3s)', `    ${p2}`], P],
+      ['padding inside a box', [`│ ${p1}`.padEnd(cols - 1) + '│', `│ ${p2}`.padEnd(cols - 1) + '│'], P],
+      ['a table cell', [`│ ${t1} │ ok`.padEnd(cols - 1) + '│', `│ ${t2}`.padEnd(55) + '│'.padEnd(cols - 56) + '│'], P],
+      ['a wrap width under the terminal width', [`  ${t1}`, `  ${t2}`], P],
+      ['a hanging list indent', [`  - ${u1}`, `    ${u2}`], U],
+      ['counts on the right', [` ${u1}`.padEnd(cols - 8) + '| 12 ++-', `   ${u2}`], U],
+      ['a right margin', [`  ${u1}`.padEnd(cols - 6), `  ${u2}`], U],
+    ])('joins across %s', async (_, rows, want) => {
+      const { at, dispose } = await linksIn(rows);
+      try {
+        expect(at(rows[0].indexOf(want.slice(0, 5)) + 2, 1)).toBe(want);
+        expect(at(rows[1].indexOf(want.slice(-5)) + 2, 2)).toBe(want);
+      } finally {
+        dispose();
+      }
+    });
+
+    // What Claude Code prints for a pasted image: the path broken ten cells early, its size on the right below.
+    it.each([
+      ['', '/scratchpad/e2e/fail-docker-html-1-mvdd6e48-sender.png', '(106.5KB)'],
+      ['/s', 'cratchpad/e2e/fail-docker-chart-1-mvdd7izj-sender.png', '(105KB)'],
+    ])('joins a Claude Code image attachment broken before its size (%s)', async (cut, rest, size) => {
+      const dir = '/private/tmp/claude-501/-Users-shlom-Documents-dev-flowpad-oss/dc014c58-fb92-4421-b334-69321848cbf8';
+      const width = 121;
+      const { at, dispose } = await linksIn([`  › [image]${dir}${cut}`, `    ${rest}`.padEnd(width - size.length) + size], width);
+      try {
+        expect(at(20, 1)).toBe(dir + cut + rest);
+        expect(at(10, 2)).toBe(dir + cut + rest);
+      } finally {
+        dispose();
+      }
+    });
+
+    it.each<[string, string[], Array<[number, number, string | null]>]>([
+      ['a list of files, one per row', ['  src/components/terminal/one-long-name/a.ts', '  src/components/terminal/one-long-name/b.ts'],
+        [[5, 1, 'src/components/terminal/one-long-name/a.ts'], [5, 2, 'src/components/terminal/one-long-name/b.ts']]],
+      ['a path a sentence goes on after', ['  see src/components/terminal/folder/a-long-file-name.ts', '  and then the next thing happens'],
+        [[10, 1, 'src/components/terminal/folder/a-long-file-name.ts'], [5, 2, null]]],
+      ['a short path followed by another path that fits', ['  src/a/b', '  docs/c.md'], [[4, 1, 'src/a/b'], [4, 2, 'docs/c.md']]],
+      ['prose with a slash, then prose', ['  this and/or that', '  something else entirely here'], [[5, 2, null]]],
+    ])('keeps rows apart: %s', async (_, rows, probes) => {
+      const { at, dispose } = await linksIn(rows);
+      try {
+        for (const [x, y, want] of probes) expect(at(x, y)).toBe(want);
+      } finally {
+        dispose();
+      }
+    });
+  });
+
   it('preserves URL identity and query/fragment across URL and persisted-tab round trips', () => {
     const url = 'https://example.org/a%20b?next=%2Fdocs#section';
     const dock = dockForDisplayTarget({ kind: 'url', url })!;

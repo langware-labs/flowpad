@@ -26,6 +26,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => s
 vi.mock('@src/hooks/useContext', () => ({ useContext: () => stable.ctx }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
   ...(await importOriginal<object>()),
+  useInstancePreferences: () => ({ preferences: { isLoaded: true, version: 0, get: () => 'ask', set: vi.fn() } }),
   useAuth: () => stable.auth,
   useOAuthFlowComplete: () => undefined,
 }));

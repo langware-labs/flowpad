@@ -5,14 +5,13 @@ title: Cloud sharing — what leaves your machine
 
 # Cloud sharing — what leaves your machine
 
-**Cloud sharing uploads metadata and coordinates. It never uploads document
-bytes, and it never uploads secret values.**
+**Link creates the project in Flowpad Cloud, using the same action as Link to cloud on Project Home.** It sends the project declaration, not the whole project folder, and requires a cloud login. It does not require a Git checkout or grant GitHub repository access.
 
-Linking a project to the cloud publishes a *declaration*: this project exists,
-it is called this, and its content lives in this git repository at this commit.
-A reviewer who opens a shared document is served by the hub cloning that
-repository **with their own GitHub token** — so read access is GitHub's ACL,
-not Flowpad's. If they cannot clone the repo, they see an error, not your code.
+Sharing selected assets can publish their content into the project's hub-hosted repository. **Send files to cloud** is a separate action that publishes the project folder. Linking, sharing assets, and sending the whole folder are different operations.
+
+After linking, sharing offers a [project role](./project-roles.md) for each recipient who is not already a member. Guest is the default; None sends without a new membership. Existing roles remain unchanged. Guest does not allow opening the project under the current permissions. Choose Member when the recipient needs to see the project. Membership is added only when you click Share, not Link.
+
+**Don't ask again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
 
 > This page is load-bearing. `tests/unit/test_cloud_share_contract.py` asserts
 > that the lists below match what the code actually sends; adding a field to
@@ -100,28 +99,24 @@ A markdown doc, skill or agent published to the cloud sends a
 `layout` is the position of the asset inside the repo. Plus the git origin:
 provider, owner, repo, branch, commit, and the path within the repo.
 
-**No bytes.** The hub stores a reference. When someone opens the document, the
-hub clones the repo server-side using that viewer's GitHub credentials and
-reads the file at that commit.
+**The projection is metadata.** Content delivery depends on the selected transfer path: a direct GitHub reference requires provider access, while published content in a hub-hosted repository uses Flowpad access controls. The projection alone does not mean no file bytes were uploaded.
 
 ## What this means for you
 
-* A private repo stays private. Sharing a project does not grant anyone access
-  to your code — GitHub does.
-* A teammate without repo access sees the project row and the document's
-  title, and gets an error where the content would be.
-* Secret values never leave your machine.
-* Your local filesystem paths never leave your machine at all.
-* Linking a project is not the same as inviting people. Access is granted
-  separately, in the project's Members list.
+* Linking declares the project; it does not send the whole project folder.
+* Sharing selected asset content or sending files to the cloud can upload bytes to a hub-hosted repository. Do not use linking's metadata-only behavior as a guarantee about those separate actions.
+* Project membership and direct GitHub repository access are separate permissions. Linking does not grant either one to a recipient.
+* A Guest project role does not allow opening the project. Member includes project read access.
+* Invitations happen on Share for selected non-members with a role other than None. They can also be managed in the project's Members list.
+* The field classification above describes the project declaration and portable metadata, not every possible content-transfer payload.
 
-## Proving it end to end
+## Direct GitHub transfer validation
 
 `ui/tests/hub_playwright/tagit_share_real_github.spec.ts` runs the whole chain
 unstubbed. It **skips** unless the env below is set, so it stays green on a
 machine without credentials.
 
-It needs a real GitHub repo because nothing cheaper reaches the last mile:
+This test covers the direct GitHub transfer path, not metadata-only linking or hub-hosted repositories. It needs a real GitHub repo:
 `AssetGitWorktree` requires an `https://github.com/...` origin (a `file://`
 bare repo gives `ORIGIN_INVALID`), and the hub serves the document by cloning
 from GitHub with the *viewer's* token — so "a reviewer can read it" is only

@@ -163,7 +163,7 @@ def _handler_class(endpoints: dict[str, EndpointScript]) -> type[BaseHTTPRequest
                         message = json.loads(data)
                     except json.JSONDecodeError:
                         continue
-                    if message.get("direct_resource_type") == "user":
+                    if message.get("direct_resource_type") == "user" or message.get("action") == "current-user":
                         reply = {"message_type": "response_msg", "content": {"status": "success", "data": FAKE_USER}}
                         self.wfile.write(_ws_frame(json.dumps(reply).encode()))
                 self.wfile.flush()

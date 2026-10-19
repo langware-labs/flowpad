@@ -15,7 +15,7 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
-import { ProjectInstallAction } from './ProjectInstallAction';
+import { isCloudOnlyProject, ProjectInstallAction } from './ProjectInstallAction';
 import { ProjectPreview } from './ProjectPreview';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
@@ -39,26 +39,37 @@ function GitPointerPreview({ ma }: { ma: MessageAttachment }) {
   const origin = (ma.origin ?? null) as (GitOrigin & { head_commit?: string | null }) | null;
   const commit = origin?.head_commit ? origin.head_commit.slice(0, 12) : null;
   return (
-    <div className="rounded border border-border px-4 py-5 text-sm text-muted-foreground" data-testid="git-pointer-preview">
+    <div
+      className="rounded border border-border px-4 py-5 text-sm text-muted-foreground"
+      data-testid="git-pointer-preview"
+    >
       <p>
-        <Trans>Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.</Trans>
+        <Trans>
+          Shared by Git — Download opens exactly the version that was shared, without touching your own checkout.
+        </Trans>
       </p>
       <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-xs">
         {origin?.rel_path && (
           <>
-            <dt><Trans>Path</Trans></dt>
+            <dt>
+              <Trans>Path</Trans>
+            </dt>
             <dd className="truncate text-foreground">{origin.rel_path}</dd>
           </>
         )}
         {commit && (
           <>
-            <dt><Trans>Version</Trans></dt>
+            <dt>
+              <Trans>Version</Trans>
+            </dt>
             <dd className="text-foreground">{commit}</dd>
           </>
         )}
         {origin?.branch && (
           <>
-            <dt><Trans>Branch</Trans></dt>
+            <dt>
+              <Trans>Branch</Trans>
+            </dt>
             <dd className="text-foreground">{origin.branch}</dd>
           </>
         )}
@@ -196,10 +207,18 @@ function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps 
       <DialogContent className="sm:max-w-xl" data-testid="asset-review-dialog">
         <DialogHeader>
           <DialogTitle className="font-bold">
-            <Trans>Received project — review before installing.</Trans>
+            {isCloudOnlyProject(row) ? (
+              <Trans>Received project</Trans>
+            ) : (
+              <Trans>Received project — review before installing.</Trans>
+            )}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            <Trans>Review the shared project and install it.</Trans>
+            {isCloudOnlyProject(row) ? (
+              <Trans>Review and open the shared project.</Trans>
+            ) : (
+              <Trans>Review the shared project and install it.</Trans>
+            )}
           </DialogDescription>
         </DialogHeader>
         <ProjectInstallAction
@@ -482,9 +501,7 @@ function AttachmentReviewDialog({
         <DialogHeader>
           {/* Whole-popup title — the per-entity icon/name/type moved down to the
               selected-entity pane. Singular vs plural tracks the list size. */}
-          <DialogTitle className="font-bold">
-            {multi ? labels.titleMany : labels.titleOne}
-          </DialogTitle>
+          <DialogTitle className="font-bold">{multi ? labels.titleMany : labels.titleOne}</DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Review each attached asset and choose how to install it.</Trans>
           </DialogDescription>
