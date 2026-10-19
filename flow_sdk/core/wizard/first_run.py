@@ -76,11 +76,19 @@ class FirstRunSetupRequired(Exception):
         super().__init__(BLOCKED_MESSAGE)
 
 
+def _is_green_untracked(state: dict) -> bool:
+    """A GREEN result written before runs were tracked: the install already ran the wizard fully. Any other result
+    (a failed or check-only run from the CLI or API) proves nothing."""
+    result = state.get("result")
+    return isinstance(result, dict) and result.get("exit_code") == 0 and not state.get(FIRST_RUN_TRACKED)
+
+
 def first_run_gate_open(wizard_id: str, gates: bool = True) -> bool:
     """Whether project setup may begin, judged for the wizard ``wizard_id``.
 
     ``gates`` is the wizard's ``gates_project_setup``: a wizard that does not declare it is open, only the
-    first-run one gates anything. Never raises."""
+    first-run one gates anything. Never raises. It fails OPEN on purpose and is a courtesy to the person, not a
+    security boundary: a gate that cannot tell must not hold anyone."""
     if not gates:
         return True
     try:
@@ -97,8 +105,7 @@ def first_run_gate_open(wizard_id: str, gates: bool = True) -> bool:
             return True
         # A GREEN result written before runs were tracked: this install already ran the wizard fully. Any other
         # result (a failed or check-only run from the CLI or API) proves nothing.
-        result = state.get("result")
-        return isinstance(result, dict) and result.get("exit_code") == 0 and not state.get(FIRST_RUN_TRACKED)
+        return _is_green_untracked(state)
     except Exception:  # noqa: BLE001 -- a gate that cannot tell stays open (and says so)
         _log.warning("first-run gate: could not read the wizard's state; leaving the gate open", exc_info=True)
         return True
@@ -176,7 +183,8 @@ def begin_first_run(wizard: "Wizard") -> None:
     if not wizard.gates_project_setup:
         return
     wid = str(wizard.id)
-    if first_run_gate_open(wid, wizard.gates_project_setup) and wid not in _WAIVED:
+    state = read_state(wid)
+    if _is_green_untracked(state) and not state.get(FIRST_RUN_DONE):
         mark_first_run_done(wid)
     mark_first_run_tracked(wid)
 

@@ -97,6 +97,16 @@ def test_an_older_install_keeps_its_standing_when_it_runs_the_wizard_again():
     assert first_run_gate_open(WIZARD_ID) is True
 
 
+def test_a_gate_open_for_another_reason_is_not_stamped_by_a_start(monkeypatch):
+    """Skip switch / hub box open the gate without the wizard having run: starting it must not make that permanent."""
+    monkeypatch.setenv(first_run.SKIP_FIRST_RUN_SETUP_ENV, "true")
+    begin_first_run(_wizard())
+    assert read_state(WIZARD_ID).get("first_run_done") is None
+
+    monkeypatch.delenv(first_run.SKIP_FIRST_RUN_SETUP_ENV)
+    assert first_run_gate_open(WIZARD_ID) is False
+
+
 def test_only_a_green_finish_stamps_it():
     begin_first_run(_wizard())
 

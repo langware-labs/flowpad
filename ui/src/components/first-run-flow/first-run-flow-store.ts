@@ -30,6 +30,9 @@ interface FirstRunFlowState {
    *  invitation needs (the gate opened for it), not the way a bare load does. */
   start: (origin: FirstRunOrigin) => void;
   end: () => void;
+  /** The app-load check runs once per page load, whichever component mounts first; `end` leaves it alone. */
+  appLoadChecked: boolean;
+  markAppLoadChecked: () => void;
 }
 
 export const useFirstRunFlowStore = create<FirstRunFlowState>((set, get) => ({
@@ -44,6 +47,8 @@ export const useFirstRunFlowStore = create<FirstRunFlowState>((set, get) => ({
     else if (current === 'app_load' && origin !== 'app_load') set({ origin });
   },
   end: () => set({ step: 'idle', origin: null, minimized: false }),
+  appLoadChecked: false,
+  markAppLoadChecked: () => set({ appLoadChecked: true }),
 }));
 
 export const startFirstRunFlow = (origin: FirstRunOrigin) => useFirstRunFlowStore.getState().start(origin);

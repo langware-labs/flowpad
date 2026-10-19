@@ -9,9 +9,6 @@ import { useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useFirstRunFlowStore } from './first-run-flow-store';
 
-/** The app-load check runs once per page load, whichever component mounts first. */
-let appLoadChecked = false;
-
 /**
  * The first-run flow, mounted once at the app root (`App.tsx`): its three windows, and what leads from each to
  * the next. The wizard popup itself is window 1 (`WizardPopupRoot`); this opens it and watches it close.
@@ -23,26 +20,27 @@ let appLoadChecked = false;
  */
 export function FirstRunFlowRoot() {
   const gate = useFirstRunGate();
-  const { step, origin, minimized, setMinimized, setStep, start, end } = useFirstRunFlowStore();
+  const { step, origin, minimized, setMinimized, setStep, start, end, appLoadChecked, markAppLoadChecked } =
+    useFirstRunFlowStore();
   const popupOpen = useWizardPopupStore((state) => state.open);
   const { navigation, currentDock } = useDockNavigation();
 
-  const finish = () => {
+  const finish = (goHome = true) => {
     const from = origin;
     end();
     // A load lands on the home page; a project setup and an invitation go on by themselves, waiting on the gate.
     // Not by navigating when the tab is ALREADY there (the app root, `currentDock.isRoot`): that re-ran the home
     // page's loader and the page flashed as if it had been opened again.
-    if (from === 'app_load' && currentDock && !currentDock.isRoot) navigation.goHome({ homePage: true });
+    if (goHome && from === 'app_load' && currentDock && !currentDock.isRoot) navigation.goHome({ homePage: true });
   };
 
   // 1. Every app load: the wizard opens when it has not run fully on this computer. 'loading' waits; anything the
   // gate cannot tell is OPEN (`useFirstRunGate`), so a failed lookup never holds the app.
   useEffect(() => {
     if (appLoadChecked || gate.state === 'loading') return;
-    appLoadChecked = true;
+    markAppLoadChecked();
     if (gate.state === 'closed') start('app_load');
-  }, [gate.state, start]);
+  }, [gate.state, appLoadChecked, start, markAppLoadChecked]);
 
   // 2. Window 1: open the wizard (blank -- the person presses its own Start), and see it close.
   const opened = useRef(false);
@@ -87,7 +85,8 @@ export function FirstRunFlowRoot() {
   const incomplete = useSetupIncompleteWarning();
   useEffect(() => {
     if (step !== 'wizard' || !minimized) return;
-    if (gate.state === 'open') finish();
+    // Minutes may have passed and the person is elsewhere by now: ending quietly, never taking them somewhere.
+    if (gate.state === 'open') finish(false);
     else if (incomplete) setStep('skip-notice');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, minimized, gate.state, incomplete]);

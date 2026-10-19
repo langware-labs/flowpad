@@ -66,6 +66,7 @@ class Wizard(Entity):
 
         return read_wizard(Path(self.asset_ref)) if self.asset_ref else None
 
+    @computed_field
     @property
     def gates_project_setup(self) -> bool:
         """Whether project setup waits for this wizard -- its document says so (``gates_project_setup``)."""

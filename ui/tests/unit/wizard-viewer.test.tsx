@@ -285,7 +285,7 @@ describe('a fully finished run', () => {
     async (button) => {
       useFirstRunFlowStore.getState().start('project_setup');
       act(() => openWizardPopup('wizard-x'));
-      const firstRun = { ...(withMessage(finished) as Record<string, unknown>), name: 'llm-setup', popup: true } as never;
+      const firstRun = { ...(withMessage(finished) as Record<string, unknown>), gates_project_setup: true, popup: true } as never;
       renderWizard(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={firstRun} />);
       await waitFor(() => expect(screen.getByTestId(button)).toBeTruthy());
 
