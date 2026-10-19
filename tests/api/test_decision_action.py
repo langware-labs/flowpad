@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.external_apis.decision import DecisionError
+from flow_sdk.fs_store.indexer.roots import system_project_id
 from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 
@@ -154,6 +155,10 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
         here = navigation_log.folder().resolve()
         [row] = [r for r in listed["data"] if Path(r["asset_ref"]).resolve() == here]
         assert (row["title"], row["num_rows"]) == ("SmartNavigationLog", 2)
+        # Flowpad's own log, not the user's work: system scope under the system project, so it is not
+        # listed in every user project.
+        assert row["scope"] == "system"
+        assert row.get("project_id") == await system_project_id()
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 

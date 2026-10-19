@@ -9,7 +9,7 @@ from flow_sdk.assets.directory import AssetDir
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.code_agentic_worker import _local_plugin_configs
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import _BUILTIN_HOOKS, ClaudeDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import ClaudeCLIStreamWorker
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
@@ -208,6 +208,8 @@ def test_claude_projection_emits_one_handler_per_configured_event(tmp_path, isol
             args.append("--wait-for-response")
         return {"args": args, "command": command, "type": "command"}
 
+    # PostToolUse is the built-in frontmatter check, projected alongside every configured set.
+    assert hooks.pop("PostToolUse") == [entry for _, entry in _BUILTIN_HOOKS]
     assert sorted(hooks) == ["SessionEnd", "SessionStart", "UserPromptSubmit"]
     for event, entries in hooks.items():
         # Matcher-free: SessionStart/SessionEnd matchers select on
@@ -224,7 +226,7 @@ def test_claude_removing_one_event_keeps_the_others_projected(tmp_path, isolated
     driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_START, HookEventType.SESSION_END])
     driver.prepare_process_hooks(assets, process_id, [HookEventType.SESSION_END])
 
-    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["SessionEnd"]
+    assert sorted(json.loads((plugin / "hooks/hooks.json").read_text(encoding="utf-8"))["hooks"]) == ["PostToolUse", "SessionEnd"]
     assert driver.prepare_process_hooks(assets, process_id, []).plugin_dirs == ()
     assert not plugin.exists()
 

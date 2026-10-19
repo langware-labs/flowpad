@@ -178,15 +178,23 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 
 
-async def test_the_log_belongs_to_the_user_not_to_every_project(hub, log_temp, index_storage):
-    """It lives in Flowpad's temp folder — inside no project and no known root — so its row was
-    born with no scope, and the project filter lists a scope-less dataset under every project."""
+async def test_the_log_is_system_not_listed_in_user_projects(hub, log_temp, index_storage):
+    """It lives in Flowpad's temp folder — inside no project and no known root. A user-scoped row is
+    listed under every project, so the log is Flowpad's own: system scope, under the system project
+    (none here), and a row indexed before that is re-labelled on the next append."""
     write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
     try:
         await _decide_and_log("open data sources")
         row = await navigation_log._indexed()
         assert row is not None, "the log was not indexed"
-        assert (row.scope, row.project_id) == ("user", None)
+        assert (row.scope, row.project_id) == ("system", None)
+
+        # An older log, indexed as the user's, moves to system on its next row.
+        row.scope = "user"
+        await row.save()
+        await _decide_and_log("take me to preferences")
+        navigation_log._LOG._row = None
+        assert (await navigation_log._indexed()).scope == "system"
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
 

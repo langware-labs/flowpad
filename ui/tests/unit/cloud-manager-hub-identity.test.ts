@@ -66,6 +66,7 @@ describe('CloudManager hub identity', () => {
     // The hub surface has no anonymous mode: a session-less bootstrap must
     // send the browser to the provider login rather than render signed-out.
     const assign = vi.fn();
+    const redirected = new Promise<void>((resolve) => assign.mockImplementation(() => resolve()));
     delete (window as unknown as { location?: Location }).location;
     (window as unknown as { location: Partial<Location> }).location = {
       origin: originalLocation.origin,
@@ -75,10 +76,13 @@ describe('CloudManager hub identity', () => {
       assign,
     };
 
-    await sdk.cloudManager.bootstrap({
+    // Not awaited: the redirect holds bootstrap open for good (the page is
+    // leaving), so the redirect itself is what this waits for.
+    void sdk.cloudManager.bootstrap({
       user: null,
       desktop_info: null,
     });
+    await redirected;
 
     expect(sdk.cloudManager.loginStatus).toBe('logged_out');
     expect(sdk.cloudManager.isLoggedIn).toBe(false);
@@ -99,6 +103,7 @@ describe('CloudManager hub identity', () => {
     // Mocked BEFORE bootstrap: a user-less hub bootstrap itself navigates to
     // login now, and jsdom's real location.assign is unimplemented.
     const assign = vi.fn();
+    const redirected = new Promise<void>((resolve) => assign.mockImplementationOnce(() => resolve()));
     delete (window as unknown as { location?: Location }).location;
     (window as unknown as { location: Partial<Location> }).location = {
       origin: originalLocation.origin,
@@ -108,13 +113,15 @@ describe('CloudManager hub identity', () => {
       assign,
     };
 
-    await sdk.cloudManager.bootstrap({
+    // Not awaited: the redirect holds bootstrap open for good.
+    void sdk.cloudManager.bootstrap({
       user: null,
       desktop_info: null,
     });
+    await redirected;
     expect(assign).toHaveBeenLastCalledWith('/api/v1/login');
 
-    const post = vi.mocked(sdk.apiClient.post);
+    const post = vi.spyOn(sdk.apiClient, 'post');
     post.mockClear();
     const secretProbe = vi.spyOn(sdk.secretsService, 'isEnabled');
 
@@ -237,7 +244,7 @@ describe('CloudManager hub identity', () => {
     });
     expect(sdk.cloudManager.connectionSlot.status).toBe('disconnected');
 
-    vi.mocked(sdk.apiClient.get).mockResolvedValue({
+    vi.spyOn(sdk.apiClient, 'get').mockResolvedValue({
       cloud_url: 'https://cloud.flowpad.test',
       login,
       connection: { status: 'connected', error: null },

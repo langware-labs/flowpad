@@ -107,14 +107,16 @@ class TempLog:
         try:
             async with _lock(self.name):
                 indexed = await self.indexed()
-                if indexed is None:
-                    # The first row: create the folder and index it once, so the UI lists the log. It is
-                    # the user's: the temp folder is inside no project and no known root.
+                if indexed is None or getattr(indexed, "scope", None) != "system":
+                    # The first row (or a row indexed as the user's before temp was system): index it once,
+                    # so the UI lists the log. The temp folder classifies as system, so it is listed under
+                    # the system project and not in every user project.
                     self._create()
                     try:
-                        await index_one(await resolve_asset(self.folder(), write=True), notify=True, scope="user")
+                        await index_one(await resolve_asset(self.folder(), write=True), notify=True)
                     except Exception as exc:  # noqa: BLE001 -- no index (no DB): the folder alone takes the row
                         logger.debug("%s: not indexed: %s", self.title, exc)
+                    self._row = None
                     indexed = await self.indexed()
                 ds = indexed or Dataset.at(self.folder())
                 [row_id] = await ds.append([row])

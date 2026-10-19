@@ -44,6 +44,7 @@ import { STATE_VISUAL } from './connections-manager/connection-state-visual';
 import { useConnections } from '@src/hooks/use-connections';
 import { useRefreshStatusOnArrival } from '@src/components/status/use-status-record';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
+import { openInbound } from './inbound/inbound-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   buildCredentialRows,
@@ -63,7 +64,7 @@ import {
 } from './credentials/credential-draft';
 import { AddConnectionDialog } from './connections-manager/add-connection-dialog';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
-import { Plus } from 'lucide-react';
+import { Plus, Webhook } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
@@ -652,8 +653,15 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         {/* The same square tile the catalogue it opens is made of, and the same
             one project home's "New …" affordances use. A pill button here and
             tiles behind it made one act look like two. */}
+        {/* Inbound routing: where the messages a number or bot sends end up (the hub's webhook chain). */}
         <DesktopTile
           className="ms-auto"
+          Icon={Webhook}
+          label={t`Inbound routing`}
+          onClick={() => openInbound(navigation)}
+          data-testid="connections-open-inbound"
+        />
+        <DesktopTile
           Icon={Plus}
           label={t`Add connection`}
           onClick={() => setAddOpen(true)}
