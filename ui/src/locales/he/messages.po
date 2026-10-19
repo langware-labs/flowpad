@@ -25203,6 +25203,7 @@ msgstr "דלג על כל הודעות הרשאה (--dangerously-skip-permissions
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "דילוג על אישורים ובידוד (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/ask/AskSkipButton.tsx
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "Skip for now"
 msgstr "לדלג בינתיים"
@@ -25234,6 +25235,10 @@ msgstr ""
 #: src/components/automations/RunsView.tsx
 msgid "Skipped"
 msgstr ""
+
+#: src/components/ask/AskSkipButton.tsx
+msgid "Skipped — setup goes on without it."
+msgstr "דילגנו — ההגדרה ממשיכה בלי זה."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skipped on this machine"

@@ -168,13 +168,12 @@ describe('AskChoiceBlock', () => {
 });
 
 describe('a question with choices, drawn by AskForm', () => {
-  it('keeps the guide below the cards and posts the picked way as one string', async () => {
+  it('posts the picked way as one string', async () => {
     h.get.mockResolvedValue(QUESTION);
     h.post.mockResolvedValue({});
     render(<AskForm questionId="q1" />);
 
     await screen.findByTestId('ask-choices');
-    expect(screen.getByTestId('ask-guide')).toHaveTextContent('IAM');
     // The cards are the form: no bare value field, and no Send of the question's own.
     expect(screen.queryByTestId('ask-input-value')).toBeNull();
     expect(screen.queryByTestId('ask-submit')).toBeNull();

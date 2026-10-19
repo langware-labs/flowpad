@@ -25430,6 +25430,7 @@ msgstr "Skip all permission prompts (--dangerously-skip-permissions)"
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/ask/AskSkipButton.tsx
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "Skip for now"
 msgstr "Skip for now"
@@ -25461,6 +25462,10 @@ msgstr "Skip runs beyond"
 #: src/components/automations/RunsView.tsx
 msgid "Skipped"
 msgstr "Skipped"
+
+#: src/components/ask/AskSkipButton.tsx
+msgid "Skipped — setup goes on without it."
+msgstr "Skipped — setup goes on without it."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skipped on this machine"
