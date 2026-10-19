@@ -619,7 +619,12 @@ export function AssetsPage() {
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isFsMode && fsVfsPath ? (
-            <ContextFolderBrowser vfsPath={fsVfsPath} onNavigate={navigateAsset} projectId={scopeProjectId} />
+            <ContextFolderBrowser
+              vfsPath={fsVfsPath}
+              onNavigate={navigateAsset}
+              projectId={scopeProjectId}
+              selectName={currentDock?.fsSelect}
+            />
           ) : isWikiMode && wikiName ? (
             <WikiResolveView
               name={wikiName}

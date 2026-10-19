@@ -257,6 +257,7 @@ export function SimpleFileManager({
   className = '',
   onFsMutated,
   isPathHighlighted,
+  initialSelectedName,
 }: SimpleFileManagerProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -305,10 +306,23 @@ export function SimpleFileManager({
   }, [browseResult, currentPath, filterDefinitions, enabledFilters]);
 
   // Sync currentPath with initialPath when it changes (e.g., browser back/forward navigation)
+  // The entry the URL names, selected once when its row lists; reset per folder.
+  const appliedSelectRef = useRef<string | undefined>(undefined);
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
     setCurrentPath(normalizeFsPath(initialPath));
     setSelectedItems(new Set());
+    appliedSelectRef.current = undefined;
   }, [initialPath]);
+
+  useEffect(() => {
+    if (!initialSelectedName || appliedSelectRef.current === initialSelectedName) return;
+    const item = files.find((f) => f.name === initialSelectedName);
+    if (!item) return;
+    appliedSelectRef.current = initialSelectedName;
+    setSelectedItems(new Set([item.id]));
+    setScrollToId(item.id);
+  }, [files, initialSelectedName]);
 
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -975,6 +989,7 @@ export function SimpleFileManager({
                     <ContextMenu key={item.id}>
                       <ContextMenuTrigger asChild>
                         <TableRow
+                          ref={item.id === scrollToId ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                           className={`cursor-pointer select-none ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
                           onClick={(e) => handleItemClick(item, e)}
                           onDoubleClick={() => handleItemDoubleClick(item)}
