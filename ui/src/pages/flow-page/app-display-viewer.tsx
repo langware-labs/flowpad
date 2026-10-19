@@ -76,9 +76,6 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   if (seen !== undefined && seen !== epoch) reload();
 }
 
-/** The hub-relayed apps already handed to a tab of their own, by `src`: a dock shown again opens no other. */
-const openedInTab = new Set<string>();
-
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
 const loadedVersion = new Map<string, string>();
 const VERSION_MARK = /<!-- flowpad-content-version: ([0-9a-f]+) -->/;
@@ -158,14 +155,8 @@ export function AppDisplayViewer({
     void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
   }, [appDisplay.src]);
 
-  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): the click that opened it opens
-  // it in a tab of its own instead — once, so showing this dock again does not open another.
+  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
   const relayed = isHubRelayed(appDisplay.src);
-  useEffect(() => {
-    if (!relayed || openedInTab.has(appDisplay.src)) return;
-    openedInTab.add(appDisplay.src);
-    openExternal(appDisplay.src);
-  }, [relayed, appDisplay.src]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -260,9 +251,11 @@ export function AppDisplayViewer({
       {relayed ? (
         <div
           data-testid="app-opens-in-tab"
-          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
         >
-          <Trans>View in new tab</Trans>
+          <p className="text-lg font-medium">
+            <Trans>This app is served externally via Flowpad. Open it in a new tab.</Trans>
+          </p>
           <Button onClick={() => openExternal(appDisplay.src)}>
             <Trans>Open in new tab</Trans>
           </Button>
