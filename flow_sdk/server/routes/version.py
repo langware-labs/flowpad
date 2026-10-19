@@ -314,25 +314,19 @@ async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse
             output=(answer.stdout + answer.stderr)[-2000:],
         )
 
-    # The other direction of the compatibility contract: the release now on disk
-    # may require a NEWER desktop than the one managing this backend. Its floor is
-    # plain data in the freshly installed wheel — check it before the restart, and
-    # put the running version back when it fails, so an incompatible pair never boots.
-    incompat = await asyncio.to_thread(self_update.verify_installed_against_desktop)
-    if incompat:
-        logger.warning("[version/install] %s is incompatible with the running desktop: %s — rolling back", version, incompat)
-        restore = await asyncio.to_thread(self_update.reinstall_version, __version__)
-        if restore.ok:
-            preserved = f"Your existing installation ({__version__}) has been preserved."
-        else:
-            preserved = (
-                f"Automatic restore of {__version__} also failed — run: "
-                f"{' '.join(self_update.build_install_command(__version__))}"
-            )
+    # The other direction of the compatibility contract: the release now on disk may require a
+    # NEWER desktop than the one managing this backend -- never schedule that pair to boot.
+    rolled = await asyncio.to_thread(self_update.rollback_if_incompatible, __version__)
+    if rolled is not None:
+        kept = (
+            f"Your existing installation ({__version__}) has been preserved."
+            if rolled.restored
+            else f"Automatic restore of {__version__} also failed -- run: {rolled.manual_command}"
+        )
         return InstallVersionResponse(
             success=False,
             reason="backend_requires_newer_desktop",
-            error=f"Cannot switch to {version}: {incompat}. {preserved}",
+            error=f"Cannot switch to {version}: {rolled.reason}. {kept}",
         )
 
     self_update.schedule_restart()

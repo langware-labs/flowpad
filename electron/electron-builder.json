@@ -32,6 +32,7 @@
     "semver.js",
     "engine-compat.js",
     "engine-compat.json",
+    "wheel-compat.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
     "loading.html",

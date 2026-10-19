@@ -280,6 +280,16 @@ def upgrade(
     if result.returncode != 0:
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
+    rolled = self_update.rollback_if_incompatible(__version__)
+    if rolled is not None:
+        typer.echo(f"flowpad {latest} is not compatible with the running desktop: {rolled.reason}.", err=True)
+        typer.echo(
+            f"flowpad {__version__} has been restored."
+            if rolled.restored
+            else f"Restoring {__version__} failed -- run: {rolled.manual_command}",
+            err=True,
+        )
+        raise typer.Exit(1)
     typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
     _echo_restart_hint(latest)
 

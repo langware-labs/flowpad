@@ -12,6 +12,7 @@ const {
   DESKTOP_COMPAT,
   desktopMinBackendVersion,
   meetsFloor,
+  isInstallableVersion,
   parseEngineCompat,
   checkPair,
   selectCompatibleRelease,
@@ -71,10 +72,25 @@ eq(checkPair({ desktopVersion: '0.2.60', engineVersion: '0.2.70' }).compatible, 
 
 // ── the user-facing message ─────────────────────────────────────────────────
 {
-  const msg = incompatibleMessage({ desktopVersion: '0.2.45', engineVersion: '0.2.70', minDesktopVersion: '0.2.60' });
+  // Built from the verdict's own reasons, so it names the direction that actually failed.
+  const v = checkPair({ desktopVersion: '0.2.45', engineVersion: '0.2.70', minDesktopVersion: '0.2.60', minBackendVersion: null });
+  const msg = incompatibleMessage({ desktopVersion: '0.2.45', engineVersion: '0.2.70', reasons: v.reasons });
   ok(msg.includes('FlowPad Desktop 0.2.45 is not compatible'), 'message names the desktop');
   ok(msg.includes('requires Desktop 0.2.60'), 'message names the required floor');
   ok(msg.includes('has been preserved'), 'message says the installation was preserved');
+}
+{
+  // The engine is too OLD and the engine declares no desktop floor at all: the text must not invent one.
+  const v = checkPair({ desktopVersion: '0.2.60', engineVersion: '0.2.40', minDesktopVersion: null, minBackendVersion: '0.2.50' });
+  const msg = incompatibleMessage({ desktopVersion: '0.2.60', engineVersion: '0.2.40', reasons: v.reasons });
+  ok(!/null|undefined/.test(msg), `no "null"/"undefined" in the text: ${JSON.stringify(msg)}`);
+  ok(msg.includes('requires Backend 0.2.50 or newer'), 'it names the floor that failed');
+}
+
+// ── only release-shaped versions may become install arguments ───────────────
+for (const good of ['0.2.219', '1.0.0', '0.2.41rc1', '0.2.40+local1', '0.2.40-local', '10.20.30.dev4']) ok(isInstallableVersion(good), `installable: ${good}`);
+for (const bad of ['', 'garbage', '1.2', 'v1.2.3', '1.2.3 --index-url http://evil', '1.2.3&calc', '1.2.3"', '1.2.3;x', ' 1.2.3', '1.2.3\n', 'x1.2.3', null, undefined, 123]) {
+  ok(!isInstallableVersion(bad), `not installable: ${JSON.stringify(bad)}`);
 }
 
 // ── selectCompatibleRelease (async) ─────────────────────────────────────────
@@ -126,6 +142,19 @@ eq(checkPair({ desktopVersion: '0.2.60', engineVersion: '0.2.70' }).compatible, 
     });
     eq(picked, null, 'no compatible release → null');
     eq(reads.length, 5, 'bounded by the limit');
+  }
+  {
+    // A release key that PARSES (semver.js finds a triple anywhere) but is not release-shaped never becomes
+    // an install argument: it is skipped without being read.
+    const asked = [];
+    const picked = await selectCompatibleRelease({
+      releases: [{ version: '9.9.9 --index-url http://evil' }, { version: '9.9.8&calc' }, { version: '0.2.5' }],
+      desktopVersion: '1.0.0',
+      minBackendVersion: null,
+      readEngineCompat: async (v) => { asked.push(v); return { minDesktopVersion: null }; },
+    });
+    eq(picked, { version: '0.2.5', minDesktopVersion: null }, 'the only release-shaped candidate wins');
+    eq(asked, ['0.2.5'], 'the others were never interrogated');
   }
   {
     // Nothing passes the desktop's own floor → null without reading any metadata.

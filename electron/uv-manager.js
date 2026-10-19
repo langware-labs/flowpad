@@ -7,6 +7,7 @@ const https = require('https');
 const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
 const engineCompat = require('./engine-compat');
+const { readWheelMember } = require('./wheel-compat');
 const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
@@ -1184,7 +1185,7 @@ class UvManager {
 
   /**
    * Is the INSTALLED (desktop, engine) pair compatible in both directions?
-   * @returns {null | {message: string, reasons: string[], engineVersion: string|null, minDesktopVersion: string|null}}
+   * @returns {null | {message: string, reasons: string[], engineVersion: string|null, minDesktopVersion: string|null, desktopTooOld: boolean}}
    *   null when compatible, unknowable (no app version / no engine), or legacy.
    */
   installedPairIssue(flowBin) {
@@ -1204,26 +1205,89 @@ class UvManager {
     if (verdict.compatible) return null;
     return {
       message: engineCompat.incompatibleMessage({
-        desktopVersion: this._appVersion, engineVersion, minDesktopVersion,
+        desktopVersion: this._appVersion, engineVersion, reasons: verdict.reasons,
       }),
       reasons: verdict.reasons,
       engineVersion,
       minDesktopVersion,
+      // The engine demands a newer desktop than this one: the DESKTOP is the old side, so "repairing"
+      // means moving the engine BACKWARD -- main.js asks before doing that. (The other direction, an
+      // engine below the desktop's floor, is a plain upgrade and needs no question.)
+      desktopTooOld: minDesktopVersion !== null && engineCompat.meetsFloor(this._appVersion, minDesktopVersion) === false,
     };
   }
 
   /**
-   * A CANDIDATE release's desktop floor, before anything touches the working install: unpack
-   * just the flowpad wheel (`uv pip install --no-deps --target <tmp>` — wheels carry no code
-   * that runs at install time) and read flow_sdk/compat.json from it. The wheel lands in uv's
-   * cache, so the real `uv tool install flowpad==X` that follows does not download it again.
+   * A CANDIDATE release's desktop floor, before anything touches the working install, read as plain
+   * data -- no package code runs. Two ways, cheapest first:
+   *   1. HTTP Range requests for just flow_sdk/compat.json inside the release's wheel (wheel-compat.js:
+   *      tens of KB, so the pre-start update check never waits on a whole-wheel download);
+   *   2. when that cannot be done (no range support, ZIP64, an unexpected wheel URL): unpack the wheel with
+   *      `uv pip install --no-deps --target <tmp>` -- the wheel lands in uv's cache, so the real
+   *      `uv tool install flowpad==X` that follows does not download it again.
    *
    * @returns {Promise<{minDesktopVersion: string|null}|'invalid'|null>} null = indeterminate
-   *   (offline, uv failure) — the caller treats that as legacy and the post-install
+   *   (offline, uv failure) -- the caller treats that as legacy and the post-install
    *   verification (installedPairIssue + rollback) stays the authoritative gate.
    */
   async _readCandidateMinDesktop(version) {
+    if (!engineCompat.isInstallableVersion(version)) return 'invalid'; // never becomes an argument
     if (this._minDesktopCache.has(version)) return this._minDesktopCache.get(version);
+    let result = await this._readCandidateViaRange(version);
+    if (result === null) result = await this._readCandidateViaUv(version);
+    if (result !== null) this._minDesktopCache.set(version, result);
+    return result;
+  }
+
+  /** The wheel URL of `version` from PyPI's own document -- https://files.pythonhosted.org only (the
+   *  update-cycle harness serves its stub PyPI from anywhere). null = unknown. */
+  async _wheelUrl(version) {
+    let files = this._pypiDoc && this._pypiDoc.releases && this._pypiDoc.releases[version];
+    if (!Array.isArray(files)) {
+      try {
+        const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, { headers: { Accept: 'application/json' } });
+        files = res.ok ? (await res.json()).urls : null;
+      } catch { files = null; }
+    }
+    const wheel = (files || []).find((f) => f && f.packagetype === 'bdist_wheel' && f.yanked !== true && typeof f.url === 'string');
+    if (!wheel) return null;
+    if (!updateTest.isEnabled() && !/^https:\/\/files\.pythonhosted\.org\//.test(wheel.url)) {
+      this.log.warn(`[compat] not reading ${PYPI_PACKAGE} ${version} from an unexpected host: ${wheel.url}`);
+      return null;
+    }
+    return wheel.url;
+  }
+
+  /** One ranged GET. A server that ignores Range answers 200 with the whole file: dropped unread. */
+  async _fetchRange(url, rangeHeader) {
+    const res = await fetch(url, { headers: { Range: rangeHeader } });
+    if (res.status !== 206) {
+      try { await res.body.cancel(); } catch { /* best effort */ }
+      return { status: res.status };
+    }
+    return { status: 206, contentRange: res.headers.get('content-range'), body: Buffer.from(await res.arrayBuffer()) };
+  }
+
+  async _readCandidateViaRange(version) {
+    try {
+      const url = await this._wheelUrl(version);
+      if (!url) return null;
+      const got = await readWheelMember({ url, member: 'flow_sdk/compat.json', fetchRange: (u, r) => this._fetchRange(u, r) });
+      if (!got) return null;
+      if (!got.found) return { minDesktopVersion: null }; // a release older than the contract: no constraint
+      try {
+        return engineCompat.parseEngineCompat(got.data.toString('utf8'));
+      } catch (err) {
+        this.log.warn(`[compat] ${PYPI_PACKAGE} ${version} ships invalid compat.json: ${err.message}`);
+        return 'invalid';
+      }
+    } catch (err) {
+      this.log.info(`[compat] range read of ${PYPI_PACKAGE} ${version} failed (${String(err.message).split('\n')[0]}) -- unpacking it with uv instead`);
+      return null;
+    }
+  }
+
+  async _readCandidateViaUv(version) {
     const pin = tryPythonVersion();
     if (!pin) return null;
     const target = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-compat-'));
@@ -1244,7 +1308,6 @@ class UvManager {
           result = 'invalid';
         }
       }
-      this._minDesktopCache.set(version, result);
     } catch (err) {
       this.log.warn(`[compat] could not read ${PYPI_PACKAGE} ${version} metadata: ${String(err.message).split('\n')[0]}`);
     } finally {
@@ -1266,9 +1329,12 @@ class UvManager {
     if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
     const data = await this._getPypiData();
     if (!data || !data.releases) return null;
+    this._pypiDoc = data;
     const releases = Object.entries(data.releases).map(([version, files]) => ({
       version,
-      yanked: Array.isArray(files) && files.length > 0 && files.every((f) => f && f.yanked === true),
+      // Same rule as the backend's release list (routes/version.py): a release with no files left, or only
+      // yanked ones, is withdrawn -- there is nothing to install.
+      yanked: Array.isArray(files) && files.every((f) => f && f.yanked === true),
     }));
     const minBackendVersion = engineCompat.desktopMinBackendVersion();
     const picked = await engineCompat.selectCompatibleRelease({
@@ -1314,7 +1380,7 @@ class UvManager {
     const issue = this.installedPairIssue();
     if (!issue) return;
     this.log.error(`[compat] installed pair is incompatible: ${issue.reasons.join('; ')}`);
-    if (previousVersion && previousVersion !== issue.engineVersion) {
+    if (previousVersion && previousVersion !== issue.engineVersion && engineCompat.isInstallableVersion(previousVersion)) {
       this.log.warn(`[compat] rolling the engine back to ${previousVersion}`);
       if (onProgress) onProgress(`Restoring FlowPad engine ${previousVersion}`);
       const pin = await this._pythonPinForUpgrade();
@@ -2828,7 +2894,13 @@ class UvManager {
     let spec = engineSpec(`${PYPI_PACKAGE}@latest`);
     let pin;
     if (version) {
+      if (!engineCompat.isInstallableVersion(version)) {
+        throw installFailure(`Refusing to install the engine: ${JSON.stringify(version)} is not a release version. Your existing installation has been preserved.`);
+      }
       const target = await this._resolveEngineTarget(version);
+      if (!engineCompat.isInstallableVersion(target.version)) {
+        throw installFailure(`Refusing to install the engine: PyPI named ${JSON.stringify(target.version)}, which is not a release version. Your existing installation has been preserved.`);
+      }
       // The agreed release must still satisfy the contract — a desktop downgraded since the
       // offer, or a floor it never met, is caught here with the working engine untouched.
       await this._assertCandidateCompatible(target.version);

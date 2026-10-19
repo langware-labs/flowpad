@@ -1986,5 +1986,170 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     }
   }
 
+  // ── Desktop <-> engine compatibility: review follow-ups ──────────────────────
+  {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const http = require('http');
+    const crypto = require('crypto');
+    const { createZip } = require('./zip-writer');
+    const engineCompatMod = require('./engine-compat');
+    const mk = (appVersion) => {
+      const m = new UvManager(silentLog, appVersion ? { appVersion } : {});
+      m._toolVenvDir = () => path.join(os.tmpdir(), 'uvtest-compat-no-such-tool');
+      return m;
+    };
+    const withDesktopFloor = async (floor, fn) => {
+      const real = engineCompatMod.desktopMinBackendVersion;
+      engineCompatMod.desktopMinBackendVersion = () => floor;
+      try { await fn(); } finally { engineCompatMod.desktopMinBackendVersion = real; }
+    };
+    const makeVenv = (engineVersion, compatJson) => {
+      const venv = fs.mkdtempSync(path.join(os.tmpdir(), 'uvtest-compat2-'));
+      const bin = path.join(venv, IS_WIN ? 'Scripts' : 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      const flowBin = path.join(bin, IS_WIN ? 'flow.exe' : 'flow');
+      fs.writeFileSync(flowBin, '');
+      const site = path.join(venv, ...(IS_WIN ? ['Lib', 'site-packages'] : ['lib', 'python3.11', 'site-packages']), 'flow_sdk');
+      fs.mkdirSync(site, { recursive: true });
+      fs.writeFileSync(path.join(site, '_version.py'), `__version__ = "${engineVersion}"\n`);
+      if (compatJson !== undefined) fs.writeFileSync(path.join(site, 'compat.json'), compatJson);
+      return { venv, flowBin };
+    };
+
+    // #2: an engine that is too OLD (no desktop floor of its own) is reported without inventing a "null" floor.
+    await withDesktopFloor('0.2.50', async () => {
+      const { venv, flowBin } = makeVenv('0.2.40');
+      const issue = mk('0.2.60').installedPairIssue(flowBin);
+      ok(issue && !/null|undefined/.test(issue.message), `no "null" in the panel text: ${issue && JSON.stringify(issue.message)}`);
+      ok(issue.message.includes('requires Backend 0.2.50 or newer'), 'it names the floor that failed');
+      eq(issue.desktopTooOld, false, 'the ENGINE is the old side -> upgrading it is safe');
+      fs.rmSync(venv, { recursive: true, force: true });
+    });
+    {
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      const issue = mk('0.2.45').installedPairIssue(flowBin);
+      eq(issue.desktopTooOld, true, 'the engine demands a newer desktop -> the DESKTOP is the old side');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+
+    // #3: a release with no files left is withdrawn, exactly as the backend lists it.
+    {
+      const m = mk('0.2.45');
+      m._getPypiData = async () => ({
+        info: { version: '0.2.70' },
+        releases: { '0.2.70': [], '0.2.69': [{ yanked: true }, { yanked: true }], '0.2.68': [{ yanked: false }] },
+      });
+      m._readCandidateMinDesktop = async () => ({ minDesktopVersion: null });
+      eq((await m.resolveCompatibleEngineVersion()).version, '0.2.68', 'empty and fully-yanked releases are never picked');
+    }
+
+    // #5: the floor is read with Range requests first; uv is only the fallback.
+    {
+      const wheel = (withCompat) => {
+        const entries = [];
+        for (let i = 0; i < 300; i++) entries.push({ name: `flow_sdk/m${i}.py`, data: crypto.randomBytes(1024) });
+        if (withCompat) entries.push({ name: 'flow_sdk/compat.json', data: '{"min_desktop_version": "0.2.60"}' });
+        return createZip(entries);
+      };
+      const inMemory = (zip, { honourRange = true } = {}) => async (_u, header) => {
+        if (!honourRange) return { status: 200 };
+        const r = /^bytes=(\d*)-(\d*)$/.exec(header);
+        const from = r[1] === '' ? Math.max(0, zip.length - Number(r[2])) : Number(r[1]);
+        const to = r[1] === '' ? zip.length - 1 : Math.min(Number(r[2]), zip.length - 1);
+        return { status: 206, contentRange: `bytes ${from}-${to}/${zip.length}`, body: zip.subarray(from, to + 1) };
+      };
+      const uvCalls = [];
+      const make = (fetchRange) => {
+        const m = mk('0.2.45');
+        m._wheelUrl = async () => 'https://files.pythonhosted.org/flowpad.whl';
+        m._fetchRange = fetchRange;
+        m._readCandidateViaUv = async (v) => { uvCalls.push(v); return { minDesktopVersion: 'from-uv' }; };
+        return m;
+      };
+
+      let m = make(inMemory(wheel(true)));
+      eq(await m._readCandidateMinDesktop('0.2.70'), { minDesktopVersion: '0.2.60' }, 'the floor comes out of the wheel by ranges');
+      eq(uvCalls, [], 'uv was not needed');
+      m._fetchRange = async () => { throw new Error('cached: must not fetch again'); };
+      eq(await m._readCandidateMinDesktop('0.2.70'), { minDesktopVersion: '0.2.60' }, 'and it is cached for the session');
+
+      m = make(inMemory(wheel(false)));
+      eq(await m._readCandidateMinDesktop('0.2.10'), { minDesktopVersion: null }, 'a wheel without compat.json is a pre-contract release (legacy)');
+      eq(uvCalls, [], 'still no uv');
+
+      m = make(inMemory(wheel(true), { honourRange: false }));
+      eq(await m._readCandidateMinDesktop('0.2.71'), { minDesktopVersion: 'from-uv' }, 'no Range support -> falls back to unpacking with uv');
+      eq(uvCalls, ['0.2.71'], 'uv ran once, for that version');
+
+      m = make(inMemory(wheel(true)));
+      m._wheelUrl = async () => null;
+      eq(await m._readCandidateMinDesktop('0.2.72'), { minDesktopVersion: 'from-uv' }, 'no usable wheel URL -> falls back too');
+
+      m = make(inMemory(wheel(true)));
+      eq(await m._readCandidateMinDesktop('1.2.3 --index-url http://evil'), 'invalid', 'a non-release string is rejected before anything runs');
+      eq(uvCalls, ['0.2.71', '0.2.72'], 'and uv never saw it');
+    }
+
+    // #5: the real ranged GET, against a local server that honours Range and one that does not.
+    {
+      const body = crypto.randomBytes(5000);
+      const serve = (honour) => new Promise((resolve) => {
+        const srv = http.createServer((req, res) => {
+          const r = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+          if (honour && r) {
+            const from = Number(r[1]); const to = Math.min(Number(r[2]), body.length - 1);
+            res.writeHead(206, { 'Content-Range': `bytes ${from}-${to}/${body.length}`, 'Content-Length': to - from + 1 });
+            res.end(body.subarray(from, to + 1));
+          } else { res.writeHead(200, { 'Content-Length': body.length }); res.end(body); }
+        }).listen(0, '127.0.0.1', () => resolve(srv));
+      });
+      const m = mk('0.2.45');
+      let srv = await serve(true);
+      let got = await m._fetchRange(`http://127.0.0.1:${srv.address().port}/x`, 'bytes=10-19');
+      eq([got.status, got.contentRange, got.body.length], [206, 'bytes 10-19/5000', 10], 'a 206 carries Content-Range and exactly the bytes asked for');
+      eq(got.body.equals(body.subarray(10, 20)), true, 'and they are the right bytes');
+      srv.close();
+      srv = await serve(false);
+      got = await m._fetchRange(`http://127.0.0.1:${srv.address().port}/x`, 'bytes=10-19');
+      eq(got, { status: 200 }, 'a server that ignores Range -> status only, the body is dropped unread');
+      srv.close();
+    }
+
+    // #6: where the wheel may come from.
+    {
+      const m = mk('0.2.45');
+      m._pypiDoc = { releases: {
+        '0.2.80': [{ packagetype: 'bdist_wheel', url: 'https://files.pythonhosted.org/packages/a/flowpad-0.2.80-py3-none-any.whl' }],
+        '0.2.81': [{ packagetype: 'bdist_wheel', url: 'https://evil.example.com/flowpad-0.2.81-py3-none-any.whl' }],
+        '0.2.82': [{ packagetype: 'bdist_wheel', yanked: true, url: 'https://files.pythonhosted.org/packages/b/flowpad-0.2.82-py3-none-any.whl' }],
+        '0.2.83': [{ packagetype: 'sdist', url: 'https://files.pythonhosted.org/packages/c/flowpad-0.2.83.tar.gz' }],
+      } };
+      eq(await m._wheelUrl('0.2.80'), 'https://files.pythonhosted.org/packages/a/flowpad-0.2.80-py3-none-any.whl', 'a PyPI-hosted wheel is used');
+      eq(await m._wheelUrl('0.2.81'), null, 'a wheel on another host is not read');
+      eq(await m._wheelUrl('0.2.82'), null, 'a yanked wheel is not read');
+      eq(await m._wheelUrl('0.2.83'), null, 'an sdist is not a wheel');
+    }
+
+    // #6: a version that is not release-shaped never reaches an install command.
+    {
+      const m = mk('0.2.45');
+      const spawned = [];
+      m._uvToolInstallForce = async (args) => { spawned.push(args.join(' ')); };
+      await assert.rejects(() => m.upgrade({ version: '1.2.3 --index-url http://evil' }), /not a release version/); passed++;
+      await assert.rejects(() => m.upgrade({ version: '1.2.3&calc' }), /not a release version/); passed++;
+      eq(spawned, [], 'nothing was spawned for either');
+
+      const { venv, flowBin } = makeVenv('0.2.70', '{"min_desktop_version": "0.2.60"}');
+      m._flowBin = flowBin;
+      m._pythonPinForUpgrade = async () => '3.11';
+      m._resolveFlowBin = async () => flowBin;
+      await assert.rejects(() => m._verifyInstalledPairOrRollback('1.2.3 --x'), /not compatible/); passed++;
+      eq(spawned, [], 'a malformed "previous version" is not pinned back either');
+      fs.rmSync(venv, { recursive: true, force: true });
+    }
+  }
+
   console.log(`uv-manager.test.js: ${passed} assertions passed`);
 })().catch((err) => { console.error(err); process.exit(1); });

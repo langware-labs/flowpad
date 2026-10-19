@@ -434,6 +434,71 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.dialogCalls.length, 1, 'the periodic check does not show the combined screen a second time');
   }
 
+  // ── an installed desktop/engine pair the contract forbids (engine-compat.js): repaired with a DIRECTION ──
+  {
+    const engineOld = { message: 'm', reasons: ['FlowPad Desktop 0.2.47 requires Backend 0.2.60 or newer (backend: 0.2.40)'], engineVersion: '0.2.40', minDesktopVersion: null, desktopTooOld: false };
+    const desktopOld = { message: 'm', reasons: ['FlowPad Backend 0.2.70 requires Desktop 0.2.60 or newer (installed Desktop: 0.2.47)'], engineVersion: '0.2.70', minDesktopVersion: '0.2.60', desktopTooOld: true };
+    const compatible = { version: '0.2.65', minDesktopVersion: null };
+    const upgradedTo = (env) => env.uv.upgrades.map((u) => u.version);
+
+    {
+      // The ENGINE is the old side: upgrading it is the safe direction -- done without a question.
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: engineOld, compatibleRelease: compatible });
+      await env.t.getDesktopUpdateVersion();
+      const r = await env.t.installAndStartBackend();
+      eq(r.ok, true, 'engine too old: startup succeeds');
+      eq(upgradedTo(env), ['0.2.65'], 'engine too old: the compatible engine is installed');
+      eq(env.dialogCalls.length, 0, 'engine too old: no question (an upgrade cannot lose data)');
+      eq(r.backendJustUpgraded, true, 'engine too old: the start waits the longer post-upgrade window');
+    }
+    {
+      // The DESKTOP is the old side and the feed says "current": the repair is a downgrade -> ask, and honour "switch".
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: desktopOld, compatibleRelease: compatible, dialogResponses: [0] });
+      await env.t.getDesktopUpdateVersion();
+      const r = await env.t.installAndStartBackend();
+      eq(env.dialogCalls.length, 1, 'desktop too old: the user is asked first');
+      ok(env.dialogCalls[0].buttons.includes('Switch to engine 0.2.65') && env.dialogCalls[0].buttons.includes('Keep the current engine'), 'the question names the engine it would install');
+      ok(/needs a newer FlowPad Desktop/.test(env.dialogCalls[0].message) && /downgrade/.test(env.dialogCalls[0].detail), 'and says it is a downgrade');
+      eq(env.dialogCalls[0].defaultId, 1, '"Keep" is the default (Enter does not downgrade)');
+      eq(upgradedTo(env), ['0.2.65'], 'desktop too old, user switches: the compatible engine is installed');
+      eq(r.ok, true, 'and startup succeeds');
+    }
+    {
+      // ...and honour "keep": nothing is changed, the app still starts.
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: desktopOld, compatibleRelease: compatible, dialogResponses: [1] });
+      await env.t.getDesktopUpdateVersion();
+      const r = await env.t.installAndStartBackend();
+      eq(r.ok, true, 'desktop too old, user keeps: startup still succeeds');
+      eq(upgradedTo(env), [], 'the engine is NOT downgraded behind the user\'s back');
+      ok(env.logLines.some((l) => /the user kept engine 0\.2\.70/.test(l)), 'and the log says the user chose it');
+    }
+    {
+      // A newer desktop is known: the engine is held (update-plan.js), the desktop offer is the fix -- no question, no change.
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.48', pairIssue: desktopOld, compatibleRelease: compatible });
+      await env.t.getDesktopUpdateVersion();
+      await env.t.installAndStartBackend();
+      eq(upgradedTo(env), [], 'newer desktop pending: the engine is held');
+      ok(!env.dialogCalls.some((d) => /needs a newer FlowPad Desktop/.test(d.message || '')), 'and the downgrade question is not asked');
+    }
+    {
+      // Nothing compatible to move to (or it is what is installed already): nothing happens, nothing is asked.
+      for (const release of [null, { version: '0.2.70', minDesktopVersion: null }]) {
+        const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: desktopOld, compatibleRelease: release });
+        await env.t.getDesktopUpdateVersion();
+        const r = await env.t.installAndStartBackend();
+        eq([r.ok, upgradedTo(env), env.dialogCalls.length], [true, [], 0], `no usable target (${release ? 'same as installed' : 'none'}): startup proceeds untouched`);
+      }
+    }
+    {
+      // A repair that FAILS must not break startup either.
+      const env = load({ appVersion: '0.2.47', desktopFeed: '0.2.47', pairIssue: engineOld, compatibleRelease: compatible, upgradeThrows: 'uv failed' });
+      await env.t.getDesktopUpdateVersion();
+      const r = await env.t.installAndStartBackend();
+      eq(r.ok, true, 'a failing repair: startup continues with the installed engine');
+      ok(env.logLines.some((l) => /could not repair the incompatible pair/.test(l)), 'and the log says why');
+    }
+  }
+
   // ── next launch of the NEW desktop: install exactly the agreed version ───
   {
     const env = load({ appVersion: '0.2.48', desktopFeed: '0.2.48', dialogResponses: [] });

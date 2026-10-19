@@ -1660,6 +1660,26 @@ async function installStep(fn) {
   }
 }
 
+/**
+ * The installed engine needs a newer desktop than this one, and the update feed did not offer one: ask before
+ * moving the engine backward. Resolves true to switch, false to keep the installed engine (Esc = keep).
+ */
+async function confirmEngineSwitch(issue, picked) {
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'warning',
+    title: 'FlowPad needs an update',
+    message: `The installed FlowPad engine (${issue.engineVersion}) needs a newer FlowPad Desktop than this one (${app.getVersion()}).`,
+    detail:
+      `${issue.reasons.join('\n')}\n\n` +
+      `Updating the desktop app is the best fix. Or FlowPad can switch to engine ${picked.version}, which works with this ` +
+      'desktop. That is a downgrade: the newer engine may have changed files the older one cannot read.',
+    buttons: [`Switch to engine ${picked.version}`, 'Keep the current engine'],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  return response === 0;
+}
+
 // `quiet`: the caller (the repair panel's Retry) shows its own panel for a failure — no second panel from here.
 async function installAndStartBackend({ quiet = false } = {}) {
   let backendJustUpgraded = false;
@@ -1775,21 +1795,32 @@ async function installAndStartBackend({ quiet = false } = {}) {
 
       // ── Installed-pair compatibility (engine-compat.js) ────────────────
       // A desktop downgrade, or an engine moved by hand (`uv tool install flowpad==X`), can leave
-      // a pair the contract forbids. Repair by installing the newest compatible release, under the
-      // same gate every other engine change obeys. When the repair is unavailable (held for a
-      // pending desktop update, offline), start what is installed and warn — a running old pair
-      // beats a bricked app, and the next launch retries.
+      // a pair the contract forbids. The repair installs the newest compatible release, under the
+      // same gate every other engine change obeys -- and it has a DIRECTION:
+      //   - the ENGINE is the old side (below the desktop's floor): upgrading it is the safe fix, done silently;
+      //   - the DESKTOP is the old side (the engine demands a newer desktop): the repair moves the engine
+      //     BACKWARD, and a newer engine may already have written state an older one cannot read -- ask first.
+      //     (When the desktop feed knows a newer desktop, engineChangeAllowed() holds and the desktop update
+      //     offer above is the fix; this question is for a feed that says "current" while the engine disagrees.)
+      // When the repair is unavailable or declined (held for a pending desktop update, offline, "Keep"), start
+      // what is installed and warn -- a running old pair beats a bricked app, and the next launch retries.
       const pairIssue = uvManager.installedPairIssue(activeBin);
       if (pairIssue) {
         log.warn(`[compat] installed desktop/engine pair is incompatible: ${pairIssue.reasons.join('; ')}`);
         if (engineChangeAllowed('repairing an incompatible engine') === 'allow') {
           try {
-            sendStatus('Installing a compatible FlowPad engine');
             const picked = await uvManager.resolveCompatibleEngineVersion();
-            if (picked) {
-              await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
-              activeBin = uvManager.getInstalledFlowBin() || activeBin;
-              backendJustUpgraded = true;
+            if (picked && picked.version !== pairIssue.engineVersion) {
+              const go = pairIssue.desktopTooOld ? await confirmEngineSwitch(pairIssue, picked) : true;
+              if (isQuitting) return { ok: false };
+              if (go) {
+                sendStatus('Installing a compatible FlowPad engine');
+                await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
+                activeBin = uvManager.getInstalledFlowBin() || activeBin;
+                backendJustUpgraded = true;
+              } else {
+                log.warn(`[compat] the user kept engine ${pairIssue.engineVersion}, which needs a newer desktop than ${app.getVersion()}`);
+              }
             }
           } catch (compatErr) {
             log.warn(`[compat] could not repair the incompatible pair, starting the installed engine: ${compatErr.message}`);
