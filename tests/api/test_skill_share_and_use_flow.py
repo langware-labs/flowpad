@@ -118,6 +118,16 @@ async def _publish(client, node_id: str, workdir: Path, remote: Path) -> dict:
     return ApiResponse(**push.json()).data
 
 
+async def _settled_dependency(consumer: Project, name: str) -> dict:
+    """The dependency as listed once its background fetch, index and Load are done (add answers at once)."""
+    from flow_sdk.builtin import project_dependencies
+
+    await project_dependencies.settled(str(consumer.id))
+    listed = (await (await Project.get_by_id(consumer.id)).dependencies_action()).data["dependencies"]
+    return next(d for d in listed if d["name"] == name)
+
+
+
 @pytest.mark.asyncio
 async def test_skill_shared_by_git_is_usable_from_another_project(
     bootstrapped_client, user, bootstrap_payload, tmp_path
@@ -158,7 +168,7 @@ async def test_skill_shared_by_git_is_usable_from_another_project(
         json={"source": str(producer_root)},
     )
     assert resp.status_code == 200, resp.text
-    dep = ApiResponse(**resp.json()).data["dependency"]
+    dep = await _settled_dependency(consumer, ApiResponse(**resp.json()).data["dependency"]["name"])
     assert dep["state"] == "ready", dep
     # Declared as the repository the push went to — what lets it travel.
     assert dep["source"].startswith("git+file://"), dep
@@ -242,7 +252,7 @@ async def test_publishing_needs_a_remote_no_action_can_create(
         json={"source": str(root)},
     )
     assert resp.status_code == 200, resp.text
-    dep = ApiResponse(**resp.json()).data["dependency"]
+    dep = await _settled_dependency(consumer, ApiResponse(**resp.json()).data["dependency"]["name"])
     # Still works here — the degenerate path that skips what sharing is for.
     assert dep["state"] == "ready", dep
     assert dep["source"] == f"file:{canonical_posix_path(str(root))}"
