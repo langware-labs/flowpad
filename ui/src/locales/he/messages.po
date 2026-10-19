@@ -4969,6 +4969,7 @@ msgid "Chat with this deployed agent"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "שיחות"
 
@@ -30407,10 +30408,6 @@ msgstr ""
 msgid "your Claude Code"
 msgstr "ה-Claude Code שלך"
 
-#: src/pages/entry/InstallLanding.tsx
-msgid "Your CloudNSite workspace is ready"
-msgstr "סביבת העבודה CloudNSite שלך מוכנה"
-
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Your diagnosis request came back"
 msgstr "בקשת האבחון שלך חזרה"
@@ -30487,6 +30484,10 @@ msgstr ""
 
 #~ msgid "Your teams"
 #~ msgstr ""
+
+#: src/pages/entry/InstallLanding.tsx
+msgid "Your workspace is ready"
+msgstr "סביבת העבודה שלך מוכנה"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
