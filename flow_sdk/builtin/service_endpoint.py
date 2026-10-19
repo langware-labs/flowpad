@@ -28,6 +28,7 @@ field set on both sides.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Literal, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
@@ -50,6 +51,8 @@ from flow_sdk.schema.data_spec.service_endpoint_spec import (
 )
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import DeploymentStatus
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceEndpoint(Entity):
@@ -288,6 +291,9 @@ class ServiceEndpoint(Entity):
 
             is_compute_node = get_assigned_compute_node() is not None
             url = await self._direct_url_from_hub(route) if is_compute_node else None
+            if is_compute_node and url is None:
+                # No row there, or the call failed: hub_get answers None for both. Not silent.
+                logger.warning("direct-url: the hub gave no address for %s; answering on this box", self.id)
             url = url or local_direct_url(self, route)
             if url is None:
                 return ApiFailResponse(
