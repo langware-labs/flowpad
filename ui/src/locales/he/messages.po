@@ -4859,6 +4859,7 @@ msgid "Chat with this deployed agent"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Chats"
 msgstr "שיחות"
 

@@ -6,6 +6,6 @@ describe('RAIL_ITEMS', () => {
     // Every other screen is opened by asking for it in the top bar (the smart
     // navigator). Stream Inbox stays ungated: a logout purges the hub's
     // conversations, and its screen is where "Login required" brings the user back in.
-    expect(RAIL_ITEMS).toEqual(['stream_inbox', 'automations', 'credentials']);
+    expect(RAIL_ITEMS).toEqual(['chats', 'stream_inbox', 'automations', 'credentials']);
   });
 });
