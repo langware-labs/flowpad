@@ -9,9 +9,15 @@ title: Cloud sharing — what leaves your machine
 
 Sharing selected assets can publish their content into the project's hub-hosted repository. **Send files to cloud** is a separate action that publishes the project folder. Linking, sharing assets, and sending the whole folder are different operations.
 
-After linking, sharing offers a [project role](./project-roles.md) for each recipient who is not already a member. Guest is the default; None sends without a new membership. Existing roles remain unchanged. Guest does not allow opening the project under the current permissions. Choose Member when the recipient needs to see the project. Membership is added only when you click Share, not Link.
+The Share dialog opens with **To** empty unless the surface that opened it names recipients; it never refills the previous share's recipients.
 
-**Don't ask again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
+When the project is not linked, Share first asks to link it. **Link** links silently and goes straight on to the Share dialog; **Skip** shares without linking, so recipients get a copy. Sharing from an unlinked project shows an amber warning icon next to the title; clicking it links the project.
+
+After linking, each recipient who is not a project member gets a line under **To**: "*name* is not a member · Fix · Learn more". **Fix** swaps the line for a [project role](./project-roles.md) picker set to Member. Nothing is chosen until you press Fix, and an unfixed recipient is shared with no new membership. Existing roles remain unchanged. Membership is added only when you click Share, not Link.
+
+Sharing a file decides git or copy from who can read the project's files **after** this share's invitations: the send invites first, then sends. Fix → Member (or Editor, Admin) therefore sends the live git link in the same share; None or Guest sends everyone a copy. A conversation started with someone on another machine arrives without a project — the hub strips `project_id`.
+
+**Don't show again** skips the link reminder on this instance; it neither links projects automatically nor changes permissions. Reset it in Preferences → Notifications → Cloud link prompt when sharing.
 
 > This page is load-bearing. `tests/unit/test_cloud_share_contract.py` asserts
 > that the lists below match what the code actually sends; adding a field to

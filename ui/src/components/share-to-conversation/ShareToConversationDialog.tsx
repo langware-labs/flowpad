@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, GitBranch, Loader2, MessageSquarePlus, Send, X } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -23,7 +23,7 @@ import {
 import { useInstancePreferences } from '@sdk/react/hooks';
 import { useShareOwnerProject } from '@src/hooks/use-share-owner-project';
 import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
-import { NO_PROJECT_ROLE, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { NO_PROJECT_ROLE, outsidersAfter, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 import { WikiButton } from '@src/components/wiki-tip/WikiButton';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -105,31 +105,11 @@ interface ShareToConversationDialogProps {
 
 const MAX_CONVERSATIONS = 5;
 
+/** The role Fix gives a non-member: one that can read the project's files, so the share goes by git. */
+const FIX_ROLE = 'member';
+
 /** Sentinel for the "start a new conversation" row (never a real UUID). */
 const NEW_CONVERSATION = '__new__';
-
-/** Who the last share went to — prefilled the next time the dialog opens
- *  without recipients. A per-viewer convenience: absent storage just means
- *  an empty "To". */
-const LAST_PARTICIPANTS_KEY = 'flowpad.share.lastParticipants';
-
-function readLastParticipants(): ConversationParticipant[] {
-  try {
-    const raw = window.localStorage.getItem(LAST_PARTICIPANTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) ? (parsed as ConversationParticipant[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function rememberLastParticipants(participants: ConversationParticipant[]): void {
-  try {
-    window.localStorage.setItem(LAST_PARTICIPANTS_KEY, JSON.stringify(participants));
-  } catch {
-    /* storage unavailable: nothing to remember */
-  }
-}
 
 /** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
@@ -236,12 +216,8 @@ export function ShareToConversationDialog({
     );
     setSkipMembership(false);
   }, [membershipRecipients, owningProject?.id]);
-  const selectedRoles = Object.fromEntries(
-    membership.nonMembers.map((r) => [
-      r,
-      roleChoices[r] ?? (!thingShare && membership.roles.includes('guest') ? 'guest' : NO_PROJECT_ROLE),
-    ]),
-  );
+  // No role until the sender presses Fix on a non-member (which picks Member).
+  const selectedRoles = Object.fromEntries(membership.nonMembers.map((r) => [r, roleChoices[r] ?? NO_PROJECT_ROLE]));
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -316,8 +292,7 @@ export function ShareToConversationDialog({
 
   useEffect(() => {
     if (!open) return;
-    // No recipient given: share with whoever the last share went to.
-    setParticipants(initialParticipantsRef.current ?? readLastParticipants());
+    setParticipants(initialParticipantsRef.current ?? []);
     setTitleInput('');
     setNote(defaultNoteRef.current ?? '');
     setFiles([]);
@@ -418,14 +393,14 @@ export function ShareToConversationDialog({
     const conv = conversationsRef.current.find((c) => c.id === selected);
     setGitSharing(gitEligibleRef.current || (conv?.git_sharing_enabled ?? false));
   }, [selected, gitCapable, preflight.answered, thingShare]);
-  // A thing share picks git only when every recipient can already read the
-  // project's files (a member with a real role) and the asset can travel by
-  // git. Anyone else in the share means everyone gets a copy.
+  // A thing share picks git only when every recipient can read the project's
+  // files once this send's invites land (the send invites before it sends), and
+  // the asset can travel by git. Anyone else in the share means everyone gets a copy.
   const everyoneInProject =
     owningProject?.remote === true &&
     participants.length > 0 &&
     membership.status === 'ready' &&
-    membership.outsiders.length === 0;
+    outsidersAfter(membership.outsiders, selectedRoles).length === 0;
   // What this share actually does: the rule for a thing share, the sender's toggle otherwise.
   const shareByGit = thingShare ? everyoneInProject && preflight.available : gitSharing;
 
@@ -646,7 +621,6 @@ export function ShareToConversationDialog({
               }
             }
           }
-          if (participants.length) rememberLastParticipants(participants);
           setSharedConversationId(convId);
           onShared?.(convId);
           if (thingShare && isRemote) {
@@ -706,12 +680,19 @@ export function ShareToConversationDialog({
             <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
             {!shared && step === 'compose' && owningProject && !owningProject.remote && (
-              <span className="me-6 ms-auto text-xs font-normal text-amber-600">
-                <Trans>Untracked sharing</Trans>{' '}
-                <button type="button" className="underline" disabled={busy} onClick={() => void linkOwner()}>
-                  link&amp;track
-                </button>
-              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-amber-500"
+                disabled={busy}
+                onClick={() => void linkOwner()}
+                title={t`Not linked to cloud — recipients get a copy. Click to link & track.`}
+                aria-label={t`Link project to cloud`}
+                data-testid="share-untracked"
+              >
+                <AlertTriangle className="h-4 w-4" />
+              </Button>
             )}
           </DialogTitle>
         </DialogHeader>
@@ -732,34 +713,37 @@ export function ShareToConversationDialog({
               </p>
               <WikiButton wikiword="Cloud sharing" linkText={t`Learn more`} className="mt-2" />
             </div>
-            <div className="rounded-md border p-3">
-              <span className="font-medium">{owningProject?.displayName}</span>
-              <p className="text-xs text-muted-foreground">
-                <Trans>Not linked to cloud</Trans>
-              </p>
-            </div>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input type="checkbox" checked={dontAsk} onChange={(e) => setDontAsk(e.target.checked)} disabled={busy} />
-              <Trans>Don’t ask again</Trans>
-            </label>
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
-            <Button
-              className="bg-green-600 hover:bg-green-700"
-              onClick={() => void linkOwner()}
-              disabled={busy}
-              data-testid="share-link-project"
-            >
-              {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Link</Trans>}
-            </Button>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground underline"
-              disabled={busy}
-              onClick={continueSharing}
-              data-testid="share-skip-link"
-            >
-              <Trans>Skip</Trans>
-            </button>
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={dontAsk}
+                  onChange={(e) => setDontAsk(e.target.checked)}
+                  disabled={busy}
+                />
+                <Trans>Don’t show again</Trans>
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="text-xs text-muted-foreground underline hover:text-foreground"
+                  disabled={busy}
+                  onClick={continueSharing}
+                  data-testid="share-skip-link"
+                >
+                  <Trans>Skip</Trans>
+                </button>
+                <Button
+                  className="bg-green-600 px-6 hover:bg-green-700"
+                  onClick={() => void linkOwner()}
+                  disabled={busy}
+                  data-testid="share-link-project"
+                >
+                  {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Link</Trans>}
+                </Button>
+              </div>
+            </div>
           </div>
         ) : shared ? (
           <div className="flex flex-col items-center gap-4 py-6 text-sm" data-testid="share-status">
@@ -838,6 +822,81 @@ export function ShareToConversationDialog({
               </div>
             </div>
 
+            {membership.status === 'loading' && (
+              <p className="text-xs text-muted-foreground">
+                <Trans>Checking project membership…</Trans>
+              </p>
+            )}
+            {membership.status === 'error' && (
+              <div className="text-xs text-destructive">
+                {membership.error}{' '}
+                <button type="button" onClick={() => void membership.refresh()} className="underline">
+                  <Trans>Retry</Trans>
+                </button>
+                <label className="mt-2 flex items-center gap-2 text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={skipMembership}
+                    onChange={(event) => setSkipMembership(event.target.checked)}
+                  />
+                  <Trans>Share without project membership</Trans>
+                </label>
+              </div>
+            )}
+            {membership.status === 'ready' &&
+              membership.nonMembers.map((recipient) =>
+                roleChoices[recipient] === undefined ? (
+                  <p
+                    key={recipient}
+                    className="-mt-2 flex flex-wrap items-center gap-x-2 text-xs text-amber-500"
+                    data-testid="share-non-member"
+                  >
+                    <span>
+                      <Trans>
+                        <span className="font-medium">{recipient}</span> is not a member
+                      </Trans>
+                    </span>
+                    <span className="text-muted-foreground">·</span>
+                    <button
+                      type="button"
+                      className="font-medium underline hover:text-foreground"
+                      disabled={busy || !membership.roles.includes(FIX_ROLE)}
+                      onClick={() => setRoleChoices((current) => ({ ...current, [recipient]: FIX_ROLE }))}
+                      data-testid="share-non-member-fix"
+                    >
+                      <Trans>Fix</Trans>
+                    </button>
+                    <span className="text-muted-foreground">·</span>
+                    <WikiButton wikiword="Project roles" linkText={t`Learn more`} />
+                  </p>
+                ) : (
+                  <div key={recipient} className="flex flex-col gap-1.5">
+                    <label className="flex items-center gap-2 text-xs" htmlFor={`role-${recipient}`}>
+                      <Trans>Project role</Trans>
+                      <WikiButton wikiword="Project roles" />
+                      {membership.nonMembers.length > 1 && (
+                        <span className="truncate text-muted-foreground">{recipient}</span>
+                      )}
+                    </label>
+                    <select
+                      id={`role-${recipient}`}
+                      className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                      disabled={busy}
+                      value={selectedRoles[recipient]}
+                      onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: e.target.value }))}
+                      data-testid="share-project-role"
+                    >
+                      <option value={NO_PROJECT_ROLE}>{t`None`}</option>
+                      {membership.roles.map((role) => (
+                        <option key={role} value={role}>
+                          {role.charAt(0).toUpperCase() + role.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ),
+              )}
+
             {!hideTitle && (
               <div className="flex flex-col gap-1.5">
                 <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -908,59 +967,6 @@ export function ShareToConversationDialog({
                 <span className="truncate rounded-md border bg-muted/40 px-2 py-1 text-xs">{source.label}</span>
               )}
             </div>
-            {membership.status === 'loading' && (
-              <p className="text-xs text-muted-foreground">
-                <Trans>Checking project membership…</Trans>
-              </p>
-            )}
-            {membership.status === 'error' && (
-              <div className="text-xs text-destructive">
-                {membership.error}{' '}
-                <button type="button" onClick={() => void membership.refresh()} className="underline">
-                  <Trans>Retry</Trans>
-                </button>
-                <label className="mt-2 flex items-center gap-2 text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={skipMembership}
-                    onChange={(event) => setSkipMembership(event.target.checked)}
-                  />
-                  <Trans>Share without project membership</Trans>
-                </label>
-              </div>
-            )}
-            {membership.status === 'ready' &&
-              membership.nonMembers.map((recipient) => (
-                <div key={recipient} className="flex flex-col gap-1.5">
-                  <label className="flex items-center gap-2 text-xs" htmlFor={`role-${recipient}`}>
-                    <Trans>Project role</Trans>
-                    <WikiButton wikiword="Project roles" />
-                    {membership.nonMembers.length > 1 && (
-                      <span className="truncate text-muted-foreground">{recipient}</span>
-                    )}
-                  </label>
-                  <select
-                    id={`role-${recipient}`}
-                    className="rounded-md border border-input bg-background px-2 py-1.5 text-sm"
-                    disabled={busy}
-                    value={selectedRoles[recipient]}
-                    onChange={(e) => setRoleChoices((current) => ({ ...current, [recipient]: e.target.value }))}
-                    data-testid="share-project-role"
-                  >
-                    <option value={NO_PROJECT_ROLE}>{t`None`}</option>
-                    {membership.roles.map((role) => (
-                      <option key={role} value={role}>
-                        {role.charAt(0).toUpperCase() + role.slice(1)}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedRoles[recipient] === 'guest' && (
-                    <p className="text-xs text-muted-foreground">
-                      <Trans>Guest does not grant access to the project.</Trans>
-                    </p>
-                  )}
-                </div>
-              ))}
             {thingShare && gitCapable && participants.length > 0 && (
               <p
                 className="text-xs text-muted-foreground"
