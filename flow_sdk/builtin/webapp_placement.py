@@ -669,7 +669,8 @@ def tell_hub(deployment) -> None:
     pushed rows: it asks the box for the placement's endpoints and adopts them at
     the box's ids (``deployment/<id>/refresh-endpoints``) — which reads this box's
     database, so the caller must not hold its write lock while waiting (an index
-    pass does). Only a box has a hub placement to refresh; a desktop's are its own.
+    pass does). Only a box the hub placed (it was assigned a compute node) has a hub
+    placement to refresh; a desktop's are its own.
     """
     task = asyncio.get_running_loop().create_task(_tell_hub(deployment))
     _TELLING.add(task)
@@ -677,9 +678,9 @@ def tell_hub(deployment) -> None:
 
 
 async def _tell_hub(deployment) -> None:
-    from flow_sdk.instance_settings.runtime import own_sandbox_id  # noqa: PLC0415
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
 
-    if not await asyncio.to_thread(own_sandbox_id):
+    if not get_assigned_compute_node():
         return
     from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
 
