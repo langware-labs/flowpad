@@ -217,6 +217,27 @@ runs:
       shell: bash
       working-directory: ui
 
+    # The first-run FLOW scenario needs the gate closed when it starts and leaves its own waiver behind, and
+    # a machine with every tool installed finishes the scenario above all OK (which opens the gate for good):
+    # so it gets a fresh backend of its own, with setup NOT switched off.
+    - name: Reset backend state before the first-run flow scenario
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' }}
+      env:
+        MINIHUB_RELOAD: 'False'
+        FLOWPAD_SKIP_DOTENV: 'true'
+        FLOWPAD_SKIP_LOCK: 'true'
+      run: scripts/ci_e2e_reset_backend.sh
+      shell: bash
+
+    - name: Playwright — first-run flow scenario
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' }}
+      env:
+        SETUP_FE_PORT: '5099'
+        SETUP_BE_PORT: '6099'
+      run: npx playwright test --config tests/e2e/first-run-flow/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
+      shell: bash
+      working-directory: ui
+
     # First-run setup has now fired and left its wizard page as the last-active
     # view; dependencies needs a fresh database again, with setup switched off.
     - name: Reset backend state before dependencies

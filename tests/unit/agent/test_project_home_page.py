@@ -40,7 +40,7 @@ def _declare(root: Path, home_page, *, entries=()) -> None:
 def _ready_home(project, asset=None, kind=None):
     result = {"asset": asset, "type": kind, "lifecycle": {
         "state": "ready", "project_id": str(project.id), "detail": "", "run": None, "asset": asset, "display": None,
-        "setup_available": False, "tree": None, "phase": None,
+        "setup_available": False, "blocked": None, "tree": None, "phase": None,
     }}
     if asset:
         result["load_run"] = None

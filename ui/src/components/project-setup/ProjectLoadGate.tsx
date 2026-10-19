@@ -10,6 +10,7 @@ import { AskForm } from '@src/components/ask/AskForm';
 import { SetupFailureActions } from './SetupFailureActions';
 import { useSetupFix } from './use-setup-fix';
 import { SetupTreeView } from './SetupTreeView';
+import { FIRST_RUN_BLOCKED, FirstRunWaiting, useFirstRunGate, useFirstRunResume } from './first-run-gate';
 import { useProjectLoad, validLoad } from './use-project-load';
 import { useProjectLoadStore } from './project-load-store';
 
@@ -72,14 +73,19 @@ export function ProjectLoadGate({
   // Opening an APP means "make it work": its owed setup (or one repair per failure) runs here, unasked,
   // in the view the app will fill. A gate for the project alone offers Set up instead.
   const setUp = useRef<string | null>(null);
+  // Refused because the first-run wizard is not done: not an owed setup to retry, a wait with a way on --
+  // and the setup begins again by itself the moment the wizard is done.
+  const gate = useFirstRunGate();
+  const blocked = result?.blocked === FIRST_RUN_BLOCKED;
+  useFirstRunResume(blocked, gate, () => void load(true));
   useEffect(() => {
     const owed =
       (result?.state === 'setup_required' && !!asset) || (result?.state === 'failed' && result.setup_available);
-    if (!owed || lifecycle.starting) return;
+    if (!owed || blocked || lifecycle.starting) return;
     if (loadedLocation !== location.key || setUp.current === location.key) return;
     setUp.current = location.key;
     void load(true);
-  }, [result, asset, lifecycle.starting, loadedLocation, location.key, load]);
+  }, [result, asset, blocked, lifecycle.starting, loadedLocation, location.key, load]);
   const name = project?.displayName || projectId;
   // Working: a load in flight, or a setup run going that is not waiting on the person.
   const busy = lifecycle.starting || !result || result.state === 'running';
@@ -139,7 +145,8 @@ export function ProjectLoadGate({
         {result?.state !== 'setup_required' && result?.phase !== 'load' && !lifecycle.questionId && (
           <SetupTreeView tree={lifecycle.tree} />
         )}
-        {result?.state === 'setup_required' && !asset && (
+        {blocked && <FirstRunWaiting />}
+        {result?.state === 'setup_required' && !asset && !blocked && (
           <Button className="self-start" disabled={lifecycle.starting} onClick={() => void load(true)}>
             <Trans>Set up</Trans>
           </Button>

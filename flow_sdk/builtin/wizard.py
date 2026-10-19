@@ -221,6 +221,20 @@ class Wizard(Entity):
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
             return {"result": None, "approved": False}
 
+    @computed_field
+    @property
+    def first_run_gate_open(self) -> bool:
+        """Whether project setup may begin -- ``True`` for every wizard but the first-run one.
+
+        A ``@computed_field`` off the same state file as ``run_state``, so the UI learns the gate opened
+        through the entity push it already watches. The rules (and why "done" is a stamp, not the last
+        run's answer) are in ``core/wizard/first_run``."""
+        from flow_sdk.core.wizard.first_run import first_run_gate_open  # noqa: PLC0415
+
+        if not self.id:
+            return True
+        return first_run_gate_open(str(self.id), self.name or "")
+
     async def run(
         self,
         *,
@@ -464,6 +478,23 @@ class Wizard(Entity):
                 "wizard": result.model_dump(mode="json"),
             }
         )
+
+    @action.post(action_name="continue-without-setup")
+    async def continue_without_setup_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/continue-without-setup` -- the person goes on without finishing this wizard.
+
+        Opens the first-run gate for THIS SESSION only (a declined install or a blocked policy never ends all
+        green, and a gate that only an all-green run opens would leave them stuck). A restart forgets it, so the
+        wizard opens again until it has run fully. Only the first-run wizard gates anything; asking it of
+        another is a 400. The wizard's own warning in the footer still says it is unfinished."""
+        from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
+        from flow_sdk.core.wizard.first_run import FIRST_RUN_WIZARD, waive_for_session  # noqa: PLC0415
+
+        if self.name != FIRST_RUN_WIZARD:
+            return ApiFailResponse(message=f"{self.name or 'This wizard'} does not gate project setup.", status_code=400)
+        waive_for_session(str(self.id))
+        await _notify_wizard_watchers(str(self.id))
+        return ApiSuccessResponse(data={"first_run_gate_open": True})
 
     @action.get(action_name="run-detail")
     async def run_detail_action(self) -> ApiResponse:

@@ -31,6 +31,7 @@ import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useProjectSetupStore } from './project-setup-store';
 import { countDrawn, SetupTreeView } from './SetupTreeView';
+import { FirstRunWaiting, isFirstRunBlocked, useFirstRunGate, useFirstRunResume } from './first-run-gate';
 import { useSetupRun } from './use-setup-run';
 
 /**
@@ -166,13 +167,21 @@ export function ProjectSetupDialog({
     await Promise.all([load(), recheckProjectReadiness()]);
   });
 
+  // Refused because the first-run wizard is not done: a wait with a way on, not an error -- and the setup begins
+  // by itself, once, the moment the wizard is done.
+  const gate = useFirstRunGate();
+  const [blocked, setBlocked] = useState(false);
+
   const start = async () => {
     try {
       await setup.start();
+      setBlocked(false);
     } catch (e) {
-      notify.error({ title: errorMessage(e, t`Could not start the setup`) });
+      if (isFirstRunBlocked(e)) setBlocked(true);
+      else notify.error({ title: errorMessage(e, t`Could not start the setup`) });
     }
   };
+  useFirstRunResume(blocked, gate, () => void start());
 
   const stop = async () => {
     try {
@@ -344,6 +353,8 @@ export function ProjectSetupDialog({
             ))}
           </ul>
         )}
+
+        {blocked && <FirstRunWaiting />}
 
         <SetupStatusLine
           tree={setup.tree}

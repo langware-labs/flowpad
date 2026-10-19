@@ -15,6 +15,7 @@ import {
   PanelRightClose,
   RotateCcw,
   TriangleAlert,
+  X,
   XCircle,
 } from 'lucide-react';
 
@@ -35,6 +36,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
+import { FIRST_RUN_WIZARD } from '@src/components/setup-incomplete/open-setup-wizard';
+import { useFirstRunFlowStore } from '@src/components/first-run-flow/first-run-flow-store';
 import { closeWizardPopup } from './wizard-popup-store';
 import { rungWord, useBackendText } from './wizard-texts';
 import { WizardForm } from './WizardForm';
@@ -260,21 +263,31 @@ function WizardViewerBody({
   // source; `[data-minimize-anchor="process-chip"]` (the footer's chip) is its target, resolved by
   // the animation itself.
   const isPopup = presentation === 'popup';
+  // Window 1 of the first-run flow: X leads on to window 2 (`first-run-flow`); minimize does not.
+  const inFirstRunFlow = useFirstRunFlowStore((state) => state.step === 'wizard') && wizard.name === FIRST_RUN_WIZARD;
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
+  const setFlowMinimized = useFirstRunFlowStore((state) => state.setMinimized);
   const minimizeAndLeave = useCallback(() => {
     // Nothing to pause: the run is entirely server-side and keeps going
     // whether or not this dialog is on screen. "Minimize" is just closing it —
     // the page behind was never left, and the fly animation tells a person
-    // where the wizard went (the footer chip reopens it).
+    // where the wizard went (the footer chip reopens it). In the first-run flow it is NOT the way
+    // on to window 2 (that is X or Skip): the flow waits for how the run ends.
+    if (inFirstRunFlow) setFlowMinimized(true);
     animateMinimizeToProcessChip(dialogContentRef.current);
     closeWizardPopup();
-  }, []);
+  }, [inFirstRunFlow, setFlowMinimized]);
+  // X (and Skip): close it. In the first-run flow that leads on to window 2; a run already going carries on.
+  const closeIt = useCallback(() => closeWizardPopup(), []);
   // "Go to homepage" from a popup must also close it: the popup sits OVER the page, so navigating
   // alone changed only the page behind it and the click looked like it did nothing.
   const goHome = useCallback(() => {
+    // A finished run opens the first-run gate a moment after this screen says so (the backend stamps it after the
+    // sign-in that follows the installs): closing now must not read as Skip. The flow waits for the gate instead.
+    if (inFirstRunFlow && finished) setFlowMinimized(true);
     if (isPopup) closeWizardPopup();
     navigation.goHome({ homePage: true });
-  }, [isPopup, navigation]);
+  }, [isPopup, navigation, inFirstRunFlow, finished, setFlowMinimized]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
@@ -417,6 +430,11 @@ function WizardViewerBody({
   // wizard over (a newer start replaces the one in flight, killing its shell and agent).
   const anyStuck = isPopup && joinedSteps.some(({ live, outcome }) => silentForMs(live, outcome, now) > STUCK_AFTER_MS);
   const notYetStarted = isPopup && !starting && !runView.live && !state.result;
+  // Start was pressed and no step has reported yet: the backend resets the last run, settles an LLM source and
+  // opens its shell before the first step goes live -- seconds the screen used to show nothing for (the whole
+  // Start block went away the moment `starting` was set, spinner included). It stays, and says what is going on.
+  // The run's ROOT goes live at once, well before any step does, so the test is on the steps themselves.
+  const awaitingFirstStep = isPopup && starting && !state.result && !joinedSteps.some((row) => row.live || row.outcome);
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
   const notFinished =
@@ -679,12 +697,17 @@ function WizardViewerBody({
           time to read what any of it is for. Once started (by this click, or
           because a headless box already ran it before anyone was watching) there
           is nothing left to offer — Reset/Run are the generic editor page's job. */}
-      {!conversational && notYetStarted ? (
-        <div className="flex justify-center">
+      {!conversational && (notYetStarted || awaitingFirstStep) ? (
+        <div className="flex flex-col items-center gap-2">
           <Button onClick={() => void startWizard()} disabled={starting} data-testid="wizard-start">
             {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            <Trans>Start</Trans>
+            {starting ? <Trans>Starting…</Trans> : <Trans>Start</Trans>}
           </Button>
+          {starting ? (
+            <p className="text-xs text-muted-foreground" role="status" data-testid="wizard-starting">
+              <Trans>Checking what is already installed…</Trans>
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -781,7 +804,7 @@ function WizardViewerBody({
       // wizard instead of answering the question (and, mounted later, would
       // also sit on top of it). Non-modal has neither problem; the backdrop
       // below stands in for the dimming a modal would have drawn.
-      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && minimizeAndLeave()}>
+      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && closeIt()}>
         <div className="fixed inset-0 z-50 bg-black/80" aria-hidden="true" />
         <DialogContent
           ref={dialogContentRef}
@@ -795,15 +818,29 @@ function WizardViewerBody({
           <DialogHeader className="sr-only">
             <DialogTitle>{bt(wizard.label || wizard.name || '')}</DialogTitle>
           </DialogHeader>
+          {/* Before Start there is nothing to minimize: X closes it. Minimize appears once a run is going and
+              keeps it going in the background. */}
+          {!notYetStarted && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute right-11 top-3 h-7 w-7 text-muted-foreground"
+              onClick={minimizeAndLeave}
+              title={t`Minimize — it keeps running in the background`}
+              data-testid="wizard-minimize"
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
             className="absolute right-3 top-3 h-7 w-7 text-muted-foreground"
-            onClick={minimizeAndLeave}
-            title={t`Minimize — it keeps running in the background`}
-            data-testid="wizard-minimize"
+            onClick={closeIt}
+            title={t`Close`}
+            data-testid="wizard-close"
           >
-            <Minus className="h-4 w-4" />
+            <X className="h-4 w-4" />
           </Button>
           {main}
         </DialogContent>

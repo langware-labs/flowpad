@@ -29,9 +29,8 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _log = logging.getLogger(__name__)
 
-#: Set to ``true`` on a test backend to keep the first-run llm-setup trigger from running.
-SKIP_FIRST_RUN_SETUP_ENV = "FLOWPAD_SKIP_FIRST_RUN_SETUP"
-
+# Both live with the gate that also reads them (``core/wizard/first_run``); re-exported under the old names.
+from flow_sdk.core.wizard.first_run import SKIP_FIRST_RUN_SETUP_ENV  # noqa: E402,F401
 
 # ── Built-in callbacks ───────────────────────────────────────────────────────
 
@@ -337,9 +336,6 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
     _log.info("wizard trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
 
 
-LLM_SETUP_WIZARD = "llm-setup"
-
-
 @trigger_callbacks.register(
     "builtin_run_llm_setup",
     meaning="First-run setup, fired by the llm-setup wizard's own trigger: settles an "
@@ -362,7 +358,7 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
         return
 
     from flow_sdk.core.compute.llm_source import person_is_watching  # noqa: PLC0415
-    from flow_sdk.core.wizard.start import navigate_to_wizard, start_wizard  # noqa: PLC0415
+    from flow_sdk.core.wizard.start import start_wizard  # noqa: PLC0415
 
     # A popup wizard, and a person looking: put its page in front of them — steps blank, its
     # explanation readable — and stop. Racing an install question onto the screen the instant the
@@ -377,7 +373,10 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
 
     on_hub_box = get_assigned_runtime() is not None
     if wizard.popup and person_is_watching() and not on_hub_box:
-        await navigate_to_wizard(wizard)
+        # The app drives the first-run flow itself (every load, before a project setup, on an invitation): its
+        # three windows, and what each Skip leads to, are the tab's (`first-run-flow`). Opening the popup from
+        # here too would put the wizard up when it has already run fully.
+        _log.info("llm setup trigger %r: a live tab is watching; the app drives the first-run flow", trigger.uname)
         return
 
     _source, result = await start_wizard(wizard, unattended=True, shown=not on_hub_box)
