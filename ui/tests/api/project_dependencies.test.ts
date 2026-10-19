@@ -117,8 +117,8 @@ describe('project dependencies (include_dirs)', () => {
     await project.addDependency(contextDir);
     const dep = await loaded;
     expect(dep.state).toBe('ready');
-    const resolved = await sdk.Project.getById(project.id);
-    expect(resolved?.include_dirs ?? []).toContain(contextDir);
+    // The announcement read the listing, which carries the resolved context.
+    expect(project.include_dirs).toContain(contextDir);
 
     // It is listed among the declared dependencies, with nothing to warn about.
     const listed = await project.dependencies();
