@@ -59,9 +59,9 @@ const side = vi.hoisted(() => ({
 /** The trigger section links into the Automations dock, so the form now reads dock
  *  navigation — which is URL-first and needs a Router the unit tier has not
  *  got. The link target has its own test. */
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), goHome: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), goHome: vi.fn(), dock: null as { isRoot: boolean } | null }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: nav, currentDock: null }),
+  useDockNavigation: () => ({ navigation: nav, currentDock: nav.dock }),
 }));
 
 vi.mock('@src/navigation/useSideWindows', () => ({
@@ -295,6 +295,14 @@ describe('a fully finished run', () => {
       useFirstRunFlowStore.getState().end();
     },
   );
+
+  it('"Go to homepage" does not navigate when the app is already on the home page', () => {
+    nav.dock = { isRoot: true };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(finished)} />);
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    expect(nav.goHome).not.toHaveBeenCalled();
+    nav.dock = null;
+  });
 
   it('says nothing about being finished while the run is still going, or has not run at all', () => {
     const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };

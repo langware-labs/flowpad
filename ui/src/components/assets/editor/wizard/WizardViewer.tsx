@@ -247,7 +247,7 @@ function WizardViewerBody({
 
   const state = wizard.run_state ?? {};
   const conversational = Boolean(wizard.agent);
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   // A run that settled OK, not one merely mid-run: `on_step`'s own partial
   // writes are always NOT_YET (see `_report_progress`), so this is only true
   // once the REAL final result lands.
@@ -288,8 +288,9 @@ function WizardViewerBody({
   // alone changed only the page behind it and the click looked like it did nothing.
   const goHome = useCallback(() => {
     if (isPopup) closeIt();
-    navigation.goHome({ homePage: true });
-  }, [isPopup, navigation, closeIt]);
+    // Already on the home page (the app root): navigating would re-run its loader and flash it as if reopened.
+    if (!currentDock?.isRoot) navigation.goHome({ homePage: true });
+  }, [isPopup, navigation, currentDock, closeIt]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
