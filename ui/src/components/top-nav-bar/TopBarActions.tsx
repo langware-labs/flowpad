@@ -5,7 +5,6 @@ import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActio
 import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { chromeActionClusterClassName } from '@src/components/entity-actions/action-button-styles';
 import { BookmarksStarButton } from './BookmarksStarButton';
-import { OpenInWindowButton } from './OpenInWindowButton';
 import { PageShareButton } from './PageShareButton';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
@@ -58,7 +57,6 @@ export function TopBarActions({
         hideFavorite
         trailing={
           <>
-            <OpenInWindowButton />
             <AssetDiscussButton />
             {favorite && <BookmarksStarButton favorite={favorite} />}
           </>
@@ -76,7 +74,6 @@ export function TopBarActions({
   return (
     <div className={`flex shrink-0 items-center gap-0.5 ${chromeActionClusterClassName}`} data-testid="top-nav-actions">
       <PageShareButton dock={dock} />
-      <OpenInWindowButton />
       <AssetDiscussButton />
       {favorite && <BookmarksStarButton favorite={favorite} />}
     </div>
