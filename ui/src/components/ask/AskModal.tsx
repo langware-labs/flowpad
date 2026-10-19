@@ -11,6 +11,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { AskChoiceBlock } from './AskChoiceBlock';
+import { AskSkipButton } from './AskSkipButton';
 import { AskItems } from './AskItems';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
@@ -37,7 +38,7 @@ export function AskModalRoot() {
 }
 
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
-  const { question, hasChoices, values, setValues, error, busy, settledKind, settledMessage, submit, answer, cancel, agentAnswered } =
+  const { question, hasChoices, values, setValues, error, busy, settledKind, settledMessage, submit, answer, cancel, skip, agentAnswered } =
     useAskQuestion(questionId);
   // The question's words were written by the backend (a compute op's prompt, detail and buttons).
   const bt = useBackendText();
@@ -100,7 +101,7 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                 for a value ("copy the Phone number ID"), and pure noise beside a
                 plain yes/no confirm, which has nothing to guide anyone THROUGH
                 and whose `setup.md` is written for the next maintainer, not for
-                whoever is answering. */}
+                whoever is answering. (Beside "pick a way" cards the backend sends none.) */}
             {question.guide && items.length === 0 && fieldsOf(question.fields).length > 0 ? (
               <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-modal-guide">
                 <MarkdownView value={question.guide} compact />
@@ -154,6 +155,8 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                 {error}
               </p>
             ) : null}
+
+            <AskSkipButton skippable={question.skippable} busy={busy} onSkip={() => void skip()} />
 
             {items.length > 0 ? null : (
               <DialogFooter>

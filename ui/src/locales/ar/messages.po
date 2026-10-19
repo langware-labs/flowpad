@@ -25207,6 +25207,7 @@ msgstr "تخطي جميع طلبات الإذن (--dangerously-skip-permissions)
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "تخطي الموافقات وبيئة العزل الآمن (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/ask/AskSkipButton.tsx
 #: src/components/llm-setup/LlmSetupView.tsx
 msgid "Skip for now"
 msgstr "تخطَّ الآن"
@@ -25238,6 +25239,10 @@ msgstr ""
 #: src/components/automations/RunsView.tsx
 msgid "Skipped"
 msgstr ""
+
+#: src/components/ask/AskSkipButton.tsx
+msgid "Skipped — setup goes on without it."
+msgstr "تم التخطي — يستمر الإعداد بدونه."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skipped on this machine"
