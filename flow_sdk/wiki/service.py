@@ -152,9 +152,14 @@ async def _implicit_project_assets(project: Project, canonical: str) -> list[Typ
             continue
         if entity_cls.get_type() in {"project", "wiki", "wiki_entry"}:
             continue
-        for entity in await entity_cls.get_all({"project_id": str(project.id)}):
-            if getattr(entity, "asset_ref", None) and _matches_word(entity, canonical):
-                matches[str(entity.typeid)] = entity.typeid
+        # Match the word in SQL: loading every project row to compare one name made
+        # each link cost a full hydrate of the project (minutes on a big project).
+        for field in ("uname", "name"):
+            if field not in fields:
+                continue
+            for entity in await entity_cls.get_all({"project_id": str(project.id), field: canonical}):
+                if getattr(entity, "asset_ref", None) and _matches_word(entity, canonical):
+                    matches[str(entity.typeid)] = entity.typeid
     return list(matches.values())
 
 
