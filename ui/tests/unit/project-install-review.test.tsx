@@ -76,6 +76,7 @@ vi.mock('@src/components/conversation/asset-review/useRunReceivedSkill', () => (
 }));
 
 import { MessageEntityChip } from '@src/components/conversation/FlowMessageBubble';
+import { ProjectInstallAction } from '@src/components/conversation/asset-review/ProjectInstallAction';
 import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from '@src/project-home-page/home-page-state';
 import { ambientLoadProjectId } from '@src/routes/loaders/load-redirects';
 
@@ -167,6 +168,35 @@ describe('MessageEntityChip — project reference', () => {
     expect(screen.getByTestId('project-install-button').textContent).toContain('Install project');
     expect(screen.queryByTestId('asset-install-project')).toBeNull();
     expect(screen.queryByTestId('asset-install-global')).toBeNull();
+  });
+
+  it('opens a resolved cloud-only project URL-first without installing it', () => {
+    const row = new Project({ id: PID, name: 'Apollo', remote: true } as Partial<Project>);
+    h.projects = [row];
+    entityState(PROJECT_TID, { data: row });
+    const setup = vi.spyOn(Project.prototype, 'setupFromGitOrigin');
+    renderChip();
+    openReview();
+
+    expect(actionState()).toBe('cloud-only');
+    expect(screen.getByRole('heading', { name: 'Received project' })).toBeTruthy();
+    expect(screen.queryByTestId('project-install-button')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Open project' }));
+    expect(setup).not.toHaveBeenCalled();
+    expect(h.openDock).toHaveBeenCalledTimes(1);
+    const landing = new URL(String(h.openDock.mock.calls[0][0].toUrl()), 'http://flowpad.local');
+    expect(landing.pathname).toContain(`/project/${PID}`);
+    expect(landing.searchParams.get(HOME_PAGE_PARAM)).toBe(HOME_PAGE_OPEN);
+    expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
+  });
+
+  it('does not offer cloud-only Open after the canonical entity request is refused', () => {
+    const staleRow = new Project({ id: PID, name: 'Apollo', remote: true } as Partial<Project>);
+    h.projects = [staleRow];
+    render(<ProjectInstallAction typeId={PROJECT_TID} entityRow={staleRow} entityUnavailable />);
+    expect(screen.queryByRole('button', { name: 'Open project' })).toBeNull();
+    expect(screen.queryByTestId('asset-open-entity')).toBeNull();
+    expect(h.openDock).not.toHaveBeenCalled();
   });
 
   it('the popup previews the project: its name and the git URL it clones', () => {

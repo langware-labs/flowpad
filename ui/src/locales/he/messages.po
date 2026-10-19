@@ -2235,6 +2235,10 @@ msgstr ""
 msgid "Add New Hook"
 msgstr "הוסף Hook חדש"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add note"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Add people"
 msgstr ""
@@ -3323,11 +3327,15 @@ msgstr "מאושר לסשן הזה"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr ""
 
-#: src/components/top-nav-bar/AppButton.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "אפליקציות"
+
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Apps and agents"
+msgstr ""
 
 #: src/components/asset-counters/app-counters.tsx
 msgid "Apps in {projectName} with a deployment"
@@ -3452,6 +3460,7 @@ msgid "Ask anything — I can search the guides and walk you through them."
 msgstr "אפשר לשאול כל דבר — אחפש בהדריכים ואדריך אותך בהם."
 
 #: src/i18n/pref-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Ask every time"
 msgstr ""
 
@@ -3502,6 +3511,10 @@ msgstr "לבקש מהם אישור"
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
+msgstr ""
+
+#: src/i18n/pref-labels.ts
+msgid "Ask to link an unlinked project to cloud before sharing its assets."
 msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -4001,8 +4014,8 @@ msgid "Back to stream inbox"
 msgstr "חזרה לדואר הנכנס"
 
 #: src/components/top-nav-bar/TopNavBar.tsx
-msgid "Back to tabs"
-msgstr ""
+#~ msgid "Back to tabs"
+#~ msgstr ""
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -4941,6 +4954,11 @@ msgstr ""
 msgid "Checking out the projects and opening the session."
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Checking project membership…"
+msgstr ""
+
 #: src/components/webapp-display/WebappDisplay.tsx
 msgid "Checking the app…"
 msgstr "Checking the app…"
@@ -5603,6 +5621,10 @@ msgstr "Hub בענן"
 #: src/notifications/ingest.ts
 msgid "Cloud is not available"
 msgstr "הענן אינו זמין"
+
+#: src/i18n/pref-labels.ts
+msgid "Cloud link prompt when sharing"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Cloud machine"
@@ -6863,9 +6885,12 @@ msgid "Could not link asset to cloud"
 msgstr "לא ניתן לקשר את הנכס לענן"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Could not link project to cloud"
 msgstr "לא ניתן לקשר את הפרויקט לענן"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Could not link this project."
+msgstr ""
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Could not list budgets: {loadError}"
@@ -9243,11 +9268,16 @@ msgid "Domains accessible from sandbox"
 msgstr "דומיינים נגישים מהסביבה המבודדת"
 
 #: src/i18n/pref-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Don't ask"
 msgstr ""
 
 #: src/navigation/smart-ask.ts
 msgid "Don't ask again"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Don’t ask again"
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -12157,6 +12187,10 @@ msgstr "משימת קבוצה נוצרה עם בעיות"
 msgid "Guest"
 msgstr "אורח"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Guest does not grant access to the project."
+msgstr ""
+
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -13403,8 +13437,8 @@ msgid "Issue diagnoses recorded by the assistant. Click a row to view the full d
 msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על שורה כדי לצפות באבחנה המלאה."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "It cannot be removed from the project"
-msgstr ""
+#~ msgid "It cannot be removed from the project"
+#~ msgstr ""
 
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -13923,6 +13957,7 @@ msgstr "מידע על כפילויות"
 msgid "Learn about your data"
 msgstr "למד עוד על הנתונים שלך"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
@@ -14083,6 +14118,10 @@ msgstr "חזרה לשורה"
 msgid "Lines"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/links/link-handlers.ts
 msgid "Link copied"
@@ -14091,6 +14130,10 @@ msgstr "הקישור הועתק"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link project to cloud to securely and privately manage your shared assets."
+msgstr ""
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
@@ -17223,6 +17266,7 @@ msgstr "ללא"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -17362,6 +17406,10 @@ msgstr "לא מותקן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Not linked to cloud"
 msgstr ""
 
 #: src/components/assets/ProjectDependencyDialog.tsx
@@ -17918,6 +17966,7 @@ msgid "On the schedule {expr}"
 msgstr ""
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr ""
 
@@ -18100,7 +18149,6 @@ msgid "open {name}"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "פתיחת {name}"
@@ -18490,6 +18538,7 @@ msgstr "פתח תוכנית"
 msgid "Open process"
 msgstr "פתח תהליך"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -20088,6 +20137,10 @@ msgstr "פרויקט נדרש"
 msgid "Project requirements"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Project role"
+msgstr ""
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
 msgstr "סודות הפרויקט במכונה זו"
@@ -20737,6 +20790,10 @@ msgid "Received pointer: {0}"
 msgstr "מצביע התקבל: {0}"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received project"
+msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received project — review before installing."
 msgstr ""
 
@@ -21033,10 +21090,11 @@ msgstr "סשן עובד מרוחק"
 msgid "Remove"
 msgstr "הסרה"
 
+#. placeholder {0}: asset.label
 #. placeholder {0}: c.label
 #. placeholder {0}: source.name
-#. placeholder {0}: source.name || source.provider
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -21804,6 +21862,7 @@ msgstr "חודש — הבדיקה הבאה תתבצע במחזור הקרוב."
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -21894,6 +21953,10 @@ msgstr "חשוף את ההודעה שהמשימה הזו נגזרה ממנה"
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Review"
 msgstr "סקירה"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review and open the shared project."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
@@ -23619,7 +23682,6 @@ msgstr ""
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -23937,6 +23999,10 @@ msgstr "שיתוף באמצעות Git origin"
 msgid "Share with team"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share without project membership"
+msgstr ""
+
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
@@ -23985,6 +24051,10 @@ msgstr "משותף עם {0}"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
+msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Sharing options"
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -24255,8 +24325,8 @@ msgid "Show value"
 msgstr ""
 
 #: src/components/top-nav-bar/AppButton.tsx
-msgid "Showing {name}"
-msgstr "מוצג: {name}"
+#~ msgid "Showing {name}"
+#~ msgstr "מוצג: {name}"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -24632,6 +24702,7 @@ msgstr ""
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "דילוג"
@@ -24658,6 +24729,10 @@ msgstr "דילוג על בדיקת ההרשאות ההתחלתית בעת ההפ
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skip it…"
 msgstr ""
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Skip on this machine only — undo any time"
+#~ msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip Permissions Warmup"
@@ -26570,6 +26645,7 @@ msgid "There are no projects on this machine yet. Open one, then use the link ag
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
 msgstr ""
 
@@ -27758,6 +27834,10 @@ msgstr "מעקב שגיאה ({0} שורות)"
 msgid "Track {0}"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Track your shared assets"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -28155,6 +28235,10 @@ msgstr "סשן ללא כותרת"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
 msgstr "משימה ללא כותרת"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Untracked sharing"
+msgstr ""
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"

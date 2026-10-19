@@ -18,6 +18,7 @@ export type ProjectInstallState =
   | 'install'
   | 'installing'
   | 'open'
+  | 'cloud-only'
   | 'error'
   | 'name-taken'
   | 'unavailable';
@@ -41,6 +42,11 @@ export function nameConflictOf(err: unknown): NameConflict | null {
         existing_project_id: data.existing_project_id,
       }
     : null;
+}
+
+/** A linked Project can be opened without inventing a local checkout. */
+export function isCloudOnlyProject(row?: Project | null): boolean {
+  return row?.remote === true && !row.origin && !row.fs_storage_mount_path;
 }
 
 /**
@@ -100,6 +106,8 @@ export function ProjectInstallAction({
   const { navigation } = useDockNavigation();
   const { row, installed: rowInstalled } = useLocalProject(typeId, entityRow);
   const installed = attachment ? attachment.installed : rowInstalled;
+  // Require the resolved entity, not a stale collection row after a refused fetch.
+  const cloudOnly = !attachment && !entityUnavailable && isCloudOnlyProject(entityRow);
   const [phase, setPhase] = useState<'idle' | 'installing' | 'error' | 'name-taken'>('idle');
   const [reason, setReason] = useState<string | null>(null);
   const [conflict, setConflict] = useState<NameConflict | null>(null);
@@ -117,17 +125,19 @@ export function ProjectInstallAction({
   const state: ProjectInstallState =
     phase === 'installing'
       ? 'installing'
-      : installed
-        ? 'open'
-        : phase === 'error'
-          ? 'error'
-          : phase === 'name-taken'
-            ? 'name-taken'
-            : row || attachment
-              ? 'install'
-              : entityUnavailable
-                ? 'unavailable'
-                : 'waiting';
+      : cloudOnly
+        ? 'cloud-only'
+        : installed
+          ? 'open'
+          : phase === 'error'
+            ? 'error'
+            : phase === 'name-taken'
+              ? 'name-taken'
+              : row || attachment
+                ? 'install'
+                : entityUnavailable
+                  ? 'unavailable'
+                  : 'waiting';
 
   const handleInstall = async (name?: string) => {
     if (!attachment && !row) return;
@@ -194,7 +204,7 @@ export function ProjectInstallAction({
             {row?.origin || attachment ? <Trans>Clone & Open</Trans> : <Trans>Install project</Trans>}
           </Button>
         )}
-        {state === 'open' && (
+        {(state === 'open' || state === 'cloud-only') && (
           <Button
             size="sm"
             variant="secondary"
@@ -205,7 +215,7 @@ export function ProjectInstallAction({
             data-testid="asset-open-entity"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            <Trans>Open</Trans>
+            {state === 'cloud-only' ? <Trans>Open project</Trans> : <Trans>Open</Trans>}
           </Button>
         )}
         {state === 'error' && (

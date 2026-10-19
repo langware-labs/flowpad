@@ -133,6 +133,7 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
         captured["et"] = entity_type
         captured["id"] = entity_id
         captured["action"] = action
+        captured["kwargs"] = kwargs
         return hub_payload
 
     async def fake_save(self_=None, **kwargs):
@@ -145,8 +146,9 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
     a = _make_action(methods=("get",))
     e = _make_entity(remote=True, members=[{"user_id": "stale"}])
 
-    result = await mod.reflect_to_hub(a, e, {}, "get")
+    result = await mod.reflect_to_hub(a, e, {"require_authoritative": True}, "get")
 
+    assert "require_authoritative" not in captured["kwargs"]
     assert result == expected_normalized
     assert captured["id"] == e.id
     assert captured["action"] == "members"
