@@ -14,6 +14,7 @@ import type { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ContentTabTooltip, WorkdirLine } from '@src/tabs/provider-meta';
 import { tagAttrs } from '@src/tags/tag-attrs';
+import { basename, normalizePath } from '@src/components/asset-manager/asset-row-helpers';
 import React, { useMemo } from 'react';
 
 /** The surfaces a review can start on. A function, not a module constant: this file sits in an
@@ -123,7 +124,12 @@ const OpenInBar: React.FC<{ path: string }> = ({ path }) => {
       Icon: FolderOpen,
       run: () => void fsRef.open({ select: true }),
     },
-    { id: 'flowpad', label: t`Open in Flowpad browser`, Icon: PanelTop, run: () => navigation.openFolder(dir) },
+    {
+      id: 'flowpad',
+      label: t`Open in Flowpad browser`,
+      Icon: PanelTop,
+      run: () => navigation.openFolder(dir, basename(normalizePath(path))),
+    },
   ].filter(Boolean) as { id: string; label: string; Icon: typeof FolderOpen; run: () => void }[];
   return (
     <div className="flex items-center justify-between gap-2 border-t pt-2">

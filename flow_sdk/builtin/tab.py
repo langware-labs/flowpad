@@ -1103,6 +1103,13 @@ async def ensure_tab_created(
             elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
                 existing.parent_tab_id = parent_tab_id
                 dirty = True
+            elif not parent_tab_id and existing.parent_tab_id is not None:
+                # Reopened from outside any workspace while its group is closed: no
+                # strip can show a child of a closed parent, so it comes back top-level.
+                parent = await Tab.get_one({"id": existing.parent_tab_id})
+                if parent is None or not parent.visible:
+                    existing.parent_tab_id = None
+                    dirty = True
         if dirty:
             await existing.save()
         if reopened:
