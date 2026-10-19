@@ -4,7 +4,7 @@ Bundle format (.flowmsg — a zip file):
   <slug>.flowmsg
   ├── flow_message.json                        (top-level FlowMessage fields; legacy: header.json)
   ├── entities.json                            (portable JSON per involved entity — the metadata axis)
-  ├── git_origins.json                         (optional GitOrigin map)
+  ├── fs_origins.json                          (optional FSOrigin map)
   ├── git_transfers.json                       (optional git-mode transfer map)
   ├── metadata/<type>-<id>/metadata.json       (optional metadata-only entity copy)
   └── attachment/
@@ -22,7 +22,6 @@ produced before the uname-sigil cleanup used ``<type>-@<id>``; unpack reads both
 from __future__ import annotations
 
 import asyncio
-import filecmp
 import json
 import logging
 import os
@@ -33,18 +32,27 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
+from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.transfer import (
+    _attachment_snapshot,
+    pack_tree,
+    portable_rel_path,
+)
 from flow_sdk.builtin.flow_message import (
+    _NON_MATERIALIZING_TYPE_IDS,
     FILE_VFS_PREFIX,
     PROMPT_FILE_VFS_PREFIX,
     AttachmentType,
     is_image_filename,
 )
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.utils.archive import is_zip_filename
 
 logger = logging.getLogger(__name__)
 
@@ -87,15 +95,10 @@ _TRANSFER_MODE_COPY = "copy"
 _TRANSFER_MODE_GIT = "git"
 _GIT_TRANSFERS_FILE = "git_transfers.json"
 
-# Origin map filename. FSOrigin generalized the git-only origin into a
-# kind-tagged pointer; the canonical file is now ``fs_origins.json``. During the
-# fleet-upgrade transition we ALSO dual-write the legacy ``git_origins.json``
-# (git-kind entries only) so an older receiver — which only knows the legacy
-# name — keeps resolving git shares. Readers try the new name, then the legacy.
-# The transfers file (``git_transfers.json``) is transfer-STRATEGY metadata, a
-# separate axis, and is intentionally left unrenamed.
+# The origin map: ``{"<type>-<id>": <FSOrigin dump>}`` for every git/local-backed
+# entry. The transfers file (``git_transfers.json``) is transfer-STRATEGY
+# metadata, a separate axis.
 _FS_ORIGINS_FILE = "fs_origins.json"
-_LEGACY_ORIGINS_FILE = "git_origins.json"
 # Message-level sender share options (a small side-manifest, like the origin
 # maps). Currently just ``{"create_bookmark": bool}`` — the receiver stamps it
 # onto each staged MessageAttachment so install can mint a favorite.
@@ -118,18 +121,34 @@ _HEADER_SERIALIZED_TYPES = frozenset(
     {
         "conversation",
         "flow_message",
-        "claude_session",
         "flowpad_diagnosis",
         "remote_worker_session",
     }
 )
 
 
-def _is_git_origin_dict(raw) -> bool:
-    """A persisted origin dict is git iff its kind is git (or absent — legacy)."""
-    from flow_sdk.builtin.fs_origin import DEFAULT_ORIGIN_KIND, resolve_origin_kind  # noqa: PLC0415
+#: Distinguishes "parsed to null" from "could not be parsed" in _read_json.
+_UNREADABLE = object()
 
-    return isinstance(raw, dict) and resolve_origin_kind(raw) == DEFAULT_ORIGIN_KIND
+
+def _write_origin_files(root: Path, origins: dict) -> None:
+    """Write the origin map to the bundle root — THE wire seam for origins.
+    Values are already-dumped FSOrigin dicts and are written through unchanged."""
+    if origins:
+        _write_json(root / _FS_ORIGINS_FILE, origins)
+
+
+def _read_origin_map(root: Path) -> dict:
+    """The bundle's origin map; ``{}`` when absent or unreadable (the ordinary
+    case for a bundle with no git-backed assets)."""
+    path = root / _FS_ORIGINS_FILE
+    if not path.is_file():
+        return {}
+    data = _read_json(path, _UNREADABLE)
+    if data is _UNREADABLE:
+        logger.warning("[bundle] unreadable %s; ignoring", _FS_ORIGINS_FILE)
+        return {}
+    return data or {}
 
 
 def _json_default(obj):
@@ -155,6 +174,47 @@ class GitShareOriginError(Exception):
     backstop for an origin that vanished between preflight and packing."""
 
 
+@dataclass(frozen=True)
+class ReferencePack:
+    """A git-reference type's bundle entry (``GitReferenceType.pack_reference``): the
+    metadata that rides, and the transportable origin the recipient resolves."""
+
+    metadata: dict
+    origin: Any
+
+
+class GitReferenceType(Protocol):
+    """What an entity class implements when its ``TypeInfo`` declares
+    ``receive_transfer`` as a git reference (artifact, folder, project).
+    The bundle code is generic; these hooks hold what is particular to a type."""
+
+    @classmethod
+    async def pack_reference(
+        cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None
+    ) -> ReferencePack | None:
+        """The bundle entry: the metadata that rides and the origin the
+        recipient resolves. ``None`` packs no reference — the packer falls
+        through to the next family."""
+
+    @classmethod
+    async def restore_reference(
+        cls, entity_id: str, metadata: dict, origin: Any, *, overwrite: bool, owner_typeid: str | None = None
+    ) -> bool:
+        """Install a staged reference: write the received row, and whatever else
+        makes it usable here. ``False`` means it could not be restored."""
+
+
+def git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
+    """The entity class of a type that travels as a git reference
+    (``TypeInfo.receive_transfer``), or ``None``."""
+    from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    if info is None or info.receive_transfer != RECEIVE_TRANSFER_GIT_REFERENCE:
+        return None
+    return SchemaRegistry.get_entity_cls(entry_type)
+
+
 # ---------------------------------------------------------------------------
 # pack_bundle
 # ---------------------------------------------------------------------------
@@ -176,11 +236,9 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
     )
     for att in msg_data.get("attachment", []):
         raw = att.get("data", "")
-        if raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX):
+        if raw.startswith((FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX)):
             att["data"] = f"attachment/files/{Path(raw).name}"
-    (tmp_root / _FLOW_MESSAGE_FILE).write_text(
-        json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(tmp_root / _FLOW_MESSAGE_FILE, msg_data)
 
 
 def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Path) -> None:
@@ -196,7 +254,7 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     from flow_sdk.storage import get_entity_embedded_storage
 
     raw = entry.data or ""
-    if not (raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX)):
+    if not raw.startswith((FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX)):
         return
     storage = get_entity_embedded_storage(flow_message.typeid)
     file_path = Path(storage.get_storage_path(raw))
@@ -207,32 +265,6 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     shutil.copy2(file_path, files_dir / file_path.name)
 
 
-async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/claude_session-@<id>/header.json`` (whitelisted
-    ClaudeTranscript fields).
-
-    Sender-local fields are stripped: ``cwd`` is the sender's filesystem path
-    and ``worker_session_id`` is the sender's AgenticProcess worker — both
-    meaningless (and path-leaking) on the receiver. The transcript *content*
-    rides separately as the share's FILE attachment; this header materializes
-    the entity row so the receiver's chip resolves a real name."""
-    from flow_sdk.builtin.claude_session import ClaudeSession
-
-    sess = await ClaudeSession.get_one({"id": entry_id})
-    if not sess:
-        return
-    sess_dir = attachment_dir / _entry_key("claude_session", entry_id)
-    sess_dir.mkdir(parents=True, exist_ok=True)
-    sess_data = sess.model_dump(
-        mode="python",
-        include={"id", "type", "name", "slug", "message_count"},
-        context={"skip_api_serializer": True},
-    )
-    (sess_dir / "header.json").write_text(
-        json.dumps(sess_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
-
-
 async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/flowpad_diagnosis-@<id>/header.json`` (the recorded
     diagnosis fields).
@@ -241,7 +273,13 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     the receiver re-materializes the row via ``.save()`` — the same create-or-
     fill-merge contract as TASK / CLAUDE_SESSION. Without this the forwarded
     diagnosis never transfers, the receiver can't materialize it, and their
-    ``body_downloaded`` (hence the Download button) never clears."""
+    ``body_downloaded`` (hence the Download button) never clears.
+
+    The environment snapshot (``reported_by`` / ``occurred_at`` / ``os`` /
+    ``app_version``) is part of the header because the receiver cannot recompute
+    it — their machine's OS and version describe the helper, not the reporter.
+    ``occurred_at`` is carried instead of ``created_date`` for the same reason:
+    the install stamps ``created_date`` locally."""
     from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
 
     diag = await FlowpadDiagnosis.get_one({"id": entry_id})
@@ -251,12 +289,24 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     diag_dir.mkdir(parents=True, exist_ok=True)
     diag_data = diag.model_dump(
         mode="python",
-        include={"id", "type", "name", "title", "symptoms", "rca", "fix", "summary", "user_report"},
+        include={
+            "id",
+            "type",
+            "name",
+            "title",
+            "symptoms",
+            "rca",
+            "fix",
+            "summary",
+            "user_report",
+            "reported_by",
+            "occurred_at",
+            "os",
+            "app_version",
+        },
         context={"skip_api_serializer": True},
     )
-    (diag_dir / "header.json").write_text(
-        json.dumps(diag_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(diag_dir / "header.json", diag_data)
 
 
 async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: Path) -> None:
@@ -267,7 +317,7 @@ async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: 
     receiver via ``RemoteWorkerSession.apply_snapshot`` (guest adopts
     host-authoritative fields by activity clock; a host row is never
     regressed). Serialized at pack/upload time, so every session message —
-    prompts, PromptResult replies, SESSION_EVENT lines — ships the session's
+    prompts, PromptCompletion replies, SESSION_EVENT lines — ships the session's
     state as of that turn for free. ``host_process_id`` / ``project_id`` are
     host-local (path-leaking) and never travel — the include list is
     ``RemoteWorkerSession.SNAPSHOT_FIELDS``."""
@@ -283,9 +333,7 @@ async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: 
         include=set(RemoteWorkerSession.SNAPSHOT_FIELDS),
         context={"skip_api_serializer": True},
     )
-    (rws_dir / "header.json").write_text(
-        json.dumps(rws_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(rws_dir / "header.json", rws_data)
 
 
 async def _pack_conversation_attachment(
@@ -338,10 +386,7 @@ async def _pack_conversation_attachment(
         # stores it on the local Conversation so both sides render the same row.
         "title": (conv.title or None),
     }
-    (conv_dir / "header.json").write_text(
-        json.dumps(conv_header, default=_json_default, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_json(conv_dir / "header.json", conv_header)
     await _pack_flow_message_entry(flow_message.id, attachment_dir)
 
 
@@ -353,6 +398,8 @@ async def _pack_attachment_entry(
     repo_cache: dict | None = None,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    *,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Dispatch a single attachment entry to the correct FAMILY packer.
 
@@ -361,7 +408,7 @@ async def _pack_attachment_entry(
       - DB-record (no on-disk asset_ref: task/conversation/flow_message/
         claude_session/flowpad_diagnosis) → their header.json serializers.
       - file-backed asset (``TypeInfo.main_subdir is not None``: skill, agent,
-        workflow, whiteboard, spec, prompt, markdown, plan, command, rule) →
+        workflow, chart, spec, prompt, markdown, plan, command, rule) →
         the ONE generic ``_pack_file_backed_attachment``.
     URL attachments have no bytes to bundle — silently skipped.
     """
@@ -380,8 +427,6 @@ async def _pack_attachment_entry(
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
-    elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
-        await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
@@ -415,12 +460,13 @@ async def _pack_attachment_entry(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
 
 
 # ---------------------------------------------------------------------------
 # File-backed asset packing — ONE family handler for skill, agent, workflow,
-# whiteboard, spec, prompt, markdown, plan, command, rule (any type whose
+# chart, spec, prompt, markdown, plan, command, rule (any type whose
 # TypeInfo declares ``main_subdir``). The canonical record is the on-disk
 # asset_ref (a file or a folder); pack copies it verbatim under the bundle at
 # ``attachment/<type>-@<id>/<main_subdir>/<leaf>`` so the in-bundle relpath
@@ -454,13 +500,111 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
     ar_path = Path(ar)
     if not ar_path.exists():
         return (info, ent, None)
-    if info.main_layout == "folder":
-        # spec-style: asset_ref is the inner main_file → ship the parent folder.
-        # skill-style: asset_ref is the folder itself.
-        src_root = ar_path.parent if getattr(info, "main_file_is_asset_ref", False) else ar_path
-    else:
-        src_root = ar_path
+    src_root = info.storage_root_for(ar_path)  # the folder for a folder type, the file otherwise
     return (info, ent, src_root)
+
+
+async def attachments_that_would_ship_nothing(typeids) -> list[tuple["TypeId", str]]:
+    """The TYPE_ID refs the receiver will REQUIRE in the bundle but the packer would ship nothing for.
+
+    The receiver's probe (``_type_id_attachment_present``) treats every TYPE_ID attachment outside
+    ``_NON_MATERIALIZING_TYPE_IDS`` as something the bundle must carry. For a file-backed type
+    whose row or file is gone, ``_pack_file_backed_attachment`` writes nothing and says nothing —
+    the sender sees success, the hub marks the body ready, and every recipient downloads a bundle
+    that cannot be complete. This answers, BEFORE the message exists, which refs would do that,
+    as ``(typeid, reason)`` pairs; an empty list means everything ships.
+
+    It mirrors the two silent returns of ``_pack_file_backed_attachment`` — no resolvable row, and
+    a row with neither a file nor anything renderable — and only for the types that packer
+    actually owns: the git-reference types and artifacts have their own packers, and the types
+    the receiver never expects are not a gap. ``test_send_session_with_missing_transcript`` pins the
+    pairing, so the two cannot drift apart unnoticed.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    gaps: list[tuple[TypeId, str]] = []
+    for tid in typeids:
+        if tid.type in _NON_MATERIALIZING_TYPE_IDS or tid.type == EntityType.ARTIFACT.value:
+            continue
+        info = SchemaRegistry.get(tid.type)
+        if info is None or getattr(info, "main_subdir", None) is None or getattr(info, "receive_transfer", None):
+            continue
+        resolved = await _resolve_file_backed_source(tid.type, tid.id)
+        if resolved is None:
+            gaps.append((tid, "there is no local record of it"))
+            continue
+        info, ent, src_root = resolved
+        if src_root is None and info.serializer().render(ent, info) is None:
+            gaps.append((tid, "its file is not on this machine"))
+    return gaps
+
+
+async def attachments_holding_gitignored(typeids) -> list[tuple["TypeId", list[str]]]:
+    """The TYPE_ID refs whose bytes, packed as a COPY, would carry files git excludes — with those files.
+
+    A file kept out of git (a data source's local copy, an ``.env.local``, a gitignored dataset's rows)
+    is often private; a copy-mode bundle packs the asset folder whole, so sharing it would carry them.
+    This answers BEFORE the message exists, so the sender is warned and chooses — the send itself still
+    packs everything once they do. Paths are relative to the asset, ``.`` for an asset that is itself
+    excluded. A git-mode share sends a reference, never the working tree, so it is not asked."""
+    from flow_sdk.assets.transfer import is_pack_cruft  # noqa: PLC0415
+    from flow_sdk.utils.git_ignore import IGNORED, ignore_status, ignored_under  # noqa: PLC0415
+
+    found: list[tuple[TypeId, list[str]]] = []
+    for tid in typeids:
+        if tid.type in _NON_MATERIALIZING_TYPE_IDS:
+            continue
+        root = await _local_copy_root(tid)
+        if root is None:
+            continue
+        if root.is_dir():
+            hits = await asyncio.to_thread(ignored_under, root)
+            rel = sorted("." if h == root.resolve() else h.relative_to(root.resolve()).as_posix() for h in hits)
+            # What the packer drops anyway (``.venv``, ``node_modules``…) is not shared, so not asked about.
+            rel = [r for r in rel if r == "." or not is_pack_cruft(r)]
+        else:
+            rel = ["."] if await asyncio.to_thread(ignore_status, root) == IGNORED else []
+        if rel:
+            found.append((tid, rel))
+    return found
+
+
+def gitignored_payload(found) -> list[dict]:
+    """The wire shape of ``attachments_holding_gitignored`` — the share preflight's and the refusal's."""
+    return [{"type_id": str(tid), "paths": paths} for tid, paths in found]
+
+
+async def refuse_gitignored(typeids):
+    """The ONE refusal of a copy that would carry git-excluded files (``share_has_gitignored``, 409, with the
+    list), or None when nothing would. The sender sends again with ``include_gitignored`` to share them."""
+    from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+    held = await attachments_holding_gitignored(typeids)
+    if not held:
+        return None
+    names = "; ".join(f"{tid} ({', '.join(paths)})" for tid, paths in held)
+    return ApiFailResponse(
+        message=f"Not sent yet: {names} holds files git excludes, which may be private. "
+        "Send again with include_gitignored to share them anyway.",
+        status_code=409,
+        data={"code": "share_has_gitignored", "gitignored": gitignored_payload(held)},
+    )
+
+
+async def _local_copy_root(tid: "TypeId") -> "Path | None":
+    """What a copy-mode share of ``tid`` packs from this machine: a file-backed asset's tree, or a
+    local folder artifact's folder. None when nothing on disk would be copied."""
+    if tid.type == EntityType.ARTIFACT.value:
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+        ent = await Artifact.get_one({"id": tid.id})
+        origin = getattr(ent, "origin", None) if ent is not None else None
+        if getattr(origin, "kind", None) != "local":
+            return None
+        src = Path(str(origin.base)) / str(origin.rel_path or ".")
+        return src if src.is_dir() else None
+    resolved = await _resolve_file_backed_source(tid.type, tid.id)
+    return resolved[2] if resolved is not None else None
 
 
 def _entry_key(entry_type: str, entry_id: str) -> str:
@@ -500,14 +644,11 @@ def _write_git_transfer_metadata(
     rel = PurePosixPath("metadata") / key / "metadata.json"
     dest = tmp_root / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(_read_file_backed_metadata(entry_type, entry_id, ent), default=_json_default, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_json(dest, _read_file_backed_metadata(entry_type, entry_id, ent))
     return rel.as_posix()
 
 
-def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
+def graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
     """Return the sender's graph entity payload for metadata-only git transfer.
 
     ``strip`` removes machine-local fields that must not travel (e.g. a
@@ -525,29 +666,25 @@ def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tupl
     return payload
 
 
+def _write_reference_metadata(tmp_root: Path, entry_type: str, entry_id: str, payload: dict) -> str:
+    """Write a git reference's metadata file; returns its bundle-relative path."""
+    rel = PurePosixPath("metadata") / _entry_key(entry_type, entry_id) / "metadata.json"
+    dest = tmp_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(dest, payload)
+    return rel.as_posix()
+
+
 def _write_graph_git_transfer_metadata(
     tmp_root: Path,
     entry_type: str,
     entry_id: str,
     ent,
-    strip: tuple[str, ...] = (),
 ) -> str:
-    key = _entry_key(entry_type, entry_id)
-    rel = PurePosixPath("metadata") / key / "metadata.json"
-    dest = tmp_root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
-        json.dumps(
-            _read_graph_entity_metadata(entry_type, entry_id, ent, strip=strip),
-            default=_json_default,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    return rel.as_posix()
+    return _write_reference_metadata(tmp_root, entry_type, entry_id, graph_entity_metadata(entry_type, entry_id, ent))
 
 
-async def _resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
+async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     """The GitOrigin to ship for a graph entity: ``stored`` if usable, else a
     LIVE probe of the entity's local ``path``.
 
@@ -558,11 +695,14 @@ async def _resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     None when neither yields a transportable origin; the CALLER owns what that
     means (a folder must fail closed, an artifact falls through to a byte copy).
     """
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
     if stored is not None and getattr(stored, "transportable", False):
         return stored
     path = getattr(ent, "path", None)
+    if not path and callable(getattr(ent, "local_origin_path", None)):
+        # An artifact keeps no path of its own; its LOCAL origin is where it is.
+        path = ent.local_origin_path()
     if not path:
         return None
     live = await asyncio.to_thread(GitOrigin.for_asset_path, str(path), repo_cache)
@@ -578,83 +718,27 @@ async def _pack_git_reference_attachment(
     transfers: dict | None,
     transfer_mode: str,
 ) -> bool:
-    """Pack a graph entity whose data is expected to arrive through git.
+    """Pack an entity whose data is expected to arrive through git.
 
-    This is intentionally narrower than file-backed asset packing. ``artifact``
-    and ``folder`` are graph entities, not FSRecord types, so git mode carries
-    their metadata and GitOrigin only — zero repository bytes travel, and
-    nothing is cloned at pack time. The receiver materializes the row as
-    pending and resolves the checkout later through the git wizard/open path
-    (artifact: open-artifact → git-setup; folder: the message chip →
-    git-context-folder wizard).
+    Applies to the types that declare ``TypeInfo.receive_transfer`` as a git
+    reference: their metadata and GitOrigin ride — zero repository bytes, and
+    nothing is cloned at pack time. The type's ``pack_reference`` hook decides
+    whether it packs in this transfer mode and what metadata rides; ``False``
+    falls through to the next family.
     """
-    if transfer_mode != _TRANSFER_MODE_GIT or transfers is None:
+    if transfers is None:
         return False
-    if entry_type not in (EntityType.ARTIFACT.value, EntityType.FOLDER.value):
+    cls = git_reference_cls(entry_type)
+    if cls is None:
         return False
-
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
-
-    strip_fields: tuple[str, ...] = ()
-    if entry_type == EntityType.FOLDER.value:
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        ent = await Folder.get_one({"id": entry_id})
-        if ent is None:
-            return False
-        origin = await _resolve_git_reference_origin(ent, ent.origin, repo_cache)
-        if origin is None:
-            # Fail closed. Returning False here fell through to a caller that
-            # packs NOTHING for a folder (no main_subdir), silently delivering a
-            # chip with no origin and no bytes.
-            raise GitShareOriginError(
-                f"{_entry_key(entry_type, entry_id)} was shared with Git but is not in a "
-                f"Git repository with a usable origin — set up Git for this folder first."
-            )
-        # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
-        # existed — repo-root folders were named ".", rendering chips as bare
-        # typeids. Persist best-effort so the sender's own chip heals too.
-        if (ent.name or "").strip() in ("", "."):
-            healed = Folder.derive_name(origin, ent.path)
-            if healed:
-                ent.name = healed
-                try:
-                    await ent.save()
-                except Exception:
-                    logger.debug("[bundle] folder %s name heal failed", entry_id, exc_info=True)
-        # The local resolved path is machine-local; the receiver derives its own.
-        strip_fields = ("path",)
-    else:
-        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-
-        ent = await Artifact.get_one({"id": entry_id})
-        if ent is None:
-            return False
-
-        raw_origin = getattr(ent, "origin", None)
-        stored = None
-        if raw_origin is not None:
-            try:
-                stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
-            except Exception:
-                stored = None
-        origin = await _resolve_git_reference_origin(ent, stored, repo_cache)
-        if origin is None:
-            # Unlike a folder, an artifact HAS a byte-copy carrier to fall
-            # through to (`_pack_webapp_artifact_attachment`), so this is a
-            # handoff, not a silent drop.
-            return False
+    packed = await cls.pack_reference(entry_id, transfer_mode=transfer_mode, repo_cache=repo_cache)
+    if packed is None:
+        return False
 
     key = _entry_key(entry_type, entry_id)
     if origins is not None:
-        origins[key] = origin.model_dump(mode="python")
-    metadata_path = _write_graph_git_transfer_metadata(
-        attachment_dir.parent,
-        entry_type,
-        entry_id,
-        ent,
-        strip=strip_fields,
-    )
+        origins[key] = packed.origin.model_dump(mode="python")
+    metadata_path = _write_reference_metadata(attachment_dir.parent, entry_type, entry_id, packed.metadata)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_GIT,
         "metadata_path": metadata_path,
@@ -670,7 +754,7 @@ async def _pack_webapp_artifact_attachment(
     transfers: dict | None,
     transfer_mode: str,
 ) -> bool:
-    """Copy-mode carrier for a folder-backed webapp ``artifact`` with no git remote.
+    """Copy-mode carrier for a local ``artifact``: a webapp folder, or one shared file.
 
     ``artifact`` is a graph entity (no ``main_subdir``, no walker), so the
     file-backed packer never handles it and the git-reference packer only fires in
@@ -682,6 +766,10 @@ async def _pack_webapp_artifact_attachment(
     it up. The receiver mirrors the folder into the target project and materializes
     the row pointing ``path`` at the served folder (see
     ``_restore_webapp_artifact_entry``). Returns True when it handled the entry.
+
+    A shared FILE (``SHARED_FILE_KIND``: a page, doc, image or video shared as
+    itself) rides the same way as ``shared/<id>/<name>``, marked ``single_file`` so the
+    receiver may keep it in their own folder rather than a project.
     """
     if transfer_mode != _TRANSFER_MODE_COPY or transfers is None:
         return False
@@ -697,21 +785,33 @@ async def _pack_webapp_artifact_attachment(
     if getattr(origin, "kind", None) != "local":
         return False
     src = Path(str(origin.base)) / str(origin.rel_path or ".")
-    if not src.is_dir():
-        return False  # only a folder artifact rides as bytes; nothing to serve otherwise
+    if src.is_file():
+        from flow_sdk.builtin.artifact import SHARED_FILE_KIND  # noqa: PLC0415
+
+        if getattr(ent, "kind", None) != SHARED_FILE_KIND:
+            return False
+        # One folder per shared file: two different files named index.html must not collide.
+        slug, bytes_rel, single_file = src.name, f"shared/{entry_id}/{src.name}", True
+    elif src.is_dir():
+        slug = _safe_entity_name(ent)
+        bytes_rel, single_file = f"webapps/{slug}", False
+    else:
+        return False  # only a folder or a shared file rides as bytes; nothing to serve otherwise
 
     key = _entry_key(entry_type, entry_id)
-    slug = _safe_entity_name(ent)
-    dest = attachment_dir / key / "webapps" / slug
+    dest = attachment_dir / key / bytes_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-    metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
+    if single_file:
+        await asyncio.to_thread(shutil.copy2, src, dest)  # an image or video can be large
+    else:
+        pack_tree(src, dest, type_name=entry_type)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_COPY,
-        "metadata_path": metadata_path,
+        "metadata_path": _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent),
         "entity_mode": "metadata",
         "slug": slug,
-        "bytes_rel": f"webapps/{slug}",
+        "bytes_rel": bytes_rel,
+        **({"single_file": True} if single_file else {}),
     }
     return True
 
@@ -725,18 +825,27 @@ async def _pack_file_backed_attachment(
     *,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Copy a file-backed asset's on-disk subtree into the bundle.
+
+    ``mirror_repo_layout=False`` (an offline export) ignores the sender's repo
+    entirely: no origin, always the portable path (``portable_rel_path``). A file handed to a
+    stranger has no shared checkout to mirror, and keying by the sender's
+    repo-relative path would nest the asset under that repo's folders on the
+    receiver (a shipped asset landed at ``flow_sdk/system_projects/…``).
 
     Bundle layout: ``attachment/<type>-@<id>/<in_bundle_rel>/…`` where
     ``in_bundle_rel`` is the asset's repo-relative ``rel_path`` when the asset
     lives inside a git repo (a ``GitOrigin`` is then recorded in ``origins``),
-    else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
+    else the portable ``portable_rel_path`` — ``<main_subdir>/<leaf>``, kept nested
+    under its enclosing repo asset when it lives inside one. Keying by ``rel_path`` lets the
     receiver mirror the sender's repo layout via the anchor-free restore. The
     leaf name and every capsule byte are preserved from an existing source.
 
-    Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
-    ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
+    Build/environment cruft — plus anything the type declares as
+    ``pack_exclude`` — is filtered via ``_pack_ignore`` (deep ``.venv``/cache
+    trees blow past Windows MAX_PATH on extractall).
     """
     # A TASK chip is a record-carrier (its folder is task.md bookkeeping), not
     # a git-shareable asset. In a git-mode message — the assignment message
@@ -746,7 +855,7 @@ async def _pack_file_backed_attachment(
     # tasks living outside any repo (e.g. ~/tasks).
     if transfer_mode == _TRANSFER_MODE_GIT and entry_type == BuiltinEntityType.TASK.value:
         transfer_mode = _TRANSFER_MODE_COPY
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
     resolved = await _resolve_file_backed_source(entry_type, entry_id)
     if resolved is None:
@@ -760,7 +869,9 @@ async def _pack_file_backed_attachment(
     # the receiver mirrors the sender's layout (else canonical main_subdir/leaf).
     # ``for_asset_path`` runs blocking git subprocesses — keep them off the loop.
     origin = (
-        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache) if src_root is not None else None
+        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache)
+        if src_root is not None and mirror_repo_layout
+        else None
     )
     if origin is not None and origins is not None:
         origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
@@ -790,106 +901,42 @@ async def _pack_file_backed_attachment(
         return
 
     if src_root is None:
-        # No on-disk source — render the body from the type's default_body_fn
+        # No on-disk source — render the main doc through the type's serializer
         # (covers a DB-backed spec/prompt/markdown whose file was never written).
-        default_body_fn = getattr(info, "default_body_fn", None)
-        if default_body_fn is None:
+        text = info.serializer().render(ent, info)
+        if text is None:
             return  # nothing renderable to ship
-        safe = _safe_entity_name(ent)
-        if info.main_layout == "folder":
-            main_file = getattr(info, "main_file", None)
-            if not main_file:
-                return  # folder type without a main doc: nothing to ship
-            dest = subdir / safe / main_file
-        else:
-            dest = subdir / f"{safe}{info.main_ext}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(default_body_fn(ent), encoding="utf-8")
-        _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
+        from flow_sdk.assets.transfer import materialize_rendered_asset
+
+        materialize_rendered_asset(info, subdir, _safe_entity_name(ent), text, TypeId(type=entry_type, id=entry_id))
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
-    # canonical <main_subdir>/<leaf>. The restore is anchor-free, so the in-bundle
-    # relpath IS the receiver's placement relpath under the project root.
-    dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
+    # portable <main_subdir>/<leaf> — kept nested under its enclosing asset when
+    # it lives inside one. The restore is anchor-free, so the in-bundle relpath
+    # IS the receiver's placement relpath under the project root.
+    dest = entry_root / PurePosixPath(origin.rel_path if origin is not None else portable_rel_path(src_root, info))
     dest.parent.mkdir(parents=True, exist_ok=True)
-    if src_root.is_dir():
-        shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-    else:
-        shutil.copy2(src_root, dest)
-
-
-def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_id: str) -> str:
-    """Persist identity for a source-less body through the type's sole seam.
-
-    Existing-source bundles never call this helper: their files and folder
-    capsules are copied byte-for-byte. A rendered fallback is newly
-    materialized, so TypeInfo may safely persist the proposed bundle id after
-    the body exists (``AssetCapsule.from_path`` accepts existing paths only).
-    """
-    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-    if info.main_layout == "folder":
-        asset_path = info.asset_ref_for(body_path.parent)
-    else:
-        asset_path = body_path
-    ref = FSRef(asset_path, record_type=RecordType(entry_type))
-    return info.mint_id(ref, proposed_id=entry_id)
+    pack_tree(src_root, dest, type_name=entry_type)
 
 
 def _safe_entity_name(entity) -> str:
     """Filesystem-safe leaf name from an entity's name/title (fallback path)."""
     raw = getattr(entity, "name", None) or getattr(entity, "title", None) or getattr(entity, "id", "asset")
-    return "".join(c if c.isalnum() or c in ("-", "_", ".") else "_" for c in str(raw)) or "asset"
+    from flow_sdk.assets.transfer import portable_asset_name
+
+    return portable_asset_name(str(raw))
 
 
 def _restore_file_backed_entry(
-    entry_dir: Path,
-    project_root: Path,
-    overwrite: bool,
+    entry_dir: Path, project_root: Path, overwrite: bool, *, placed: list[Path] | None = None
 ) -> bool:
-    """Copy every file under ``attachment/<type>-@<id>/`` into ``project_root``.
+    from flow_sdk.assets.transfer import AssetTransferConflict, restore_tree
 
-    The in-bundle relpath is already the canonical ``<main_subdir>/<leaf>``
-    (the packer stores it that way), so this is an anchor-free verbatim mirror
-    — no per-type knowledge. Returns True when ≥1 file was restored. Raises
-    ``FlowMessageExistsError`` on a genuine collision when overwrite=False;
-    a byte-identical existing file is an idempotent no-op (re-receive).
-    """
-    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
-
-    conflicts: list[dict] = []
-    copied_any = False
-    root_resolved = project_root.resolve()
-    for src in entry_dir.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(entry_dir)  # "<main_subdir>/<leaf>..." or "<rel_path>/..."
-        # Path-traversal guard: the in-bundle relpath is sender-controlled (git
-        # origins key the subtree by rel_path). Gate on the SAME named guard the
-        # packer uses (anti-drift), then keep the resolve check as defense in depth
-        # against symlink escapes a string check can't see.
-        dest = project_root / rel
-        if not is_safe_rel_path(rel.as_posix()):
-            logger.warning("[bundle] skipping unsafe attachment path %s", rel)
-            continue
-        try:
-            dest.resolve().relative_to(root_resolved)
-        except ValueError:
-            logger.warning("[bundle] skipping unsafe attachment path %s (escapes project root)", rel)
-            continue
-        if dest.exists() and not overwrite:
-            if filecmp.cmp(src, dest, shallow=False):
-                continue  # same asset already present — no-op
-            conflicts.append({"path": str(dest)})
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
-        copied_any = True
-    if conflicts:
-        raise FlowMessageExistsError(conflicts)
-    return copied_any
+    try:
+        return restore_tree(entry_dir, project_root, overwrite=overwrite, placed=placed)
+    except AssetTransferConflict as exc:
+        raise FlowMessageExistsError(exc.conflicts) from exc
 
 
 async def _reindex_root(root: Path, record_type, *, types=None, project_id: str | None = None) -> None:
@@ -984,20 +1031,11 @@ async def _reindex_git_origin_scopes(
         raw = origins_map.get(_entry_key(entry_type, entry_id))
         if not raw:
             continue
-        rel = str(raw.get("rel_path") or "").replace("\\", "/")
+        rel = str(raw.get("rel_path") or "")
         info = SchemaRegistry.get(entry_type)
-        main_subdir = getattr(info, "main_subdir", None) if info else None
-        if not rel or not main_subdir:
-            continue
-        # rel_path ends with "<main_subdir>/<leaf>"; the scope is everything above
-        # main_subdir. Strip those trailing components structurally (robust to a
-        # main_subdir token appearing earlier in the path than a substring search).
-        drop = len(PurePosixPath(main_subdir.replace("\\", "/")).parts) + 1  # main_subdir parts + leaf
-        rel_parts = PurePosixPath(rel).parts
-        prefix_parts = rel_parts[:-drop] if len(rel_parts) > drop else ()
-        if not prefix_parts:
+        scope = _git_origin_index_scope(project_root, rel, info)
+        if scope == project_root:
             continue  # canonical/top-level — the project-root walk already covers it
-        scope = project_root / PurePosixPath(*prefix_parts)
         try:
             scopes.setdefault(scope, set()).add(RecordType(entry_type))
         except ValueError:
@@ -1024,7 +1062,26 @@ class ReceivedAsset:
     asset_id: str
     entry_key: str
     record_type: object | None = None
-    git_origin: dict | None = None
+    origin: dict | None = None
+    # The files the copy just placed under ``root`` — what a single-file asset
+    # is indexed by, instead of a walk.
+    files: tuple[Path, ...] = ()
+
+
+async def _index_received_files(files, asset_type: str, *, project_id: str | None) -> bool:
+    """Index a just-installed single-file asset by its own path(s); True when a
+    row was synced (the caller then skips the project walk)."""
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    indexed = False
+    for path in files:
+        try:
+            resolved = await resolve_asset(path, write=True, type_name=asset_type)
+        except NotAnAsset:
+            continue
+        if await index_one(resolved, notify=True, scope="project", project_id=project_id) is not None:
+            indexed = True
+    return indexed
 
 
 async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: str | None, owner) -> None:
@@ -1055,16 +1112,28 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     for item in attachments:
         if item.record_type is not None:
             types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
+            # A single-file project asset (a ``File`` shape) is indexed by its
+            # own installed path: a whole-root walk held the DB writer 16–18 s
+            # per message, and re-rooting the walk at the family folder found
+            # nothing (walkers look for ``<root>/<main_subdir>`` under the root
+            # they are handed). Folder assets and user-scope placements keep the
+            # wide walk — their nested children live outside one family folder.
+            # The shape is the test, not the legacy ``main_file`` (None for all).
+            info = SchemaRegistry.get(item.asset_type)
+            single_file = info is not None and not isinstance(info.shape, Folder)
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, types, project_id=project_id)
+                if not (
+                    single_file and await _index_received_files(item.files, item.asset_type, project_id=project_id)
+                ):
+                    await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
-        if item.git_origin:
-            origins = {item.entry_key: item.git_origin}
+        if item.origin:
+            origins = {item.entry_key: item.origin}
             entries = {(item.asset_type, item.asset_id)}
             if item.scope == AttachmentScope.PROJECT.value:
                 await _reindex_git_origin_scopes(item.root, entries, origins, project_id=project_id)
-            await _stamp_git_origins(entries, origins, owner)
+            await _stamp_origins(entries, origins, owner)
         await _notify_received_assets({(item.asset_type, item.asset_id)})
 
 
@@ -1079,31 +1148,10 @@ def _parse_entry_key(key: str) -> tuple[str, str] | None:
     return entry_type, entry_id
 
 
-def _git_origin_asset_root(checkout_root: Path, rel_path: str) -> Path | None:
-    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
-
-    if not is_safe_rel_path(rel_path):
-        return None
-    root = checkout_root.resolve()
-    candidate = checkout_root / PurePosixPath(rel_path.replace("\\", "/"))
-    try:
-        candidate.resolve().relative_to(root)
-    except ValueError:
-        return None
-    return candidate
-
-
 def _asset_ref_for_git_origin(checkout_root: Path, rel_path: str, info) -> Path | None:
-    asset_root = _git_origin_asset_root(checkout_root, rel_path)
-    if asset_root is None:
-        return None
-    if (
-        getattr(info, "main_layout", None) == "folder"
-        and getattr(info, "main_file_is_asset_ref", False)
-        and getattr(info, "main_file", None)
-    ):
-        return asset_root / info.main_file
-    return asset_root
+    from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
+
+    return safe_join(checkout_root, rel_path)
 
 
 def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
@@ -1116,94 +1164,11 @@ def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
     return checkout_root / PurePosixPath(*prefix_parts) if prefix_parts else checkout_root
 
 
-def _repo_matches_git_origin(repo_path: Path, origin, *, require_branch: bool = False) -> bool:
-    return origin.matches_checkout(repo_path, require_branch=require_branch)
-
-
-async def _project_id_for_checkout(
-    checkout_root: Path,
-    *,
-    preferred_root: Path | None,
-    preferred_project_id: str | None,
-) -> str | None:
-    try:
-        if preferred_root is not None and preferred_project_id:
-            if checkout_root.resolve() == preferred_root.resolve():
-                return preferred_project_id
-    except OSError:
-        pass
-    try:
-        from flow_sdk.builtin.project import Project  # noqa: PLC0415
-
-        project = await Project.recover_by_path(str(checkout_root))
-        return project.id if project else Project.derive_id_for_path(str(checkout_root))
-    except Exception:
-        return None
-
-
-def _next_git_clone_target(origin) -> Path:
-    return origin.next_clone_target()
-
-
-async def _resolve_git_checkout(
-    origin,
-    *,
-    preferred_root: Path | None,
-    preferred_project_id: str | None,
-) -> tuple[Path, str | None]:
-    from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_clone, git_pull  # noqa: PLC0415
-
-    candidates: list[Path] = []
-    if preferred_root is not None and preferred_root.exists():
-        preferred_repo = await asyncio.to_thread(find_project_root, str(preferred_root))
-        if preferred_repo and _repo_matches_git_origin(Path(preferred_repo), origin, require_branch=True):
-            candidates.append(Path(preferred_repo))
-
-    clone_url = origin.clone_url()
-    local_repo = await asyncio.to_thread(find_local_repo_for_url, clone_url)
-    if local_repo and _repo_matches_git_origin(Path(local_repo), origin, require_branch=True):
-        p = Path(local_repo)
-        if p not in candidates:
-            candidates.append(p)
-
-    for candidate in candidates:
-        if origin.branch:
-            ok, msg = await git_pull(str(candidate), branch=origin.branch)
-            if not ok:
-                logger.info("[bundle] git pull failed for %s: %s", candidate, msg)
-        asset_root = _git_origin_asset_root(candidate, origin.rel_path)
-        if asset_root is not None and asset_root.exists():
-            project_id = await _project_id_for_checkout(
-                candidate,
-                preferred_root=preferred_root,
-                preferred_project_id=preferred_project_id,
-            )
-            return candidate, project_id
-
-    clone_target = _next_git_clone_target(origin)
-    if clone_target.exists() and _repo_matches_git_origin(clone_target, origin):
-        project_id = await _project_id_for_checkout(
-            clone_target,
-            preferred_root=preferred_root,
-            preferred_project_id=preferred_project_id,
-        )
-        return clone_target, project_id
-    ok, msg = await git_clone(clone_url, str(clone_target), branch=origin.branch or None)
-    if not ok:
-        raise RuntimeError(msg)
-    project_id = await _project_id_for_checkout(
-        clone_target,
-        preferred_root=preferred_root,
-        preferred_project_id=preferred_project_id,
-    )
-    return clone_target, project_id
-
-
 def _read_transfer_metadata(tmp_root: Path, transfer: dict) -> dict:
     rel = str(transfer.get("metadata_path") or "")
     if not rel:
         return {}
-    from flow_sdk.builtin.git_origin import is_safe_rel_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
 
     if not is_safe_rel_path(rel):
         return {}
@@ -1301,7 +1266,7 @@ async def _restore_git_transfer_entry(
     owner_typeid: str | None,
 ) -> bool:
     from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
-    from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -1314,11 +1279,11 @@ async def _restore_git_transfer_entry(
     info = SchemaRegistry.get(entry_type)
     if info is None or getattr(info, "main_subdir", None) is None:
         return False
-    raw_origin = origins_map.get(key) or transfer.get("git_origin") or transfer.get("origin")
+    raw_origin = origins_map.get(key)
     if not raw_origin:
         return False
     try:
-        origin = FS_ORIGIN_ADAPTER.validate_python(raw_origin)
+        origin = ORIGIN_ADAPTER.validate_python(raw_origin)
     except Exception:
         logger.warning("[bundle] invalid transfer origin for %s", key, exc_info=True)
         return False
@@ -1327,7 +1292,9 @@ async def _restore_git_transfer_entry(
     # pull/reuse-local; local = resolve an existing mount). Everything below is
     # origin-kind-agnostic — it operates only on the returned local_root + the
     # universal rel_path.
-    local_root, project_id = await get_origin_driver(origin.kind).materialize(
+    # A received share opens EXACTLY the shared version and never touches the
+    # receiver's own checkout (``materialize_pinned``).
+    local_root, project_id = await get_origin_driver(origin.kind).materialize_pinned(
         origin,
         preferred_root=preferred_project_root,
         preferred_project_id=preferred_project_id,
@@ -1345,7 +1312,13 @@ async def _restore_git_transfer_entry(
             same_asset = existing_asset.resolve() == asset_ref.resolve()
         except OSError:
             same_asset = str(existing_asset) == str(asset_ref)
-        if not same_asset:
+        # The same shared asset (same repo + path) arriving at a newer commit is
+        # a new VERSION of what the receiver has, not a clash with their work.
+        existing_origin = getattr(existing, "origin", None)
+        same_share = existing_origin is not None and getattr(existing_origin, "key", None) is not None and (
+            existing_origin.key() == origin.key()
+        )
+        if not same_asset and not same_share:
             raise FlowMessageExistsError(
                 [
                     {
@@ -1356,12 +1329,11 @@ async def _restore_git_transfer_entry(
                 ]
             )
 
-    scope = _git_origin_index_scope(local_root, origin.rel_path, info)
     try:
-        record_type = RecordType(entry_type)
+        RecordType(entry_type)
     except ValueError:
         return False
-    await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(record_type,), project_id=project_id)
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
     await _apply_git_transfer_metadata(
         tmp_root,
         transfer,
@@ -1371,30 +1343,69 @@ async def _restore_git_transfer_entry(
         project_id=project_id,
         owner_typeid=owner_typeid,
     )
-    await _stamp_git_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    await _stamp_origins({(entry_type, entry_id)}, {key: origin.model_dump(mode="python")}, owner_typeid)
+    # The walk persists with notify=False: announce the row, as the copy path
+    # does, so a receiver UI that already asked for it (and cached the miss)
+    # sees it without a reload.
+    await _notify_received_assets({(entry_type, entry_id)})
     return True
 
 
-def _git_origin_from_payload(payload: dict, origins_map: dict, key: str, transfer: dict):
-    raw = (
-        origins_map.get(key)
-        or transfer.get("origin")
-        or transfer.get("git_origin")
-        or payload.get("origin")
-        or payload.get("git_origin")
-    )
-    if raw is None and isinstance(payload.get("metadata"), dict):
-        raw = payload["metadata"].get("origin") or payload["metadata"].get("git_origin")
-    if raw is None:
-        return None
-    from flow_sdk.builtin.fs_origin import FSOrigin  # noqa: PLC0415
-    from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
+#: (checkout, commit) pairs whose ``received_with`` companions are already
+#: indexed: a checkout at a commit never changes, so re-opening it skips the walk.
+_COMPANIONS_INDEXED: set[tuple[str, str]] = set()
 
-    try:
-        return raw if isinstance(raw, FSOrigin) else FS_ORIGIN_ADAPTER.validate_python(raw)
-    except Exception:
-        logger.warning("[bundle] invalid transfer origin for %s", key, exc_info=True)
-        return None
+
+async def _index_git_checkout(entry_type: str, local_root: Path, origin, info, project_id: str | None) -> None:
+    """Index the asset of a git share from the checkout it was opened in, and
+    what its type declares it needs from the same checkout (``received_with``)
+    — in ONE walk over the checkout when the asset's own type is among those."""
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    companions = tuple(dict.fromkeys(info.received_with)) if info is not None else ()
+    seen = (str(local_root), getattr(origin, "head_commit", None) or "")
+    if entry_type not in companions:
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+    elif seen in _COMPANIONS_INDEXED:
+        # The companions are indexed; the asset itself may be new at this commit.
+        scope = _git_origin_index_scope(local_root, origin.rel_path, info)
+        await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=(RecordType(entry_type),), project_id=project_id)
+        return
+    if companions and seen not in _COMPANIONS_INDEXED:
+        await _reindex_root(local_root, RecordType.REAL_PROJECT_CWD, types=tuple(RecordType(t) for t in companions), project_id=project_id)
+        if seen[1]:
+            _COMPANIONS_INDEXED.add(seen)
+
+
+async def reopen_git_share(entry_type: str, entry_id: str, origin, local_root: Path, project_id: str | None) -> Path:
+    """Point an already-received git share at another checkout of it (a newer
+    commit): index it there and stamp the origin with that commit. Answers the
+    asset's new path."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    asset_ref = _asset_ref_for_git_origin(local_root, origin.rel_path, info)
+    if asset_ref is None or not asset_ref.exists():
+        raise FileNotFoundError(f"shared asset not found: {local_root / origin.rel_path}")
+    # The row already exists (it was received before), so a walk alone does not
+    # move it: point its record and row at the new checkout first, then index there.
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+    patch = {"type": entry_type, "id": entry_id, "asset_ref": str(asset_ref)}
+    if project_id:
+        patch["project_id"] = project_id
+    record = FSRecord(type=entry_type, id=entry_id)
+    record.asset_ref = str(asset_ref)
+    await asyncio.to_thread(record.save_metadata, patch)
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    ent = await cls.get_one({"id": entry_id}) if cls is not None else None
+    if ent is not None:
+        await _overlay_fields_on_row(ent, patch, None, label=f"{entry_type}-@{entry_id} (git update)")
+    await _index_git_checkout(entry_type, local_root, origin, info, project_id)
+    await _stamp_origins({(entry_type, entry_id)}, {_entry_key(entry_type, entry_id): origin.model_dump(mode="python")}, None)
+    await _notify_received_assets({(entry_type, entry_id)})
+    return asset_ref
 
 
 async def _restore_git_reference_entity_entry(
@@ -1405,15 +1416,14 @@ async def _restore_git_reference_entity_entry(
     *,
     overwrite: bool,
     owner_typeid: str | None,
+    name: str | None = None,
 ) -> bool:
-    """Materialize graph entities whose bytes are supplied by git, not bundle.
+    """Materialize an entity whose bytes are supplied by git, not the bundle.
 
-    For ``artifact`` we only persist the received declaration and GitOrigin. The
-    checkout remains unresolved until the receiver opens the artifact and the
-    git setup wizard can provide a local path. For ``folder`` (a git context
-    folder chip) we mint the receiver-local Folder from the origin — path
-    unset, NO clone — and the message chip's wizard resolves a local checkout
-    later.
+    Generic over the types that declare ``TypeInfo.receive_transfer`` as a git
+    reference: read the staged metadata and origin, then let the type's
+    ``restore_reference`` hook write its row (and, for a project, clone it).
+    ``name`` replaces the sender's name — the receiver's choice when it is taken here.
     """
     if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
         return False
@@ -1421,66 +1431,16 @@ async def _restore_git_reference_entity_entry(
     if parsed is None:
         return False
     entry_type, entry_id = parsed
-    if entry_type == EntityType.FOLDER.value:
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        payload = _read_transfer_metadata(tmp_root, transfer)
-        origin = _git_origin_from_payload(payload, origins_map, key, transfer)
-        if origin is None or not getattr(origin, "transportable", False):
-            return False
-        # Get-or-create keyed by origin (idempotent — a re-received chip
-        # reconciles with an already-minted folder). Local path stays unset.
-        folder = await Folder.mint_for_origin(origin)
-        if not getattr(folder, "name", None) and payload.get("name"):
-            folder.name = payload["name"]
-            await folder.save(owner_typeid)
-        return True
-    if entry_type != EntityType.ARTIFACT.value:
+    cls = git_reference_cls(entry_type)
+    if cls is None:
         return False
-
-    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-
     payload = _read_transfer_metadata(tmp_root, transfer)
-    origin = _git_origin_from_payload(payload, origins_map, key, transfer)
+    if name:
+        payload = {**payload, "name": name}
+    origin = ORIGIN_ADAPTER.validate_python(origins_map.get(key) or payload.get("origin"))
     if origin is None:
         return False
-
-    payload = {
-        "type": entry_type,
-        "id": entry_id,
-        "name": payload.get("name") or f"artifact-{entry_id[:8]}",
-        "kind": payload.get("kind") or "application.web",
-        "description": payload.get("description"),
-        "origin": origin.model_dump(mode="python"),
-    }
-
-    existing = await Artifact.get_one({"id": entry_id})
-    if existing is not None and not overwrite:
-        existing_origin = _git_origin_from_payload(
-            existing.model_dump(mode="python", context={"skip_api_serializer": True}),
-            {},
-            key,
-            {},
-        )
-        if existing_origin is not None and existing_origin.key() == origin.key():
-            if getattr(existing, "origin", None) is None:
-                existing.origin = origin
-                await existing.save(owner_typeid)
-            return True
-        raise FlowMessageExistsError(
-            [
-                {
-                    "type": entry_type,
-                    "id": entry_id,
-                    "path": None,
-                }
-            ]
-        )
-
-    artifact = Artifact.model_validate(payload)
-    artifact.id = entry_id
-    await artifact.save(owner_typeid)
-    return True
+    return await cls.restore_reference(entry_id, payload, origin, overwrite=overwrite, owner_typeid=owner_typeid)
 
 
 async def _restore_webapp_artifact_entry(
@@ -1494,17 +1454,17 @@ async def _restore_webapp_artifact_entry(
     overwrite: bool,
     owner_typeid: str | None,
 ) -> Path | None:
-    """Install a copy-mode folder webapp artifact: mirror its staged bytes into the
-    project and materialize the ``Artifact`` row pointing ``path`` at the served
-    folder (no clone).
+    """Install a copy-mode artifact: mirror its staged bytes (a webapp folder or a
+    shared file) under ``project_root`` and materialize the ``Artifact`` row
+    pointing at them (no clone).
 
     The counterpart of ``_pack_webapp_artifact_attachment``. ``entry_dir`` holds
-    only ``webapps/<slug>/…`` (the declaration rode separately at
+    only the bytes (the declaration rode separately at
     ``metadata/<key>/metadata.json``), so ``_restore_file_backed_entry`` mirrors it
-    verbatim under ``project_root``. Returns the served folder path, or None.
+    verbatim under ``project_root``. Returns the served path, or None.
     """
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-    from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin  # noqa: PLC0415
 
     slug = str(transfer.get("slug") or "")
     bytes_rel = str(transfer.get("bytes_rel") or (f"webapps/{slug}" if slug else ""))
@@ -1515,29 +1475,37 @@ async def _restore_webapp_artifact_entry(
     # verbatim — raises FlowMessageExistsError on a real collision when overwrite=False).
     _restore_file_backed_entry(entry_dir, project_root, overwrite)
     served = project_root / PurePosixPath(bytes_rel)
-    if not served.is_dir():
+    single_file = bool(transfer.get("single_file"))
+    if not (served.is_file() if single_file else served.is_dir()):
         return None
 
     # Materialize the row from the shipped declaration — pick only the artifact's
     # own fields (never the sender-local project_id / audit columns).
     payload = _read_transfer_metadata(unpacked_root, transfer)
+    # Where the bytes now live. A shared file also opens as the file itself
+    # (``_shared_file_target`` reads asset_ref).
+    location = {"origin": LocalOrigin(base=str(served.parent), rel_path=served.name)}
+    if single_file:
+        location["path"] = location["asset_ref"] = str(served)
+
+    existing = await Artifact.get_one({"id": asset_id})
+    if existing is not None and not overwrite:
+        # Idempotent re-receive: heal a missing location, leave the rest untouched.
+        if getattr(existing, "origin", None) is None or (single_file and existing.asset_ref != str(served)):
+            for field, value in location.items():
+                setattr(existing, field, value)
+            await existing.save(owner_typeid)
+        return served
+
     new_payload = {
         "type": EntityType.ARTIFACT.value,
         "id": asset_id,
         "name": payload.get("name") or f"artifact-{asset_id[:8]}",
         "kind": payload.get("kind") or "application.web",
         "description": payload.get("description"),
-        "origin": LocalOrigin(base=str(served.parent), rel_path=served.name).model_dump(mode="python"),
         "project_id": project_id,
+        **location,
     }
-
-    existing = await Artifact.get_one({"id": asset_id})
-    if existing is not None and not overwrite:
-        # Idempotent re-receive: heal a missing origin, leave the rest untouched.
-        if getattr(existing, "origin", None) is None:
-            existing.origin = LocalOrigin(base=str(served.parent), rel_path=served.name)
-            await existing.save(owner_typeid)
-        return served
 
     artifact = Artifact.model_validate(new_payload)
     artifact.id = asset_id
@@ -1545,32 +1513,29 @@ async def _restore_webapp_artifact_entry(
     return served
 
 
-async def _stamp_git_origins(
+async def _stamp_origins(
     received_entries: "set[tuple[str, str]]",
     origins_map: dict,
     owner_typeid: str | None,
 ) -> None:
-    """Stamp ``git_origin`` on received file-backed entities (best-effort).
+    """Stamp ``origin`` on received file-backed entities (best-effort).
 
     The indexer materialized the rows from disk (preserving the sender's pinned
-    id); here we attach the git provenance carried in ``git_origins.json`` so the
+    id); here we attach the provenance carried in ``fs_origins.json`` so the
     receiver records the asset's upstream repo + repo-relative position. Written
-    to the backend record metadata (``persist=TRUE``), never the user-facing file
-    and never the hub. Validated through ``GitOrigin`` so a malformed entry is
-    dropped rather than persisted raw.
+    to the backend record metadata (``persist=TRUE``), never the user-facing file.
+    A malformed entry is dropped rather than persisted raw.
     """
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     for entry_type, entry_id in received_entries:
         raw = origins_map.get(_entry_key(entry_type, entry_id))
         if not raw:
             continue
-        try:
-            origin = GitOrigin.model_validate(raw)
-        except Exception:
-            logger.warning("[bundle] invalid git_origin for %s-@%s; skipping", entry_type, entry_id)
+        origin = ORIGIN_ADAPTER.validate_python(raw)
+        if origin is None:
             continue
         cls = SchemaRegistry.get_entity_cls(entry_type)
         if cls is None:
@@ -1582,18 +1547,16 @@ async def _stamp_git_origins(
         try:
             await asyncio.to_thread(
                 FSRecord(type=entry_type, id=entry_id).save_metadata_field,
-                "git_origin",
+                "origin",
                 origin_payload,
             )
         except Exception:
-            logger.warning(
-                "[bundle] failed to persist git_origin metadata on %s-@%s", entry_type, entry_id, exc_info=True
-            )
-        ent.git_origin = origin_payload
+            logger.warning("[bundle] failed to persist origin metadata on %s-@%s", entry_type, entry_id, exc_info=True)
+        ent.origin = origin
         try:
             await _save_entity_db_only(ent, owner_typeid)
         except Exception:
-            logger.warning("[bundle] failed to stamp git_origin on %s-@%s", entry_type, entry_id, exc_info=True)
+            logger.warning("[bundle] failed to stamp origin on %s-@%s", entry_type, entry_id, exc_info=True)
 
 
 async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
@@ -1634,49 +1597,6 @@ async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
             logger.exception("[bundle] notify CREATE failed for %s-%s", entry_type, entry_id)
 
 
-def _attachment_snapshot(entry_dir: Path, entry_type: str) -> "tuple[str | None, str | None]":
-    """Best-effort (name, description) for a staged attachment's chip/modal.
-
-    Taken from the bundle at unpack time so the staged MessageAttachment can
-    render without the asset entity existing locally: leaf folder/file name,
-    refined by the main document's YAML frontmatter when present.
-    """
-    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(entry_type)
-    main_file = getattr(info, "main_file", None) if info else None
-    # Early-stop lookups (no full-tree listing): an attachment carrying a large
-    # resource tree must not be walked whole on the sync path.
-    main_path = None
-    name: str | None = None
-    if main_file:
-        main_path = next((p for p in entry_dir.rglob(main_file) if p.is_file()), None)
-        if main_path is not None:
-            name = main_path.parent.name
-    if main_path is None:
-        main_path = next((p for p in entry_dir.rglob("*.md") if p.is_file()), None)
-        if main_path is not None:
-            name = main_path.stem
-    if name is None:
-        first = next((p for p in entry_dir.rglob("*") if p.is_file()), None)
-        if first is not None:
-            name = first.stem
-    description: str | None = None
-    if main_path is not None:
-        try:
-            fm_text = _extract_frontmatter(main_path.read_text(encoding="utf-8", errors="replace"))
-            meta = _yaml_load(fm_text) if fm_text else None
-            if isinstance(meta, dict):
-                name = str(meta.get("name") or meta.get("title") or name or "") or name
-                raw_desc = meta.get("description")
-                if raw_desc:
-                    description = str(raw_desc)
-        except Exception:  # noqa: BLE001 — snapshot is cosmetic, never abort unpack
-            pass
-    return name, description
-
-
 async def _stage_attachment(
     *,
     top_fm_id: str,
@@ -1687,7 +1607,7 @@ async def _stage_attachment(
     unpacked_path: str,
     name: "str | None",
     description: "str | None",
-    git_origin: "dict | None",
+    origin: "dict | None",
     git_transfer: "dict | None" = None,
     transfer_mode: str = "copy",
     user_scope_allowed: "bool | None" = None,
@@ -1705,10 +1625,10 @@ async def _stage_attachment(
     (raw ``file`` entries have no TypeInfo to derive it from, and are always
     user-installable under ``~/.claude``).
     """
-    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
-    from flow_sdk.fs_store.placement import (  # noqa: PLC0415
+    from flow_sdk.assets.placement import (  # noqa: PLC0415
         user_scope_allowed as user_scope_allowed_policy,
     )
+    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma_id = MessageAttachment.allocate_deterministic_id(top_fm_id, entry_key)
@@ -1723,7 +1643,7 @@ async def _stage_attachment(
     ma.description = description
     ma.unpacked_path = unpacked_path
     ma.transfer_mode = transfer_mode
-    ma.git_origin = git_origin
+    ma.origin = origin
     ma.git_transfer = git_transfer
     ma.create_bookmark = create_bookmark
     # Schema-derived, stamped ONCE here so the UI never re-encodes the policy
@@ -1749,39 +1669,38 @@ async def _stage_attachment(
 # install layout, so ``_restore_file_backed_entry`` (anchor-free verbatim
 # mirror) and the scoped reindex work unchanged.
 #
-# Markdown lands under ``.claude/docs/`` — indexed as MARKDOWN by BOTH the
-# project (REAL_PROJECT_CWD) and user (USER_HOME_FOLDER) ``markdown_flat_fn``
-# walkers, which key on ``<root>/.claude/docs/**/*.md``. Everything else lands
-# under ``.claude/files/`` (copied on install; no dedicated walker yet, so not
-# auto-indexed — tracked as out-of-scope).
+# An untyped file follows its ``FSOrigin`` when the attachment carries one (so the
+# receiver's tree mirrors the sender's repo); otherwise it falls back by class —
+# markdown to ``docs/``, anything else to the project root. Both are owned by
+# ``placement.untyped_rel_subdir``. Non-markdown still has no dedicated walker, so
+# it is copied but not auto-indexed — it is at least visible and git-tracked now,
+# which the old ``.claude/files/`` was not.
 _MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 # Videos the bubble renders inline as a card — no staged chip. Images use the
 # shared ``is_image_filename`` predicate (single source of truth for pictures).
 _INLINE_VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mov", ".m4v", ".ogg"})
-# Transcripts (worker sessions / conversation.jsonl) ride as FILE attachments
-# but are consumed by ``_materialize_received_transcripts`` — never a user doc.
-_NON_STAGED_FILE_SUFFIXES = frozenset({".jsonl"})
 
 
 def is_markdown_filename(filename: str) -> bool:
     return PurePosixPath(filename).suffix.lower() in _MARKDOWN_SUFFIXES
 
 
-def file_attachment_rel_subdir(filename: str) -> str:
-    """Install-layout subdir for a raw file, mirrored in its staged entry dir.
-    Delegates to ``placement.raw_file_rel_subdir`` — the single owner of the
-    raw-file (NONE class) layout — so stage-time and install-time agree."""
-    from flow_sdk.fs_store.placement import raw_file_rel_subdir  # noqa: PLC0415
+def file_attachment_rel_subdir(filename: str, *, origin: object | None = None) -> str:
+    """Install-layout subdir for an untyped file, mirrored in its staged entry dir.
 
-    return raw_file_rel_subdir(filename)
+    Delegates to ``placement.untyped_rel_subdir`` — the single owner of that
+    layout — so stage-time and install-time can never disagree. ``origin``, when
+    the attachment carries one, puts the file back at its position in the sender's
+    tree; without one the fallback is ``docs/`` for markdown, the project root
+    otherwise."""
+    from flow_sdk.assets.placement import untyped_rel_subdir  # noqa: PLC0415
+
+    return untyped_rel_subdir(filename, origin=origin)
 
 
 def _should_stage_file_attachment(filename: str) -> bool:
-    if is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES:
-        return False  # renders inline as an image/video card
-    if PurePosixPath(filename).suffix.lower() in _NON_STAGED_FILE_SUFFIXES:
-        return False  # transcript, not a user document
-    return True
+    # Images/videos render inline as media cards instead of staged file cards.
+    return not (is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES)
 
 
 async def _stage_file_attachments(
@@ -1800,6 +1719,7 @@ async def _stage_file_attachments(
     upserts the same row, preserving install state. Images/videos and
     transcripts are skipped (see ``_should_stage_file_attachment``)."""
     from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.assets.placement import untyped_fallback_class, user_scope_allowed  # noqa: PLC0415
     from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
 
     staged: list = []
@@ -1822,27 +1742,93 @@ async def _stage_file_attachments(
         # Synthesize the entry dir under the persisted staging tree, laid out
         # at the canonical install relpath so install mirrors it verbatim.
         entry_dir = fm_data_ops.staged_entry_dir(top_fm_id, entry_key)
-        dest = entry_dir / file_attachment_rel_subdir(filename) / filename
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        if is_zip_filename(filename):
+            # A zip stages as its EXTRACTED folder: review browses it, and
+            # "Copy to project" lands the folder, never the archive.
+            entry_type, scope_class = await _stage_zip_contents(src, entry_dir)
+        else:
+            entry_type, scope_class = "file", untyped_fallback_class(filename)
+            dest = entry_dir / file_attachment_rel_subdir(filename) / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
         ma = await _stage_attachment(
             top_fm_id=top_fm_id,
             conversation_id=staging_conv_id,
             entry_key=entry_key,
-            entry_type="file",
+            entry_type=entry_type,
             entry_id=asset_id,
             unpacked_path=fm_data_ops.staged_entry_rel_path(entry_key),
             name=filename,
             description=None,
-            git_origin=None,
+            origin=None,
             transfer_mode="copy",
-            # A raw file is always user-installable (docs/ or files/ under
-            # ~/.claude); there's no TypeInfo for 'file' to derive this from.
-            user_scope_allowed=True,
+            # There's no TypeInfo for 'file', so the class comes from the filename
+            # and the ONE policy owner answers from it: a markdown doc is
+            # user-installable (``~/docs``), untyped bytes are project-only —
+            # a bare file dropped in the user's home is never a sane destination.
+            user_scope_allowed=user_scope_allowed(scope_class),
             owner_typeid=owner_typeid,
         )
         staged.append(ma)
     return staged
+
+
+def _zip_asset_type(root: Path) -> str | None:
+    """The ONE registered folder type whose shape ``root`` holds (``SKILL.md``,
+    ``agent.json``…), else None. Ambiguous (two types claim it) is None too —
+    an untyped folder is the safe reading."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    hits = []
+    for name in SchemaRegistry.get_all_types():
+        info = SchemaRegistry.get(name)
+        shape = getattr(info, "shape", None)
+        if not isinstance(shape, Folder) or not shape.main or info._resolved_layout[2] is None:
+            continue
+        if info.layout_of(root, verify=True).root is not None:
+            hits.append(name)
+    return hits[0] if len(hits) == 1 else None
+
+
+async def _stage_zip_contents(zip_src: Path, entry_dir: Path) -> "tuple[str, Any]":
+    """Extract a received zip into its staged entry dir; return ``(type, class)``
+    it stages as.
+
+    The zip is classified by what it holds: when its root — or the one folder it
+    wraps — is a registered folder asset (a zipped skill), it is laid out at that
+    type's canonical install relpath and stages as that type; otherwise it is a
+    plain folder named after the zip, at the project root (``<stem>/…``)."""
+    from flow_sdk.builtin.asset_placement import resolve_default_harness  # noqa: PLC0415
+
+    return await asyncio.to_thread(_place_zip_sync, zip_src, entry_dir, await resolve_default_harness())
+
+
+def _place_zip_sync(zip_src: Path, entry_dir: Path, default_worker) -> "tuple[str, Any]":
+    from flow_sdk.assets.placement import family_subdir, untyped_fallback_class  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.utils.archive import safe_extract_zip, unwrap_single_folder  # noqa: PLC0415
+
+    stem = PurePosixPath(zip_src.name).stem
+    # Extracted beside the entry dir — same volume, so placing it is a rename.
+    scratch = entry_dir.with_name(f"{entry_dir.name}.extracting")
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        safe_extract_zip(zip_src, scratch)
+        content = unwrap_single_folder(scratch)
+        asset_type = _zip_asset_type(content)
+        if asset_type is not None:
+            asset_class, harness, family = SchemaRegistry.get(asset_type)._resolved_layout
+            subdir = family_subdir(asset_class, harness, family, default_worker=default_worker) or ""
+            dest = entry_dir / subdir / (content.name if content != scratch else stem)
+        else:
+            asset_class = untyped_fallback_class(zip_src.name)
+            dest = entry_dir / file_attachment_rel_subdir(zip_src.name) / stem
+        shutil.rmtree(entry_dir, ignore_errors=True)  # a re-download restages from scratch
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(content, dest)
+        return asset_type or "file", asset_class
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 async def _notify_staged_attachments(mas: list) -> None:
@@ -1862,27 +1848,6 @@ async def _notify_staged_attachments(mas: list) -> None:
             await ma.add_entity_op_notification(op, notify_immediately=True)
         except Exception:
             logger.exception("[bundle] notify CREATE failed for message_attachment %s", ma.id)
-
-
-# Build/environment artifacts that must never ride inside a shared asset
-# bundle. They are regenerable cruft, not skill source, and their deeply
-# nested trees (a `.venv` ships `…/site-packages/pip/_internal/…/__pycache__/
-# *.pyc`) blow past Windows' 260-char MAX_PATH on the receiver's extractall —
-# which silently aborts the whole download. Keep this in sync with the spirit
-# of a `.gitignore`: ship source, not built environments.
-_ASSET_PACK_IGNORE = shutil.ignore_patterns(
-    ".venv",
-    "venv",
-    "env",
-    "__pycache__",
-    "*.pyc",
-    "*.pyo",
-    "node_modules",
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-)
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
@@ -1915,6 +1880,34 @@ def _normalize_transfer_mode(transfer_mode: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _row_as_its_file_says(entry_type: str, ent):
+    """A file-backed asset's row re-read from its file before it is snapshotted.
+
+    The envelope rides beside the file and the receiver overlays it onto the row
+    it indexed from that file — so the two must agree, and the FILE is the truth.
+    A row can lag its file (an ``agent.json`` edited after the last index shipped
+    ``mcp_servers: []`` beside a file naming the MCP, and the receiver's agent
+    lost its tool). Best-effort: a file that cannot be re-read keeps the row as is.
+    """
+    from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    ref = str(getattr(ent, "asset_ref", "") or "")
+    eid = getattr(ent, "id", None)
+    if info is None or info.main_subdir is None or not eid or not ref or not Path(ref).exists():
+        return ent
+    try:
+        resolved = await resolve_asset(ref, write=False, type_name=entry_type, owner_id=eid)
+        await index_one(resolved, scope=getattr(ent, "scope", None), project_id=getattr(ent, "project_id", None))
+        return await type(ent).get_one({"id": eid}) or ent
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "[bundle] could not re-read %s-%s from its file; packing the row", entry_type, eid, exc_info=True
+        )
+        return ent
+
+
 async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     """Add ``to_common_json()`` for a TYPE_ID attachment entity + its nested
     repo descendants into ``entities`` (keyed ``<type>-<id>``). Best-effort:
@@ -1937,12 +1930,19 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
         return
     if entry_type in _HEADER_SERIALIZED_TYPES:
         return
+    if entry_type in MEMBERSHIP_CONTAINER_TYPES:
+        # Org / team / project rows are written only by the hub membership
+        # mirror; an envelope here would let the install overlay write the
+        # sender's copy over the recipient's. A project rides as its git
+        # reference instead.
+        return
     cls = SchemaRegistry.get_entity_cls(entry_type)
     if cls is None:
         return
     ent = await cls.get_one({"id": entry_id})
     if ent is None:
         return
+    ent = await _row_as_its_file_says(entry_type, ent)
     try:
         entities[f"{entry_type}-{entry_id}"] = ent.to_common_json()
     except Exception:
@@ -1961,9 +1961,9 @@ async def _collect_descendant_envelopes(entry_type: str, ent, entities: dict) ->
 
         info = SchemaRegistry.get(entry_type)
         ar = getattr(ent, "asset_ref", None)
-        if info is None or not ar or info.main_layout != "folder":
+        if info is None or not ar or not isinstance(info.shape, Folder):
             return
-        folder = info.folder_for(Path(ar))
+        folder = info.storage_root_for(Path(ar))
         if not folder.is_dir():
             return
         for ref in repo_assets_fn([FSRef(folder)], IndexerOptions()):
@@ -2025,17 +2025,18 @@ async def pack_bundle(
     *,
     transfer_mode: str = _TRANSFER_MODE_COPY,
     create_bookmark: bool = False,
+    mirror_repo_layout: bool = True,
 ) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
     File-backed assets that live inside a git repo on the sender contribute a
-    ``GitOrigin`` to the top-level ``git_origins.json`` map (keyed by the asset
+    origin to the top-level ``fs_origins.json`` map (keyed by the asset
     typeid). Those entries are stored in the bundle keyed by their repo-relative
     ``rel_path`` so the receiver mirrors the sender's repo layout; assets with no
     git origin keep the canonical ``<main_subdir>/<leaf>`` layout.
 
     ``transfer_mode='git'`` switches git-backed file-backed assets to metadata-
-    only transfer: the bundle carries ``git_origins.json`` + ``git_transfers.json``
+    only transfer: the bundle carries ``fs_origins.json`` + ``git_transfers.json``
     + the sender's ``metadata.json`` copy, and the receiver indexes from the git
     checkout instead of copying asset bytes out of the bundle.
     """
@@ -2064,33 +2065,16 @@ async def pack_bundle(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
             await _collect_attachment_envelopes(entry, entities)
         if entities:
-            (tmp_root / _ENTITIES_FILE).write_text(
-                json.dumps(entities, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
-        if origins:
-            (tmp_root / _FS_ORIGINS_FILE).write_text(
-                json.dumps(origins, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
-            # Transition dual-write: legacy receivers only read git_origins.json.
-            # Non-git kinds never go in the legacy file (an old receiver can't
-            # materialize them anyway and would mis-handle the entry).
-            legacy_origins = {k: v for k, v in origins.items() if _is_git_origin_dict(v)}
-            if legacy_origins:
-                (tmp_root / _LEGACY_ORIGINS_FILE).write_text(
-                    json.dumps(legacy_origins, default=_json_default, ensure_ascii=False),
-                    encoding="utf-8",
-                )
+            _write_json(tmp_root / _ENTITIES_FILE, entities)
+        _write_origin_files(tmp_root, origins)
         if transfers:
-            (tmp_root / _GIT_TRANSFERS_FILE).write_text(
-                json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
-            )
+            _write_json(tmp_root / _GIT_TRANSFERS_FILE, transfers)
         if create_bookmark:
-            (tmp_root / _SHARE_OPTIONS_FILE).write_text(
-                json.dumps({"create_bookmark": True}, ensure_ascii=False), encoding="utf-8"
-            )
+            _write_json(tmp_root / _SHARE_OPTIONS_FILE, {"create_bookmark": True})
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
@@ -2112,9 +2096,14 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
         include=_FM_FIELDS,
         context={"skip_api_serializer": True},
     )
-    (fm_dir / "header.json").write_text(
-        json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    _write_json(fm_dir / "header.json", fm_data)
+
+
+def _write_json(path: Path, data) -> None:
+    """Serialize ``data`` to ``path``. The write counterpart to ``_read_json``,
+    holding the three encoding decisions (``_json_default`` for Enums, no ASCII
+    escaping, utf-8) in one place so a bundle file cannot drift from the rest."""
+    path.write_text(json.dumps(data, default=_json_default, ensure_ascii=False), encoding="utf-8")
 
 
 def _read_json(path: Path, default):
@@ -2151,7 +2140,7 @@ def _read_task_md_header(entry_dir: Path) -> dict | None:
     task_md = next(entry_dir.glob("tasks/*/task.md"), None) or next(entry_dir.rglob("task.md"), None)
     if task_md is None:
         return None
-    from flow_sdk.fs_store.indexer.functions.task import _read_task_md_fields  # noqa: PLC0415
+    from flow_sdk.assets.types.task import _read_task_md_fields
 
     fields = _read_task_md_fields(task_md)
     return fields or None
@@ -2189,7 +2178,7 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
     ``/fs/download/`` resolves identically on both sides. Inline-text PROMPT
     attachments are passed through.
     """
-    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.storage import get_entity_embedded_storage
 
     fm_typeid = TypeId(type="flow_message", id=fm_id)
@@ -2216,81 +2205,88 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
 
 
 # ---------------------------------------------------------------------------
-# _materialize_received_transcripts
-# ---------------------------------------------------------------------------
-
-# Worker-session entity types → worker key. A shared session's chip opens its
-# transcript *by session id*, resolved against the local CLI dirs; on a
-# receiver that never ran the session those are empty, so we persist the
-# carried transcript where ``resolve_session_jsonl`` falls back to.
-_WORKER_SESSION_TYPES = {
-    "claude_session": "claude",
-    "codex_session": "codex",
-    "copilot_session": "copilot",
-}
-
-
-def _file_contains(path: Path, needle: str) -> bool:
-    try:
-        return needle in path.read_text(encoding="utf-8", errors="ignore")
-    except OSError:
-        return False
-
-
-def _materialize_received_transcripts(fm_data: dict, tmp_root: Path) -> None:
-    """Persist any carried worker-session transcript into the instance's
-    received-transcripts store, keyed by (worker, session_id).
-
-    The transcript rides in as the share's FILE attachment; copying it to the
-    received store makes the by-session-id transcript chip open on a receiver
-    that never ran the session — exactly as it does on the sender. No-op when
-    the message carries no worker session (the common case) or the sender
-    opted not to attach the transcript. Worker-generic (claude/codex/copilot).
-
-    The FILE is paired to its session by matching the session id inside the
-    file's content: every worker transcript embeds its own session id, so the
-    pairing is unambiguous even when several files ride along.
-    """
-    from flow_sdk.transcript_analyzer.resolver import received_transcript_dest
-
-    atts = fm_data.get("attachment", []) or []
-    sessions: list[tuple[str, str]] = []
-    for att in atts:
-        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.TYPE_ID.value:
-            continue
-        tid = TypeId(att.get("data") or "")
-        worker = _WORKER_SESSION_TYPES.get(tid.type)
-        if worker and tid.id:
-            sessions.append((worker, tid.id))
-    if not sessions:
-        return
-
-    file_srcs: list[Path] = []
-    for att in atts:
-        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.FILE.value:
-            continue
-        rel = att.get("data") or ""
-        if rel.startswith("attachment/files/"):
-            src = tmp_root / rel
-            if src.exists():
-                file_srcs.append(src)
-    if not file_srcs:
-        return
-
-    for worker, sid in sessions:
-        dest = received_transcript_dest(worker, sid)
-        if dest is None or dest.exists():
-            continue
-        match = next((f for f in file_srcs if _file_contains(f, sid)), None)
-        if match is None:
-            continue
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(match, dest)
-
-
-# ---------------------------------------------------------------------------
 # _merge_conversation_jsonl
 # ---------------------------------------------------------------------------
+
+
+def _send_time_from_pointer_index(tmp_root: Path, fm_id: str) -> str | None:
+    """Recover a message's send-time from the pointer index inside the bundle.
+
+    ``_FM_FIELDS`` only gained ``created_date`` on 2026-06-30, so every bundle
+    packed by an older sender ships a header with no send-time — and those bundles
+    are frozen that way on the hub forever. Without a fallback the receiver stamps
+    ``now()``, which for a months-old message re-download throws the stream inbox order
+    out (and, once stamped, looks newer than the hub, so no later sync repairs it).
+
+    The time is not actually lost: ``_pack_conversation_attachment`` copies the
+    sender's ``conversation.jsonl`` into the bundle, and its Pointer for this
+    message carries the real send-time. Read it from there.
+    """
+    from flow_sdk.fs_store.pointer import Pointer  # noqa: PLC0415
+
+    attachment_dir = tmp_root / "attachment"
+    if not attachment_dir.is_dir():
+        return None
+    for entry_dir in sorted(attachment_dir.iterdir()):
+        jsonl_path = entry_dir / "conversation.jsonl"
+        if not jsonl_path.is_file():
+            continue
+        try:
+            lines = jsonl_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            line = line.strip()
+            if not line or fm_id not in line:
+                continue
+            try:
+                ptr = Pointer.from_jsonl_line(line)
+            except Exception:  # noqa: BLE001
+                continue
+            if ptr.id == fm_id and ptr.ts:
+                return str(ptr.ts)
+    return None
+
+
+def _restore_send_time(fm_data: dict, tmp_root: Path, fm_id: str, hub_updated: str | None = None) -> None:
+    """Fill a legacy bundle's missing send-time on ``fm_data``, in place.
+
+    THE one place that decides a message's send-time on receive. It must be
+    applied at EVERY site that can persist a FlowMessage out of a bundle — a
+    message rides a bundle twice (top-level header AND
+    ``attachment/flow_message-@<id>/header.json``), and the attachment entry is
+    written first. Restoring only at the top-level materialize is too late: the
+    row is already born stamped ``now()``, and the materialize then takes its
+    existing-row branch and never applies the recovered value.
+
+    Both clocks, not just ``created_date``: stream inbox recency is
+    ``max(message.updated_date)``, so leaving ``updated_date`` at ``now()``
+    drags the whole conversation to the sync instant.
+
+    ``updated_date`` is NOT the send-time and must not be guessed from it.
+    ``created_date`` is when the message was written; ``updated_date`` is when
+    the delivery lifecycle last touched it — in practice when it reached the
+    recipient, which the hub stamps (``received_at`` is ``HUB_WRITE``). Those
+    diverge by however long the message sat undelivered: days, for a backlog.
+    The pointer index only knows the send-time, so filling ``updated_date`` from
+    it sends the conversation DAYS into the past until the hub corrects it a
+    beat later — measured live at 10–11 stream inbox positions, dipping and snapping
+    back. Hence ``hub_updated``: the caller passes the hub's authoritative value
+    when it has one (it is sitting in the same payload that triggered the
+    download), so the row is born correct instead of corrected afterwards.
+
+    Falling back to the send-time is still right when there is no hub value — a
+    ``.flowmsg`` shared as a file has no delivery lifecycle and no second writer,
+    so nothing dips.
+    """
+    if fm_data.get("created_date"):
+        return
+    ts = _send_time_from_pointer_index(tmp_root, fm_id)
+    if not ts:
+        return
+    fm_data["created_date"] = ts
+    if not fm_data.get("updated_date"):
+        fm_data["updated_date"] = hub_updated or ts
 
 
 def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
@@ -2329,19 +2325,191 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _extended_length_path(p: Path) -> Path:
-    """Return ``p`` as a Windows extended-length (``\\\\?\\``) path so writes
-    under it bypass the 260-char MAX_PATH limit. No-op off Windows and when the
-    prefix is already present. The prefix requires a fully-qualified,
-    backslash-separated path with no ``.``/``..`` components, so resolve first."""
-    if os.name != "nt":
-        return p
-    resolved = os.path.abspath(str(p))
-    if resolved.startswith("\\\\?\\"):
-        return Path(resolved)
-    if resolved.startswith("\\\\"):  # UNC: \\server\share -> \\?\UNC\server\share
-        return Path("\\\\?\\UNC" + resolved[1:])
-    return Path("\\\\?\\" + resolved)
+@dataclass
+class _UnpackCtx:
+    """The unpack-time state the header-carried entry unpackers read: one
+    object instead of a closure over ``unpack_bundle``'s locals."""
+
+    tmp_root: Path
+    top_fm_id: str | None
+    staging_conv_id: str | None
+    bound_project_id: str | None
+    overwrite: bool
+    owner_typeid: str | None
+    create_bookmark: bool
+    msg_data: dict
+    task_id: str | None
+    hub_updated: Any
+    staged_mas: list
+
+
+async def _unpack_auto_policy_entry(
+    entry_dir: Path, name: str, entry_type: str, entry_id: str, ctx: "_UnpackCtx"
+) -> None:
+    """Row-only auto payload (claude_session, flowpad_diagnosis): staged like
+    every payload entry, then installed IMMEDIATELY through the one install
+    action — 'auto' means "no review gate", not "skip the pipeline". The row
+    materializes inside the install (create-or-fill-merge from the staged
+    header, plus the type's receive_row_overrides — e.g. claude_session stamps
+    received=True), so chips resolve exactly as before; project_id stays null
+    and scope inherits live via the parent-chain fallback."""
+    from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
+
+    header = _read_entity_header(entry_dir) or {}
+    ma = await _stage_attachment(
+        top_fm_id=ctx.top_fm_id,
+        conversation_id=ctx.staging_conv_id,
+        entry_key=name,
+        entry_type=entry_type,
+        entry_id=entry_id,
+        unpacked_path=fm_data_ops.staged_entry_rel_path(name),
+        name=header.get("name") or header.get("title"),
+        description=None,
+        origin=None,
+        create_bookmark=ctx.create_bookmark,
+        owner_typeid=ctx.owner_typeid,
+        user_scope_allowed=True,
+    )
+    ctx.staged_mas.append(ma)
+    from flow_sdk.app.actions.message_attachment_action import (  # noqa: PLC0415
+        handle_attachment_install,
+    )
+
+    # A conversation bound to a project claims its auto payloads
+    # too; otherwise they install user-scoped as before.
+    _auto_scope, _auto_pid = ("project", ctx.bound_project_id) if ctx.bound_project_id else ("user", None)
+    res = await handle_attachment_install(
+        ma.id,
+        _auto_scope,
+        _auto_pid,
+        overwrite=ctx.overwrite,
+        someone_typeid=ctx.owner_typeid,
+    )
+    if getattr(res, "status", None) != "SUCCESS":
+        logger.warning(
+            "[unpack] auto-install failed for %s-%s: %s",
+            entry_type,
+            entry_id,
+            getattr(res, "message", res),
+        )
+
+
+async def _unpack_remote_worker_session_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> None:
+    """Live-session snapshot: materialize/refresh the local session row from
+    the packed header, hub-free. Merge discipline lives in ``apply_snapshot``
+    — a host row is never regressed by an inbound snapshot; a guest row adopts
+    host-authoritative fields only when the snapshot's activity clock is
+    fresher. The inverse of ``_pack_remote_worker_session_attachment``."""
+    rws_data = _read_entity_header(entry_dir)
+    if rws_data is not None:
+        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+
+        await RemoteWorkerSession.adopt_snapshot(
+            {**rws_data, "id": rws_data.get("id") or entry_id},
+            someone_typeid=ctx.owner_typeid,
+        )
+
+
+async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> str | None:
+    """The inverse of ``_pack_conversation_attachment``: copy the shipped
+    ``conversation.jsonl`` to its permanent task dir and materialize the local
+    Conversation (notify=False — the sync fires in step 7, after the referenced
+    FlowMessage exists). Returns the conversation id, or None."""
+    from flow_sdk.app.actions.notification_scanner import _create_conversation_from_disk  # noqa: PLC0415
+    from flow_sdk.builtin.task import Task  # noqa: PLC0415
+
+    jsonl_file = entry_dir / "conversation.jsonl"
+    if not jsonl_file.exists():
+        return None
+    task_id_for_conv = (
+        next(
+            (
+                TypeId(c).id
+                for c in ctx.msg_data.get("shared_context_entities", [])
+                if TypeId(c).type == BuiltinEntityType.TASK.value
+            ),
+            None,
+        )
+        or ctx.task_id
+    )
+    # The bundle's conversation header carries the sender's
+    # local project_id / project_name. The receiver stores
+    # them as the conversation's `remote_project_id` /
+    # `remote_project_name` — provenance for the per-machine
+    # remote→local mapping table.
+    conv_header = _read_entity_header(entry_dir) or {}
+    bundle_remote_project_id = conv_header.get("project_id") or None
+    bundle_remote_project_name = conv_header.get("project_name") or None
+    bundle_participants = conv_header.get("participants") or []
+    bundle_title = (conv_header.get("title") or "").strip() or None
+    # Copy conversation.jsonl to a permanent location before the
+    # temp dir is cleaned up — _create_conversation_from_disk
+    # stores data_path pointing at task_dir, so it must survive.
+    import re as _re
+
+    from flow_sdk.instance_settings import get_instance_settings
+
+    task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
+    task_title_slug = (
+        _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60] if task_obj else "task"
+    )
+    perm_task_dir = get_instance_settings().tasks_dir / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
+    perm_task_dir.mkdir(parents=True, exist_ok=True)
+    perm_jsonl = perm_task_dir / "conversation.jsonl"
+    _merge_conversation_jsonl(jsonl_file, perm_jsonl)
+    # notify=False — the conversation save would otherwise fire a
+    # sync notification before the referenced FlowMessage is saved
+    # (step 5), causing the UI to fetch a not-yet-saved FM (404).
+    # We send the conversation sync explicitly in step 7 instead.
+    conv = await _create_conversation_from_disk(
+        task_dir=perm_task_dir,
+        task_id=task_id_for_conv or "",
+        conversation_id=entry_id,
+        owner_typeid=ctx.owner_typeid,
+        notify=False,
+        project_id=None,
+        remote_project_id=bundle_remote_project_id,
+        remote_project_name=bundle_remote_project_name,
+        participants=bundle_participants,
+        title=bundle_title,
+    )
+    # Frontend notification is deferred to step 7 — firing it here would
+    # tell the UI to refetch the conversation before the referenced
+    # FlowMessage is saved (step 5), causing 404s.
+    return conv.id if conv else None
+
+
+async def _unpack_flow_message_entry(entry_dir: Path, entry_id: str, ctx: "_UnpackCtx") -> None:
+    """The inverse of ``_pack_flow_message_entry``: this entry — not the
+    top-level materialize — is where a bundled message's row is born, so its
+    send-time is restored here (else it is stamped now() and every later
+    writer leaves the existing row alone). ``hub_updated`` describes the
+    TOP-level message only; a nested entry holds no hub payload."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    fm_data = _read_entity_header(entry_dir)
+    if fm_data is None:
+        return
+    fm_data.pop("expand", None)
+    fm_id = fm_data.get("id") or entry_id
+    existing_fm = await FlowMessage.get_one({"id": fm_id})
+    if existing_fm is not None and not ctx.overwrite:
+        return  # already exists — skip without aborting the whole unpack
+    _rewrite_file_attachments(fm_data, ctx.tmp_root, fm_id)
+    _restore_send_time(fm_data, ctx.tmp_root, fm_id, ctx.hub_updated if fm_id == ctx.top_fm_id else None)
+    inner_fm = FlowMessage.model_validate(fm_data)
+    inner_fm.id = fm_id
+    await inner_fm.save(ctx.owner_typeid)
+
+
+#: Header-carried families: the entry types packed as ``header.json`` (not
+#: bytes), keyed to their unpackers. ``_HEADER_SERIALIZED_TYPES`` is this
+#: table's keys plus flowpad_diagnosis, which unpacks through the auto policy.
+_HEADER_UNPACKERS: dict[str, Any] = {
+    EntityType.REMOTE_WORKER_SESSION.value: _unpack_remote_worker_session_entry,
+    BuiltinEntityType.CONVERSATION.value: _unpack_conversation_entry,
+    BuiltinEntityType.FLOW_MESSAGE.value: _unpack_flow_message_entry,
+}
 
 
 async def unpack_bundle(
@@ -2349,10 +2517,11 @@ async def unpack_bundle(
     local_user_id: str,
     *,
     overwrite: bool = False,
+    hub_updated: str | None = None,
 ) -> "FlowMessage":
     """Extract .flowmsg into the message's STAGING area, return FlowMessage.
 
-    File-backed assets (skill, agent, workflow, whiteboard, spec, prompt,
+    File-backed assets (skill, agent, workflow, chart, spec, prompt,
     markdown, plan, command, rule) and git-transfer assets are NOT copied into
     any project or indexed here. The extracted tree persists under the
     FlowMessage's record-data dir (``download/`` + ``unpacked/`` — see
@@ -2381,9 +2550,6 @@ async def unpack_bundle(
     overwrite=False.
     """
     from flow_sdk._compat import UTC
-    from flow_sdk.app.actions.notification_scanner import (
-        _create_conversation_from_disk,
-    )
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.task import Task
@@ -2398,8 +2564,11 @@ async def unpack_bundle(
         # the packer already strips the deep `.venv`/cache trees that used to
         # trip this; this keeps a legitimately-deep asset from breaking a share.
         def _extract() -> None:
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(_extended_length_path(tmp_root))
+            from flow_sdk.utils.archive import safe_extract_zip  # noqa: PLC0415
+
+            # The one extractor for sender-controlled archives: zip-slip and
+            # zip-bomb refused, symlink members skipped.
+            safe_extract_zip(zip_path, tmp_root)
 
         # Off-thread: a multi-MB bundle extraction on the sync path must not
         # stall the event loop (same rationale as the indexer's I/O-to-threads).
@@ -2421,8 +2590,8 @@ async def unpack_bundle(
 
         # Persist the bundle into the message's record-data dir: raw zip under
         # download/, extracted tree under unpacked/ (the STAGING area install
-        # reads from later). rmtree-then-copy makes a re-download an atomic
-        # refresh of staging; install state lives on MessageAttachment rows,
+        # reads from later). The materializer stages each replacement before
+        # publishing it; install state lives on MessageAttachment rows,
         # not in these folders, so it survives.
         from flow_sdk.builtin.flow_message import BODY_FILENAME as _BODY_FILENAME  # noqa: PLC0415
         from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
@@ -2450,12 +2619,11 @@ async def unpack_bundle(
         _canonicalize_arcs()
 
         def _persist_staging() -> None:
+            from flow_sdk.assets.materialize import materialize_asset_sync
+
             dl_dir = fm_data_ops.download_dir(top_fm_id)
-            dl_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(zip_path, dl_dir / _BODY_FILENAME)
-            staged_root = fm_data_ops.unpacked_dir(top_fm_id)
-            shutil.rmtree(staged_root, ignore_errors=True)
-            shutil.copytree(tmp_root, staged_root)
+            materialize_asset_sync(Path(zip_path), dl_dir / _BODY_FILENAME, overwrite=True)
+            materialize_asset_sync(tmp_root, fm_data_ops.unpacked_dir(top_fm_id), overwrite=True)
 
         await asyncio.to_thread(_persist_staging)
 
@@ -2525,20 +2693,11 @@ async def unpack_bundle(
         # Git provenance/placement map (type-@id -> GitOrigin dict). Optional; only
         # present when the sender packed assets that lived inside a git repo. Used
         # to (a) place assets at their repo-relative path — already encoded in the
-        # bundle layout by the packer — and (b) stamp ``git_origin`` on the
+        # bundle layout by the packer — and (b) stamp ``origin`` on the
         # materialized receiver entities after reindex.
-        # Origin map: prefer the canonical fs_origins.json, fall back to the
-        # legacy git_origins.json (old sender). Values are kind-tagged FSOrigin
-        # dicts (a legacy dict with no ``kind`` reads as git downstream).
-        git_origins_map: dict = {}
-        for _origins_name in (_FS_ORIGINS_FILE, _LEGACY_ORIGINS_FILE):
-            _go_path = tmp_root / _origins_name
-            if _go_path.exists():
-                try:
-                    git_origins_map = json.loads(_go_path.read_text(encoding="utf-8")) or {}
-                    break
-                except Exception:
-                    logger.warning("[bundle] unreadable %s; ignoring", _origins_name, exc_info=True)
+        # Origin map (fs_origins.json): kind-tagged FSOrigin dicts (a dict with
+        # no ``kind`` reads as git downstream).
+        git_origins_map: dict = _read_origin_map(tmp_root)
 
         git_transfers_map: dict = {}
         _gt_path = tmp_root / _GIT_TRANSFERS_FILE
@@ -2571,7 +2730,7 @@ async def unpack_bundle(
             # runs inside the explicit install action, not at download.
             entry_type, entry_id = parsed
             gt_payload = _read_transfer_metadata(tmp_root, transfer)
-            raw_origin = git_origins_map.get(key) or (transfer or {}).get("git_origin")
+            raw_origin = git_origins_map.get(key)
             # The transfers manifest carries both git transfers AND copy-mode
             # webapp-artifact byte carriers. Honor the per-entry mode: git points
             # unpacked_path at the metadata file; copy points it at the staged
@@ -2580,7 +2739,8 @@ async def unpack_bundle(
             _tmode = (transfer or {}).get("transfer_mode") or "git"
             if _tmode == _TRANSFER_MODE_COPY:
                 _unpacked = fm_data_ops.staged_entry_rel_path(key)
-                _user_scope: bool | None = False
+                # A shared file may live in the recipient's own folder; a webapp needs a project.
+                _user_scope: bool | None = bool((transfer or {}).get("single_file"))
             else:
                 _unpacked = str(transfer.get("metadata_path") or "")
                 _user_scope = None
@@ -2594,7 +2754,7 @@ async def unpack_bundle(
                     unpacked_path=_unpacked,
                     name=(gt_payload.get("name") or None),
                     description=(gt_payload.get("description") or None),
-                    git_origin=raw_origin if isinstance(raw_origin, dict) else None,
+                    origin=raw_origin if isinstance(raw_origin, dict) else None,
                     git_transfer=transfer if isinstance(transfer, dict) else None,
                     transfer_mode=_tmode,
                     user_scope_allowed=_user_scope,
@@ -2603,6 +2763,19 @@ async def unpack_bundle(
                 )
             )
 
+        unpack_ctx = _UnpackCtx(
+            tmp_root=tmp_root,
+            top_fm_id=top_fm_id,
+            staging_conv_id=staging_conv_id,
+            bound_project_id=bound_project_id,
+            overwrite=overwrite,
+            owner_typeid=owner_typeid,
+            create_bookmark=create_bookmark,
+            msg_data=msg_data,
+            task_id=task_id,
+            hub_updated=hub_updated,
+            staged_mas=staged_mas,
+        )
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -2614,7 +2787,7 @@ async def unpack_bundle(
                 entry_type, entry_id = parsed
 
                 # FILE-BACKED ASSET FAMILY (TypeInfo.main_subdir set): one branch
-                # for skill/agent/workflow/whiteboard/spec/prompt/markdown/plan/
+                # for skill/agent/workflow/chart/spec/prompt/markdown/plan/
                 # command/rule. STAGED — the subtree already persists under the
                 # message's unpacked/ dir; record a MessageAttachment row so the
                 # UI can review + explicitly install (copy + reindex live in the
@@ -2633,7 +2806,7 @@ async def unpack_bundle(
                         unpacked_path=fm_data_ops.staged_entry_rel_path(name),
                         name=snap_name,
                         description=snap_desc,
-                        git_origin=(git_origins_map.get(name) or None),
+                        origin=(git_origins_map.get(name) or None),
                         create_bookmark=create_bookmark,
                         owner_typeid=owner_typeid,
                     )
@@ -2704,157 +2877,11 @@ async def unpack_bundle(
                     continue
 
                 if getattr(SchemaRegistry.get(entry_type), "receive_policy", None) == "auto":
-                    # Row-only auto payload (claude_session, flowpad_diagnosis):
-                    # staged like every payload entry, then installed IMMEDIATELY
-                    # through the one install action — 'auto' means "no review
-                    # gate", not "skip the pipeline". The row materializes inside
-                    # the install (create-or-fill-merge from the staged header,
-                    # plus the type's receive_row_overrides — e.g. claude_session
-                    # stamps received=True), so chips resolve exactly as before;
-                    # project_id stays null and scope inherits live via the
-                    # parent-chain fallback (Entity.effective_project_id).
-                    header = _read_entity_header(entry_dir) or {}
-                    ma = await _stage_attachment(
-                        top_fm_id=top_fm_id,
-                        conversation_id=staging_conv_id,
-                        entry_key=name,
-                        entry_type=entry_type,
-                        entry_id=entry_id,
-                        unpacked_path=fm_data_ops.staged_entry_rel_path(name),
-                        name=header.get("name") or header.get("title"),
-                        description=None,
-                        git_origin=None,
-                        create_bookmark=create_bookmark,
-                        owner_typeid=owner_typeid,
-                        user_scope_allowed=True,
-                    )
-                    staged_mas.append(ma)
-                    from flow_sdk.app.actions.message_attachment_action import (  # noqa: PLC0415
-                        handle_attachment_install,
-                    )
-
-                    # A conversation bound to a project claims its auto payloads
-                    # too; otherwise they install user-scoped as before.
-                    _auto_scope, _auto_pid = ("project", bound_project_id) if bound_project_id else ("user", None)
-                    res = await handle_attachment_install(
-                        ma.id,
-                        _auto_scope,
-                        _auto_pid,
-                        overwrite=overwrite,
-                        someone_typeid=owner_typeid,
-                    )
-                    if getattr(res, "status", None) != "SUCCESS":
-                        logger.warning(
-                            "[unpack] auto-install failed for %s-%s: %s",
-                            entry_type,
-                            entry_id,
-                            getattr(res, "message", res),
-                        )
-
-                elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
-                    # Live-session snapshot: materialize/refresh the local
-                    # session row from the packed header, hub-free. Merge
-                    # discipline lives in ``apply_snapshot`` — a host row is
-                    # never regressed by an inbound snapshot; a guest row
-                    # adopts host-authoritative fields only when the
-                    # snapshot's activity clock is fresher.
-                    rws_data = _read_entity_header(entry_dir)
-                    if rws_data is not None:
-                        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
-                        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
-
-                        rws_id = rws_data.get("id") or entry_id
-                        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
-                        cloud_uid = (_get_cloud_user() or {}).get("id")
-                        local_is_host = bool(
-                            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
-                            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
-                        )
-                        rws = RemoteWorkerSession.apply_snapshot(
-                            existing_rws,
-                            {**rws_data, "id": rws_id},
-                            local_is_host=local_is_host,
-                        )
-                        await rws.save(owner_typeid)
-
-                elif entry_type == BuiltinEntityType.CONVERSATION.value:
-                    jsonl_file = entry_dir / "conversation.jsonl"
-                    if jsonl_file.exists():
-                        task_id_for_conv = (
-                            next(
-                                (
-                                    TypeId(c).id
-                                    for c in msg_data.get("shared_context_entities", [])
-                                    if TypeId(c).type == BuiltinEntityType.TASK.value
-                                ),
-                                None,
-                            )
-                            or task_id
-                        )
-                        # The bundle's conversation header carries the sender's
-                        # local project_id / project_name. The receiver stores
-                        # them as the conversation's `remote_project_id` /
-                        # `remote_project_name` — provenance for the per-machine
-                        # remote→local mapping table.
-                        conv_header = _read_entity_header(entry_dir) or {}
-                        bundle_remote_project_id = conv_header.get("project_id") or None
-                        bundle_remote_project_name = conv_header.get("project_name") or None
-                        bundle_participants = conv_header.get("participants") or []
-                        bundle_title = (conv_header.get("title") or "").strip() or None
-                        # Copy conversation.jsonl to a permanent location before the
-                        # temp dir is cleaned up — _create_conversation_from_disk
-                        # stores data_path pointing at task_dir, so it must survive.
-                        import re as _re
-
-                        from flow_sdk.instance_settings import get_instance_settings
-
-                        task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
-                        task_title_slug = (
-                            _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60]
-                            if task_obj
-                            else "task"
-                        )
-                        perm_task_dir = (
-                            get_instance_settings().tasks_dir
-                            / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
-                        )
-                        perm_task_dir.mkdir(parents=True, exist_ok=True)
-                        perm_jsonl = perm_task_dir / "conversation.jsonl"
-                        _merge_conversation_jsonl(jsonl_file, perm_jsonl)
-                        # notify=False — the conversation save would otherwise fire a
-                        # sync notification before the referenced FlowMessage is saved
-                        # (step 5), causing the UI to fetch a not-yet-saved FM (404).
-                        # We send the conversation sync explicitly in step 7 instead.
-                        conv = await _create_conversation_from_disk(
-                            task_dir=perm_task_dir,
-                            task_id=task_id_for_conv or "",
-                            conversation_id=entry_id,
-                            owner_typeid=owner_typeid,
-                            notify=False,
-                            project_id=None,
-                            remote_project_id=bundle_remote_project_id,
-                            remote_project_name=bundle_remote_project_name,
-                            participants=bundle_participants,
-                            title=bundle_title,
-                        )
-                        if conv:
-                            conversation_id = conv.id
-                            # Frontend notification is deferred to step 7 — firing it here
-                            # would tell the UI to refetch the conversation before the
-                            # referenced FlowMessage is saved (step 5), causing 404s.
-
-                elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
-                    fm_data = _read_entity_header(entry_dir)
-                    if fm_data is not None:
-                        fm_data.pop("expand", None)
-                        fm_id = fm_data.get("id") or entry_id
-                        existing_fm = await FlowMessage.get_one({"id": fm_id})
-                        if existing_fm is not None and not overwrite:
-                            continue  # already exists — skip without aborting the whole unpack
-                        _rewrite_file_attachments(fm_data, tmp_root, fm_id)
-                        inner_fm = FlowMessage.model_validate(fm_data)
-                        inner_fm.id = fm_id
-                        await inner_fm.save(owner_typeid)
+                    await _unpack_auto_policy_entry(entry_dir, name, entry_type, entry_id, unpack_ctx)
+                elif entry_type in _HEADER_UNPACKERS:
+                    result = await _HEADER_UNPACKERS[entry_type](entry_dir, entry_id, unpack_ctx)
+                    if entry_type == BuiltinEntityType.CONVERSATION.value and result:
+                        conversation_id = result
 
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the
@@ -2864,9 +2891,6 @@ async def unpack_bundle(
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
         # (top_fm_id was resolved early — the staging dirs are keyed by it.)
-        # Persist any carried worker-session transcript BEFORE the rewrite
-        # mutates attachment paths — it reads the FILE sources from tmp_root.
-        _materialize_received_transcripts(msg_data, tmp_root)
         # Stage raw FILE attachments (the OS-file-picker lane) as MessageAttachment
         # rows so they join the same download→review→install flow as asset
         # entities. Runs BEFORE _rewrite_file_attachments, which reads the FILE
@@ -2885,13 +2909,17 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        target_conv_id = conversation_id or next(
-            (
-                TypeId(c).id
-                for c in msg_data.get("shared_context_entities", [])
-                if TypeId(c).type == BuiltinEntityType.CONVERSATION.value
-            ),
-            None,
+        target_conv_id = (
+            conversation_id
+            or msg_data.get("conversation_id")
+            or next(
+                (
+                    TypeId(c).id
+                    for c in msg_data.get("shared_context_entities", [])
+                    if TypeId(c).type == BuiltinEntityType.CONVERSATION.value
+                ),
+                None,
+            )
         )
         # Lightweight bundles (no Conversation attachment dir, no
         # shared_context_entities entry) still reference the parent
@@ -2914,7 +2942,12 @@ async def unpack_bundle(
                         msg_data["conversation_id"] = target_conv_id
                     break
         if top_fm_already_exists and not overwrite and not conversation_id:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+            # A body pull fills an already-received header. Header-only bundles
+            # need not include a Conversation payload to identify that same row.
+            # Keep the conflict for standalone imports or a different parent.
+            existing_top = await FlowMessage.get_one({"id": top_fm_id_check}) if target_conv_id else None
+            if existing_top is None or existing_top.conversation_id != target_conv_id:
+                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)
@@ -2923,6 +2956,14 @@ async def unpack_bundle(
             await _notify_staged_attachments(staged_mas)
             return saved_fm
 
+        # Send-time precedence, one place: the header (post-2026-06-30 senders) →
+        # the pointer index the bundle already carries (pre-fix senders) → now().
+        # Recovered time goes onto the ROW too, not just the pointer: the row's
+        # ``created_date`` is what the stream inbox sorts on, and a ``now()`` there is
+        # self-sealing (it outranks the hub, so no later sync repairs it).
+        # Same restore as the attachment entry above — this path is reached when the
+        # bundle has no per-message attachment entry, so the row is born here instead.
+        _restore_send_time(msg_data, tmp_root, top_fm_id, hub_updated)
         bundle_ts = msg_data.get("created_date") or datetime.now(UTC).isoformat()
         top_fm = await materialize_flow_message(
             msg_data,

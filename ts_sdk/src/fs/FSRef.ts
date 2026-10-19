@@ -5,7 +5,10 @@
  * Mirrors flow_sdk/fs_store/fs_ref.py FSRef on the Python side.
  */
 
+import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
+import type { FileUpload } from '../services/FileUpload';
+import type { AssetDocument, DocumentPatch } from './AssetDocument';
 
 export type FSRefType = 'text' | 'json' | 'folder' | 'file';
 
@@ -29,19 +32,57 @@ export class FSRef {
     this.readOnly = readOnly;
   }
 
+  /**
+   * The local compute node that can service OS- and Git-specific file actions.
+   *
+   * Hub-backed refs deliberately return null: they still support the ordinary
+   * FSRef read/write/download contract, but their TypeId identifies the asset
+   * rather than a machine whose filesystem can be opened or queried with git.
+   */
+  get localComputeNodeId(): string | null {
+    return this.typeId.type === 'compute_node' ? this.typeId.id : null;
+  }
+
   static fromJson(json: FSRefJson): FSRef {
     return new FSRef(json.path, new TypeId(json.type_id), json.ref_type, json.read_only);
   }
 
   child(name: string): FSRef {
     const sep = this.path.endsWith('/') ? '' : '/';
-    return new FSRef(`${this.path}${sep}${name}`, this.typeId);
+    return new FSRef(`${this.path}${sep}${name}`, this.typeId, 'file', this.readOnly);
+  }
+
+  /**
+   * Resolve a relative path (`../shared/base.json`, `sibling.html`) against this
+   * ref's own location, returning a ref to the target.
+   *
+   * Resolves against this ref's own path INCLUDING its last segment, so for a
+   * file ref one `..` cancels the filename rather than climbing a directory:
+   * `x/y/deck.html` + `../t.json` is `x/y/t.json`, its sibling. That is the
+   * behaviour deck manifests are written against. Pair it with {@link vpath} to
+   * address the result.
+   *
+   * Here rather than at a call site: DeckViewer had this loop inline and then
+   * hand-built `${typeId}/${path}` — the string {@link vpath} already produces
+   * — which meant reaching past `typeId`, deliberately not public. A path rule
+   * copied per consumer is a path rule that drifts.
+   */
+  resolve(rel: string): FSRef {
+    const segs = this.path.split('/').filter(Boolean);
+    for (const part of rel.split('/')) {
+      if (part === '' || part === '.') continue;
+      if (part === '..') segs.pop();
+      else segs.push(part);
+    }
+    return new FSRef(segs.join('/'), this.typeId, 'file', this.readOnly);
   }
 
   get parent(): FSRef {
-    const idx = this.path.lastIndexOf('/');
+    // A Windows machine path separates with `\` (`C:\Users\…\CHART.md`): cut at
+    // whichever separator comes last, or a Windows asset's parent becomes `/`.
+    const idx = Math.max(this.path.lastIndexOf('/'), this.path.lastIndexOf('\\'));
     const parentPath = idx > 0 ? this.path.slice(0, idx) : '/';
-    return new FSRef(parentPath, this.typeId);
+    return new FSRef(parentPath, this.typeId, 'folder', this.readOnly);
   }
 
   async read(): Promise<string> {
@@ -50,19 +91,84 @@ export class FSRef {
     return typeof result === 'string' ? result : String(result);
   }
 
+  /**
+   * Binary counterpart of {@link read} — the same VFS download, asked for as a
+   * Blob. Without it a caller with a binary file (a .xlsx, an image) has no way
+   * through this class and has to reach past it for the ref's TypeId, which is
+   * deliberately not public.
+   */
+  async readBlob(): Promise<Blob> {
+    const { fsManager } = await import('../services/fsService');
+    const result = await fsManager.download(this.typeId, this.path, { asBlob: true });
+    return result instanceof Blob ? result : new Blob([result]);
+  }
+
   async write(content: string): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.writeFile(this.typeId, this.path, content);
   }
 
+  /** Ask the backend to scaffold a missing asset document at this exact path. */
+  async ensureDocument(assetTypeId: TypeId, spec: Record<string, import('./AssetDocument').DocumentValue>): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    await fsManager.ensureDocument(this.typeId, this.path, assetTypeId, spec);
+  }
+
+  async readDocument(): Promise<AssetDocument> {
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.readDocument(this.typeId, this.path);
+  }
+
+  async updateDocument(patch: DocumentPatch): Promise<AssetDocument> {
+    if (this.readOnly) throw new Error(`Cannot write read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.updateDocument(this.typeId, this.path, patch);
+  }
+
+  /** Upload a file into this folder through the ordinary entity VFS action. */
+  async uploadFile(file: File): Promise<FileUpload> {
+    if (this.readOnly) throw new Error(`Cannot upload to read-only FSRef: ${this.path}`);
+    const { fsManager } = await import('../services/fsService');
+    return fsManager.uploadFile(this.typeId, this.path, file);
+  }
+
+  /** Browser URL for this file through the ordinary entity VFS action. */
+  getDownloadUrl(): string {
+    const action = new ActionInfo('fs', this.typeId.type, this.typeId.id, 'GET');
+    const cleanPath = this.path.replace(/^\/+/, '');
+    action.subpath = cleanPath ? `download/${cleanPath}` : 'download';
+    return action.fullActionUrl;
+  }
+
   async exists(): Promise<boolean> {
-    try {
-      const { fsManager } = await import('../services/fsService');
-      await fsManager.download(this.typeId, this.path);
-      return true;
-    } catch {
-      return false;
-    }
+    // Deliberately NOT "attempt a download and catch the 404". That probe made a
+    // routine question ("has this been saved yet?") emit a browser-level
+    // `Failed to load resource: 404` before any application code could run, and
+    // it also transferred the whole file just to learn that it was there.
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.exists(this.typeId, this.path);
+  }
+
+  /**
+   * Read this file, or `null` when it does not exist yet.
+   *
+   * The sanctioned way to read a maybe-unsaved document. `read()`-and-catch emits a
+   * browser-level 404 for the ordinary "not created yet" case, and `exists()` then
+   * `read()` costs two round trips on the common path — this is one request that
+   * answers both. Encoded here rather than at each editor so the next caller cannot
+   * re-invent the noisy pattern.
+   */
+  async readIfExists(): Promise<string | null> {
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.readIfExists(this.typeId, this.path);
+  }
+
+  /** Extract this `.zip` to a temp folder and return that folder's machine path. */
+  async extractPreview(): Promise<string> {
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.extractPreview(this.typeId, this.path);
   }
 
   /**
@@ -78,6 +184,7 @@ export class FSRef {
    * file never produces a hard 404 in the editor.
    */
   async create(content: string = ''): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot create read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.writeFile(this.typeId, this.path, content);
   }
@@ -91,14 +198,18 @@ export class FSRef {
 
   async ls(): Promise<FSRef[]> {
     const { fsManager } = await import('../services/fsService');
-    const result = await fsManager.listDirectory(this.typeId, this.path).catch(() => ({ items: [] as Array<{name: string; relativePath?: string}> }));
-    return (result.items ?? []).map((item: {name: string; relativePath?: string}) => {
-      const itemPath = item.relativePath ?? (this.path.endsWith('/') ? `${this.path}${item.name}` : `${this.path}/${item.name}`);
-      return new FSRef(itemPath, this.typeId);
+    const result = await fsManager
+      .listDirectory(this.typeId, this.path)
+      .catch(() => ({ items: [] as Array<{ name: string; relativePath?: string }> }));
+    return (result.items ?? []).map((item: { name: string; relativePath?: string }) => {
+      const itemPath =
+        item.relativePath ?? (this.path.endsWith('/') ? `${this.path}${item.name}` : `${this.path}/${item.name}`);
+      return new FSRef(itemPath, this.typeId, 'file', this.readOnly);
     });
   }
 
   async delete(): Promise<void> {
+    if (this.readOnly) throw new Error(`Cannot delete read-only FSRef: ${this.path}`);
     const { fsManager } = await import('../services/fsService');
     await fsManager.delete(this.typeId, this.path).catch(() => {});
   }

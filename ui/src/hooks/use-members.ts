@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { APIEntity, getMembers, type Participant, type TypeId } from '@sdk';
-import { useEntity } from '@src/hooks/entity-hooks';
 import {
-  useMembershipAvailability,
-  type MembershipReason,
-} from '@src/hooks/use-membership-availability';
+  getMembers,
+  inviteFailure,
+  Project,
+  type AnyEntity,
+  type Participant,
+  type ShareResult,
+  type TypeId,
+} from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { useMembershipAvailability, type MembershipReason } from '@src/hooks/use-membership-availability';
 
 /** Module-level stable empty result so callers' equality checks (and any
  *  downstream useMemo deps) don't churn while the entity is still loading. */
@@ -31,7 +36,7 @@ export interface UseMembersResult {
   /** The entity itself, already resolved here for the roster — exposed so
    *  callers needing it (e.g. to publish before minting an invite link) don't
    *  mount a second ``useEntity`` for the same typeId. */
-  entity: APIEntity<any> | null | undefined;
+  entity: AnyEntity | null | undefined;
   /** Members + roles. Sourced from the local entity cache, then refreshed
    *  on mount via the generic ``members`` action (which the local server
    *  reflects to the hub when ``entity.remote=true``). */
@@ -60,11 +65,22 @@ export interface UseMembersResult {
   /** Re-fetch via ``getMembers``. Caller uses this after actions that may
    *  have changed membership (invite, leave, role change). */
   refresh: () => Promise<void>;
-  /** Invite one or more members by email in a single ``share`` round-trip —
-   *  the same path every other invite flow uses. De-dupes + drops blanks
-   *  first; recipients only appear in ``members`` after they accept + join
-   *  hub-side. */
-  addMembers: (emails: string[]) => Promise<void>;
+  /** Invite one or more members in a single ``share`` round-trip — the same
+   *  collapsed shape ``APIEntity.share`` itself takes. ``idOrEmail`` is
+   *  either an email or a hub user id (a contact the address book knows only
+   *  by id, e.g. from a conversation roster, has no email to invite by);
+   *  ``role`` is optional and only a Project invite honours it. Recipients
+   *  only appear in ``members`` after they accept + join hub-side.
+   *
+   *  On a Project every invite goes through ``Project.invite`` and its
+   *  ``ShareResult`` is returned: ``teams`` ride the SAME round-trip, each
+   *  granted on the hub as one principal, and each person and team has its own
+   *  outcome. It throws only when nothing landed; a partial failure is read
+   *  from the result. Any other entity uses the plain ``share`` and returns null. */
+  addMembers: (
+    users: { idOrEmail: string; role?: string }[],
+    opts?: { teams?: TypeId[] },
+  ) => Promise<ShareResult | null>;
   /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
    *  owner-self) callers with 403, which throws here. Refreshes after. */
   removeMember: (userId: string) => Promise<void>;
@@ -85,7 +101,7 @@ export interface UseMembersResult {
  * Multiple consumers for the same typeId share an in-flight fetch.
  */
 export function useMembers(typeId: TypeId | null): UseMembersResult {
-  const { data: entity } = useEntity<APIEntity<any>>(typeId);
+  const { data: entity } = useEntity<AnyEntity>(typeId);
   const { available, reason } = useMembershipAvailability();
   const [refreshed, setRefreshed] = useState<Participant[] | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -142,12 +158,21 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   }, [typeId, available]);
 
   const addMembers = useCallback(
-    async (emails: string[]) => {
-      const cleaned = Array.from(new Set(emails.map((e) => e.trim().toLowerCase()).filter(Boolean)));
-      if (!cleaned.length) return;
+    async (users: { idOrEmail: string; role?: string }[], opts?: { teams?: TypeId[] }) => {
+      const teams = opts?.teams ?? [];
+      if (!users.length && !teams.length) return null;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
-      await entity.share(cleaned);
+      if (entity instanceof Project) {
+        const result = await entity.invite(users, teams.length ? { teams } : {});
+        await refresh();
+        const failure = inviteFailure(result);
+        if (failure) throw failure;
+        return result;
+      }
+      if (teams.length) throw new Error('useMembers: only a project can be shared with a team');
+      await entity.share(users);
       await refresh();
+      return null;
     },
     [entity, refresh],
   );
@@ -200,10 +225,7 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   // `ready` is "the hub has answered at least once" (success OR failure), OR
   // membership is unavailable (nothing to wait for) — so UI gating on
   // rosterReady never stalls on a logged-out / offline surface.
-  const ready = useMemo(
-    () => refreshed !== null || error !== null || !available,
-    [refreshed, error, available],
-  );
+  const ready = useMemo(() => refreshed !== null || error !== null || !available, [refreshed, error, available]);
 
   return {
     entity,

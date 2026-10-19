@@ -3,7 +3,7 @@
  *
  * Two modes:
  *  - LINK:  copy a deep-link URL to the entity
- *  - BUNDLE: download a portable .flowmsg zip
+ *  - BUNDLE: write a message and download it, with what it carries, as a .flowmsg
  *
  * The conversation/email share moved to the contact-first
  * ``ShareToConversationDialog`` (so a re-share threads into the existing
@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
-import { Input } from '@src/components/ui/input';
+import { DownloadMessageForm } from '@src/components/share-to-conversation/DownloadMessageForm';
 import { cn } from '@src/lib/utils';
 
 type ShareMode = 'link' | 'bundle';
@@ -49,8 +49,6 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
   const entityType = isProcess ? 'session' : 'entity';
 
   const [mode, setMode] = useState<ShareMode>(allowCopyLink ? 'link' : 'bundle');
-  const [title, setTitle] = useState('');
-  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -61,8 +59,6 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
   useEffect(() => {
     if (open) {
       setMode(allowCopyLink ? 'link' : 'bundle');
-      setTitle(initialTitle);
-      setMessage('');
       setError(null);
       setBusy(false);
       setShareUrl(null);
@@ -92,28 +88,6 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       setBusy(false);
     }
   };
-
-  const handleDownloadBundle = async () => {
-    if (!title.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await entityShare.exportBundle({ title, message });
-      const a = document.createElement('a');
-      a.href = result.downloadUrl;
-      a.download = '';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      notify.success({ title: t`Bundle ready — download started.` });
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create task bundle.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const canSubmitBundle = title.trim().length > 0 && !busy;
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -169,41 +143,11 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
           )}
 
           {mode === 'bundle' && (
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                <Trans>Package this share into a portable <code>.flowmsg</code> file that recipients can import.</Trans>
-              </p>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground"><Trans>Title</Trans></label>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder={t`Title`}
-                  disabled={busy}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground"><Trans>Message (optional)</Trans></label>
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder={t`Add a personal note...`}
-                  rows={3}
-                  disabled={busy}
-                  className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-              </div>
-              <Button
-                type="button"
-                onClick={() => void handleDownloadBundle()}
-                disabled={!canSubmitBundle}
-                className="w-full gap-2"
-              >
-                <Download className="h-4 w-4" />
-                <Trans>Download .flowmsg</Trans>
-              </Button>
-              {error && <p className="text-xs text-destructive">{error}</p>}
-            </div>
+            <DownloadMessageForm
+              active={open && mode === 'bundle'}
+              initial={[{ typeid: typeId.toString(), label: initialTitle || typeId.toString() }]}
+              onDone={onClose}
+            />
           )}
         </div>
 

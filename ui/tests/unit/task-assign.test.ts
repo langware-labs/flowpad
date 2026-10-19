@@ -14,7 +14,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataManager, Task } from '@sdk';
 
-const CHILD_TYPEID = 'task-9a2e5d31-7777-4888-8999-aaaabbbbcccc';
+// The notification send is its own module (a hub round-trip); what the task does with its
+// answer is what is under test here.
+const send = vi.hoisted(() => ({ createAndSendConversation: vi.fn() }));
+vi.mock('@sdk/entities/conversation-send', () => send);
+
 // Fresh id per task: the SDK entity registry warns when the same id is
 // re-registered with a different instance across tests.
 let TASK_ID = '';
@@ -22,9 +26,7 @@ let TASK_ID = '';
 let callAction: ReturnType<typeof vi.spyOn>;
 
 const assignResult = (over: Record<string, unknown> = {}) => ({
-  child: CHILD_TYPEID,
   self: false,
-  created: true,
   assignee: 'bob@x.com',
   ...over,
 });
@@ -55,7 +57,7 @@ describe('Task.assign', () => {
       name: 'Bob',
       message: 'please take a look',
     });
-    expect(out).toEqual({ childTypeid: CHILD_TYPEID, conversationId: null, self: false });
+    expect(out).toEqual({ conversationId: null, self: false });
   });
 
   it('accepts a bare email string', async () => {
@@ -79,7 +81,26 @@ describe('Task.assign', () => {
 
     // No notification conversation: a self-assignment has nobody to notify.
     expect(callAction).toHaveBeenCalledTimes(1);
-    expect(out).toEqual({ childTypeid: null, conversationId: null, self: true });
+    expect(out).toEqual({ conversationId: null, self: true });
+  });
+
+  it('keeps the conversation it was asked in, so opening the task opens that conversation', async () => {
+    // The setup file loaded the SDK before this file's mock registered: a fresh graph sees it.
+    vi.resetModules();
+    const sdk = await import('@sdk');
+    send.createAndSendConversation.mockResolvedValue({ conversation_id: 'conv-1' });
+    const call = vi.spyOn(sdk.dataManager, 'callAction').mockResolvedValue(assignResult() as never);
+    const t = new sdk.Task({ id: crypto.randomUUID(), type: 'task', title: 'Fix login' });
+
+    const out = await t.assign('bob@x.com', { message: 'please look' });
+
+    expect(out).toEqual({ conversationId: 'conv-1', self: false });
+    expect(t.origin_conversation).toBe('conv-1');
+    // A local action, never a field save: a save of a shared task round-trips through the hub,
+    // which does not model the link and would drop it.
+    const link = call.mock.calls[1][0] as any;
+    expect(link.name).toBe('link-conversation');
+    expect(link.bodyParameters).toEqual({ conversation_id: 'conv-1' });
   });
 
   it('requires a recipient email', async () => {

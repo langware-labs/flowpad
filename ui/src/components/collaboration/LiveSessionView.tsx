@@ -1,29 +1,53 @@
 import {
+  Conversation,
   FlowMessage,
   FlowMessageKind,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
   RemoteWorkerSessionStatus,
+  SessionReplyPolicy,
   TypeId,
   isSessionTerminal,
 } from '@sdk';
-import { Trans } from '@lingui/react/macro';
-import { CircleCheck, CircleX, Pause, Play, PlugZap, Radio } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { ArrowLeft, CircleCheck, CircleX, PlugZap, Radio } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
-import { SessionEventLine } from '@src/components/conversation/LiveSessionGroup';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
+import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
+import { LiveSessionActivity, OpenSessionChatButton } from '@src/components/conversation/LiveSessionActivity';
 import {
-  grantContactPermission,
-  revokeContactPermission,
+  sessionGrantScope,
+  setSessionGrantScope,
   useContactPermissions,
   type ContactKey,
 } from '@src/hooks/use-contact-permissions';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
+import { authoredBy, senderOf } from '@sdk/models/MessageSender';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { MarkdownView } from '@src/components/markdown-view';
+import { useApproveLiveSession } from './useApproveLiveSession';
+import { SessionRoleBadge } from './SessionRoleBadge';
+import {
+  failedPromptOf,
+  pendingPromptOf,
+  promptTextOf,
+  resultTextOf,
+  sessionTitle,
+} from '@src/components/conversation/session-turns';
+import { isPromptMessage } from '@src/components/conversation/attachment-actions/prompt-attachment';
+import { sessionRole } from '@src/hooks/useConversationSessions';
+import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
+import { ConversationHeaderSession } from '@src/components/conversation/ConversationHeaderSession';
+import { buildMessageStartPrompt } from '@src/components/conversation/prompt-building';
+import { useConversation } from '@src/components/conversation/useConversation';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -41,41 +65,19 @@ export function useLiveSession(sessionId: string) {
   return useEntity<RemoteWorkerSession>(sessionTypeId, { watch: true });
 }
 
-function promptTextOf(fm: FlowMessage): string {
-  for (const a of fm.attachment ?? []) {
-    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt-') && a.prompt_preview) {
-      return a.prompt_preview;
-    }
-    if (a?.attachment_type === 'prompt' && a.data && !a.data.startsWith('prompt/')) {
-      return a.data;
-    }
-  }
-  const text = fm.text ?? '';
-  return text === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : text;
-}
-
-function resultTextOf(fm: FlowMessage): string | null {
-  for (const a of fm.attachment ?? []) {
-    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_result-')) {
-      return a.prompt_preview ?? fm.text ?? '';
-    }
-  }
-  return null;
-}
-
 /** Guest-facing status line per lifecycle state. */
 function statusLine(status: string | undefined, hostName: string): ReactNode {
   switch (status) {
     case RemoteWorkerSessionStatus.DRAFT:
-      return <Trans>Not started — your first prompt will request access to {hostName}'s machine.</Trans>;
+      return <Trans>Requesting access to {hostName}'s machine…</Trans>;
     case RemoteWorkerSessionStatus.PENDING:
       return <Trans>Waiting for {hostName} to approve the live session…</Trans>;
     case RemoteWorkerSessionStatus.RUNNING:
       return <Trans>Working on {hostName}'s machine…</Trans>;
     case RemoteWorkerSessionStatus.IDLE:
       return <Trans>Connected to {hostName}'s machine.</Trans>;
-    case RemoteWorkerSessionStatus.PAUSED:
-      return <Trans>{hostName} paused the live session.</Trans>;
+    case RemoteWorkerSessionStatus.ERROR:
+      return <Trans>Connected to {hostName}'s machine — the last prompt failed.</Trans>;
     case RemoteWorkerSessionStatus.DECLINED:
       return <Trans>{hostName} declined the live session.</Trans>;
     case RemoteWorkerSessionStatus.ENDED:
@@ -85,47 +87,95 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
   }
 }
 
-/** Host permission toggle backed by a ContactPermission row. */
-function PermissionToggle({
+/** Host-only standing grant: future sessions from this guest start approved,
+ *  in this project or everywhere. Backed by ONE ContactPermission row. */
+function StandingGrantCheckbox({
   contact,
   projectId,
-  action,
-  label,
+  guestName,
 }: {
   contact: ContactKey;
   projectId: string | null;
-  action: 'execute_prompt' | 'auto_reply';
-  label: ReactNode;
+  guestName: string;
 }) {
+  const { t } = useLingui();
   const { permissions, refetch } = useContactPermissions(contact);
-  const granted = permissions.some(
-    (r) => (r.project_id ?? null) === projectId && (r.allowed_actions ?? []).includes(action),
+  const scope = sessionGrantScope(permissions, projectId);
+  const [pendingScope, setPendingScope] = useState<'project' | 'everywhere'>(projectId ? 'project' : 'everywhere');
+  const effectiveScope: 'project' | 'everywhere' = scope === 'global' ? 'everywhere' : (scope ?? pendingScope);
+  const apply = useCallback(
+    async (on: boolean, which: 'project' | 'everywhere') => {
+      await setSessionGrantScope(contact, projectId, scope, on ? (which === 'project' ? 'project' : 'global') : null);
+      await refetch?.();
+    },
+    [contact, projectId, scope, refetch],
   );
-  const toggle = useCallback(async () => {
-    if (granted) await revokeContactPermission(contact, projectId, action);
-    else await grantContactPermission(contact, projectId, action);
-    await refetch?.();
-  }, [granted, contact, projectId, action, refetch]);
   return (
-    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-      <Checkbox checked={granted} onCheckedChange={() => void toggle()} className="h-3.5 w-3.5" />
-      {label}
-    </label>
+    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <label className="flex cursor-pointer items-center gap-1.5">
+        <Checkbox
+          checked={scope !== null}
+          onCheckedChange={(v) => void apply(!!v, effectiveScope)}
+          className="h-3.5 w-3.5"
+          data-testid="live-session-standing-grant"
+        />
+        <Trans>Always allow sessions from {guestName}</Trans>
+      </label>
+      <select
+        value={effectiveScope}
+        onChange={(e) => {
+          const next = e.target.value as 'project' | 'everywhere';
+          setPendingScope(next);
+          if (scope !== null) void apply(true, next);
+        }}
+        aria-label={t`Standing grant scope`}
+        data-testid="live-session-standing-grant-scope"
+        className="rounded border border-border bg-background px-1 py-0.5 text-[11px]"
+      >
+        {projectId && <option value="project">{t`in this project`}</option>}
+        <option value="everywhere">{t`everywhere`}</option>
+      </select>
+    </div>
   );
 }
 
 /**
- * The live-session surface — the same Prompt/PromptResult FlowMessages the
+ * The message ⋮ menu's "start a worker on this message", offered in the live
+ * session: a local session that starts at the session's latest message.
+ */
+function SessionOnLatestMessage({ conversationId, messageId }: { conversationId: string; messageId: string }) {
+  const { conversation, task } = useConversation(conversationId);
+  const buildPrompt = useCallback(
+    () =>
+      buildMessageStartPrompt(new TypeId(Conversation.type, conversationId), new TypeId(FlowMessage.type, messageId)),
+    [conversationId, messageId],
+  );
+  return (
+    <ConversationHeaderSession
+      conversation={conversation ?? null}
+      task={task}
+      buildPrompt={buildPrompt}
+      launchOnly
+      testIdPrefix="live-session"
+    />
+  );
+}
+
+/**
+ * The live-session surface — the same Prompt/PromptCompletion FlowMessages the
  * conversation groups away, rendered as a terminal-style exchange ("I am
  * working on the other side"). The GUEST types prompts and watches; the HOST
- * gets the pinned amber control header (Approve/Decline, Pause/Resume,
+ * gets the pinned amber control header (Approve/Decline,
  * Disconnect, standing-permission toggles).
  */
 export function LiveSessionView({ sessionId }: { sessionId: string }) {
   // Host/guest ids are CLOUD ids (host_user_id is stamped from the roster /
   // sender cloud identity), so compare against cloudUser, not the local
   // bootstrap user — otherwise the host is misread as a guest.
+  const { t } = useLingui();
   const { cloudUser } = useAuth();
+  const { localUser } = useLocalUser();
+  const { navigation: dockNavigation } = useDockNavigation();
   const { data: session, refetch } = useLiveSession(sessionId);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -150,6 +200,19 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     enabled: !!sessionId,
   });
 
+  // The session is named after its first prompt (a session opened before any
+  // prompt starts with its `requested` line, which names nothing). Memoized: the
+  // scan reads every message's attachments, on a list that grows.
+  const firstPrompt = useMemo(() => messages.find((m) => isPromptMessage(m)) ?? null, [messages]);
+
+  const { approve, picker: approvePicker } = useApproveLiveSession();
+  const retryFailedPrompt = useRetryFailedPrompt();
+  // The prompt the host failed to run and nothing answered since — its failed line offers Retry.
+  const failed = useMemo(() => failedPromptOf(messages), [messages]);
+  // A prompt nothing answered yet is running — read from the messages, since the
+  // guest's mirror never learns RUNNING (nothing is sent when a turn starts).
+  const pendingPrompt = useMemo(() => pendingPromptOf(messages), [messages]);
+
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
       setBusy(verb);
@@ -171,25 +234,94 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const isHost = session.isHost(cloudUser?.id ?? null) || !!session.host_process_id;
-  const status = session.status;
+  const isHost = sessionRole(session, cloudUser?.id) === 'host';
+  const status = session.status as RemoteWorkerSessionStatus | undefined;
   const terminal = isSessionTerminal(status);
+  const running =
+    status === RemoteWorkerSessionStatus.RUNNING || (status === RemoteWorkerSessionStatus.IDLE && !!pendingPrompt);
+  // Either side ends the session from here; the guest's header is the smaller row.
+  const disconnectButton = (small: boolean) =>
+    !terminal && (
+      <Button
+        size="sm"
+        variant="destructive"
+        className={small ? 'h-6 px-2 text-[11px]' : undefined}
+        onClick={() => void runAction('disconnect', () => session.disconnect())}
+        disabled={!!busy}
+        data-testid="live-session-disconnect"
+      >
+        <PlugZap className={small ? 'me-1 h-3.5 w-3.5' : 'me-1.5 h-4 w-4'} />
+        <Trans>Disconnect</Trans>
+      </Button>
+    );
+  const latestMessageId = messages[messages.length - 1]?.id;
+  const sessionOnLatestMessage = conversationId && latestMessageId && (
+    <SessionOnLatestMessage conversationId={conversationId} messageId={latestMessageId} />
+  );
   const hostName = session.host_name ?? 'the host';
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
 
-  // Guest DRAFT → PENDING flips locally on the first send (host-authoritative
-  // afterwards; apply_snapshot's no-regress rules protect the optimistic flip).
-  const onSent = () => {
-    if (!isHost && session.status === RemoteWorkerSessionStatus.DRAFT) {
-      session.status = RemoteWorkerSessionStatus.PENDING;
-      void session.save();
-    }
-    void refetch?.();
-  };
+  // Local vs remote, from where this machine sits: the guest's prompts are local
+  // to the guest and run remotely, on the host's Claude Code; the host sees both flipped.
+  const otherName = isHost ? guestName : hostName;
+  // Either side may type a prompt: label each by who actually wrote it.
+  const mine = (fm: FlowMessage) => authoredBy(senderOf(fm), [cloudUser?.id, localUser?.id]);
+  const replyAuthor = isHost ? t`your Claude Code` : t`${hostName}'s Claude Code`;
+  const title = firstPrompt ? sessionTitle(promptTextOf(firstPrompt)) : t`Live session with ${otherName}`;
+
+  const onSent = () => void refetch?.();
+
+  const replyPolicyControl = (
+    <Select
+      value={session.effectiveReplyPolicy}
+      onValueChange={(v) => void runAction('policy', () => session.setReplyPolicy(v as SessionReplyPolicy))}
+      disabled={terminal || !!busy}
+    >
+      <SelectTrigger className="h-6 w-auto gap-1 px-2 text-[11px]" data-testid="live-session-reply-policy">
+        <span className="text-muted-foreground">
+          <Trans>Replies:</Trans>
+        </span>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SessionReplyPolicy.AUTO}>
+          <Trans>Auto-send</Trans>
+        </SelectItem>
+        <SelectItem value={SessionReplyPolicy.REVIEW}>
+          <Trans>{hostName} reviews</Trans>
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <div className="flex h-full flex-col" data-testid="live-session-view">
+      {approvePicker}
+      <div className="flex flex-shrink-0 items-center gap-2 border-b px-4 py-1.5">
+        {conversationId && (
+          <button
+            type="button"
+            onClick={() =>
+              dockNavigation.openDock(
+                DockPointer.forConversation(conversationId, { messageId: session.starting_message_id ?? null }),
+              )
+            }
+            data-testid="live-session-back"
+            title={t`Back to the conversation message that started this session`}
+            className="inline-flex flex-shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            <Trans>Back</Trans>
+          </button>
+        )}
+        <span className="min-w-0 flex-1 truncate text-sm font-medium" data-testid="live-session-title" title={title}>
+          {title}
+        </span>
+        <SessionRoleBadge role={isHost ? 'host' : 'guest'} />
+        {isHost && session.host_process_id && <OpenSessionChatButton processId={session.host_process_id} />}
+        {replyPolicyControl}
+      </div>
       {/* ── pinned header ─────────────────────────────────────────────── */}
       {isHost ? (
         <div className="sticky top-0 z-10 flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2">
@@ -199,7 +331,9 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               {status === RemoteWorkerSessionStatus.PENDING ? (
                 <Trans>{guestName} wants to run prompts on your machine.</Trans>
               ) : (
-                <Trans>Live session with {guestName} on your machine · {status}</Trans>
+                <Trans>
+                  Live session with {guestName} on your machine · {status}
+                </Trans>
               )}
             </span>
           </div>
@@ -208,12 +342,23 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               <>
                 <Button
                   size="sm"
-                  onClick={() => void runAction('approve', () => session.approve())}
+                  className="bg-blue-600 text-white hover:bg-blue-500"
+                  onClick={() => void runAction('approve', () => approve(session, { remember: 'everywhere' }))}
                   disabled={!!busy}
+                  title={t`Approve, and let ${guestName} start sessions without asking`}
                   data-testid="live-session-approve"
                 >
-                  <CircleCheck className="mr-1.5 h-4 w-4" />
+                  <CircleCheck className="me-1.5 h-4 w-4" />
                   <Trans>Approve</Trans>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void runAction('approve', () => approve(session))}
+                  disabled={!!busy}
+                  data-testid="live-session-approve-once"
+                >
+                  <Trans>Approve once</Trans>
                 </Button>
                 <Button
                   size="sm"
@@ -222,118 +367,153 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   disabled={!!busy}
                   data-testid="live-session-decline"
                 >
-                  <CircleX className="mr-1.5 h-4 w-4" />
+                  <CircleX className="me-1.5 h-4 w-4" />
                   <Trans>Decline</Trans>
                 </Button>
               </>
             )}
-            {(status === RemoteWorkerSessionStatus.IDLE || status === RemoteWorkerSessionStatus.RUNNING) && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => void runAction('pause', () => session.pause())}
-                disabled={!!busy}
-                data-testid="live-session-pause"
-              >
-                <Pause className="mr-1.5 h-4 w-4" />
-                <Trans>Pause</Trans>
-              </Button>
-            )}
-            {status === RemoteWorkerSessionStatus.PAUSED && (
-              <Button
-                size="sm"
-                onClick={() => void runAction('resume', () => session.resume())}
-                disabled={!!busy}
-                data-testid="live-session-resume"
-              >
-                <Play className="mr-1.5 h-4 w-4" />
-                <Trans>Resume</Trans>
-              </Button>
-            )}
-            {!terminal && (
-              <Button
-                size="sm"
-                variant="destructive"
-                onClick={() => void runAction('disconnect', () => session.disconnect())}
-                disabled={!!busy}
-                data-testid="live-session-disconnect"
-              >
-                <PlugZap className="mr-1.5 h-4 w-4" />
-                <Trans>Disconnect</Trans>
-              </Button>
-            )}
+            {sessionOnLatestMessage}
+            {disconnectButton(false)}
           </div>
           {!terminal && (
             <div className="flex w-full items-center gap-4">
-              <PermissionToggle
+              <StandingGrantCheckbox
                 contact={guestContact}
                 projectId={session.project_id ?? null}
-                action="execute_prompt"
-                label={<Trans>Always auto-run {guestName}'s sessions here</Trans>}
+                guestName={guestName}
               />
             </div>
           )}
         </div>
       ) : (
         <div className="sticky top-0 z-10 flex flex-shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
-          <Radio
-            className={`h-3.5 w-3.5 flex-shrink-0 ${status === RemoteWorkerSessionStatus.RUNNING ? 'animate-pulse text-emerald-500' : ''}`}
-          />
-          <span data-testid="live-session-status-line">{statusLine(status, hostName)}</span>
+          <Radio className={`h-3.5 w-3.5 flex-shrink-0 ${running ? 'animate-pulse text-emerald-500' : ''}`} />
+          <span data-testid="live-session-status-line">
+            {statusLine(running ? RemoteWorkerSessionStatus.RUNNING : status, hostName)}
+          </span>
+          <div className="ms-auto flex items-center gap-2">
+            {sessionOnLatestMessage}
+            {disconnectButton(true)}
+          </div>
         </div>
       )}
 
-      {/* ── terminal-style exchange ───────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]">
+      {/* ── terminal-style exchange, latest-first; the composer below rides its context ── */}
+      <LatestScroll
+        className="bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]"
+        after={
+          /* ── composer (guest drives; host may also type) ── */
+          <div className="flex-shrink-0 border-t px-3 py-2">
+            {terminal ? (
+              <p className="text-center text-[11px] italic text-muted-foreground/70">
+                {status === RemoteWorkerSessionStatus.DECLINED ? (
+                  <Trans>This live session was declined.</Trans>
+                ) : (
+                  <Trans>This live session has ended.</Trans>
+                )}
+              </p>
+            ) : conversationId ? (
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] text-muted-foreground" data-testid="live-session-input-caption">
+                  {isHost ? (
+                    <Trans>Runs on your machine, in your Claude Code · Enter to send</Trans>
+                  ) : (
+                    <Trans>Runs on {hostName}'s machine, in their Claude Code · Enter to send</Trans>
+                  )}
+                </p>
+                <MessageComposer
+                  key={sessionId}
+                  conversationId={conversationId}
+                  liveSessionId={sessionId}
+                  onSent={onSent}
+                  variant="terminal"
+                  autoFocus
+                  placeholder={
+                    isHost ? t`Prompt for your Claude Code…` : t`Prompt for Claude Code on ${hostName}'s machine…`
+                  }
+                />
+              </div>
+            ) : (
+              <p className="text-center text-[11px] italic text-muted-foreground/70">
+                <Trans>This session has no bound conversation.</Trans>
+              </p>
+            )}
+          </div>
+        }
+      >
         {messages.length === 0 ? (
-          <p className="text-muted-foreground/70">
-            <Trans>No turns yet — send a prompt below to start working on {hostName}'s machine.</Trans>
+          <p className="text-muted-foreground/70" data-testid="live-session-empty">
+            {isHost ? (
+              <Trans>No prompts yet — {guestName}'s prompts will run here, in your Claude Code.</Trans>
+            ) : (
+              <Trans>No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine.</Trans>
+            )}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
             {messages.map((fm) => {
               if (fm.kind === FlowMessageKind.SESSION_EVENT) {
-                return <SessionEventLine key={fm.id} text={fm.text ?? ''} />;
+                const retry =
+                  !isHost && failed && conversationId && fm === failed.line
+                    ? () => void runAction('retry', () => retryFailedPrompt(conversationId, sessionId, failed.text))
+                    : undefined;
+                return (
+                  <SessionEventLine key={fm.id} text={fm.text ?? ''} onRetry={retry} retrying={busy === 'retry'} />
+                );
               }
               const result = resultTextOf(fm);
               if (result !== null) {
+                if (fm.is_draft && isHost) {
+                  // Review policy: the reply waits as the host's draft — send
+                  // or discard it here, in the session, never in the thread.
+                  return (
+                    <div key={fm.id} className="flex flex-col gap-1" data-testid="live-session-review-draft">
+                      <span className="text-[11px] italic text-muted-foreground">
+                        <Trans>Reply awaiting your review</Trans>
+                      </span>
+                      <MessageComposer draft={fm} onSent={onSent} onAfterDiscard={onSent} />
+                    </div>
+                  );
+                }
                 return (
-                  <pre key={fm.id} className="whitespace-pre-wrap text-foreground/90">
-                    {result}
-                  </pre>
+                  <div
+                    key={fm.id}
+                    data-testid="live-session-reply"
+                    data-side={isHost ? 'local' : 'remote'}
+                    className="flex flex-col gap-0.5 border-s-2 border-sky-500/60 ps-3"
+                  >
+                    <span className="select-none font-sans text-[10.5px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                      {replyAuthor}
+                      <span className="ms-1.5 normal-case tracking-normal text-muted-foreground">
+                        {isHost ? <Trans>· local</Trans> : <Trans>· remote</Trans>}
+                      </span>
+                    </span>
+                    <div className="break-words text-foreground/90" data-testid="live-session-reply-body">
+                      <MarkdownView value={result} dense codeChrome={false} />
+                    </div>
+                  </div>
                 );
               }
               const prompt = promptTextOf(fm);
               if (!prompt) return null;
               return (
-                <div key={fm.id} className="flex gap-2">
-                  <span className="select-none text-emerald-600 dark:text-emerald-400">❯</span>
+                <div
+                  key={fm.id}
+                  className="flex gap-2"
+                  data-testid="live-session-prompt"
+                  data-side={mine(fm) ? 'local' : 'remote'}
+                >
+                  <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">
+                    {mine(fm) ? t`You` : otherName} ❯
+                  </span>
                   <pre className="whitespace-pre-wrap">{prompt}</pre>
                 </div>
               );
             })}
           </div>
         )}
-      </div>
-
-      {/* ── composer (guest drives; host may also type) ───────────────── */}
-      <div className="flex-shrink-0 border-t px-3 py-2">
-        {terminal ? (
-          <p className="text-center text-[11px] italic text-muted-foreground/70">
-            {status === RemoteWorkerSessionStatus.DECLINED ? (
-              <Trans>This live session was declined.</Trans>
-            ) : (
-              <Trans>This live session has ended.</Trans>
-            )}
-          </p>
-        ) : conversationId ? (
-          <MessageComposer conversationId={conversationId} liveSessionId={sessionId} onSent={onSent} />
-        ) : (
-          <p className="text-center text-[11px] italic text-muted-foreground/70">
-            <Trans>This session has no bound conversation.</Trans>
-          </p>
-        )}
-      </div>
+        {isHost && <LiveSessionActivity session={session} />}
+      </LatestScroll>
     </div>
   );
 }

@@ -12,7 +12,7 @@ status are asymmetric), the **OSS receive/upsert path** (`hub_bridge`), the
 reconcile/staleness** (client-side revival), and the **conversation loader
 cascade** (the URL → entity → context resolution).
 
-It supersedes the old root `DESIGN_loadConversation.md` — the loader rationale
+It supersedes the old [`DESIGN_loadConversation.md`](../historical/DESIGN_loadConversation.md) — the loader rationale
 from that design doc is folded into the [Loader cascade](#5-conversation-loader-cascade)
 section below; that file can be deleted.
 
@@ -51,21 +51,21 @@ visibility. Hold that distinction; the rest is bookkeeping.
 
 ## 1. Hub fan-out (HUB repo)
 
-> The hub is a **separate checkout** at
-> `/Users/shlom/Documents/dev/test_flowpad/FlowPad/`. Paths in this section are
+> The hub is a **separate checkout**. Paths in this section are
 > in the **hub repo**, not flowpad-oss.
 
-`Conversation.add_message` (`flowpad/hub/builtin/conversation.py:107-123`) runs
+`Conversation.add_message` (`flowpad/hub/builtin/conversation.py:281-308`) runs
 after the message is accepted and stored. The hub has accepted it, so it is
 `SENT` (one check on the sender's UI) — `CREATED` only ever exists client-side,
-pre-accept (`conversation.py:108-113`). The sequence is:
+pre-accept (`conversation.py:282-287`). The sequence is:
 
 ```
 add_message(fm):
-  if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :112
-  add_child(fm); _recompute_message_count(); update()                   # :114-116
-  _fanout_message(fm)                                                   # :117  CONTENT, skip sender
-  _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :122  STATUS, sender alone
+  if rank(fm.delivery_status) < rank(SENT): fm.delivery_status = SENT   # :286-287
+  reset_create_fields(fm)   # wire attribution is client-controlled      # :298
+  add_child(fm); _recompute_message_count(); update()                   # :299-301
+  _fanout_message(fm)                                                   # :302  CONTENT, skip sender
+  _fanout_status_update(fm, only_user_id=fm.sender_id)                  # :307  STATUS, sender alone
 ```
 
 ### The common iterator — `_dispatch_to_participants`
@@ -97,28 +97,28 @@ The sender is skipped because the hub's entity-save auto-notify already echoed
 the row to the sender; re-delivering the content would be redundant (and arrives
 without `from_entity`, so it would hit the denied fallback — see §2).
 
-### Status fanout targets / honors the sender
+### Status fanout targets
 
-Two distinct status pushes, with **inverse** sender handling:
+Two distinct status pushes:
 
 1. **`sent` → sender alone.** Because content fanout skipped the sender, the
    sender would never learn its own message advanced `created → sent`. So
    `add_message` pushes `_fanout_status_update(fm, only_user_id=fm.sender_id)`
    (`conversation.py:118-122, 283-299`) to bump that one row.
 
-2. **`delivered` / `received` → everyone, honoring visibility.** When a
-   recipient auto-acks, the resulting status update fans to all participants —
-   but `_fanout_status_update` applies the inverse skip: `skip = fm.sender_id if
-   not self.message_status_visible else None` (`conversation.py:298`). With read
-   receipts OFF the **sender** is the one skipped; with them ON everyone
-   (sender included) sees the tick advance.
+2. **`delivered` / `received` → auto-watch recipients.** A recipient
+   installation emits these acknowledgements only when
+   `preferences.notifications.share_message_status` is enabled. The Hub persists
+   the resulting FlowMessage update, and generic role-based auto-watch routes it
+   once to every live connection that can access the message. Legacy explicit
+   watch mode retains the participant fanout helper.
 
 ```
             sender skipped?   targets
-  CREATE        YES           recipients               (content; sender already has it)
-  sent          —             sender only              (only_user_id)
-  delivered/    iff status    all, or all-but-sender   (visibility-gated inverse skip)
-   received      hidden
+  CREATE        YES           recipients              (content; sender already has it)
+  sent          —             sender only             (only_user_id)
+  delivered/    NO            role-accessible live connections
+   received
 ```
 
 `_fanout_message_delete` (`conversation.py:216-231`) is the deliberate
@@ -129,21 +129,22 @@ pointer index.
 ## 2. OSS receive / upsert — `hub_bridge`
 
 All inbound frames land on `HubBridge._on_data_op`
-(`flow_sdk/cloud_client/hub_bridge.py:277-341`). It parses `to_entity`
-(the changed entity) and `from_entity` (the parent envelope, `hub_bridge.py:285-289`),
-then routes by type (`hub_bridge.py:296-319`):
+(`flow_sdk/cloud_client/hub_bridge.py:361`). It parses `to_entity`
+(the changed entity) and `from_entity` (the parent envelope, `hub_bridge.py:370-374`),
+then routes by type (`hub_bridge.py:381-409`):
 
 ```
 _on_data_op(message):
   child_*                      → _handle_child_op       (envelope inverted: to=parent)
   to_entity.type == flow_message → _handle_flow_message_op(op, eid, data, parent_conv_id)
-                                    parent_conv_id = from_eid iff from_entity is a conversation  # :311-313
+                                    parent_conv_id = from_eid iff from_entity is a conversation  # :397
   to_entity.type == conversation → _handle_conversation_op(op, eid, data)
   to_entity.type == invitation   → _handle_invitation_op (nudge → HTTP pull)
-  always: _dispatch_event(...)   → generic cloud_watch subscribers                # :334-341
+  (also task / deployment / llm_endpoint / membership-mirror branches)            # :403-409
+  always: _dispatch_event(...)   → generic cloud_watch subscribers                # :426
 ```
 
-### `_handle_flow_message_op` (`hub_bridge.py:397-533`)
+### `_handle_flow_message_op` (`hub_bridge.py:490`)
 
 **Self-send drop (`hub_bridge.py:420-427`).** The hub fires *two* CREATE frames
 per `add_message`: the entity-save auto-notify (no `from_entity`, broadcast to
@@ -173,9 +174,12 @@ emit_live_create=True, remote=True)`. The history here matters: the bridge once
 pre-emitted the CREATE for latency and called materialize with `notify=False` —
 but `notify=False` *also* suppressed the Conversation UPDATE, so an already-open
 view never re-rendered. Correctness won: **both** events go through materialize
-(`hub_bridge.py:480-485`). A body-bearing prompt that is still `UPLOADING` is
-deferred — its auto-run waits for the `body_status → READY` UPDATE, kept
-idempotent by a `prompt_auto_handled` marker (`hub_bridge.py:510-527`).
+(`hub_bridge.py:480-485`). A prompt is routed to the session gate
+(`process_inbound_prompt`, see [`./live-sessions.md`](./live-sessions.md)); a
+body-bearing one that is still `UPLOADING` is deferred — the gate runs on the
+`body_status → READY` UPDATE instead, kept idempotent by the
+`prompt_auto_handled` marker (the two trigger points in `hub_bridge.py`
+`_handle_flow_message_op`).
 
 **Eager bundle pull (`hub_bridge.py:540-546`).** Only when `body_status` is
 already `ready` at CREATE time (sender uploaded before our bridge saw the
@@ -259,27 +263,26 @@ one place (`materialize_flow_message.py:1-12`).
 
 ### Load-bearing order: FM CREATE → Conversation UPDATE
 
-`materialize_flow_message` (`materialize_flow_message.py:153-324`) saves the FM
+`materialize_flow_message` (`materialize_flow_message.py:186-402`) saves the FM
 *before* it notifies the conversation, because the UI refetches the conversation
-on the UPDATE and must already have the FM row to render
-(`materialize_flow_message.py:165-175`):
+on the UPDATE and must already have the FM row to render:
 
 ```
 materialize_flow_message(payload, conversation_id, remote, emit_live_create):
-  1. upsert FlowMessage  (notify=False)                                   # :196-235
-       existing + remote + is_stale → LWW merge_hub_payload, reflect      # :206-213
-       new + remote → carry wire created_by verbatim, reflect             # :221-235
-  2. emit explicit CREATE  iff (is_new OR emit_live_create)               # :246-251
-  3. ensure conversation exists (bare build if caller skipped it)         # :254-264
-  4. append typed Pointer → conversation.jsonl                            # :274-282
-  5. project_pointers_to_entity(rec) → message_ids / message_count       # :283-284
-  6. sniffer EVENTs + conv.notify_updated()                              # :286-320
+  1. upsert FlowMessage  (notify=False)                                   # :230-281
+       existing + remote + is_stale → LWW merge_hub_payload, reflect      # :239-249
+       new + remote → carry wire created_by verbatim, reflect             # :259-276
+  2. emit explicit CREATE  iff notify AND (is_new OR emit_live_create)    # :289
+  3. ensure conversation exists (bare build if caller skipped it)         # :300-312
+  4. attach_child(fm) + append typed Pointer → conversation.jsonl         # :345-352
+  5. project_pointers_to_entity(rec) → message_ids / message_count       # :354
+  6. sniffer EVENTs + conv.notify_updated()                              # :367-398
 ```
 
 Step 2's `emit_live_create` flag is the fix for the "doorbell rings once" bug: a
 background catch-up that materialized the row first would otherwise swallow the
 live CREATE, so body-bearing messages never reached the open conversation
-(`materialize_flow_message.py:237-245`). The hub WS bridge always passes it.
+(`materialize_flow_message.py:283-289`). The hub WS bridge always passes it.
 
 The `remote=True` path preserves hub attribution via `remote_reflection()` (a
 contextvar that suppresses the driver's local-user stamp) and applies the
@@ -341,24 +344,24 @@ reconcile is non-fatal and drops the guard so a later mount retries
 The loader resolves a `/dock/conversation/<id>[/message/<id>]` URL into a fully
 populated conversation plus `dataContext`. It is a two-tier split mirroring
 `load-shell` / `load-project`: a pure primitive `loadConversation(id)`
-(`ui/src/routes/loaders/load-conversation.ts:58-126`) and a URL-aware wrapper
-`loadConversationRoute(pointer)` (`load-conversation.ts:132-179`).
+(`ui/src/routes/loaders/load-conversation.ts:51-113`) and a URL-aware wrapper
+`loadConversationRoute(pointer)` (`load-conversation.ts:120-168`).
 
 ```
 loadConversation(id):
-  Phase 1  conv = getByTypeId(Conversation, id)                # :61-77  HARD-required
+  Phase 1  conv = getByTypeId(Conversation, id)                # :55-69  HARD-required
              404/403 → throw ConversationLoadError('not_found')
              other   → throw ...('network_error')
-  Phase 2  taskTypeId = conv.firstContextOfType('task')        # :80-84  silent-optional
+  Phase 2  taskTypeId = conv.firstContextOfType('task')        # :74-76  silent-optional
              if present: task = getByTypeId(task).catch(null)
-  Phase 3  projectId = task?.project_id                        # :92     CASCADE
+  Phase 3  projectId = task?.project_id                        # :85     CASCADE
                        ?? conv.project_id
                        ?? undefined
-  Phase 4  dataContext.setActiveEntityTypeId(conv)             # :97
-           projectId ? setContext(CurrentProject, project)     # :99-108
+  Phase 4  dataContext.setActiveEntityTypeId(conv)             # :90
+           projectId ? setContextEntityTypeId(CurrentProjectTypeId, project)  # :92-99
                        + prefetch Project (best-effort)
-                     : setContext(CurrentProject, null)        # :109-119  → red "Select Project" pill
-  Phase 5  if task?.project_root: setWorkdir(root)             # :121-123
+                     : setContextEntityTypeId(CurrentProjectTypeId, null)     # :106  → red "Select Project" pill
+  Phase 5  if task?.project_root: setWorkdir(root)             # :109-111
 ```
 
 ### Why this shape (rationale folded from the old design doc)

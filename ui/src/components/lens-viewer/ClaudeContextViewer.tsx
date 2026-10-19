@@ -19,9 +19,7 @@ import type {
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <div className="mb-2 flex items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-        {children}
-      </span>
+      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">{children}</span>
       <div className="h-px flex-1 bg-border" />
     </div>
   );
@@ -37,10 +35,8 @@ function TokenBar({ pct, label, tokens }: { pct: number; label: string; tokens: 
           style={{ width: `${Math.max(pct, 0.5)}%` }}
         />
       </div>
-      <span className={cn('w-10 text-right font-mono text-[11px] font-medium', pctColor(pct))}>
-        {pct}%
-      </span>
-      <span className="w-14 text-right font-mono text-[11px] text-muted-foreground">{tokens}</span>
+      <span className={cn('w-10 text-end font-mono text-[11px] font-medium', pctColor(pct))}>{pct}%</span>
+      <span className="w-14 text-end font-mono text-[11px] text-muted-foreground">{tokens}</span>
     </div>
   );
 }
@@ -78,14 +74,14 @@ function BigUsageRing({ pct }: { pct: number }) {
 // ─── Category palette ─────────────────────────────────────────────────────────
 
 const CAT_COLOR: Record<string, string> = {
-  'system prompt':    'text-violet-400',
-  'system tools':     'text-blue-400',
-  'mcp tools':        'text-cyan-400',
-  'custom agents':    'text-teal-400',
-  'memory files':     'text-emerald-400',
-  'skills':           'text-yellow-400',
-  'messages':         'text-slate-300',
-  'free space':       'text-muted-foreground',
+  'system prompt': 'text-violet-400',
+  'system tools': 'text-blue-400',
+  'mcp tools': 'text-cyan-400',
+  'custom agents': 'text-teal-400',
+  'memory files': 'text-emerald-400',
+  skills: 'text-yellow-400',
+  messages: 'text-slate-300',
+  'free space': 'text-muted-foreground',
   'autocompact buffer': 'text-orange-400',
 };
 
@@ -105,16 +101,16 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
     <div className="flex h-full flex-col overflow-hidden">
       {/* ── Header ── */}
       <div className="flex items-center gap-3 border-b px-4 py-2">
-        <span className="text-sm font-semibold"><Trans>Claude Code — Context Window</Trans></span>
-        {data && (
-          <span className="font-mono text-[11px] text-muted-foreground">{data.model}</span>
-        )}
+        <span className="text-sm font-semibold">
+          <Trans>Claude Code — Context Window</Trans>
+        </span>
+        {data && <span className="font-mono text-[11px] text-muted-foreground">{data.model}</span>}
         {sessionTitle && (
           <span className="truncate text-[11px] text-muted-foreground/70" title={sessionTitle}>
             {sessionTitle}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ms-auto flex items-center gap-1">
           <button
             onClick={refetch}
             disabled={isLoading}
@@ -140,8 +136,12 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
         {!data && !isLoading && (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             <div className="text-center">
-              <p className="font-medium"><Trans>No context data</Trans></p>
-              <p className="mt-1 text-xs"><Trans>Ensure the claude CLI is installed and authenticated.</Trans></p>
+              <p className="font-medium">
+                <Trans>No context data</Trans>
+              </p>
+              <p className="mt-1 text-xs">
+                <Trans>Ensure the claude CLI is installed and authenticated.</Trans>
+              </p>
             </div>
           </div>
         )}
@@ -150,8 +150,12 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             <div className="text-center">
               <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" />
-              <p><Trans>Running /context…</Trans></p>
-              <p className="mt-1 text-xs text-muted-foreground/60"><Trans>Takes ~4 seconds</Trans></p>
+              <p>
+                <Trans>Running /context…</Trans>
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground/60">
+                <Trans>Takes ~4 seconds</Trans>
+              </p>
             </div>
           </div>
         )}
@@ -164,13 +168,7 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
 
 // ─── Dashboard layout ─────────────────────────────────────────────────────────
 
-function Dashboard({
-  data,
-  todayCost,
-}: {
-  data: ClaudeContextData;
-  todayCost: number | null;
-}) {
+function Dashboard({ data, todayCost }: { data: ClaudeContextData; todayCost: number | null }) {
   const { t } = useLingui();
   // Group MCP tools by server
   const mcpByServer = data.mcp_tools.reduce<Record<string, ClaudeContextMcpTool[]>>((acc, t) => {
@@ -196,7 +194,9 @@ function Dashboard({
             <p className="font-mono text-sm font-semibold text-foreground">
               {data.tokens_used_str} / {data.tokens_total_str}
             </p>
-            <p className="text-[11px] text-muted-foreground"><Trans>context tokens</Trans></p>
+            <p className="text-[11px] text-muted-foreground">
+              <Trans>context tokens</Trans>
+            </p>
           </div>
         </div>
 
@@ -206,26 +206,19 @@ function Dashboard({
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
               <Trans>Today's cost</Trans>
             </p>
-            <p className="mt-1 font-mono text-xl font-bold text-foreground">
-              ${todayCost.toFixed(4)}
-            </p>
+            <p className="mt-1 font-mono text-xl font-bold text-foreground">${todayCost.toFixed(4)}</p>
           </div>
         )}
       </div>
 
       {/* ── Right column: breakdowns ── */}
-      <div className="flex flex-col gap-5 min-w-0">
+      <div className="flex min-w-0 flex-col gap-5">
         {/* Context breakdown */}
         {data.estimated_usage_by_category.length > 0 && (
           <Card title={t`Context breakdown`}>
             <div className="flex flex-col gap-2">
               {data.estimated_usage_by_category.map((row) => (
-                <TokenBar
-                  key={row.category}
-                  label={row.category}
-                  pct={row.percentage_float ?? 0}
-                  tokens={row.tokens}
-                />
+                <TokenBar key={row.category} label={row.category} pct={row.percentage_float ?? 0} tokens={row.tokens} />
               ))}
             </div>
           </Card>
@@ -245,15 +238,13 @@ function Dashboard({
                         {tools.length} tools · {fmtTok(total)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pl-3 lg:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 ps-3 lg:grid-cols-3">
                       {tools.map((t) => (
                         <div key={t.tool} className="flex items-center justify-between gap-1">
                           <span className="truncate font-mono text-[10px] text-muted-foreground">
                             {t.tool.split('__').at(-1)}
                           </span>
-                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
-                            {t.tokens}
-                          </span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{t.tokens}</span>
                         </div>
                       ))}
                     </div>
@@ -285,9 +276,7 @@ function Dashboard({
                   <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground" title={f.path}>
                     {f.path.split('/').at(-1)}
                   </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
-                    {f.tokens}
-                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{f.tokens}</span>
                 </div>
               ))}
             </div>
@@ -308,13 +297,11 @@ function Dashboard({
                         {skills.length} · {fmtTok(total)}
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 pl-3 lg:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 ps-3 lg:grid-cols-3">
                       {skills.map((sk: ClaudeContextSkill) => (
                         <div key={sk.skill} className="flex items-center justify-between gap-1">
                           <span className="truncate text-[11px] text-muted-foreground">{sk.skill}</span>
-                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">
-                            {sk.tokens}
-                          </span>
+                          <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{sk.tokens}</span>
                         </div>
                       ))}
                     </div>

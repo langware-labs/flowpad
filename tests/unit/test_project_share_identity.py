@@ -48,19 +48,19 @@ def test_path_alias_routes_through_exact_dns_minter_key():
     assert Project.derive_id_for_path(path) == "fc980f08-65ca-5b26-9f96-e12812c819cf"
 
     sentinel_v5 = "22222222-2222-5222-8222-222222222222"
-    with patch("flow_sdk.builtin.project.mint_uuid", return_value=sentinel_v5) as mock_mint:
+    with patch("flow_sdk.api.api_types.identifier.mint_uuid", return_value=sentinel_v5) as mock_mint:
         assert Project.derive_id_for_path(path) == sentinel_v5
 
     mock_mint.assert_called_once_with(key, namespace=uuid.NAMESPACE_DNS)
 
 
 def test_hub_body_publishes_under_own_id():
-    """_hub_body posts under self.id (no cloud id), maps name->title, strips local fields."""
+    """_hub_body posts under self.id (no cloud id), sends ``name`` verbatim, strips local fields."""
     p = Project(name="demo", fs_storage_mount_path="/tmp/demo_proj_hub")
     body = p._hub_body()
     assert body["id"] == p.id, "hub row is keyed by the project's own id"
-    assert body["title"] == "demo"
-    assert "name" not in body
+    assert body["name"] == "demo", "a project's label is ``name`` on both sides — no rename in transit"
+    assert "title" not in body, "``title`` is unset on a project; exclude_none keeps it out of the body"
     for leaked in ("fs_storage_mount_path", "members", "session_code", "include_dirs"):
         assert leaked not in body, f"{leaked} must be stripped from the hub body"
 
@@ -76,7 +76,8 @@ def test_share_invites_under_own_id():
     """share(recipients) targets project-<self.id> — no /join, no cloud id."""
     import inspect
 
-    src = inspect.getsource(Project.share)
+    # ``share`` publishes, then sends its invites through ``_send_invites``.
+    src = inspect.getsource(Project.share) + inspect.getsource(Project._send_invites)
     assert "/join" not in src, "projects derive the roster from role edges — no /join"
     assert "cloud_id" not in src, "no cloud id"
     assert "project-{self.id}" in src and "/members" in src

@@ -1,7 +1,7 @@
-"""Journey — a folder-backed guided-onboarding document (a FlowDoc dialect).
+"""Journey — a folder-backed guided-onboarding document (a GraphWorkflowDoc dialect).
 
-A Journey is the same folder/graph shape as an AgenticFlow (so it runs on the
-same FlowManager engine, unchanged), but typed separately so it stays out of
+A Journey is the same folder/graph shape as an GraphWorkflow (so it runs on the
+same GraphWorkflowManager engine, unchanged), but typed separately so it stays out of
 the user's Flows list. Its graph is a mostly-linear sequence of ``guided_step``
 nodes: each PRESENTS a place in the app (a standard dock pointer + optional
 wiki-word highlight) and PARKS the run until the frontend orchestrator observes
@@ -9,7 +9,7 @@ the step's standard signal and injects its ``done``.
 
 Folder layout::
 
-    <scope>/.claude/journeys/<name>/
+    <scope>/agentic-assets/journey/<name>/
         graph.json      # the journey document (guided_step nodes + edges)
         display.json    # canvas layout only
         runs/           # execution journals (one JSONL per run)
@@ -22,13 +22,13 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.types.graph_workflow_doc import GraphWorkflowDoc, GraphWorkflowNodeDef
     from flow_sdk.builtin.journey_journal import JourneyJournal
-    from flow_sdk.flow_manager.flow_doc import FlowDoc, FlowNodeDef
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +42,11 @@ def journeys_home_dir() -> Path:
 
 # ── graph helpers — the linear projection over guided_step nodes ──────────────
 
-def guided_nodes(doc: "FlowDoc") -> list["FlowNodeDef"]:
+def guided_nodes(doc: "GraphWorkflowDoc") -> list["GraphWorkflowNodeDef"]:
     return [n for n in doc.nodes if n.node_type == GUIDED_STEP]
 
 
-def entry_node(doc: "FlowDoc") -> str:
+def entry_node(doc: "GraphWorkflowDoc") -> str:
     """The first guided_step — the one no edge targets (the journey start)."""
     guided = guided_nodes(doc)
     targeted = {e.to_node for e in doc.edges}
@@ -56,7 +56,7 @@ def entry_node(doc: "FlowDoc") -> str:
     return guided[0].id if guided else ""
 
 
-def next_guided(doc: "FlowDoc", node_id: str, event: str) -> Optional[str]:
+def next_guided(doc: "GraphWorkflowDoc", node_id: str, event: str) -> Optional[str]:
     """The next guided_step reached from ``node_id`` on ``event`` (skip falls back
     to the ``done`` edge when the author didn't wire a dedicated skip edge)."""
     for target in doc.targets_for(node_id, event):
@@ -75,9 +75,9 @@ async def park_run(journey_id: str, node_id: str) -> str:
     if not node_id:
         return ""
     try:
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        fe = await get_flow_manager().inject(journey_id, "start", target_node=node_id)
+        fe = await get_graph_workflow_manager().inject(journey_id, "start", target_node=node_id)
         return fe.execution_id if fe else ""
     except Exception:
         logger.debug("Journey: park run failed", exc_info=True)
@@ -88,9 +88,9 @@ async def _run_is_live(run_id: str) -> bool:
     if not run_id:
         return False
     try:
-        from flow_sdk.flow_manager import get_flow_manager
+        from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-        return run_id in get_flow_manager().live_run_ids()
+        return run_id in get_graph_workflow_manager().live_run_ids()
     except Exception:
         return False
 
@@ -99,10 +99,26 @@ class Journey(Entity):
     type: str = APIField(default=EntityType.JOURNEY.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     enabled: bool = APIField(default=True, description="The journey's active switch.")
+    project_root: str | None = NoDBAPIField(default=None)
 
     _api_visible: ClassVar[bool] = True
+
+    async def expand_blobs(self):
+        await super().expand_blobs()
+        self.project_root = None
+        if not self.asset_ref:
+            return
+        from flow_sdk.builtin.asset_publishing import owning_project
+
+        project = await owning_project(self)
+        mount = getattr(project, "fs_storage_mount_path", None)
+        if not mount:
+            return
+        root, occurrence = Path(mount).resolve(), Path(self.asset_ref).resolve()
+        if root == occurrence or root in occurrence.parents:
+            self.project_root = str(root)
 
     @property
     def folder(self) -> Optional[Path]:
@@ -117,13 +133,13 @@ class Journey(Entity):
     def auto_launch_enabled(self) -> bool:
         """The `auto_launch` flag — disk (graph.json) is the single source of
         truth, read through the one shared reader the indexer also uses."""
-        from flow_sdk.fs_store.indexer.functions.journey import read_auto_launch
+        from flow_sdk.assets.types.journey import read_auto_launch
 
         return read_auto_launch(Path(self.asset_ref)) if self.asset_ref else False
 
     def gate(self) -> Optional[dict]:
         """The `gate` block from graph.json (disk is truth), or None."""
-        from flow_sdk.fs_store.indexer.functions.journey import read_gate
+        from flow_sdk.assets.types.journey import read_gate
 
         return read_gate(Path(self.asset_ref)) if self.asset_ref else None
 
@@ -149,15 +165,29 @@ class Journey(Entity):
 
         Systemness is a property of the LOCATION (see
         ``config.is_system_project_path``); a journey sits a few levels below
-        the project dir (``<project>/.claude/journeys/<name>``), so walk up."""
+        the project dir (``<project>/agentic-assets/journey/<name>``), so walk up."""
         from flow_sdk.config import is_system_project_path
 
         if not self.asset_ref:
             return False
         return any(is_system_project_path(p) for p in Path(self.asset_ref).parents)
 
+    def matches_selector(self, selector: str) -> bool:
+        """Whether a manifest selector names this Journey."""
+        return bool(
+            selector
+            and (
+                self.id == selector
+                or self.name == selector
+                or (self.asset_ref and Path(self.asset_ref).name == selector)
+            )
+        )
+
     @staticmethod
-    async def auto_launch_for(user_id: str) -> Optional["JourneyJournal"]:
+    async def auto_launch_for(
+        user_id: str,
+        project_id: Optional[str] = None,
+    ) -> Optional["JourneyJournal"]:
         """The JOURNAL to enter on project load, or None — launched if needed.
 
         Auto-LAUNCH, not merely auto-show: an existing active journal is
@@ -165,14 +195,58 @@ class Journey(Entity):
         fresh one is started. A journey the user already completed is never
         re-entered.
 
-        A user's OWN project's journey always beats a shipped system one: a
-        repo that carries an onboarding journey must not lose the race to
-        ``flowpad_assistant``'s getting-started just because of DB row order.
-        The system journey stays the fallback for projects with none."""
+        With ``project_id``, only journeys rooted in that Project or one of its
+        direct context folders are eligible. This is the install-link contract:
+        opening Project B must never launch Project A's vendor onboarding.
+        Without it, retain the legacy home-loader behavior where a user's own
+        journey beats a shipped system journey.
+        """
         from flow_sdk.builtin.journey_journal import JourneyStatus
 
-        # Stable sort → project journeys first, original order kept within each group.
-        candidates = sorted(await Journey.get_all({}), key=lambda j: j.is_system())
+        candidates = await Journey.get_all({})
+        if project_id:
+            from flow_sdk.assets.flow_json import read_autolaunch_journey  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.fs_store.path_utils import (  # noqa: PLC0415
+                canonical_posix_path,
+                is_path_under,
+            )
+
+            project = await Project.get_by_id(project_id)
+            if project is None:
+                return None
+            roots = project.direct_context_roots()
+
+            preferred: dict[str, str] = {}
+            for root in roots:
+                declared = read_autolaunch_journey(Path(root))
+                if declared:
+                    preferred[root] = declared
+
+            def scope_rank(journey: Journey) -> tuple[int, int]:
+                if not journey.asset_ref:
+                    return (2, len(roots))
+                try:
+                    ref = canonical_posix_path(journey.asset_ref)
+                except OSError:
+                    return (2, len(roots))
+                for index, root in enumerate(roots):
+                    if is_path_under(ref, root):
+                        selector = preferred.get(root)
+                        is_preferred = journey.matches_selector(selector or "")
+                        return (0 if is_preferred else 1, index)
+                return (2, len(roots))
+
+            ranked = [(scope_rank(journey), journey) for journey in candidates]
+            candidates = [
+                journey
+                for rank, journey in sorted(ranked, key=lambda item: item[0])
+                if rank[0] < 2
+            ]
+        else:
+            # Stable sort → project journeys first, original order kept within
+            # each group. This preserves the existing home-page behavior.
+            candidates.sort(key=lambda journey: journey.is_system())
         for journey in candidates:
             if not journey.enabled or not journey.auto_launch_enabled():
                 continue
@@ -186,14 +260,14 @@ class Journey(Entity):
             return await journey.launch(user_id)
         return None
 
-    def doc(self) -> Optional["FlowDoc"]:
+    def doc(self) -> Optional["GraphWorkflowDoc"]:
         """This journey's parsed graph.json (disk is truth)."""
-        from flow_sdk.flow_manager.flow_doc import parse_flow_doc
+        from flow_sdk.assets.types.graph_workflow_doc import parse_graph_workflow_doc
 
         if not self.asset_ref:
             return None
         try:
-            return parse_flow_doc((Path(self.asset_ref) / "graph.json").read_text(encoding="utf-8"))
+            return parse_graph_workflow_doc((Path(self.asset_ref) / "graph.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
@@ -217,8 +291,8 @@ class Journey(Entity):
 
     async def launch(self, user_id: str) -> Optional["JourneyJournal"]:
         """Idempotent: return the active journal, else start a fresh one at the entry."""
+        from flow_sdk.api.api_types.identifier import mint_uuid
         from flow_sdk.builtin.journey_journal import JourneyJournal, JourneyStatus
-        from flow_sdk.fs_store.identifier import mint_uuid
 
         active = await self._active(user_id)
         if active is not None:
@@ -271,9 +345,9 @@ class Journey(Entity):
         # Advance the live run so its one-liner tracks (best effort).
         if await _run_is_live(journal.run_id):
             try:
-                from flow_sdk.flow_manager import get_flow_manager
+                from flow_sdk.graph_workflow_manager import get_graph_workflow_manager
 
-                await get_flow_manager().inject(
+                await get_graph_workflow_manager().inject(
                     self.id, event, execution_id=journal.run_id, source_node=node_id)
             except Exception:
                 logger.debug("Journey: advance inject failed", exc_info=True)
@@ -322,23 +396,23 @@ class Journey(Entity):
 
     def materialize_folder(self) -> Path:
         """Create the folder + stub files for a fresh journey (idempotent)."""
-        from flow_sdk.builtin.flow_folder import scaffold_flow_folder
+        from flow_sdk.builtin.graph_workflow_folder import scaffold_graph_workflow_folder
 
-        return scaffold_flow_folder(self, journeys_home_dir(), "journey")
+        return scaffold_graph_workflow_folder(self, journeys_home_dir(), "journey")
 
     async def save(self, *args, **kwargs):  # type: ignore[override]
         result = await super().save(*args, **kwargs)
-        from flow_sdk.builtin.flow_folder import rescaffold_after_save
+        from flow_sdk.builtin.graph_workflow_folder import rescaffold_after_save
 
         await rescaffold_after_save(self, "Journey")
         return result
 
 
-# Journeys run on the shared FlowManager engine — register as a flow-doc-backed
+# Journeys run on the shared GraphWorkflowManager engine — register as a flow-doc-backed
 # entity type so the engine resolves them without a journey special case.
 def _register_with_flow_engine() -> None:
     try:
-        from flow_sdk.flow_manager.manager import register_flow_entity_loader
+        from flow_sdk.graph_workflow_manager.manager import register_flow_entity_loader
 
         register_flow_entity_loader(Journey.get_by_id)
     except Exception:  # pragma: no cover — engine optional in slim contexts

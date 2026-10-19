@@ -1,6 +1,41 @@
-import { APIEntity, ApiError, dataManager, QueryRequest } from '@sdk';
+import { useLazyAsset } from '../useLazyAsset';
+import { LazyAsset } from '../../../lazy/LazyAsset';
+import { APIEntity, dataManager } from '../../../APIEntity';
+import { ApiError } from '../../../ApiResponse';
+import { QueryRequest } from '../../../FlowSync/query';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { UseEntitiesQueryResult } from './types';
+
+const collections: Partial<Record<string, LazyAsset.Projects | LazyAsset.Bookmarks | LazyAsset.RagIndexes>> = {
+  project: LazyAsset.Projects,
+  bookmark: LazyAsset.Bookmarks,
+  rag_index: LazyAsset.RagIndexes,
+};
+
+/** Shared unscoped collections use the registry; arbitrary entity queries retain their own lifecycle. */
+export function useEntitiesQuery<T extends APIEntity<T>>(
+  request: QueryRequest,
+  options?: { enabled?: boolean; priority?: 'demand' | 'background' },
+): UseEntitiesQueryResult<T> {
+  const asset = !request.query && !request.scope?.filter(Boolean).length ? collections[request.type] : undefined;
+  const shared = useLazyAsset(asset ?? LazyAsset.Projects, undefined, {
+    subscribed: !!asset,
+    enabled: !!asset && options?.enabled !== false,
+    priority: options?.priority ?? 'background',
+  });
+  const watched = useWatchedEntitiesQuery<T>(request, { enabled: !asset && options?.enabled !== false });
+  if (!asset) return watched;
+  return {
+    data: shared.data as T[] | undefined,
+    isLoading: shared.isLoading,
+    error: shared.error as ApiError | null,
+    isError: shared.isError,
+    isSuccess: shared.isSuccess,
+    refetch: async () => {
+      await shared.reload();
+    },
+  };
+}
 
 /**
  * Hook for querying multiple entities with real-time subscription updates
@@ -9,7 +44,7 @@ import { UseEntitiesQueryResult } from './types';
  * @param options - Optional configuration including enabled flag
  * @returns Query result with data, loading state, error state, and refetch function
  */
-export function useEntitiesQuery<T extends APIEntity<T>>(
+function useWatchedEntitiesQuery<T extends APIEntity<T>>(
   request: QueryRequest,
   options?: {
     enabled?: boolean;
@@ -31,7 +66,7 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
     isSuccess: boolean;
   };
   // Seed state from the in-memory query cache so a remount (e.g. reopening the
-  // inbox, which fully unmounts/remounts its view) renders the already-known rows
+  // stream inbox, which fully unmounts/remounts its view) renders the already-known rows
   // on the first frame instead of flashing an empty ``undefined``/loading state.
   // ``getCachedQueryResults`` is a synchronous keyed read; a miss (cold load)
   // yields the loading state, so cold starts are unchanged. Reused on resubscribe.
@@ -47,7 +82,13 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
   // Lazy one-time seed: useRef evaluates its argument on EVERY render, so the
   // cache read + array clone must not live in the initializer. Start from a cheap
   // loading literal and replace it with the real seed exactly once.
-  const stateRef = useRef<QueryState>({ data: undefined, isLoading: enabled, error: null, isError: false, isSuccess: false });
+  const stateRef = useRef<QueryState>({
+    data: undefined,
+    isLoading: enabled,
+    error: null,
+    isError: false,
+    isSuccess: false,
+  });
   const seededRef = useRef(false);
   if (!seededRef.current) {
     seededRef.current = true;
@@ -90,12 +131,14 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
       callback(); // Trigger re-render immediately with the seeded state
 
       let unsubscribe: (() => void) | undefined;
+      let disposed = false;
 
       const watchRequest = new QueryRequest({
         type: request.type,
         query: request.query,
         scope: request.scope?.filter((s) => s != null) || [],
         callback: (updatedEntities) => {
+          if (disposed) return;
           // Always create a new array reference for predictable React re-rendering
           // This ensures dependency arrays like useEffect(() => {}, [data]) always detect changes
           const newData = [...(updatedEntities as T[])];
@@ -116,9 +159,11 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
       dataManager
         .watchQuery<T>(watchRequest)
         .then((unsub) => {
-          unsubscribe = unsub;
+          if (disposed) unsub();
+          else unsubscribe = unsub;
         })
         .catch((err) => {
+          if (disposed) return;
           // Handle errors from watchQuery setup
           stateRef.current = {
             data: undefined,
@@ -131,6 +176,7 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
         });
 
       return () => {
+        disposed = true;
         notifyRef.current = null;
         if (unsubscribe) {
           unsubscribe();

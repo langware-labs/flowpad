@@ -2,7 +2,8 @@ import apiClient from '@sdk/client';
 import { redirect } from 'react-router';
 import { JOURNEY_PARAM } from '@src/navigation/DockPointer';
 import { isJourneyDismissed } from './journey-dismissed';
-import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
+import { AMBIENT_JOURNEYS_ENABLED } from './journeys-enabled';
+import { ambientLoadProjectId, registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 
 /**
  * The `auto_launch` journey redirect, or null when there's nothing to enter.
@@ -12,18 +13,16 @@ import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
  * (disk `auto_launch` flag), skips one the user completed, and launches the
  * journal, so the redirect lands the user on their current step.
  */
-async function autoLaunchRedirect(request: Request): Promise<Response | null> {
+export async function autoLaunchRedirect(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.searchParams.get(JOURNEY_PARAM)) return null; // already showing one
   if (isJourneyDismissed()) return null; // user closed it this session — badge is the way back
-  // A deep link the user was SENT here by outranks an ambient auto-launch: this
-  // redirect rewrites the query, and the `?action=open&…` params would be lost
-  // before anything read them (a launched sandbox came up with no project that
-  // way). The journey auto-launches on the next home load instead.
-  if (url.searchParams.get('action') === 'open') return null;
-
+  const projectId = ambientLoadProjectId(request);
+  if (projectId === undefined) return null; // deep link / Hub / inside a session
+  // Home and non-dock routes retain the existing unscoped fallback.
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
   const { journey_id: journeyId } = await apiClient.get<{ journey_id: string | null }>(
-    '/api/v1/journeys/auto-launch',
+    `/api/v1/journeys/auto-launch${query}`,
   );
   if (!journeyId) return null;
 
@@ -31,4 +30,6 @@ async function autoLaunchRedirect(request: Request): Promise<Response | null> {
   return redirect(`${url.pathname}${url.search}`);
 }
 
-registerLoadRedirect(autoLaunchRedirect);
+// Registration IS the switch: with the feature hidden the redirect is never
+// in the load chain at all, rather than running on every load to say "no".
+if (AMBIENT_JOURNEYS_ENABLED) registerLoadRedirect(autoLaunchRedirect);

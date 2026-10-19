@@ -2,6 +2,9 @@
 id: d5b076f3-d845-5740-8810-5b9a3203f042
 ---
 
+# The sniffer state (sniffer_hook / sniffer_installed) is served by the deferred
+# /api/v1/graph/info route, not /graph/bootstrap (split out of bootstrap so boot
+# does not wait on it; see docs/boot.md).
 # Sniffer is OPT-IN, default OFF. This test asserts the default-off state holds
 # across SPA navigation (the per-instance gate does not get flipped by client-side
 # routing or the per-user localStorage pref). Uses {APP_URL}=4098 / {API_URL}=9008.
@@ -12,7 +15,7 @@ test 1: Default-off sniffer state is unchanged after SPA navigation
 - navigate to {APP_URL}/dock/shell
 - wait for the shell view to render
 - navigate to {APP_URL}/dock/home
-- [bash] run "curl -sS {API_URL}/api/v1/graph/bootstrap"
+- [bash] run "curl -sS {API_URL}/api/v1/graph/info"
 - validate data.sniffer_hook is null (SPA navigation never enables the per-instance sniffer gate)
 - check console for SNIFFER-RELATED errors only
 - validate no sniffer-related console errors appeared. Ignore unrelated `Failed to load resource` messages.

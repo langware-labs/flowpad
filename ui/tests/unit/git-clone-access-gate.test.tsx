@@ -14,11 +14,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gitMocks = vi.hoisted(() => ({
   hasGitHubRepoAccess: vi.fn(),
+  hubOnly: false,
 }));
 
 vi.mock('@src/utils/gitUtils', () => ({
   hasGitHubRepoAccess: gitMocks.hasGitHubRepoAccess,
 }));
+vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => gitMocks.hubOnly }));
 
 // The dialog polls GitHub connect status and subscribes to the WS broadcast on
 // open; neither is what's under test here.
@@ -26,9 +28,13 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    connectionManager: { on: vi.fn(), off: vi.fn() },
     dataContext: { userTypeId: { type: 'user', id: 'u1' } },
-    dataManager: { callAction: vi.fn(() => Promise.resolve({ has_token: false })) },
+    dataManager: {
+      callAction: vi.fn(() => Promise.resolve({ has_token: false })),
+      // The dialog subscribes to the SDK's OAUTH_FLOW_COMPLETE event.
+      on: vi.fn(),
+      off: vi.fn(),
+    },
     oauthService: { connect: vi.fn() },
   };
 });
@@ -58,6 +64,7 @@ async function typeUrlAndSubmit(user: ReturnType<typeof userEvent.setup>) {
 
 describe('NewProjectFromGitDialog access gate', () => {
   beforeEach(() => {
+    gitMocks.hubOnly = false;
     gitMocks.hasGitHubRepoAccess.mockReset();
   });
   afterEach(cleanup);
@@ -88,6 +95,23 @@ describe('NewProjectFromGitDialog access gate', () => {
     await typeUrlAndSubmit(user);
 
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(REPO_URL, undefined, undefined));
+    expect(screen.queryByTestId('git-access-error')).toBeNull();
+  });
+
+  it('skips the probe on a hub, where the route it asks does not exist', async () => {
+    // `/api/v1/git/remote-access` lives in flow_sdk; the hub registers no git
+    // router, so probing there reports "couldn't reach" for every repo — even
+    // ones the token demonstrably reads. The clone must be allowed to speak for
+    // itself instead.
+    gitMocks.hubOnly = true;
+    const onCreate = vi.fn(() => Promise.resolve({ ok: true as const }));
+    renderDialog(onCreate);
+
+    await userEvent.type(screen.getByPlaceholderText(/github\.com/i), REPO_URL);
+    await userEvent.click(screen.getByRole('button', { name: /clone/i }));
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(REPO_URL, undefined, undefined));
+    expect(gitMocks.hasGitHubRepoAccess).not.toHaveBeenCalled();
     expect(screen.queryByTestId('git-access-error')).toBeNull();
   });
 });

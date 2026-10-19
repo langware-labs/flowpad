@@ -1,12 +1,9 @@
 /**
- * Scope — mirrors Python `resource_management.api.scope.Scope`.
- * Determines where a filesystem record is stored.
+ * Scope — where an asset belongs. Mirrors Python `flow_sdk/assets/placement.py` `Scope`
+ * (re-exported as `flow_sdk/fs_store/scope.py`).
  */
 export enum Scope {
-  MANAGED = 'managed',
   USER = 'user',
-  GLOBAL = 'global',
   PROJECT = 'project',
-  LOCAL = 'local',
-  LEGACY = 'legacy',
+  SYSTEM = 'system',
 }

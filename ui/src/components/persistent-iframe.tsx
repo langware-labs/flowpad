@@ -1,7 +1,4 @@
-import { Button } from '@src/components/ui/button';
-import { Card, CardContent, CardHeader } from '@src/components/ui/card';
-import { Trans, useLingui } from '@lingui/react/macro';
-import { useQuery } from '@tanstack/react-query';
+import { VISIBILITY_MESSAGE, VISIBILITY_PLEASE_MESSAGE } from '@sdk/apps/host';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
 interface PersistentIframeProps {
@@ -11,16 +8,28 @@ interface PersistentIframeProps {
   testId?: string;
   onLoad?: () => void;
   onError?: (error: Error) => void;
-  onErrorRetry?: () => void;
 }
 
 export interface PersistentIframeHandle {
   refresh: () => void;
   /** Post a message to the guest document (parent→iframe channel). */
   postToGuest: (message: unknown) => void;
+  /** Whether a `message` event came from this frame's guest document (iframe→parent channel). */
+  isGuest: (source: MessageEventSource | null) => boolean;
 }
 
 type IframeOwner = symbol;
+
+// A parked frame stays mounted (so it never reloads) but must be `invisible`,
+// not just `opacity-0 pointer-events-none`. The frame is cross-origin, so
+// Chromium hit-tests wheel scrolling against its surface and ignores
+// `pointer-events: none` there: an invisible parked frame left over from a web
+// tab swallowed every wheel event over the content area it last covered, so no
+// document, list or panel under it could scroll. `visibility: hidden` takes the
+// frame out of hit-testing entirely; `visibility` is in the transition so the
+// fade-out still plays before it flips.
+const PARKED_CLASS = 'absolute invisible opacity-0 pointer-events-none transition-[opacity,visibility] duration-200';
+const SHOWN_CLASS = 'absolute visible opacity-100 pointer-events-auto transition-[opacity,visibility] duration-200';
 
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
@@ -33,12 +42,58 @@ class IframeRegistry {
   private activeOwners = new Map<string, IframeOwner>();
   private resizeObservers = new Map<string, ResizeObserver>();
   private positionCleanups = new Map<string, () => void>();
+  // The cache key each frame was last loaded under. Kept HERE, not in the component: a display that
+  // unmounts its frame while the app is down remounts it with the key already advanced, and a
+  // component-local "last key" would then see no change and re-reveal the parked error page.
+  private loadedKeys = new Map<string, unknown>();
 
   static getInstance(): IframeRegistry {
     if (!IframeRegistry.instance) {
       IframeRegistry.instance = new IframeRegistry();
     }
     return IframeRegistry.instance;
+  }
+
+  private constructor() {
+    // A guest that just loaded asks whether it is on screen: a notice sent before it listened is
+    // gone. Answered for its own frame only (`isGuest`). Here, not in the display component: a
+    // parked frame has no component mounted to answer for it.
+    window.addEventListener('message', (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type !== VISIBILITY_PLEASE_MESSAGE) return;
+      for (const src of this.iframes.keys()) {
+        if (this.isGuest(src, event.source)) this.tellVisibility(src);
+      }
+    });
+  }
+
+  // A parked frame is hidden with CSS, which its guest cannot see; the SDK folds this notice into
+  // the guest's own `document.hidden` (`adoptHostVisibility` in `@sdk/apps/host`).
+  private tellVisibility(src: string): void {
+    this.postToGuest(src, { type: VISIBILITY_MESSAGE, hidden: this.containers.get(src)?.className !== SHOWN_CLASS });
+  }
+
+  /**
+   * A `testId` names the frame that is CURRENTLY on screen, so exactly one
+   * iframe may carry it.
+   *
+   * The registry is keyed by `src` and deliberately never destroys an entry —
+   * it parks dead frames so an app that recovers does not re-reveal Chrome's
+   * error page. The consequence is that every distinct `src` for the same slot
+   * (a reload nonce, a re-show that rebuilds the URL) leaves another parked
+   * iframe behind, and each was stamped with the same `data-testid`. The
+   * parked ones stay in the body portal forever, so the testid accumulates
+   * duplicates: `[data-testid="vibe-app-frame"]` resolved to two elements, one
+   * of them a retired frame nobody can see.
+   *
+   * Stripping the id from the losers keeps parking intact (the frame, its load
+   * state and its guest document are untouched) while making the id mean what
+   * it says. A parked frame that becomes current again is re-stamped by
+   * `getOrCreateIframe`, which claims it back.
+   */
+  private claimTestId(testId: string, owner: HTMLIFrameElement): void {
+    for (const frame of this.iframes.values()) {
+      if (frame !== owner && frame.dataset.testid === testId) delete frame.dataset.testid;
+    }
   }
 
   private createPortalContainer(): HTMLDivElement {
@@ -66,7 +121,7 @@ class IframeRegistry {
 
       // Create iframe wrapper
       const iframeWrapper = document.createElement('div');
-      iframeWrapper.className = 'absolute opacity-0 pointer-events-none transition-opacity duration-200';
+      iframeWrapper.className = PARKED_CLASS;
 
       // Create iframe
       const iframe = document.createElement('iframe');
@@ -111,8 +166,11 @@ class IframeRegistry {
 
       this.iframes.set(key, iframe);
       this.containers.set(key, iframeWrapper);
+      if (config.testId) this.claimTestId(config.testId, iframe);
     } else if (config.testId) {
-      this.iframes.get(key)!.dataset.testid = config.testId;
+      const iframe = this.iframes.get(key)!;
+      iframe.dataset.testid = config.testId;
+      this.claimTestId(config.testId, iframe);
     }
 
     return {
@@ -157,7 +215,8 @@ class IframeRegistry {
       this.updateIframePosition(src, targetElement);
 
       // Show iframe
-      container.className = 'absolute opacity-100 pointer-events-auto transition-opacity duration-200';
+      container.className = SHOWN_CLASS;
+      this.tellVisibility(src);
 
       // Set up resize observer to keep position updated
       const resizeObserver = new ResizeObserver(() => {
@@ -209,7 +268,8 @@ class IframeRegistry {
   private hideContainer(src: string): void {
     const container = this.containers.get(src);
     if (container) {
-      container.className = 'absolute opacity-0 pointer-events-none transition-opacity duration-200';
+      container.className = PARKED_CLASS;
+      this.tellVisibility(src);
     }
     this.clearPositionTracking(src);
   }
@@ -264,6 +324,15 @@ class IframeRegistry {
     this.iframes.delete(src);
     this.loadingStates.delete(src);
     this.errorStates.delete(src);
+    this.loadedKeys.delete(src);
+  }
+
+  /** Reload the frame when it is asked for under a key other than the one it was loaded with. */
+  syncKey(src: string, key: unknown): void {
+    const known = this.loadedKeys.has(src);
+    const stale = known && this.loadedKeys.get(src) !== key;
+    this.loadedKeys.set(src, key);
+    if (stale) this.refresh(src);
   }
 
   refresh(src: string): void {
@@ -277,13 +346,16 @@ class IframeRegistry {
     const iframe = this.iframes.get(src);
     iframe?.contentWindow?.postMessage(message, '*');
   }
+
+  isGuest(src: string, source: MessageEventSource | null): boolean {
+    return source != null && this.iframes.get(src)?.contentWindow === source;
+  }
 }
 
 const registry = IframeRegistry.getInstance();
 
 const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProps>(
-  ({ src, cacheKey, testId, onLoad, onError, onErrorRetry }, ref) => {
-    const { t } = useLingui();
+  ({ src, cacheKey, testId, onLoad, onError }, ref) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const ownerRef = useRef<IframeOwner>(Symbol('persistent-iframe-owner'));
     const [, forceUpdate] = useState({});
@@ -291,37 +363,18 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Force re-render to get updated loading/error states
     const triggerUpdate = useCallback(() => forceUpdate({}), []);
 
-    const {
-      data: isPreFetchedSourceNotAvailable,
-      isLoading: isPreFetchedSourceLoading,
-      isError: isPreFetchedSourceError,
-      refetch: refetchSource,
-    } = useQuery({
-      queryKey: ['preFetchedSource', cacheKey, src],
-      queryFn: async () => {
-        try {
-          const res = await fetch(src, { method: 'GET', credentials: 'include', redirect: 'manual' });
-          if (res.status >= 400) {
-            const text = await res.text();
-            onError?.(new Error(text));
-            return true; // Not available
-          }
-          return false; // Available
-        } catch {
-          // Network error (connection refused, etc.)
-          onError?.(new Error(t`Unable to connect to webapp`));
-          return true; // Not available
-        }
-      },
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      retry: false, // Don't retry on network errors
-    });
-    const cacheKeyRef = useRef(cacheKey);
-
+    // NOTE: there used to be a pre-flight availability probe here --
+    // `fetch(src, { redirect: 'manual' })`, treating `status >= 400` as "not
+    // available". It could never work: a cross-origin `src` answers opaquely, with
+    // a status that is always 0 -- measured identical whether the dev server was
+    // alive or refusing connections. It therefore reported "available"
+    // unconditionally, and its `catch` for connection-refused was unreachable.
+    // Availability is decided by `useWebappDiagnostics`, which asks the endpoint's
+    // machine to probe its port directly. This component is purely the
+    // mechanism: it mounts a frame and reports load state.
     const refreshIframe = useCallback(() => {
-      void refetchSource();
       registry.refresh(src);
-    }, [src, refetchSource]);
+    }, [src]);
 
     // Expose refresh + guest-post methods to parent via ref
     useImperativeHandle(
@@ -329,41 +382,32 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       () => ({
         refresh: refreshIframe,
         postToGuest: (message: unknown) => registry.postToGuest(src, message),
+        isGuest: (source: MessageEventSource | null) => registry.isGuest(src, source),
       }),
       [refreshIframe, src],
     );
 
     useEffect(() => {
-      if (cacheKeyRef.current !== cacheKey) {
-        refreshIframe();
-        cacheKeyRef.current = cacheKey;
-      }
-    }, [cacheKey, refreshIframe]);
+      registry.syncKey(src, cacheKey);
+    }, [cacheKey, src]);
 
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);
     const isIframeError = registry.getErrorState(src);
 
-    const isLoading = isPreFetchedSourceLoading || isIframeLoading;
-    const isError = isPreFetchedSourceNotAvailable || isPreFetchedSourceError || isIframeError;
+
 
     const showIframe = useCallback(() => {
-      if (containerRef.current && !isError) {
+      if (containerRef.current && !isIframeError) {
         registry.showIframeAt(src, containerRef.current, ownerRef.current);
         triggerUpdate();
       }
-    }, [src, isError, triggerUpdate]);
+    }, [src, isIframeError, triggerUpdate]);
 
     const hideIframe = useCallback(() => {
       registry.hideIframe(src, ownerRef.current);
       triggerUpdate();
     }, [src, triggerUpdate]);
-
-    const retryOnError = useCallback(() => {
-      void refetchSource();
-      registry.refresh(src);
-      onErrorRetry?.();
-    }, [onErrorRetry, refetchSource, src]);
 
     // Initialize iframe when component mounts
     useEffect(() => {
@@ -384,17 +428,17 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {
-      if (!isError && !isLoading && containerRef.current) {
+      if (!isIframeError && !isIframeLoading && containerRef.current) {
         showIframe();
       }
-    }, [isError, isLoading, showIframe]);
+    }, [isIframeError, isIframeLoading, showIframe]);
 
     // Hide iframe when there's an error
     useEffect(() => {
-      if (isError) {
+      if (isIframeError) {
         hideIframe();
       }
-    }, [isError, hideIframe]);
+    }, [isIframeError, hideIframe]);
 
     // Handle component unmount
     useEffect(() => {
@@ -403,68 +447,14 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
       };
     }, [hideIframe]);
 
-    const renderContent = () => {
-      if (isLoading) {
-        return (
-          <div className="flex h-full w-full items-center justify-center bg-background">
-            <div className="flex flex-col items-center space-y-4">
-              <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-foreground" />
-              <div className="text-center">
-                <p className="text-sm font-medium text-foreground"><Trans>Loading server...</Trans></p>
-                <div className="mt-2 w-64 rounded-full bg-muted">
-                  <div className="h-2 animate-pulse rounded-full bg-primary" style={{ width: '100%' }} />
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground"><Trans>This may take up to 20 seconds</Trans></p>
-              </div>
-            </div>
-          </div>
-        );
-      }
-
-      if (isError) {
-        return (
-          <div className="flex h-full w-full items-center justify-center bg-muted/30">
-            <Card className="max-w-sm border-none bg-transparent text-center shadow-none">
-              <CardHeader className="pb-2">
-                <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-muted-foreground"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </div>
-                <p className="text-lg font-semibold text-foreground"><Trans>Webapp Not Available</Trans></p>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  <Trans>The webapp server is not running. Start the services to view the app.</Trans>
-                </p>
-                <Button variant="outline" size="sm" onClick={retryOnError}>
-                  <Trans>Retry Connection</Trans>
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        );
-      }
-
-      return null;
-    };
-
+    // Renders nothing of its own: this component is the MECHANISM (a registry-
+    // parked iframe positioned over this slot), not a surface. Loading and error
+    // presentation belong to `WebappDisplay`, which is the only thing that can
+    // actually tell whether the guest is healthy — a cross-origin frame reports
+    // a refused navigation as a successful `onload`, so anything decided here
+    // would be guesswork competing with the real verdict.
     return (
-      <div className="relative h-full w-full" ref={containerRef} data-testid={testId ? `${testId}-host` : undefined}>
-        {renderContent()}
-      </div>
+      <div className="relative h-full w-full" ref={containerRef} data-testid={testId ? `${testId}-host` : undefined} />
     );
   },
 );

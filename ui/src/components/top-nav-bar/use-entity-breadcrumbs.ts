@@ -1,0 +1,825 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { useEffect, useMemo, useState } from 'react';
+import { LayoutGrid, type LucideIcon } from 'lucide-react';
+import {
+  AgenticProcess,
+  Agent,
+  Conversation,
+  DataDriver,
+  DataSource,
+  dataManager,
+  Organization,
+  PageId,
+  Project,
+  tabManager,
+  User,
+  TypeId,
+  ViewType,
+  Wiki,
+  WikiEntry,
+  WorldViewProjection,
+  type AnyEntity,
+} from '@sdk';
+import { VIEWER_REGISTRY } from '@src/types/ViewType';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { wikiAuthorityForPage } from '@src/components/wiki/resolve-wiki';
+import { useWikiResolveResult } from '@src/routes/loaders/wiki-resolve-store';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { subjectEditorPointer } from '@src/navigation/subject-editor';
+import { resolveAncestorChain, type AncestorNode } from '@src/navigation/entity-ancestors';
+import { useContext } from '@src/hooks/useContext';
+import { useProjectLocation } from '@src/hooks/use-project-location';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { ViewMode } from '@src/contexts/view-mode-context';
+import { parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
+import { bareKind, DATA_SCHEMA_TYPE } from '@src/components/schema-tree/schema-tree-model';
+import { parseSchemaTreePointer, SOURCE_SEGMENT } from '@src/components/schema-tree/schema-tree-pointer';
+import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
+
+/**
+ * The address bar's contents: `Project / …ancestors… / current`.
+ *
+ * The chain is the entity's CONTAINMENT (`parent_type_id`) — where the thing
+ * lives, not how you got to it. Two consequences worth knowing before reading a
+ * bug report about this:
+ *
+ *  - Most entity types carry `parent_type_id === null`, so the usual shape is
+ *    `Project / Document` with an EMPTY middle. Deep chains (task→spec,
+ *    comment→doc) are the exception, not the rule. This is by design; we
+ *    deliberately do not synthesize crumbs out of folder paths.
+ *  - The same entity always shows the same crumbs, whatever route you took to
+ *    it. That is the point of choosing containment over the tab-opener chain.
+ *
+ * Resolution is staged so the bar NEVER blocks on the network:
+ *
+ *   Phase 0 (sync, first frame) — project from context, current entity from the
+ *     URL's own target. If the dock target is already the context's active
+ *     entity, its display name is in hand immediately.
+ *   Phase 1 (microtask on a warm cache) — `tabManager.resolveDockTarget` upgrades the
+ *     label and covers path-addressed docks the URL alone can't name.
+ *   Phase 2 — the ancestor walk fills the middle in.
+ *
+ * So the bar paints `Project / Something` on the first frame and sharpens; it
+ * never blanks and never waits.
+ *
+ * A WIKI route is the exception to "the middle is the containment chain": it
+ * reads `Project / <Wiki> / <word>`, where the middle is the NAMESPACE the word
+ * resolved through rather than a parent. See `DockPointer.wikiRef`.
+ */
+
+export interface Crumb {
+  /** Stable React key — unique in the trail, not an identity: see `typeId`. */
+  key: string;
+  label: string;
+  /** Always resolved through the backend type registry — never a literal. */
+  Icon: LucideIcon;
+  /** null ⇒ not navigable (the current page, or a type no dock can address). */
+  pointer: DockPointer | null;
+  kind: 'project' | 'ancestor' | 'current';
+  /** The ONE entity this crumb names, when it names one — what its hover card shows. */
+  typeId?: TypeId;
+  /**
+   * Where the thing LIVES on disk, when it is file-backed — the absolute machine
+   * path and the real basename (with extension, unlike `label`). Both null for a
+   * conversation, a process or a list, which have no file. Only the current
+   * crumb carries them; they are what its details popover shows, and they moved
+   * here when the asset editor's own header row was removed.
+   */
+  path?: string | null;
+  filename?: string | null;
+  /** `path` names a folder, not a file — a Files dock. */
+  directory?: boolean;
+}
+
+export interface EntityBreadcrumbs {
+  crumbs: Crumb[];
+  /** The dock's target entity. Shared with the actions cluster so the dock is
+   *  resolved ONCE per navigation, not once per consumer. */
+  targetTypeId: TypeId | null;
+  targetTitle: string;
+}
+
+/** The "this dock has no entity at all, and its view declares no glyph either"
+ *  fallback. Not a per-type icon map — there is no type here to look up. */
+const VIEW_CRUMB_ICON = LayoutGrid;
+
+/**
+ * The glyph for a dock with no target entity: the VIEW's own registry icon, the
+ * same `iconName` the tab strip and the navigator read. A view is a thing with
+ * an identity — Files is a folder everywhere it appears — so the address bar
+ * must not invent a second glyph for it.
+ */
+function viewIcon(dock: DockPointer | null): LucideIcon {
+  const iconName = dock?.viewType ? VIEWER_REGISTRY[dock.viewType as ViewType]?.iconName : null;
+  return iconName ? lucideByName(iconName) : VIEW_CRUMB_ICON;
+}
+
+/** A label good enough for a crumb, never a raw `type-uuid`. `displayName`
+ *  falls back to a fabricated id string when an entity has no real name; the
+ *  type's own label reads far better in an address bar. */
+function entityLabel(entity: AnyEntity | null, typeId: TypeId | null): string {
+  const synthetic = (entity as { hasSyntheticDisplayName?: boolean } | null)?.hasSyntheticDisplayName;
+  const name = entity?.displayName?.trim();
+  if (name && !synthetic) return name;
+  return typeId ? labelForType(typeId.type) : '';
+}
+
+/**
+ * The two crumb labels this module writes itself rather than reading off an
+ * entity or the type registry.
+ *
+ * Lazy `msg` descriptors, not `t`: this is module scope, so an eager macro would
+ * be evaluated once at import — before `initLocale` has activated the real
+ * catalog — and would then stay in that language for the life of the tab. They
+ * are resolved through `i18n._` at render instead, which is also what makes them
+ * re-translate when the locale changes.
+ */
+
+/**
+ * What the last crumb says on the app root, which has no dock at all. Without
+ * it the address would read as just the project name and look truncated.
+ *
+ * KNOWN NUANCE: this msgid is shared with the journey tray's "Start" BUTTON,
+ * and a gendered language wants different grammar for the two — a breadcrumb
+ * names a place ("התחלה"), a button commands ("התחילו"). The obvious fix, a
+ * Lingui `context` making this its own catalog entry, is not available: the
+ * locit tooling's `.po` reader (`.claude/skills/locit/_po.py`) does not support
+ * `msgctxt`, so its scanner sees both entries as the bare id "Start" and would
+ * write a future translation into whichever it hit first. Splitting this needs
+ * that reader taught about `msgctxt` first.
+ */
+const HOME_CRUMB_LABEL = msg`Start`;
+
+/** What the last crumb says on the project's own page, where the target IS the
+ *  leading crumb and repeating the name would read "Acme › Acme". */
+const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
+/** The org graph addresses as "Organization › Graph" — see the crumb builder. */
+const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
+const GRAPH_CRUMB_LABEL = msg`Graph`;
+const STREAM_INBOX_CRUMB_LABEL = msg`Stream Inbox`;
+const DRIVERS_CRUMB_LABEL = msg`Drivers`;
+/** The agent-editor section a nested child was opened from — the middle segment of its address. */
+const CHILD_SECTION_CRUMB_LABELS = {
+  channel: msg`Channels`,
+  data_source: msg`Data sources`,
+  schedule: msg`Schedules`,
+  mcp: msg`MCP servers`,
+  skill: msg`Skills`,
+  doc: msg`Docs`,
+  deployment: msg`Deployments`,
+  credential: msg`Credentials`,
+} as const;
+
+/** Basename of an `asset_ref`, trailing separators ignored. */
+function basename(ref: string | null): string | null {
+  if (!ref) return null;
+  return (
+    ref
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || null
+  );
+}
+
+/** Human label for a dock with no target entity (assets list, settings, a bare
+ *  shell). The open tab already carries the app's canonical name for it. */
+function viewLabel(dock: DockPointer | null): string {
+  if (!dock) return i18n._(HOME_CRUMB_LABEL);
+  const tab = tabManager.findByDockKey(dock.tabHash);
+  return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
+}
+
+// Type names only (the crumb needs no entity class): a live session and the conversation it sits in.
+const LIVE_SESSION_TYPE = 'remote_worker_session';
+const CONVERSATION_TYPE = 'conversation';
+
+export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
+  const { project, activeEntity, activeEntityTypeId, localUser } = useContext();
+  const { projectPath } = useProjectLocation();
+  // The context hands over the cached Project and does not re-publish when a
+  // rename mutates it in place — subscribe to the row (as the project chip does)
+  // so the crumb re-renders, and key the memo on the name, not the object.
+  const { data: liveProject } = useEntity<Project>(project?.typeId ?? null);
+  const projectLabel = (liveProject ?? project)?.displayName;
+
+  // Identity of what this dock ADDRESSES, as a string.
+  //
+  // Deliberately not `tabHash`: that identifies the TAB, and one tab shows many
+  // things — every document opened inside the assets tab shares the hash
+  // `assets|project:<id>`. Keying on it left the address stuck on the list while
+  // the user read a document. viewType + pointer is what actually changes with
+  // the content; `focus` carries the target for worldview docks, whose pointer
+  // does not.
+  //
+  // `hostProcessId` too: a file shown in a session's display is addressed
+  // `project › process › file`, and the host is lifted out of `pointer`.
+  const hostProcessId = dock?.hostProcessId ?? null;
+  // The nested child too (see DockPointer.child): it is lifted out of `pointer`, like the host.
+  const nestedChild = dock?.child ?? null;
+  const dockKey = dock
+    ? `${dock.viewType ?? ''}|${dock.pointer ?? ''}|${dock.options?.focus ?? ''}|${hostProcessId ?? ''}|${nestedChild?.typeId ?? ''}`
+    : null;
+
+  // Phase 0 — straight off the URL, no awaits, available on the first frame.
+  const urlTargetTypeId = useMemo(() => dock?.targetTypeId ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A wiki route names its subject instead of identifying it (see
+  // `DockPointer.wikiRef`), so nothing here fetches what the route already did:
+  // the word is the label, the space is the Wiki's id, and the loader has
+  // parked the resolved target in the wiki-resolve store.
+  const wikiRef = useMemo(() => dock?.wikiRef ?? null, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Authority from the PAGE, through the shared helper the loader uses — the
+  // store is keyed by it, so assuming 'local' would miss every hub resolve.
+  const wikiResolve = useWikiResolveResult(wikiRef?.space ?? '', wikiRef?.name ?? '', wikiAuthorityForPage(dock?.page));
+  const wikiPageTypeId = wikiResolve?.kind === 'resolved' ? wikiResolve.target_typeid : null;
+  const [wikiCrumb, setWikiCrumb] = useState<{ typeId: TypeId; label: string } | null>(null);
+
+  const [resolved, setResolved] = useState<{ typeId: TypeId | null; entity: AnyEntity | null }>({
+    typeId: null,
+    entity: null,
+  });
+  const [ancestors, setAncestors] = useState<AncestorNode[]>([]);
+  // The drivers nest UNDER the data sources screen (data-sources-pointer.ts), so the address reads
+  // `Data sources › Drivers › <driver>`. The driver list is fetched only on a driver's own page.
+  const dataSourcesRoute = useMemo(
+    () => (dock?.viewType === ViewType.DATA_SOURCES ? parseDataSourcesPointer(dock.pointer) : null),
+    [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const driverName = dataSourcesRoute?.section === 'drivers' ? dataSourcesRoute.driver : null;
+  // One source's page: `Data sources › <source>`. Fetched only there.
+  const sourceTypeId = useMemo(
+    () => (dataSourcesRoute?.section === 'source' ? new TypeId(DataSource.type, dataSourcesRoute.id) : null),
+    [dataSourcesRoute],
+  );
+  const { data: pageSource } = useEntity<DataSource>(sourceTypeId);
+  // A conversation read on its source's page: `Data sources › <source> › <conversation>`.
+  const sourceConvTypeId = useMemo(
+    () =>
+      dataSourcesRoute?.section === 'source' && dataSourcesRoute.conversation
+        ? new TypeId(Conversation.type, dataSourcesRoute.conversation)
+        : null,
+    [dataSourcesRoute],
+  );
+  const { data: sourceConv } = useEntity<Conversation>(sourceConvTypeId);
+  const { specFor: driverFor } = useSourceSpecs({ enabled: !!driverName });
+  const driver = driverName ? driverFor(driverName) : undefined;
+  const agentRoute = useMemo(
+    () => (dock?.viewType === ViewType.AGENT ? DockPointer.parseAgentPointer(dock.pointer) : null),
+    [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const scopedAgentId = agentRoute?.agentId ?? dock?.agentScopeId ?? null;
+  const scopedAgentTypeId = useMemo(() => {
+    if (!scopedAgentId) return null;
+    try {
+      return new TypeId(Agent.type, scopedAgentId);
+    } catch {
+      return null;
+    }
+  }, [scopedAgentId]);
+  const [scopedAgent, setScopedAgent] = useState<Agent | null>(null);
+  useEffect(() => {
+    let live = true;
+    setScopedAgent(null);
+    if (!scopedAgentTypeId) return;
+    void dataManager
+      .getByTypeId<Agent>(scopedAgentTypeId)
+      .then((agent) => {
+        if (live) setScopedAgent(agent);
+      })
+      .catch(() => null);
+    return () => {
+      live = false;
+    };
+  }, [scopedAgentTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A live session lives IN its conversation: the address reads `<conversation> › Live session`.
+  // Not a `parent_type_id` — that link drives sharing; this is only where the session sits.
+  const liveSessionConvId =
+    resolved.typeId?.type === LIVE_SESSION_TYPE
+      ? ((resolved.entity as { conversation_id?: string | null } | null)?.conversation_id ?? null)
+      : null;
+  const liveSessionConvTypeId = useMemo(() => {
+    try {
+      return liveSessionConvId ? new TypeId(CONVERSATION_TYPE, liveSessionConvId) : null;
+    } catch {
+      return null;
+    }
+  }, [liveSessionConvId]);
+  const { data: liveSessionConv } = useEntity<AnyEntity>(liveSessionConvTypeId);
+
+  // The session whose display is showing this dock: the middle segment of
+  // `project › process › file`. The host is the process's own typeid
+  // (`agentic_process-<id>`), exactly what the URL's `process/<typeid>/display` carries.
+  const hostProcessTypeId = useMemo(() => {
+    if (!hostProcessId) return null;
+    try {
+      return new TypeId(hostProcessId);
+    } catch {
+      return null;
+    }
+  }, [hostProcessId]);
+  const { data: hostProcess } = useEntity<AgenticProcess>(hostProcessTypeId);
+  const childTypeId = useMemo(() => {
+    try {
+      return nestedChild ? new TypeId(nestedChild.typeId) : null;
+    } catch {
+      return null;
+    }
+  }, [nestedChild?.typeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: childEntity } = useEntity<AnyEntity>(childTypeId);
+  // An app opened ON something (`/dock/app/<editor>?subject=dataset-<id>`) edits that thing: the
+  // address reads `project › <subject> › <app>`, not `project › <app>` as if the app were the page.
+  const subjectTypeId = useMemo(() => {
+    const subject = dock?.viewType === ViewType.APP ? dock.options?.subject : null;
+    try {
+      return subject ? new TypeId(subject) : null;
+    } catch {
+      return null;
+    }
+  }, [dockKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: subjectEntity } = useEntity<AnyEntity>(subjectTypeId);
+  // The subject crumb goes where the subject opens (its best editor) — from the eval browser on a
+  // dataset, clicking the dataset opens the dataset editor. Null while unknown, or when this app IS it.
+  const [subjectEditor, setSubjectEditor] = useState<DockPointer | null>(null);
+  // Keyed on the subject's id, not the TypeId object (re-made on every dock change in the same app).
+  const subjectKey = subjectTypeId?.toString() ?? null;
+  useEffect(() => {
+    setSubjectEditor(null);
+    if (!subjectKey) return;
+    let live = true;
+    subjectEditorPointer(subjectKey)
+      .then((editor) => live && setSubjectEditor(editor))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [subjectKey]);
+
+  // The Wiki the page lives in, as its own crumb. `@local` is an alias for the
+  // active project's default wiki rather than an id, so it takes the same
+  // resolution the wiki route itself uses.
+  useEffect(() => {
+    let live = true;
+    setWikiCrumb(null);
+    const space = wikiRef?.space;
+    if (!space) return;
+
+    void (async () => {
+      const wiki =
+        space === DEFAULT_WIKI_SPACE
+          ? await project?.getDefaultWiki().catch(() => null)
+          : await dataManager.getByTypeId<Wiki>(new TypeId(Wiki.type, space)).catch(() => null);
+      if (!live || !wiki) return;
+      setWikiCrumb({ typeId: wiki.typeId, label: entityLabel(wiki as AnyEntity, wiki.typeId) });
+    })();
+
+    return () => {
+      live = false;
+    };
+  }, [wikiRef?.space, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keyed on the string, not the DockPointer: identity of the CONTENT is what
+  // should re-run this, and it survives a pointer instance being re-minted.
+  // `wikiPageTypeId` joins the key because a wiki route's target arrives from
+  // the resolve store AFTER the dock does — without it the effect would never
+  // re-run to pick the page up.
+  useEffect(() => {
+    let live = true;
+    setAncestors([]);
+    setResolved({ typeId: null, entity: null });
+
+    if (!dock) return;
+    // `resolveDockTarget` structurally cannot answer for a wiki route — it reads
+    // `targetTypeId` and `vfsPath`, both null by construction there — so calling
+    // it would burn a pass and re-run this whole effect when the store lands.
+    if (wikiRef && !wikiPageTypeId) return;
+
+    void (async () => {
+      try {
+        const { targetTypeId, target } = wikiPageTypeId
+          ? {
+              targetTypeId: wikiPageTypeId,
+              target: await dataManager.getByTypeId<AnyEntity>(wikiPageTypeId).catch(() => null),
+            }
+          : await tabManager.resolveDockTarget(dock);
+        if (!live) return;
+        setResolved({ typeId: targetTypeId ?? null, entity: (target as AnyEntity) ?? null });
+
+        const parentRef = (target as { parent_type_id?: string | null } | null)?.parent_type_id ?? null;
+        const chain = await resolveAncestorChain(parentRef, () => live);
+        if (!live) return;
+        setAncestors(chain);
+      } catch {
+        // A dock we can't resolve still deserves an address bar — Phase 0's
+        // crumbs stand on their own.
+        if (live) setAncestors([]);
+      }
+    })();
+
+    return () => {
+      live = false;
+    };
+  }, [dockKey, wikiPageTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const targetTypeId = resolved.typeId ?? urlTargetTypeId;
+
+  const targetTitle = useMemo(() => {
+    // The wiki word, ahead of the resolved page's own name: it is right on the
+    // first frame — before the route has resolved, and still when it resolves
+    // to nothing. The CANONICAL form, not the raw URL segment: the backend
+    // resolves `Docs/Child` as `Docs`, and echoing the segment would name a
+    // page that was never opened.
+    if (wikiRef) return wikiRef.word;
+    if (resolved.entity) return entityLabel(resolved.entity, targetTypeId);
+    // Before Phase 1 lands, the context's active entity is often already the
+    // thing this dock points at — an exact label with no fetch.
+    if (targetTypeId && activeEntityTypeId?.toString() === targetTypeId.toString()) {
+      return entityLabel(activeEntity as AnyEntity, targetTypeId);
+    }
+    if (targetTypeId) return labelForType(targetTypeId.type);
+    // A raw VFS file is not an entity, so nothing resolves for it — but it is
+    // still a file with a name, and the tab label ("<project>'s Assets") names
+    // the container it was opened in, not the thing on screen.
+    if (dock?.resourceVfsPath?.filename) return dock.resourceVfsPath.filename;
+    return viewLabel(dock);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolved.entity, targetTypeId, activeEntity, activeEntityTypeId, wikiRef, dockKey]);
+
+  const crumbs = useMemo<Crumb[]>(() => {
+    const out: Crumb[] = [];
+    const isAgentStreamInbox = agentRoute?.view === 'stream_inbox' && !!agentRoute.agentId;
+    const isAgentConversation = dock?.viewType === ViewType.CONVERSATION && !!dock.agentScopeId;
+    const isAgentScoped = isAgentStreamInbox || isAgentConversation;
+    // Owned by a person, like the agent's is by the agent: the user's Stream Inbox (and a conversation opened
+    // without an agent scope) is NOT a project's, so no project leads it — `<user> › Stream Inbox`.
+    const isUserStreamInbox = dock?.viewType === ViewType.STREAM_INBOX;
+    const isUserConversation = dock?.viewType === ViewType.CONVERSATION && !dock.agentScopeId;
+    const isUserScoped = isUserStreamInbox || isUserConversation;
+    // This machine's, not a project's (`DataSourcesView`: `scope: []`).
+    const isMachineScoped = dock?.viewType === ViewType.DATA_SOURCES;
+
+    // The project always leads — except on the hub, or in the transient window
+    // where no project is selected, where there simply isn't one.
+    //
+    // The one crumb that does NOT navigate: clicking it opens the projects
+    // list, which is what the chip it replaced did. Opening the project itself
+    // is the briefcase button up in the nav cluster — a destination, next to
+    // the other destinations, rather than a second meaning for this click.
+    if (project && !isAgentScoped && !isUserScoped && !isMachineScoped) {
+      out.push({
+        key: 'project',
+        label: projectLabel ?? project.displayName,
+        Icon: iconForType(Project.type),
+        pointer: null,
+        kind: 'project',
+      });
+    }
+
+    // A document shown in a session's display lives UNDER that session.
+    if (hostProcessTypeId && !isAgentScoped) {
+      out.push({
+        key: hostProcessTypeId.toString(),
+        typeId: hostProcessTypeId,
+        label: hostProcess
+          ? entityLabel(hostProcess as AnyEntity, hostProcessTypeId)
+          : labelForType(AgenticProcess.type),
+        Icon: iconForType(AgenticProcess.type),
+        pointer: DockPointer.forShell(hostProcessId ?? undefined).withViewMode(ViewMode.Vibe),
+        kind: 'ancestor',
+      });
+    }
+
+    // The Wiki the page is IN. Not an ancestor in the `parent_type_id` sense —
+    // a wiki page is a plain markdown asset whose containment is its folder —
+    // but it IS the namespace the route resolved the word through, so it is the
+    // honest middle segment of a wiki address. Not navigable: no editor claims
+    // the `wiki` type, so there is no dock that opens a Wiki itself, and a dead
+    // link reads worse than plain text.
+    if (wikiCrumb) {
+      out.push({
+        key: wikiCrumb.typeId.toString(),
+        typeId: wikiCrumb.typeId,
+        label: wikiCrumb.label,
+        Icon: iconForType(wikiCrumb.typeId.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+    }
+
+    // Walked nearest-first; the address reads outermost-first.
+    for (const node of isAgentScoped ? [] : [...ancestors].reverse()) {
+      out.push({
+        key: node.typeId.toString(),
+        typeId: node.typeId,
+        label: entityLabel(node.entity, node.typeId),
+        Icon: iconForType(node.typeId.type),
+        pointer: buildDockPointer(
+          { ...(node.entity as object), type: node.typeId.type, id: node.typeId.id },
+          undefined,
+        ),
+        kind: 'ancestor',
+      });
+    }
+
+    if (liveSessionConvTypeId) {
+      out.push({
+        key: liveSessionConvTypeId.toString(),
+        typeId: liveSessionConvTypeId,
+        label: liveSessionConv ? entityLabel(liveSessionConv, liveSessionConvTypeId) : labelForType(CONVERSATION_TYPE),
+        Icon: iconForType(CONVERSATION_TYPE),
+        pointer: DockPointer.forConversation(liveSessionConvTypeId.id),
+        kind: 'ancestor',
+      });
+    }
+
+    if (isAgentScoped && scopedAgentId && scopedAgentTypeId) {
+      const agentEntity = scopedAgent ?? (isAgentStreamInbox ? (resolved.entity as Agent | null) : null);
+      out.push({
+        key: `agent-${scopedAgentId}`,
+        typeId: scopedAgentTypeId,
+        label: agentEntity ? entityLabel(agentEntity, scopedAgentTypeId) : labelForType(Agent.type),
+        Icon: iconForType(Agent.type),
+        pointer: agentEntity
+          ? buildDockPointer({ ...(agentEntity as object), type: Agent.type, id: scopedAgentId }, undefined)
+          : null,
+        kind: 'ancestor',
+      });
+      out.push({
+        key: `agent-stream-inbox-${scopedAgentId}`,
+        label: i18n._(STREAM_INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.STREAM_INBOX)),
+        pointer: isAgentStreamInbox ? null : DockPointer.forAgentStreamInbox(scopedAgentId),
+        kind: isAgentStreamInbox ? 'current' : 'ancestor',
+      });
+      if (isAgentStreamInbox) return out;
+    }
+
+    if (isUserScoped) {
+      out.push({
+        key: 'user',
+        label: localUser?.name || labelForType(User.type),
+        Icon: iconForType(User.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+      out.push({
+        key: 'user-stream-inbox',
+        label: i18n._(STREAM_INBOX_CRUMB_LABEL),
+        Icon: viewIcon(new DockPointer(ViewType.STREAM_INBOX)),
+        pointer: isUserStreamInbox ? null : DockPointer.forStreamInbox(),
+        kind: isUserStreamInbox ? 'current' : 'ancestor',
+      });
+      if (isUserStreamInbox) return out;
+    }
+
+    // The organization GRAPH is a lens on the People & teams screen, not a
+    // separate destination — so it addresses as "Organization › Graph" with the
+    // first segment navigating back to the screen. Without this the trail read
+    // "Worldview", which names the widget rather than the thing being looked at
+    // and left the graph as a dead end you could only leave with the back button.
+    const isOrgGraph = dock?.viewType === ViewType.WORLDVIEW && dock?.pointer === WorldViewProjection.ORGANIZATION;
+    if (isOrgGraph) {
+      out.push({
+        key: 'organization',
+        label: i18n._(ORGANIZATION_CRUMB_LABEL),
+        Icon: iconForType(Organization.type),
+        pointer: new DockPointer(ViewType.ORGANIZATION, undefined, undefined, undefined, PageId.HUB),
+        kind: 'ancestor',
+      });
+    }
+
+    // On the project's OWN page the target is the project, so naming it again
+    // would read "Acme › Acme". It's the same shape as a site's root crumb — the
+    // trail still needs a last segment, it just isn't the name a second time.
+    //
+    // Both routes there count: `/dock/project/<id>` addresses the project as an
+    // entity, while a bare `/dock/project` has no target at all and would
+    // otherwise fall back to the view's type label ("Project").
+    const isProjectHome =
+      !!dock?.isProjectShell || (!!project && targetTypeId?.type === Project.type && targetTypeId.id === project.id);
+
+    // Same precedence the asset editor's header used before it was removed: the
+    // route's own VFS path first (parsed, no fetch, right on the first frame),
+    // then the resolved entity's `asset_ref` for a typeid-addressed asset.
+    const assetRef = (resolved.entity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
+    // A Files dock shows a FOLDER. Its root ("<project>'s Files") has no pointer
+    // at all, yet it is the most file-backed thing in the app — it is the
+    // project directory — so it falls back to the project's own path. Without
+    // this the crumb was plain text and offered nothing on hover.
+    const isExplorer = dock?.viewType === ViewType.EXPLORER;
+    const path = dock?.resourceVfsPath?.machinePath || assetRef || (isExplorer ? projectPath : null) || null;
+    const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
+    const directory = isExplorer;
+
+    // The schema tree: `<project> › Schema › <schema> › …` — the pointer is the kinds unfolded
+    // down to the selection (schema-tree-pointer.ts), each one a step back up.
+    if (dock?.viewType === ViewType.SCHEMA_TREE) {
+      const steps = parseSchemaTreePointer(dock.pointer);
+      const schemaTitle = VIEWER_REGISTRY[ViewType.SCHEMA_TREE]?.title;
+      const scopeProjectId = dock.scopeProjectId ?? project?.id ?? null;
+      const at = (path: string[]) => (scopeProjectId ? DockPointer.forSchemaTree(scopeProjectId, path) : null);
+      out.push({
+        key: 'schema-tree',
+        label: schemaTitle ? i18n._(schemaTitle) : viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: steps.length ? at([]) : null,
+        kind: steps.length ? 'ancestor' : 'current',
+      });
+      steps.forEach((step, i) => {
+        const last = i === steps.length - 1;
+        const source = step.startsWith(SOURCE_SEGMENT);
+        out.push({
+          key: `schema-tree-${i}-${step}`,
+          label: source ? labelForType(DataSource.type) : bareKind(step),
+          Icon: iconForType(source ? DataSource.type : DATA_SCHEMA_TYPE),
+          pointer: last ? null : at(steps.slice(0, i + 1)),
+          kind: last ? 'current' : 'ancestor',
+        });
+      });
+      return out;
+    }
+
+    if (dataSourcesRoute?.section === 'source' && dock) {
+      out.push({
+        key: 'data-sources',
+        label: viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: DockPointer.forDataSources(),
+        kind: 'ancestor',
+      });
+      const folder = pageSource?.asset_ref ?? null;
+      out.push({
+        key: `data-source-${dataSourcesRoute.id}`,
+        typeId: sourceTypeId ?? undefined,
+        label: pageSource?.name || pageSource?.provider || labelForType(DataSource.type),
+        Icon: iconForType(DataSource.type),
+        pointer: sourceConvTypeId
+          ? DockPointer.forDataSources({ section: 'source', id: dataSourcesRoute.id, tab: 'messages' })
+          : null,
+        kind: sourceConvTypeId ? 'ancestor' : 'current',
+        path: folder,
+        filename: basename(folder),
+        directory: true,
+      });
+      if (sourceConvTypeId) {
+        out.push({
+          key: sourceConvTypeId.toString(),
+          typeId: sourceConvTypeId,
+          label: sourceConv ? entityLabel(sourceConv, sourceConvTypeId) : labelForType(Conversation.type),
+          Icon: iconForType(Conversation.type),
+          pointer: null,
+          kind: 'current',
+        });
+      }
+      return out;
+    }
+
+    if (dataSourcesRoute?.section === 'drivers' && dock) {
+      out.push({
+        key: 'data-sources',
+        label: viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: DockPointer.forDataSources(),
+        kind: 'ancestor',
+      });
+      out.push({
+        key: 'data-drivers',
+        label: i18n._(DRIVERS_CRUMB_LABEL),
+        Icon: iconForType(DataDriver.type),
+        pointer: driverName ? DockPointer.forDataSources({ section: 'drivers', driver: null }) : null,
+        kind: driverName ? 'ancestor' : 'current',
+      });
+      if (driverName) {
+        const folder = driver?.asset_ref ?? null;
+        out.push({
+          key: `data-driver-${driverName}`,
+          label: driver?.title || driverName,
+          Icon: iconForType(DataDriver.type),
+          pointer: null,
+          kind: 'current',
+          path: folder,
+          filename: basename(folder),
+          directory: true,
+        });
+      }
+      return out;
+    }
+
+    if (subjectTypeId) {
+      out.push({
+        key: `subject-${subjectTypeId.toString()}`,
+        typeId: subjectTypeId,
+        label: subjectEntity ? entityLabel(subjectEntity, subjectTypeId) : labelForType(subjectTypeId.type),
+        Icon: iconForType(subjectTypeId.type),
+        pointer: subjectEditor && subjectEditor.pointer !== dock?.pointer ? subjectEditor : null,
+        kind: 'ancestor',
+      });
+    }
+    // An app names itself by its title ("Dataset editor"), not its folder name ("dataset-editor").
+    const appTitle = subjectTypeId ? (resolved.entity as { title?: string } | null)?.title?.trim() : null;
+
+    out.push(
+      targetTypeId
+        ? {
+            key: targetTypeId.toString(),
+            // The project's own page already has the project crumb beside it.
+            typeId: isProjectHome ? undefined : targetTypeId,
+            label: isProjectHome ? i18n._(PROJECT_HOME_CRUMB_LABEL) : appTitle || targetTitle,
+            Icon: iconForType(targetTypeId.type),
+            pointer: null,
+            kind: 'current',
+            path,
+            filename,
+            directory,
+          }
+        : {
+            key: 'view',
+            label: isProjectHome
+              ? i18n._(PROJECT_HOME_CRUMB_LABEL)
+              : isOrgGraph
+                ? i18n._(GRAPH_CRUMB_LABEL)
+                : targetTitle,
+            // A wiki word that hasn't resolved yet (or resolves to nothing) is
+            // still a wiki word, not an unidentified view — the registry has a
+            // glyph for exactly that. `iconForType`, so it moves with TypeInfo.
+            Icon: isProjectHome ? iconForType(Project.type) : wikiRef ? iconForType(WikiEntry.type) : viewIcon(dock),
+            pointer: null,
+            kind: 'current',
+            path,
+            filename,
+            directory,
+          },
+    );
+
+    // A view nested in this editor (an MCP server opened from the agent): the editor stops being
+    // the current segment and becomes the way back — `project › Dana › MCP servers › linear`.
+    if (nestedChild && childTypeId && dock) {
+      const parent = out[out.length - 1];
+      out[out.length - 1] = {
+        ...parent,
+        pointer: dock.withoutChild(),
+        kind: 'ancestor',
+        path: undefined,
+        filename: undefined,
+      };
+      out.push({
+        key: `child-section-${nestedChild.section}`,
+        label: i18n._(CHILD_SECTION_CRUMB_LABELS[nestedChild.section]),
+        Icon: iconForType(childTypeId.type),
+        pointer: null,
+        kind: 'ancestor',
+      });
+      const childPath = (childEntity as { asset_ref?: string | null } | null)?.asset_ref ?? null;
+      out.push({
+        key: childTypeId.toString(),
+        typeId: childTypeId,
+        label: childEntity ? entityLabel(childEntity, childTypeId) : labelForType(childTypeId.type),
+        Icon: iconForType(childTypeId.type),
+        pointer: null,
+        kind: 'current',
+        path: childPath,
+        filename: basename(childPath) || null,
+      });
+    }
+
+    return out;
+  }, [
+    dataSourcesRoute,
+    pageSource,
+    sourceConvTypeId,
+    sourceConv,
+    localUser,
+    driverName,
+    driver,
+    nestedChild,
+    childTypeId,
+    childEntity,
+    subjectTypeId,
+    subjectEntity,
+    subjectEditor,
+    project,
+    projectLabel,
+    agentRoute,
+    scopedAgentId,
+    scopedAgentTypeId,
+    scopedAgent,
+    hostProcessTypeId,
+    hostProcess,
+    liveSessionConvTypeId,
+    liveSessionConv,
+    dock,
+    ancestors,
+    wikiCrumb,
+    wikiRef,
+    targetTypeId,
+    targetTitle,
+    resolved.entity,
+    projectPath,
+  ]);
+
+  return { crumbs, targetTypeId, targetTitle };
+}

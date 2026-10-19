@@ -1,0 +1,215 @@
+import * as React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { FileText, FolderOpen, KeyRound, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { cn } from '@src/lib/utils';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
+import { TableCell, TableRow } from '../ui/table';
+import { MoreOnHover } from './more-on-hover';
+import { SignInMethodIcon } from './sign-in-method';
+import { credentialEnvFileName, missingNeeds } from '@sdk';
+import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
+import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
+
+/** Same cap the OAuth scope chips use — one chip and a count. */
+const VARS_SHOWN = 1;
+
+/** The provider glyph, from the definition's `icon_name` — asset data, not a type icon. */
+function CredentialGlyph({ iconName }: { iconName?: string }) {
+  const Icon = (iconName && lucideByName(iconName)) || KeyRound;
+  return <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />;
+}
+
+/**
+ * Credential rows for the Connections table — `<TableRow>`s in the one table, so
+ * a pasted API key reads as the same kind of thing as an OAuth sign-in.
+ */
+export function CredentialConnectionRows({
+  rows,
+  onSetValues,
+  onEdit,
+  onDelete,
+  onOpenEnvFile,
+  onRevealEnvFile,
+  selectedTypeid,
+  selectedRef,
+}: {
+  rows: CredentialRow[];
+  /** The credential the URL names: highlighted, and given ``selectedRef`` so the host scrolls to it. */
+  selectedTypeid?: string;
+  selectedRef?: React.Ref<HTMLTableRowElement>;
+  onSetValues: (row: CredentialRow) => void;
+  onEdit: (row: CredentialRow) => void;
+  onDelete: (row: CredentialRow) => void;
+  /** Open the row's `.env.local` in the editor. Offered only for env-file credentials. */
+  onOpenEnvFile: (path: string) => void;
+  /** Reveal the row's `.env.local` in the OS file manager. */
+  onRevealEnvFile: (path: string) => void;
+}) {
+  const { t } = useLingui();
+
+  return (
+    <>
+      {rows.map((row) => {
+        const testKey = `${row.scope}-${row.name}`;
+        const shown = row.vars.slice(0, VARS_SHOWN);
+        const extra = row.vars.length - shown.length;
+        const connected = row.state === 'connected';
+        // An either-or group with no member set reads "A or B": one of them is enough.
+        const missing = missingNeeds(row.vars)
+          .map((need) => need.map((v) => v.envVar).join(t` or `))
+          .join(', ');
+        return (
+          <TableRow
+            key={row.typeid}
+            ref={row.typeid === selectedTypeid ? selectedRef : undefined}
+            aria-current={row.typeid === selectedTypeid ? 'true' : undefined}
+            className={cn(row.typeid === selectedTypeid && 'bg-primary/10 ring-1 ring-inset ring-primary/40')}
+            data-testid={`connection-row-${testKey}`}
+            data-typeid={row.typeid}
+          >
+            <TableCell className="font-medium">
+              <div className="flex items-center gap-2">
+                <CredentialGlyph iconName={row.iconName} />
+                <span className="truncate" title={row.description}>
+                  {row.title}
+                </span>
+                <RequirementChip required={row.required} testId={`connection-required-${testKey}`} />
+              </div>
+            </TableCell>
+
+            <TableCell>
+              <SignInMethodIcon
+                method="api_key"
+                lines={[
+                  row.store === 'vault'
+                    ? t`Values are kept in this machine's encrypted vault`
+                    : row.scope === 'user'
+                      ? t`Values are kept in ${credentialEnvFileName(row.source.environment)} in your home folder`
+                      : t`Values are kept in this project's ${credentialEnvFileName(row.source.environment)}`,
+                ]}
+                testId={`connection-kind-${testKey}`}
+              />
+            </TableCell>
+
+            <TableCell data-testid={`connection-vars-${testKey}`}>
+              <MoreOnHover
+                lines={row.vars.map(
+                  (v) =>
+                    `${v.envVar} · ${v.required}${v.present ? '' : t` — not set`}${v.warning === 'wrong-store' ? t` (value is in the other store)` : ''}`,
+                )}
+              >
+                <div className="flex items-center gap-1">
+                  {shown.map((v) => (
+                    <Badge
+                      key={v.envVar}
+                      variant="secondary"
+                      className={cn(
+                        'max-w-[220px] truncate font-mono text-[11px] font-normal',
+                        !v.present && 'opacity-50',
+                      )}
+                    >
+                      {v.envVar}
+                    </Badge>
+                  ))}
+                  {!!extra && (
+                    <span className="shrink-0 cursor-help text-xs text-muted-foreground underline decoration-dotted underline-offset-2">
+                      +{extra}
+                    </span>
+                  )}
+                </div>
+              </MoreOnHover>
+            </TableCell>
+
+            <TableCell>
+              <div className="flex items-center gap-2 text-sm">
+                <span
+                  className={cn('h-2 w-2 shrink-0 rounded-full', connected ? 'bg-emerald-500' : 'bg-amber-500')}
+                />
+                <span
+                  className={cn('whitespace-nowrap', !connected && 'text-amber-600')}
+                  title={missing ? t`Missing: ${missing}` : undefined}
+                  data-testid={`connection-status-${testKey}`}
+                >
+                  {connected ? <Trans>Connected</Trans> : <Trans>Needs values</Trans>}
+                </span>
+              </div>
+            </TableCell>
+
+            <TableCell className="text-sm text-muted-foreground" data-testid={`connection-scope-${testKey}`}>
+              <span title={row.shadowed ? t`This project declares the same variables, and its values win` : undefined}>
+                {row.scope === 'user' ? <Trans>All projects</Trans> : <Trans>This project</Trans>}
+                {row.shadowed && (
+                  <span className="ms-1 text-xs text-muted-foreground/70">
+                    <Trans>(overridden)</Trans>
+                  </span>
+                )}
+              </span>
+            </TableCell>
+
+            <TableCell className="text-end">
+              <div className="flex items-center justify-end gap-1">
+                <Button
+                  variant={connected ? 'ghost' : 'outline'}
+                  size="sm"
+                  className="h-7"
+                  onClick={() => onSetValues(row)}
+                  data-testid={`connection-setvalues-${testKey}`}
+                >
+                  {connected ? <Trans>Update values</Trans> : <Trans>Set values</Trans>}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                      title={t`More`}
+                      data-testid={`connection-more-${testKey}`}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => onEdit(row)} data-testid={`connection-edit-${testKey}`}>
+                      <Pencil className="me-2 h-3.5 w-3.5" />
+                      <Trans>Edit</Trans>
+                    </DropdownMenuItem>
+                    {row.envPath && (
+                      <>
+                        <DropdownMenuItem
+                          onSelect={() => onOpenEnvFile(row.envPath!)}
+                          data-testid={`connection-open-env-${testKey}`}
+                        >
+                          <FileText className="me-2 h-3.5 w-3.5" />
+                          <Trans>Open {credentialEnvFileName(row.source.environment)} in editor</Trans>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => onRevealEnvFile(row.envPath!)}
+                          data-testid={`connection-reveal-env-${testKey}`}
+                        >
+                          <FolderOpen className="me-2 h-3.5 w-3.5" />
+                          <Trans>Reveal in Finder/Explorer</Trans>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={() => onDelete(row)}
+                      data-testid={`connection-delete-${testKey}`}
+                    >
+                      <Trash2 className="me-2 h-3.5 w-3.5" />
+                      <Trans>Delete</Trans>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </TableCell>
+          </TableRow>
+        );
+      })}
+    </>
+  );
+}

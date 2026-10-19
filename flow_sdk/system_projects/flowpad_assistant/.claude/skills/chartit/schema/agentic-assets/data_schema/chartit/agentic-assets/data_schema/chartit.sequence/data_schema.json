@@ -1,0 +1,7 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "participants": {"shape": ["chartit.participant"], "description": "The lifelines, left to right."},
+    "messages":     {"shape": ["chartit.message"], "description": "The arrows, top to bottom."}
+  }
+}

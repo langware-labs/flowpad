@@ -25,12 +25,20 @@ from typing import TYPE_CHECKING
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
+)
+from flow_sdk.builtin.process_lifecycle import (
     is_running as is_process_running,
+)
+from flow_sdk.builtin.process_lifecycle import (
     is_startable as is_process_startable,
 )
-from flow_sdk.builtin.worker_status import (
+from flow_sdk.transcript_analyzer.worker_status import (
     WorkerStatus,
+)
+from flow_sdk.transcript_analyzer.worker_status import (
     is_running as is_worker_running,
+)
+from flow_sdk.transcript_analyzer.worker_status import (
     is_terminal as is_worker_terminal,
 )
 
@@ -104,7 +112,7 @@ def is_turn_busy(
 ) -> bool:
     """True when a turn is in flight — the single ``busy`` boolean.
 
-    ``busy`` is a function of process state, resolved from four signals (any
+    ``busy`` is a function of process state, resolved from six signals (any
     one → busy):
 
       1. the per-process prompt lock is held (headless / chat-over-PTY turn), OR
@@ -113,7 +121,12 @@ def is_turn_busy(
       3. ``_turn_in_flight`` is set (a worker spinning up before its transcript
          lands), OR
       4. the raw ``worker_status`` is a mid-turn activity state
-         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**.
+         (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**, and
+         only if the live worker wrote that tail (:func:`_tail_predates_worker`), OR
+      5. another live OS process is running a turn on it
+         (:func:`turn_owned_elsewhere` — a local deployment's loop), OR
+      6. its headless turn task is still running its tail (slot release, turn-end
+         bookkeeping) — the worker can read terminal a moment before that ends.
 
     A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
     (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
@@ -136,21 +149,98 @@ def is_turn_busy(
     try:
         from flow_sdk.builtin.agentic_process.agentic_process import (
             prompt_lock_locked,
+            prompt_task_active,
             prompt_worker_active,
         )
     except Exception:
         prompt_lock_locked = None
+        prompt_task_active = None
         prompt_worker_active = None
     if prompt_lock_locked is not None and prompt_lock_locked(process.id):
         return True
     if prompt_worker_active is not None and prompt_worker_active(process.id):
         return True
+    if prompt_task_active is not None and prompt_task_active(process.id):
+        return True
     if getattr(process, "_turn_in_flight", False):
+        return True
+    if turn_owned_elsewhere(process, worker_status):
         return True
     if get_worker_mode(process) is not WorkerMode.INTERACTIVE:
         return False
     resolved = worker_status if worker_status is not None else process.fetch_worker_status()
-    return resolved in _BUSY_WORKER_STATUSES
+    return resolved in _BUSY_WORKER_STATUSES and not _tail_predates_worker(process)
+
+
+def _tail_predates_worker(process: "AgenticProcess") -> bool:
+    """True when the live PTY worker has not written its transcript since it launched.
+
+    A mid-turn tail then belongs to the worker BEFORE it -- killed between a
+    tool's result and its reply -- and nobody is working on that turn. A resumed
+    ``claude --resume`` sits idle at its prompt and writes nothing until the next
+    message (it holds the closing "No response requested." in memory until then),
+    so without this a session reopened over an interrupted turn read ``busy`` and
+    greyed the Chat switch until a new turn ended.
+    """
+    from datetime import datetime  # noqa: PLC0415
+
+    from flow_sdk.builtin.agentic_process import transcript_cache  # noqa: PLC0415 -- cycle
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        AgenticProcessContextKey,
+    )
+
+    started_at = (getattr(process, "context_data", None) or {}).get(AgenticProcessContextKey.WORKER_STARTED_AT.value)
+    path = transcript_cache.transcript_path(process) if started_at else None
+    if path is None:
+        return False
+    try:
+        return path.stat().st_mtime < datetime.fromisoformat(started_at).timestamp()
+    except (OSError, ValueError):
+        return False
+
+
+def turn_owned_elsewhere(process: "AgenticProcess", worker_status: WorkerStatus | None = None) -> bool:
+    """True when ANOTHER live OS process is running a turn on *process*.
+
+    Signals 1–3 of :func:`is_turn_busy` live in the memory of the process that
+    runs the turn. A local agent deployment runs its turns in its own process
+    (``builtin/agent_loop``), so the app — which serves ``busy`` to every client —
+    holds none of them. What it can read is the turn record that runner writes on
+    the row (``agent_serve.started_record``): a turn STARTED by a pid that is
+    still alive is in flight. A dead pid is not — a loop that crashed mid-turn
+    must not pin ``busy`` forever (the same trap signal 4 is gated against).
+
+    The record closes only after the runner has read the reply, while the app's
+    last live push fires on the transcript's own turn end. So the transcript has
+    the last word: once its tail stopped working, the turn is over here too —
+    otherwise that final push would leave every client showing "working".
+    """
+    import os  # noqa: PLC0415
+
+    from flow_sdk.builtin.agent_serve import OWNER_PID, STARTED, turns_of  # noqa: PLC0415
+
+    own = os.getpid()
+    owned = any(
+        isinstance(record, dict)
+        and record.get("status") == STARTED
+        and isinstance(record.get(OWNER_PID), int)
+        and record[OWNER_PID] != own
+        and _pid_alive(record[OWNER_PID])
+        for record in turns_of(process).values()
+    )
+    if not owned:
+        return False
+    tail = worker_status if worker_status is not None else process.fetch_worker_status()
+    return tail is None or tail in _BUSY_WORKER_STATUSES
+
+
+def _pid_alive(pid: int) -> bool:
+    import psutil  # noqa: PLC0415
+
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
 
 
 def is_ready_from_busy(

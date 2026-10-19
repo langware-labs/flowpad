@@ -1,0 +1,69 @@
+/* Flowpad's own palette, radii, font stack and dark theme come from
+   /sdk/flowpad.css, linked in index.html. An app that lives inside Flowpad
+   should look like Flowpad, so colour is not decided here — this file is
+   layout and hierarchy only. Restyle it freely; keep the tokens.
+
+   Reach for the `html-builder` skill before redesigning: it covers modern CSS
+   with no build step, and `frontend-design` covers the aesthetic direction. */
+
+@layer base, layout, controls, items;
+
+@layer base {
+  body { font: 15px/1.55 var(--font-sans); }
+  h1 { margin: 0; font-size: 1.0625rem; font-weight: 600; }
+  .muted { color: hsl(var(--muted-foreground)); }
+  .empty { color: hsl(var(--muted-foreground)); }
+}
+
+@layer layout {
+  .app-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.875rem 1.25rem;
+    border-block-end: 1px solid hsl(var(--border));
+    background: hsl(var(--card));
+  }
+  main { padding: 1.25rem; max-inline-size: 60rem; margin-inline: auto; }
+
+  .status {
+    font-size: 0.8rem;
+    color: hsl(var(--muted-foreground));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .status::before {
+    content: '';
+    inline-size: 6px;
+    block-size: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .status.ok { color: hsl(var(--brand)); }
+  .status.error { color: hsl(var(--destructive)); }
+}
+
+@layer controls {
+  /* /sdk/flowpad.css already styles input and button by element — this file only
+     says how they sit in the row. */
+  .create-row { display: flex; gap: 0.5rem; margin-block-end: 1rem; }
+  .create-row input { flex: 1; }
+}
+
+@layer items {
+  .items { list-style: none; margin: 0; padding: 0; }
+
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.2rem;
+    border-block-end: 1px solid hsl(var(--border));
+  }
+  .item.status-done .title {
+    color: hsl(var(--muted-foreground));
+    text-decoration: line-through;
+  }
+}

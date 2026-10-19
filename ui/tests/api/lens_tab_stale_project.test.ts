@@ -19,7 +19,7 @@
  *   - the tab gets the CWD-resolved project at mint (the real FE fallback —
  *     prod's flowpad-oss project),
  *   - the session is later re-stamped to an UMBRELLA project whose mount
- *     contains the transcript file (prod's "/Users/shlom" home project, which
+ *     contains the transcript file (prod's "/Users/alice" home project, which
  *     contains ~/.claude), via the product's own scoped index endpoint.
  *
  * Invariant under test: after a load through the real UI path, the lens tab's
@@ -40,7 +40,7 @@ import { ClaudeSession, ComputeNode, GRAPH_API_PREFIX, Project, Tab, apiClient, 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { setupTab } from '@src/tabs/tab-content-lifecycle';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
 
 const CLAUDE_HOME = process.env.FLOWPAD_CLAUDE_HOME || '';
@@ -79,7 +79,7 @@ describe.skipIf(!CLAUDE_HOME)('lens tab follows its target session project acros
   const encoded = workDir.replace(/\//g, '-');
   const jsonlPath = path.join(CLAUDE_HOME, 'projects', encoded, `${sessionId}.jsonl`);
   // The per-run project whose mount CONTAINS the transcript file — the
-  // "/Users/shlom" analog (prod's home project contains ~/.claude). Scoped to
+  // "/Users/alice" analog (prod's home project contains ~/.claude). Scoped to
   // this run's unique encoded dir so reruns never poison each other.
   const umbrellaMount = path.dirname(jsonlPath);
 
@@ -124,7 +124,7 @@ describe.skipIf(!CLAUDE_HOME)('lens tab follows its target session project acros
     expect(minted.project_id).toBe(cwdProject.id);
 
     // ── Phase 2: an umbrella project whose mount CONTAINS the transcript file
-    // (the "/Users/shlom" analog) appears; the transcript changes; the next
+    // (the "/Users/alice" analog) appears; the transcript changes; the next
     // scoped index re-stamps the session to the umbrella via deepest-mount-wins
     // on the transcript's physical path — through sync_to_db, which skips the
     // tab reconcile save-hook. The tab snapshot is now stale.

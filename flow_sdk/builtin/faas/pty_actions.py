@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import threading
 import time
 import uuid
 from typing import TYPE_CHECKING, Callable
 
+from flow_sdk import toplog
 from flow_sdk.api.messages import PtyOutputMessage, PtySessionStatusMessage, ResponseMessage
-from flow_sdk.api.type_id import TypeId
 from flow_sdk.core.network.connection import Connection
 from flow_sdk.core.network.connection_manager import get_connection_handler
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -56,18 +59,15 @@ class PtyActionsMixin:
         - close: Close PTY session
         - list: List all active PTY sessions for this compute node
         """
-        logging.info("[PTY] terminal_command action called")
         request_info = get_current_request_info()
         if not request_info or not request_info.sub_path:
             logging.error("[PTY] No operation specified in sub_path")
             return ApiFailResponse(message="No operation specified")
 
         op = request_info.sub_path.strip("/").lower()
-        logging.info(f"[PTY] Terminal operation: {op}")
 
         try:
             body = await request_info.get_post_data()
-            logging.info(f"[PTY] Request body: {body}")
 
             if op == "start":
                 result = await self._start_pty_session(body)
@@ -88,7 +88,6 @@ class PtyActionsMixin:
             else:
                 result = ApiFailResponse(message=f"Unknown terminal operation: {op}")
 
-            logging.info(f"[PTY] Returning result: {result}")
             return result
         except Exception as e:
             logging.error(f"[PTY] Error in terminal_command: {str(e)}", exc_info=True)
@@ -277,8 +276,9 @@ class PtyActionsMixin:
         # Evict oldest sessions when the cap is reached, to prevent PTY device exhaustion.
         node_sessions = [k for k in pty_registry.states if k[0] == self.id]
         if len(node_sessions) >= _PTY_CAP:
-            evict_keys = node_sessions[:_PTY_EVICT_COUNT]
+            evict_keys = [k for k in node_sessions if not pty_registry.states[k].pinned][:_PTY_EVICT_COUNT]
             logging.warning(f"[PTY] Cap ({_PTY_CAP}) reached — evicting {len(evict_keys)} oldest sessions")
+            toplog.log("pty", "cap_evict cap=%s evicting=%s", _PTY_CAP, [k[2] for k in evict_keys])
             for evict_key in evict_keys:
                 evict_shell_id = evict_key[2]
                 try:
@@ -298,8 +298,23 @@ class PtyActionsMixin:
 
         # Mutable holder for session_state, populated after generate_session()
         session_state_holder: list = []
+        # What the PTY prints before its session is registered — a login shell's prompt, a command
+        # that writes at once — is held here and replayed, in order, the moment it is. Dropped, it
+        # was never counted, so ``Shell.write``'s readiness waited out its whole budget on a fresh
+        # shell. The lock orders the reader thread against that replay.
+        early_output: list[bytes] = []
+        output_lock = threading.Lock()
+        # `pty` toplog: last time a delayed-output line was logged (≤1/s).
+        slow_output_logged_at = [0.0]
 
         def on_pty_output(data: bytes):
+            with output_lock:
+                if not session_state_holder:
+                    early_output.append(data)
+                    return
+                _on_output(data)
+
+        def _on_output(data: bytes):
             logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
 
@@ -322,6 +337,13 @@ class PtyActionsMixin:
                     asyncio.run_coroutine_threadsafe(_q.put((seq, data)), main_loop)
 
             async def get_and_send():
+                if toplog.is_on("pty"):
+                    # Reader thread → event loop hop. A large lag means the loop is
+                    # stalled or flooded — every client's output is late by this much.
+                    lag_ms = (time.time() - chunk_timestamp) * 1000
+                    if lag_ms > 200 and time.time() - slow_output_logged_at[0] >= 1.0:
+                        slow_output_logged_at[0] = time.time()
+                        toplog.log("pty", "output_delayed shell=%s seq=%s loop_lag_ms=%.0f", shell_id, seq, lag_ms)
                 current_session = await pty_registry.get_session(current_pty_key)
                 if current_session and current_session.attached_connections:
                     for current_connection_id in current_session.attached_connections:
@@ -421,7 +443,15 @@ class PtyActionsMixin:
             persisted_max = pty_stream_file.max_seq()
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
+            # A previous process may have died fullscreen (alternate screen,
+            # mouse capture on); replay must not hand that canvas to this one.
+            pty_stream_file.mark_new_generation()
             session_state.generation_start_seq = session_state.seq
+            toplog.log(
+                "pty", "session_start shell=%s pid=%s persisted_max_seq=%s start_seq=%s size=%sx%s",
+                shell_id, provider_session_data.get("pid") if isinstance(provider_session_data, dict) else None,
+                persisted_max, session_state.seq, cols, rows,
+            )
 
             # Write-through: create/update the Shell DB entity from the record
             # via the generic base sync, then apply the shell-specific side
@@ -464,8 +494,13 @@ class PtyActionsMixin:
         except Exception as e:
             logging.warning(f"[PTY] Error creating shell session record: {e}", exc_info=True)
 
-        # Populate the holder so on_pty_output can access session_state
-        session_state_holder.append(session_state)
+        # Populate the holder so on_pty_output can access session_state — and replay what the PTY
+        # printed before it was.
+        with output_lock:
+            session_state_holder.append(session_state)
+            for data in early_output:
+                _on_output(data)
+            early_output.clear()
 
         # Add to active_pty_sessions
         if shell_id not in self.active_pty_sessions:
@@ -641,11 +676,11 @@ class PtyActionsMixin:
         # Parser-fn-only types need their own dispatch (no record_cls). Add
         # cases here as more types migrate.
         if record_type == "claude_session":
-            from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+            from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+            from flow_sdk.fs_store.indexer.functions.claude_sessions import (
                 claude_session_meta_dict,
                 discover_claude_session_paths_iter,
                 ensure_claude_session_stats,
-                extract_claude_session_from_path,
                 get_claude_session,
             )
 
@@ -781,6 +816,10 @@ class PtyActionsMixin:
         if not pty_handle:
             # Session not found or expired (expected after server restart)
             logging.debug(f"[PTY] Session {pty_id} not found")
+            toplog.log(
+                "pty", "attach_not_found shell=%s connection=%s backend_pid=%s",
+                pty_id, request_connection_id, os.getpid(),
+            )
             status_msg = PtySessionStatusMessage(
                 shell_id=pty_id,
                 status="not_found",
@@ -817,6 +856,7 @@ class PtyActionsMixin:
             rows = int(body.get("rows") or 0) or None
         except (TypeError, ValueError):
             cols = rows = None
+        repaint_t0 = time.monotonic()
         try:
             await pty_handle.repaint(cols, rows)
         except Exception as e:
@@ -826,6 +866,11 @@ class PtyActionsMixin:
 
         # Send status message
         latest_seq = pty_handle.latest_seq
+        toplog.log(
+            "pty", "attach shell=%s connection=%s latest_seq=%s size=%sx%s repaint_ms=%.0f backend_pid=%s",
+            pty_id, request_connection_id, latest_seq, cols, rows,
+            (time.monotonic() - repaint_t0) * 1000, os.getpid(),
+        )
         status_msg = PtySessionStatusMessage(
             shell_id=pty_id,
             status="reattached",
@@ -934,6 +979,7 @@ class PtyActionsMixin:
 
         pty = self.get_pty(shell_id)
         if not pty:
+            toplog.log("pty", "input_dropped shell=%s reason=session_not_found bytes=%s", shell_id, len(data))
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -955,6 +1001,7 @@ class PtyActionsMixin:
             return ApiSuccessResponse(data=response_msg.model_dump())
         except Exception as e:
             logging.error(f"Failed to send PTY input: {e}")
+            toplog.log("pty", "input_dropped shell=%s reason=write_failed error=%r", shell_id, e)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1005,8 +1052,15 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"PTY session not found: {shell_id}", data=response_msg.model_dump())
 
+        # ``repaint``: the client drew output at another size — redraw even at an unchanged size
+        # (attach's policy: resize if different, else winsize jiggle).
+        repaint = bool(body.get("repaint"))
+        toplog.log("pty", "resize shell=%s size=%sx%s repaint=%s", shell_id, cols, rows, repaint)
         try:
-            await pty.resize(cols, rows)
+            if repaint:
+                await pty.repaint(cols, rows)
+            else:
+                await pty.resize(cols, rows)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,

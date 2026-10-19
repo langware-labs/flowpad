@@ -1,25 +1,62 @@
 import {
   AgenticProcess,
   ComputeNode,
+  CredentialsSubview,
   dataContext,
   DockPointerData,
+  isHubOnly,
   type IDockPointer,
   Layout,
   PageId,
   QueryRequest,
   Shell,
+  tabManager,
+  tabForDockKey,
   toplog,
   TypeId,
   VFSPath,
+  viewModeMemory,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
-import type { ViewMode } from '@src/contexts/view-mode-context';
-import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
+import { isValidIdentifier } from '@sdk/models/TypeId';
+import {
+  UNSTATED_VIEW_MODE,
+  sessionOpenViewMode,
+  sessionIdForDock,
+  VIEW_MODE_SWITCH_STATE,
+  ViewMode,
+} from '@src/contexts/view-mode-context';
+import {
+  CAPABILITY_PARAM,
+  DockPointer,
+  JOURNEY_PARAM,
+  JOURNEY_STEP_PARAM,
+  NODE_PARAM,
+  WORKSPACE_PARAM,
+  WORKSPACE_ENTRY_PARAM,
+} from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
+import { getHistoryPosition } from './history-position-store';
+import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
+import { contentAssetTargetForDock, reviewPromptFor, isContentAssetDock } from './content-asset-dock';
+import { isAdoptableChildDock, isWorkspaceAnchorDock } from './adoptable-child-dock';
+import { isHostDock } from './tab-hosts';
+import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import { vfsLocatorForComputeNode } from './vfs-locator';
+import { dockForDisplayTarget } from './display-target-pointer';
+import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-page-state';
+import { placeDockInProject, presentDockTab } from './present-dock-tab';
+import { openExternal } from '@src/lib/open-external';
+import { openInBrowserProfile } from '@src/lib/browser-profiles';
+import { appLinkPath, bareWebUrl, isWebUrl, localWebUrl } from '@src/lib/link-kind';
+import { errorMessage } from '@src/lib/error-message';
+import type { LinkSource } from '@src/components/links/link-events';
+import { notify } from '@src/notifications/notify';
+import { t } from '@lingui/core/macro';
 
 // Always returns a record (possibly empty) so consumers can read keys without
 // optional-chaining. An earlier version returned `undefined` for empty input,
@@ -36,7 +73,50 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   return result;
 }
 
-let pendingDockNavigationUrl: string | null = null;
+/**
+ * How a dock commit should enter browser history.
+ *
+ * Default is a PUSH, because a navigation is normally something the user chose and
+ * Back should undo it. `replace` is for a commit the user did NOT initiate — the
+ * agent re-pointing the vibe workspace's active display, or a loader restoring it —
+ * where each push would otherwise cost the user one Back press to escape a history
+ * they never asked for, and where a pushed entry would immediately redirect forward
+ * again (the classic redirect trap).
+ */
+export interface NavigationCommitOptions {
+  replace?: boolean;
+  /**
+   * The user switched view mode (the footer toggle). Travels as history state so
+   * `useDockViewModeOverrideSync` can tell it from a redirect that merely adds a
+   * mode to a bare URL — only a switch saves the preference.
+   */
+  viewModeSwitch?: boolean;
+  /**
+   * Open as a TOP-LEVEL tab — the global strip's chips and "+": never carried into
+   * the Vibe workspace on screen as its child.
+   */
+  topLevel?: boolean;
+  /** The `tab_switch` start line's `via=` when neither flag above names it. */
+  via?: string;
+}
+
+interface PendingDockNavigation {
+  /**
+   * Where we are GOING. `navigate()` is async — React Router runs loaders before
+   * the URL changes — so for that whole window `window.location` still reports
+   * the PREVIOUS location. Anything that composes a URL from the live location
+   * during that window and commits it supersedes the navigation in flight.
+   *
+   * Holding the destination as a POINTER is what makes that unrepresentable:
+   * `here` returns this, so a write composes onto the destination instead of
+   * rebuilding the location we already left.
+   */
+  target: DockPointer;
+  targetUrl: string;
+  sourceUrl: string;
+}
+
+let pendingDockNavigation: PendingDockNavigation | null = null;
 
 // View types whose dock adopts the current project's scope when opened without an
 // explicit one (see openDock). These are the project-aware browser surfaces: the
@@ -45,17 +125,88 @@ let pendingDockNavigationUrl: string | null = null;
 // URL — the ChatsNavigator reads currentDock.scopeFilter to filter history, exactly
 // like assets/explorer/triggers (SHELL's tabHash ignores scope, so the open
 // session's identity is unaffected).
+/**
+ * The project a session dock BELONGS to, when it is already known without a
+ * fetch: its open tab's project, else the cached process's. A session opened
+ * from another project (a project switch, a chat link, spotlight) must carry its
+ * own project's scope — seeding the one being left made the loader's scope
+ * reconcile redirect, so the whole loader ran a second time.
+ */
+function ownerProjectId(dock: DockPointer): string | null {
+  if (!DockPointer.isSessionView(dock.viewType)) return null;
+  const tab = tabForDockKey(tabManager.getSnapshot(), dock.tabHash);
+  if (tab) return tab.project_id ?? null;
+  const processId = sessionIdForDock(dock);
+  // A malformed id (a hand-typed or legacy link) must not throw out of openDock.
+  if (!processId || !isValidIdentifier(processId)) return null;
+  return AgenticProcess.getByIdFromCache<AgenticProcess>(processId)?.project_id ?? null;
+}
+
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
-  ViewType.TRIGGERS,
   ViewType.EXPLORER,
+  ViewType.SCHEMA_TREE,
   ViewType.SHELL,
+  ViewType.VIBE,
 ]);
 
 // URL options that are STICKY across navigation: openDock carries each from the
 // live URL onto any target that doesn't set it. A param here means "topmost
 // until explicitly closed" — clearing it must bypass openDock (see closeJourney).
-export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM, JOURNEY_STEP_PARAM, WORKSPACE_PARAM];
+
+/**
+ * The workspace host to carry from `here` onto `target`, or null.
+ *
+ * Both commit paths (`openDock` and `commitDetached`) apply this, so the rule is
+ * stated once: content opened from inside a workspace stays in that workspace,
+ * and a navigation AWAY — a process, project or list dock — drops it rather than
+ * resurrecting a workspace around a top-level surface. `isAdoptableChildDock` is
+ * the same predicate that decides whether a tab may adopt a parent at all.
+ *
+ * Carrying from the live URL, rather than reading the target's own tab row, is
+ * what keeps a click inside workspace A in workspace A: one document is one tab
+ * however many agents display it, so the row's `parent_tab_id` is
+ * last-writer-wins and would teleport the user into whichever workspace showed
+ * it most recently.
+ */
+function hostToCarry(here: DockPointer | null, target: DockPointer): string | null {
+  if (!here || target.hostProcessId || !isAdoptableChildDock(target)) return null;
+  return here.hostProcessId ?? hostOfWorkspaceAnchor(here);
+}
+
+/**
+ * The host id when `dock` IS a vibe workspace's anchor — the process dock the
+ * Display renders. The anchor cannot carry a `host` option itself (it is not an
+ * adoptable child), so this is how content opened while sitting on the Display
+ * inherits it — and that is where most opens actually start.
+ *
+ * Reading the ambient mode here is deliberate, and is NOT the thing
+ * `canonicalWorkspaceDisplayPath` refuses to do. That runs in the LOADER, before
+ * the mounted dock has settled the effective mode, so an ambient read there can
+ * be wrong for a dock whose own mode differs from the ambient one. This runs
+ * at click time, long after mount, when the effective mode is settled.
+ */
+/** An asset as a Vibe host's child: rebased onto its project, `?host=` the session. */
+function hostedAssetDock(asset: DockPointer, projectId: string, processId: string): DockPointer {
+  return DockPointer.rebaseAssetsOntoProject(asset, projectId)
+    .withHost(new TypeId(AgenticProcess.type, processId).toString())
+    .withViewMode(ViewMode.Vibe);
+}
+
+function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
+  if (!isWorkspaceAnchorDock(dock)) return null;
+  // A host tab IS a workspace: what it opens is its child.
+  if (isHostDock(dock)) return dock.pointer ?? null;
+  if (dock.viewType !== ViewType.SHELL) return null;
+  return (dock.viewMode ?? UNSTATED_VIEW_MODE) === ViewMode.Vibe ? (dock.pointer ?? null) : null;
+}
+
+/** A link that cannot be opened says why — the backend's sentence, not the HTTP status — once,
+ *  as a toast that times out. It is about this click, so it never becomes a standing warning. */
+function notifyLinkError(error: unknown): void {
+  notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), transient: true });
+}
 
 /**
  * NavigationActions - Navigation actions implementation
@@ -65,6 +216,7 @@ export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
  *
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
+
 export class NavigationActions {
   constructor(
     private navigate: NavigateFunction,
@@ -75,6 +227,31 @@ export class NavigationActions {
 
   private static getCurrentBrowserUrl(): string {
     return `${window.location.pathname}${window.location.search}`;
+  }
+
+  /**
+   * WHERE THE APP IS, OR IS ABOUT TO BE — the pointer every URL write composes
+   * onto.
+   *
+   * A navigation in flight wins over the browser's location, because the browser
+   * has not moved yet (see {@link PendingDockNavigation.target}). Composing onto
+   * the live location during that window is what once let a journey's
+   * `?highlight=` write revert the navigation it had just asked for.
+   *
+   * Never null: the app root is an ordinary pointer now.
+   */
+  get here(): DockPointer {
+    return pendingDockNavigation?.target ?? NavigationActions.currentBrowserDock();
+  }
+
+  /** The live browser URL as a pointer. Falls back to the root for a URL we
+   *  cannot parse — the app is somewhere, and the root is the safe somewhere. */
+  private static currentBrowserDock(): DockPointer {
+    try {
+      return DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
+    } catch {
+      return DockPointer.root();
+    }
   }
 
   /** The `?viewMode` on the LIVE browser URL, or null. Used for view-mode
@@ -88,58 +265,131 @@ export class NavigationActions {
     }
   }
 
-  private static needsRouterFallback(): boolean {
-    return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
+  /** State a mode-less target's mode. Only a session (and what it hosts) has
+   *  one: its own remembered mode, else the last mode the user selected — never
+   *  the mode on screen, which belongs to the tab being LEFT. A hosted child
+   *  shows in its host's mode (`liveMode`). Every other page states none. */
+  private static withTargetViewMode(target: DockPointer, liveMode: () => ViewMode | null): DockPointer {
+    // A process asked for in Vibe by option is the Vibe host dock — map it here,
+    // on the way out, so no opener ever writes the old spelling and pays the
+    // loader's canonical redirect for it.
+    if (target.viewType === ViewType.SHELL && target.viewMode === ViewMode.Vibe) {
+      return target.withViewMode(ViewMode.Vibe);
+    }
+    if (target.viewMode !== null) return target;
+    // Not in cache: opens bare and the shell loader states it from the entity.
+    const session = sessionIdForDock(target) ? viewModeMemory.targetFor(target.targetTypeId) : null;
+    const mode = session ? sessionOpenViewMode(session) : target.hostProcessId ? liveMode() : null;
+    return mode ? target.withViewMode(mode) : target;
   }
 
   private static clearCommittedPendingNavigation(): void {
-    if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
-      pendingDockNavigationUrl = null;
+    if (!pendingDockNavigation) return;
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
+    // A loader may redirect the requested URL to a canonical destination (for
+    // example bare /dock/shell → a concrete, project-scoped shell). Either an
+    // exact target commit or any departure from the stamped source proves the
+    // transition finished; retaining the raw requested URL after a redirect
+    // suppresses the next legitimate click until the fallback timer fires.
+    if (currentUrl === pendingDockNavigation.targetUrl || currentUrl !== pendingDockNavigation.sourceUrl) {
+      pendingDockNavigation = null;
     }
   }
 
-  private markPendingNavigation(targetUrl: string): void {
-    pendingDockNavigationUrl = targetUrl;
+  private markPendingNavigation(target: DockPointer, targetUrl: string): void {
+    const pending = {
+      target,
+      targetUrl,
+      sourceUrl: NavigationActions.getCurrentBrowserUrl(),
+    };
+    pendingDockNavigation = pending;
     window.setTimeout(() => {
-      if (pendingDockNavigationUrl === targetUrl && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
-        pendingDockNavigationUrl = null;
+      if (pendingDockNavigation === pending && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
+        pendingDockNavigation = null;
       }
     }, 1000);
   }
 
-  // `viewType:pointer` label for the navigation toplog trace.
-  private static dockLabel(d: { viewType: string; pointer?: string | null } | null): string | null {
-    return d ? `${d.viewType}:${d.pointer ?? ''}` : null;
+  /** `tab_switch` start line: a navigation that will actually move the app. */
+  static logTabSwitchStart(via: string, target: DockPointer | null): void {
+    if (!toplog.isOn('tab_switch')) return;
+    const sw = beginTabSwitch();
+    toplog.log(
+      'tab_switch',
+      `start sw=${sw} via=${via} from=${dockLabel(NavigationActions.currentBrowserDock())} to=${dockLabel(target) ?? '-'} visibility=${document.visibilityState}`,
+    );
   }
 
-  private commitBrowserNavigation(fullUrl: string, routerUrl: string): void {
-    this.markPendingNavigation(fullUrl);
+  private commitBrowserNavigation(
+    target: DockPointer,
+    fullUrl: string,
+    routerUrl: string,
+    opts?: NavigationCommitOptions,
+  ): void {
+    this.markPendingNavigation(target, fullUrl);
 
     const from = NavigationActions.getCurrentBrowserUrl();
-    const willPush = from !== fullUrl;
+    const willNavigate = from !== fullUrl;
     toplog.log('navigation', 'commitBrowserNavigation', {
       from,
       to: fullUrl,
       routerUrl,
-      willPushState: willPush,
-      routerFallback: NavigationActions.needsRouterFallback(),
+      willNavigate,
+      replace: opts?.replace === true,
+      viewModeSwitch: opts?.viewModeSwitch === true,
       historyLen: window.history.length,
     });
-    if (willPush) {
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-
-    // createMemoryRouter in RTL/jsdom is not wired to window.history/popstate.
-    // BrowserRouter is wired to popstate, so calling navigate there would run
-    // the route loaders twice.
-    if (NavigationActions.needsRouterFallback()) {
-      void this.navigate(routerUrl);
+    if (willNavigate) {
+      NavigationActions.logTabSwitchStart(
+        opts?.viewModeSwitch ? 'view_mode' : opts?.replace ? 'replace' : (opts?.via ?? 'openDock'),
+        target,
+      );
+      // React Router owns browser history and, critically, loader execution.
+      // A hand-written pushState/popstate updates useLocation but can bypass
+      // data-router revalidation, leaving the new URL rendered against stale
+      // context. Every dock transition therefore enters through navigate().
+      void this.navigate(routerUrl, {
+        ...(opts?.replace ? { replace: true } : {}),
+        ...(opts?.viewModeSwitch ? { state: VIEW_MODE_SWITCH_STATE } : {}),
+      });
     }
   }
 
+  /**
+   * Commit a pointer from OUTSIDE the react-router context.
+   *
+   * The normal path goes through `navigate()` because React Router owns history
+   * and, critically, loader execution. A few callers are mounted above the
+   * router (the ui_command listener) and have no `navigate` to call, so they
+   * push and fire a synthetic popstate for the data router to pick up.
+   *
+   * That idiom lives HERE rather than being re-spelled per caller — it was
+   * already duplicated, with string equality where pointer equality belongs, so
+   * a param reordering counted as a different URL and re-pushed.
+   */
+  static commitDetached(pointer: IDockPointer): void {
+    let target = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    let here: DockPointer | null = null;
+    try {
+      here = DockPointer.fromUrl(NavigationActions.getCurrentBrowserUrl());
+    } catch {
+      here = null;
+    }
+    // A backend-driven navigate onto workspace content stays in the workspace.
+    const carriedHost = hostToCarry(here, target);
+    if (carriedHost) target = target.withHost(carriedHost);
+    // ...and in the mode on screen, as `openDock` does: otherwise an agent's
+    // navigate repaints the user out of the mode they were looking at.
+    target = NavigationActions.withTargetViewMode(target, () => here?.viewMode ?? null);
+    const url = target.toUrl(window.location.pathname);
+    if (here?.equals(target)) return;
+    NavigationActions.logTabSwitchStart('detached', target);
+    window.history.pushState(null, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  }
+
   static resetPendingNavigationForTests(): void {
-    pendingDockNavigationUrl = null;
+    pendingDockNavigation = null;
   }
 
   /**
@@ -153,67 +403,91 @@ export class NavigationActions {
   }
 
   /**
-   * THE primitive for editing query params on the LIVE URL without any other
-   * navigation: read the current URL, apply the mutator, no-op when nothing
-   * changed, commit. Every "tweak a param in place" flow goes through here —
-   * hand-rolling the split/mutate/clear/commit ritual per caller is how the
-   * `path || '/'` guard and the pending-nav clear drift apart.
+   * Commit a pointer AS-IS — no sticky carry-forward, no scope seeding.
+   *
+   * The escape hatch for writes that must be able to REMOVE an option
+   * (`closeJourney`, `endJourneySteps`) or that are pure param edits on the
+   * current surface (`setOption`), where `openDock`'s carry-forward would put
+   * back what we are trying to drop. Composition happens on the pointer, so there is
+   * no URL string to get stale.
    */
-  private updateLiveUrlParams(mutate: (params: URLSearchParams) => void): void {
-    const current = NavigationActions.getCurrentBrowserUrl();
-    const [path, query] = current.split('?');
-    const params = new URLSearchParams(query ?? '');
-    mutate(params);
-    const rest = params.toString();
-    const url = rest ? `${path || '/'}?${rest}` : path || '/';
-    if (current === url) return;
+  private commitPointer(dock: DockPointer): void {
     NavigationActions.clearCommittedPendingNavigation();
-    this.commitBrowserNavigation(url, url);
-  }
-
-  /**
-   * Set `?highlight=` on the LIVE URL without any other navigation — the
-   * transparent form of highlighting: wherever the user is (or is arriving,
-   * mid-route-change), only the param changes. Rebuilding from `currentDock`
-   * here would race an in-flight navigation and yank the user backwards.
-   */
-  applyHighlightInPlace(wikiword: string): void {
-    this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
-  }
-
-  /**
-   * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
-   * the sticky URL options (journeyId) from the live URL — the home root is not
-   * a dock URL, so openDock's carry-forward can't do it. This is also the
-   * "start dock" surface a journey can name (`start: {kind: "root"}`).
-   */
-  openHomeRoot(highlightWord?: string): void {
-    NavigationActions.clearCommittedPendingNavigation();
-    const params = new URLSearchParams();
-    if (highlightWord) params.set(HIGHLIGHT_PARAM, highlightWord);
-    for (const key of STICKY_OPTION_PARAMS) {
-      const live = NavigationActions.currentUrlOption(key);
-      if (live) params.set(key, live);
-    }
-    const rest = params.toString();
-    const url = rest ? `/?${rest}` : '/';
+    const url = dock.toUrl(window.location.pathname);
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    // `via=commit`: a param edit, a journey close or the dock closing — not a click.
+    this.commitBrowserNavigation(dock, url, url, { via: 'commit' });
   }
 
   /**
-   * A URL option read from the LIVE URL, or null. Parses the raw URL rather
-   * than `currentDock` so it also sees params carried on the home root (which
-   * has no DockPointer). The reader behind sticky-param carry-forward.
+   * Leave the journey's step sequence, keeping the journey shown.
+   *
+   * Lives here beside `showJourney`/`closeJourney` because clearing a STICKY
+   * param must bypass `openDock`'s carry-forward — a navigation-layer rule that
+   * callers should not have to know, and that a second copy of would drift.
    */
-  private static currentUrlOption(key: string): string | null {
-    const query = NavigationActions.getCurrentBrowserUrl().split('?')[1];
-    return query ? new URLSearchParams(query).get(key) : null;
+  endJourneySteps(): void {
+    this.setOption(JOURNEY_STEP_PARAM, null);
   }
 
-  /** The journey shown by the live URL, or null. */
-  private static currentJourneyId(): string | null {
-    return NavigationActions.currentUrlOption(JOURNEY_PARAM);
+  /**
+   * Set (or clear, with `null`) one URL option on the current surface.
+   *
+   * The typed form of "tweak a param in place" — composed on {@link here}, so a
+   * write during an in-flight navigation lands on the destination rather than
+   * rebuilding the location we already left. Call sites used `useSearchParams`'s
+   * setter, which reads React-state search params and therefore has exactly that
+   * staleness.
+   */
+  setOption(key: string, value: string | null): void {
+    this.commitPointer(this.here.withOption(key, value));
+  }
+
+  /**
+   * Navigate to the app home root `/`, optionally with `?highlight=`.
+   *
+   * An ordinary `openDock` now: the root is a pointer, so sticky options
+   * (journeyId) ride along through the one carry-forward in `openDock` rather
+   * than a hand-copied loop here. Also the surface a journey names as
+   * `start: {kind: "root"}`.
+   */
+  private openHomeRoot(highlightWord?: string): void {
+    const root = DockPointer.root();
+    this.openDock(highlightWord ? root.withHighlight(highlightWord) : root);
+  }
+
+  /**
+   * "Take me home" — the destination, wherever it is asked from.
+   *
+   * The two surfaces differ: the hub keeps every navigation under `page=hub`
+   * (a desk factory would revert the page and land on the desk home), while the
+   * desk home is the app root, which is NOT a dock URL and so needs
+   * `openHomeRoot` to carry the sticky options forward. Stated once here so the
+   * nav bar — and the next entry point (spotlight, a shortcut, a journey) —
+   * can't each re-derive the branch, and so the pending `TODO(nav)` about
+   * committing through the router has exactly one place left to land.
+   */
+  goHome(options?: { homePage?: boolean }): void {
+    // Two surfaces, one navigation. The hub keeps every navigation under
+    // `page=hub` (a desk factory would revert the page and land on the desk
+    // home); the desk home is the app root. Both are pointers, so the branch is
+    // a choice of destination rather than a choice of mechanism.
+    if (this.here.page === PageId.HUB) {
+      this.openDock(DockPointer.forHome().withPage(PageId.HUB));
+      return;
+    }
+    // `homePage`: the Home BUTTON asks for the project's home page, which the
+    // root's load redirect resolves (`project-home-page-redirect`). Only the
+    // button asks — a fallback "go home" (no chat to resume) wants the plain
+    // home. From the home page itself the button gives the plain home, or the
+    // default home could never be reached.
+    const wantsHomePage = options?.homePage && !isProjectHomePage(dataContext.project?.id, this.here);
+    this.openDock(wantsHomePage ? withHomePage(DockPointer.root()) : DockPointer.root());
+  }
+
+  /** The journey shown where we are (or are going), or null. */
+  private currentJourneyId(): string | null {
+    return this.here.journeyId;
   }
 
   /**
@@ -223,14 +497,10 @@ export class NavigationActions {
    * stays topmost until {@link closeJourney}. URL-carried ⇒ reload-safe.
    */
   showJourney(journeyId: string): void {
-    if (this.currentDock) {
-      this.openDock(this.currentDock.withJourney(journeyId));
-      return;
-    }
-    NavigationActions.clearCommittedPendingNavigation();
-    const url = `/?${JOURNEY_PARAM}=${encodeURIComponent(journeyId)}`;
-    if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    // One path for every surface. The old home-root branch hand-built
+    // `/?journeyId=…`, which DROPPED every other param on the way — `highlight`
+    // included. Composing on the pointer cannot lose the rest of the location.
+    this.openDock(this.here.withJourney(journeyId));
   }
 
   /**
@@ -239,17 +509,33 @@ export class NavigationActions {
    * whose carry-forward would immediately put the param back.
    */
   closeJourney(): void {
-    if (!NavigationActions.currentJourneyId()) return;
-    const dock = this.currentDock;
-    if (!dock?.journeyId) {
-      // Home root (or any non-dock URL) carrying the param: drop just that key.
-      this.updateLiveUrlParams((params) => params.delete(JOURNEY_PARAM));
-      return;
-    }
-    NavigationActions.clearCommittedPendingNavigation();
-    const url = dock.withJourney(null).toUrl();
-    if (NavigationActions.getCurrentBrowserUrl() === url) return;
-    this.commitBrowserNavigation(url, url);
+    if (!this.currentJourneyId()) return;
+    // `commitPointer`, not `openDock`: the sticky carry-forward would put the
+    // param straight back. This is the one thing that clears it.
+    this.commitPointer(this.here.withJourney(null));
+  }
+
+  /**
+   * Switch the active workspace and resume its last project and tab. `null` (or the default
+   * workspace's id) is the default workspace — the param is cleared, so its URLs
+   * are the ones from before workspaces existed.
+   *
+   * `commitPointer`, not `openDock`: the workspace param is sticky, and
+   * `openDock`'s carry-forward would put the OLD workspace straight back.
+   */
+  openWorkspace(workspaceId: string | null): void {
+    this.commitPointer(DockPointer.root().withOption(WORKSPACE_PARAM, workspaceId || null).withOption(WORKSPACE_ENTRY_PARAM, 'resume'));
+  }
+
+  /**
+   * Open a project's home INSIDE a workspace — after the project was moved there
+   * (`Project.switchWorkspace`). The loader drops a project outside the URL's
+   * workspace, so the pointer must name the new one; and like `openWorkspace` this
+   * is `commitPointer`, not `openDock`, because the sticky param's carry-forward
+   * would put the OLD workspace straight back (`null` = the default workspace).
+   */
+  openProjectInWorkspace(projectId: string, workspaceId: string | null): void {
+    this.commitPointer(DockPointer.forProject(projectId).withOption(WORKSPACE_PARAM, workspaceId || null));
   }
 
   // ========== Core Navigation ==========
@@ -262,9 +548,13 @@ export class NavigationActions {
    *
    * @param pointer - DockPointer to navigate to, or null to close dock
    */
-  openDock(pointer: DockPointer | null): void;
-  openDock(pointer: IDockPointer, extraOptions?: Record<string, string>): void;
-  openDock(pointer: IDockPointer | DockPointer | null, extraOptions?: Record<string, string>): void {
+  openDock(pointer: DockPointer | null, extraOptions?: Record<string, string>, opts?: NavigationCommitOptions): void;
+  openDock(pointer: IDockPointer, extraOptions?: Record<string, string>, opts?: NavigationCommitOptions): void;
+  openDock(
+    pointer: IDockPointer | DockPointer | null,
+    extraOptions?: Record<string, string>,
+    opts?: NavigationCommitOptions,
+  ): void {
     NavigationActions.clearCommittedPendingNavigation();
     const currentPath = window.location.pathname;
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
@@ -274,7 +564,7 @@ export class NavigationActions {
         pointer === null
           ? null
           : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
-      currentDock: NavigationActions.dockLabel(this.currentDock),
+      currentDock: dockLabel(this.currentDock),
       currentUrl,
       extraOptions,
     });
@@ -284,11 +574,10 @@ export class NavigationActions {
         toplog.log('navigation', 'openDock(null) no-op (already not on a dock URL)', { currentUrl });
         return; // already not on a dock URL
       }
-      // Root-level dock URLs strip to '' — and navigate('') is a react-router
-      // relative no-op, so close-dock silently did nothing outside the
-      // /agent|/flow prefixed namespaces. Normalize to the app root.
-      const baseUrl = stripDockPortion(currentPath) || '/';
-      this.navigateToBaseUrl(baseUrl);
+      // Closing the dock IS going to the root, and the root is an ordinary
+      // pointer — `buildDockUrl` already returns the base path (or `/`) for it,
+      // which is exactly what the hand-rolled strip-and-normalize did.
+      this.commitPointer(DockPointer.root());
       return;
     }
 
@@ -299,16 +588,29 @@ export class NavigationActions {
         : base;
 
     // STICKY URL options: each listed param rides onto any target that doesn't
-    // set it, read from the LIVE URL (the home root `/` is not a dock URL yet
-    // can carry them). `journeyId` is the first — a shown journey is TOPMOST
-    // until `closeJourney()` (which bypasses openDock so the param can clear).
-    // New sticky params are one table entry, not another bespoke block.
+    // set it, read from WHERE WE ARE (or are going) — one carry-forward for
+    // every surface now that the home root is an ordinary pointer, where it used
+    // to need a hand-copied duplicate in `openHomeRoot`. `journeyId` is the
+    // first: a shown journey is TOPMOST until `closeJourney()` (which commits
+    // directly so the param can actually clear). New sticky params are one table
+    // entry, not another bespoke block.
+    const here = this.here;
     for (const key of STICKY_OPTION_PARAMS) {
-      const live = NavigationActions.currentUrlOption(key);
+      const live = here.options?.[key];
       if (live && !dock.options?.[key]) {
         dock = dock.withOption(key, live);
       }
     }
+
+    // The workspace host is sticky the same way, but ONLY onto surfaces that may
+    // live inside a workspace — the same predicate that decides whether a tab may
+    // adopt a parent. Navigating to a process, a project or a list is a
+    // navigation AWAY, and inheriting the host there would resurrect a workspace
+    // around a top-level surface. Carrying it from the live URL is what keeps a
+    // click inside workspace A in workspace A, rather than following the shown
+    // document's last writer into workspace B.
+    const carriedHost = opts?.topLevel ? null : hostToCarry(here, dock);
+    if (carriedHost) dock = dock.withHost(carriedHost);
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
@@ -320,26 +622,32 @@ export class NavigationActions {
     // respected untouched. This is what makes the left-rail Triggers / Files
     // icons open a project tab when a project is active and a global one
     // otherwise — exactly like the Assets icon.
-    if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
-      const projectId = dataContext.project?.id ?? null;
+    if (
+      dock.viewType &&
+      SCOPE_SEEDED_VIEWS.has(dock.viewType) &&
+      dock.scopeFilter === null &&
+      !isContentAssetDock(dock)
+    ) {
+      const projectId = ownerProjectId(dock) ?? dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
-    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
-    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
-    // preference on load, this inheritance matters only for navigations issued
-    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
-    // on a ?viewMode URL) — not for general mode stickiness.
-    if (dock.viewMode === null) {
-      const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
-      if (liveViewMode) dock = dock.withViewMode(liveViewMode);
-    }
+    // A session entry STATES its mode: its own memory, else the last mode the
+    // user selected (see `withTargetViewMode`). Opening only DISPLAYS a mode;
+    // memory is minted by `VIEW_MODE_STORE`. Cache-only: a cold deep link has no
+    // entity to read here, and the shell loader states a session's mode instead.
+    dock = NavigationActions.withTargetViewMode(
+      dock,
+      () => NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null,
+    );
 
     if (this.currentDock?.equals(dock)) {
       toplog.log('navigation', 'openDock no-op (currentDock equals target)', {
-        dock: NavigationActions.dockLabel(dock),
+        dock: dockLabel(dock),
       });
+      if (toplog.isOn('tab_switch')) {
+        toplog.log('tab_switch', `noop sw=${tabSwitch.id} reason=same_dock to=${dockLabel(dock)}`);
+      }
       return; // already at this pointer, no-op
     }
 
@@ -348,12 +656,18 @@ export class NavigationActions {
       layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout, dock.page);
     const fullUrl = targetDock.toUrl(currentPath);
 
-    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
+    if (currentUrl === fullUrl || pendingDockNavigation?.targetUrl === fullUrl) {
       toplog.log('navigation', 'openDock no-op (URL already current/pending)', {
         currentUrl,
         fullUrl,
-        pending: pendingDockNavigationUrl,
+        pending: pendingDockNavigation?.targetUrl ?? null,
       });
+      if (toplog.isOn('tab_switch')) {
+        toplog.log(
+          'tab_switch',
+          `noop sw=${tabSwitch.id} reason=${currentUrl === fullUrl ? 'url_current' : 'url_pending'} to=${dockLabel(dock)}`,
+        );
+      }
       return;
     }
 
@@ -374,33 +688,7 @@ export class NavigationActions {
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
-    this.commitBrowserNavigation(fullUrl, url);
-  }
-
-  private navigateToBaseUrl(baseUrl: string): void {
-    const currentUrl = NavigationActions.getCurrentBrowserUrl();
-    if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) {
-      toplog.log('navigation', 'navigateToBaseUrl no-op (already there/pending)', {
-        currentUrl,
-        baseUrl,
-        pending: pendingDockNavigationUrl,
-      });
-      return;
-    }
-
-    toplog.log('navigation', 'navigateToBaseUrl (close dock)', {
-      from: currentUrl,
-      to: baseUrl,
-      historyLen: window.history.length,
-    });
-    this.markPendingNavigation(baseUrl);
-    if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
-      window.history.pushState(null, '', baseUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    if (NavigationActions.needsRouterFallback()) {
-      void this.navigate(baseUrl);
-    }
+    this.commitBrowserNavigation(targetDock, fullUrl, url, opts);
   }
 
   /**
@@ -411,32 +699,6 @@ export class NavigationActions {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     const fullUrl = base.toUrl(window.location.pathname);
     return `${window.location.origin}${fullUrl}`;
-  }
-
-  /**
-   * Open a dock pointer in a separate browser tab named "flowpad-shell".
-   *
-   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
-   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
-   * - Leaves the current tab (e.g. the conversation view) untouched.
-   *
-   * Useful for shell / Claude Code sessions launched from a non-shell view.
-   */
-  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
-    const absoluteUrl = this.getDockUrl(pointer);
-    const opened = window.open(absoluteUrl, 'flowpad-shell');
-    if (opened) opened.focus();
-  }
-
-  /**
-   * Open a dock pointer in a NEW browser tab (`_blank`), one per call —
-   * unlike {@link openInBrowserTab}, which reuses the single named
-   * "flowpad-shell" tab. Used by pop-out flows where each popped entity
-   * must get its own window. Inside Electron, the main process's
-   * setWindowOpenHandler routes this to the system browser.
-   */
-  openInNewBrowserTab(pointer: IDockPointer | DockPointer): void {
-    window.open(this.getDockUrl(pointer), '_blank', 'noopener,noreferrer');
   }
 
   /**
@@ -462,11 +724,28 @@ export class NavigationActions {
     //console.log('[NavigationActions] 🚪 closeDock completed');
   }
 
+  /**
+   * Commit a pointer WITHOUT adding a history entry.
+   *
+   * Same path as {@link openDock} — sticky options, host carry, round-trip check and
+   * all — differing only in how it enters history. Exists so the intent reads at the
+   * call site: this navigation was not the user's choice, so Back should skip it.
+   *
+   * The caller is the vibe workspace's active display, where the agent may show a
+   * dozen targets in one turn. Pushing each would bury whatever the user was doing a
+   * dozen Back presses deep; the show history stays browsable through the display
+   * history popover, which is where it belongs.
+   */
+  replaceDock(pointer: DockPointer | null, extraOptions?: Record<string, string>): void {
+    this.openDock(pointer, extraOptions, { replace: true });
+  }
+
   // ========== Tab Navigation (Shortcuts) ==========
 
   openTab(tabType: ViewType, options?: TabOptions): void {
     const pointer = DockPointer.forTab(tabType, {
       ...(options?.pinned !== undefined && { pinned: options.pinned.toString() }),
+      ...(options?.capabilityKind ? { [CAPABILITY_PARAM]: options.capabilityKind } : {}),
     });
     this.openDock(pointer);
   }
@@ -480,22 +759,7 @@ export class NavigationActions {
     this.openDock(new DockPointer(viewType, pointer, undefined, undefined, page));
   }
 
-  closeTab(tabType: ViewType): void {
-    // Closing a tab doesn't navigate - it's a store action
-    // This is an exception to URL-first principle (closing doesn't change URL)
-    console.warn('[Navigation] closeTab is not URL-based, implement via store action', tabType);
-  }
-
-  switchToTab(tabType: ViewType): void {
-    // Switching is the same as opening (idempotent)
-    this.openTab(tabType);
-  }
-
   // ========== Content Navigation (Shortcuts) ==========
-
-  openAssetList(typeName: string): void {
-    this.openDock(DockPointer.forAssetList(typeName));
-  }
 
   /**
    * Open the Assets dock at its default surface: the project home when a
@@ -507,6 +771,31 @@ export class NavigationActions {
     this.openDock(
       projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : DockPointer.forAssetList('all'),
     );
+  }
+
+  /**
+   * Open the Discover page — a TOP-LEVEL route, not a dock tab — for one
+   * project. The project rides as `?scope-project=<id>` (the one URL grammar
+   * for "this surface is about project X"); the route's loader adopts it, so
+   * a hard load or a bookmark lands on the same state as this click. Without
+   * a project the page falls back to the active one.
+   */
+  openDiscover(projectId?: string | null): void {
+    // The scope rides in the URL the way every dock carries it — through
+    // `withScopeFilter`, never a hand-built `scope-*` literal.
+    const root = DockPointer.root();
+    const dock = projectId ? root.withScopeFilter(projectScope(projectId)) : root;
+    const query = dock.toSearchParams().toString();
+    void this.navigate(query ? `/discover?${query}` : '/discover');
+  }
+
+  /** One published asset's page (`/discover/<typeid>`), scoped to its project the same way. */
+  openDiscoverAsset(typeid: string, projectId?: string | null): void {
+    const root = DockPointer.root();
+    const dock = projectId ? root.withScopeFilter(projectScope(projectId)) : root;
+    const query = dock.toSearchParams().toString();
+    const path = `/discover/${encodeURIComponent(typeid)}`;
+    void this.navigate(query ? `${path}?${query}` : path);
   }
 
   openProject(
@@ -521,7 +810,7 @@ export class NavigationActions {
       line: options?.line,
       column: options?.column,
     });
-    this.openDock(pointer);
+    this.openDock(options?.scope ? pointer.withScopeFilter(options.scope) : pointer);
   }
 
   /**
@@ -532,6 +821,87 @@ export class NavigationActions {
    */
   openFile(path: string, options?: FileOptions): void {
     this.openDock(dockPointerForFile(path, options));
+  }
+
+  /** Resolve a clicked link (terminal output, message text) to the dock that presents it. */
+  private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
+    if (!source) throw new Error(t`This link has no source yet`);
+    link = localWebUrl(link) ?? link;
+    // An app URL copied from this browser is an internal address, not an iframe.
+    link = appLinkPath(link, window.location.origin) ?? link;
+    const dock = dockForDisplayTarget(await source.resolveDisplayTarget(link));
+    if (!dock) throw new Error(t`This link has no available viewer`);
+    return dock;
+  }
+
+  /** Resolve on activation, then open using the same presentation as an agent show. */
+  async openLink(link: string, source: LinkSource | null): Promise<void> {
+    const origin = this.here;
+    try {
+      const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
+      const anchor = tabForDockKey(tabs, origin.tabHash ?? '');
+      const placed = await presentDockTab(dock, {
+        projectId: source?.project_id ?? anchor?.project_id,
+        afterTabId: anchor?.id ?? null,
+        parentTabId: anchor?.parent_tab_id ?? null,
+      });
+      this.openDock(placed);
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** The link in `process`'s Display — the `flow show` channel, so it lands in the Display history too. */
+  async showLinkInDisplay(link: string, process: AgenticProcess): Promise<void> {
+    try {
+      await process.show({ link: appLinkPath(link, window.location.origin) ?? link });
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
+  async openLinkInVibe(link: string, source: LinkSource | null, process: AgenticProcess): Promise<void> {
+    try {
+      const dock = placeDockInProject(
+        await this.resolveLinkDock(link, source),
+        process.project_id ?? source?.project_id,
+      );
+      this.openDock(dock.withHost(process.typeId.toString()).withViewMode(ViewMode.Vibe));
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
+  async openLinkInBrowser(link: string, source: LinkSource | null): Promise<void> {
+    try {
+      openExternal(await this.browserUrlFor(link, source));
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  /** `openLinkInBrowser`, in one browser profile of this machine (`fetchBrowserProfiles`). */
+  async openLinkInBrowserProfile(link: string, source: LinkSource | null, browser: string, profile: string): Promise<void> {
+    try {
+      await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  private async browserUrlFor(link: string, source: LinkSource | null): Promise<string> {
+    if (isWebUrl(link)) return link;
+    // `clau.de/reset` is a web page written without its scheme, not a file to look up.
+    const web = bareWebUrl(link);
+    if (web?.sure) return web.url;
+    try {
+      return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
+    } catch (error) {
+      if (web) return web.url;
+      throw error;
+    }
   }
 
   /**
@@ -552,18 +922,22 @@ export class NavigationActions {
    * any surface that has a directory (file browsers, task artifacts) routes it
    * here. Converts the absolute machine path to the compute-node-relative form
    * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
+   * `select` names an entry of the folder to show selected.
    */
-  openFolder(machinePath: string): void {
-    let rel = machinePath;
-    const cn = dataContext.computeNodeTypeId;
-    if (cn) {
-      try {
-        rel = VFSPath.fromMachinePath(machinePath, cn).entitySubPath;
-      } catch {
-        // Not an absolute machine path — forAssetFsFolder normalizes it as-is.
-      }
+  openFolder(machinePath: string, select?: string): void {
+    const parsed = VFSPath.parse(machinePath);
+    if (parsed.isAbsolute) {
+      this.openDock(DockPointer.forAssetFs(parsed, Layout.DOCK, select));
+      return;
     }
-    this.openDock(DockPointer.forAssetFsFolder(rel));
+
+    const liveTypeId = dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
+    const locatorTypeId = vfsLocatorForComputeNode(dataContext.computeNode) ?? liveTypeId;
+    const vfsPath =
+      machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
+        ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
+        : VFSPath.fromTypeId(locatorTypeId, machinePath);
+    this.openDock(DockPointer.forAssetFs(vfsPath, Layout.DOCK, select));
   }
 
   /** Navigate to the default shell view (no specific session) */
@@ -573,15 +947,142 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: {
+      cwd?: string;
+      /** Typed AND submitted once the terminal attaches. */
+      startCommand?: string;
+      skipPermissions?: boolean;
+      viewMode?: string;
+      host?: string;
+      /** A top-level tab, never a child of the workspace on screen (see `NavigationCommitOptions.topLevel`). */
+      topLevel?: boolean;
+    },
   ): Promise<Shell | null> {
-    const extraOptions = toStringRecord(options);
+    const { topLevel, ...urlOptions } = options ?? {};
+    const extraOptions = toStringRecord(urlOptions);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) {
       return null;
     }
-    this.openDock(shell.dockPointer, extraOptions);
+    // On the hub a terminal lives on the hub page (there is no desk to host it).
+    this.openDock(
+      isHubOnly()
+        ? new DockPointer(
+            ViewType.SHELL,
+            shell.typeId.toString(),
+            shell.compute_node_id ? { [NODE_PARAM]: shell.compute_node_id } : undefined,
+            undefined,
+            PageId.HUB,
+          )
+        : shell.dockPointer,
+      extraOptions,
+      topLevel ? { topLevel: true } : undefined,
+    );
     return shell;
+  }
+
+  /** Start through the existing Vibe launcher, keeping an open file as a child. */
+  async startVibeSession(projectId: string, workdir?: string): Promise<void> {
+    const here = this.here;
+    const contentDock = here && isContentAssetDock(here) ? here : null;
+    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+    await createVibeProcessForProject({
+      projectId,
+      workdir,
+      navigation: {
+        openShellProcess: (processId) => {
+          if (contentDock) {
+            this.openDock(hostedAssetDock(contentDock, projectId, processId));
+          } else {
+            void this.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+          }
+        },
+      },
+    });
+  }
+
+  /**
+   * Show a session on another SURFACE — Vibe, Chat or Terminal. The same switch as
+   * the session's own switch makes (marked `viewModeSwitch`, so the mode is recorded):
+   * one tab, re-pointed; the transport follows (`useProcessSurface`). Vibe → its
+   * host dock; leaving Vibe carries the nested tabs out (backend re-point).
+   */
+  switchSessionSurface(processId: string, mode: ViewMode): void {
+    this.openDock(DockPointer.forSession(processId).withViewMode(mode), undefined, { viewModeSwitch: true });
+  }
+
+  /**
+   * Open `processId` as a Vibe tab placed RIGHT AFTER the tab on screen (or after
+   * its host, from a child) — the chat header's New / Recent. A session reopened
+   * this way brings back the children that closed with it (backend reopen path).
+   */
+  async openVibeTabBeside(processId: string): Promise<void> {
+    this.openDock(await this.placeVibeTabBeside(processId), undefined, { topLevel: true });
+  }
+
+  /** Mint (or reopen) `processId`'s Vibe tab right after the tab on screen — or
+   *  after its host, from a child — without navigating. */
+  private async placeVibeTabBeside(processId: string): Promise<DockPointer> {
+    // The snapshot: the tab on screen is already in it (no round trip before the open).
+    const tabs = await tabManager.snapshotOrRefresh();
+    const here = tabForDockKey(tabs, this.here.tabHash ?? '');
+    const anchor = (here?.parent_tab_id && tabs.find((t) => t.id === here.parent_tab_id)) || here;
+    const dock = DockPointer.forSession(processId).withViewMode(ViewMode.Vibe);
+    return presentDockTab(dock, { afterTabId: anchor?.id ?? null, projectId: anchor?.project_id ?? null });
+  }
+
+  /**
+   * Discuss an asset: a Vibe HOST tab with the asset as its child — the chat beside
+   * the asset is that host's session. Resumes the latest Vibe chat about this asset
+   * (`target_typeid_str` = the asset) and creates one only when there is none.
+   * The host tab is placed first; opening the asset under `?host=` then makes it
+   * that tab's child (the tab loader re-parents a warm tab whose host edge is new).
+   */
+  async discussAsset(asset: DockPointer, projectId: string): Promise<void> {
+    // The same chat identity the chat beside an asset uses (`asset-work-context`).
+    const target = contentAssetTargetForDock(asset)?.targetVfsPath;
+    const { lastVibeChatQuery, pickLastVibeChat } = await import('@src/pages/flow-page/vibe-process-resolver');
+    const { createVibeProcessForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+    const last = target
+      ? pickLastVibeChat(
+          await AgenticProcess.query<AgenticProcess>(lastVibeChatQuery(projectId, target, { openedOnly: false })),
+        )
+      : null;
+    const processId =
+      last?.id ?? (await createVibeProcessForProject({ projectId, targetVfsPath: target, open: false })).id;
+    await this.placeVibeTabBeside(processId);
+    this.openDock(hostedAssetDock(asset, projectId, processId));
+  }
+
+  /**
+   * Start a NEW session that reviews a document, on the surface asked for. The
+   * document is the session's target and the prompt names it; an entity-backed
+   * one also rides in the session's shared context. The launching tab stays as
+   * it is: Terminal and Chat open their own tab, Vibe opens a host tab placed
+   * right after the tab on screen. `path` is the file of a document addressed
+   * by id, which its dock does not carry — the caller has the entity in hand.
+   */
+  async reviewDocument(asset: DockPointer, mode: ViewMode, projectId: string | null, path?: string): Promise<void> {
+    const target = contentAssetTargetForDock(asset);
+    if (!target) return;
+    const prompt = reviewPromptFor({ ...target, path: target.path ?? path });
+    const about = {
+      targetVfsPath: target.targetVfsPath,
+      sharedContextEntities: target.typeId ? [target.typeId] : undefined,
+    };
+    if (mode === ViewMode.Vibe) {
+      if (!projectId) return;
+      const { launchVibeSessionForProject } = await import('@src/pages/flow-page/use-start-vibe-session');
+      await launchVibeSessionForProject({
+        ...about,
+        projectId,
+        message: prompt,
+        navigation: { openShellProcess: (processId) => void this.openVibeTabBeside(processId) },
+      });
+      return;
+    }
+    const { openNewChat } = await import('./open-new-chat');
+    await openNewChat(this, { ...about, mode, projectId: projectId ?? undefined, prompt });
   }
 
   async openShellProcess(
@@ -657,42 +1158,15 @@ export class NavigationActions {
     }
   }
 
-  async openNewClaudeProcess(options?: {
-    cwd?: string;
-    projectId?: string;
-    workerType?: 'claude_code' | 'codex' | 'copilot';
-  }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
-    try {
-      const computeNode = dataContext.computeNode;
-      if (!computeNode) {
-        console.error('[NavigationActions] No compute node');
-        return null;
-      }
-      const agenticProcess = await computeNode.createProcess(
-        {
-          workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
-          projectId: options?.projectId ?? dataContext.project?.id,
-          ...(options?.workerType ? { workerType: options.workerType } : {}),
-        },
-        { watchProcess: false, visible: true },
-      );
-      return {
-        processId: agenticProcess.id,
-        shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.dockPointer,
-      };
-    } catch (error) {
-      console.error('[NavigationActions] Error creating AgenticProcess:', error);
-      return null;
-    }
-  }
-
   async openNewShell(options?: {
     cwd?: string;
+    /** Typed AND submitted once the terminal attaches. */
     startCommand?: string;
     computeNode?: ComputeNode;
     skipNavigate?: boolean;
     projectId?: string;
+    /** Open the terminal in this view mode (`vibe` keeps a journey in its skin). */
+    viewMode?: string;
   }): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;
@@ -719,7 +1193,9 @@ export class NavigationActions {
       // bootstrap ``@local`` project if both are absent.
       const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
       if (pinnedProjectId) newShell.project_id = pinnedProjectId;
-      await newShell.save(cn.typeId);
+      // On the hub a terminal is a remote PTY session on the node, never a Shell row:
+      // the shell lives in the client cache and starts by its id (Shell.start).
+      if (!isHubOnly()) await newShell.save(cn.typeId);
       if (!options?.skipNavigate) {
         await this.openShell(newShell.id, options);
       }
@@ -747,49 +1223,6 @@ export class NavigationActions {
 
   openDiff(checkpointHash: string): void {
     const pointer = DockPointer.forCheckpoint(checkpointHash);
-    this.openDock(pointer);
-  }
-
-  openWebApp(port: string): void {
-    const pointer = DockPointer.forTab(ViewType.WEB_APP, { port });
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open file explorer with optional path
-   * @param path - Optional path to navigate to (file or folder)
-   *   - If folder: opens that folder
-   *   - If file: opens containing folder with file selected
-   *   - If omitted: opens root
-   */
-  openExplorer(path?: string): void {
-    const pointer = DockPointer.forExplorer(path);
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open the show view for an entity's MCP UI
-   * @param typeId - TypeId string (e.g., "agent-@my-agent")
-   * @param page - Page name
-   * @param component - Component name
-   */
-  openShow(typeId: string, page?: string, component?: string): void {
-    const pointer = DockPointer.forShow(typeId, page, component);
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open HOME/LiveStatus view with optional tab and item
-   * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>
-   *
-   * @param tab - Tab name (e.g., "summary", "projects", "sessions")
-   * @param item - Optional item within the tab
-   * @param options - Optional scope filter options
-   * @param options.scope - Scope filter: 'all' | 'global' | 'project'
-   * @param options.project - Project encoded name (when scope is 'project')
-   */
-  openHome(tab?: string, item?: string, options?: { scope?: string; project?: string; expand?: boolean }): void {
-    const pointer = DockPointer.forHome(tab, item, options);
     this.openDock(pointer);
   }
 
@@ -822,13 +1255,9 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
-  /**
-   * Open tasks view
-   * @param taskId - Optional task ID to view/edit
-   */
-  openTasks(taskId?: string): void {
-    const pointer = DockPointer.forTasks(taskId);
-    this.openDock(pointer);
+  /** Open the table behind one home counter (see `DockPointer.forCounterAssets`). */
+  openAssetList(group: string, counter: string): void {
+    this.openDock(DockPointer.forCounterAssets(group, counter));
   }
 
   /**
@@ -852,16 +1281,6 @@ export class NavigationActions {
   }
 
   /**
-   * Open settings viewer
-   * @param fieldName - Optional field name to scroll to / highlight
-   * @param filter - Optional search filter string
-   */
-  openSettings(fieldName?: string, filter?: string): void {
-    const pointer = DockPointer.forSettings(fieldName, filter);
-    this.openDock(pointer);
-  }
-
-  /**
    * Open the user Preferences screen
    * @param category - Optional category whose tab should be active
    */
@@ -870,59 +1289,48 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
-  // ========== Entity Navigation ==========
-
-  openEntity(entity: unknown): void {
-    // TODO: Determine appropriate dock based on entity type
-    // For now, log a warning
-    console.warn('[Navigation] openEntity not yet implemented', { entity });
-  }
-
-  openCodeRef(codeRef: { path: string }): void {
-    if (codeRef.path) {
-      // Use openFile to automatically choose the right viewer based on file type
-      this.openFile(codeRef.path);
-    } else {
-      console.warn('[Navigation] openCodeRef called with invalid codeRef', codeRef);
-    }
+  /**
+   * Open the Credentials screen — the one way in from every surface.
+   * @param tab - Which tab is active; defaults to Connections
+   * @param projectId - Project whose credentials and env files are shown; defaults to the
+   *   active project. Decided HERE, at navigation time, and written into the URL: the view
+   *   itself never guesses a project the URL does not name.
+   */
+  openCredentials(tab?: CredentialsSubview, projectId: string | undefined = dataContext.project?.id): void {
+    this.openDock(DockPointer.forCredentials(tab, projectId));
   }
 
   // ========== History Navigation ==========
 
+  /**
+   * Step back one entry — but only if there IS one. Unguarded, `navigate(-1)`
+   * on a freshly deep-linked page walks out of the app entirely (to whatever
+   * the tab showed before, or a blank page in the Electron shell).
+   *
+   * This is the HISTORY affordance and nothing else. A view that wants "leave
+   * this thing" should name its destination — `openDock(DockPointer.forX())` —
+   * rather than depend on where the user happened to come from.
+   */
   goBack(): void {
-    toplog.log('navigation', 'NavigationActions.goBack → navigate(-1)', {
+    const { canGoBack, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goBack', {
+      canGoBack,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
-      currentDock: NavigationActions.dockLabel(this.currentDock),
-      historyLen: window.history.length,
+      currentDock: dockLabel(this.currentDock),
     });
+    if (!canGoBack) return;
     void this.navigate(-1);
   }
 
   goForward(): void {
-    toplog.log('navigation', 'NavigationActions.goForward → navigate(1)', {
+    const { canGoForward, idx } = getHistoryPosition();
+    toplog.log('navigation', 'NavigationActions.goForward', {
+      canGoForward,
+      idx,
       currentUrl: NavigationActions.getCurrentBrowserUrl(),
-      historyLen: window.history.length,
     });
+    if (!canGoForward) return;
     void this.navigate(1);
-  }
-
-  // ========== Sharing ==========
-
-  getShareableUrl(): string {
-    const baseUrl = window.location.origin;
-    const currentPath = window.location.pathname + window.location.search;
-    return `${baseUrl}${currentPath}`;
-  }
-
-  async copyShareableUrl(): Promise<boolean> {
-    const url = this.getShareableUrl();
-    try {
-      await navigator.clipboard.writeText(url);
-      console.log('[Navigation] Copied shareable URL:', url);
-      return true;
-    } catch (error) {
-      console.error('[Navigation] Failed to copy URL:', error);
-      return false;
-    }
   }
 }

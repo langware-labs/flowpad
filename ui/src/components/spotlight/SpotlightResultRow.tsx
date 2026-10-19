@@ -1,22 +1,46 @@
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TYPE_COLORS } from '@src/components/record-search-bar/RecordSearchBar';
 import { cn } from '@src/lib/utils';
 import { FileText, Loader2 } from 'lucide-react';
-import { timeAgo } from './adapters';
+import { providerMetaFor } from '@src/tabs/provider-meta';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import type { SpotlightRow } from './types';
+
+/**
+ * Worker sessions render their vendor logo bare (it reads as a logo, not a
+ * doc), so they skip the `TYPE_COLORS` badge and carry their own tint. Color
+ * only — the *glyph* comes from the type registry, same as everywhere else.
+ */
+const BARE_GLYPH_TINT: Record<string, string> = {
+  claude_session: 'text-orange-500',
+  codex_session: 'text-emerald-500',
+  copilot_session: 'text-sky-500',
+};
 
 /**
  * Per-result-type leading icon. Worker sessions get their vendor glyph; every
  * other record type gets a generic doc badge tinted by `TYPE_COLORS`. Shared by
  * the global Spotlight modal and the inline navigator search so both render
  * results identically.
+ *
+ * The vendor glyph resolves through `iconForType` (backend `TypeInfo.icon`)
+ * rather than a per-type import map here — that map was a second source of
+ * truth for the same fact, and it is why a session's icon could be right in
+ * search yet missing on the attachment chip.
  */
-export function RowIcon({ recordType }: { recordType: string }) {
-  if (recordType === 'claude_session') return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
-  if (recordType === 'codex_session') return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
-  if (recordType === 'copilot_session') return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
+export function RowIcon({ recordType, vendorWorkerType }: { recordType: string; vendorWorkerType?: string }) {
+  // A vendor named explicitly wins: it is the only way to glyph a worker whose
+  // sessions have no entity type in the registry (opencode). Colour and mark
+  // both come from PROVIDER_META, the same table the tab strip reads.
+  if (vendorWorkerType) {
+    const meta = providerMetaFor(vendorWorkerType);
+    return <meta.Icon className={cn('h-3.5 w-3.5 shrink-0', meta.iconClassName)} />;
+  }
+  const tint = BARE_GLYPH_TINT[recordType];
+  if (tint) {
+    const VendorIcon = iconForType(recordType);
+    return <VendorIcon className={cn('h-3.5 w-3.5 shrink-0', tint)} />;
+  }
   const color = TYPE_COLORS[recordType];
   return (
     <span
@@ -39,18 +63,16 @@ export function RowIcon({ recordType }: { recordType: string }) {
 export function SpotlightResultRowContent({ row, opening }: { row: SpotlightRow; opening?: boolean }) {
   return (
     <>
-      <RowIcon recordType={row.recordType} />
+      <RowIcon recordType={row.recordType} vendorWorkerType={row.vendorWorkerType} />
       <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <span className="truncate text-sm">{row.title}</span>
-        {row.subtitle && (
-          <span className="truncate text-[10px] text-muted-foreground/70">{row.subtitle}</span>
-        )}
+        {row.subtitle && <span className="truncate text-[10px] text-muted-foreground/70">{row.subtitle}</span>}
       </span>
       {opening ? (
         <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
       ) : (
         row.timestamp && (
-          <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(row.timestamp)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{formatTimeAgoShort(row.timestamp)}</span>
         )
       )}
     </>

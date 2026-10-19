@@ -6,19 +6,19 @@ Usage:
     python -m flow_sdk.server.run
 """
 
+import faulthandler
 import logging
 import os
+import signal
 import sys
 import time
+from pathlib import Path
 
-# Ensure the repo root and SDK path are on sys.path so "server" and "flow_sdk"
-# are importable even when this script is run directly (e.g. `python run.py`).
-_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Direct script execution needs the directory containing the flow_sdk package.
+# Never add flow_sdk itself: its secrets package would shadow stdlib secrets.
+_repo_root = str(Path(__file__).resolve().parents[2])
 if _repo_root not in sys.path:
     sys.path.insert(0, _repo_root)
-_sdk_path = os.path.join(_repo_root, "sdk", "python")
-if _sdk_path not in sys.path:
-    sys.path.insert(0, _sdk_path)
 
 # On Windows the console/stdio defaults to a legacy code page (e.g. cp1252),
 # so a log line carrying non-ASCII text — a Hebrew project path, an exception
@@ -33,9 +33,22 @@ if sys.platform == "win32":
         except (AttributeError, ValueError):
             pass
 
+# Boot progress before the heavy imports, not after them. stderr is the server
+# log, and the monitor / desktop gate extend their wait for a slow boot only
+# while that log grows — an import phase that logs nothing would look hung.
+from flow_sdk import boot_progress
+
+boot_progress.start(sys.stderr)
+
 import uvicorn
 from dotenv import load_dotenv
-from filelock import FileLock, Timeout
+from filelock import FileLock
+
+# A named logger, never the module-level `logging.info(...)` helpers: those
+# install a root handler in the DEFAULT format on first use, and that first
+# use (raising RLIMIT_NOFILE) happens before app.py's basicConfig — which then
+# silently becomes a no-op and the server log loses its timestamps.
+log = logging.getLogger(__name__)
 
 _lock: FileLock | None = None  # kept alive for the process lifetime
 
@@ -52,86 +65,52 @@ def _raise_nofile_soft_limit(min_soft: int = 4096) -> None:
         target = min(max(soft, min_soft), hard)
         if target > soft:
             resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
-            logging.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
+            log.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
     except (OSError, ValueError) as exc:
-        logging.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
+        log.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
 
 
 def _pid_alive(pid: int) -> bool:
-    """Return True if the process with the given PID is still running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
+    """Return True if the process with the given PID is still running.
+
+    Delegates to ``pid_probe`` (stdlib-only, safe to import this early). Do not
+    inline ``os.kill(pid, 0)`` here: on Windows that delivers a console Ctrl-C
+    rather than probing, so the stale-lock check would signal the very backend
+    it is asking about — or this process.
+    """
+    from flow_sdk.pid_probe import pid_is_alive
+
+    return pid_is_alive(pid)
 
 
 def _acquire_singleton_lock() -> bool:
-    """Acquire an exclusive process-level lock to prevent duplicate server instances.
+    """Acquire the per-instance backend lock (see ``flow_sdk.singleton_lock``).
 
-    Uses filelock (fcntl on POSIX, msvcrt on Windows) — kernel-owned, so the
-    lock is automatically released if the process crashes without cleanup.
-    We also write our PID into the lock file so stale locks can be detected.
-
-    Returns True if the lock was acquired, False if another instance is running.
+    Returns True if the lock was acquired, False if another backend is running.
     Set FLOWPAD_SKIP_LOCK=true to bypass (for isolated test servers).
     """
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
-        logging.info("[singleton] Lock skipped (FLOWPAD_SKIP_LOCK=true)")
+        log.info("[singleton] Lock skipped (FLOWPAD_SKIP_LOCK=true)")
         return True
 
     global _lock
-    from flow_sdk.config import get_port_file_path
+    from flow_sdk import singleton_lock
+    from flow_sdk.instance_settings import get_instance_settings
 
-    lock_path = get_port_file_path().with_suffix(".lock")
-    pid_path = get_port_file_path().with_suffix(".pid")
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    def _try_acquire() -> bool:
-        global _lock
-        _lock = FileLock(str(lock_path), timeout=0)
-        try:
-            _lock.acquire()
-            pid_path.write_text(str(os.getpid()))
-            logging.info("[singleton] Lock acquired: pid=%d path=%s", os.getpid(), lock_path)
-            return True
-        except Timeout:
-            return False
-
-    if _try_acquire():
-        return True
-
-    # Acquisition failed — read holder PID from pid file (may not exist if server
-    # was started before PID-writing was added, or if file was deleted externally).
-    try:
-        holder_pid = int(pid_path.read_text().strip())
-    except Exception:
-        holder_pid = 0
-
-    if not holder_pid or not _pid_alive(holder_pid):
-        # Either no PID file or the recorded PID is dead — stale lock.
-        # Remove and retry; FileLock is the real guard.
-        if holder_pid:
-            logging.warning("[singleton] Stale lock (pid=%d is dead) — removing and retrying", holder_pid)
-        else:
-            logging.warning("[singleton] No PID in pid file — retrying acquire")
-        lock_path.unlink(missing_ok=True)
-        pid_path.unlink(missing_ok=True)
-        if _try_acquire():
-            return True
-
-    logging.warning(
-        "[singleton] Server already running (pid=%s) — exiting (our pid=%d)",
-        holder_pid or "unknown",
-        os.getpid(),
+    settings = get_instance_settings()
+    _lock = singleton_lock.acquire(
+        settings.server_lock_path, settings.server_pid_path, _pid_alive, logging.getLogger(), "Server"
     )
-    return False
+    return _lock is not None
 
 
 def _release_singleton_lock() -> None:
     if _lock and _lock.is_locked:
-        _lock.release()
-        logging.info("[singleton] Lock released: pid=%d", os.getpid())
+        from flow_sdk import singleton_lock
+        from flow_sdk.instance_settings import get_instance_settings
+
+        singleton_lock.release(_lock, get_instance_settings().server_pid_path)
+        log.info("[singleton] Lock released: pid=%d", os.getpid())
 
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
@@ -155,6 +134,12 @@ try:
 except (FileNotFoundError, OSError):
     pass
 
+# Only AFTER the .env file is loaded: env_probe imports ``flow_sdk.config``, whose
+# ``default_service_config`` reads the environment ONCE, at import. Imported above the
+# load_dotenv, it froze FLOWPAD_HUB_URL before .env.<instance>.local could set it, so a
+# backend pointed at another hub silently talked to the default one.
+from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture  # noqa: E402
+
 # Build the per-instance settings singleton now that .env.local is loaded.
 # Anything imported below that touches FLOW_HOME / .flow paths goes through
 # get_instance_settings() and sees the right dev/test/prod resolution.
@@ -172,19 +157,54 @@ reset_instance_settings()
 get_instance_settings()
 
 
+def _register_stack_dump(target: Path) -> None:
+    """Dump every thread's stack to ``target`` on SIGUSR1.
+
+    A hung request shows up as a live server that answers everything except
+    the one route, and on macOS py-spy needs root, so without this the only
+    way to see where the loop or a thread-pool worker sits is to infer it.
+    ``kill -USR1 <server_pid>`` appends one dump per signal.
+    """
+    if not hasattr(signal, "SIGUSR1") or not hasattr(faulthandler, "register"):
+        return
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        stream = open(target, "a", encoding="utf-8")  # noqa: SIM115 - lives as long as the process
+    except OSError as exc:
+        log.warning("[startup] Stack-dump signal not registered: %s", exc)
+        return
+    faulthandler.register(signal.SIGUSR1, file=stream, all_threads=True)
+    log.info("[startup] SIGUSR1 dumps all thread stacks to %s", target)
+
+
+def _adopt_terminal_path(terminal_path) -> None:
+    """Adopt the terminal's PATH before uvicorn spawns anything, saying what it added and what it cost."""
+    waited = time.monotonic()
+    added, why = adopt_terminal_path(terminal_path)
+    took = f"waited {(time.monotonic() - waited) * 1000:.0f} ms"
+    if why:
+        print(f"[startup] PATH from the login shell NOT adopted ({took}): {why}. Running with the launch PATH.")
+    else:
+        print(f"[startup] PATH from the login shell ({took}) added {added}")
+
+
 def main():
     """Start the minihub server."""
     startup_start = time.time()
     _raise_nofile_soft_limit()
+    # The login shell costs ~1s; it runs while the app imports and lands before anything spawns.
+    terminal_path = start_terminal_path_capture()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
+        boot_progress.stop()
         sys.exit(0)
 
     settings = get_instance_settings()
     host = settings.host
     port = settings.port
     reload_enabled = settings.reload_enabled
+    _register_stack_dump(settings.logs_dir / "server" / "stacks.log")
 
     print(f"Starting Flowpad server at http://{host}:{port}")
     print(f"Bootstrap endpoint: http://{host}:{port}/api/v1/graph/bootstrap")
@@ -196,6 +216,9 @@ def main():
         "port": port,
         "log_level": "info",
     }
+    if sys.platform == "win32":
+        # A client hanging up mid-accept must not close the listener (win_loop.py).
+        uvicorn_kwargs["loop"] = "flow_sdk.server.win_loop:ResilientProactorEventLoop"
 
     if reload_enabled:
         # Resolve watch directories relative to the repo root
@@ -207,8 +230,7 @@ def main():
             os.path.join(repo_root, "flow_sdk"),
             os.path.join(repo_root, "server"),
         ]
-        uvicorn.run("flow_sdk.server.app:app", **uvicorn_kwargs)
-        _release_singleton_lock()
+        target = "flow_sdk.server.app:app"
     else:
         # Import directly when not using reload
         from flow_sdk.server.app import _print_startup_timing, app
@@ -220,8 +242,13 @@ def main():
         total_startup = time.time() - startup_start
         print(f"Total startup time (until Uvicorn starts): {total_startup * 1000:.2f} ms\n")
 
-        uvicorn.run(app, **uvicorn_kwargs)
+        boot_progress.set_phase("uvicorn")
+        target = app
 
+    # Before uvicorn starts anything, so nothing spawns with the launch PATH. The lifespan's
+    # capability sweep reads the login shell again later; that one is a refresh, not this.
+    _adopt_terminal_path(terminal_path)
+    uvicorn.run(target, **uvicorn_kwargs)
     _release_singleton_lock()
 
 

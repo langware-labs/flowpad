@@ -1,20 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
-import { apiClient } from '@sdk/client';
+import { useMemo } from 'react';
+import { LazyAsset } from '@sdk/lazy';
+import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
+import type { AssetTypeVault } from '@sdk/lazy/assets';
+export type { AssetTypeVault } from '@sdk/lazy/assets';
+const NO_VAULTS: AssetTypeVault[] = [];
 import { dataManager } from '@sdk';
-import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
-import { useViewMode } from '@src/contexts/view-mode-context';
-import { isHubOnly } from '@src/navigation/hub-runtime';
-
-export interface AssetTypeVault {
-  typeid: string;
-  relPath: string;
-  /** Absolute filesystem path of the vault root (backend ``_markdown_vaults``). */
-  absPath: string;
-  label: string;
-  scope: string;
-  project_id?: string | null;
-  record_project_id?: string | null;
-}
+import { isBrowseableIn, type TypeShape, type ViewMode } from '@sdk/FlowSync/schema';
+import { useTierMode, ViewMode as UiViewMode } from '@src/contexts/view-mode-context';
+import { translateTypeLabel } from '@src/i18n/type-labels';
 
 export interface AssetTypeInfo {
   type_name: string;
@@ -22,12 +15,11 @@ export interface AssetTypeInfo {
   icon: string | null;
   creatable: boolean;
   browseable_by: ViewMode | null;
-  /** Folder-layout type whose asset_ref is the bare folder (e.g. skill): its
-   *  sidebar row expands into the on-disk file tree. Sourced synchronously from
-   *  the registry (TypeInfo.folder_backed), so it's set on the first render. */
-  folder_backed?: boolean;
-  /** Fixed inner filename for folder-backed assets, e.g. SKILL.md. */
-  main_file?: string | null;
+  /** The type's on-disk shape (TypeInfo.shape): `kind:'folder'` means the asset
+   *  IS a directory — its sidebar row expands into the on-disk file tree and it
+   *  can own nested assets. Sourced synchronously from the registry, so it's set
+   *  on the first render. */
+  shape?: TypeShape | null;
   vaults?: AssetTypeVault[];
 }
 
@@ -38,6 +30,14 @@ export interface UseAssetTypesOptions {
    * filtering unless they opt in explicitly.
    */
   vibeAsStandard?: boolean;
+  /**
+   * Every browseable type, whatever the current view mode. For pickers whose
+   * candidates are a project's own assets (the home-page picker): the mode is a
+   * browsing skin, and must not decide which of the project's assets exist.
+   */
+  anyMode?: boolean;
+  /** All user-facing browsing tiers; developer-only types still require Dev. */
+  allUserTypes?: boolean;
   /**
    * Fetch markdown ``vaults``. They are the ONLY runtime piece here — everything
    * else is synchronous from the registry — so a caller that never reads
@@ -61,17 +61,19 @@ function humanize(typeName: string): string {
  *  component test that mounts before bootstrap/loadTypes ran). */
 function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
   return (dataManager?.getAllTypeInfos?.() ?? [])
-    .filter((t) => isBrowseableIn(t.browseable_by, mode))
+    .filter((t) => isBrowseableIn(t.browseable_by, mode, t.dev_only))
     .map((t) => ({
       type_name: t.type_name,
-      label: humanize(t.type_name),
+      // Same two-step as `labelForType`: the registry picks the word, i18n picks
+      // the language. Without it the asset browser's type rows stayed English on
+      // a Hebrew screen even where the rest of the pane had translated.
+      label: translateTypeLabel(t.type_name, humanize(t.type_name)),
       icon: t.icon,
       creatable: t.creatable,
       browseable_by: t.browseable_by,
       // Sourced synchronously from the registry like every other static field —
       // available on the first render, so a deep-link auto-expand can't race it.
-      folder_backed: t.folder_backed,
-      main_file: t.main_file,
+      shape: t.shape,
     }));
 }
 
@@ -85,52 +87,37 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
  * The only runtime piece is markdown ``vaults`` (per-project doc roots): we still
  * fetch ``/assets/types`` but consume ONLY its vaults, merging them onto markdown.
  */
-export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: AssetTypeInfo[]; isLoading: boolean } {
-  const currentMode = useViewMode();
-  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe'
-    ? 'standard'
-    : currentMode;
+export function useAssetTypes(options: UseAssetTypesOptions = {}): {
+  types: AssetTypeInfo[];
+  isLoading: boolean;
+  error: Error | null;
+  reload: () => Promise<unknown>;
+} {
+  // A tier question (which types are browseable), so Dev on lifts it to `dev`.
+  const currentMode = useTierMode();
+  const mode: ViewMode = options.anyMode
+    ? 'dev'
+    : options.allUserTypes
+      ? currentMode === UiViewMode.Dev
+        ? 'dev'
+        : 'advanced'
+      : options.vibeAsStandard && currentMode === UiViewMode.Vibe
+        ? 'standard'
+        : currentMode;
   const withVaults = options.withVaults ?? true;
-  const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
-  const [isLoading, setIsLoading] = useState(withVaults);
-
-  useEffect(() => {
-    if (!withVaults) return;
-    // Hub mode: the hub backend has no `/assets/types` route (404). There are no
-    // markdown vaults there — leave vaults empty and skip the request.
-    if (isHubOnly()) {
-      setIsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    (window as any).__DBG_TYPES = ((window as any).__DBG_TYPES || '') + 'fire;';
-    apiClient
-      .get<{ types: AssetTypeInfo[] }>('/assets/types')
-      .then((res) => {
-        (window as any).__DBG_TYPES += (cancelled ? 'resolved-cancelled;' : 'resolved-set;');
-        if (cancelled) return;
-        setVaults(res?.types?.find((t) => t.type_name === 'markdown')?.vaults || []);
-        setIsLoading(false);
-      })
-      .catch((e) => {
-        (window as any).__DBG_TYPES += 'catch:' + (e?.message || e) + ';';
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [withVaults]);
+  const { data, isLoading, error, reload } = useLazyAsset(LazyAsset.AssetCatalog, undefined, {
+    enabled: withVaults,
+    priority: 'background',
+  });
+  const vaults = data?.types.find((t) => t.type_name === 'markdown')?.vaults ?? NO_VAULTS;
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
-  // folder_backed is already on each entry (sync, from the registry).
+  // shape is already on each entry (sync, from the registry).
   const types = useMemo(
-    () =>
-      staticAssetTypes(mode).map((t) =>
-        t.type_name === 'markdown' ? { ...t, vaults } : t,
-      ),
+    () => staticAssetTypes(mode).map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
     [mode, vaults],
   );
 
-  return { types, isLoading };
+  return { types, isLoading, error, reload };
 }

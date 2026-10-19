@@ -14,14 +14,20 @@ import json
 import logging
 from typing import Any
 
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import wrap_live
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
     FlowElementType,
 )
-from flow_sdk.transcript_analyzer.derive import derive_entry
+from flow_sdk.transcript_analyzer.entry import EntryKind
 from flow_sdk.transcript_analyzer.parsers.codex import CodexParser
-from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    error_frame,
+    final_end_frame,
+    safe_dump,
+    status_frame,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,22 +54,28 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
 
     if etype == "turn.completed":
         return _convert_turn_completed(event)
-    if etype == "error":
-        return [_error(_safe_dump(event))]
-
     try:
         entries = _parser.feed(event, _line_index)
     except Exception:
         logger.debug("codex_event_to_flowdata: parse failed", exc_info=True)
-        return [_status("parse-error", _safe_dump(event))]
+        return [status_frame("parse-error", safe_dump(event))]
     finally:
         _line_index += 1
+
+    if etype == "error" and not any(
+        e.kind is EntryKind.WORKER_UNAVAILABLE for e in entries
+    ):
+        # A provider quota/rate-limit error is not a crash: the parser
+        # normalizes it into the vendor-blind WORKER_UNAVAILABLE frame (same
+        # shape Claude emits) so callers can tell "the account is out" from
+        # "the CLI broke". Anything else stays a raw ERROR frame.
+        return [error_frame(safe_dump(event))]
 
     if not entries:
         # Non-conversational lines (thread.started, turn.started, item.started
         # for partial-stream items) — surface a small status so the wire stream
         # stays continuous but no process_entry is emitted.
-        return [_status(str(etype) or "unknown", _safe_dump(event))]
+        return [status_frame(str(etype) or "unknown", safe_dump(event))]
 
     return [_wrap_live(e) for e in entries]
 
@@ -82,47 +94,12 @@ def convert_line(line: str) -> list[FlowData]:
     return convert_event(event)
 
 
-def final_end_frame() -> FlowData:
-    return FlowData(
-        flow_value="",
-        attributes={
-            "element-type": FlowElementType.END,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
 # ── Internals ─────────────────────────────────────────────────────────────────
 
 
 def _wrap_live(entry) -> FlowData:
-    # Derived refinements (e.g. a `flow` CLI call inside a shell command)
-    # are applied here so the live frame matches what history's refold
-    # produces for the same entry.
-    entry = derive_entry(entry)
-    pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
-    frames = entry.to_flow_data()
-    if frames:
-        fd = frames[0]
-        fd.process_entry = pe.to_dict()
-        fd.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
-        fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
-        fd.attributes.setdefault("subtype", entry.kind.value)
-        fd.attributes.setdefault("observation-kind", "live")
-        return fd
-
-    return FlowData(
-        flow_value={},
-        created_time=entry.timestamp or "",
-        attributes={
-            "element-type": _element_type_for_kind(entry.kind.value),
-            "data-type": FlowDataType.OBJECT,
-            "subtype": entry.kind.value,
-            "observation-kind": "live",
-        },
-        process_entry=pe.to_dict(),
-    )
-
+    """This vendor's element-type mapping over the shared live envelope."""
+    return wrap_live(entry, _element_type_for_kind)
 
 def _element_type_for_kind(kind: str) -> str:
     if kind == "user_message":
@@ -150,29 +127,3 @@ def _convert_turn_completed(event: dict[str, Any]) -> list[FlowData]:
     ]
 
 
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )
-
-
-def _error(msg: str) -> FlowData:
-    return FlowData(
-        flow_value=msg,
-        attributes={
-            "element-type": FlowElementType.ERROR,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
-
-
-def _safe_dump(obj: Any) -> str:
-    try:
-        return json.dumps(obj, default=str)[:400]
-    except (TypeError, ValueError):
-        return str(obj)[:400]

@@ -1,23 +1,28 @@
+import { registerTerminalLinks } from './terminal-links';
+import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
+import { useLingui } from '@lingui/react/macro';
+
 import {
   AgenticProcessEventName,
-  connectionManager,
   dataContext,
   FlowDataSource,
   fsStore,
+  isProcessEnded,
   isProcessRunning,
-  isReadyForInput,
   PrefKey,
   Shell,
+  shellQuote,
   toplog,
-  WorkerMode,
   type AgenticProcess,
-  type MarkdownDoc,
 } from '@sdk';
+import type { DisplayEntry } from '@sdk';
+import { historyEntryDock } from '@src/pages/flow-page/display-stack';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
@@ -25,29 +30,33 @@ import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { usePreference } from '@src/hooks/use-preference';
-import { DockPointer, useDockNavigation, useSideWindows } from '@src/navigation';
+import { useProcessArtifacts } from '@src/hooks/use-process-artifacts';
+import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
-import { fetchPtyStream, replayPtyStream } from './pty-replay';
+import { useXtermShellAttach } from '../useXtermShellAttach';
+import { releaseLaunchWatch } from '@src/components/agents/launch-watch';
 import { SearchAddon } from '@xterm/addon-search';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router';
 import { AnnotationGutter } from './AnnotationGutter';
+import { SurfaceSwitchWaitNotice } from './SurfaceSwitchWaitNotice';
+import { useSurfaceSwitchWait } from './use-process-surface';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
 import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
+import { type CompactExecutionInputHandle } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
+import { FrozenWhenHidden } from './FrozenWhenHidden';
 import { SimpleChatPane } from './SimpleChatPane';
-import { notify } from '@src/notifications/notify';
-import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useSessionSurface } from '@src/contexts/view-mode-context';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -66,7 +75,7 @@ import {
 } from './side-windows';
 import { SideTabTooltipContent } from './LastPromptTooltip';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
-import { SidecarShellTerminal } from './SidecarShellTerminal';
+import { ShellTerminal } from './ShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { calcTimeGutterWidth, TimeGutter } from './TimeGutter';
@@ -75,7 +84,11 @@ import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
-import { clipboardDataHasImage, imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import {
+  clipboardDataHasImage,
+  imageFilesFromClipboardItems,
+  textFromClipboardItems,
+} from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
@@ -95,23 +108,16 @@ export interface ColVisibility {
   annotations: boolean;
 }
 
-// Stable empty-array identity so a doc-less process doesn't hand the ribbon a
-// fresh `[]` every render.
-const EMPTY_DOCS: MarkdownDoc[] = [];
+import { perfLog } from '@src/routes/loaders/_perf';
+import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
-const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-
-import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import {
-  FONT_FAMILY,
-  FONT_SIZE_PX,
-  applyRtlGridContract,
-  openTerminalLink,
-  registerOsc52ClipboardWrite,
-} from './terminalConfig';
+const bracketedPaste = (text: string) => `\x1b[200~${text}\x1b[201~`;
+import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
+import { retireXterm } from './retire-xterm';
+import { workerCliVendor } from './process-cli-presentation';
 import { isTextInputTarget } from '@src/utils/isTextInputTarget';
 
 // Focus the terminal WITHOUT yanking focus from a text field the user is editing
@@ -161,32 +167,70 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // _flow is used only in the React.memo comparator below
   void _flow;
 
+  const { t } = useLingui();
   const { agenticProcessTypeId, agenticProcess: contextProcess } = useContext();
   // Prop takes precedence (e.g. WorkflowsPage passes an explicit process).
   // For TabbedTerminal, no prop is passed — fall back to the context process
   // set by the loader, which is always authoritative for the active tab.
-  const process = propProcess ?? contextProcess ?? undefined;
-  const { navigation } = useDockNavigation();
+  const suppliedProcess = propProcess ?? contextProcess ?? undefined;
+  // Lifecycle reconciliation lives in the always-mounted TerminalPanel, but
+  // this memoized renderer still needs its own entity subscription. Process
+  // instances mutate in place, so a parent re-render with the same process id
+  // is intentionally swallowed by the comparator below; the subscription is
+  // what updates every render-driving field (transport, shell, status, plan,
+  // start failure, and transcript metadata) without moving lifecycle ownership
+  // back under the startup gate.
+  const { data: subscribedProcess } = useEntity<AgenticProcess>(suppliedProcess?.typeId ?? null);
+  const process = subscribedProcess ?? suppliedProcess;
+  const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: by default Standard users get the friendly SimpleChatPane (chat
-  // instead of the raw xterm) and Advanced/Dev keep the terminal. The bottom-
-  // ribbon toggle overrides that per the user's saved choice (chatUiOverride):
-  // once set it takes priority over View mode. The xterm stays mounted underneath
-  // the chat overlay (same session, same PTY — see SimpleChatPane), so toggling
-  // is instant and never resets the terminal. Embedded terminals (chat side
-  // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
+  // Skin layer: the view mode's SURFACE decides which pane shows (the session's
+  // own switch is the selector). The xterm stays mounted underneath the chat
+  // overlay (same session, same PTY — see SimpleChatPane), so switching is
+  // instant and never resets the terminal. Embedded terminals (chat side panel)
+  // and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  const chatOverride = useChatUiOverride();
-  const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
+  // Only the `chat` surface forces the pane. `vibe` renders VibeWorkspace, not
+  // this component, so reaching here in vibe means the surfaces disagree (a
+  // popped-out window, a mode-less process URL) — fall through to the process's
+  // own transport via `isHeadless` below rather than pinning the pane, which
+  // would put a chat over the live PTY of any task-runner process.
+  const surface = useSessionSurface();
+  const wantChat = surface === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
-  // pane is the ONLY view. Force it on regardless of the chat/terminal skin
-  // override, and (in the render) skip mounting the xterm container entirely so
-  // no PtySync attach is attempted for a process that has no shell.
+  // pane is the ONLY view. Force it on regardless of the surface, and (in the
+  // render) skip mounting the xterm container entirely so no PtySync attach is
+  // attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
-  const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
-  const canToggleView = !embedded && !!process;
-  const [searchParams] = useSearchParams();
-  const targetTimestamp = searchParams.get('t') ?? undefined;
+  // Chat and the terminal are mutually exclusive: a chat surface over a live PTY
+  // is only ever a switch on its way. When that switch has to WAIT (the agent is
+  // mid-turn, or background work still runs in the PTY) the terminal stays on
+  // screen with a line saying why, instead of a chat whose questions and
+  // prompts would land in a terminal nobody sees.
+  const switchWait = useSurfaceSwitchWait(process?.id);
+  const showSimpleChat = wantChat ? !embedded && !!process && !switchWait : isHeadless;
+  // The chat pane is a full render of the transcript (a 600-row chat ≈ 4 s). The surface
+  // is GLOBAL — one view mode for the whole app — so every pooled panel, shown or not,
+  // used to mount its pane when the mode flipped to chat and unmount it on the way back:
+  // 11 s with three long chats pooled, on every switch between a chat tab and a terminal
+  // tab (FLOWPAD-2193). A panel now mounts its pane the first time it is SHOWN as chat and
+  // keeps it: when the surface moves on the pane is hidden, not rebuilt, so a flip is a
+  // visibility change. `chatMounted` only ever goes true.
+  //
+  // Also not for a panel that is merely LEFT: on a switch the surface follows the NEW url
+  // at once while the pool still lists the OLD panel as shown, and that panel's own mode
+  // reconcile can flap its transport for a commit — either looked like "active in chat"
+  // and mounted a 1373-row pane on the wrong tab. `active` drops on the next commit, which
+  // cancels this frame.
+  const [chatMounted, setChatMounted] = useState(false);
+  const wantsChatMount = !chatMounted && showSimpleChat && active && !!process;
+  useEffect(() => {
+    if (!wantsChatMount) return;
+    const frame = requestAnimationFrame(() => setChatMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, [wantsChatMount]);
+  const mountChatPane = chatMounted && !!process;
+  const targetTimestamp = currentDock?.transcriptTimestamp ?? undefined;
 
   const canUseDOM = typeof window !== 'undefined' && typeof document !== 'undefined';
 
@@ -197,11 +241,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // pty-sync unified session (owns adapter, VT, segments)
   const ptySyncRef = useRef(new PtySyncSession());
+  // `pty` toplog: only the first keystroke of a run dropped while disconnected is logged.
+  const inputDropRunRef = useRef(false);
   const harnessRef = useRef<XTermHarness | null>(null);
   // Reactive snapshot — subscribes to ptySyncRef without needing PtySyncProvider context
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
+  const terminalLinks = useLinks(shellRef, process);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
@@ -217,24 +264,43 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const { preferences } = useInstancePreferences();
   const { shell } = useShell(sessionId);
   const [shellReady, setShellReady] = useState(false);
+  // `tab_switch` needs both facts inside callbacks that outlive the render:
+  // whether this panel is the shown one, and whether it already holds history
+  // (a warm activation) or is still attaching (the cold `ready` comes from
+  // `on_connected done`).
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // Only the view on screen sizes the PTY — its one winsize is shared by every
+  // client attached to it, and a hidden view's grid is stale.
+  const onScreen = () => activeRef.current && document.visibilityState !== 'hidden';
+  const shellReadyRef = useRef(false);
+  shellReadyRef.current = shellReady;
+  // With the chat pane over the xterm, the chat is what the user sees — its
+  // `ready` comes from SimpleChatPane, not from the terminal underneath.
+  const showSimpleChatRef = useRef(showSimpleChat);
+  showSimpleChatRef.current = showSimpleChat;
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.status ? isProcessRunning(process.status) : false;
+  // The process ended (stopped / failed): no PTY to follow until it runs again, so the view gives
+  // back what a live session holds — its watch, its output subscription, the shell's chunk window.
+  // A plain shell (no process) and a process that has not started are not "ended".
+  // This is the TERMINAL's hold only. In chat mode the chat pane's own hooks keep the process
+  // watched after it ends, by design: "stopped" is a chat's resting state, and the watch is what
+  // carries another window's status change and the watcher-only progress stream. A watch on an
+  // ended process costs nothing — pushes are event-driven and nothing flows for it.
+  const processEnded = !!process?.status && isProcessEnded(process.status);
 
   // Live failed-to-start latch → banner. The loader only classifies a latched
   // process on navigation; when the worker dies instantly while this tab is
   // already mounted (first death, or a failed Retry), the only signal is the
   // entity update flipping `start_failure`. The loader-context `process` is
   // not reactive, so subscribe via useEntity and surface the banner here.
-  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
-  const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is enabled while the process is ready for input:
-  // RUNNING, fresh headless, or headless-idle, with no turn in flight. A mode
-  // switch mid-turn is 409'd by the backend on the SAME `is_turn_busy` predicate
-  // that sets the wire `busy` boolean, so `isReadyForInput` keeps the toggle in
-  // lock-step with the AP and cannot land on a 409 hole. `liveProcess` is the
-  // reactive entity; the loader `process` is the first-render fallback.
-  const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
+  // ── Session surface ───────────────────────────────────────────────────────
+  // The always-mounted TerminalPanel owns process transport reconciliation, so
+  // this conditional renderer cannot lose a mode click while startup hides it.
+  // This component's subscription above is render-only.
+  const liveStartFailure = process?.start_failure ?? null;
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -249,8 +315,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     onWorkerSessionId?.(process?.session_id ?? null);
   }, [process?.session_id, onWorkerSessionId]);
 
+  // The view's watch, held while the process is live and the view is mounted. Leaving either
+  // way also gives back the launch-time lease its opener took (launch-watch.ts).
   useEffect(() => {
-    if (!process) return;
+    if (!process || processEnded) return;
+    const processId = process.id;
     let disposed = false;
     let unwatch: (() => Promise<void>) | null = null;
     void process.watch().then((release) => {
@@ -263,8 +332,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => {
       disposed = true;
       if (unwatch) void unwatch();
+      releaseLaunchWatch(processId);
     };
-  }, [process?.id]);
+  }, [process?.id, processEnded]);
 
   useEffect(() => {
     firstPromptBufferRef.current = '';
@@ -337,7 +407,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleToggleSidecar = useCallback(async () => {
     if (!process) return;
     if (!sidecarShellId) {
-      // Create a plain Shell entity and let SidecarShellTerminal start its PTY
+      // Create a plain Shell entity and let ShellTerminal start its PTY
       const computeNodeId = shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? null;
       const computeNodeUname = shellRef.current?.compute_node_uname ?? dataContext.computeNode?.uname ?? null;
       if (!computeNodeId) return;
@@ -385,10 +455,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        const [[captured], initialCaption] = await Promise.all([
+          imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' }),
+          textFromClipboardItems(items),
+        ]);
         if (!captured) return;
-        // Offer markup before the screenshot is attached. Cancel aborts.
-        const [file] = await annotateImageFiles([captured]);
+        // Offer markup (and a caption, prefilled with any text that came along)
+        // before the screenshot is attached. Cancel aborts.
+        const {
+          files: [file],
+          caption,
+        } = await annotateImageFiles([captured], { initialCaption });
         if (!file) return;
 
         const uploads = await fsStore
@@ -402,11 +479,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         // bracketed paste so the CLI re-reads the clipboard and inlines the
         // ANNOTATED image. The original paste-time signal was suppressed (the
         // capture-phase paste listener), so the CLI never saw the original.
-        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
+        await shellRef.current?.sendInput(bracketedPaste(''));
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        // The caption rides as a note after the file line — bracketed, so a
+        // multi-line note is typed into the prompt, never submitted line by line.
+        if (caption) await shellRef.current?.sendInput(bracketedPaste(`User note: ${caption}`));
         openSideTab(SideTabId.Files);
         // Opening the Files drawer (and the annotate dialog before it) drops
         // focus to <body> — hand it back to the terminal so typing continues.
@@ -500,20 +580,36 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
   }, [process, agenticProcessTypeId, navigation]);
 
-  // Docs chip: persisted ``markdown_docs`` (oldest-first; tail = latest) drives
-  // the "Open Doc" affordance, mirroring ``plan_path`` / Open Plan. The list is
-  // a persisted entity field, so it restores after a reload via ``useEntity``.
-  const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
-  // Open via the shared file dispatch (an .md routes to the markdown asset
-  // editor, rendered — the same chokepoint every "open this file" surface uses).
-  const handleOpenMarkdown = useCallback((path: string) => navigation.openFile(path), [navigation]);
+  // Artifacts chip: what the run REGISTERED (`flow artifact …`), read off the
+  // process property and kept live by the `artifact.*` bus lane. It replaces
+  // the markdown-docs chip, which inferred "the run produced something" from an
+  // authored `.md` instead of the run saying so.
+  const { data: artifacts } = useProcessArtifacts(process);
+  // The click opens the REFERENCED ASSET, never the artifact row — via the
+  // shared file dispatch, the chokepoint every "open this file" surface uses.
+  const handleOpenArtifact = useCallback((assetRef: string) => navigation.openFile(assetRef), [navigation]);
+
+  // Shown chip: every `flow show` this run made (`context_data.display_stack`).
+  // A row opens the target as its own tab, rebased onto the process's project
+  // — the same address the show listener mints, so it lands on that tab.
+  const shownStack = process?.displayStack;
+  const handleOpenShown = useCallback(
+    (entry: DisplayEntry) => {
+      const dock = historyEntryDock(entry, process?.project_id ?? null);
+      if (dock) navigation.openDock(dock);
+    },
+    [process, navigation],
+  );
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
   // only fires for live new output, but ``plan_path`` survives persistence.
   useEffect(() => {
     if (!process || process.plan_path) return;
-    void process.getPlan();
+    // Fire-and-forget on mount, so it owns its failure: a backend that is down
+    // (or absent, as under vitest) would otherwise raise an unhandled rejection
+    // with no caller to receive it. No plan simply means the button stays put.
+    void process.getPlan().catch(() => undefined);
     // We intentionally only react to the process identity changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [process?.id]);
@@ -548,7 +644,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
     enterRefetchTimerRef.current = setTimeout(() => {
       enterRefetchTimerRef.current = null;
-      refreshPromptsRef.current?.();
+      refreshPromptsRef.current?.({ force: true });
     }, 1000);
   }, []);
   useEffect(
@@ -650,24 +746,77 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     bufferFlushCount,
   ]);
 
-  // Refit terminal when annotation gutter or file panel appears/disappears
+  // The size this view last delivered to the PTY. Output drawn while the xterm is at another size
+  // is garbage that re-sending the PTY's own size can't fix (no winsize change → no SIGWINCH), so
+  // that view asks for a redraw on its next send (`drift`).
+  const syncedSizeRef = useRef<{ cols: number; rows: number } | null>(null);
+  const driftRef = useRef(false);
+
+  const handlePtyResize = useCallback(
+    (cols: number, rows: number) => {
+      if (isTransitioningRef.current) return;
+      if (!onScreen()) return;
+      const shell = shellRef.current;
+      if (!shell) return;
+      const repaint = driftRef.current;
+      driftRef.current = false;
+      syncedSizeRef.current = { cols, rows };
+      // Not gated on `connected`: the shell keeps the size and its attach asserts it.
+      void shell.resize(cols, rows, { repaint }).then(
+        (ok) => {
+          if (ok) return;
+          syncedSizeRef.current = null;
+          driftRef.current = true;
+        },
+        (e) => console.error('[InteractiveTerminal] Failed to resize PTY:', e),
+      );
+    },
+    [sessionId],
+  );
+
+  /** Fit the xterm to its box and record the cell height. */
+  const fitXterm = useCallback(() => {
+    const term = terminalRef.current;
+    const fit = fitAddonRef.current;
+    if (!term || !fit) return;
+    fit.fit();
+    const container = xtermContainerRef.current;
+    if (container?.offsetHeight && term.rows > 0) commitCellHeight(container.offsetHeight / term.rows);
+  }, [commitCellHeight]);
+
+  /** Fit the xterm and size the PTY to it — never one without the other. Off screen the view does
+   *  not size the PTY, so it does not fit either; the return to screen fits + sends. */
+  const fitAndSync = useCallback(() => {
+    const term = terminalRef.current;
+    if (!term || !onScreen()) return;
+    try {
+      fitXterm();
+    } catch {
+      return;
+    }
+    handlePtyResize(term.cols, term.rows);
+  }, [fitXterm, handlePtyResize]);
+
+  /** Live output reaching an off-screen xterm that is not at the size it last gave the PTY. */
+  const noteDrift = useCallback(() => {
+    if (driftRef.current || onScreen()) return;
+    const term = terminalRef.current;
+    const synced = syncedSizeRef.current;
+    // Never synced: its attach sizes the PTY (and repaints) when it comes on screen.
+    if (!term || !synced || (synced.cols === term.cols && synced.rows === term.rows)) return;
+    driftRef.current = true;
+    toplog.log(
+      'pty',
+      `fit_unsent shell=${sessionId} xterm=${term.cols}x${term.rows} synced=${synced.cols}x${synced.rows}`,
+    );
+  }, [sessionId]);
+
+  // Refit terminal when annotation gutter or file panel appears/disappears — and size the PTY
+  // to it: a refit the PTY never hears of leaves the xterm drawing output meant for another grid.
   useEffect(() => {
     if (!terminalReady) return;
-    const fit = fitAddonRef.current;
-    const term = terminalRef.current;
-    if (!fit || !term) return;
-    requestAnimationFrame(() => {
-      try {
-        fit.fit();
-        const container = xtermContainerRef.current;
-        if (container?.offsetHeight && term.rows > 0) {
-          commitCellHeight(container.offsetHeight / term.rows);
-        }
-      } catch {
-        // ignore
-      }
-    });
-  }, [showAnnotationGutter, showTimeGutter, timeGutterWidth, terminalReady, sideWindowTabs.length]);
+    requestAnimationFrame(fitAndSync);
+  }, [showAnnotationGutter, showTimeGutter, timeGutterWidth, terminalReady, sideWindowTabs.length, fitAndSync]);
 
   // Update refs on session change
   useEffect(() => {
@@ -690,28 +839,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       // After the transition guard lifts, re-fit the terminal so it picks up
       // any container resize events that were suppressed during the window.
-      const fit = fitAddonRef.current;
-      const term = terminalRef.current;
-      if (fit && term) {
-        requestAnimationFrame(() => {
-          try {
-            fit.fit();
-            if (term.rows > 0 && xtermContainerRef.current?.offsetHeight) {
-              commitCellHeight(xtermContainerRef.current.offsetHeight / term.rows);
-            }
-            const shell = shellRef.current;
-            if (shell?.connected) {
-              void shell.resize(term.cols, term.rows);
-            }
-          } catch {
-            /* ignore */
-          }
-        });
-      }
+      requestAnimationFrame(fitAndSync);
     }, 150);
 
     return () => clearTimeout(t);
-  }, [sessionId]);
+  }, [sessionId, fitAndSync]);
 
   // Shell entity is resolved reactively by useShell(sessionId) above.
 
@@ -770,27 +902,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const initializeTerminal = () => {
       if (disposed) return;
       if (active) {
-        const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-        if (t0 !== undefined)
-          console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms xterm initializeTerminal (active)`);
+        perfLog('xterm initializeTerminal (active)');
       }
 
-      const term = new XTerm({
-        scrollback: 50000,
-        convertEol: true,
-        cursorBlink: true,
-        scrollOnUserInput: true,
-        disableStdin: false,
-        cursorStyle: 'block',
-        fontFamily: FONT_FAMILY,
-        fontSize: FONT_SIZE_PX,
-        fontWeight: '400',
-        fontWeightBold: '700',
-        allowTransparency: true,
-        allowProposedApi: true,
-      });
-
-      term.loadAddon(new WebLinksAddon(openTerminalLink));
+      const term = new XTerm({ ...XTERM_BASE_OPTIONS, scrollback: 50000 });
 
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -821,15 +936,22 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       try {
         term.open(container);
-        applyRtlGridContract(container);
+        registerTerminalLinks(term, terminalLinks.handlers);
+        // Stamp the RTL/bidi contract on THIS container. The vendor-keyed
+        // effect below re-decides when worker_type resolves, but it cannot be
+        // the only writer: the container is conditionally mounted
+        // (`!isHeadless`), so a chat⇄terminal round trip mounts a fresh div
+        // while worker_type never changes — leaving it bare, and every
+        // pre-reversed Hebrew row reordered a second time by the browser.
+        applyRtlGridContract(container, workerCliVendor(process?.worker_type));
         terminalRef.current = term;
         fitAddonRef.current = fit;
         container.addEventListener('paste', onDomPaste, true);
         if (active) {
-          const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-          if (t0 !== undefined)
-            console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms term.open() done (active)`);
+          perfLog('term.open() done (active)');
         }
+        // A mount on a tab switch means the "warm" terminal was thrown away.
+        toplog.log('pty', `xterm_mount shell=${sessionId} active=${active} size=${term.cols}x${term.rows}`);
       } catch (e) {
         console.error('[InteractiveTerminal] Failed to open terminal:', e);
         return;
@@ -850,13 +972,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         onTitleChange?.(title);
       });
 
+      const tFitScheduled = performance.now();
       fitTimeoutId = setTimeout(() => {
         if (!disposed) {
+          const tFitFired = performance.now();
+          // Fired far past its 50ms means the main thread was busy, not this work.
+          if (active) {
+            toplog.log(
+              'agentic_process.load',
+              `InteractiveTerminal fit timer fired after ${(tFitFired - tFitScheduled).toFixed(0)}ms (scheduled 50ms) shell=${sessionId}`,
+            );
+          }
           try {
-            fit.fit();
-            const h = container.offsetHeight;
-            const r = term.rows;
-            if (h && r > 0) commitCellHeight(h / r);
+            fitXterm();
 
             // Initialize pty-sync session (adapter + VirtualTerminal)
             ptySyncRef.current.initialize(term);
@@ -868,9 +996,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             ptySyncRef.current.initSegments(Date.now(), Math.max(3, term.rows - 4), adapter?.getEvictionOffset() ?? 0);
 
             if (active) {
-              const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-              if (t0 !== undefined)
-                console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
+              toplog.log(
+                'agentic_process.load',
+                `InteractiveTerminal fit + ptySync.initialize took ${(performance.now() - tFitFired).toFixed(0)}ms shell=${sessionId}`,
+              );
+              perfLog('setTerminalReady(true) (active)');
             }
             setTerminalReady(true);
             focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
@@ -918,13 +1048,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
       if (terminalRef.current) {
         const term = terminalRef.current;
-        setTimeout(() => {
-          try {
-            term.dispose();
-          } catch (e) {
-            console.warn('[InteractiveTerminal] Error disposing terminal:', e);
-          }
-        }, 10);
+        toplog.log('pty', `xterm_dispose shell=${sessionId} active=${active}`);
+        retireXterm(term, (e) => console.warn('[InteractiveTerminal] Error disposing terminal:', e));
 
         terminalRef.current = null;
         fitAddonRef.current = null;
@@ -934,6 +1059,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isHeadless]);
+
+  // Which RTL/bidi contract a terminal follows depends on the CLI running in
+  // it, and worker_type arrives with the subscribed process — i.e. after
+  // term.open() has already run. Deciding in its own layout effect re-applies
+  // the contract the moment the vendor resolves, so a codex session never
+  // paints a frame under Claude Code's contract (and back, if it ever swaps).
+  useLayoutEffect(() => {
+    const container = xtermContainerRef.current;
+    if (container) applyRtlGridContract(container, workerCliVendor(process?.worker_type));
+  }, [process?.worker_type]);
 
   // Intercept Cmd+F / Ctrl+F at the native DOM level so we can call preventDefault()
   // before the browser opens its own find bar. xterm's attachCustomKeyEventHandler
@@ -968,271 +1103,173 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     term.options.theme = resolvedTheme === 'dark' ? DARK_THEME : LIGHT_THEME;
   }, [resolvedTheme]);
 
-  const handlePtyResize = useCallback(
-    (cols: number, rows: number) => {
-      if (isTransitioningRef.current) return;
-      const shell = shellRef.current;
-      if (!shell?.connected) return;
-
-      try {
-        void shell.resize(cols, rows);
-      } catch (e) {
-        console.error('[InteractiveTerminal] Failed to resize PTY:', e);
-      }
-    },
-    [sessionId],
-  );
-
-  // PTY connect and WS reconnect are handled by process.start() (called in loader)
-  // and Shell's built-in auto-reconnect (ConnectionManager on_reconnected listener).
+  // The owning TerminalPanel starts/attaches an AgenticProcess after the route
+  // commits. Shell WS reconnects remain owned by Shell's ConnectionManager
+  // on_reconnected listener.
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
   // requiring the effect to re-subscribe when the setting changes.
   const bufferSyncUpdatesRef = useRef(preferences.bufferSyncUpdates);
   bufferSyncUpdatesRef.current = preferences.bufferSyncUpdates;
 
-  // Unified PTY lifecycle effect driven by Shell 'status' events.
-  // On 'connected': reset xterm to a clean slate, write replay chunks,
-  // subscribe live output. On 'disconnected': cleanup output subscription.
-  // Gates on terminalReady so xterm is fitted to correct dimensions before
-  // replay writes (otherwise writes at default 80x24).
-  useEffect(() => {
-    if (!shell || !terminalReady) return;
+  // Synchronized output (DEC 2026): a TUI brackets a frame with BSU … ESU; holding the bracketed
+  // bytes until ESU paints the frame at once instead of tearing. Behind the bufferSyncUpdates pref.
+  const syncRef = useRef({ buf: '', inSync: false, timer: null as ReturnType<typeof setTimeout> | null });
 
-    const BSU = '\x1b[?2026h';
-    const ESU = '\x1b[?2026l';
-    let syncBuf = '';
-    let inSync = false;
-    let syncTimer: ReturnType<typeof setTimeout> | null = null;
-    let unsubOutput: (() => void) | undefined;
+  const writeToTerm = useCallback((data: string) => {
+    const term = terminalRef.current;
+    if (!term) return;
+    try {
+      term.write(data, () => {
+        if (!anchorsResolvedRef.current) {
+          ptySyncRef.current.notifyBufferReady();
+          setBufferFlushCount((c) => c + 1);
+        }
+      });
+    } catch (e) {
+      console.error('[InteractiveTerminal] write failed:', e);
+    }
+  }, []);
 
-    const writeToTerm = (data: string) => {
-      const term = terminalRef.current;
-      if (!term) return;
-      try {
-        term.write(data, () => {
-          if (!anchorsResolvedRef.current) {
-            ptySyncRef.current.notifyBufferReady();
-            setBufferFlushCount((c) => c + 1);
-          }
-        });
-      } catch (e) {
-        console.error('[InteractiveTerminal] write failed:', e);
-      }
-    };
+  /** Write out a bracketed frame still held (a disconnect, the view letting go). */
+  const flushSyncFrame = useCallback(() => {
+    const sync = syncRef.current;
+    if (sync.timer) clearTimeout(sync.timer);
+    sync.timer = null;
+    if (sync.buf) writeToTerm(sync.buf);
+    sync.buf = '';
+    sync.inSync = false;
+  }, [writeToTerm]);
 
-    const handlePtyData = (data: string, seq?: number) => {
-      if (data.includes('\x1b[3J'))
-        console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
-      if (data.includes('\x1b[2J')) console.log('[PTY] ESC[2J (clear screen) received, seq:', seq);
-      if (seq !== undefined) {
-        const chunk = shell.getPtyChunk(seq);
-        if (chunk) ptySyncRef.current.processChunk(chunk);
-      }
-
+  const writeLive = useCallback(
+    (data: string) => {
+      noteDrift();
+      const BSU = '\x1b[?2026h';
+      const ESU = '\x1b[?2026l';
+      const sync = syncRef.current;
       if (!bufferSyncUpdatesRef.current) {
         writeToTerm(data);
         return;
       }
-
-      console.log('############### applying buffering from BSU to ESU');
-      if (!inSync) {
+      if (!sync.inSync) {
         const bsuIdx = data.indexOf(BSU);
-        if (bsuIdx >= 0) {
-          if (bsuIdx > 0) writeToTerm(data.slice(0, bsuIdx));
-          inSync = true;
-          syncBuf = data.slice(bsuIdx);
-          syncTimer = setTimeout(() => {
-            if (inSync && syncBuf) {
-              writeToTerm(syncBuf);
-              syncBuf = '';
-              inSync = false;
-            }
-          }, 2000);
-        } else {
+        if (bsuIdx < 0) {
           writeToTerm(data);
+          return;
         }
+        if (bsuIdx > 0) writeToTerm(data.slice(0, bsuIdx));
+        sync.inSync = true;
+        sync.buf = data.slice(bsuIdx);
+        sync.timer = setTimeout(() => flushSyncFrame(), 2000); // a frame never closed is shown anyway
       } else {
-        syncBuf += data;
+        sync.buf += data;
       }
-
-      if (inSync) {
-        const esuIdx = syncBuf.indexOf(ESU);
-        if (esuIdx >= 0) {
-          if (syncTimer) {
-            clearTimeout(syncTimer);
-            syncTimer = null;
-          }
-          const endIdx = esuIdx + ESU.length;
-          const syncData = syncBuf.slice(0, endIdx);
-          const remainder = syncBuf.slice(endIdx);
-          syncBuf = '';
-          inSync = false;
-          writeToTerm(syncData);
-          if (remainder) handlePtyData(remainder);
-        }
+      const esuIdx = sync.buf.indexOf(ESU);
+      if (esuIdx >= 0) {
+        const endIdx = esuIdx + ESU.length;
+        const frame = sync.buf.slice(0, endIdx);
+        const remainder = sync.buf.slice(endIdx);
+        if (sync.timer) clearTimeout(sync.timer);
+        sync.timer = null;
+        sync.buf = '';
+        sync.inSync = false;
+        writeToTerm(frame);
+        if (remainder) writeLive(remainder);
       }
-    };
+    },
+    [writeToTerm, flushSyncFrame, noteDrift],
+  );
 
-    let connectGen = 0; // cancellation token: a newer connect/disconnect wins
-
-    const onConnected = () => {
-      const gen = ++connectGen;
-      void (async () => {
-        const term = terminalRef.current;
-        if (!term) return;
-
-        // Fetch + replay the recorded framed stream (full history at the
-        // recorded sizes — see pty-replay.ts). Falls back to live-only on
-        // any failure (404 legacy/no stream, replay error).
-        let historySerialized: string | null = null;
-        let historyLastSeq = 0;
-        try {
-          const ptyId = shell.pty_pid ?? shell.id;
-          const tFetch = performance.now();
-          const stream = await fetchPtyStream(ptyId);
-          const tReplay = performance.now();
-          toplog.log(
-            'process_load',
-            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
-          );
-          if (gen !== connectGen) return; // superseded — don't burn a full replay for a dead attach
-          if (stream) {
-            const replay = await replayPtyStream(stream);
-            toplog.log(
-              'process_load',
-              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
-            );
-            if (replay) {
-              historySerialized = replay.serialized;
-              historyLastSeq = replay.lastSeq;
-            }
-          }
-        } catch (e) {
-          console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
-        }
-        if (gen !== connectGen) return; // superseded while fetching
-
-        // Reset xterm to a clean slate for this session, then restore the
-        // replayed history (scrollback + final screen + cursor).
-        term.reset();
-        if (historySerialized) term.write(historySerialized);
-
-        // Write live-session chunks accumulated since attach into xterm,
-        // skipping chunks already covered by the replayed stream (frames
-        // carry the same per-session seq as WS chunks). Chunks are decoded
-        // with a STREAMING TextDecoder — xterm's raw-Uint8Array path drops
-        // multi-byte chars split across writes (xtermjs/xterm.js#6003).
-        // Skipped chunks are decoded too so partial-char state stays aligned
-        // across the dedup boundary.
-        const chunks = shell.getPtyChunks();
-        const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
-        let wrote = Boolean(historySerialized);
-        const tBacklog = performance.now();
-        for (const chunk of chunks) {
-          ptySyncRef.current.processChunk(chunk);
-          const text = chunkDecoder.decode(chunk.data, { stream: true });
-          if (chunk.seq <= historyLastSeq) continue;
-          term.write(text);
-          wrote = true;
-        }
+  // The PTY in this view: its recorded past, then live — the ONE attach every terminal view uses
+  // (useXtermShellAttach: connect / mount / recovery / reconnect). Gated on terminalReady so the
+  // replay lands at the fitted size, not 80×24. PtySync sees every chunk; live output goes through
+  // the synchronized-output writer above.
+  // An ended process's view is detached; the xterm keeps its final screen and scrollback, and a
+  // restart attaches again the way a mount does.
+  useXtermShellAttach(processEnded ? null : shell, terminalReady ? terminalRef.current : null, {
+    ready: terminalReady,
+    onChunk: (chunk) => ptySyncRef.current.processChunk(chunk),
+    write: writeLive,
+    recoveredFor: (msg) => Boolean(process && msg?.process_id === process.id),
+    ownsSize: onScreen,
+    onAttached: ({ source, wrote, ms, historyKb }) => {
+      // On screen the attach asserted this xterm's size and the program repainted at it.
+      const t = terminalRef.current;
+      if (t && onScreen()) {
+        syncedSizeRef.current = { cols: t.cols, rows: t.rows };
+        driftRef.current = false;
+      }
+      // Signal buffer ready once xterm has processed the history and backlog writes.
+      if (wrote) {
+        terminalRef.current?.write('', () => {
+          anchorsResolvedRef.current = false;
+          ptySyncRef.current.notifyBufferReady();
+          setBufferFlushCount((c) => c + 1);
+        });
+      }
+      setShellReady(true);
+      if (activeRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
         toplog.log(
-          'process_load',
-          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq}`,
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=terminal mode=cold source=${source} shell=${sessionId} attach_ms=${ms.toFixed(0)} history_kb=${historyKb.toFixed(0)}`,
         );
-
-        // Signal buffer ready after xterm processes the buffered writes.
-        if (wrote) {
-          term.write('', () => {
-            anchorsResolvedRef.current = false;
-            ptySyncRef.current.notifyBufferReady();
-            setBufferFlushCount((c) => c + 1);
-          });
-        }
-
-        // Assert this client's size on the PTY — the resulting SIGWINCH makes
-        // the running TUI repaint at the real xterm dimensions (the attach-time
-        // jiggle only repainted at the PTY's previous size).
-        if (shell.connected) void shell.resize(term.cols, term.rows);
-
-        // Subscribe to live output (unsubscribe any prior subscription first).
-        unsubOutput?.();
-        unsubOutput = shell.onOutput(handlePtyData);
-
-        setShellReady(true);
-      })();
-    };
-
-    const onDisconnected = () => {
-      connectGen++; // cancel any in-flight history replay
-      unsubOutput?.();
-      unsubOutput = undefined;
+      }
+    },
+    onDetached: () => {
       setShellReady(false);
-      if (syncTimer) {
-        clearTimeout(syncTimer);
-        syncTimer = null;
-      }
-      if (syncBuf && terminalRef.current) {
-        try {
-          terminalRef.current.write(syncBuf);
-        } catch {
-          // Best-effort flush during disconnect.
-        }
-        syncBuf = '';
-        inSync = false;
-      }
-    };
+      flushSyncFrame();
+    },
+  });
 
-    const unsubStatus = shell.on('status', (s: string) => {
-      if (s === 'connected') onConnected();
-      if (s === 'disconnected') onDisconnected();
+  // The chunk window only feeds a live view (re-attach backlog, VT rebuild on resize); the
+  // backend recording is untouched and a restart fills a fresh window.
+  useEffect(() => {
+    if (processEnded) shell?.releaseOutput();
+  }, [processEnded, shell]);
+
+  // ── The dock's command, typed once the PTY is actually at a prompt ─────────
+  //
+  // `?startCommand=` names a command the navigation asked
+  // this terminal to type (see START_COMMAND_PARAM). The write lands HERE, on
+  // the mounted view at `shellReady`, and nowhere else: the click handler that
+  // navigated has no PTY yet, and the loader must not await one — a shell is
+  // created, then attached, and bytes sent before the attach handshake
+  // completes are simply dropped by a PTY that has not reached its prompt.
+  //
+  // Consumed exactly once per arrival. The ref guards a re-render, and the
+  // `replace` navigation drops the param from the URL so a reload — or a back
+  // button — cannot retype it. That matters more than tidiness: `startCommand`
+  // SUBMITS, and silently re-running a command on refresh is not something a
+  // URL should do.
+  const startCommandRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || !shellReady || !sessionId) return;
+    // Only the dock we are actually showing may type into us. Warm-mounted
+    // panels for other tabs share this component, and a command addressed to
+    // one terminal must never land in another.
+    //
+    // Through `shellId`, because the dock spells a shell as its TypeId
+    // (`shell-<uuid>`) while `sessionId` here is the bare uuid — comparing the
+    // two raw never matched, and the command was silently never typed.
+    if (currentDock?.shellId !== sessionId) return;
+    const command = currentDock?.shellStartCommand ?? null;
+    // The param is gone once consumed, so a LATER arrival carrying the same
+    // command (Run pressed twice on one code block) is a new ask, not a re-render.
+    if (!command) {
+      startCommandRef.current = null;
+      return;
+    }
+    if (startCommandRef.current === command) return;
+    startCommandRef.current = command;
+    void (async () => {
+      const { runInTerminal } = await import('@src/terminal/run-in-terminal');
+      await runInTerminal(sessionId, command);
+      navigation.openDock(currentDock.withoutShellStartCommand(), undefined, { replace: true });
+    })().catch((err: unknown) => {
+      startCommandRef.current = null;
+      console.warn('[InteractiveTerminal] start command failed', err);
     });
-
-    // Distinct `recovered` event: the backend's PTY-recovery watchdog respawned
-    // this session's worker after a server restart (see flow_sdk/server/
-    // pty_recovery.py). Re-run the attach handshake — fetch + replay the fresh
-    // scrollback and re-subscribe — so an already-open tab self-heals without a
-    // reopen. connectGen makes re-invocation safe (a newer attach supersedes).
-    const onRecovered = (msg: { shell_id?: string; process_id?: string }) => {
-      if (msg?.shell_id === sessionId || (process && msg?.process_id === process.id)) {
-        onConnected();
-      }
-    };
-    connectionManager.on('on_recovered', onRecovered);
-
-    // WS reconnect (e.g. sleep/wake): connection membership is restored by the
-    // backend (PtyRegistry.on_ws_connect re-attaches this connection_id), so live
-    // output resumes on its own. Re-run the attach handshake to repaint the gap —
-    // fetch + replay the framed stream (seq-deduped against what we already have)
-    // and re-subscribe — so the terminal catches up instead of staying on its
-    // pre-sleep frame. No backend attach call is issued from here. connectGen
-    // makes re-invocation safe (a newer attach supersedes an in-flight one).
-    const onReconnected = () => onConnected();
-    connectionManager.on('on_reconnected', onReconnected);
-
-    // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
-    if (shell.connected) onConnected();
-
-    return () => {
-      connectGen++; // cancel any in-flight history replay
-      unsubStatus();
-      connectionManager.off('on_recovered', onRecovered);
-      connectionManager.off('on_reconnected', onReconnected);
-      unsubOutput?.();
-
-      if (syncTimer) clearTimeout(syncTimer);
-      if (syncBuf && terminalRef.current) {
-        try {
-          terminalRef.current.write(syncBuf);
-        } catch {
-          // Best-effort flush during cleanup.
-        }
-        syncBuf = '';
-        inSync = false;
-      }
-      setShellReady(false);
-    };
-  }, [shell, terminalReady]);
+  }, [active, shellReady, sessionId, currentDock, navigation]);
 
   const reportFirstPromptIfNeeded = useCallback(
     (prompt: string) => {
@@ -1289,7 +1326,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       collectFirstPromptInput(data);
       if (data.includes('\r') || data.includes('\n')) scheduleEnterRefetch();
       const shell = shellRef.current;
-      if (shell?.connected) await shell.sendInput(data);
+      if (shell) {
+        // The connection decides: send now, hold as typeahead until its first
+        // attach, or refuse on a pane that was live and dropped.
+        inputDropRunRef.current = false;
+        await shell.sendInput(data);
+      } else if (!inputDropRunRef.current) {
+        // No shell entity yet — nothing to hold the keystrokes for.
+        inputDropRunRef.current = true;
+        toplog.log('pty', `input_dropped shell=${sessionId} reason=no_shell`);
+      }
     });
 
     return () => disp.dispose();
@@ -1302,7 +1348,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
     const handleRestarted = () => {
       const term = terminalRef.current;
-      const fit = fitAddonRef.current;
       ptySyncRef.current.resetSession();
 
       // attachPty({ force: true }) resets attach state, then re-attaches
@@ -1318,32 +1363,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         ?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true })
         .catch((err) => console.debug('[InteractiveTerminal] restart re-attach deferred:', err));
 
-      // Re-fit after a frame so xterm recalculates row/col geometry
-      requestAnimationFrame(() => {
-        if (fit && term) {
-          try {
-            fit.fit();
-            const container = xtermContainerRef.current;
-            if (container?.offsetHeight && term.rows > 0) {
-              commitCellHeight(container.offsetHeight / term.rows);
-            }
-            // Send updated dimensions to the new PTY
-            const shell = shellRef.current;
-            if (shell?.connected) {
-              void shell.resize(term.cols, term.rows);
-            }
-          } catch {
-            /* ignore */
-          }
-        }
-      });
+      // Re-fit after a frame so xterm recalculates row/col geometry, and size the new PTY to it
+      requestAnimationFrame(fitAndSync);
     };
 
     process.on('restarted', handleRestarted);
     return () => {
       process.off('restarted', handleRestarted);
     };
-  }, [process]);
+  }, [process, fitAndSync]);
 
   // ResizeObserver (only when active)
   useEffect(() => {
@@ -1362,12 +1390,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     let lastH = -1;
 
     const observer = new ResizeObserver(() => {
-      if (!active) return;
+      // Off screen (inactive, or the window hidden) the view does not size the PTY, so it does
+      // not fit: the box is left unrecorded and the return to screen fits + sends.
+      if (!active || !onScreen()) return;
       if (isTransitioningRef.current) return;
-
-      const term = terminalRef.current;
-      const fit = fitAddonRef.current;
-      if (!term || !fit) return;
 
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -1375,33 +1401,31 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       lastW = w;
       lastH = h;
 
-      try {
-        fit.fit();
-      } catch {
-        return;
-      }
-
-      if (container.offsetHeight && term.rows > 0) {
-        commitCellHeight(container.offsetHeight / term.rows);
-      }
-
-      // Rebuild VirtualTerminal with new dimensions and replay stored chunks
-      const snapshot = ptySyncRef.current.getSnapshot();
-      if (snapshot.adapter && snapshot.vt) {
-        const shell = shellRef.current;
-        if (shell) {
-          ptySyncRef.current.rebuild(shell.getPtyChunks());
-        }
-      }
-
+      // Fit and send TOGETHER, once the box settles: a fit whose send is dropped (the tab left
+      // within the debounce) left the xterm on a grid the PTY never got.
       if (resizeTimeoutRef.current) clearTimeout(resizeTimeoutRef.current);
       resizeTimeoutRef.current = setTimeout(() => {
-        const t = terminalRef.current;
-        if (!t) return;
-        if (!active) return;
-        if (isTransitioningRef.current) return;
-        handlePtyResize(t.cols, t.rows);
         resizeTimeoutRef.current = null;
+        if (isTransitioningRef.current) return;
+        fitAndSync();
+        // Rebuild VirtualTerminal with new dimensions and replay stored chunks
+        const term = terminalRef.current;
+        const shell = shellRef.current;
+        const snapshot = ptySyncRef.current.getSnapshot();
+        if (!term || !shell || !snapshot.adapter || !snapshot.vt) return;
+        const chunks = shell.getPtyChunks();
+        // Nothing to replay (an ended session let its window go): the VT keeps its last build.
+        if (!chunks.length) return;
+        const tRebuild = performance.now();
+        ptySyncRef.current.rebuild(chunks);
+        const rebuildMs = performance.now() - tRebuild;
+        // Replays the shell's chunk window (bounded, see PtyConnection) — only slow ones are logged.
+        if (rebuildMs > 50) {
+          toplog.log(
+            'pty',
+            `vt_rebuild_slow shell=${sessionId} chunks=${chunks.length} ms=${rebuildMs.toFixed(0)} size=${term.cols}x${term.rows}`,
+          );
+        }
       }, 250);
     });
 
@@ -1413,7 +1437,33 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         resizeTimeoutRef.current = null;
       }
     };
-  }, [active, handlePtyResize, sessionId, canUseDOM, terminalReady]);
+  }, [active, fitAndSync, sessionId, canUseDOM, terminalReady]);
+
+  // `tab_switch` warm chat: a return to a panel whose chat pane is already
+  // mounted is a visibility flip — nothing reloads, so no other point fires.
+  // Warm = shown, hidden, shown again. Keyed on having been HIDDEN, not on
+  // having run before: StrictMode runs the mount effect twice, and a "ran
+  // before" ref calls every fresh mount warm.
+  const wasHiddenRef = useRef(false);
+  useEffect(() => {
+    if (!active) {
+      wasHiddenRef.current = true;
+      return;
+    }
+    if (!wasHiddenRef.current) return; // first showing — SimpleChatPane logs the cold ready
+    wasHiddenRef.current = false;
+    if (!showSimpleChat || !toplog.isOn('tab_switch')) return;
+    const frame = requestAnimationFrame(() => {
+      if (claimTabSwitchReady()) {
+        toplog.log(
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`,
+        );
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per activation
+  }, [active]);
 
   // Active tab focus/refresh — skip scrollToBottom when navigating to a bookmark
   // so the bookmark scroll (pendingScrollLine) can land without being overridden.
@@ -1422,21 +1472,25 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!terminalReady) return;
 
     const term = terminalRef.current;
-    const fit = fitAddonRef.current;
-    if (!term || !fit) return;
+    if (!term) return;
 
     requestAnimationFrame(() => {
       try {
-        fit.fit();
+        // Fit + size the PTY; a view that drifted while off screen asks for a redraw here.
+        fitAndSync();
         if (!targetTimestamp) term.scrollToBottom();
         term.refresh(0, Math.max(0, term.rows - 1));
         focusTerminalUnlessEditingElsewhere(term, xtermContainerRef.current);
-        handlePtyResize(term.cols, term.rows);
+        // Warm = this panel already replayed its history; the refresh above is
+        // the whole switch. A panel still attaching logs its cold `ready` later.
+        if (shellReadyRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
+          toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=terminal mode=warm shell=${sessionId}`);
+        }
       } catch (e) {
         console.warn('[InteractiveTerminal] activate refresh failed:', e);
       }
     });
-  }, [active, terminalReady, sessionId, handlePtyResize, targetTimestamp]);
+  }, [active, terminalReady, sessionId, fitAndSync, targetTimestamp]);
 
   // Re-assert this view's geometry to the backend PTY. Needed because the same
   // PTY can be attached in another tab with a different container size; whoever
@@ -1445,17 +1499,31 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // even when it's unchanged locally, it differs from the backend's current
   // (other tab's) shape, so it triggers a SIGWINCH and repaints to our width.
   const reassertGeometry = useCallback(() => {
-    const term = terminalRef.current;
-    const fit = fitAddonRef.current;
-    if (!term || !fit) return;
-    if (isTransitioningRef.current) return;
-    try {
-      fit.fit();
-      handlePtyResize(term.cols, term.rows);
-    } catch (e) {
-      console.warn('[InteractiveTerminal] reassertGeometry failed:', e);
+    if (!isTransitioningRef.current) fitAndSync();
+  }, [fitAndSync]);
+
+  // The tab coming back on screen re-asserts its size: the window regaining focus
+  // or the browser tab turning visible changes neither `active` nor the layout,
+  // so nothing else would notice another client resized the PTY meanwhile. Off
+  // screen the view lets go, so a reconnect never re-asserts its stale grid.
+  useEffect(() => {
+    if (!terminalReady) return;
+    if (!active) {
+      shellRef.current?.releaseSize();
+      return;
     }
-  }, [handlePtyResize]);
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') shellRef.current?.releaseSize();
+      else reassertGeometry();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', reassertGeometry);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', reassertGeometry);
+    };
+  }, [active, terminalReady, reassertGeometry]);
+  useEffect(() => () => shellRef.current?.releaseSize(), []);
 
   const handleContainerClick = () => {
     terminalRef.current?.focus();
@@ -1490,71 +1558,37 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // "Paste path" from the Files tab: into the chat composer at its caret when
+  // chat mode is on (the composer is mounted only then, and the chat layer
+  // covers the PTY), else into the PTY.
+  const composerRef = useRef<CompactExecutionInputHandle>(null);
+  const handleInsertInputPath = useCallback((path: string) => {
+    if (composerRef.current) {
+      composerRef.current.insertAtCaret(path);
+      return;
+    }
+    void shellRef.current?.sendInput(shellQuote(path));
+    requestAnimationFrame(() => terminalRef.current?.focus());
+  }, []);
+
   // Simple-chat composer image paste — same upload + Files-tab-open behaviour as
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
   const handleChatPasteImages = useCallback(
-    async (incoming: File[]): Promise<string[]> => {
+    async (incoming: File[], { initialCaption }: { initialCaption?: string } = {}): Promise<string[]> => {
       if (!inputDirInfo || !incoming.length) return [];
       // Offer markup before the pasted image(s) are attached. Cancel aborts.
-      const files = await annotateImageFiles(incoming);
+      const { files, caption } = await annotateImageFiles(incoming, { initialCaption });
       if (!files.length) return [];
       const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       openSideTab(SideTabId.Files);
-      return files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      const refs = files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      // The caption is the user's own prompt text — it follows the refs as-is.
+      return caption ? [...refs, caption] : refs;
     },
     [inputDirInfo, openSideTab],
   );
-
-  // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
-  // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
-  // is a real lifecycle action now, not just a view flip — one standardized
-  // `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
-  // →chat kills the PTY worker, keeping the session, and reverts to headless
-  // routing. Both reconcile the transcript (clear + force-reload) so the
-  // destination view shows turns the other mode produced. The backend 409s a
-  // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
-  const [switching, setSwitching] = useState(false);
-  const handleToggleView = useCallback(async () => {
-    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
-    // backend 409s it). The button is disabled in that state; this is the
-    // belt-and-suspenders guard for any non-click caller.
-    if (!process || switching || !awaitingUserInput) return;
-    const toChat = !showSimpleChat; // currently terminal → go chat
-    setSwitching(true);
-    try {
-      if (toChat) {
-        await process.switchMode(WorkerMode.CLI);
-        setChatUiOverride('chat');
-      } else {
-        const dims = terminalRef.current
-          ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
-          : undefined;
-        await process.switchMode(WorkerMode.Interactive, dims);
-        setChatUiOverride('terminal');
-      }
-    } catch (err) {
-      console.error('[InteractiveTerminal] mode switch failed', err);
-      notify.error({
-        title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
-        message: err instanceof Error ? err.message : String(err),
-      });
-      setSwitching(false);
-      return;
-    }
-    // The TRANSPORT switch is done — re-enable the toggle now. The transcript
-    // reconcile (pull in turns the other mode produced) is a VIEW concern and is
-    // slow on a large session (the backend transcript parse), so DON'T hold the
-    // toggle disabled behind it — that wedged rapid switching. Reconcile in the
-    // background; the chat pane fills in when it resolves (and the live WS stream
-    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
-    // stream with the transcript (clears internally) — no separate clear needed.
-    setSwitching(false);
-    void process
-      .loadHistory({ force: true })
-      .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
-  }, [process, switching, showSimpleChat, awaitingUserInput]);
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
@@ -1593,7 +1627,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     }
     if (inputDirInfo) {
       panels[SideTabId.Files] = (
-        <InputFilesPanel computeNodeTypeId={inputDirInfo.computeNodeTypeId} inputDirAbsPath={inputDirInfo.absPath} />
+        <InputFilesPanel
+          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+          inputDirAbsPath={inputDirInfo.absPath}
+          onInsertPath={handleInsertInputPath}
+        />
       );
       if (process?.workdir || shellRef.current?.workdir) {
         panels[SideTabId.Dir] = (
@@ -1605,7 +1643,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     }
     return panels;
-  }, [process, inputDirInfo, sidecarShellId, mergedPrompts, scrollAnnotationToLine, dataContext.computeNode?.id]);
+  }, [
+    process,
+    inputDirInfo,
+    sidecarShellId,
+    mergedPrompts,
+    scrollAnnotationToLine,
+    dataContext.computeNode?.id,
+    handleInsertInputPath,
+  ]);
 
   const sideTabs = useMemo<TabDescriptor<SideTabId>[]>(
     () =>
@@ -1613,7 +1659,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const d = SIDE_TABS[id];
         return {
           id,
-          label: d.label,
+          label: t(d.label),
           icon: d.icon,
           closable: true,
           tooltip: (
@@ -1622,12 +1668,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               isPrompts={id === SideTabId.Prompts}
               lastPromptText={lastPromptText}
               promptCount={mergedPrompts.length}
-              fallback={d.description}
+              fallback={t(d.description)}
             />
           ),
         };
       }),
-    [sideWindowTabs, lastPromptText, mergedPrompts.length],
+    [sideWindowTabs, lastPromptText, mergedPrompts.length, t],
   );
 
   return (
@@ -1635,47 +1681,53 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
         {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
         {process && activePane === 'claude' && (
-          <ProcessToolbar
-            process={process}
-            traceFilters={traceFilters}
-            onTraceFiltersChange={setTraceFilters}
-            colVis={colVis}
-            onColVisChange={setColVis}
-            sessionStartTime={sessionStartTime}
-            lastMessageTime={lastMessageTime}
-            embedded={embedded}
-            onClose={onClose}
-            shell={shell}
-          />
+          <FrozenWhenHidden active={active}>
+            <ProcessToolbar
+              process={process}
+              traceFilters={traceFilters}
+              onTraceFiltersChange={setTraceFilters}
+              colVis={colVis}
+              onColVisChange={setColVis}
+              sessionStartTime={sessionStartTime}
+              lastMessageTime={lastMessageTime}
+              embedded={embedded}
+              onClose={onClose}
+              shell={shell}
+            />
+          </FrozenWhenHidden>
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
 
         {/* Runtime-error banner — populated by the shell-dock loader on soft
           ProcessLoadError (PTY dead, process stopped, project missing,
-          shell entity missing, network). Renders nothing when null. */}
-        <TerminalRuntimeErrorBanner />
+          shell entity missing, network). Renders nothing when null, and
+          nothing when the failure belongs to a DIFFERENT process: a plain
+          terminal passes no id and so never wears another session's error. */}
+        <TerminalRuntimeErrorBanner processId={process?.id} />
 
         <PtySyncProvider session={ptySyncRef.current}>
           {/* Column header — only for Claude pane; terminal debug chrome
             (trace/annotation/PTY-timing), hidden in Standard view and when the
             simple chat replaces the xterm. */}
           {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
-            <ColumnHeaderBar
-              showTrace={showGutter}
-              traceWidth={48}
-              totalTraceEvents={totalTraceEvents}
-              historicalCount={historicalCount}
-              liveCount={liveCount}
-              showTime={showTimeGutter}
-              timeWidth={timeGutterWidth}
-              traceFilters={traceFilters}
-              showAnnotations={showAnnotationGutter}
-              annotationsWidth={24}
-              annotationElements={annotationElements}
-              onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
-              onHideTime={() => setColVis({ ...colVis, time: false })}
-              onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
-            />
+            <FrozenWhenHidden active={active}>
+              <ColumnHeaderBar
+                showTrace={showGutter}
+                traceWidth={48}
+                totalTraceEvents={totalTraceEvents}
+                historicalCount={historicalCount}
+                liveCount={liveCount}
+                showTime={showTimeGutter}
+                timeWidth={timeGutterWidth}
+                traceFilters={traceFilters}
+                showAnnotations={showAnnotationGutter}
+                annotationsWidth={24}
+                annotationElements={annotationElements}
+                onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
+                onHideTime={() => setColVis({ ...colVis, time: false })}
+                onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
+              />
+            </FrozenWhenHidden>
           ) : null}
 
           <div className="flex min-h-0 flex-1">
@@ -1733,62 +1785,83 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     </div>
                   )}
                 </div>
+                {terminalLinks.menu}
                 {/* Gutters — absolutely positioned over padded areas */}
                 {showGutter && (
                   <div
                     className="absolute bottom-0 left-0 top-0"
                     style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}
                   >
-                    <TraceGutter
-                      entries={gutterEntries}
-                      totalTraceEvents={totalTraceEvents}
-                      historicalCount={historicalCount}
-                      liveCount={liveCount}
-                      viewportY={viewportY}
-                      rows={rows}
-                      cellHeight={metricsCellHeight}
-                      expanded={gutterExpanded}
-                      onOpen={() => setGutterExpanded(true)}
-                      onClose={() => setGutterExpanded(false)}
-                      hideCounter
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <TraceGutter
+                        entries={gutterEntries}
+                        totalTraceEvents={totalTraceEvents}
+                        historicalCount={historicalCount}
+                        liveCount={liveCount}
+                        viewportY={viewportY}
+                        rows={rows}
+                        cellHeight={metricsCellHeight}
+                        expanded={gutterExpanded}
+                        onOpen={() => setGutterExpanded(true)}
+                        onClose={() => setGutterExpanded(false)}
+                        hideCounter
+                      />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {showTimeGutter && (
                   <div className="absolute bottom-0 top-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
-                    <TimeGutter
-                      rows={timeGutterRows}
-                      cellHeight={metricsCellHeight}
-                      filters={traceFilters}
-                      ptySyncSession={ptySyncRef.current}
-                      viewportY={viewportY}
-                      refLines={ptySyncSnapshot.refLines}
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <TimeGutter
+                        rows={timeGutterRows}
+                        cellHeight={metricsCellHeight}
+                        filters={traceFilters}
+                        ptySyncSession={ptySyncRef.current}
+                        viewportY={viewportY}
+                        refLines={ptySyncSnapshot.refLines}
+                      />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {showAnnotationGutter && (
                   <div className="absolute bottom-0 right-0 top-0" style={{ width: 24, zIndex: 1 }}>
-                    <AnnotationGutter
-                      elements={annotationElements}
-                      viewportY={viewportY}
-                      rows={rows}
-                      cellHeight={metricsCellHeight}
-                      scrollToLine={scrollAnnotationToLine}
-                      createBookmark={createBookmark}
-                      createComment={createComment}
-                      deleteBookmark={deleteBookmark}
-                      onHoverRow={onAnnotationHoverRow}
-                      hideCounter
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <AnnotationGutter
+                        elements={annotationElements}
+                        viewportY={viewportY}
+                        rows={rows}
+                        cellHeight={metricsCellHeight}
+                        scrollToLine={scrollAnnotationToLine}
+                        createBookmark={createBookmark}
+                        createComment={createComment}
+                        deleteBookmark={deleteBookmark}
+                        onHoverRow={onAnnotationHoverRow}
+                        hideCounter
+                      />
+                    </FrozenWhenHidden>
+                  </div>
+                )}
+                {/* A held-back switch, either direction: says why the pane has
+                    not changed yet (renders nothing while nothing waits). */}
+                {!embedded && (
+                  <div className="absolute inset-x-0 top-0 z-[61]">
+                    <SurfaceSwitchWaitNotice processId={process?.id} />
                   </div>
                 )}
                 {/* Standard-view simple chat — opaque overlay above xterm +
                   gutters. The xterm stays mounted (and fitted) underneath so
                   toggling Advanced⇄Standard is instant and never resets the
                   terminal. Same session, same PTY (see SimpleChatPane). */}
-                {showSimpleChat && process && (
-                  <div className="absolute inset-0 z-[60]">
-                    <SimpleChatPane process={process} />
+                {mountChatPane && process && (
+                  <div
+                    className={showSimpleChat ? 'absolute inset-0 z-[60]' : 'invisible absolute inset-0 z-[60]'}
+                    aria-hidden={!showSimpleChat}
+                    data-testid="simple-chat-overlay"
+                    data-shown={showSimpleChat ? 'true' : 'false'}
+                  >
+                    <FrozenWhenHidden active={active && showSimpleChat}>
+                      <SimpleChatPane process={process} />
+                    </FrozenWhenHidden>
                   </div>
                 )}
               </div>
@@ -1802,6 +1875,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   activeTab={activeSideTab}
                   onActiveTabChange={selectSideTab}
                   onCloseTab={closeSideTab}
+                  onOpenChange={sideWindows.closeAll}
+                  closeLabel={t`Close all side tabs`}
+                  closeText={t`Close all`}
                   truncateLabels
                   scrollableTabs
                 >
@@ -1813,42 +1889,42 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             {/* Shell pane — full content area when active */}
             {activePane === 'shell' && sidecarShellId && (
               <PaneView>
-                <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
+                <ShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
               </PaneView>
             )}
           </div>
         </PtySyncProvider>
 
         {process && (
-          <TerminalBottomRibbon
-            fileCount={fileCount}
-            isActive={processIsActive}
-            promptCount={mergedPrompts.length}
-            lastPromptText={lastPromptText}
-            process={process}
-            openTabs={ribbonOpenTabs}
-            activeSideTab={ribbonActiveSideTab}
-            onOpenSideTab={(tab) => {
-              if (tab === SideTabId.Shell) {
-                void handleToggleSidecar();
-              } else {
-                toggleSideTab(tab);
+          <FrozenWhenHidden active={active}>
+            <TerminalBottomRibbon
+              fileCount={fileCount}
+              isActive={processIsActive}
+              promptCount={mergedPrompts.length}
+              lastPromptText={lastPromptText}
+              process={process}
+              openTabs={ribbonOpenTabs}
+              activeSideTab={ribbonActiveSideTab}
+              onOpenSideTab={(tab) => {
+                if (tab === SideTabId.Shell) {
+                  void handleToggleSidecar();
+                } else {
+                  toggleSideTab(tab);
+                }
+              }}
+              hasLastPlan={hasPlan}
+              onOpenLastPlan={handleOpenLastPlan}
+              artifacts={artifacts}
+              onOpenArtifact={handleOpenArtifact}
+              shown={shownStack}
+              onOpenShown={handleOpenShown}
+              composer={
+                showSimpleChat && process ? (
+                  <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />
+                ) : undefined
               }
-            }}
-            hasLastPlan={hasPlan}
-            onOpenLastPlan={handleOpenLastPlan}
-            markdownDocs={markdownDocs}
-            onOpenMarkdown={handleOpenMarkdown}
-            composer={
-              showSimpleChat && process ? (
-                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
-              ) : undefined
-            }
-            chatActive={showSimpleChat}
-            switching={switching}
-            toggleEnabled={awaitingUserInput}
-            onToggleView={canToggleView ? () => void handleToggleView() : undefined}
-          />
+            />
+          </FrozenWhenHidden>
         )}
       </div>
     </ChatPlanModeProvider>

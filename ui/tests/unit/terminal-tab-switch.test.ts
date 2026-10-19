@@ -12,6 +12,13 @@ import { describe, expect, it } from 'vitest';
 
 const tabbedTerminalPath = resolve(__dirname, '../../src/components/terminal/TabbedTerminal.tsx');
 const tabbedTerminalSource = readFileSync(tabbedTerminalPath, 'utf-8');
+// The panel (xterm host) and the pool that keeps panels alive for the life of
+// their tab were split out of TabbedTerminal, which is now a slot of the pool.
+const terminalPanelSource = readFileSync(
+  resolve(__dirname, '../../src/components/terminal/TerminalPanel.tsx'),
+  'utf-8',
+);
+const terminalPoolSource = readFileSync(resolve(__dirname, '../../src/components/terminal/TerminalPool.tsx'), 'utf-8');
 
 // Creation flows and opener descriptors moved into the strip controller
 // extracted from TabbedTerminal (tab-management.md Part 3 §6).
@@ -55,18 +62,19 @@ describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
     // visibility:hidden keeps inactive terminals in layout so xterm canvas can
     // initialize with real dimensions — display:none would break this. (The
     // per-panel style lives in the TerminalPanel subcomponent.)
-    expect(tabbedTerminalSource).toContain("visibility: 'hidden'");
-    expect(tabbedTerminalSource).not.toContain('display: none');
+    expect(terminalPanelSource).toContain("visibility: 'hidden'");
+    expect(terminalPanelSource).not.toContain('display: none');
   });
 
   it('passes active prop to terminal components', () => {
-    expect(tabbedTerminalSource).toContain('active={isActive}');
+    expect(terminalPanelSource).toContain('active={isActive}');
   });
 
-  it('keeps mounted terminals warm (lazy-mount set never shrinks)', () => {
-    // Once mounted, a panel stays mounted (the `mounted` set only grows), so
-    // re-activation is instant and PTY/canvas state is preserved.
-    expect(tabbedTerminalSource).toContain('keep mounted ones');
-    expect(tabbedTerminalSource).toContain('mounted.has(tabHash)');
+  it('keeps mounted terminals warm (the pool renders every panel ever shown)', () => {
+    // Once shown, a panel is rendered by the pool until its tab closes, so
+    // re-activation is instant and PTY/canvas state is preserved. The DOM-level
+    // proof lives in terminal-survives-layout-swap / terminal_tab_switch_keeps_xterm_mounted.
+    expect(terminalPoolSource).toContain('snapshot.mounted.has(tabKey(tab))');
+    expect(tabbedTerminalSource).toContain('terminalPool.show(slot, shownKey, host)');
   });
 });

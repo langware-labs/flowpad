@@ -33,8 +33,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from flow_sdk.actions import action
+from flow_sdk.assets.translations import ensure_placeholder, normalize_lang
 from flow_sdk.builtin.claude_memory_entities import Markdown, Translation
-from flow_sdk.fs_store.operations.translation import ensure_placeholder, normalize_lang
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
@@ -102,7 +102,10 @@ async def add_translation() -> ApiResponse:
             existing.process_id = process_id
         entry = existing
     else:
-        ref = ensure_placeholder(entity.get_type(), str(entity.id), lang)
+        from flow_sdk.fs_store.fs_ref import FSRef
+        from flow_sdk.fs_store.record_paths import data_dir_for
+
+        ref = FSRef(ensure_placeholder(data_dir_for(entity.get_type(), str(entity.id)), lang))
         entry = Translation(lang=lang, ref=ref, process_id=process_id)
         entity.translations.append(entry)
 

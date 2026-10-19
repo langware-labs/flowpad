@@ -39,6 +39,20 @@ describe('MessageAttachment actions', () => {
     expect(lastAction(spy).bodyParameters).toEqual({ scope: 'user', project_id: null, overwrite: true });
   });
 
+  it("install(user, …, {name}) sends the receiver's name for a project whose own is taken", async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
+    const ma = new MessageAttachment({ id: MA_ID });
+
+    await ma.install('user', undefined, { name: 'course-2' });
+
+    expect(lastAction(spy).bodyParameters).toEqual({
+      scope: 'user',
+      project_id: null,
+      overwrite: false,
+      name: 'course-2',
+    });
+  });
+
   it('uninstall POSTs the uninstall action on the entity', async () => {
     const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
     const ma = new MessageAttachment({ id: MA_ID });
@@ -51,20 +65,15 @@ describe('MessageAttachment actions', () => {
     expect(action.targetEntity?.toString()).toBe(`message_attachment-${MA_ID}`);
   });
 
-  it('listStagedFiles / readStagedFile GET the staged read surface', async () => {
+  it('listStagedFiles GETs the staged read surface', async () => {
     const spy = vi
       .spyOn(dataManager, 'callAction')
-      .mockResolvedValue({ files: [], main_file: null, root: '', abs_root: '/tmp/x' } as never);
+      .mockResolvedValue({ files: [], main_file: null, asset_root: null, root: '', abs_root: '/tmp/x' } as never);
     const ma = new MessageAttachment({ id: MA_ID });
 
     await ma.listStagedFiles();
     expect(lastAction(spy).name).toBe('staged-files');
     expect(lastAction(spy).method).toBe('GET');
-
-    await ma.readStagedFile('SKILL.md');
-    const action = lastAction(spy);
-    expect(action.name).toBe('staged-file-content');
-    expect(action.queryParameters).toEqual({ path: 'SKILL.md' });
   });
 
   it('targetTypeId + installed getters', () => {

@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
 from flow_sdk.transcript_analyzer.entry import TranscriptEntry
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
+
+T = TypeVar("T")
 
 
 class TranscriptStreamer:
@@ -56,6 +60,19 @@ class TranscriptStreamer:
         async with self._lock:
             self.last_activity = time.monotonic()
             return await asyncio.to_thread(self.transcript.parse_delta)
+
+    async def read(self, fn: Callable[[AgentTranscriptFile], T]) -> T:
+        """Run ``fn(transcript)`` while no delta is being parsed, and return its result.
+
+        A parse mutates rows the transcript has already published: Claude's
+        keep-last usage dedup zeroes an earlier snapshot's rows in place before
+        re-emitting them. A reader that sums ``usage`` during a parse can see
+        totals dip; under the lock the walk is exact. ``fn`` is synchronous and
+        runs on the event loop — keep it to a walk, and never call back into
+        this streamer from it (the lock is not re-entrant).
+        """
+        async with self._lock:
+            return fn(self.transcript)
 
     async def force_reparse(self) -> list[TranscriptEntry]:
         """Reset offset to 0 and re-emit the full file as one delta. Debug knob."""

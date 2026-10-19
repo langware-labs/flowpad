@@ -1,0 +1,10 @@
+{
+  "name": "eval-browser",
+  "title": "Eval browser",
+  "description": "Browse a dataset's eval runs -- metrics, slices, issues grouped by cause, down to one example's gold vs prediction.",
+  "kind": "application.web.editor",
+  "build": ".",
+  "edits": [
+    "dataset"
+  ]
+}

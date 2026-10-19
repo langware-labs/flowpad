@@ -14,8 +14,8 @@
 # already-trusted wheel/app context.
 #
 # Env:
-#   CSC_NAME                      Developer ID identity
-#                                 (default: "Langware Labs LTD (4FR748HA36)")
+#   CSC_NAME                      Developer ID identity (required), e.g.
+#                                 "Developer ID Application: <Name> (<TEAMID>)"
 #   APPLE_ID                      Apple ID email (notarization)
 #   APPLE_APP_SPECIFIC_PASSWORD   app-specific password (notarization)
 #   APPLE_TEAM_ID                 Apple Developer Team ID (notarization)
@@ -31,7 +31,13 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 RUST_DIR="${PROJECT_DIR}/flow_sdk/rust"
 OUT_DIR="${PROJECT_DIR}/flow_sdk/rust/bin/darwin"
 DEST="${OUT_DIR}/flow-rs"
-CSC_NAME="${CSC_NAME:-Langware Labs LTD (4FR748HA36)}"
+CSC_NAME="${CSC_NAME:-}"
+
+if [[ -z "$CSC_NAME" ]]; then
+  echo "Error: CSC_NAME not set — the Developer ID identity to sign with." >&2
+  echo "       Check: security find-identity -v -p codesigning" >&2
+  exit 1
+fi
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "Error: sign_flow_rs_macos.sh must run on macOS." >&2

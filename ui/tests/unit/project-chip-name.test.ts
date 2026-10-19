@@ -1,18 +1,18 @@
 /**
  * Unit tests for `resolveProjectChipName` — the pure name-resolution behind the
- * tab-strip project chip. It shows the current project's name alongside the
- * open-projects/terminals counts: prefer the explicit prop, else fall back to
- * the matching open bucket's display name, else null (counts-only chip).
+ * nav bar's project chip (RuntimeChip via `useProjectListMenu`): prefer the
+ * explicit name, else fall back to the matching open bucket's display name,
+ * else null (the chip then shows the runtime's word).
  */
 import { describe, expect, it } from 'vitest';
-import { resolveProjectChipName } from '@src/components/terminal/ProjectsCounterChip';
-import type { TabProjectBucket } from '@src/tabs/useTabs';
+import { resolveProjectChipName } from '@src/components/terminal/project-list-menu';
+import type { TabProjectBucket } from '@src/tabs/use-tab-manager';
 
 // Minimal bucket shapes — resolveProjectChipName only reads projectId + project.
 const bucket = (projectId: string, name: string | null): TabProjectBucket =>
   ({
     projectId,
-    project: name === null ? null : ({ getDisplayName: () => name, name } as any),
+    project: name === null ? null : ({ displayName: name, name } as any),
     tabCount: 0,
     state: 'live',
   } as unknown as TabProjectBucket);
@@ -31,7 +31,7 @@ describe('resolveProjectChipName', () => {
     expect(resolveProjectChipName(null, 'p2', buckets)).toBe('Beta');
   });
 
-  it('uses the bucket display name (getDisplayName) over the raw id', () => {
+  it('uses the bucket display name over the raw id', () => {
     expect(resolveProjectChipName('', 'p9', [bucket('p9', 'Pretty Name')])).toBe('Pretty Name');
   });
 

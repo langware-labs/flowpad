@@ -9,9 +9,11 @@ export type ContactIdentity = ContactKey & { name?: string | null };
  *  has neither a user id nor an email (nothing to key permissions on). Accepts
  *  any row carrying the three snake_case fields, so both the conversation
  *  participant list and the member roster share one implementation. */
-export function contactFromParticipant(
-  row: { user_id?: string | null; email?: string | null; name?: string | null },
-): ContactIdentity | null {
+export function contactFromParticipant(row: {
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+}): ContactIdentity | null {
   const userId = row.user_id?.trim() || null;
   const email = row.email?.trim() || null;
   const name = row.name?.trim() || null;
@@ -21,6 +23,17 @@ export function contactFromParticipant(
 
 export function participantLabel(participant: ConversationParticipant | null | undefined): string {
   return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
+}
+
+/** The second line under a person's name in a list: their email, when a name
+ *  is the label (else the email IS the label) and an email is known. The hub
+ *  never discloses another member's email, so a hub-only contact has none. */
+export function participantSubtitle(
+  participant: { name?: string | null; email?: string | null } | null | undefined,
+): string | null {
+  const name = participant?.name?.trim();
+  const email = participant?.email?.trim();
+  return name && email ? email : null;
 }
 
 /** Name-only display — never the full email. Falls back to the email's local
@@ -97,10 +110,16 @@ export function participantRoleLabel(participant: ConversationParticipant | null
 }
 
 /** Standard role ladder, highest first — mirrors the hub's ``ROLE_RANK``
- *  (``flowpad/hub/core/auth/role_hierarchy.py``), the single source of truth
+ *  (``hub role_hierarchy.py``), the single source of truth
  *  the hub's ``can_assign`` gate enforces. Index = rank (lower index = more
  *  privileged). Custom/unknown roles rank as ``null`` (not on the ladder). */
 const ROLE_LADDER = ['owner', 'full-access', 'admin', 'editor', 'member', 'reader', 'guest'] as const;
+
+/** The ladder as a plain list, highest first. Exported for surfaces that pick a
+ *  role with no member row to rank against -- e.g. the child-access editor,
+ *  whose `from_role` is a role held on the PARENT and so has no participant to
+ *  compare with. Assignment ceilings still apply server-side. */
+export const LADDER_ROLES: readonly string[] = ROLE_LADDER;
 
 /** Rank of a single standard role (0 = owner), or null for custom/unknown. */
 function roleRank(role: string | null | undefined): number | null {
@@ -125,6 +144,11 @@ export function participantRank(participant: ConversationParticipant | null | un
  *  non-membership ``full-access``/``guest`` (rankable, never assignable). */
 const ASSIGNABLE_ROLES = ['admin', 'editor', 'member', 'reader'] as const;
 
+/** Roles a rule may CONFER, before the caller's own ceiling narrows it. Same
+ *  list `assignableRoles` filters, exported for the same reason as
+ *  `LADDER_ROLES`. */
+export const CONFERRABLE_ROLES: readonly string[] = ASSIGNABLE_ROLES;
+
 /** Roles the caller may assign to a given member, mirroring the hub's
  *  ``can_assign`` ceiling: assigned role strictly below the caller's rank AND
  *  the member's current rank strictly below the caller's; never self, never a
@@ -143,21 +167,58 @@ export function assignableRoles(
   return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
 }
 
-/** True when the caller may invite new members: the hub policy grants the
- *  mutating ``members`` action to admin and above (owner via the default
- *  ``owner: *`` policy). */
-export function canInviteMembers(me: ConversationParticipant | null | undefined): boolean {
-  const rank = participantRank(me);
-  return rank !== null && rank <= (roleRank('admin') as number);
+/**
+ * Roles the caller may confer on someone NEW, mirroring the same `can_assign` ceiling
+ * `assignableRoles` applies to an existing member: strictly below the caller's own rank.
+ *
+ * Separate from `assignableRoles` because an invite has no target yet — no current rank to compare
+ * against and no `user_id` to select — so that function correctly bails, and a picker built on it
+ * would offer nothing. The ceiling is the half that still applies, and it is the half that matters:
+ * an organization's admin inviting someone must not be offered `admin`, because the hub refuses to
+ * grant a role at or above the granter's own. Offering it produced a dropdown whose top entry
+ * always failed.
+ */
+export function grantableRoles(me: ConversationParticipant | null | undefined): string[] {
+  const myRank = participantRank(me);
+  // An unknown standing grants nothing. Both call sites already render the picker only once the
+  // roster has resolved (`canInviteMembers` is false without a rank, and the share panel waits for
+  // `ready`), so this is unreachable in practice -- and answering "the whole ladder" when we do not
+  // know who is asking is the wrong direction to guess in.
+  if (myRank === null) return [];
+  return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
 }
 
-/** First-letter initials for the avatar fallback. Strips non-letters and
- *  caps at two characters. Falls back to "?" so the avatar never goes blank. */
+/** True when the caller may invite new members: the hub policy grants the
+ *  mutating ``members`` action to admin and above (owner via the default
+ *  ``owner: *`` policy). ``lowestInviter`` lowers that line for an entity whose
+ *  policy opens invites further down — ``editor`` on a project, ``member`` on a
+ *  DIRECT conversation (the hub lets a member invite a member there). */
+export function canInviteMembers(
+  me: ConversationParticipant | null | undefined,
+  lowestInviter: (typeof ROLE_LADDER)[number] = 'admin',
+): boolean {
+  const rank = participantRank(me);
+  return rank !== null && rank <= (roleRank(lowestInviter) as number);
+}
+
+/** Initials of any display label — the avatar fallback for participants AND
+ *  non-participant identities (an Agent). Splits on separators, caps at
+ *  `maxChars`, and falls back to "?" so the avatar never goes blank. */
+export function initialsFromLabel(label: string | null | undefined, maxChars: 1 | 2 = 2): string {
+  const text = (label ?? '').trim();
+  if (!text) return '?';
+  const parts = text.split(/[\s@._-]+/).filter(Boolean);
+  const initials =
+    parts.length === 0
+      ? text.slice(0, 1)
+      : parts.length === 1
+        ? parts[0].slice(0, maxChars)
+        : parts[0][0] + parts[1][0];
+  return initials.slice(0, maxChars).toUpperCase();
+}
+
+/** First-letter initials for the participant avatar fallback. */
 export function participantInitials(participant: ConversationParticipant | null | undefined): string {
   const label = participantLabel(participant);
-  if (!label || label === 'unknown') return '?';
-  const parts = label.split(/[\s@._-]+/).filter(Boolean);
-  if (parts.length === 0) return label.slice(0, 1).toUpperCase();
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
+  return !label || label === 'unknown' ? '?' : initialsFromLabel(label);
 }

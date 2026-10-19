@@ -1,0 +1,43 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "title": {
+      "shape": "string",
+      "description": "What the mock shows, in a few words."
+    },
+    "goal": {
+      "shape": "?string",
+      "description": "The question the mock is meant to settle."
+    },
+    "mode": {
+      "shape": "enum:fast|real",
+      "description": "fast: drawn in the product's tokens; real: built from the running app's captured DOM."
+    },
+    "app_url": {
+      "shape": "?string",
+      "description": "Where the mock is served (its Flowpad web app URL)."
+    },
+    "folder": {
+      "shape": "?string",
+      "description": "The mock's web app folder in the mock project (absolute; never the repo) — the review panel's Open folder shows it."
+    },
+    "repo": {
+      "shape": "?string",
+      "description": "The repo the mock is about (absolute). Save to repo copies the mock into <repo>/agentic-assets/webapp/mock-<slug>/."
+    },
+    "session": {
+      "shape": "?string",
+      "description": "The agentic process that builds the mock — where submitted feedback is sent."
+    },
+    "status": {
+      "shape": "enum:draft|in_review|submitted|revised",
+      "description": "draft: being built; in_review: shown, collecting feedback; submitted: feedback sent; revised: the mock changed after feedback."
+    },
+    "journey": {
+      "shape": [
+        "mockify.step"
+      ],
+      "description": "The screens, in journey order; a branch follows the step it branches from."
+    }
+  }
+}

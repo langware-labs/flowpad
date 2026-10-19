@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { ReactElement } from 'react';
-import { videoSource } from '@src/components/conversation/AttachmentChip';
+import { videoSource } from '@src/components/ui/media-lightbox';
 
 const typeOf = (name: string): string | undefined =>
   (videoSource('blob:x', name) as ReactElement<{ type?: string }>).props.type;

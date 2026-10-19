@@ -152,6 +152,9 @@ describe('e2b_sandbox_pty', () => {
     }
 
     await apiTestSetup(info, context.task.name);
+    // `sandbox_available` rides the deferred runtime info, not the bootstrap body: read it the
+    // way the app's loader does before gating, or the suite skips on every backend.
+    dataContext.applyInfo(await dataManager.info());
 
     // Skip the whole suite when the backend has no E2B_KEY configured.
     if (!dataContext.bootstrapInfo?.sandbox_available) {

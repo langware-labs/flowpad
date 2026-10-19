@@ -4,8 +4,12 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
-async function bootstrapData(request: APIRequestContext) {
-  const res = await request.get(`${API}/api/v1/graph/bootstrap`);
+// The sniffer state (sniffer_hook / sniffer_installed) is served by the deferred
+// /api/v1/graph/info route, not /graph/bootstrap (split out of bootstrap so boot
+// does not wait on it; see docs/boot.md).
+
+async function infoData(request: APIRequestContext) {
+  const res = await request.get(`${API}/api/v1/graph/info`);
   expect(res.status()).toBe(200);
   const body = await res.json();
   return body.data as Record<string, unknown>;
@@ -17,16 +21,16 @@ async function bootstrapData(request: APIRequestContext) {
 // shipped default-off contract.
 test.describe('Sniffer — bootstrap default-off contract', () => {
   test('1: bootstrap reflects the default-off sniffer contract', async ({ request }) => {
-    const data = await bootstrapData(request);
+    const data = await infoData(request);
     expect(data, 'bootstrap has a data object').toBeTruthy();
     expect('sniffer_hook' in data, 'data has a sniffer_hook key').toBe(true);
     expect(data.sniffer_hook, 'sniffer_hook is null when the instance gate is off').toBeNull();
   });
 
   test('2: bootstrap is stable across calls (no auto-install side effect)', async ({ request }) => {
-    const first = await bootstrapData(request);
+    const first = await infoData(request);
     expect(first.sniffer_hook).toBeNull();
-    const second = await bootstrapData(request);
+    const second = await infoData(request);
     expect(second.sniffer_hook, 'reading bootstrap never silently enables the sniffer').toBeNull();
   });
 });

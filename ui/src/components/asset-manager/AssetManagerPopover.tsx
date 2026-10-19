@@ -1,113 +1,96 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
-  AgenticProcess,
   assetDescriptorHasUsage,
-  assetSourceLabel,
+  dataContext,
   dataManager,
-  FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
   isTypeId,
   Project,
   QueryRequest,
   TypeId,
-  ActionInfo,
-  GitWorkdir,
+  VFSPath,
+  type Agent,
   type AssetDescriptor,
 } from '@sdk';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@src/components/ui/popover';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
-import { Button } from '@src/components/ui/button';
-import { Textarea } from '@src/components/ui/textarea';
+import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { AgentTypeChip } from '@src/components/agents/AgentIntroCard';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { useProcessAssets } from './useProcessAssets';
+import { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
+import { assetBoardScope, BOARD_SCOPES, loadShownScopes, saveShownScopes, type BoardScope } from './board-scope';
+import { AssetScopeToggles } from './AssetScopeToggles';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { WikiTip } from '@src/components/wiki-tip';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
-import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { EntityIcon, useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
 import {
   basename as _basename,
-  displayLabelForTypeid as _displayLabelForTypeid,
-  improvableMainFile,
+  descriptorKey,
+  displayLabelForDescriptor as _displayLabelForDescriptor,
   isOpenableTypeid as _isOpenableTypeid,
-  makeIconForType,
-  normalizePath,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+
 import { cn } from '@src/lib/utils';
-import { invalidateGitStatus } from '@src/lib/git-status-cache';
-import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
-import { notify } from '@src/notifications';
-import type { WorkerType as TranscriptWorkerType } from '@src/hooks/use-transcript';
 import {
-  launchAssetAnalysis,
-  launchAssetCorrect,
-  waitForAssetAnalysisResult,
-} from '@src/components/assets/editor/skill/skill-eval-analysis';
-import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, GitCommitHorizontal, Loader2, Lock, Plus, Search, Sparkles, WandSparkles, X, type LucideIcon } from 'lucide-react';
+  ArrowLeft,
+  ArrowDownAZ,
+  Boxes,
+  ChevronRight,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  Loader2,
+  Plus,
+  Search,
+  Sparkles,
+  SquareArrowOutUpRight,
+  WandSparkles,
+  X,
+} from 'lucide-react';
 
 /** The wiki page behind the improve wand's tip. */
 const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
-
-interface AssetImproveTarget {
-  descriptor: AssetDescriptor;
-  assetKey: string;
-  assetTypeid: string;
-  assetPath: string;
-  assetLabel: string;
-  assetType: string;
-  workdir: string;
-  file: string;
-  folderBacked: boolean;
-  computeNodeId: string;
-}
-
-function dirname(path: string): string {
-  const n = normalizePath(path);
-  const idx = n.lastIndexOf('/');
-  return idx >= 0 ? n.slice(0, idx) || '/' : '.';
-}
-
-function descriptorKey(descriptor: AssetDescriptor): string {
-  return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
-}
 
 /**
  * One column template, applied identically to every row (asset rows and dir
  * rows alike) so cells line up down the list:
  *
- *   name chip │ scope icon │ scope name │ wand │ detach
+ *   name chip │ scope (icon + name) │ explorer │ wand │ select
  *
- * Deliberately not CSS subgrid: a row carries its own background (used rows are
- * tinted) and bottom border, which `display: contents` would throw away. Fixed
- * tracks on a fixed-width popover align by construction, and cost nothing.
+ * Deliberately not CSS subgrid: a row carries its own background (selected rows
+ * are tinted) and bottom border, which `display: contents` would throw away.
+ * Fixed tracks align by construction, and cost nothing.
  *
  * The corollary is that optional cells still have to occupy their track — see
- * `GridCellSpacer`. Rows whose wand or detach button is absent were the whole
+ * `GridCellSpacer`. Rows whose wand or un-select button is absent were the whole
  * reason nothing lined up before.
+ *
+ * The track widths live in styles/index.css (`.asset-grid-row`) because they
+ * respond to the row's width: a narrow host gets the dense layout, where the
+ * scope name drops out and only its icon remains. A grid can't container-query
+ * itself, so the outer div is the container and the inner one is the grid.
  */
-const ASSET_GRID_ROW = 'grid grid-cols-[minmax(0,1fr)_1.25rem_5.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
+function AssetGridRow({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('asset-grid-row-host border-b last:border-b-0', className)} {...rest}>
+      <div className="asset-grid-row grid items-center gap-2 px-3 py-1.5">{children}</div>
+    </div>
+  );
+}
 
 /** Holds a grid track open where an optional cell isn't rendered. */
 function GridCellSpacer() {
@@ -135,7 +118,7 @@ function AssetSectionRule({ testid, children }: { testid: string; children: Reac
 function AssetTypeHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
   return (
     <div
-      className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-primary/70"
+      className="px-3 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-foreground/80"
       data-testid={testid}
     >
       {children}
@@ -143,199 +126,207 @@ function AssetTypeHeader({ testid, children }: { testid: string; children: React
   );
 }
 
-function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
-  const w = (workerType ?? 'claude').toLowerCase();
-  if (w.includes('codex')) return 'codex';
-  if (w.includes('copilot')) return 'copilot';
-  if (w.includes('workflow')) return 'workflow';
-  return 'claude';
+export interface AssetManagerPopoverProps {
+  /** The popover trigger; passed to PopoverTrigger asChild. Ignored when `centered`. */
+  trigger?: React.ReactNode;
+  /** Controlled open state. Omit to let the popover manage its own. */
+  open?: boolean;
+  /** Required alongside `open`. */
+  onOpenChange?: (open: boolean) => void;
+  /**
+   * Preferred side to open on. Defaults to `'bottom'`. Pass `'top'` when the
+   * trigger sits near the bottom of the viewport (e.g. a message composer) so
+   * the list opens upward. Collision detection still flips it back if there's
+   * no room. Ignored when `centered`.
+   */
+  side?: 'top' | 'bottom';
+  /**
+   * Render as a centered modal dialog instead of a popover anchored to the
+   * trigger. Use when the trigger is incidental (a fan-out menu item) or when
+   * the surface must escape an enclosing menu.
+   */
+  centered?: boolean;
+  /** Placeholder for the filter box. */
+  searchPlaceholder?: string;
+
+  /**
+   * Host-owned asset list. Omit and the popover fetches the project-wide
+   * staging list itself. Process-backed hosts pass their own
+   * `useProcessAssets(process, …)` so EMBEDDED / ADDITIONAL_DIR / usage state
+   * is present.
+   */
+  assets?: UseProcessAssetsResult;
+  /**
+   * The Agent this process was launched through (`useLaunchingAgent`). Pinned
+   * at the top of the list as the run's principal — avatar + name, click opens
+   * the agent. Absent for a process not spawned from an Agent.
+   */
+  agent?: Agent | null;
+  /** Restrict the visible candidates. Default: everything the source returned. */
+  filter?: (descriptor: AssetDescriptor) => boolean;
+
+  // ── selection: status in, actions out ──────────────────────────────────
+  /**
+   * Already-chosen assets, keyed by TYPEID. Keying by typeid rather than
+   * (typeid, source) is deliberate: attaching a `user_dir` asset makes a second
+   * `embedded` row appear, and both must read as selected.
+   */
+  selectedTypeIds?: readonly string[];
+  /**
+   * A row was chosen. Receives the whole descriptor — hosts that only want the
+   * ref read `d.typeid`, while pick surfaces need `posix_path`/`source`.
+   *
+   * Optional: omitting it makes the surface a READ-ONLY board — no select
+   * control renders at all, and the two sections read purely as "what this run
+   * used" vs "what is available". That is what the process asset manager wants;
+   * pick surfaces (composer attach, favorites, automation rail) supply it.
+   */
+  onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
+  /**
+   * A selected row was un-chosen. Absent ⇒ this is a one-shot surface: no
+   * un-select control, and the list closes after a pick. Supplying it is what
+   * makes the surface multi-select, so the two can't fall out of step.
+   */
+  onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
+  /**
+   * Opening a row (its name chip) shows the asset in a NEW window rather than this one. For a host
+   * that holds unsaved input -- a form's Attach -- where leaving the screen would discard it.
+   */
+  openInWindow?: boolean;
+
+  // ── process-derived status (props) ─────────────────────────────────────
+  /** Whether the Flowpad Assistant is mounted. Labels the "+" menu's
+   *  mount/unmount item; `onToggleAssistant` is what makes it render. */
+  assistantEnabled?: boolean;
+  /** The run's worker (`claude_code`, `codex`, …) — names the worker scope toggle. */
+  workerType?: string | null;
+  /** Directories mounted into the process via `--add-dir`. */
+  additionalDirs?: readonly string[];
+  /** `descriptorKey()` of the asset whose improvement is currently running. */
+  improveBusyKey?: string | null;
+  /**
+   * Whether an asset can actually be improved. Supplied by the host because it
+   * owns the improve flow (and the type registry it consults) — deriving it
+   * here too would let the wand appear on rows the host then refuses.
+   */
+  canImprove?: (descriptor: AssetDescriptor) => boolean;
+
+  // ── actions (events) — each one also gates its own affordance ──────────
+  onToggleAssistant?: () => void | Promise<void>;
+  onAddFolder?: () => void | Promise<void>;
+  onRemoveDir?: (path: string) => void | Promise<void>;
+  onAddProjectDir?: (path: string) => void | Promise<void>;
+  onImprove?: (descriptor: AssetDescriptor) => void;
 }
 
-interface AssetManagerPopoverProps {
-  /** Process whose assets we are managing. Null before first-send. */
-  process: AgenticProcess | null;
-  /** Currently-attached refs (typeid strings). For pre-process staging. */
-  attachedRefs: string[];
-  onAttach: (ref: string) => void | Promise<void>;
-  onDetach: (ref: string) => void | Promise<void>;
-  /** The popover trigger; passed to PopoverTrigger asChild. */
-  trigger: React.ReactNode;
-  /** Optional extra content rendered below the assets table (e.g. project selector). */
-  footer?: React.ReactNode;
-}
+/** Shared empty default — a stable identity, so optional array props don't
+ *  invalidate the memos that depend on them on every render. */
+const NONE: readonly string[] = [];
 
 /**
- * Reusable asset-management popover. Driven by `process.getAssets()`.
+ * Skills + agents only — the candidate set for "run something on this".
+ * Workflows are deliberately excluded: they are runnable themselves rather than
+ * embeddable into another process.
+ */
+export const RUNNABLE_ASSETS = (d: AssetDescriptor): boolean =>
+  d.typeid.startsWith('skill-') || d.typeid.startsWith('subagent-');
+
+/**
+ * Reusable asset list popover.
+ *
+ * Purely presentational: it renders the descriptor list it is given and emits
+ * events. Everything that reads or mutates an `AgenticProcess` lives in the
+ * host (see `AssetManagerButton`), which passes the resulting status down as
+ * props. An affordance renders iff the callback implementing it was supplied.
  *
  * Each row is a single ``(typeid, source)`` descriptor. The same typeid may
  * appear multiple times with different sources (e.g. a skill that's both
- * EMBEDDED and USER_DIR). The attach/detach toggle on a row writes to the
- * process's `embedded_asset_refs`; the EMBEDDED row appears after attach.
+ * EMBEDDED and USER_DIR), and selection is keyed by typeid so every row for one
+ * asset reads as selected together.
  */
 export function AssetManagerPopover({
-  process,
-  attachedRefs,
-  onAttach,
-  onDetach,
   trigger,
-  footer,
+  open: controlledOpen,
+  onOpenChange,
+  side = 'bottom',
+  centered = false,
+  searchPlaceholder,
+  assets,
+  agent = null,
+  filter,
+  selectedTypeIds = NONE,
+  onPick,
+  onUnpick,
+  openInWindow = false,
+  assistantEnabled,
+  additionalDirs = NONE,
+  improveBusyKey = null,
+  canImprove,
+  workerType,
+  onToggleAssistant,
+  onAddFolder,
+  onRemoveDir,
+  onAddProjectDir,
+  onImprove,
 }: AssetManagerPopoverProps) {
   const { t } = useLingui();
-  const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<'list' | 'add' | 'pick-project'>('list');
-  const [query, setQuery] = useState('');
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (isControlled) onOpenChange?.(next);
+      else setUncontrolledOpen(next);
+    },
+    [isControlled, onOpenChange],
+  );
+  const [view, setView] = useState<'list' | 'pick-project'>('list');
   const [listFilter, setListFilter] = useState('');
   const [sortBy, setSortBy] = useState<'scope' | 'name'>('scope');
-  const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
-  const [fixText, setFixText] = useState('');
-  // The improve input dialog — on submit it genie-flies into the footer's
-  // process chip (where the named "Improve <asset>" worker then appears), so the
-  // run visibly moves to the footer instead of vanishing behind a toast.
-  const improveDialogRef = useRef<HTMLDivElement | null>(null);
-  const [busyAssetKey, setBusyAssetKey] = useState<string | null>(null);
-  const [dirtyImprove, setDirtyImprove] = useState<{ target: AssetImproveTarget; issueRequest: string } | null>(null);
-  const [processHydrationVersion, setProcessHydrationVersion] = useState(0);
-  const [hydratedTranscriptIdentity, setHydratedTranscriptIdentity] = useState<{
-    sessionId: string | null;
-    workerType: string | null;
-  }>({ sessionId: null, workerType: null });
-  const hydratedProcessIds = useRef<Set<string>>(new Set());
 
-  const dataCtx = useDataContext();
-  const { navigation } = useDockNavigation();
+  // No host list supplied (a pick surface with no process): fetch the
+  // project-wide staging list ourselves. `enabled` is false whenever the host
+  // owns the data, so only one fetch is ever in flight.
+  const ownAssets = useProcessAssets(null, { enabled: open && !assets });
 
-  // Subscribe to entity-field changes (additional_dirs, restart_required,
-  // load_flowpad_assistant, …) so the popover re-renders when the backend
-  // mutates them in place. The snapshot folds in `load_flowpad_assistant` so
-  // the header toggle + location marker re-render even when the process isn't
-  // RUNNING (i.e. `restart_required` doesn't move).
-  const processSnapshot = useSyncExternalStore(
-    useCallback(
-      (cb) => (process ? dataManager.subscribe(process.typeId, cb, false) : () => {}),
-      [process],
-    ),
-    () => {
-      if (!process) return '';
-      const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
-      return `${current.restart_required}|${current.load_flowpad_assistant}|${current.session_id ?? ''}|${current.worker_type ?? ''}`;
-    },
-    () => {
-      if (!process) return '';
-      const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
-      return `${current.restart_required}|${current.load_flowpad_assistant}|${current.session_id ?? ''}|${current.worker_type ?? ''}`;
-    },
-  );
+  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =
+    assets ?? ownAssets;
 
-  const activeProcess = useMemo(() => {
-    if (!process) return null;
-    void processSnapshot;
-    void processHydrationVersion;
-    return dataManager.getByTypeIdFromCache(process.typeId) ?? process;
-  }, [process, processHydrationVersion, processSnapshot]);
-
-  const processKey = process?.typeId.toString() ?? '';
-
-  useEffect(() => {
-    setHydratedTranscriptIdentity({ sessionId: null, workerType: null });
-  }, [processKey]);
-
-  useEffect(() => {
-    if (!open || !process) return;
-    const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
-    if (current.session_id) return;
-    const processKey = process.typeId.toString();
-    if (hydratedProcessIds.current.has(processKey)) return;
-    hydratedProcessIds.current.add(processKey);
-    let cancelled = false;
-    void dataManager.refreshByTypeId(process.typeId)
-      .then((fresh) => {
-        if (cancelled) return;
-        if (fresh instanceof AgenticProcess && fresh.session_id) {
-          setHydratedTranscriptIdentity({
-            sessionId: fresh.session_id,
-            workerType: fresh.worker_type ?? null,
-          });
-        }
-        setProcessHydrationVersion((version) => version + 1);
-      })
-      .catch((err) => {
-        console.error('[AssetManagerPopover] process hydration failed', err);
-      });
-    return () => { cancelled = true; };
-  }, [open, process, processSnapshot]);
-
-  const { descriptors, isLoading, refresh } = useProcessAssets(activeProcess, { enabled: open });
-  const { types: assetTypes } = useAssetTypes();
-  const transcriptSessionId = activeProcess?.session_id ?? hydratedTranscriptIdentity.sessionId;
-  const transcriptWorkerType = normalizeTranscriptWorker(
-    activeProcess?.worker_type ?? hydratedTranscriptIdentity.workerType,
-  );
-
-  const additionalDirs = useMemo(() => activeProcess?.additional_dirs ?? [], [activeProcess?.additional_dirs]);
-
-  // Resolved Flowpad Assistant mount status for this process. `null`/`undefined`
-  // inherits the global default (currently ON), so only an explicit `false`
-  // reads as disabled. Toggling writes an explicit boolean.
-  const assistantEnabled = !!activeProcess && activeProcess.load_flowpad_assistant !== false;
-
-  const handleToggleAssistant = useCallback(async () => {
-    if (!activeProcess) return;
-    try {
-      await activeProcess.setAssistantEnabled(!assistantEnabled);
-      await refresh();
-    } catch (err) {
-      console.error('[AssetManagerPopover] toggle Flowpad Assistant failed', err);
-    }
-  }, [activeProcess, assistantEnabled, refresh]);
-
-  // When restart_required transitions from true → false (a successful restart
-  // just completed) re-fetch descriptors so the list reflects the new worker
-  // state — e.g. embedded assets that were materialized on start.
-  const prevRestartRequired = useRef<boolean>(false);
-  useEffect(() => {
-    if (!activeProcess) return;
-    const cur = !!activeProcess.restart_required;
-    if (prevRestartRequired.current && !cur && open) {
-      void refresh();
-    }
-    prevRestartRequired.current = cur;
-  }, [activeProcess, activeProcess?.restart_required, open, refresh]);
+  // Which scopes the list shows — one header toggle each. Per viewer, kept
+  // across opens and reloads.
+  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(loadShownScopes);
+  const toggleScope = useCallback((scope: BoardScope) => {
+    setShownScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(scope)) next.delete(scope);
+      else next.add(scope);
+      saveShownScopes(next);
+      return next;
+    });
+  }, []);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
   const { data: allProjects = [] } = useEntitiesQuery<Project>(projectsQuery, {
-    enabled: open && mode === 'pick-project',
+    enabled: open && view === 'pick-project',
   });
   const [projectQuery, setProjectQuery] = useState('');
 
-  const handleAddFolder = useCallback(async () => {
-    if (!activeProcess) return;
-    const cn = dataCtx.computeNode;
-    if (!cn) return;
-    const picked = await cn.openPathDialog();
-    if (!picked) return;
-    await activeProcess.addDir(picked);
-    await refresh();
-  }, [activeProcess, dataCtx.computeNode, refresh]);
+  /** Leave a drill-down / picker, dropping the filter that belonged to it. */
+  const backToList = useCallback(() => {
+    setView('list');
+    setListFilter('');
+    setProjectQuery('');
+  }, []);
 
   const handlePickProject = useCallback(
     async (path: string) => {
-      if (!activeProcess || !path) return;
-      await activeProcess.addDir(path);
-      setMode('list');
+      if (!onAddProjectDir || !path) return;
+      await onAddProjectDir(path);
+      setView('list');
       setProjectQuery('');
-      await refresh();
     },
-    [activeProcess, refresh],
-  );
-
-  const handleRemoveDir = useCallback(
-    async (path: string) => {
-      if (!activeProcess) return;
-      await activeProcess.removeDir(path);
-      await refresh();
-    },
-    [activeProcess, refresh],
+    [onAddProjectDir],
   );
 
   // Pre-fetch every descriptor's entity into the dataManager cache so the
@@ -347,31 +338,23 @@ export function AssetManagerPopover({
   // raw ``<type>-<uuid>`` typeid until something else loads them.
   const [entityVersion, setEntityVersion] = useState(0);
   useEffect(() => {
-    if (!descriptors.length) return;
-    const missing = descriptors
+    if (!listDescriptors.length) return;
+    const missing = listDescriptors
       .filter((d) => isTypeId(d.typeid))
       .map((d) => new TypeId(d.typeid))
       .filter((t) => !dataManager.getByTypeIdFromCache(t));
     if (!missing.length) return;
     let cancelled = false;
-    void Promise.all(
-      missing.map((t) => dataManager.getByTypeId(t).catch(() => null)),
-    ).then(() => {
+    void Promise.all(missing.map((t) => dataManager.getByTypeId(t).catch(() => null))).then(() => {
       if (!cancelled) setEntityVersion((v) => v + 1);
     });
-    return () => { cancelled = true; };
-  }, [descriptors]);
-
-  const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
-
-  const attachedSet = useMemo(() => new Set(attachedRefs), [attachedRefs]);
-  const assetTypeByName = useMemo(() => {
-    void assetTypes;
-    return new Map(dataManager.getAllTypeInfos().map((t) => [t.type_name, t]));
-  }, [assetTypes]);
+    return () => {
+      cancelled = true;
+    };
+  }, [listDescriptors]);
 
   // The list has two nested axes, and they are different questions:
-  //   section — did this run USE the asset (the usage[] axis)?
+  //   section — is this asset already in play (selected, or used by the run)?
   //   group   — WHAT is it (skill / agent / …)?
   // The scope chip answers the third (where does it live), per row. One row per
   // (typeid, source) pair, so an asset visible through two sources stays visible
@@ -379,27 +362,40 @@ export function AssetManagerPopover({
   //
   // ``entityVersion`` participates in the deps so newly-loaded entities trigger a
   // fresh build (display labels resolve from the cache).
-  const sections = useMemo(() => {
+  const sections_ = useMemo(() => {
     void entityVersion;
 
     // Resolve each descriptor's scope + label ONCE. Both are cache lookups that
     // allocate (a tooltip string, a display label), and a comparator would
     // otherwise re-derive them O(n log n) times — ~20k times for a 1000-asset
     // staging list, on every keystroke in the filter box.
-    const rows = descriptors.map((d) => ({
+    const selected = new Set(selectedTypeIds);
+    // The host's `filter` scopes what it will accept a pick of.
+    const candidates = filter ? listDescriptors.filter(filter) : listDescriptors;
+    const allRows = candidates.map((d) => ({
       d,
       type: _parseTypeid(d.typeid).type,
+      boardScope: assetBoardScope(d),
       scope: assetScope(d),
-      label: _displayLabelForTypeid(d.typeid),
+      label: _displayLabelForDescriptor(d),
       used: assetDescriptorHasUsage(d),
+      selected: assets?.workerScoped ? !!d.attached : selected.has(d.typeid),
+      improvable: !!canImprove?.(d),
+      key: descriptorKey(d),
     }));
-    type Row = (typeof rows)[number];
+    type Row = (typeof allRows)[number];
+
+    // Counted before the text filter, so a toggle's number doesn't move while typing.
+    const scopeCounts = Object.fromEntries(BOARD_SCOPES.map((s) => [s, 0])) as Record<BoardScope, number>;
+    for (const r of allRows) scopeCounts[r.boardScope] += 1;
+    const rows = allRows.filter((r) => shownScopes.has(r.boardScope));
 
     const q = listFilter.trim().toLowerCase();
     const filtered = q
       ? rows.filter((r) =>
-          [r.label, r.d.typeid, r.d.source, r.scope.label, r.d.posix_path, r.d.source_dir]
-            .some((v) => typeof v === 'string' && v.toLowerCase().includes(q)),
+          [r.label, r.d.typeid, r.d.source, r.scope.label, r.d.posix_path, r.d.source_dir].some(
+            (v) => typeof v === 'string' && v.toLowerCase().includes(q),
+          ),
         )
       : rows;
 
@@ -418,20 +414,36 @@ export function AssetManagerPopover({
         if (bucket) bucket.push(r);
         else buckets.set(r.type, [r]);
       }
-      return [...buckets.entries()]
-        // labelForType, not the useAssetTypes array: that one is view-mode
-        // filtered and can miss a type Vibe mode still has descriptors for.
-        .map(([type, rows]) => ({ type, label: labelForType(type), rows: rows.sort(byRow) }))
-        .sort((a, b) => a.label.localeCompare(b.label));
+      return (
+        [...buckets.entries()]
+          // labelForType, not the useAssetTypes array: that one is view-mode
+          // filtered and can miss a type Vibe mode still has descriptors for.
+          .map(([type, rows]) => ({ type, label: labelForType(type), rows: rows.sort(byRow) }))
+          .sort((a, b) => a.label.localeCompare(b.label))
+      );
     };
 
-    // A group only exists if something was pushed into it, so a surviving
-    // section always has rows — `sections.length === 0` is the emptiness test.
-    return [
-      { key: 'used' as const, groups: groupByType(filtered.filter((r) => r.used)) },
-      { key: 'available' as const, groups: groupByType(filtered.filter((r) => !r.used)) },
+    const list = [
+      { key: 'used' as const, label: t`Used assets`, groups: groupByType(filtered.filter((r) => r.used)) },
+      { key: 'selected' as const, label: assets?.workerScoped ? t`Attached assets` : t`Selected assets`, groups: groupByType(filtered.filter((r) => r.selected && !r.used)) },
+      {
+        key: 'available' as const,
+        label: assets?.workerScoped ? t`Available assets` : t`Project assets`,
+        groups: groupByType(filtered.filter((r) => !r.selected && !r.used && (!assets?.workerScoped || r.d.available === true))),
+      },
+      {
+        key: 'other' as const,
+        label: t`Other assets`,
+        groups: groupByType(filtered.filter((r) => assets?.workerScoped && !r.selected && !r.used && r.d.available !== true)),
+      },
     ].filter((s) => s.groups.length > 0);
-  }, [descriptors, entityVersion, listFilter, sortBy]);
+    return { list, scopeCounts };
+  }, [assets?.workerScoped, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, shownScopes, sortBy, t]);
+  const { list: sections, scopeCounts } = sections_;
+
+  // Pinned rows (the launching agent) sit above the sections and are not
+  // filterable — they hide while a filter is typed.
+  const showPinnedRows = !listFilter.trim();
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -453,262 +465,84 @@ export function AssetManagerPopover({
     });
   }, [allProjects, projectQuery]);
 
-  // Add-mode entries: anything not currently EMBEDDED. Each row is the
-  // "source" copy that the user can attach to the process.
-  const addModeRows = useMemo(() => {
-    const embeddedTypeids = new Set(
-      descriptors.filter((d) => d.source === 'embedded').map((d) => d.typeid),
-    );
-    const candidates = descriptors.filter(
-      (d) => d.source !== 'embedded' && !embeddedTypeids.has(d.typeid),
-    );
-    const q = query.trim().toLowerCase();
-    if (!q) return candidates;
-    return candidates.filter((d) => d.typeid.toLowerCase().includes(q));
-  }, [descriptors, query]);
-
   const handleOpenChange = useCallback(
     (next: boolean) => {
       setOpen(next);
-      if (next) void refresh();
       if (!next) {
-        setMode('list');
-        setQuery('');
+        setView('list');
         setProjectQuery('');
         setListFilter('');
       }
     },
-    [refresh],
+    [setOpen],
   );
 
-  const toggleRow = useCallback(
-    (ref: string) => {
-      if (attachedSet.has(ref)) void onDetach(ref);
-      else void onAttach(ref);
+  const handlePick = useCallback(
+    async (descriptor: AssetDescriptor) => {
+      if (!onPick) return;
+      // A surface with no un-select is one-shot: close on pick. Settle our own
+      // open state BEFORE emitting, because such a host routinely unmounts this
+      // component from inside `onPick` (the automation rail swaps itself for a
+      // drawer), and setting state afterwards would write to an unmounted tree.
+      if (!onUnpick) handleOpenChange(false);
+      await onPick(descriptor);
     },
-    [attachedSet, onAttach, onDetach],
+    [handleOpenChange, onPick, onUnpick],
   );
 
-  const resolveImproveTarget = useCallback(
-    (descriptor: AssetDescriptor): AssetImproveTarget | null => {
-      const assetPath = normalizePath(descriptor.posix_path);
-      if (!assetPath) {
-        notify.error({ title: t`Cannot improve asset`, message: t`This asset has no file path.` });
-        return null;
-      }
-      const { type } = _parseTypeid(descriptor.typeid);
-      const typeInfo = assetTypeByName.get(type);
-      const folderBacked = !!typeInfo?.folder_backed;
-      const file = improvableMainFile(descriptor, assetTypeByName);
-      if (!file) {
-        notify.error({ title: t`Cannot improve asset`, message: t`This folder-backed asset has no main file metadata.` });
-        return null;
-      }
-      return {
-        descriptor,
-        assetKey: descriptorKey(descriptor),
-        assetTypeid: descriptor.typeid,
-        assetPath,
-        assetLabel: _displayLabelForTypeid(descriptor.typeid),
-        assetType: type,
-        workdir: folderBacked ? assetPath : dirname(assetPath),
-        file,
-        folderBacked,
-        computeNodeId: dataCtx.computeNode?.id ?? '@local',
-      };
-    },
-    [assetTypeByName, dataCtx.computeNode?.id, t],
-  );
-
-  const assetHasDirtyChanges = useCallback(async (target: AssetImproveTarget): Promise<boolean> => {
-    const diff = await new GitWorkdir(target.workdir, target.computeNodeId).assetDiff(target.file);
-    return diff.files.length > 0;
-  }, []);
-
-  const commitAsset = useCallback(async (target: AssetImproveTarget) => {
-    const action = new ActionInfo('commit-asset', 'compute_node', target.computeNodeId, 'POST');
-    action.bodyParameters = { workdir: target.workdir, file: target.file };
-    const result = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
-    invalidateGitStatus(target.computeNodeId, target.workdir);
-    if (result?.committed) {
-      notify.success({ title: `Saved ${target.assetLabel} v${result.version ?? ''}`.trim() });
-    } else {
-      notify.info({ title: t`Nothing to save`, message: t`The asset matches HEAD.` });
-    }
-  }, [t]);
-
-  const runImprovement = useCallback(
-    async (target: AssetImproveTarget, issueRequest: string, opts: { skipDirtyCheck?: boolean } = {}) => {
-      if (!activeProcess?.session_id) {
-        notify.error({ title: t`Cannot improve asset`, message: t`This process has no transcript session yet.` });
-        return;
-      }
-      const notificationId = `asset-improve:${target.assetKey}`;
-      try {
-        if (!opts.skipDirtyCheck && await assetHasDirtyChanges(target)) {
-          setDirtyImprove({ target, issueRequest });
-          return;
-        }
-        setBusyAssetKey(target.assetKey);
-        const startedAt = Date.now();
-        notify.busy({ id: notificationId, title: t`Analyzing asset`, message: target.assetLabel });
-        const analysisProcess = await launchAssetAnalysis({
-          assetKey: target.assetKey,
-          assetTypeid: target.assetTypeid,
-          assetPath: target.assetPath,
-          assetLabel: target.assetLabel,
-          issueRequest,
-          sessionId: activeProcess.session_id,
-          workerType: transcriptWorkerType,
-        });
-        if (!analysisProcess) return;
-        await analysisProcess.waitForComplete();
-
-        const analysis = await waitForAssetAnalysisResult({
-          sessionId: activeProcess.session_id,
-          assetKey: target.assetKey,
-          assetTypeid: target.assetTypeid,
-          assetPath: target.assetPath,
-          sinceMs: startedAt,
-        });
-        if (!analysis?.findings.length) {
-          notify.warning({
-            id: notificationId,
-            title: t`No findings found`,
-            message: t`The analysis completed but did not produce asset-scoped findings.`,
-          });
-          return;
-        }
-
-        notify.busy({ id: notificationId, title: t`Improving asset`, message: target.assetLabel });
-        const correctionProcess = await launchAssetCorrect({
-          assetKey: target.assetKey,
-          assetTypeid: target.assetTypeid,
-          assetPath: target.assetPath,
-          assetLabel: target.assetLabel,
-          workdir: target.workdir,
-          file: target.file,
-          issueRequest,
-          sessionId: activeProcess.session_id,
-          findings: analysis.findings,
-          analysisTrace: analysis.trace,
-        });
-        if (!correctionProcess) return;
-        await correctionProcess.waitForComplete();
-
-        invalidateGitStatus(target.computeNodeId, target.workdir);
-        navigation.openDock(DockPointer.forAssetCompare({
-          computeNodeId: target.computeNodeId,
-          workdir: target.workdir,
-          file: target.file,
-          assetPath: target.assetPath,
-          assetType: target.assetType,
-          assetLabel: target.assetLabel,
-        }));
-        notify.success({ id: notificationId, title: t`Improvement ready`, message: t`Opened Asset compare.` });
-        setOpen(false);
-      } catch (err) {
-        notify.error({
-          id: notificationId,
-          title: t`Improve failed`,
-          message: err instanceof Error ? err.message : String(err),
-        });
-      } finally {
-        setBusyAssetKey(null);
-      }
-    },
-    [activeProcess?.session_id, assetHasDirtyChanges, navigation, t, transcriptWorkerType],
-  );
-
-  const openImproveDialog = useCallback((descriptor: AssetDescriptor) => {
-    setFixDescriptor(descriptor);
-    setFixText('');
-  }, []);
-
-  const submitImproveDialog = useCallback(async () => {
-    if (!fixDescriptor) return;
-    const issueRequest = fixText.trim();
-    if (!issueRequest) return;
-    const target = resolveImproveTarget(fixDescriptor);
-    if (!target) return;
-    // Fly the dialog into the footer chip before it unmounts (the ghost is
-    // cloned, so closing immediately is fine) — the run now lives there.
-    animateMinimizeToProcessChip(improveDialogRef.current);
-    setFixDescriptor(null);
-    setFixText('');
-    await runImprovement(target, issueRequest);
-  }, [fixDescriptor, fixText, resolveImproveTarget, runImprovement]);
-
-  const saveDirtyAndContinue = useCallback(async () => {
-    const pending = dirtyImprove;
-    if (!pending) return;
-    setDirtyImprove(null);
-    try {
-      await commitAsset(pending.target);
-      await runImprovement(pending.target, pending.issueRequest, { skipDirtyCheck: true });
-    } catch (err) {
-      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
-    }
-  }, [commitAsset, dirtyImprove, runImprovement, t]);
-
-  return (
+  const body = (
     <>
-    <Popover open={open} onOpenChange={handleOpenChange}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent
-        align="end"
-        sideOffset={4}
-        collisionPadding={8}
-        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
-        data-testid="asset-manager-popover"
-      >
-        {/* Header */}
-        <div className="flex items-center gap-1.5 border-b px-3 py-2">
-          {mode !== 'list' && (
-            <button
-              type="button"
-              className="-ml-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
-              onClick={() => setMode('list')}
-              title={t`Back`}
-              data-testid="asset-manager-back"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </button>
+      {/* Header */}
+      <div className="flex items-center gap-1.5 border-b px-3 py-2">
+        {view !== 'list' && (
+          <button
+            type="button"
+            className="-ms-1 flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+            onClick={backToList}
+            title={t`Back`}
+            data-testid="asset-manager-back"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
+        {/* Breadcrumb — the root crumb is itself the way back up, so the trail
+            and the back button are the same navigation, written twice on
+            purpose (one is discoverable, the other is where the eye already is). */}
+        <span className="flex min-w-0 items-center gap-1 text-xs font-medium" data-testid="asset-manager-breadcrumb">
+          {view === 'list' ? (
+            <Trans>Assets</Trans>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={backToList}
+                className="rounded text-muted-foreground hover:text-foreground hover:underline"
+                data-testid="asset-manager-crumb-root"
+              >
+                <Trans>Assets</Trans>
+              </button>
+              <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
+              <span className="min-w-0 truncate">
+                <Trans>Pick project folder</Trans>
+              </span>
+            </>
           )}
-          <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">
-            {mode === 'add'
-              ? <Trans>Add asset</Trans>
-              : mode === 'pick-project'
-              ? <Trans>Pick project folder</Trans>
-              : <Trans>Assets</Trans>}
-          </span>
-          {mode === 'list' && (
-            <div className="ml-auto flex items-center gap-1">
-              {activeProcess && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={assistantEnabled}
-                  onClick={() => void handleToggleAssistant()}
-                  title={
-                    assistantEnabled
-                      ? t`Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required.`
-                      : t`Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required.`
-                  }
-                  data-testid="asset-manager-assistant-toggle"
-                  data-enabled={assistantEnabled ? 'true' : 'false'}
-                  className={
-                    'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors ' +
-                    (assistantEnabled
-                      ? 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
-                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')
-                  }
-                >
-                  <Sparkles className="h-3 w-3" />
-                  <Trans>Assistant</Trans>
-                </button>
-              )}
+        </span>
+        {view === 'list' && (
+          <div className="ms-auto flex items-center gap-1">
+            <AssetScopeToggles
+              counts={scopeCounts}
+              shown={shownScopes}
+              onToggle={toggleScope}
+              workerLabel={workerType ? workerLabel(workerType) : undefined}
+              workerIcon={workerType ? workerIcon(workerType) : undefined}
+            />
+            {/* Prop-gated: pick surfaces supply neither handler, so no
+                  DropdownMenu mounts there at all — which is what keeps this
+                  component safe to drop into a composer that forbids nested
+                  popovers. */}
+            {(onAddFolder || onAddProjectDir || onToggleAssistant) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -720,266 +554,230 @@ export function AssetManagerPopover({
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
-                  <DropdownMenuItem
-                    onSelect={() => setMode('add')}
-                    data-testid="asset-manager-add-asset"
-                  >
-                    <Boxes className="mr-2 h-3.5 w-3.5" />
-                    <Trans>Asset…</Trans>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!activeProcess || !dataCtx.computeNode}
-                    onSelect={() => { void handleAddFolder(); }}
-                    data-testid="asset-manager-add-folder"
-                  >
-                    <FolderOpen className="mr-2 h-3.5 w-3.5" />
-                    <Trans>Folder…</Trans>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={!activeProcess}
-                    onSelect={() => { setProjectQuery(''); setMode('pick-project'); }}
-                    data-testid="asset-manager-add-project-folder"
-                  >
-                    <FolderPlus className="mr-2 h-3.5 w-3.5" />
-                    <Trans>Project folder…</Trans>
-                  </DropdownMenuItem>
+                <DropdownMenuContent align="end" className="w-56">
+                  {onAddFolder && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void onAddFolder();
+                      }}
+                      data-testid="asset-manager-add-folder"
+                    >
+                      <FolderOpen className="me-2 h-3.5 w-3.5" />
+                      <Trans>Folder…</Trans>
+                    </DropdownMenuItem>
+                  )}
+                  {onAddProjectDir && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        setProjectQuery('');
+                        setView('pick-project');
+                      }}
+                      data-testid="asset-manager-add-project-folder"
+                    >
+                      <FolderPlus className="me-2 h-3.5 w-3.5" />
+                      <Trans>Project folder…</Trans>
+                    </DropdownMenuItem>
+                  )}
+                  {/* The Flowpad Assistant is one more folder mounted into the
+                      worker; its assets then show under the Assistant toggle. */}
+                  {onToggleAssistant && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void onToggleAssistant();
+                      }}
+                      title={t`A restart of the worker is required.`}
+                      data-testid="asset-manager-assistant-mount"
+                      data-enabled={assistantEnabled ? 'true' : 'false'}
+                    >
+                      <Sparkles className="me-2 h-3.5 w-3.5" />
+                      {assistantEnabled ? <Trans>Unmount Flowpad Assistant</Trans> : <Trans>Mount Flowpad Assistant</Trans>}
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-          )}
-        </div>
-
-        {mode === 'list' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
-              <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder={t`Filter…`}
-                value={listFilter}
-                onChange={(e) => setListFilter(e.target.value)}
-                className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-                data-testid="asset-manager-list-filter"
-              />
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
-                className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-                title={t`Sort within each type`}
-                data-testid="asset-manager-list-sort"
-              >
-                <option value="scope"><Trans>By scope</Trans></option>
-                <option value="name"><Trans>By name</Trans></option>
-              </select>
-              <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
-              {/* Flowpad Assistant location marker — its assets live inside the
-                  installed package and are mounted via --add-dir, so they don't
-                  show as individual rows. A light-bordered location row marks
-                  where the flowpad assets come from when the toggle is on. */}
-              {assistantEnabled && !listFilter.trim() && (
-                <div
-                  className="m-1 flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5"
-                  data-testid="asset-manager-flowpad-location"
-                  title={t`Flowpad Assistant — its skills & agents are mounted into this process via --add-dir.`}
-                >
-                  <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-                    {FLOWPAD_ASSISTANT_PROJECT_NAME}
-                  </span>
-                  <span className="flex-shrink-0 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
-                    <Trans>mounted</Trans>
-                  </span>
-                </div>
-              )}
-              {filteredDirs.map((path) => (
-                <DirRow
-                  key={`dir|${path}`}
-                  path={path}
-                  onRemove={handleRemoveDir}
-                />
-              ))}
-              {sections.length === 0 && filteredDirs.length === 0 && (
-                isLoading ? (
-                  <div
-                    className="flex items-center justify-center gap-2 px-3 py-4 text-[11px] text-muted-foreground"
-                    data-testid="asset-manager-loading"
-                  >
-                    <FusionSpinner size="xs" />
-                    <span><Trans>Loading assets…</Trans></span>
-                  </div>
-                ) : (
-                  <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                    {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
-                  </div>
-                )
-              )}
-              {sections.map((section) => (
-                <Fragment key={section.key}>
-                  <AssetSectionRule testid={`asset-manager-section-${section.key}`}>
-                    {section.key === 'used' ? <Trans>Used assets</Trans> : <Trans>Available assets</Trans>}
-                  </AssetSectionRule>
-                  {section.groups.map((group) => (
-                    <Fragment key={group.type}>
-                      <AssetTypeHeader testid={`asset-manager-group-${section.key}-${group.type}`}>
-                        {group.label}
-                      </AssetTypeHeader>
-                      {group.rows.map((row) => (
-                        <AssetRow
-                          key={`${row.d.typeid}|${row.d.source}`}
-                          descriptor={row.d}
-                          scope={row.scope}
-                          label={row.label}
-                          iconForType={iconForType}
-                          attached={attachedSet.has(row.d.typeid)}
-                          used={row.used}
-                          improvable={!!improvableMainFile(row.d, assetTypeByName)}
-                          busy={busyAssetKey === descriptorKey(row.d)}
-                          onDetach={onDetach}
-                          onImprove={openImproveDialog}
-                        />
-                      ))}
-                    </Fragment>
-                  ))}
-                </Fragment>
-              ))}
-            </div>
-
-            {footer}
-          </div>
-        ) : mode === 'add' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="border-b px-3 py-2">
-              <input
-                autoFocus
-                type="text"
-                placeholder={t`Search agents and skills…`}
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                data-testid="asset-manager-search"
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {addModeRows.length === 0 && (
-                <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  <Trans>No matches.</Trans>
-                </div>
-              )}
-              {addModeRows.map((d, idx) => (
-                <AddModeRow
-                  key={`${d.typeid}|${d.source}|${idx}`}
-                  descriptor={d}
-                  iconForType={iconForType}
-                  checked={attachedSet.has(d.typeid)}
-                  onToggle={toggleRow}
-                />
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="border-b px-3 py-2">
-              <input
-                autoFocus
-                type="text"
-                placeholder={t`Search projects…`}
-                value={projectQuery}
-                onChange={(e) => setProjectQuery(e.target.value)}
-                className="w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
-                data-testid="asset-manager-project-search"
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              {filteredProjects.length === 0 && (
-                <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  <Trans>No projects.</Trans>
-                </div>
-              )}
-              {filteredProjects.map((p) => {
-                const path = (p as { fs_storage_mount_path?: string }).fs_storage_mount_path ?? '';
-                return (
-                  <ProjectPickRow
-                    key={p.id}
-                    name={p.displayName ?? p.id ?? ''}
-                    path={path}
-                    onPick={handlePickProject}
-                  />
-                );
-              })}
-            </div>
+            )}
           </div>
         )}
+      </div>
+
+      {view !== 'pick-project' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
+            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+            <input
+              autoFocus
+              type="text"
+              placeholder={searchPlaceholder ?? t`Filter…`}
+              value={listFilter}
+              onChange={(e) => setListFilter(e.target.value)}
+              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              data-testid="asset-manager-list-filter"
+            />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
+              className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+              title={t`Sort within each type`}
+              data-testid="asset-manager-list-sort"
+            >
+              <option value="scope">
+                <Trans>By scope</Trans>
+              </option>
+              <option value="name">
+                <Trans>By name</Trans>
+              </option>
+            </select>
+            <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
+            {/* The run's principal — the Agent it was launched through. */}
+            {showPinnedRows && agent && <LaunchingAgentRow agent={agent} />}
+            {filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
+            {(assets ?? ownAssets).unresolvedUsage?.map((usage) => (
+              <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
+                <div className="truncate" title={usage.reference}>{usage.reference}</div>
+                <div className="text-muted-foreground">
+                  <Trans>Used in transcript</Trans> · {usage.resolution}
+                </div>
+              </div>
+            ))}
+            {!!scanIssues?.length && (
+              <details className="px-3 py-2 text-xs text-amber-700" data-testid="asset-scan-issues">
+                <summary><Trans>Some assets could not be read.</Trans></summary>
+                {scanIssues.map((issue, index) => <div key={`${issue.path}:${index}`} className="mt-1 break-words">{issue.path}: {issue.message}</div>)}
+              </details>
+            )}
+            {truncated && <div className="px-3 py-2 text-xs text-muted-foreground"><Trans>Asset list truncated. Narrow the selection to see more.</Trans></div>}
+            {listError && (
+              <div role="alert" className="px-3 py-4 text-center text-[11px] text-destructive">
+                <Trans>Could not verify available assets.</Trans>
+              </div>
+            )}
+            {!listError && sections.length === 0 && !(assets ?? ownAssets).unresolvedUsage?.length &&
+              filteredDirs.length === 0 &&
+              (listIsLoading ? (
+                <div
+                  className="flex items-center justify-center gap-2 px-3 py-4 text-[11px] text-muted-foreground"
+                  data-testid="asset-manager-loading"
+                >
+                  <FusionSpinner size="xs" />
+                  <span>
+                    <Trans>Loading assets…</Trans>
+                  </span>
+                </div>
+              ) : (
+                <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                  {listFilter.trim() ? (
+                    <Trans>No matches.</Trans>
+                  ) : BOARD_SCOPES.some((scope) => scopeCounts[scope] > 0) ? (
+                    <Trans>Turn on a scope above to see its assets.</Trans>
+                  ) : (
+                    <Trans>No assets available.</Trans>
+                  )}
+                </div>
+              ))}
+            {sections.map((section) => (
+              <Fragment key={section.key}>
+                <AssetSectionRule testid={`asset-manager-section-${section.key}`}>{section.label}</AssetSectionRule>
+                {section.groups.map((group) => (
+                  <Fragment key={group.type}>
+                    <AssetTypeHeader testid={`asset-manager-group-${section.key}-${group.type}`}>
+                      {group.label}
+                    </AssetTypeHeader>
+                    {group.rows.map((row) => (
+                      <AssetRow
+                        key={row.key}
+                        descriptor={row.d}
+                        scope={row.scope}
+                        label={row.label}
+                        selected={row.selected}
+                        improvable={row.improvable}
+                        busy={improveBusyKey === row.key}
+                        onPick={onPick ? handlePick : undefined}
+                        onUnpick={onUnpick}
+                        onImprove={onImprove}
+                        openInWindow={openInWindow}
+                      />
+                    ))}
+                  </Fragment>
+                ))}
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b px-3 py-2">
+            <input
+              autoFocus
+              type="text"
+              placeholder={t`Search projects…`}
+              value={projectQuery}
+              onChange={(e) => setProjectQuery(e.target.value)}
+              className="w-full rounded-md border bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-ring"
+              data-testid="asset-manager-project-search"
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {filteredProjects.length === 0 && (
+              <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                <Trans>No projects.</Trans>
+              </div>
+            )}
+            {filteredProjects.map((p) => {
+              const path = (p as { fs_storage_mount_path?: string }).fs_storage_mount_path ?? '';
+              return (
+                <ProjectPickRow key={p.id} name={p.displayName ?? p.id ?? ''} path={path} onPick={handlePickProject} />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+
+  // Two containers, one body. `centered` escapes an enclosing menu (the
+  // bookmarks tree, the composer's attach fan-out) where an anchored popover
+  // would be trapped or immediately dismissed.
+  if (centered) {
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="flex max-h-[min(85vh,40rem)] w-[30rem] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
+          data-testid="asset-manager-popover"
+        >
+          <DialogTitle className="sr-only">
+            <Trans>Assets</Trans>
+          </DialogTitle>
+          {body}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent
+        align="end"
+        side={side}
+        sideOffset={4}
+        collisionPadding={8}
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-[30rem] max-w-[calc(100vw-2rem)] flex-col p-0"
+        data-testid="asset-manager-popover"
+      >
+        {body}
       </PopoverContent>
     </Popover>
-
-    <Dialog open={!!fixDescriptor} onOpenChange={(next) => { if (!next) setFixDescriptor(null); }}>
-      <DialogContent ref={improveDialogRef} className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle><Trans>What would you like to fix?</Trans></DialogTitle>
-          <DialogDescription>
-            {fixDescriptor ? _displayLabelForTypeid(fixDescriptor.typeid) : null}
-          </DialogDescription>
-        </DialogHeader>
-        <Textarea
-          value={fixText}
-          onChange={(event) => setFixText(event.target.value)}
-          placeholder={t`Describe the issue to analyze and improve…`}
-          className="min-h-28"
-          autoFocus
-        />
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setFixDescriptor(null)}>
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button onClick={() => { void submitImproveDialog(); }} disabled={!fixText.trim() || !!busyAssetKey}>
-            {busyAssetKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
-            <Trans>Analyze and improve</Trans>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <Dialog open={!!dirtyImprove} onOpenChange={(next) => { if (!next) setDirtyImprove(null); }}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle><Trans>Asset has changes</Trans></DialogTitle>
-          <DialogDescription>
-            <Trans>Save the current asset changes as a version before running improvement.</Trans>
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setDirtyImprove(null)} disabled={!!busyAssetKey}>
-            <Trans>Cancel</Trans>
-          </Button>
-          <Button onClick={() => { void saveDirtyAndContinue(); }} disabled={!!busyAssetKey}>
-            {busyAssetKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommitHorizontal className="h-3.5 w-3.5" />}
-            <Trans>Save</Trans>
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    </>
   );
 }
 
 // ── Row components ────────────────────────────────────────────────────────────
 
-function DirRow({
-  path,
-  onRemove,
-}: {
-  path: string;
-  onRemove: (path: string) => void | Promise<void>;
-}) {
+function DirRow({ path, onRemove }: { path: string; onRemove?: (path: string) => void | Promise<void> }) {
   const { t } = useLingui();
   return (
-    <div
-      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0')}
-      data-testid={`asset-manager-dir-row-${path}`}
-    >
+    <AssetGridRow data-testid={`asset-manager-dir-row-${path}`}>
       <span className="flex min-w-0 items-center gap-1.5 text-xs text-foreground" title={path}>
         <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{_basename(path) || path}</span>
@@ -989,16 +787,21 @@ function DirRow({
           assets inside it wore the additional-dir one. */}
       <AssetScopeChip scope={additionalDirScope(path)} testidSuffix={`dir-${path}`} />
       <GridCellSpacer />
-      <button
-        type="button"
-        className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        onClick={() => void onRemove(path)}
-        title={t`Remove directory`}
-        data-testid={`asset-manager-dir-remove-${path}`}
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
+      <GridCellSpacer />
+      {onRemove ? (
+        <button
+          type="button"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => void onRemove(path)}
+          title={t`Remove directory`}
+          data-testid={`asset-manager-dir-remove-${path}`}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      ) : (
+        <GridCellSpacer />
+      )}
+    </AssetGridRow>
   );
 }
 
@@ -1014,110 +817,207 @@ function ProjectPickRow({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-left last:border-b-0 hover:bg-muted/50"
+      className="flex w-full items-center gap-2 border-b px-3 py-1.5 text-start last:border-b-0 hover:bg-muted/50"
       onClick={() => void onPick(path)}
       data-testid={`asset-manager-project-pick-${path}`}
     >
       <FolderPlus className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs text-foreground" title={name}>{name}</div>
-        <div className="truncate text-[10px] text-muted-foreground" title={path}>{path}</div>
+        <div className="truncate text-xs text-foreground" title={name}>
+          {name}
+        </div>
+        <div className="truncate text-[10px] text-muted-foreground" title={path}>
+          {path}
+        </div>
       </div>
     </button>
   );
 }
 
-interface RowSharedProps {
-  descriptor: AssetDescriptor;
-  iconForType: (type: string) => LucideIcon;
+/**
+ * The run's principal, pinned above every asset section: the Agent this process
+ * was launched through. Avatar (image / emoji / icon) with the name's initial
+ * as the fallback, then the name; the row opens the agent.
+ */
+function LaunchingAgentRow({ agent }: { agent: Agent }) {
+  const { t } = useLingui();
+  const { navigation } = useDockNavigation();
+  const name = agent.displayName;
+
+  return (
+    <button
+      type="button"
+      onClick={() => navigation.openDock(agent.dockPointer)}
+      className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-border bg-muted/30 px-2.5 py-1.5 text-start hover:bg-muted"
+      data-testid="asset-manager-launching-agent"
+      title={t`Open ${name}`}
+    >
+      <AgentAvatar agent={agent} className="h-6 w-6 text-[11px]" data-testid="asset-manager-launching-agent-avatar" />
+      <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground" data-testid="asset-manager-launching-agent-name">
+        {name}
+      </span>
+      <AgentTypeChip className="flex-shrink-0" />
+    </button>
+  );
 }
 
-function AssetRow({
+
+export function AssetRow({
   descriptor,
   scope,
   label,
-  iconForType,
-  attached,
-  used,
+  selected,
   improvable,
   busy,
-  onDetach,
+  canOpen,
+  cannotOpenReason,
+  openAction,
+  onPick,
+  onUnpick,
   onImprove,
-}: RowSharedProps & {
-  /** Resolved by the list memo — both are cache lookups, so don't redo them here. */
+  openInWindow = false,
+}: {
+  descriptor: AssetDescriptor;
+  /** Resolved by the list memo — all of these are cache lookups or allocations,
+   *  so they are derived once there rather than per render here. */
   scope: AssetScope;
   label: string;
-  attached: boolean;
-  used: boolean;
+  selected: boolean;
   improvable: boolean;
   busy: boolean;
-  onDetach: (ref: string) => void | Promise<void>;
-  onImprove: (descriptor: AssetDescriptor) => void;
+  /** Host veto on the open affordance. Openability is otherwise derived from the
+   *  typeid alone, which answers "is this a resolvable entity" — not "does an
+   *  editor exist for it". A capability has a real `capability-<uuid>` and no
+   *  editor, so the derived answer is yes and the click dead-ends. Defaults to
+   *  the derived value; `false` disables the control. */
+  canOpen?: boolean;
+  /** Why the row cannot be opened, for the disabled tooltip. Without it the
+   *  vetoed row claims to be an inline persona, which is a different thing. */
+  cannotOpenReason?: string;
+  /** Host-owned open action, REPLACING the derived "open in its asset editor"
+   *  navigation — and making the row openable regardless of what the typeid
+   *  says. For a row whose type has no editor (`data_source`, configured in the
+   *  Data sources view rather than opened as a file) the derived route falls
+   *  back to the markdown editor and dead-ends; the host knows where its row
+   *  actually leads, so it says so. */
+  openAction?: { label: string; run: (descriptor: AssetDescriptor) => void };
+  onPick?: (descriptor: AssetDescriptor) => void | Promise<void>;
+  onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
+  onImprove?: (descriptor: AssetDescriptor) => void;
+  /** See ``AssetManagerPopoverProps.openInWindow``. */
+  openInWindow?: boolean;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
-  const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
-  // Only offer the wand when improvement can actually run — a used asset whose
-  // main file resolves (see improvableMainFile). Gating on `used && posix_path`
-  // alone showed the wand on folder-backed types with no resolvable main file
-  // (e.g. a deck_template missing its main_file), which then errored on click.
-  const canImprove = used && improvable;
-  const openable = _isOpenableTypeid(descriptor.typeid);
+  const openable = (canOpen ?? true) && (!!openAction || _isOpenableTypeid(descriptor.typeid));
+  const locationText = useEntityLocationLabel(descriptor.remote);
+  // The name chip OPENS the asset in its editor — clicking the thing you are
+  // looking at should show you the thing. Selecting is a separate, explicit
+  // control at the row end, and only exists where a host asked for it: on the
+  // process asset manager this list is a read-only "used vs available" board.
+  const togglesOff = selected && !!onUnpick;
+  const pickLabel = togglesOff ? t`Remove ${label}` : t`Select ${label}`;
+  const openActionLabel = !openable
+    ? (cannotOpenReason ?? t`Inline persona — no backing entity`)
+    : openAction
+      ? openAction.label
+      : readOnly
+        ? t`View ${label} (read-only)`
+        : t`Open ${label}`;
+  const openActionTitle = locationText ? `${openActionLabel}\n${locationText}` : openActionLabel;
+  const openActionAria = locationText ? `${openActionLabel}, ${locationText}` : openActionLabel;
+  // Explorer targets the FILE, so an asset with no path (inline persona) has
+  // nowhere to go — same "no backing file" story as a non-openable row.
+  const explorerPath = descriptor.posix_path ?? null;
+  const explorerLabel = explorerPath
+    ? t`Show ${label} in Files`
+    : (cannotOpenReason ?? t`Inline persona — no file on disk`);
 
-  const onChipClick = useCallback(() => {
-    if (!openable || !id) return;
+  const onOpenExplorerClick = useCallback(() => {
+    if (!explorerPath) return;
     try {
-      // Open by the asset's TypeId via the canonical DockPointer factory
-      // (grammar editor/<editor>/typeid/<type>-<id>). Read-only sources open in
-      // viewer mode (readOnly=1), passed as a real `?readOnly=1` query string
-      // via the DockPointer options (not embedded in the path).
-      navigation.openDock(
-        DockPointer.forAssetEditorByTypeId(
-          type,
-          new TypeId(type, id),
-          undefined,
-          readOnly ? { readOnly: '1' } : undefined,
-        ),
-      );
+      // Read at CLICK time, not through `useContext`: that hook's snapshot spans
+      // ~30 fields that churn on a live process, and this list mounts one row
+      // per asset — subscribing per row would re-render the whole board on
+      // every terminal tick for a value only this handler ever reads.
+      const computeNode = dataContext.computeNode?.typeId ?? LOCAL_COMPUTE_NODE;
+      navigation.openDock(DockPointer.forExplorer(VFSPath.fromMachinePath(explorerPath, computeNode).absVfsPath));
+    } catch (err) {
+      console.error('[AssetRow] failed to open asset in explorer', explorerPath, err);
+    }
+  }, [explorerPath, navigation]);
+
+  const onOpenClick = useCallback(() => {
+    if (!openable) return;
+    if (openAction) {
+      openAction.run(descriptor);
+      return;
+    }
+    if (!id) return;
+    try {
+      const options = { assetType: type, ...(readOnly ? { readOnly: '1' } : {}) };
+      const computeNode = dataContext.computeNode?.typeId ?? LOCAL_COMPUTE_NODE;
+      const pointer = descriptor.posix_path
+        ? DockPointer.forAssetEditor(
+            type, VFSPath.fromMachinePath(descriptor.posix_path, computeNode).absVfsPath,
+            undefined, options,
+          )
+        : DockPointer.forAssetEditorByTypeId(type, new TypeId(type, id), undefined, options);
+      if (openInWindow) navigation.openDockInWindow(pointer);
+      else navigation.openDock(pointer);
     } catch (err) {
       console.error('[AssetRow] failed to open asset', descriptor.typeid, err);
     }
-  }, [navigation, type, id, readOnly, openable, descriptor.typeid]);
+  }, [navigation, type, id, readOnly, openable, openAction, descriptor, openInWindow]);
 
   return (
-    <div
-      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0', used && 'bg-primary/5')}
+    <AssetGridRow
+      className={selected ? 'bg-primary/5' : undefined}
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
       data-read-only={readOnly ? 'true' : 'false'}
-      data-used={used ? 'true' : 'false'}
+      data-selected={selected ? 'true' : 'false'}
       data-scope={scope.kind}
     >
       <button
         type="button"
-        onClick={onChipClick}
+        onClick={onOpenClick}
         disabled={!openable}
         data-openable={openable ? 'true' : 'false'}
         className={cn(
-          'flex min-w-0 items-center gap-1.5 rounded border border-border px-1.5 py-0.5 text-xs',
-          openable
-            ? 'bg-muted/30 text-foreground hover:bg-muted'
-            : 'cursor-default border-dashed bg-muted/20 text-muted-foreground',
+          'flex min-w-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-xs disabled:cursor-default disabled:opacity-60',
+          selected
+            ? 'border-primary/50 bg-primary/10 text-foreground hover:bg-primary/20'
+            : 'border-border bg-muted/30 text-foreground hover:bg-muted',
         )}
-        title={
-          !openable
-            ? t`Inline persona — no backing entity`
-            : readOnly
-              ? t`View ${label} (read-only)`
-              : t`Open ${label}`
-        }
+        title={openActionTitle}
+        aria-label={openActionAria}
+        data-testid={`asset-manager-open-${descriptor.typeid}-${descriptor.source}`}
       >
-        <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <EntityIcon
+          type={type}
+          remote={descriptor.remote}
+          showLocationTooltip={false}
+          density="compact"
+          className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground"
+        />
         <span className="min-w-0 truncate">{label}</span>
       </button>
       <AssetScopeChip scope={scope} testidSuffix={`${descriptor.typeid}-${descriptor.source}`} />
-      {canImprove ? (
+      <button
+        type="button"
+        onClick={onOpenExplorerClick}
+        disabled={!explorerPath}
+        data-openable={explorerPath ? 'true' : 'false'}
+        className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-40"
+        title={explorerLabel}
+        aria-label={explorerLabel}
+        data-testid={`asset-manager-explorer-${descriptor.typeid}-${descriptor.source}`}
+      >
+        <SquareArrowOutUpRight className="h-3 w-3" />
+      </button>
+      {improvable && onImprove ? (
         <WikiTip
           wikiword={ASSET_IMPROVEMENT_WIKI}
           label={t`Analyze and improve`}
@@ -1137,70 +1037,37 @@ function AssetRow({
       ) : (
         <GridCellSpacer />
       )}
-      {attached && !readOnly ? (
+      {/* The SELECT control. No read-only guard here: read-only describes whether
+          the asset FILE can be edited, not whether the user's own selection can
+          be undone. Most staged rows are read-only sources, so gating on it hid
+          the control exactly where it is needed most.
+
+          Absent entirely when the host supplied no selection callbacks — that is
+          what turns this list into a read-only availability board. */}
+      {togglesOff || onPick ? (
         <button
           type="button"
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-          onClick={() => void onDetach(descriptor.typeid)}
-          title={t`Detach`}
-          data-testid={`asset-manager-detach-${descriptor.typeid}`}
+          className={cn(
+            'flex h-5 w-5 items-center justify-center rounded hover:bg-muted hover:text-foreground',
+            togglesOff ? 'text-primary' : 'text-muted-foreground',
+          )}
+          onClick={() => {
+            void (togglesOff ? onUnpick(descriptor) : onPick?.(descriptor));
+          }}
+          title={pickLabel}
+          aria-label={pickLabel}
+          aria-pressed={selected}
+          data-testid={
+            togglesOff
+              ? `asset-manager-unselect-${descriptor.typeid}-${descriptor.source}`
+              : `asset-manager-select-${descriptor.typeid}-${descriptor.source}`
+          }
         >
-          <X className="h-3 w-3" />
+          {togglesOff ? <X className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
         </button>
       ) : (
         <GridCellSpacer />
       )}
-    </div>
-  );
-}
-
-function AddModeRow({
-  descriptor,
-  iconForType,
-  checked,
-  onToggle,
-}: RowSharedProps & {
-  checked: boolean;
-  onToggle: (ref: string) => void;
-}) {
-  const { t } = useLingui();
-  const { type } = _parseTypeid(descriptor.typeid);
-  const Icon = iconForType(type);
-  const readOnly = isReadOnlySource(descriptor.source);
-  // Add mode keeps its lock + source pill; only the manage list moved to scope
-  // chips. Take the tooltip from the scope model anyway, so the read-only copy
-  // lives in exactly one place.
-  const lockTooltip = assetScope(descriptor).tooltip;
-  const label = _displayLabelForTypeid(descriptor.typeid);
-  return (
-    <label
-      className="flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0 hover:bg-muted/50"
-      data-testid={`asset-manager-add-row-${descriptor.typeid}`}
-      data-read-only={readOnly ? 'true' : 'false'}
-    >
-      <input
-        type="checkbox"
-        className="h-3 w-3 flex-shrink-0"
-        checked={checked}
-        onChange={() => onToggle(descriptor.typeid)}
-      />
-      <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {readOnly && (
-        <Lock
-          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label={t`Read-only source`}
-          data-testid={`asset-manager-add-readonly-${descriptor.typeid}-${descriptor.source}`}
-        >
-          <title>{lockTooltip}</title>
-        </Lock>
-      )}
-      <span
-        className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={assetSourceLabel(descriptor.source)}
-      >
-        {assetSourceLabel(descriptor.source)}
-      </span>
-    </label>
+    </AssetGridRow>
   );
 }

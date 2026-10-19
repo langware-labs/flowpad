@@ -2,7 +2,7 @@ import string
 
 from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.db.relationship_model import Relationship
 
 char_set = string.ascii_lowercase + string.digits

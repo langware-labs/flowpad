@@ -1,0 +1,330 @@
+import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { ViewMode } from '@src/contexts/view-mode-context';
+import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
+import { AskForHelpButton } from '@src/components/help/AskForHelpButton';
+import {
+  continueVibeSessionForProject,
+  createVibeProcessForProject,
+  embedVibeSubagent,
+} from './use-start-vibe-session';
+import { chatTargetForProject } from '@src/lib/chat-target';
+import { useAgentContext } from '@src/contexts/agent-context';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications/notify';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, useVibeModelTier, type VibeModelChoice } from './vibe-model-select';
+import { VibeWorkerSelect } from './vibe-worker-select';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
+import { AgenticProcess, ProcessKind, toplog } from '@sdk';
+import { SessionSurfaceSwitch } from '@src/components/terminal/interactive-terminal/SessionSurfaceSwitch';
+import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { useCallback, useEffect, useState } from 'react';
+import { useLingui } from '@lingui/react/macro';
+import type { AssetWorkContext } from './asset-work-context';
+import { useKeyedAssetPromptContext } from './asset-work-context';
+import { VibeWorkerSwitchDialog, type VibeWorkerSwitchIntent } from './VibeWorkerSwitchDialog';
+
+interface VibeChatPaneProps {
+  process: AgenticProcess | null;
+  workContext?: AssetWorkContext | null;
+  /**
+   * Host-owned "New is creating a session right now" flag (FLOWPAD-2045).
+   *
+   * The pane can UNMOUNT mid-creation: `New` rebinds the URL the moment the new
+   * process lands, and the host stops rendering the pane for the render or two
+   * it takes the entity to resolve. Local state dies with it and the gate would
+   * never lift — so a host that gates surfaces of its OWN on this flag (the vibe
+   * workspace greys its starter chips) owns the state and passes it back down.
+   * Hosts that don't care omit both and the pane keeps its local copy.
+   */
+  newSessionPending?: boolean;
+  onNewSessionPendingChange?: (pending: boolean) => void;
+}
+
+/** Process-bound chat shared by the process Display and asset-child shells. */
+export function VibeChatPane({
+  process,
+  workContext = null,
+  newSessionPending,
+  onNewSessionPendingChange,
+}: VibeChatPaneProps) {
+  const { t } = useLingui();
+  const { project } = useAgentContext();
+  const { navigation } = useDockNavigation();
+  const defaultWorkerType = useDefaultWorkerType();
+  // The stored tier every build starts with. The home carries no picker, so this
+  // pane's picker is where it is set: a pick switches this session AND becomes
+  // the tier the next build (from the home or here) starts with.
+  const [vibeModelTier, setVibeModelTier] = useVibeModelTier();
+  const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
+  const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
+    workerType: WorkerType;
+    model: VibeModelChoice;
+    sourceProcess: AgenticProcess;
+    projectId: string | null;
+    workdir: string | null | undefined;
+    /** The chat never ran a turn — nothing to carry over, so no question to ask. */
+    empty: boolean;
+  } | null>(null);
+  const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
+
+  // `tab_switch` ready point for the vibe workspace chat: the process history is
+  // in the stream (EntityExecutionPanel hydrates the same idempotent load) and
+  // the next frame paints it. Once per process this pane is bound to — a switch
+  // between the workspace's child tabs keeps the pane and only repaints the
+  // Display, which the `painted` line covers.
+  useEffect(() => {
+    if (!process || !toplog.isOn('tab_switch')) return;
+    const started = performance.now();
+    void process.loadHistory().then(() => {
+      if (!process.historyLoaded) return; // useHistoryLoadAlert logs the failure
+      requestAnimationFrame(() => {
+        if (!claimTabSwitchReady()) return;
+        toplog.log(
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=vibe mode=cold proc=${process.id.slice(0, 8)} history_ms=${Math.round(performance.now() - started)}`,
+        );
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per bound process, not per entity instance
+  }, [process?.id]);
+
+  const [localNewSessionPending, setLocalNewSessionPending] = useState(false);
+  const startingNewSession = newSessionPending ?? localNewSessionPending;
+  const markNewSessionPending = useCallback(
+    (pending: boolean) => {
+      setLocalNewSessionPending(pending);
+      onNewSessionPendingChange?.(pending);
+    },
+    [onNewSessionPendingChange],
+  );
+
+  // "New" must EAGERLY create the fresh AgenticProcess and rebind the
+  // workspace URL — not just clear the panel's local composer state. Vibe is
+  // bound to its process by the dock URL (useVibeWorkspaceSession), and a
+  // sibling surface (Terminal view mode) reads that SAME URL without going
+  // through this panel at all. If "New" only cleared local state and left the
+  // real process/navigation for the lazy first-send, a user who clicks New
+  // and switches to Terminal before typing anything would still land in the
+  // old, already-used session — the URL never moved (FLOWPAD-2027).
+  // `startNewSession` still runs first for instant visual feedback (blank
+  // composer while the real process spins up); the effective reset once the
+  // new process lands is driven by `initialProcessId` changing underneath,
+  // same as picking a session from history.
+  const handleNewSession = useCallback(
+    async (startNewSession: () => void) => {
+      if (startingNewSession) return;
+      const projectId = project?.id ?? process?.project_id ?? null;
+      if (!projectId) {
+        startNewSession();
+        return;
+      }
+      startNewSession();
+      // Held until createVibeProcessForProject has BOTH created the process and
+      // rebound the URL to it, so nothing the user can click in between (the
+      // composer, the display's starter chips) is still aimed at the old
+      // session. FLOWPAD-2045: a starter chip clicked in that window sent its
+      // prompt into the previous chat, and the new one stayed empty forever.
+      markNewSessionPending(true);
+      try {
+        rememberLaunch('vibe', ViewMode.Vibe);
+        await createVibeProcessForProject({
+          projectId,
+          workdir: project?.fs_storage_mount_path ?? undefined,
+          navigation,
+          workerType: defaultWorkerType,
+        });
+      } catch (error) {
+        console.error('[Vibe] Failed to start a new session:', error);
+        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+      } finally {
+        markNewSessionPending(false);
+      }
+    },
+    [
+      startingNewSession,
+      project?.id,
+      project?.fs_storage_mount_path,
+      process?.project_id,
+      navigation,
+      defaultWorkerType,
+      markNewSessionPending,
+      t,
+    ],
+  );
+
+  // The vibe composer is the PROJECT's build surface, so its target is the
+  // project's chat target — the one key `openNewChat` and
+  // `createVibeProcessForProject` both stamp (see `chatTargetForProject`).
+  //
+  // Deliberately NOT read off the open process. A session minted by a task
+  // runner carries THAT runner's subject entity as its target — a diagnosis
+  // terminal is keyed to its FlowpadDiagnosis so a second "Open in terminal"
+  // click reconnects instead of spawning a duplicate. Inheriting it pointed the
+  // composer at an entity owning no builds, which disabled "Recent" outright,
+  // and would have stamped the same wrong target on the next chat created here.
+  //
+  // The process's own target survives only as a project-less fallback: a null
+  // target hard-disables the composer (EntityExecutionPanel's documented
+  // contract), and with no process resolved there is nothing to host at all.
+  const chatProjectId = project?.id ?? process?.project_id ?? null;
+  const chatTarget = !process
+    ? null
+    : chatProjectId
+      ? chatTargetForProject(chatProjectId)
+      : (process.target_typeid_str ?? null);
+
+  const handleActiveWorkerChange = useCallback(
+    ({
+      workerType,
+      activeProcess,
+      model,
+      projectId,
+      workdir,
+    }: {
+      workerType: WorkerType;
+      activeProcess: AgenticProcess;
+      model: string | null;
+      projectId: string | null;
+      workdir: string | null | undefined;
+    }) => {
+      setPendingWorkerSwitch({
+        workerType,
+        model: model || VIBE_MODEL_DEFAULT,
+        sourceProcess: activeProcess,
+        projectId,
+        workdir,
+        empty: !activeProcess.session_id,
+      });
+    },
+    [],
+  );
+
+  const runWorkerSwitch = useCallback(
+    async (intent: VibeWorkerSwitchIntent, requested?: typeof pendingWorkerSwitch) => {
+      const pending = requested ?? pendingWorkerSwitch;
+      if (!pending || !pending.projectId || workerSwitchIntent) return;
+      setWorkerSwitchIntent(intent);
+      const options = {
+        projectId: pending.projectId,
+        workdir: pending.workdir ?? undefined,
+        navigation,
+        model: pending.model,
+        workerType: pending.workerType,
+        targetVfsPath: pending.sourceProcess.target_typeid_str ?? undefined,
+      };
+      try {
+        if (intent === 'continue') {
+          await continueVibeSessionForProject({
+            ...options,
+            sourceProcess: pending.sourceProcess,
+          });
+        } else {
+          await createVibeProcessForProject(options);
+        }
+        setPendingWorkerSwitch(null);
+      } catch (error) {
+        console.error('[Vibe] Failed to switch worker:', error);
+        notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+      } finally {
+        setWorkerSwitchIntent(null);
+      }
+    },
+    [navigation, pendingWorkerSwitch, t, workerSwitchIntent],
+  );
+
+  // An empty chat has no conversation to continue, so "Continue this conversation"
+  // was a question with one real answer: start the new worker's chat directly.
+  useEffect(() => {
+    if (pendingWorkerSwitch?.empty) void runWorkerSwitch('new', pendingWorkerSwitch);
+  }, [pendingWorkerSwitch, runWorkerSwitch]);
+
+  return (
+    <>
+      <EntityExecutionPanel
+        target={chatTarget}
+        processType={ProcessKind.Chat}
+        linkSurface="vibe"
+        className="h-full border-e border-border"
+        dense
+        allowAttachments
+        composerDisabled={startingNewSession}
+        // The session's surface selector — the same control as the terminal/chat headers.
+        settingsActions={
+          process ? (
+            <div className="flex items-center justify-between gap-2" data-testid="execution-settings-surface">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{t`Show as`}</div>
+              <SessionSurfaceSwitch process={process} />
+            </div>
+          ) : null
+        }
+        leadingSlot={({ startNewSession }) => (
+          <NewSessionPill
+            onClick={() => void handleNewSession(startNewSession)}
+            disabled={startingNewSession}
+            title={t`New build`}
+          />
+        )}
+        emptyStateText={t`What do you want to work on`}
+        historyLabel={t`Build history`}
+        historyTriggerLabel={t`Recent`}
+        historyOnLeft
+        // "Recent" lists the PROJECT's conversational sessions, not just those
+        // sharing this panel's target — so a session opened from a diagnosis or
+        // a transcript is reachable from the build composer it belongs to.
+        historyProjectId={chatProjectId}
+        showProcessNameBar
+        afterHistorySlot={
+          <AskForHelpButton projectId={project?.id ?? null} sessionTypeId={process?.typeId ?? null} origin="vibe" />
+        }
+        pastSessionsLabel={t`Past builds`}
+        noPastSessionsLabel={t`No past builds`}
+        defaultProjectId={project?.id ?? null}
+        defaultWorkdir={project?.fs_storage_mount_path ?? null}
+        defaultModel={vibeModelTier}
+        defaultWorkerType={defaultWorkerType}
+        modelSelectSlot={({ value, disabled, onChange }) => (
+          <VibeModelSelect
+            value={value}
+            onChange={(next) => {
+              setVibeModelTier(next);
+              return onChange(next);
+            }}
+            disabled={disabled}
+          />
+        )}
+        workerSelectSlot={({ value, disabled, onChange }) => (
+          <VibeWorkerSelect
+            value={normalizeWorkerType(value)}
+            onChange={(next) => onChange(next)}
+            disabled={disabled || !project?.id}
+          />
+        )}
+        onActiveWorkerChange={handleActiveWorkerChange}
+        initialProcessId={process?.id ?? null}
+        promptContext={promptContext ? { label: t`Working on ${promptContext.label}`, text: promptContext.text } : null}
+        onPromptContextConsumed={promptContext ? () => consume(promptContext.key) : undefined}
+        // New and Recent open a Vibe tab beside this one (`openVibeTabBeside`).
+        onProcessSelected={(processId) => {
+          void navigation.openVibeTabBeside(processId);
+        }}
+        onProcessCreated={async (newProcess) => {
+          await newProcess.enableAssistant();
+          await embedVibeSubagent(newProcess);
+          void navigation.openVibeTabBeside(newProcess.id);
+        }}
+      />
+      <VibeWorkerSwitchDialog
+        open={!!pendingWorkerSwitch && !pendingWorkerSwitch.empty}
+        workerType={pendingWorkerSwitch?.workerType ?? defaultWorkerType}
+        inFlight={workerSwitchIntent}
+        onStartNew={() => void runWorkerSwitch('new')}
+        onContinue={() => void runWorkerSwitch('continue')}
+        onCancel={() => {
+          if (!workerSwitchIntent) setPendingWorkerSwitch(null);
+        }}
+      />
+    </>
+  );
+}

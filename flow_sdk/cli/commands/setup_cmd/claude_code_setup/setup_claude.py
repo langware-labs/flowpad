@@ -3,25 +3,22 @@
 import os
 import sys
 from pathlib import Path
-from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import CLIContext, ClaudeScope
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.hook_parser import HookParser
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.claude_hooks import setHook, removeHook
 
 
-def setup_claude_code(cmd: CLICommand):
+def setup_claude_code(context: CLIContext):
     """
     Run the setup specific to Claude Code.
 
     Args:
-        cmd: CLICommand with context and command details
+        context: CLIContext for the command execution
 
     Returns:
         str: Setup result message
     """
     print("Setting up Claude Code integration...")
-
-    context = cmd.context
 
     # Determine the scope to use
     scope = _determine_scope(context)

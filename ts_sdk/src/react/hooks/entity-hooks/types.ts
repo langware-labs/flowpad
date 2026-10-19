@@ -1,4 +1,6 @@
-import { APIEntity, ApiError, ExpansionRequest } from '@sdk';
+import { APIEntity } from '../../../APIEntity';
+import { ApiError } from '../../../ApiResponse';
+import { ExpansionRequest } from '../../../FlowSync/query';
 
 export type useEntityOptions<T extends APIEntity<T>> = {
   watch?: boolean;

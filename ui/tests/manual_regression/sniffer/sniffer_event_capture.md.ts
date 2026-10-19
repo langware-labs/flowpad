@@ -4,13 +4,17 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
+// The sniffer state (sniffer_hook / sniffer_installed) is served by the deferred
+// /api/v1/graph/info route, not /graph/bootstrap (split out of bootstrap so boot
+// does not wait on it; see docs/boot.md).
+
 // Sniffer is OPT-IN, default OFF. With the instance gate off there is no
 // sniffer_hook and therefore no event-capture surface — correct app behavior,
 // not a failure. The sniffer hook is an `agent_hook` named "Hooks Sniffer"
 // (uname "sniffer"); the canonical gate check is the hooks-sniffer status action.
 test.describe('Sniffer — no capture surface when default-off', () => {
   test('1: no sniffer hook means no capture surface', async ({ request }) => {
-    const res = await request.get(`${API}/api/v1/graph/bootstrap`);
+    const res = await request.get(`${API}/api/v1/graph/info`);
     expect(res.status()).toBe(200);
     const data = (await res.json()).data as Record<string, unknown>;
     expect(data.sniffer_hook, 'default-off: the capture hook is not installed').toBeNull();

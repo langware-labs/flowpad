@@ -38,7 +38,7 @@ If `server.json` is missing, that instance's backend isn't running — stop and 
 ```bash
 mkdir -p "$OUT"
 curl -sf "$API_URL/api/v1/workers/claude/<SESSION_ID>/trace-skeleton" \
-  | jq '.skeleton' > "$OUT/<SESSION_ID>.skeleton.json"
+  | jq '.data.skeleton' > "$OUT/<SESSION_ID>.skeleton.json"
 jq '.summary' "$OUT/<SESSION_ID>.skeleton.json"
 ```
 
@@ -133,7 +133,7 @@ jq -n --slurpfile a "$OUT/<SESSION_ID>.annotations.json" '{annotations: $a[0]}' 
       -H 'Content-Type: application/json' -d @-
 ```
 
-Response: `{ok, id, asset_ref, summary}`.
+Response: `{status, data: {id, asset_ref, summary, feed_entry_id}}` (standard envelope — read `.data`).
 
 ### 5. Verify
 

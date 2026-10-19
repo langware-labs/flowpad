@@ -18,10 +18,31 @@ import inspect
 from contextlib import asynccontextmanager
 from typing import Any, Callable
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from .driver_types import FlowDrivers
+
+
+def _rejected_body(request: Request, exc: Exception) -> JSONResponse:
+    """A `RequestValidationError` as the standard FAIL envelope.
+
+    The issues become one sentence — `body.field: message`, the same wording the UI and
+    the wizard use — because a caller shows a message, and an unreadable one is why a
+    mistyped field could take a page down. 422 is preserved: WHAT went wrong is the
+    status, and only the body's shape changes.
+    """
+    issues = exc.errors() if isinstance(exc, RequestValidationError) else []
+    said = "; ".join(
+        f"{'.'.join(str(part) for part in issue.get('loc', ()))}: {issue.get('msg', '')}".strip(": ")
+        for issue in issues
+    )
+    return JSONResponse(
+        status_code=422,
+        content={"status": "FAIL", "message": said or "Request body was rejected", "data": None},
+    )
 
 
 class FlowServer:
@@ -81,15 +102,33 @@ class FlowServer:
         # 4. Middleware (added in reverse execution order)
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
         from .middleware.cookie_gate_middleware import CookieGateMiddleware
+        from .middleware.http_timing_middleware import HttpTimingMiddleware
+        from .middleware.json_body_relabel_middleware import JsonBodyRelabelMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
+        # Outside RequestTransactionMiddleware, which parses the body into RequestInfo: the
+        # relabel must happen before ANY reader, or it waits on a body that is already consumed.
+        # `curl -d '{...}'` JSON then arrives labelled application/json everywhere.
+        app.add_middleware(JsonBodyRelabelMiddleware)
         # Last = outermost = runs first: an ungated request is rejected before
         # RequestTransactionMiddleware opens a transaction or resolves a user.
         # No-op on an unarmed instance, which is the default and every desktop.
         app.add_middleware(CookieGateMiddleware)
+        # Outermost of all: the `http` toplog tag times every request that reaches
+        # the app, including the ones an inner layer rejects or answers itself.
+        app.add_middleware(HttpTimingMiddleware)
+
+        # A rejected BODY answers in the standard envelope, like every other failure.
+        # FastAPI handles `RequestValidationError` itself, so it never reaches the
+        # catch-all middleware above — routes bound straight to FastAPI were answering
+        # 422 with a raw `{"detail": [ {...}, ... ]}`, a shape no client of ours reads.
+        # `apiClient` unwraps `{status,data}`; the UI's error reader was handed a LIST
+        # where it expected a sentence and put an object into React, which replaced the
+        # whole page with the error screen.
+        app.add_exception_handler(RequestValidationError, _rejected_body)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router
@@ -146,10 +185,21 @@ class FlowServer:
 
         @asynccontextmanager
         async def lifespan(_app: FastAPI):
+            from flow_sdk import boot_progress
             from flow_sdk.db.database import close_db, init_db
 
             # ── Startup ──────────────────────────────────────────────
+            # The steps here import nothing, so the boot reporter would see no
+            # progress in them: each declares itself. No-ops outside a boot.
+            boot_progress.set_phase("db")
             await init_db()
+
+            # Record "the Electron app owns this instance" while FLOWPAD_DESKTOP
+            # is still visible — only this process ever sees it, and the CLI that
+            # can arm the cookie-gate needs the fact on disk to refuse.
+            from .startup import mark_desktop_managed
+
+            mark_desktop_managed()
 
             # SOD driver. An explicitly-registered driver (tests / embedders /
             # cloud) wins. Otherwise there is NO desktop driver to install:
@@ -159,24 +209,30 @@ class FlowServer:
             sod = drivers.get(FlowDrivers.SOD)
             if sod is not None:
                 from flow_sdk.request_context.methods import set_default_test_sod_driver
+
                 set_default_test_sod_driver(sod)
             else:
                 from .startup import cleanup_legacy_sod_local
+
                 cleanup_legacy_sod_local()
 
             # Storage driver
             storage = drivers.get(FlowDrivers.STORAGE)
             if storage is not None:
                 from flow_sdk.request_context.methods import set_default_test_storage_fallback
+
                 set_default_test_storage_fallback(storage)
             else:
                 from .startup import init_local_storage_driver
+
                 init_local_storage_driver()
 
             # User startup hooks
+            boot_progress.set_phase("startup_hooks")
             for hook in startup_hooks:
                 await hook()
 
+            boot_progress.stop()
             yield
 
             # ── Shutdown ─────────────────────────────────────────────

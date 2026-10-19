@@ -1,11 +1,11 @@
 import type { ComponentType } from 'react';
 import { ViewType } from '@src/types/ViewType';
 import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
-import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
-import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
+import { AssetsNavigatorSwitch } from '@src/components/assets/AssetsNavigatorSwitch';
+import { AutomationsNavigator } from '@src/components/automations/AutomationsNavigator';
 import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
 import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
-import { AgenticFlowsNavigator } from '@src/components/agentic-flows/AgenticFlowsNavigator';
+import { GraphWorkflowsNavigator } from '@src/components/graph-workflows/GraphWorkflowsNavigator';
 
 /**
  * Navigator registry — maps a ViewType to the component that fills the shared
@@ -19,11 +19,13 @@ import { AgenticFlowsNavigator } from '@src/components/agentic-flows/AgenticFlow
  */
 export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.DOCS]: DocsNavigator,
-  [ViewType.ASSETS]: AssetsNavigator,
-  [ViewType.PROJECT]: AssetsNavigator,
-  [ViewType.TRIGGERS]: TriggersNavigator,
-  [ViewType.CRON]: TriggersNavigator,
+  // The switch, not the tree directly: an agent editor rides these same two
+  // view types and swaps in its own resource pane (AssetsNavigatorSwitch).
+  [ViewType.ASSETS]: AssetsNavigatorSwitch,
+  [ViewType.PROJECT]: AssetsNavigatorSwitch,
+  [ViewType.AUTOMATIONS]: AutomationsNavigator,
   [ViewType.SHELL]: ChatsNavigator,
+  [ViewType.VIBE]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
-  [ViewType.AGENTIC_FLOWS]: AgenticFlowsNavigator,
+  [ViewType.GRAPH_WORKFLOWS]: GraphWorkflowsNavigator,
 };

@@ -1,9 +1,10 @@
 ---
+id: 70f8ef0b-cb3c-4872-bf42-7bdcc306983e
 name: locit
-description: Localization lens — scan the lingui .po catalogs for target-locale
-  strings that are untranslated or gone stale (English source changed in git),
-  then translate each one through a research→review agent pair and write SOTA
-  translations back into every locale file with a summary + detailed report.
+description: Localization lens — scan the lingui .po catalogs for target-locale strings
+  that are untranslated or gone stale (English source changed in git), then translate
+  each one through a research→review agent pair and write SOTA translations back into
+  every locale file with a summary + detailed report.
 tags: ''
 version: 1
 ---

@@ -7,11 +7,45 @@ matches stored values across macOS, Linux, and Windows on the same host.
 
 from __future__ import annotations
 
+import functools
+import logging
 import ntpath
 import os
+import platform
 import tempfile
 import unicodedata
+import uuid
 from pathlib import Path, PureWindowsPath
+
+
+def source_unreachable(path: Path | str) -> bool:
+    """True when we CANNOT TELL whether ``path`` is deleted or merely out of reach.
+
+    The orphan predicates ask "does this file still exist"; a bare stat answers
+    that question with ``False`` in two very different situations — the file was
+    deleted, or the filesystem it lives on went away (an unmounted volume, a
+    disconnected network share, a remote mount whose cache was evicted). Only the
+    first is a deletion, and treating the second as one reaps every row beneath
+    that root.
+
+    The rule is the parent directory: **a missing file whose parent still exists
+    is genuinely gone; a missing file whose parent is ALSO gone tells us nothing.**
+    One stat, no roots registry, no mount-table parsing.
+
+    The deliberate trade is that deleting a whole directory now leaves its rows
+    behind as garbage rather than reaping them. That is the safe direction — a
+    stale row is recoverable, a wrongly-deleted entity is not — and the default
+    ``OrphanAction.INDEX`` only counts orphans anyway.
+    """
+    try:
+        # os.path, not pathlib: both call sites already hold a str and this runs
+        # once per missing row during a sweep, where the Path object would be
+        # allocated and discarded immediately (measured ~2.3x the cost).
+        return not os.path.exists(os.path.dirname(str(path)))
+    except OSError:
+        # A stale handle or a permission error on the parent is the same answer:
+        # we could not look, so we do not know.
+        return True
 
 
 def canonical_posix_path(p: Path | str) -> str:
@@ -25,6 +59,41 @@ def canonical_posix_path(p: Path | str) -> str:
       pitfalls; no-op for ASCII paths.
     """
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
+
+
+def asset_ref_spellings(p: Path | str) -> list[str]:
+    """Every spelling a stored ``asset_ref`` may have for ``p``, deduped.
+
+    The spelling given (a row saved by hand keeps it verbatim — ``/tmp/x``
+    stays ``/tmp/x`` even where ``/tmp`` is a symlink), the RESOLVED path
+    ``FSRef`` stores, and the canonical form that additionally NFC-normalizes.
+    A lookup that probes only one of them reads a real row as "unowned" — which
+    lets a writer mint a fresh id for a row that exists.
+    """
+    raw = str(p)
+    out = [raw]
+    for candidate in (str(Path(raw).resolve()), canonical_posix_path(raw)):
+        if candidate not in out:
+            out.append(candidate)
+    return out
+
+
+def source_gone(ref: Path | str) -> bool:
+    """A declared source that is deleted: absent, and not merely out of reach (see ``source_unreachable``)."""
+    return bool(ref) and not Path(ref).exists() and not source_unreachable(ref)
+
+
+def asset_refs_under(root: Path | str) -> list[str]:
+    """The SQL ``LIKE`` patterns that match an ``asset_ref`` stored under ``root`` — one per spelling a row
+    may carry (:func:`asset_ref_spellings`), each with ITS OWN separator. A mount is kept in POSIX form
+    while ``FSRef`` stores the resolved path, which on Windows is backslashed: a single ``<root>/%``
+    matches nothing there. A stopgap until ``asset_ref`` is stored in one canonical form (a migration)."""
+
+    def under(spelling: str) -> str:
+        sep = "\\" if "\\" in spelling else "/"
+        return spelling.rstrip("/\\") + sep + "%"
+
+    return list(dict.fromkeys(under(s) for s in asset_ref_spellings(root)))
 
 
 def _path_policy_key(path: Path | str) -> tuple[str, str, str] | None:
@@ -65,6 +134,32 @@ def _same_flavour_key(path: Path | str, flavour: str) -> str | None:
     return keyed[1]
 
 
+@functools.lru_cache(maxsize=512)
+def _resolved_root_key(root: str, flavour: str) -> str | None:
+    return _same_flavour_key(root, flavour)
+
+
+def _root_key(raw_root: Path | str, flavour: str) -> str | None:
+    """``_same_flavour_key`` for a policy ROOT (home, a workspace root, a temp root,
+    flow home, a records root), resolved once per distinct root instead of per call.
+
+    The policy compares every candidate against the same handful of roots, and
+    resolving each of them is most of what a call used to cost (seven of the eight
+    ``Path.resolve`` per ``is_protected_path``). The memo is keyed on the root's own
+    text — the value the settings, the workspace registry or the environment hands
+    over — so a changed input is a different key and can never read a stale answer.
+    ``~`` is expanded BEFORE keying, because its meaning follows ``$HOME``.
+
+    What the key cannot see is the filesystem under an unchanged root text: a
+    symlink on the way to a root that is re-pointed while the process runs keeps
+    its first resolution. Candidates are never memoized — only these roots.
+    """
+    raw = os.fspath(raw_root)
+    if raw.lstrip().startswith("~"):
+        raw = os.path.expanduser(raw.strip())
+    return _resolved_root_key(raw, flavour)
+
+
 def _same_or_under(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip("/") + "/")
 
@@ -76,7 +171,7 @@ def _temp_root_keys(flavour: str) -> frozenset[str]:
         os.environ.get("TMP", ""),
         os.environ.get("TMPDIR", ""),
     )
-    return frozenset(root for raw_root in raw_roots if raw_root and (root := _same_flavour_key(raw_root, flavour)))
+    return frozenset(root for raw_root in raw_roots if raw_root and (root := _root_key(raw_root, flavour)))
 
 
 def is_protected_path(path: Path | str | None) -> bool:
@@ -88,13 +183,28 @@ def is_protected_path(path: Path | str | None) -> bool:
 
     Protected paths are filesystem roots, the configured user home and its
     ancestors, the agent workspace container itself, exact temporary roots,
-    and instance/legacy record stores. Descendant project folders remain
-    unprotected.
+    instance/legacy record stores, and SDK-shipped system projects. Descendant
+    project folders remain unprotected.
     """
     if path is None:
         return True
-    keyed = _path_policy_key(path)
+    return _is_protected_keyed(path, _path_policy_key(path))
+
+
+def _is_protected_keyed(path: Path | str, keyed: tuple[str, str, str] | None) -> bool:
+    """``is_protected_path`` for a path whose policy key is already in hand, so a
+    caller that needs the key too (``is_valid_project_cwd``) resolves it once."""
     if keyed is None:
+        return True
+    # SDK-shipped system projects live inside the INSTALLED package
+    # (<site-packages>/flow_sdk/system_projects/<name>), which none of the
+    # roots below cover — so without this, deleting the Flowpad Assistant
+    # rmtree's the shipped docs/skills/agents out of the user's own install.
+    # It belongs here rather than at one deleter so EVERY destructive path
+    # that consults this policy is covered.
+    from flow_sdk.config import is_system_project_path  # noqa: PLC0415
+
+    if is_system_project_path(path):
         return True
     flavour, candidate, filesystem_root = keyed
     if candidate == filesystem_root:
@@ -108,7 +218,7 @@ def is_protected_path(path: Path | str | None) -> bool:
         settings = None
 
     home = (
-        _same_flavour_key(settings.user_home, flavour)
+        _root_key(settings.user_home, flavour)
         if settings is not None and getattr(settings, "user_home", None)
         else None
     )
@@ -117,28 +227,40 @@ def is_protected_path(path: Path | str | None) -> bool:
     if home and _same_or_under(home, candidate):
         return True
 
+    # This instance's workspace root, and prod's ``~/Flowpad workspace`` — the user's
+    # own projects live there whichever instance is asking.
+    if home and candidate == home + ("/flowpad workspace" if flavour == "windows" else "/Flowpad workspace"):
+        return True
+    # Every workspace root — the default one and each user-created one — holds the
+    # user's projects, so none of them may be removed wholesale. The user-created
+    # roots' keys are precomputed when they change; only the default one resolves here.
     try:
-        from flow_sdk.config import AGENT_MOUNT_FOLDER, agent_workspace_root  # noqa: PLC0415
+        from flow_sdk.config import agent_workspace_root, extra_workspace_root_keys  # noqa: PLC0415
 
-        agent_roots = (AGENT_MOUNT_FOLDER, agent_workspace_root())
+        root = _root_key(agent_workspace_root(), flavour)
+        extra = {key for key_flavour, key in extra_workspace_root_keys() if key_flavour == flavour}
     except Exception:
-        agent_roots = ()
-    for raw_root in agent_roots:
-        root = _same_flavour_key(raw_root, flavour)
-        if root and candidate == root:
-            return True
+        root, extra = None, set()
+    if (root and candidate == root) or candidate in extra:
+        return True
 
     if candidate in _temp_root_keys(flavour):
         return True
 
     internal_roots: list[Path | str] = []
     if settings is not None:
-        for attr in ("records_root", "records_data_dir"):
+        # ``flow_home`` first: it CONTAINS records_root/records_data_dir, and the
+        # two of them alone covered only the CURRENT instance's records — not the
+        # instance dir around them (the DBs), and not other instances' dirs. That
+        # gap let `<flow_home>/instances/<name>` be minted as a project cwd and
+        # then walked: 21 such rows contributed 155,914 of 166,310 walked folders
+        # on one machine. Nothing under flow_home is user content.
+        for attr in ("flow_home", "records_root", "records_data_dir"):
             value = getattr(settings, attr, None)
             if value:
                 internal_roots.append(value)
     for raw_root in internal_roots:
-        root = _same_flavour_key(raw_root, flavour)
+        root = _root_key(raw_root, flavour)
         if root and _same_or_under(candidate, root):
             return True
     if home:
@@ -164,13 +286,10 @@ def is_valid_project_cwd(
     Rejects every protected path plus temporary-directory descendants unless
     ``include_temp`` is explicitly requested by a diagnostic/test caller.
     """
-    if is_protected_path(path):
-        return False
     if path is None:
         return False
-
     keyed = _path_policy_key(path)
-    if keyed is None:
+    if keyed is None or _is_protected_keyed(path, keyed):
         return False
     flavour, candidate, _filesystem_root = keyed
 
@@ -188,6 +307,35 @@ def is_valid_project_cwd(
         if any(_same_or_under(candidate, root) for root in _temp_root_keys(flavour)):
             return False
     return True
+
+
+def is_valid_project_mount(
+    path: Path | str | None,
+    *,
+    include_temp: bool = False,
+) -> bool:
+    """Canonical policy gate for a project mount used in OWNERSHIP lookups.
+
+    Deliberately distinct from ``is_valid_project_cwd``. That one answers "may
+    a worker run here / may this become a discovered cwd", and it fails closed
+    through ``is_protected_path`` — whose job is "must never be recursively
+    deleted". The two questions only *look* alike, and conflating them is a
+    real bug: an SDK-shipped system project is protected from deletion (it
+    lives inside the installed package), so the delete gate rejects it, so it
+    vanished from ``load_project_mounts`` and every file under
+    ``flow_sdk/system_projects/<name>/`` was attributed to the nearest
+    *deletable* ancestor project instead — typically the checkout containing
+    the install.
+
+    Undeletable does not mean unowned. A system project mount is a precise,
+    legitimate owner, so it is admitted here while remaining fully protected
+    from every destructive caller.
+    """
+    from flow_sdk.config import is_system_project_path  # noqa: PLC0415
+
+    if path is not None and is_system_project_path(path):
+        return True
+    return is_valid_project_cwd(path, include_temp=include_temp)
 
 
 def ancestors_of(p: Path | str) -> list[str]:
@@ -209,10 +357,83 @@ def is_path_under(path: str, root: str) -> bool:
 
     Pure string check over already-canonical posix paths (see
     ``canonical_posix_path``) — ``/a/bc`` is NOT under ``/a/b``. The single
-    containment predicate shared by the nested-project walk dedup
-    (``real_project_cwd_fn._dedup_nested``) and the deepest-project-wins
-    association (``deepest_project_id_for_path``) so the two can never drift.
+    containment predicate every nesting question goes through, so they cannot
+    drift: deepest-project-wins association (``deepest_project_id_for_path``),
+    descendant queries, and the placement checks.
     """
     r = root.rstrip("/")
     p = path.rstrip("/")
     return p == r or p.startswith(r + "/")
+
+
+def trash_path(path: Path | str) -> str:
+    """Move ``path`` to the desktop Trash. Returns which mechanism was used.
+
+    The recoverable counterpart of ``shutil.rmtree`` for paths that hold the
+    USER's files rather than flow-owned internal state. It lives beside
+    ``is_protected_path`` deliberately: this module already owns "what must
+    never be recursively deleted", and the safe action belongs with the policy.
+
+    ``send2trash`` is preferred because it produces a real, restorable Trash
+    entry — on macOS that is the user's own Trash, so it is where Finder's "Put
+    Back" can find it regardless of ``$HOME``. The fallback is a plain move into
+    ``~/.Trash``, reached only when the package is missing; any other failure
+    propagates, because a trash call that quietly did something else is worse
+    than one that fails. Callers report the mechanism so their confirmation text
+    can stay honest about what happened.
+    """
+    import shutil  # noqa: PLC0415
+
+    target = Path(path)
+    try:
+        from send2trash import send2trash  # noqa: PLC0415 — optional dependency
+    except ImportError:
+        trash_dir = Path.home() / ".Trash"
+        trash_dir.mkdir(parents=True, exist_ok=True)
+        destination = trash_dir / target.name
+        suffix = 1
+        while destination.exists():
+            destination = trash_dir / f"{target.name} {suffix}"
+            suffix += 1
+        shutil.move(str(target), str(destination))
+        return "trash_fallback"
+    send2trash(str(target))
+    return "trash"
+
+
+def vfs_relative_path(abs_path: str) -> str:
+    """Normalize an OS-absolute path into a VFS-relative form (no leading slash).
+
+    On Unix: `lstrip("/")`.
+    On Windows: backslashes → forward slashes, then handle three shapes:
+    - Drive-letter (`C:/Users/x`): strip the drive prefix.
+    - UNC (`//server/share/x`): drop the leading `//` but keep `server/share`
+      so the host prefix survives; the OS layer can reassemble UNC from it.
+    - Other shapes: just `lstrip("/")`.
+    """
+    if platform.system() != "Windows":
+        return abs_path.lstrip("/")
+    norm = abs_path.replace("\\", "/")
+    if len(norm) >= 2 and norm[1] == ":":
+        return norm[2:].lstrip("/")
+    if norm.startswith("//"):
+        logging.warning(
+            "UNC path %r encountered — VFS support for UNC paths is limited; "
+            "consider mapping the share to a drive letter.",
+            abs_path,
+        )
+        return norm[2:]
+    return norm.lstrip("/")
+
+
+def legacy_project_scope_id(path: str | Path) -> str | None:
+    """Existing path-derived record-scope alias; never a new Project entity id.
+
+    Discovery needs this compatibility value before a Project row exists, so
+    computing it must not import the application entity/database runtime.
+    """
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    if not path or not is_valid_project_cwd(path, include_temp=True):
+        return None
+    return mint_uuid(f"project:{canonical_posix_path(path)}", namespace=uuid.NAMESPACE_DNS)

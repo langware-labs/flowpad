@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import json
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any
 
 from starlette.requests import Request
+
+# Note: These are flow-cli paths, not FlowPad
+from flow_sdk.config import default_service_config
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.request_context.execution_context import get_execution_context
+
 
 # TODO: ServiceConfig - stub import
 class ServiceConfig:
@@ -11,12 +19,6 @@ class ServiceConfig:
     development: bool = True
     sandbox_storage_mount_path: str = "/tmp"
 
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.request_context.execution_context import get_execution_context
-
-# Note: These are flow-cli paths, not FlowPad
-from flow_sdk.config import default_service_config
-from flow_sdk.api.api_types.type_id import TypeId
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -120,38 +122,15 @@ def get_entity_embedded_storage(typeid: TypeId, parent_storage: StorageDriver | 
 
 
 def get_entity_storage(typeid: TypeId, parent_storage: StorageDriver | None = None, entity: Any = None):
-    """
-    Get the FS storage driver for an entity.
+    """The storage service's resolution, with the REQUEST-scoped embedded store
+    as the fallback instead of the service's temp folder."""
+    from flow_sdk.storage.entity_storage_service import (  # noqa: PLC0415
+        get_entity_storage as service_entity_storage,
+    )
 
-    Resolution order:
-    1. Entity fs_storage_provider field (if set)
-    2. Embedded storage (default fallback)
-
-    Args:
-        typeid: The entity's TypeId
-        parent_storage: Optional parent storage driver
-        entity: Optional entity instance for property-based storage resolution
-    """
-    from flow_sdk.core.fs.drivers.storage_mount import StorageMount
-    from flow_sdk.core.fs.flow_fs import get_storage_driver
-
-    # Check entity for storage provider field
-    if entity is not None:
-        storage_provider = getattr(entity, "fs_storage_provider", None)
-        if storage_provider is not None:
-            config = get_current_service_config()
-            mount_path = getattr(entity, "fs_storage_mount_path", None) or config.sandbox_storage_mount_path
-            mount = StorageMount(
-                name=f"{typeid.type}_storage",
-                provider=storage_provider,
-                storage_path=mount_path,
-            )
-            driver = get_storage_driver(mount)
-            driver.root_entity_typeid = typeid
-            return driver
-
-    # Fall back to embedded storage
-    return get_entity_embedded_storage(typeid, parent_storage)
+    return service_entity_storage(
+        typeid, entity=entity, fallback=lambda tid: get_entity_embedded_storage(tid, parent_storage)
+    )
 
 
 test_sod_override = None
@@ -182,11 +161,12 @@ def get_current_sod_store():
     return get_instance_settings().sod
 
 
-def get_current_email_provider():
-    service: FlowpadService | None = get_current_service()
-    if service is None:
-        return None
-    return service.email_provider
+def request_fields(body: Any) -> dict:
+    """An action's fields from a JSON body, or from the ``request`` field of a multipart one (with files)."""
+    if not isinstance(body, dict):
+        return {}
+    raw = body.get("request")
+    return json.loads(raw) if isinstance(raw, str) else (raw if isinstance(raw, dict) else body)
 
 
 def get_current_request_info():
@@ -256,6 +236,40 @@ def get_current_request_user():
     return request_info.user
 
 
+async def get_current_request_user_fresh():
+    """The request's user, re-read from the database.
+
+    ``request_info.user`` is the process-wide ``_LOCAL_USER_CACHE`` singleton
+    (``request_transaction_middleware``), resolved at the first request of the
+    process and never refreshed. Anything that writes to the user AFTER that —
+    every OAuth flow storing a token writes through its own freshly-fetched
+    user — is invisible to it.
+
+    For most callers that does not matter: they want the identity. It matters
+    enormously for anything reading or writing ``user.env_vars``, which is the
+    authoritative record of the user's credentials:
+
+    * reading it made ``oauth/attach`` report "SOD for provider
+      'github_credentials' not found" for a credential sitting in the database,
+      and made a project's env table resolve a valid reference to MISSING;
+    * writing through it would persist an env-var list that predates every
+      token stored since the process booted, silently dropping them.
+
+    Use this wherever ``env_vars`` is the point. Falls back to the cached object
+    when the re-read finds nothing, so a user that exists only in memory still
+    works.
+    """
+    request_info = get_current_request_info()
+    if request_info is None or request_info.user is None:
+        return None
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    typeid = getattr(request_info.user, "typeid", None)
+    if typeid is None:
+        return request_info.user
+    return await Entity.get_by_typeid(typeid) or request_info.user
+
+
 def get_current_auth_result():
     request_info = get_current_request_info()
     if request_info is None:
@@ -277,7 +291,12 @@ def _sod_key(entity: Any, name: str) -> str:
 async def get_user_credentials(user, name: str, foreign_key: str | None = None) -> Any:
     sod_store: SodDriver = get_current_sod_store()
     value = await sod_store.read_user_sod(_sod_key(user, name), foreign_key)
-    return value
+    from flow_sdk.core.oauth.hub_mirror import resolve_hub_mirror  # noqa: PLC0415
+
+    token, refreshed = await resolve_hub_mirror(value)
+    if refreshed != value:
+        await sod_store.write_user_sod(_sod_key(user, name), refreshed, foreign_key)
+    return token
 
 
 async def set_user_credentials(user, name: str, value: Any, foreign_key: str):

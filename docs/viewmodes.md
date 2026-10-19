@@ -3,13 +3,36 @@ id: d344b080-a33a-4cf3-8916-cec2b50d3199
 title: View Modes
 ---
 
-# View Modes — Standard / Advanced / Dev "skin" system
+# View Modes — Vibe / Standard / Advanced / Dev "skin" system
 
-A single global flag, **View mode**, lets a user dial the whole UI across three
-tiers: **Standard** (calm, minimal) ⊂ **Advanced** (power-user) ⊂ **Dev** (full
-developer internals). Normal users toggle Standard ↔ Advanced; developers can
-enter Dev mode (console-only entry: `window.setDev(true)`). It is toggled from
-the footer pill and behaves like the theme: one switch, app-wide.
+> **2026-10-11 — a mode belongs to a session tab.** The footer selector is gone and
+> there is no app-wide mode. Only a session dock (`/dock/shell/agentic_process-…`,
+> `/dock/vibe/…`) and a child its workspace hosts carry `?viewMode`; every other page
+> drops it (`DockPointer.carriesViewMode`) and has one look. The home is always the
+> tabless Vibe hero. A session's tab remembers the mode it was last shown in
+> (`AgenticProcess.last_mode`, `VIEW_MODE_STORE.tab = TabOpen`); a session with no
+> memory opens in the last mode the user selected with a session's own switch
+> (`lastSelectedViewMode()`). Sections below that describe the footer control or
+> `Project.last_mode` are history.
+
+
+A single global flag, **View mode**, lets a user dial the whole UI across four
+tiers: **Vibe** (creator workspace, the default) ⊂ **Standard** (calm, minimal) ⊂
+**Advanced** (power-user) ⊂ **Dev** (full developer internals). It is picked from
+the footer selector and behaves like the theme: one switch, app-wide.
+
+The footer control labels each mode by the **surface it shows**, not by its rank —
+Vibe, **Chat** (`standard`), **Terminal** (`advanced`), Dev — because the selector
+is what picks the workspace / chat pane / xterm, and rank names would tell the user
+about an internal hierarchy instead of what they get. The enum values stay
+`standard`/`advanced` (persisted preference, URL param). The first three always
+render; Dev stays hidden until a double-click on the selected Terminal button
+reveals it (revealing never selects), and that reveal is deliberately not
+persisted. `window.setDev(true)` still works.
+
+Vibe has its own doc — [Vibe Mode](modes/vibe_mode.md) — because it adds a layout
+(chat + Display) rather than only hiding chrome. Everything below applies to all
+four tiers.
 
 This doc is the methodology + developer guidelines for building UI that honors
 View mode. **Read the skin-layer rule before adding a single conditional.**
@@ -41,6 +64,79 @@ Why so strict: a mode toggle that resets state, refetches, or unmounts live
 work is a bug surface. Keeping mode a pure presentation concern makes it cheap,
 instant, and impossible to break the data layer with.
 
+### The ONE sanctioned exception — session surface
+
+An agent session's **transport** follows the mode, and this is deliberate. It is
+BIDIRECTIONAL (FLOWPAD-2105): a **terminal** surface *requires* an interactive
+PTY (`viewModePtyMode`), so selecting Terminal switches the live worker to
+`WorkerMode.Interactive`; selecting **Chat or Vibe** switches it back to
+`WorkerMode.CLI`
+(`ui/src/components/terminal/interactive-terminal/use-process-surface.ts`).
+Both directions reach the backend through the **same** action, `switch-mode`:
+`→Interactive` spawns the PTY and returns the same open payload the `open`
+action does, so the client still does its live attach off the response, while
+`→CLI` runs `_enter_cli_mode`, killing the PTY and persisting `visible=false` +
+`pty_mode=false`. They used to differ — `→Interactive` went through `start()` /
+`open`, which carries no mid-turn guard, and that let a mid-turn switch to
+Terminal spawn a second worker onto the transcript a live headless turn was
+still writing, losing that turn (FLOWPAD-2130). One route, one guard.
+Both sides are one backend mutation driven by view mode — the mapping is
+`surfaceForViewMode(mode) → 'vibe' | 'chat' | 'terminal'`
+(`ui/src/contexts/view-mode-context.tsx`), the single reason View mode is *the*
+mode selector rather than a skin. It replaced a second `chat mode` preference
+that drifted out of sync with this one; one enum, one preference, one control.
+
+Chat and vibe can *render* either transport — they bind to the session's
+transport-independent stream — but `pty_mode` is the session's **durable
+transport intent**, and for a while nothing in `ui/src` ever wrote it back. That
+made it a one-way latch: a session that had once visited the terminal stayed on
+a PTY forever, across reloads included. Leaving the terminal now hands the
+worker back.
+
+Why the round trip was once removed, and why it is safe now: the old kill fired
+on a *healthy* worker at the wrong moment — the backend 409s a mid-turn switch,
+and the refused kill was silently queued to land minutes later. That is a guard
+problem, and the guard is now direction-split, because the two directions ask
+different questions:
+
+* `→Interactive` waits for **readiness** (`isReadyForInput`) — it has to spawn a
+  worker and attach to it.
+* `→CLI` waits on **busy** (`isBusy`), the same `is_turn_busy` predicate the
+  backend 409s on, so the client and the server can never disagree. Using
+  readiness here would strand the one session that most needs the switch: a PTY
+  the user ended from the xterm (`/exit` → STOPPED) is neither busy nor ready.
+
+Both directions leave the mode unrecorded on refusal, so the reconcile retries
+the moment the worker goes idle rather than stranding the session on the wrong
+transport. Each also forces `loadHistory({ force: true })` afterwards — the
+**transcript** obligation is separate from the transport one and applies in
+every direction, including chat→vibe where no transport changes at all, so a
+turn produced on the surface being left is not missing from the incoming pane.
+
+**Chat/vibe and the terminal are mutually exclusive, first sight included.**
+Opening a dock in chat or vibe on a session that is still `pty_mode=true` (a
+reload, a `?viewMode=standard` link) switches it to headless like any other mode
+change — it used to be left on its PTY, so a question the agent then asked waited
+in a terminal nobody could see.
+
+A switch the worker cannot take yet **waits, and says why**
+(`SurfaceSwitchWaitNotice`): mid-turn (`busy`), or — after the turn ended —
+background work the agent launched (`run_in_background`) still running in the
+PTY, which `switch-mode` refuses with a 409 (`BACKGROUND_TASKS_RUNNING`) rather
+than kill it. While a chat switch waits, `InteractiveTerminal` keeps the terminal
+on screen under the notice instead of a chat over the live PTY. The session's
+surface switch is greyed mid-turn (`busy`), as before; background work is not
+`busy`, so that pick lands and the notice says why the switch is still waiting.
+
+The other direction waits too: a chat worker the agent left background work in
+(`background_work`) cannot take a switch to the terminal (the work belongs to its
+process and would die with it). The notice then offers **Switch anyway**, behind a
+confirmation that the switch ends the work — see `agent-management/mode-switching.md`.
+
+Code still must not infer "this is the chat surface, therefore the worker is
+headless" — during that wait it is not; read `pty_mode` /
+`AgenticProcess.isHeadless` when that is what you mean.
+
 ## The toolkit — `@src/components/view-mode`
 
 One import surface. State lives in `ui/src/contexts/view-mode-context.tsx`;
@@ -50,8 +146,9 @@ the barrel re-exports it alongside the components.
 import {
   useIsAdvanced,   // () => boolean    — true if Advanced or Dev (hierarchy)
   useIsDev,        // () => boolean    — true only in Dev mode
+  useIsVibe,       // () => boolean    — true only in Vibe mode
   useViewMode,     // () => ViewMode   — when you need the enum value
-  ViewMode,        // enum { Standard, Advanced, Dev }
+  ViewMode,        // enum { Vibe, Standard, Advanced, Dev }
   setViewMode,     // (ViewMode) => void
   getViewMode,     // () => ViewMode   — imperative read (also window.getView)
   AdvancedOnly,    // <AdvancedOnly reserve> — hide-in-Standard wrapper
@@ -61,14 +158,26 @@ import {
 ```
 
 Also available as globals:
-- `window.setView(mode)` — set to Standard/Advanced/Dev
+- `window.setView(mode)` — set to Vibe/Standard/Advanced/Dev
 - `window.getView()` — read current mode
 - `window.setDev(val?)` — set Dev mode (no arg = toggle between Dev and Advanced)
 - `window.getDev()` — read Dev mode boolean
 
-The flag is persisted to `localStorage.viewMode` and reflected as a
+The mode is persisted as the prefMan preference `preferences.ui.view_mode` (a
+**boot key**: seeded synchronously from `localStorage.viewMode` at startup and
+mirrored back on every write, so first paint doesn't flash the default while
+`preferences.json` loads). It is reflected as a
 `data-view="standard|advanced|dev"` attribute on `<html>` (set on first paint and on
 every change) so CSS can react app-wide.
+
+The boot seed only exists once the app has run in that browser profile. A
+consumer that paints a user-visible arrangement off the mode — rather than
+skinning one already on screen — must therefore distinguish "nothing stored" from
+"nothing read in yet", which `get()` alone cannot: use
+`usePreferenceResolved(PrefKey.VIEW_MODE)` (or `useSessionSurface()`, which
+returns `null` until it resolves) and hold the decision instead of rendering the
+default and repainting. `AdvancedOnly` / `DevOnly` / `ViewSwap` need none of this
+— they gate chrome around content that is already correct.
 
 ## Decision tree — how to gate a surface
 
@@ -118,45 +227,42 @@ inside one component with scattered `isAdvanced &&`. Instead:
 
 ```tsx
 // container builds slots ONCE (all hooks already ran above)
-const center = <EntityActionsToolbar … showExport={false} />;   // Share + Bookmark
-const download = <ExportEntityButton … />;
-// …debug, restart, right slots…
+const title = <span className="truncate">{entity.name}</span>;
+const actions = <EntityActions entity={entity} />;
 
 <ViewSwap
-  advanced={<AdvancedInteractiveTabHeader debug={debug} restart={restart}
-              center={center} download={download} right={right} />}
-  standard={<StandardInteractiveTabHeader center={center} />}
+  advanced={<FullHeader title={title} actions={actions} />}
+  standard={<CompactHeader title={title} />}
 />
 ```
 
-The same `center` node is handed to both layouts — one set of buttons, two
+The same `title` node is handed to both layouts — one node, two
 arrangements. Nothing is rebuilt or refetched on toggle.
 
 ## Worked example — the interactive tab header
 
 `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` is the
-stateful container; `InteractiveTabHeader.tsx` holds the two layouts.
+stateful container; `InteractiveTabHeader.tsx` is its ONE layout. The header is
+the slot pattern without the swap: it no longer differs by tier, so there is no
+`ViewSwap` — what differs is decided by which slots the container fills.
 
-Standard strips the toolbar to its essence: only **Share + Bookmark**, aligned
-right. Advanced is the full toolbar. The download/export action moved out of the
-center CTA group into the right toolbar (it's an Advanced-only action and never
-belonged between Share and the star).
-
-| Slot | Standard | Advanced |
+| Slot | Content | When |
 | --- | --- | --- |
-| `debug` (CLI Options, Columns & Trace) | — | ✓ left |
-| `restart` | — | ✓ left |
-| `center` (Share + Bookmark) | ✓ right-aligned | ✓ centered |
-| `download` (export bundle) | — | ✓ right |
-| `right` (asset mgr, commit/merge, terminal, fork, worktree, session info, transcript) | — | ✓ right |
+| `debug` | `DebugMenu` — CLI options, gutters, raw-stream viewers | terminal **surface** only (`useSessionSurface() === 'terminal'`), and embedded terminals |
+| `title` | entity title, centered | not embedded |
+| `modes` | `SessionSurfaceSwitch` — Terminal / Chat / Vibe | not embedded |
+| `right` | Fork, then `SessionActionsMenu` (session info, transcript, assets, restart, open terminal, worktree, commit & merge, export), then Close | Fork and the nav-out menu items: not embedded; Close: embedded only |
 
 Notes:
-- **Embedded** terminals (chat side panel) always use the Advanced layout —
-  `const standard = !embedded && !isAdvanced` — so that surface is unchanged.
-- All `!embedded` / `hasSession` slot conditions are unchanged; they live inside
-  the slot definitions, so embedded behavior is byte-for-byte identical.
-- `ProcessToolbar` keeps **every** hook (`useSyncExternalStore`, the API-timeout
-  effect, etc.) running in both modes — the header is hidden, the process is not.
+- The debug menu follows the **surface**, not the developer-mode switch: it is
+  about the xterm, so it shows on every terminal and on no chat or Vibe tab.
+- Share + Bookmark are deliberately absent — the top navigation bar already
+  carries them.
+- The restart-required signal is on the session actions **button**, so it is
+  visible with the menu closed.
+- A menu whose items open a dialog or popover is **non-modal**
+  (`<DropdownMenu modal={false}>`), and a popover opened from an item opens on
+  the menu's close event (`onCloseAutoFocus`), not on the item's select.
 
 ## Testing recipe (debugMCP)
 
@@ -165,6 +271,7 @@ needed to set state:
 
 ```js
 // drive the mode (re-renders live, no reload)
+browser_evaluate: () => window.setView('vibe')
 browser_evaluate: () => window.setView('standard')
 browser_evaluate: () => window.setView('advanced')
 browser_evaluate: () => window.setView('dev')
@@ -173,7 +280,7 @@ browser_evaluate: () => window.setDev(false)    // exit Dev → Advanced
 browser_evaluate: () => window.setDev()         // toggle Dev ↔ Advanced
 browser_evaluate: () => window.getView()
 browser_evaluate: () => window.getDev()
-browser_evaluate: () => document.documentElement.dataset.view   // 'standard' | 'advanced' | 'dev'
+browser_evaluate: () => document.documentElement.dataset.view   // 'vibe' | 'standard' | 'advanced' | 'dev'
 ```
 
 Assertions:
@@ -200,7 +307,8 @@ Assertions:
 
 ## Decision log
 
-- **3-tier hierarchy: Standard ⊂ Advanced ⊂ Dev.** `useIsAdvanced()` returns true for both Advanced and Dev, enforcing the hierarchy by construction. New consumers can use `useIsDev()` for Dev-specific gates. Migration from the old separate `devMode` boolean is automatic (one-time `localStorage` swap on startup).
+- **4-tier hierarchy: Vibe ⊂ Standard ⊂ Advanced ⊂ Dev.** `useIsAdvanced()` returns true for both Advanced and Dev, enforcing the hierarchy by construction. New consumers can use `useIsDev()` for Dev-specific gates, or `useIsVibe()` for the creator workspace. Migration from the old separate `devMode` boolean is automatic (one-time `localStorage` swap on startup).
+- **Labelled by surface, not by rank.** The selector reads Vibe / Chat / Terminal / Dev while the persisted values stay `vibe`/`standard`/`advanced`/`dev`. Users pick a surface; the hierarchy is an implementation detail that only gate authors need.
 - **No-arg `setDev()` toggles Dev ↔ Advanced.** Developers use `window.setDev()` to toggle dev mode without reaching the console to type true/false. Non-developers never see Dev mode in the UI (normal users don't have access to the 3-state footer pill cycle).
 - **Reserve-by-default (visibility:hidden) over unmount.** A View toggle should feel like flipping a skin, not reflowing the page. Reserving space keeps it shift-free; `reserve={false}` is the opt-out for flow layouts. (The footer trace-heartbeat and UsageBar shipped this way.)
 - **One global flag, not per-surface toggles.** View mode is a single mental model for the user and a single read path (`useIsAdvanced`, `useIsDev`) for devs. A per-tab/per-surface toggle was rejected as a second concept to manage.

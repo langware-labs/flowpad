@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-9c3569a1-3e91-5616-8025-d0b68c0a610d",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "docs",
+  "folder_rel_path": "reports",
+  "folder_name": "reports",
+  "inputs_hash": "b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.",
+  "files": [
+    {
+      "name": "asset-filesystem-refactor.md",
+      "rel_path": "asset-filesystem-refactor.md",
+      "title": "Filesystem asset refactor validation",
+      "summary": "2026-09-11 validation report for the filesystem asset refactor: library boundary, automated suite results and live checks.",
+      "content_hash": "993d5a13878d511846b252c33a008ac5de1c1bd399c3ed86ef0e3fc3d0343eea",
+      "size_bytes": 9137
+    },
+    {
+      "name": "filesystem-asset-library-validation.md",
+      "rel_path": "filesystem-asset-library-validation.md",
+      "title": "Filesystem asset library consolidation — 2026-09-13",
+      "summary": "2026-09-13 report on consolidating the flow_sdk/assets filesystem library: identity, occurrences, import boundaries and implementation checks.",
+      "content_hash": "9257dbc30833ea3f006a055b0e7862c29421f6284cf3fdb5fd97f9b0151e5383",
+      "size_bytes": 8111
+    },
+    {
+      "name": "worker-asset-availability.md",
+      "rel_path": "worker-asset-availability.md",
+      "title": "Worker asset availability validation",
+      "summary": "2026-09-10 validation of which skills and agents each worker harness actually discovers across launch modes; parity still in progress.",
+      "content_hash": "30c332b863dc16f399cf2090907704c05c16eeca4bd67a34c57c13f2df9931ae",
+      "size_bytes": 4352
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-09-25T12:04:30Z",
+  "latest_process_ref": ""
+}

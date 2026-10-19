@@ -6,6 +6,7 @@ import type { Browseable } from '@src/components/browseable-tree/types';
 
 // Stable dock so BrowseableGrid's default navigate doesn't need a Router.
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => ({ toString: () => 'DOCK' }),
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: { toString: () => 'DOCK' } }),
 }));
 
@@ -15,9 +16,9 @@ const ID = { fresh: '00000000-0000-4000-8000-000000000012' };
 
 /** A favorite with a stubbed save — markOpened is a pure entity mutation, so
  *  these need no hook, no provider and no module mocks. */
-function favorite(counter?: number): Bookmark {
+function favorite(counter?: number, save = vi.fn(() => Promise.resolve())): Bookmark {
   const b = new Bookmark({ id: ID.fresh, bookmark_type: BookmarkType.FAVORITE, title: 'fav', counter });
-  b.save = vi.fn(() => Promise.resolve());
+  b.save = save;
   return b;
 }
 
@@ -52,11 +53,58 @@ describe('Bookmark.markOpened', () => {
 
   it('persists the bump', async () => {
     vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
-    const b = favorite();
+    const save = vi.fn(() => Promise.resolve());
+    const b = favorite(undefined, save);
 
     await b.markOpened();
 
-    expect(b.save).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledOnce();
+  });
+});
+
+// ── Bookmark.markSeen: clears the badge without counting as an open ──────────
+describe('Bookmark.markSeen', () => {
+  it('sets its own flag and leaves the open count alone — a hover is not an open', async () => {
+    vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite(); // counter undefined = never opened
+
+    await b.markSeen();
+    await b.markOpened();
+
+    expect(b.seen).toBe(true);
+    expect(b.counter).toBe(1); // the open, and only the open
+  });
+
+  it('is idempotent — a second sweep of the same menu writes nothing', async () => {
+    vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const save = vi.fn(() => Promise.resolve());
+    const b = favorite(undefined, save);
+
+    await b.markSeen();
+    await b.markSeen();
+
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it('is a no-op on an already-opened favorite — nothing left to clear', async () => {
+    const notify = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const save = vi.fn(() => Promise.resolve());
+    const b = favorite(3, save);
+
+    await b.markSeen();
+
+    expect(b.seen).toBeFalsy();
+    expect(save).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('notifies subscribers — this, not the save WS echo, is what clears the badge', async () => {
+    const notify = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite();
+
+    await b.markSeen();
+
+    expect(notify).toHaveBeenCalledWith(b);
   });
 });
 

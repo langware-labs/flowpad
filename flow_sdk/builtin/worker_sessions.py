@@ -5,7 +5,6 @@ import logging
 import re
 from pathlib import Path
 
-from flow_sdk.config import AGENT_MOUNT_FOLDER
 
 
 def get_first_user_message(content_items):
@@ -99,7 +98,9 @@ def get_worker_sessions() -> list[dict]:
         List of session dictionaries with sessionId, title, timestamp, and shortId
     """
     # Use default home directory
-    current_dir = str(AGENT_MOUNT_FOLDER)
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+    current_dir = str(agent_workspace_root())
     current_path = Path(current_dir).resolve()
     # Replace /, spaces, and periods with hyphens for Claude project naming
     claude_project_name = re.sub(r"[/. ]", "-", str(current_path))

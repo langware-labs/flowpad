@@ -1,0 +1,6 @@
+{
+  "name": "flowpad-app",
+  "title": "Flowpad app",
+  "description": "A static app over the Flowpad SDK: plain files Flowpad serves itself, no build step.",
+  "build": "."
+}

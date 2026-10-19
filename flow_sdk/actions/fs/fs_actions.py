@@ -5,20 +5,26 @@ Ported from FlowPad: flowpad/hub/app/actions/fs/fs_actions.py
 Implements individual filesystem operations (browse, upload, download, delete, etc.)
 """
 
+import asyncio
 import errno
 import json
 import logging
+import os
 import mimetypes
 import re
 import urllib.parse
+from contextlib import AsyncExitStack
 from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import AsyncIterator, List
 
 from starlette.datastructures import UploadFile
-from starlette.responses import StreamingResponse
+from starlette.responses import Response, StreamingResponse
 
 from flow_sdk.api.fs.fs_api import EntityFSReqInfo, VFSPath
-from flow_sdk.models import FSItem
+from flow_sdk.assets.layout import File
+from flow_sdk.builtin.faas.serve_static import AppNotBuilt, serve_app_bytes
+from flow_sdk.models import FSEntry
 from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.storage import LocalStorageDriver, StoragePermissionError, get_entity_storage
@@ -116,7 +122,28 @@ async def _get_storage_for_entity(request_info: RequestInfo) -> LocalStorageDriv
     return get_entity_storage(target_entity, entity=entity)
 
 
-async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSItem]]:
+def _legacy_embedded_storage(typeid, storage) -> LocalStorageDriver | None:
+    """Where a ``files_in_asset_folder`` entity kept its files BEFORE they moved
+    into its asset folder — or None when there is nothing to fall back to.
+
+    Read-only fallback (no migration): files attached earlier stay in
+    ``records_data/<type>/<id>/embedded/`` and keep listing, opening and
+    rendering from there. Only consulted when ``storage`` is the asset folder;
+    an entity already on the embedded store has no older place to look.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(getattr(typeid, "type", "") or ""))
+    if info is None or not info.files_in_asset_folder:
+        return None
+    legacy = get_entity_embedded_storage(typeid)
+    if os.path.normpath(str(legacy.mount_path)) == os.path.normpath(str(storage.mount_path)):
+        return None
+    return legacy
+
+
+async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSEntry]]:
     """List directory contents.
 
     Args:
@@ -124,20 +151,27 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with action and path
 
     Returns:
-        ApiResponse with list of FSItem objects
+        ApiResponse with list of FSEntry objects
 
     Raises:
         FileNotFoundError: If directory doesn't exist
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Browse action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Browse action requires typeid")
 
     try:
         storage = await _get_storage_for_entity(request_info)
-        items = await storage.list_dir(fs_info.vpath.abs_vfspath)
-        _stamp_local_paths(items, storage, fs_info.vpath.abs_vfspath)
+        path = fs_info.vpath.abs_vfspath
+        items = await storage.list_dir(path)
+        _stamp_local_paths(items, storage)
+        legacy = _legacy_embedded_storage(fs_info.vpath.typeid, storage)
+        if legacy is not None:
+            names = {i.display_name for i in items}
+            older = [i for i in await legacy.list_dir(path) if i.display_name not in names]
+            _stamp_local_paths(older, legacy)
+            items = items + older
         return ApiSuccessResponse(data=items)
     except FileNotFoundError as e:
         logger.error(f"Browse error: {e}")
@@ -150,7 +184,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
 
 
-def _stamp_local_paths(items, storage, root: str) -> None:
+def _stamp_local_paths(items, storage) -> None:
     """Fill each item's transient ``local_path`` when its bytes are on disk.
 
     Only the server can resolve an entity's storage root (embedded storage sits
@@ -160,13 +194,13 @@ def _stamp_local_paths(items, storage, root: str) -> None:
     """
     from pathlib import Path
 
-    root = (root or "").strip("/")
     for item in items or []:
         if getattr(item, "is_dir", False):
             continue
-        rel = str(getattr(item, "vfs_abs_path", "") or "").strip("/")
-        if root and rel.startswith(root + "/"):
-            rel = rel[len(root) + 1 :]
+        # Entity-relative path, sub-folders kept: ``vfs_abs_path`` is
+        # ``<type>-<id>/<sub>/<name>``, and only the entity prefix goes — stripping
+        # the whole browsed folder resolved ``attachments/x.png`` at the root.
+        rel = VFSPath(str(getattr(item, "vfs_abs_path", "") or "").strip("/")).entity_sub_path or ""
         try:
             p = Path(storage.get_storage_path(rel))
             if p.is_file():
@@ -186,11 +220,20 @@ async def push_entity_files_to_hub(entity) -> int:
     ``_hub_reflect._reflect_fs_to_hub``; that only fires once the entity is
     ALREADY remote, which is exactly the window this closes.
 
-    Type-agnostic, like ``share()``. Best-effort: a hub failure must never fail
-    the share, and an entity with no files costs one empty directory listing.
+    A type opts into the record-aware transport by naming its canonical Hub
+    file in ``TypeInfo.hub_main_file``; ``TypeInfo.shape`` then says how:
+
+    * ``file`` publishes the record's main ref under its canonical Hub name;
+    * ``folder`` recursively publishes the record's asset folder, preserving
+      relative paths.
+
+    Other entity types keep the generic embedded-VFS fallback used before this
+    record-aware transport existed. Best-effort: a hub failure must never fail
+    the share.
     """
     if not getattr(entity, "id", None) or not getattr(entity, "remote", False):
         return 0
+
     try:
         from pathlib import Path
 
@@ -198,14 +241,69 @@ async def push_entity_files_to_hub(entity) -> int:
         from flow_sdk.utils.hub import hub_upload_entity_file
 
         et = BuiltinEntityType(entity.get_type())
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"share: unsupported file push for {entity.typeid}: {e}")
+        return 0
+
+    # Layout is TypeInfo's — ``hub_main_file`` is the opt-in, ``shape`` the how.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    _info = SchemaRegistry.get(entity.get_type())
+    canonical_main = _info.hub_main_file if _info is not None else None
+    if canonical_main:
+        layout = "file" if isinstance(_info.shape, File) else "folder"
+        try:
+            record = await entity.get_record()
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"share: record unavailable for {entity.typeid}: {e}")
+            return 0
+        if record is None:
+            return 0
+
+        if layout == "file":
+            main_ref = record.main_ref
+            source = Path(main_ref.path) if main_ref is not None else None
+            if source is None or not source.is_file() or not canonical_main:
+                return 0
+            try:
+                await hub_upload_entity_file(et, entity.id, canonical_main, source.read_bytes())
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"share: file push failed for {entity.typeid}/{canonical_main}: {e}")
+                return 0
+            return 1
+
+        asset_ref = record.asset_ref
+        root = Path(asset_ref.path) if asset_ref is not None else None
+        if root is None or not root.is_dir():
+            return 0
+        return await _push_folder_to_hub(et, entity, root)
+
+    pushed = 0
+    if _info is not None and _info.files_in_asset_folder:
+        # Files live in the asset folder; its own documents (the main file and
+        # whatever the type keeps home) are fields, not files — the share POST
+        # already carried them.
+        from flow_sdk.storage.asset_vfs import local_asset_vfs_binding  # noqa: PLC0415
+
+        binding = local_asset_vfs_binding(entity)
+        if binding is not None:
+            skip = {binding.main_ref, *(_info.pack_exclude or ())}
+            pushed += await _push_folder_to_hub(et, entity, binding.root, skip_top=skip)
+
+    try:
         storage = get_entity_storage(entity.typeid)
         root = VFSPath.from_entity_path(entity.typeid, "").abs_vfspath.strip("/")
         items = await storage.list_dir(root)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"share: no files to push for {entity.typeid}: {e}")
-        return 0
+        return pushed
 
-    pushed = 0
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # One git question for the whole folder, not three subprocesses per file.
+    ignored = await asyncio.to_thread(ignored_under, Path(storage.get_storage_path(""))) if items else set()
     for item in items or []:
         name = getattr(item, "display_name", None)
         if getattr(item, "is_dir", False) or not name:
@@ -217,10 +315,45 @@ async def push_entity_files_to_hub(entity) -> int:
             rel = item.vfs_abs_path.strip("/")
             if root and rel.startswith(root + "/"):
                 rel = rel[len(root) + 1 :]
-            content = Path(storage.get_storage_path(rel)).read_bytes()
+            local = Path(storage.get_storage_path(rel))
+            if is_under(local, ignored):
+                continue  # kept out of git, so it stays on this machine (see _push_folder_to_hub)
+            content = local.read_bytes()
             await hub_upload_entity_file(et, entity.id, name, content)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
+            continue
+        pushed += 1
+    return pushed
+
+
+async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = frozenset()) -> int:
+    """Upload every file under ``root`` to the entity's hub twin, keeping relative
+    paths. ``skip_top`` names files at the folder root to leave out."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+    from flow_sdk.utils.hub import hub_upload_entity_file  # noqa: PLC0415
+
+    # Nobody picked these files one by one, so what git excludes (often private: a data source's local
+    # copy, an env file) stays on this machine. A person's own share asks first (``share_has_gitignored``).
+    ignored = await asyncio.to_thread(ignored_under, root)
+    pushed = 0
+    for source in sorted(root.rglob("*")):
+        # Never follow a sender-local symlink outside the declared asset.
+        if source.is_symlink() or not source.is_file():
+            continue
+        if is_under(source, ignored):
+            continue
+        rel = source.relative_to(root)
+        parent = rel.parent.as_posix()
+        if parent == "." and rel.name in skip_top:
+            continue
+        sub_path = "upload" if parent == "." else f"upload/{parent}"
+        try:
+            await hub_upload_entity_file(et, entity.id, rel.name, source.read_bytes(), sub_path=sub_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
             continue
         pushed += 1
     return pushed
@@ -245,8 +378,8 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     if typeid is None or not getattr(typeid, "id", None) or not getattr(typeid, "type", None):
         return False
     try:
-        from pathlib import Path
 
+        from flow_sdk.builtin.flow_message import BODY_FILENAME
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.utils.hub import hub_base_url, hub_get
@@ -257,6 +390,15 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     try:
         # A type the hub doesn't host has no endpoint to fall back to.
         et = BuiltinEntityType(str(typeid.type))
+        # A message keeps exactly ONE object on the hub: the packed ``body.flowmsg``
+        # bundle. Its attachments (``data/<name>``, ``prompt/<name>``) only ever come
+        # into being locally, when that bundle is unpacked — they are never uploaded
+        # per-file, so asking the hub for one cannot succeed. Without this the miss
+        # that precedes an unpack turns into a guaranteed hub 404, which the error
+        # reporter escalates into a "Cloud Request Failed" warning at the user while
+        # the UI is already showing the correct Download affordance.
+        if et is BuiltinEntityType.FLOW_MESSAGE and vfs_path != BODY_FILENAME:
+            return False
         entity_cls = SchemaRegistry.get_entity_cls(str(typeid.type))
         entity = await entity_cls.get_one({"id": str(typeid.id)}) if entity_cls else None
     except Exception as e:  # noqa: BLE001
@@ -267,10 +409,147 @@ async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorage
     bytes_ = await hub_get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
-    target = Path(storage.get_storage_path(vfs_path))
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(bytes_)
+    await storage.upload(BytesIO(bytes_), vfs_path)
     return True
+
+
+async def serve(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Response | ApiFailResponse:
+    """Serve a file for the browser to RENDER, at a url that mirrors its path.
+
+    The sibling of ``download``, and the difference is the whole point. Download
+    answers "give me these bytes" with ``Content-Disposition: attachment``; this
+    answers "show me this page", which needs three things download cannot give:
+    an inline disposition, an html-aware read, and — above all — **a url**.
+
+    A page handed to an iframe as ``srcDoc`` has no url of its own, so the
+    browser resolves its relative links and assets against the PARENT document:
+    ``<a href="page2.html">`` in a shown site became ``/dock/shell/page2.html``,
+    an app route holding no file. Every workaround for that (intercepting
+    clicks, inlining assets as data: uris) is a way of compensating for the
+    missing address. Serving supplies the address instead, and because this
+    url's tail IS the file's path, ``page2.html`` beside ``index.html`` resolves
+    to ``…/fs/serve/<dir>/page2.html`` with no ``<base>`` and no rewriting.
+
+    Reach is identical to ``download`` — the same entity storage, the same
+    paths — so this exposes no file that was not already readable. What changes
+    is only how the browser is told to treat the bytes.
+
+    Delegates to ``serve_app_bytes`` rather than restating it: the utf-8 read is
+    a documented contract (a locale-default read serves mojibake off a Windows
+    host), and so are the etag and the streaming asset branch. Two flags depart
+    from the app defaults — no index fallback (a missing file must read as
+    missing, not as some other page) and no caching (a file being iterated on is
+    not a release).
+    """
+    if request_info.method != "get":
+        return ApiFailResponse(message="Serve action requires GET method")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Serve action requires typeid")
+    if request_info.request is None:
+        return ApiFailResponse(message="Serve action requires an HTTP request")
+
+    try:
+        storage = await _get_storage_for_entity(request_info)
+        if not await storage.exists(fs_info.vpath.abs_vfspath):
+            return ApiFailResponse(message="File not found", status_code=404)
+
+        target = Path(storage.get_storage_path(fs_info.vpath.abs_vfspath))
+        return await serve_app_bytes(
+            target.parent,
+            target.name,
+            request_info.request,
+            # No base_url: the url already mirrors the filesystem, so relative
+            # refs resolve correctly on their own.
+            fallback_index=False,
+            cache_control="no-store",
+            # The display passes the process it shows this page beside, so the
+            # page's SDK can reach that process (displayContext, enqueue).
+            process_id=request_info.request.query_params.get("process"),
+        )
+    except AppNotBuilt:
+        return ApiFailResponse(message="File not found", status_code=404)
+    except FileNotFoundError:
+        return ApiFailResponse(message="File not found", status_code=404)
+    except Exception as e:
+        if _is_permission_denied_error(e):
+            logger.warning(f"Serve permission denied: {e}")
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.error(f"Serve error: {e}")
+        return ApiFailResponse(message=f"Failed to serve file: {str(e)}")
+
+
+async def read_optional(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Read a file that may not be there — one request, 200 either way.
+
+    ``{"exists": bool, "content": str | None}``. This is the read half of the same
+    rule ``exists`` answers: absence is a valid answer, not an error status. Callers
+    that used ``exists`` then ``download`` paid TWO round trips on the common
+    (present) path just to avoid a 404 on the rare one; this answers both questions
+    at once.
+
+    Text only, deliberately: the callers are editors reading their own documents.
+    Binary stays on ``download``, which streams instead of buffering.
+    """
+    if request_info.method != "get":
+        return ApiFailResponse(message="read_optional action requires GET method")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="read_optional action requires typeid")
+
+    storage = await _get_storage_for_entity(request_info)
+    path = fs_info.vpath.abs_vfspath
+    if not await storage.exists(path):
+        return ApiSuccessResponse(data={"exists": False, "content": None})
+    raw = b"".join([chunk async for chunk in storage.stream(path)])
+    return ApiSuccessResponse(data={"exists": True, "content": raw.decode("utf-8", errors="replace")})
+
+
+async def extract_preview(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Extract a local ``.zip`` to look inside it: ``{"path": <extracted folder>}``.
+
+    The folder lives in this instance's temp preview area (``archive.preview_root``)
+    — disposable, re-extracted after the OS wipes it. Nothing is written beside
+    the zip. Local storage only: the answer is a path on this machine."""
+    from flow_sdk.utils.archive import UnsafeArchiveError, extract_preview as _extract  # noqa: PLC0415
+
+    if request_info.method != "post":
+        return ApiFailResponse(message="extract_preview requires POST")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="extract_preview requires typeid")
+    storage = await _get_storage_for_entity(request_info)
+    local_full_path = getattr(storage, "_local_full_path", None)
+    if local_full_path is None:
+        return ApiFailResponse(message="extract_preview needs a local file", status_code=400)
+    try:
+        out = await asyncio.to_thread(_extract, Path(local_full_path(fs_info.vpath.abs_vfspath)))
+    except UnsafeArchiveError as e:
+        return ApiFailResponse(message=f"cannot open archive: {e}", status_code=422)
+    return ApiSuccessResponse(data={"path": str(out)})
+
+
+async def watch_file(request_info: RequestInfo, fs_info: EntityFSReqInfo, *, on: bool) -> ApiResponse[bool]:
+    """Start (``watch``) or stop (``unwatch``) telling this connection when the
+    file changes on disk — a ``file_changed_msg`` naming the entity and path it
+    was watched by. POST body ``{connection_id}``. See ``file_watch``."""
+    from flow_sdk.actions.fs.file_watch import unwatch_file  # noqa: PLC0415
+    from flow_sdk.actions.fs.file_watch import watch_file as start_watch  # noqa: PLC0415
+
+    if request_info.method != "post":
+        return ApiFailResponse(message="watch/unwatch require POST")
+    body = await request_info.get_post_data()
+    connection_id = body.get("connection_id") if isinstance(body, dict) else None
+    if not connection_id:
+        return ApiFailResponse(message="connection_id is required")
+    storage = await _get_storage_for_entity(request_info)
+    local = storage._local_full_path(fs_info.vpath.abs_vfspath)
+    entity = str(fs_info.vpath.typeid)
+    path = "/".join((request_info.sub_path or "").split("/")[1:])
+    if on:
+        if not os.path.isfile(local):
+            return ApiFailResponse(message=f"no such file: {local}", data={"error_code": "NOT_FOUND"})
+        start_watch(connection_id, local, entity, path)
+    else:
+        unwatch_file(connection_id, local, entity, path)
+    return ApiSuccessResponse(data=True)
 
 
 async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
@@ -283,7 +562,7 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
     Returns:
         StreamingResponse with file contents or error response
     """
-    if not request_info.is_get:
+    if request_info.method != "get":
         return ApiFailResponse(message="Download action requires GET method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Download action requires typeid")
@@ -300,7 +579,10 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         # ``remote`` flag rather than its type — a task's attachment and a
         # flow_message's file are the same problem.
         if not await storage.exists(fs_info.vpath.abs_vfspath):
-            if not await fetch_remote_entity_file(
+            legacy = _legacy_embedded_storage(fs_info.vpath.typeid, storage)
+            if legacy is not None and await legacy.exists(fs_info.vpath.abs_vfspath):
+                storage = legacy
+            elif not await fetch_remote_entity_file(
                 fs_info.vpath.typeid,
                 fs_info.vpath.entity_sub_path,
                 storage,
@@ -334,7 +616,7 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         return ApiFailResponse(message=f"Failed to download file: {str(e)}")
 
 
-async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSItem]]:
+async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSEntry]]:
     """Upload files.
 
     Args:
@@ -342,9 +624,9 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with destination path
 
     Returns:
-        ApiResponse with list of uploaded FSItem objects
+        ApiResponse with list of uploaded FSEntry objects
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Upload action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Upload action requires typeid")
@@ -387,8 +669,8 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
                 # Upload file
                 await storage.upload(BytesIO(content), dest_path)
 
-                # Create FSItem for response
-                fs_item = FSItem(
+                # Create FSEntry for response
+                fs_item = FSEntry(
                     vfs_abs_path=dest_path,
                     is_dir=False,
                     size=len(content),
@@ -423,7 +705,7 @@ async def delete(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     Returns:
         ApiResponse with success/error status
     """
-    if not request_info.is_delete:
+    if request_info.method != "delete":
         return ApiFailResponse(message="Delete action requires DELETE method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Delete action requires typeid")
@@ -447,7 +729,7 @@ async def delete(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to delete: {str(e)}")
 
 
-async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Create directory.
 
     Args:
@@ -455,9 +737,9 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         fs_info: Filesystem request info with directory path
 
     Returns:
-        ApiResponse with FSItem for new directory
+        ApiResponse with FSEntry for new directory
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Mkdir action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Mkdir action requires typeid")
@@ -472,8 +754,8 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         # Create directory
         await storage.create_folder(fs_info.vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=fs_info.vpath.abs_vfspath,
             is_dir=True,
             display_name=fs_info.vpath.filename,
@@ -488,7 +770,7 @@ async def mkdir(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         return ApiFailResponse(message=f"Failed to create directory: {str(e)}")
 
 
-async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Write content to file.
 
     Args:
@@ -496,9 +778,9 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         fs_info: Filesystem request info with file path
 
     Returns:
-        ApiResponse with FSItem for written file
+        ApiResponse with FSEntry for written file
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Write action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Write action requires typeid")
@@ -529,12 +811,26 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         # Auto-version asset files: bump frontmatter `version` + file-scoped git
         # commit when an asset's content actually changed. Best-effort, local-only,
         # and gated to frontmatter-bearing files — never blocks the save.
-        from flow_sdk.actions.fs.asset_versioning import autoversion_commit_local  # noqa: PLC0415
+        from flow_sdk.actions.fs.asset_versioning import _real_path, autoversion_commit_local  # noqa: PLC0415
 
-        await autoversion_commit_local(storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "")
+        # Both post-write hooks want the on-disk path; resolve it once. None ⇒
+        # remote/sandbox storage — no local git tree, and the box's own indexer
+        # owns the entity row.
+        real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
+        await autoversion_commit_local(
+            storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "", real_path=real_path
+        )
 
-        # Return FSItem
-        fs_item = FSItem(
+        # The file IS the record for a file-backed entity (agent.json, SKILL.md,
+        # a task's folder…), so a write here must land in the row too — else
+        # every reader of the entity (an Agent's `system_prompt` at launch, the
+        # card, search) keeps the pre-edit values until some sweep happens to
+        # walk this path. One-path resync through the same seam the indexer and
+        # the SubAgent writer use; a non-asset path is a cheap no-op there.
+        await _resync_entity_from_disk(real_path)
+
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=fs_info.vpath.abs_vfspath,
             is_dir=False,
             size=len(content_bytes),
@@ -550,7 +846,91 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         return ApiFailResponse(message=f"Failed to write file: {str(e)}")
 
 
-async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Read or patch the exact addressed document through authorized storage."""
+    from pydantic import ValidationError
+
+    from flow_sdk.actions.fs.asset_versioning import _real_path, finish_document_version, prepare_document_version
+    from flow_sdk.assets.document import DocumentConflict, DocumentPatch, read_document_bytes, update_document
+    from flow_sdk.assets.serialization import entity_body_path
+
+    if request_info.method not in ("get", "post") or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Document requires GET or POST and a target", status_code=400)
+    try:
+        from flow_sdk.assets.entity_document import entity_info_for, read_entity_document
+
+        storage = await _get_storage_for_entity(request_info)
+        path = fs_info.vpath.abs_vfspath
+        local = _real_path(storage, path)
+        entity_info = entity_info_for(local) if local else None
+        if request_info.method == "get":
+            if entity_info is not None:
+                # An entity document is two files (``<type>.json`` + its body), read together.
+                result = await asyncio.to_thread(read_entity_document, local, entity_info)
+            else:
+                raw = b"".join([chunk async for chunk in storage.stream(path)])
+                result = read_document_bytes(raw)
+        else:
+            payload = await request_info.get_post_data()
+            if not isinstance(payload, dict) or not isinstance(payload.get("expected_revision"), str):
+                return ApiFailResponse(message="expected_revision is required", status_code=400)
+            values = dict(payload)
+            expected = values.pop("expected_revision")
+            patch = DocumentPatch.model_validate(values)
+            real_path = local
+            if real_path is None:
+                return ApiFailResponse(message="Storage does not support conditional document writes", status_code=501,
+                                       data={"code": "conditional_write_unsupported"})
+            async with AsyncExitStack() as edit:
+                if entity_info is not None and entity_info.document_edit_context is not None:
+                    await edit.enter_async_context(entity_info.document_edit_context(real_path, patch))
+                version_context = await prepare_document_version(real_path)
+                version_base = (version_context[4] if version_context is not None and
+                                Path(version_context[3]).resolve() == Path(real_path).resolve() else None)
+                result = await asyncio.to_thread(update_document, real_path, patch, expected_revision=expected,
+                                                 version_base=version_base, info=entity_info)
+                if result.revision != expected:
+                    await finish_document_version(real_path, result, version_context)
+                    await _resync_entity_from_disk(real_path)
+        data = result.model_dump(mode="json")
+        body_path = fs_info.vpath.entity_sub_path
+        if entity_info is not None and entity_info.body_file is not None:
+            body_path = str(entity_body_path(PurePosixPath(body_path).parent, entity_info.body_file))
+        data["body_ref"] = {"path": body_path, "type_id": str(fs_info.vpath.typeid), "ref_type": "text", "read_only": False}
+        return ApiSuccessResponse(data=data)
+    except DocumentConflict as exc:
+        return ApiFailResponse(message=str(exc), status_code=409,
+                               data={"code": "stale_document", "current_revision": exc.current_revision})
+    except FileNotFoundError:
+        return ApiFailResponse(message="Document not found", status_code=404)
+    except (ValidationError, ValueError, UnicodeError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    except Exception as exc:
+        if _is_permission_denied_error(exc):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.exception("Document operation failed")
+        return ApiFailResponse(message=str(exc))
+
+
+async def _resync_entity_from_disk(real_path: str | None) -> None:
+    """Re-extract whatever entity the just-written local file backs. Best-effort.
+
+    Awaited (not scheduled) on purpose: the editor that wrote refetches the
+    entity right after the save resolves, and read-after-write is the whole
+    point. ``mint=False``: resync an EXISTING entity only — minting here would
+    stamp an identity capsule into the bytes the client just wrote.
+    """
+    if not real_path:
+        return
+    try:
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
+        await reindex_paths([real_path], mint=False)
+    except Exception as e:  # noqa: BLE001 — a resync failure must never fail the save
+        logger.warning("[fs-write] entity resync skipped (non-fatal): %s", e)
+
+
+async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Rename file or folder.
 
     Query parameter:
@@ -561,9 +941,9 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         fs_info: Filesystem request info with path
 
     Returns:
-        ApiResponse with FSItem for renamed item
+        ApiResponse with FSEntry for renamed item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Rename action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Rename action requires typeid")
@@ -590,8 +970,8 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         # Rename (move to same directory)
         await storage.move(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=new_name,
@@ -606,7 +986,7 @@ async def rename(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to rename: {str(e)}")
 
 
-async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Copy file or folder.
 
     Query parameter:
@@ -617,9 +997,9 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         fs_info: Filesystem request info with source path
 
     Returns:
-        ApiResponse with FSItem for copied item
+        ApiResponse with FSEntry for copied item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Copy action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Copy action requires typeid")
@@ -641,8 +1021,8 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         # Copy
         await storage.copy(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=dest_vpath.filename,
@@ -657,7 +1037,7 @@ async def copy(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         return ApiFailResponse(message=f"Failed to copy: {str(e)}")
 
 
-async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSItem]:
+async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[FSEntry]:
     """Move file or folder.
 
     Query parameter:
@@ -668,9 +1048,9 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         fs_info: Filesystem request info with source path
 
     Returns:
-        ApiResponse with FSItem for moved item
+        ApiResponse with FSEntry for moved item
     """
-    if not request_info.is_post:
+    if request_info.method != "post":
         return ApiFailResponse(message="Move action requires POST method")
     if not fs_info.vpath.typeid:
         return ApiFailResponse(message="Move action requires typeid")
@@ -692,8 +1072,8 @@ async def move(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespon
         # Move
         await storage.move(fs_info.vpath.abs_vfspath, dest_vpath.abs_vfspath)
 
-        # Return FSItem
-        fs_item = FSItem(
+        # Return FSEntry
+        fs_item = FSEntry(
             vfs_abs_path=dest_vpath.abs_vfspath,
             is_dir=False,
             display_name=dest_vpath.filename,
@@ -727,3 +1107,39 @@ async def download_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> A
 async def upload_zip(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
     """Upload zip file (not implemented in this version)"""
     return ApiFailResponse(message="Zip upload not available in this version")
+
+
+async def ensure_document(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Explicitly repair a missing main document at the authorized occurrence."""
+    from flow_sdk.actions.fs.asset_versioning import _real_path
+    from flow_sdk.assets.creation import AssetPathCollisionError, ensure_asset_document
+    from flow_sdk.fs_store.type_id import TypeId
+
+    if request_info.method != "post" or not fs_info.vpath.typeid:
+        return ApiFailResponse(message="Document repair requires POST and a target", status_code=400)
+    try:
+        payload = await request_info.get_post_data()
+        if not isinstance(payload, dict) or not isinstance(payload.get("spec"), dict):
+            return ApiFailResponse(message="typeid and an explicit scaffold spec are required", status_code=400)
+        identity = TypeId(payload.get("typeid", ""))
+        storage = await _get_storage_for_entity(request_info)
+        real_path = _real_path(storage, fs_info.vpath.abs_vfspath)
+        if real_path is None:
+            return ApiFailResponse(message="Storage does not support local document repair", status_code=501)
+        target = Path(real_path)
+        if not target.resolve().is_relative_to(Path(storage.mount_path).resolve()):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        await asyncio.to_thread(ensure_asset_document, target, identity, payload["spec"])
+        await _resync_entity_from_disk(real_path)
+        return ApiSuccessResponse(data={"path": fs_info.vpath.entity_sub_path})
+    except AssetPathCollisionError as exc:
+        return ApiFailResponse(message=str(exc), status_code=409)
+    except FileNotFoundError:
+        return ApiFailResponse(message="Asset folder not found", status_code=404)
+    except (ValueError, UnicodeError) as exc:
+        return ApiFailResponse(message=str(exc), status_code=400)
+    except Exception as exc:
+        if _is_permission_denied_error(exc):
+            return _permission_denied_response(fs_info.vpath.entity_sub_path)
+        logger.exception("Document repair failed")
+        return ApiFailResponse(message=str(exc))

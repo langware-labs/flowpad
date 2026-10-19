@@ -250,3 +250,36 @@ print(AssetCapsule.from_path(Path(sys.argv[1])).write_if_absent('identity', Caps
 """
     procs = [subprocess.Popen([sys.executable, "-c", code, str(folder), str(i)], stdout=subprocess.PIPE, text=True) for i in range(2)]
     assert len({proc.communicate()[0].strip() for proc in procs}) == 1
+
+
+def test_fenced_code_is_quoted_text_not_a_capsule(tmp_path):
+    """A document ABOUT capsules shows the grammar inside a code fence; the
+    scanner must treat that as prose, so the document stays indexable and its
+    own real block (outside any fence) is still found."""
+    from flow_sdk.capsules import AssetCapsule, CapsuleData
+
+    path = tmp_path / "doc.md"
+    path.write_text(
+        "# Capsules\n\n```markdown\n<!-- flowpad:capsule identity\nversion: 1\ndata:\n  id: <uuid>\n"
+        "flowpad:endcapsule identity -->\n```\n\nand a source-file example in a second fence:\n\n"
+        "```python\n# flowpad:capsule tag\n# flowpad:endcapsule tag\n```\n",
+        encoding="utf-8",
+    )
+    capsule = AssetCapsule.from_path(path)
+    assert capsule.read("identity") is None
+    capsule.write("identity", CapsuleData(1, {"id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"}))
+    assert capsule.read("identity").data["id"] == "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+
+def test_a_prose_mention_of_the_grammar_is_not_a_marker(tmp_path):
+    """A plan or doc that says `<!-- flowpad:capsule identity … -->` mid-sentence
+    is prose; only a line that starts as a marker and fails is malformed."""
+    from flow_sdk.capsules import AssetCapsule, MalformedCapsuleError
+    import pytest
+
+    path = tmp_path / "plan.md"
+    path.write_text("Today the id is an appended `<!-- flowpad:capsule identity ... -->` block.\n", encoding="utf-8")
+    assert AssetCapsule.from_path(path).read("identity") is None
+    path.write_text("<!-- flowpad:capsule identity\nversion: 1\n", encoding="utf-8")  # a real, broken marker
+    with pytest.raises(MalformedCapsuleError):
+        AssetCapsule.from_path(path).read("identity")

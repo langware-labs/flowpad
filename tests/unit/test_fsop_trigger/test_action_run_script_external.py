@@ -6,19 +6,15 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from flow_sdk.builtin.change_event import ChangeEvent
-from flow_sdk.builtin.hook_models import (
-    ActionType,
-    RunScriptActionHandler,
-    TriggerAction,
-    get_action_handler,
-)
-
+from flow_sdk.builtin.hook_models import RunScriptActionHandler, get_action_handler
+from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -60,6 +56,34 @@ async def test_external_path_executes(tmp_path):
     assert marker.exists(), "script should have created marker file"
 
 
+async def test_a_relative_script_path_is_the_triggers_projects(tmp_path, monkeypatch):
+    """A trigger checked into a project names its script by a project-relative path, and runs the
+    same on every clone: the path is resolved under the trigger's project folder."""
+    import flow_sdk.diagnose.runner as runner
+
+    marker = tmp_path / "marker.txt"
+    (tmp_path / "agentic-assets" / "trigger" / "t").mkdir(parents=True)
+    _make_script(tmp_path / "agentic-assets" / "trigger" / "t", "notify.sh", f"#!/usr/bin/env bash\ntouch {marker}\n")
+    asked = []
+
+    async def project_path_of(project_id):
+        asked.append(project_id)
+        return str(tmp_path) if project_id == "proj-1" else None
+
+    monkeypatch.setattr(runner, "project_path_of", project_path_of)
+    trigger = _make_fake_trigger()
+    trigger.project_id = "proj-1"
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path="agentic-assets/trigger/t/notify.sh")
+    result = await RunScriptActionHandler().execute(trigger, action=action, changes=_changes())
+    assert marker.exists() and result.returncode == 0 and asked == ["proj-1"]
+
+    trigger.project_id = "elsewhere"
+    result = await RunScriptActionHandler().execute(trigger, action=action, changes=_changes())
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    assert result.ran is False and result.exit_code == ExitCode.NOT_FOUND
+
+
 async def test_external_path_stdout_captured(tmp_path):
     """Run result must capture stdout."""
     script = _make_script(tmp_path, "s.sh", '#!/usr/bin/env bash\necho hello-stdout\n')
@@ -68,7 +92,7 @@ async def test_external_path_stdout_captured(tmp_path):
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
 
-    assert result is not None, "handler must return a RunResult"
+    assert result is not None, "handler must return a CliResult"
     assert "hello-stdout" in result.stdout
 
 
@@ -98,6 +122,21 @@ async def test_external_path_returncode_nonzero(tmp_path):
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
     assert result.returncode == 7
+    assert result.ok is False  # the verdict is derived from the raw exit, in one place
+
+
+async def test_external_path_that_cannot_start_is_returned_not_raised(tmp_path):
+    """A script whose interpreter does not exist never starts — that is an
+    answer (``returncode is None``), not an exception out of the trigger."""
+    script = _make_script(tmp_path, "s.sh", "#!/definitely/not/an/interpreter\nexit 0\n")
+
+    handler = RunScriptActionHandler()
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
+    assert result.returncode is None
+    assert result.ran is False
+    assert result.ok is False
+    assert result.stderr
 
 
 async def test_external_path_env_vars_set(tmp_path):
@@ -145,20 +184,79 @@ async def test_external_path_short_timeout_killed(tmp_path):
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     # Use a short timeout via handler override for the test (not the default 30s)
+    started = time.monotonic()
     result = await handler.execute(
         _make_fake_trigger(),
         action=action,
         changes=_changes("/x", "modified"),
-        timeout_seconds=1.0,
+        timeout_seconds=0.3,
     )
+    elapsed = time.monotonic() - started
     assert result.timed_out is True
     assert result.returncode != 0  # killed → negative or non-zero
+    # The bound must be real. `sleep` is a CHILD of the script's bash, and it
+    # inherits the stdout/stderr pipes: if the timeout kills only bash and not
+    # the process group, the follow-up communicate() blocks on that pipe until
+    # `sleep 10` ends on its own and this returns after ~10s, not ~0.3s.
+    assert elapsed < 3, f"timeout did not bound the script tree: returned after {elapsed:.2f}s"
 
 
 async def test_external_path_duration_recorded(tmp_path):
-    """RunResult includes a duration_ms field."""
+    """The CliResult records how long the script ran, and which script it was."""
     script = _make_script(tmp_path, "s.sh", '#!/usr/bin/env bash\nexit 0\n')
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
     result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/x", "modified"))
-    assert result.duration_ms >= 0
+    assert result.duration_s >= 0
+    assert result.command == str(script)
+    assert result.ok is True
+
+
+async def test_external_path_is_told_how_to_reach_this_flowpad(tmp_path):
+    """A script that writes dataset rows through the Python SDK needs the interpreter that has it,
+    and a ``flow`` call must reach the backend that fired the trigger -- the three a worker gets."""
+    import sys
+
+    from flow_sdk.instance_settings import get_instance_settings
+
+    out = tmp_path / "env.txt"
+    script = _make_script(tmp_path, "s.sh",
+                          f"#!/usr/bin/env bash\necho py=$FLOWPAD_PYTHON > {out}\necho inst=$FLOW_INSTANCE >> {out}\n")
+    action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
+    await RunScriptActionHandler().execute(_make_fake_trigger(), action=action, changes=_changes())
+
+    lines = out.read_text().splitlines()
+    assert lines == [f"py={sys.executable}", f"inst={get_instance_settings().instance_name}"]
+
+
+async def test_a_script_that_fails_is_a_failed_run(tmp_path):
+    """The shared loop reports an action that ANSWERS a failure (it does not raise): a script that
+    exits non-zero, or is not on disk, lands in the run's errors -- never a clean run row."""
+    from flow_sdk.builtin.trigger import run_trigger_actions
+
+    def rule(script: Path) -> MagicMock:
+        t = _make_fake_trigger()
+        t.then, t.trigger_type, t.project_id = None, "tag", None
+        t.actions = [TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))]
+        return t
+
+    broke = await run_trigger_actions(rule(_make_script(tmp_path, "no.sh", "#!/usr/bin/env bash\nexit 3\n")), [])
+    assert broke.error and "run_script" in broke.error
+    missing = await run_trigger_actions(rule(tmp_path / "absent.sh"), [])
+    assert missing.error and "absent.sh" in missing.error or "no script" in missing.error
+    fine = await run_trigger_actions(rule(_make_script(tmp_path, "ok.sh", "#!/usr/bin/env bash\nexit 0\n")), [])
+    assert fine.error is None
+
+
+async def test_a_second_fire_while_the_first_still_runs_is_not_a_failed_run(tmp_path):
+    """A `then` wizard whose slot is held answers busy: nothing ran, the next fire tries again. That
+    is quiet, like a busy action -- not a failed run."""
+    import asyncio
+
+    from flow_sdk.builtin.trigger import run_trigger_actions
+
+    t = _make_fake_trigger()
+    t.trigger_type, t.project_id, t.actions = "tag", None, []
+    t.then = {"run_script": str(_make_script(tmp_path, "slow.sh", "#!/usr/bin/env bash\nsleep 0.5\n"))}
+    first, second = await asyncio.gather(run_trigger_actions(t, []), run_trigger_actions(t, []))
+    assert (first.error, second.error) == (None, None)

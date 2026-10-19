@@ -1,6 +1,6 @@
 """API tests for the single backend download gate, driven through real routes.
 
-The implicit sync/nav actions (open / inbox-open / conversation-sync / …) pull a
+The implicit sync/nav actions (open / stream-inbox-open / conversation-sync / …) pull a
 message's body bundle to materialize it. They must forward ``body_status`` into
 the one chokepoint (``_download_and_unpack_bundle``) so that a *dangling pointer*
 — a hub FlowMessage with FILE attachments + ``attachment_filename`` set but
@@ -30,11 +30,9 @@ import pytest
 # registered in the pytest process — otherwise SchemaRegistry.get("prompt")
 # is None and unpack_bundle treats the entry as a generic DB-record (no parking).
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
 from flow_sdk.builtin.flow_message import BODY_FILENAME, AttachmentType, BodyStatus, FlowMessage
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
-
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -71,7 +69,7 @@ def _download_gets(mock_get) -> list:
     return hits
 
 
-# The deep-link ``open`` action (handle_open_flow_message) is the incident path:
+# The deep-link ``open`` resolver (open_flow_message_params) is the incident path:
 # it tolerates a hub-only entity (the framework does not require a local row), and
 # a *local* dangling FM would short-circuit before ever reaching the chokepoint —
 # so driving ``open`` against a mocked, hub-only dangling FM is what actually

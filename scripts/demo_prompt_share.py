@@ -192,14 +192,19 @@ def run() -> int:
             fail("body_downloaded did not flip on bob's FlowMessage")
         print("    prompt entity materialized on bob (user scope) + body_downloaded")
 
-        print("· step 6: bob approves (approve_all)")
-        local_post(client, BOB_BE, f"graph/flow_message/{fm_id}/approve-prompt",
-                   {"approve_all": True})
-        bob_fm = local_get(client, BOB_BE, f"graph/flow_message/{fm_id}")
-        [att] = prompt_attachments(bob_fm)
-        if not att.get("approved_by"):
-            fail("approved_by not set on the prompt attachment after approve_all")
-        print("    approved_by stamped on the TYPE_ID prompt attachment")
+        print("· step 6: bob approves the session the prompt opened")
+
+        def bob_session():
+            rows = local_get(client, BOB_BE, "graph/remote_worker_session")
+            return next((r for r in rows if r.get("starting_message_id") == fm_id), None)
+
+        if not _until(lambda: (bob_session() or {}).get("status") == "pending"):
+            fail("bob never parked a PENDING session for the prompt")
+        session_id = bob_session()["id"]
+        local_post(client, BOB_BE, f"graph/remote_worker_session/{session_id}/approve", {})
+        if (bob_session() or {}).get("status") != "idle":
+            fail("session did not become idle after approve")
+        print("    session approved (pending → idle)")
 
         print("· step 7: executed-run cross-link + usage bump")
         proc = local_post(client, BOB_BE, "graph/agentic_process", {

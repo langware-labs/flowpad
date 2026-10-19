@@ -1,12 +1,11 @@
 """Indexer tests for the DECK_TEMPLATE type.
 
 Covers the slot functions end-to-end:
-- ``deck_template_fn`` walker emits one FSRef per ``assets/deck-templates/<slug>/``
+- ``repo_assets_fn`` emits one FSRef per ``agentic-assets/deck_template/<slug>/``
   folder carrying a ``template.json`` manifest.
 - ``extract_deck_template`` parses the manifest + ``layouts/`` into one FSRecord
   with denormalized layout data.
-- ``TypeInfo.mint_id`` adopts a valid manifest id else mints via the
-  ``.flow/id`` capsule (idempotent).
+- the json capsule carries the id (idempotent; a manifest id is not a carrier).
 - ``deck_template_asset_hash`` tracks inner layout/common file edits.
 
 Pure-sync (no scan needed): the walker is called directly with a project node.
@@ -21,19 +20,17 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.types.deck_template import deck_template_asset_hash, extract_deck_template
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
-from flow_sdk.fs_store.indexer.functions.deck_template import (
-    deck_template_asset_hash,
-    deck_template_fn,
-    extract_deck_template,
-)
+from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 
 def _mint(ref: FSRef) -> str:
-    return SchemaRegistry.get("deck_template").mint_id(ref)
+    return resolve_id(SchemaRegistry.get("deck_template"), ref)
 
 
 def _extract(ref: FSRef):
@@ -60,8 +57,8 @@ def _seed_template(
     common: dict[str, str] | None = None,
     media: dict[str, bytes] | None = None,
 ) -> Path:
-    """Seed a deck template folder under ``assets/deck-templates/<slug>/``."""
-    tpl = project / "assets" / "deck-templates" / slug
+    """Seed a deck template folder under ``agentic-assets/deck_template/<slug>/``."""
+    tpl = project / "agentic-assets" / "deck_template" / slug
     tpl.mkdir(parents=True)
     (tpl / "template.json").write_text(
         _doc(metadata=manifest, data=manifest_data), encoding="utf-8"
@@ -90,10 +87,10 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
     _seed_template(tmp_path, "A", layouts=["cover-centered"])
     _seed_template(tmp_path, "B", layouts=["agenda-list"])
     # A folder without template.json must be skipped.
-    (tmp_path / "assets" / "deck-templates" / "no-manifest").mkdir(parents=True)
+    (tmp_path / "agentic-assets" / "deck_template" / "no-manifest").mkdir(parents=True)
 
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    refs = deck_template_fn([node], IndexerOptions(verbose=False))
+    refs = repo_assets_fn([node], IndexerOptions(verbose=False))
 
     assert len(refs) == 2
     assert all(r.record_type == RecordType.DECK_TEMPLATE for r in refs)
@@ -102,22 +99,16 @@ def test_walker_emits_one_ref_per_template(tmp_path: Path) -> None:
 
 def test_walker_no_templates_dir(tmp_path: Path) -> None:
     node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
-    assert deck_template_fn([node], IndexerOptions(verbose=False)) == []
+    assert repo_assets_fn([node], IndexerOptions(verbose=False)) == []
 
 
 # ── id minting ────────────────────────────────────────────────────────────────
-
-def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
-    valid = str(uuid.uuid4())  # v4 → adoptable
-    tpl = _seed_template(tmp_path, "adopt", manifest={"id": valid})
-    assert _mint(FSRef(tpl)) == valid
-
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "mint")
     first = _mint(FSRef(tpl))
     second = _mint(FSRef(tpl))
-    assert first == second  # idempotent (adopted from the .flow/id capsule)
+    assert first == second  # idempotent (adopted from the json capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4, not uuid5(path)
 
 
@@ -167,10 +158,10 @@ def test_extract_defaults_name_to_slug(tmp_path: Path) -> None:
 
 def test_extract_free_data_section_passthrough(tmp_path: Path) -> None:
     tpl = _seed_template(
-        tmp_path, "d", manifest_data={"owner": "eran", "brand": "acme"}
+        tmp_path, "d", manifest_data={"owner": "dan", "brand": "acme"}
     )
     meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
-    assert meta["data"] == {"owner": "eran", "brand": "acme"}
+    assert meta["data"] == {"owner": "dan", "brand": "acme"}
 
 
 def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:
@@ -182,7 +173,7 @@ def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:
 
 
 def test_extract_non_template_folder_returns_empty(tmp_path: Path) -> None:
-    plain = tmp_path / "assets" / "deck-templates" / "no-manifest"
+    plain = tmp_path / "agentic-assets" / "deck_template" / "no-manifest"
     plain.mkdir(parents=True)
     assert extract_deck_template(FSRef(plain), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 
@@ -205,11 +196,11 @@ def test_asset_hash_tracks_layout_and_common_edits(tmp_path: Path) -> None:
         common={"tokens.css": ":root {}"},
     )
     before = deck_template_asset_hash(FSRef(tpl))
-    os.utime(tpl / "layouts" / "cover-centered.html", (before + 100, before + 100))
+    os.utime(tpl / "layouts" / "cover-centered.html", ns=(before + 100 * 10**9, before + 100 * 10**9))
     after_layout = deck_template_asset_hash(FSRef(tpl))
     assert after_layout > before
 
-    os.utime(tpl / "common" / "tokens.css", (after_layout + 100, after_layout + 100))
+    os.utime(tpl / "common" / "tokens.css", ns=(after_layout + 100 * 10**9, after_layout + 100 * 10**9))
     assert deck_template_asset_hash(FSRef(tpl)) > after_layout
 
 
@@ -219,5 +210,5 @@ def test_asset_hash_tracks_media_add(tmp_path: Path) -> None:
         tmp_path, "media", layouts=["media-full-bleed"], media={"common/logo.png": b"\x89PNG"}
     )
     before = deck_template_asset_hash(FSRef(tpl))
-    os.utime(tpl / "media" / "common", (before + 100, before + 100))
+    os.utime(tpl / "media" / "common", ns=(before + 100 * 10**9, before + 100 * 10**9))
     assert deck_template_asset_hash(FSRef(tpl)) > before

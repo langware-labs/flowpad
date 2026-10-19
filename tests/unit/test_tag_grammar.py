@@ -14,12 +14,14 @@ from flow_sdk.tags.grammar import (
     is_valid_tag,
     is_valid_tag_pattern,
     normalize_tag,
+    join_namespace,
     split_namespace,
     tag_ancestors,
     tag_is_within,
     tag_matches,
     tag_pattern_problem,
     tag_tree,
+    namespace_from_name,
 )
 
 GRAMMAR = json.loads(
@@ -70,17 +72,17 @@ def test_ancestors():
 
 
 def test_glob_vs_prefix_semantics_diverge():
-    # Glob: `flow` does NOT match `flow.done` (no partial-tree matching
-    # without `*`); prefix containment says flow.done IS within flow.
-    assert not tag_matches("flow", "flow.done")
-    assert tag_is_within("flow.done", "flow")
+    # Glob: `flow` does NOT match `graph_workflow.done` (no partial-tree matching
+    # without `*`); prefix containment says graph_workflow.done IS within graph_workflow.
+    assert not tag_matches("graph_workflow", "graph_workflow.done")
+    assert tag_is_within("graph_workflow.done", "graph_workflow")
 
 
 def test_tag_tree_derivation():
-    tree = tag_tree(["flow.step.done", "flow.done", "entity.created"])
-    assert tree[""] == ["entity", "flow"]
-    assert tree["flow"] == ["flow.done", "flow.step"]
-    assert tree["flow.step"] == ["flow.step.done"]
+    tree = tag_tree(["graph_workflow.step.done", "graph_workflow.done", "entity.created"])
+    assert tree[""] == ["entity", "graph_workflow"]
+    assert tree["graph_workflow"] == ["graph_workflow.done", "graph_workflow.step"]
+    assert tree["graph_workflow.step"] == ["graph_workflow.step.done"]
     assert tree["entity"] == ["entity.created"]
 
 
@@ -105,3 +107,46 @@ def test_capability_matcher_behavior_preserved():
     assert not capability_kind_matches("harness.claude", "harness.codex.cli")
     # Never raises on untrusted strings (historical contract).
     assert not capability_kind_matches("x", "Not A Valid Kind At All")
+
+
+def test_join_namespace_is_the_inverse_of_split() -> None:
+    """The marker format has exactly one owner. It used to be written by hand
+    wherever a namespaced kind was minted, so only the READ side was covered by
+    the Python/TS parity contract."""
+    for namespace, rest in (("acme", "orders.created"), ("acme", "ingest.message.slack")):
+        joined = join_namespace(namespace, rest)
+        assert joined == f"--{namespace}--.{rest}"
+        assert split_namespace(joined) == (namespace, rest)
+        assert normalize_tag(joined) == joined      # a namespaced kind is a legal tag
+
+
+def test_the_system_namespace_is_never_written() -> None:
+    """Ours is the default and it is silent: no marker, at all."""
+    assert join_namespace("", "orders.created") == "orders.created"
+    assert join_namespace(None, "orders.created") == "orders.created"
+
+
+def test_a_namespace_the_marker_cannot_hold_fails_where_it_is_built() -> None:
+    """Rather than producing a tag `normalize_tag` rejects somewhere later."""
+    with pytest.raises(ValueError, match="not a usable namespace"):
+        join_namespace("Acme Corp", "orders.created")
+
+
+def test_a_name_is_folded_into_something_a_marker_can_hold():
+    """A namespace segment is `[a-z0-9_]`, and `join_namespace` RAISES on anything else —
+    during an asset's import, where it would take the asset down. Real names are not
+    shaped that way, so folding lives here, next to the class it has to satisfy."""
+    assert namespace_from_name("ai-course") == "ai_course"
+    assert namespace_from_name("My Project") == "my_project"
+    assert namespace_from_name("2026") == "2026"
+    # Nothing usable survives: the caller stays in OUR ontology rather than minting junk.
+    assert namespace_from_name("---") == ""
+    assert namespace_from_name("") == ""
+
+
+def test_every_folded_name_is_a_legal_marker():
+    """The fold and the pattern cannot drift: whatever comes out joins without raising."""
+    for raw in ["ai-course", "My Project", "a.b.c", "ünïcode", "2026", "__x__"]:
+        folded = namespace_from_name(raw)
+        if folded:
+            assert join_namespace(folded, "ingest.x") == f"--{folded}--.ingest.x"

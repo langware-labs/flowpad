@@ -3,22 +3,22 @@
  *
  * Every scenario walks the four steps the product defines for any share:
  *   1. share    — sender performs the share through the real entry-point UI
- *   2. accept   — receiver sees the invitation in its UI and accepts it
+ *   2. receive  — receiver synchronizes its immediate assignment
  *   3. open     — receiver opens the shared asset; it renders with a clean
  *                 console (manual_regression noise filter applied)
  *   4. reply    — receiver replies in the composer; sender sees it arrive
  *
  * Entry points: asset-page share (workflow — the MarkdownEditor share button
- * every md-backed editor inherits; whiteboard — the AssetEditorHeader button)
+ * every md-backed editor inherits; chart — the AssetEditorHeader button)
  * and message forward. Assets are seeded via each instance's SDK realm; every
- * share/accept/open/reply interaction is a real browser click (Playwright,
+ * share/open/reply interaction is driven through the real browser (Playwright,
  * headless Chromium).
  *
  * All scenarios drive the full four-step loop. A/B step 3 (open the shared
  * asset) exercises the receiver body-bundle path: the matrix originally found
- * that shared workflow/whiteboard entities never materialized on the receiver
+ * that shared workflow/chart entities never materialized on the receiver
  * (their bytes weren't packed, and their ids weren't carried) — now fixed in
- * `flow_message_bundle.py` (workflow/whiteboard added to `_FS_ROOTED_TYPES` +
+ * `flow_message_bundle.py` (workflow/chart added to `_FS_ROOTED_TYPES` +
  * sender id injected into the main doc's frontmatter so the receiver
  * materializes the SAME entity). Forward (C) needs no body bundle.
  *
@@ -31,7 +31,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
-import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
+import { testEntityName } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
   HUB_INST_1 as INST_1,
@@ -41,10 +41,10 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  acceptInvitationInUI,
   driveShareDialog,
   launchBrowser,
   mapConversationToProject,
+  openAssignedConversationInUI,
   openConversation,
   openInstancePage,
   realConsoleErrors,
@@ -62,6 +62,16 @@ let p1: InstancePage; // sender's window
 let p2: InstancePage; // receiver's window
 
 const ts = Date.now();
+const ownedEntityNames = new Set<string>();
+const ownedConversationTitles = new Set<string>();
+
+/** Mint a unique label and retain this file's exact cleanup ownership. */
+function ownedTestEntityName(kind: string): string {
+  const name = testEntityName(kind);
+  ownedEntityNames.add(name);
+  if (kind === 'conv') ownedConversationTitles.add(name);
+  return name;
+}
 
 beforeAll(async () => {
   const hub = await hubAvailable();
@@ -78,11 +88,16 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
-  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`, {
-    waitUntil: 'domcontentloaded',
-  });
-  const warmShare = p1.page.getByTestId('dynamic-workflow-editor-share');
+  // These fixtures live across several `it` blocks. Do not register them with
+  // the generic afterEach cleanup; this file's two-realm afterAll owns them.
+  const warm = await dev1.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
+  await p1.page.goto(
+    `${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`,
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  );
+  const warmShare = p1.page.getByTestId('entity-actions-share');
   await warmShare.waitFor({ timeout: 60_000 }).catch(() => undefined);
   // Open + close the share dialog once too: its chunk, the contact picker,
   // and the conversations-for-contacts query all cold-load on first open.
@@ -99,12 +114,18 @@ beforeAll(async () => {
   // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
   // server, so the first editor open (A3) would otherwise cold-transform the
   // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
-  const warmWf2 = trackForCleanup(await dev2.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warmWf2.id}?viewMode=advanced`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await p2.page.locator('[data-testid="dynamic-workflow-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
-  const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
+  const warmWf2 = await dev2.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
+  await p2.page.goto(
+    `${p2.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warmWf2.id}?viewMode=advanced`,
+    {
+      waitUntil: 'domcontentloaded',
+    },
+  );
+  await p2.page
+    .locator('[data-testid="dynamic-workflow-editor"]')
+    .waitFor({ timeout: 60_000 })
+    .catch(() => undefined);
+  const warmWb2 = await dev2.sdk.Chart.create(ownedTestEntityName('chart'), 'excalidraw');
   const warmWbRef = (warmWb2 as { asset_ref?: string }).asset_ref;
   if (warmWbRef) {
     const { promises: nodeFs } = await import('node:fs');
@@ -113,12 +134,15 @@ beforeAll(async () => {
       `${warmWbRef}/board.json`,
       JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
     );
-    await nodeFs.writeFile(`${warmWbRef}/WHITE_BOARD.md`, '# warm whiteboard\n');
+    await nodeFs.writeFile(`${warmWbRef}/CHART.md`, '# warm chart\n');
   }
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}?viewMode=advanced`, {
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/chart/typeid/chart-${warmWb2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
+  await p2.page
+    .locator('[data-testid="chart-excalidraw"]')
+    .waitFor({ timeout: 60_000 })
+    .catch(() => undefined);
 }, 120_000);
 
 afterAll(async () => {
@@ -129,41 +153,6 @@ afterAll(async () => {
   // deleting only the local mirrors makes the next conversation-list sync
   // rebuild every old hub conversation and starts a refetch/broadcast storm.
   if (!skipReason && dev1 && dev2) {
-    // Decline receiver-side test invitations before deleting their local
-    // Conversation mirrors. A generic local DELETE does not express the
-    // hub-side decline intent; after a bailed run that left the invitation
-    // pending forever, so every later sync rebuilt and broadcast all prior
-    // e2etest rows. Match through the canonical invitation target path and
-    // touch only conversations carrying this harness's test prefix.
-    const receiverConversations = await fetch(
-      `${dev2.apiUrl}/api/v1/graph/conversation`,
-    ).then((r) => r.json()).catch(() => null);
-    const receiverInvitations = await fetch(
-      `${dev2.apiUrl}/api/v1/graph/invitation`,
-    ).then((r) => r.json()).catch(() => null);
-    const testConversationIds = new Set(
-      ((receiverConversations?.data ?? []) as any[])
-        .filter((row) => String(row?.title ?? '').startsWith('e2etest-'))
-        .map((row) => String(row.id)),
-    );
-    for (const invitation of (receiverInvitations?.data ?? []) as any[]) {
-      const match = String(invitation?.target_url_path ?? '').match(
-        /^\/conversation\/([0-9a-f-]+)$/,
-      );
-      if (
-        !invitation?.accepted
-        && invitation?.id
-        && match
-        && testConversationIds.has(match[1])
-      ) {
-        await fetch(`${dev2.apiUrl}/api/v1/graph/invitation-decline`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invitation_id: invitation.id }),
-        }).catch(() => undefined);
-      }
-    }
-
     const cleanupFailures: string[] = [];
     const instances = [dev1, dev2];
     const testConversations = new Map<ResolvedInstance, any[]>();
@@ -171,17 +160,14 @@ afterAll(async () => {
     // The forward scenario can create a Bob-owned conversation that is also
     // mirrored on Alice. Both mirrors omit created_by in the local hub
     // projection, so let the hub's owner check identify which side may delete.
+    // Read local mirrors only: a teardown-time conversation-list action would
+    // broad-sync unrelated historical hub conversations.
     for (const inst of instances) {
-      await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      }).catch(() => undefined);
       const listed = await fetch(`${inst.apiUrl}/api/v1/graph/conversation`)
         .then((r) => r.json())
         .catch(() => null);
       const rows = ((listed?.data ?? []) as any[]).filter(
-        (row) => row?.id && String(row?.title ?? '').startsWith('e2etest-'),
+        (row) => row?.id && ownedConversationTitles.has(String(row?.title ?? '')),
       );
       testConversations.set(inst, rows);
     }
@@ -197,18 +183,18 @@ afterAll(async () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversation_id: id, mode }),
-        }).then((r) => r.json()).catch(() => null);
-        if (
-          conversation.remote
-          && result?.status !== 'SUCCESS'
-          && Number(result?.data?.hub_status) === 403
-        ) {
+        })
+          .then((r) => r.json())
+          .catch(() => null);
+        if (conversation.remote && result?.status !== 'SUCCESS' && Number(result?.data?.hub_status) === 403) {
           mode = 'leave';
           result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ conversation_id: id, mode }),
-          }).then((r) => r.json()).catch(() => null);
+          })
+            .then((r) => r.json())
+            .catch(() => null);
         }
         if (result?.status !== 'SUCCESS' && !String(result?.message ?? '').includes('Conversation not found')) {
           cleanupFailures.push(`${inst.name} conversation ${id} (${mode}): ${JSON.stringify(result)}`);
@@ -216,14 +202,31 @@ afterAll(async () => {
       }
     }
 
-    const SWEEP = ['skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    const SWEEP = ['skill', 'agent', 'workflow', 'dynamic_workflow', 'chart', 'markdown', 'spec', 'prompt'];
     for (const inst of [dev1, dev2]) {
       for (const type of SWEEP) {
-        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
+        const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`)
+          .then((r) => r.json())
+          .catch(() => null);
         for (const r of (list?.data ?? []) as any[]) {
           const label = String(r?.title ?? r?.name ?? '');
-          if (label.startsWith('e2etest-') && r?.id) {
-            await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, { method: 'DELETE' }).catch(() => undefined);
+          if (ownedEntityNames.has(label) && r?.id) {
+            // Folder/file-backed assets need the fs-records lifecycle so the
+            // entity row, search index, and record directory disappear
+            // together. Graph DELETE is retained only as a fallback for
+            // entity-only types that do not have a registered record class.
+            const recordDelete = await fetch(
+              `${inst.apiUrl}/api/v1/graph/compute_node/@local/fs-records/${type}/${r.id}`,
+              { method: 'DELETE' },
+            ).catch(() => null);
+            if (!recordDelete?.ok) {
+              const graphDelete = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${r.id}`, {
+                method: 'DELETE',
+              }).catch(() => null);
+              if (!graphDelete?.ok) {
+                cleanupFailures.push(`${inst.name} ${type} ${r.id}: full purge and graph fallback failed`);
+              }
+            }
           }
         }
       }
@@ -261,9 +264,7 @@ async function conversationIdByTitle(inst: ResolvedInstance, title: string): Pro
       // message to have crossed the hub boundary (created → sent or later).
       const pointers = ((hit as any).conversationMessageIds ?? []) as Array<{ id?: string }>;
       const latestId = pointers[pointers.length - 1]?.id;
-      const latest = latestId
-        ? await inst.sdk.FlowMessage.getById(latestId).catch(() => null)
-        : null;
+      const latest = latestId ? await inst.sdk.FlowMessage.getById(latestId).catch(() => null) : null;
       if (latest && latest.delivery_status !== 'created') return hit.id;
     }
     if (Date.now() > deadline) throw new Error(`no conversation titled "${title}" on ${inst.name}`);
@@ -290,10 +291,29 @@ async function downloadAndOpenAssetClean(
   // _notify_received_assets fix; without it the chip stays disabled forever.
   const deadline = Date.now() + 22_000;
   for (;;) {
-    if (await inst.page.getByTestId(chipTestId).first().isVisible().catch(() => false)) break;
-    const visible = await download.first().isVisible().catch(() => false);
-    if (visible && (await download.first().isEnabled().catch(() => false))) {
-      await download.first().click().catch(() => undefined);
+    if (
+      await inst.page
+        .getByTestId(chipTestId)
+        .first()
+        .isVisible()
+        .catch(() => false)
+    )
+      break;
+    const visible = await download
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (
+      visible &&
+      (await download
+        .first()
+        .isEnabled()
+        .catch(() => false))
+    ) {
+      await download
+        .first()
+        .click()
+        .catch(() => undefined);
     }
     if (Date.now() > deadline) throw new Error(`chip ${chipTestId} never appeared on ${inst.name}`);
     await inst.page.waitForTimeout(400);
@@ -302,24 +322,27 @@ async function downloadAndOpenAssetClean(
   // STAGED RECEPTION (f1276cd5): download STAGES the asset (MessageAttachment,
   // scope=null) — the chip renders dashed and opens the review/install modal,
   // never the editor (consent boundary). Install explicitly into the mapped
-  // project via the modal's backend action, then open the editor at its dock
-  // URL — the same target the context panel's Open resolves. (The chip→modal
-  // UX has its own coverage; this test's assertion target stays "the shared
-  // asset opens cleanly in the receiver's editor".)
+  // project via the backend action, then open through the real chip. Installed,
+  // it navigates straight to the entity: the review → Open detour is behind the
+  // developer switch now (bd2e5b0d1 — a tab's `?viewMode=advanced` no longer
+  // turns Advanced on). The chip owns the URL-first openDock action; a hard
+  // page.goto here would tear down the live socket/watch graph, rerun
+  // bootstrap, and make unrelated project indexing contend with the open.
   const chipMatch = /^entity-chip-([a-z_]+)-(.+)$/.exec(chipTestId);
   if (!chipMatch) throw new Error(`unexpected chip testid ${chipTestId}`);
   const [, assetType, assetId] = chipMatch;
   const convRow = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`)
-    .then((r) => r.json()).catch(() => null);
+    .then((r) => r.json())
+    .catch(() => null);
   const projectId = convRow?.data?.project_id as string;
   let staged: any = null;
   const stagedDeadline = Date.now() + 10_000;
   while (!staged && Date.now() < stagedDeadline) {
     const rows = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment`)
-      .then((r) => r.json()).catch(() => null);
-    staged = ((rows?.data ?? []) as any[]).find(
-      (m) => m.conversation_id === conversationId && m.asset_id === assetId,
-    ) ?? null;
+      .then((r) => r.json())
+      .catch(() => null);
+    staged =
+      ((rows?.data ?? []) as any[]).find((m) => m.conversation_id === conversationId && m.asset_id === assetId) ?? null;
     if (!staged) await inst.page.waitForTimeout(400);
   }
   if (!staged) throw new Error(`staged MessageAttachment for ${assetType}-${assetId} never appeared on ${inst.name}`);
@@ -333,10 +356,7 @@ async function downloadAndOpenAssetClean(
   }
 
   resetConsoleErrors(inst);
-  await inst.page.goto(
-    `${inst.feUrl}/dock/assets/editor/${assetType}/typeid/${assetType}-${assetId}?viewMode=advanced`,
-    { waitUntil: 'domcontentloaded' },
-  );
+  await inst.page.getByTestId(chipTestId).first().click();
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.
@@ -357,32 +377,34 @@ describe('A. asset-page share: workflow', () => {
   let convId: string;
   const replyText = `wf-reply-${ts}`;
 
-  const convTitle = testEntityName('conv');
+  const convTitle = ownedTestEntityName('conv');
 
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
+    const wf = await dev1.sdk.DynamicWorkflow.createInProject(null, ownedTestEntityName('workflow'));
     workflowId = wf.id!;
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`, {
-      waitUntil: 'domcontentloaded',
-    });
-    await p1.page.getByTestId('dynamic-workflow-editor-share').click({ timeout: 20_000 });
+    await p1.page.goto(
+      `${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`,
+      {
+        waitUntil: 'domcontentloaded',
+      },
+    );
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 20_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
       title: convTitle,
     });
     convId = await conversationIdByTitle(dev1, convTitle);
-    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
-  it('A2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2, convId);
+  it('A2 receive — dev-2 opens its assigned conversation', async () => {
+    await openAssignedConversationInUI(p2, convId);
   });
 
   // Receiver materialization: the body bundle downloads, unpacks, and
   // materializes the shared workflow under the SAME id (the packer now adds
-  // workflow/whiteboard to `_FS_ROOTED_TYPES` and injects the sender id into
+  // workflow/chart to `_FS_ROOTED_TYPES` and injects the sender id into
   // the asset's main doc — see flow_message_bundle.py). The chip then resolves
   // and opens the editor with a clean console.
   it('A3 open — dev-2 opens the shared workflow with a clean console', async () => {
@@ -403,19 +425,19 @@ describe('A. asset-page share: workflow', () => {
   });
 });
 
-// ─── Scenario B: asset-page share — whiteboard (AssetEditorHeader button) ────
+// ─── Scenario B: asset-page share — chart (AssetEditorHeader button) ────
 
-describe('B. asset-page share: whiteboard', () => {
+describe('B. asset-page share: chart', () => {
   let wbId: string;
   let convId: string;
   const replyText = `wb-reply-${ts}`;
-  const wbName = testEntityName('whiteboard');
-  const convTitle = testEntityName('conv');
+  const wbName = ownedTestEntityName('chart');
+  const convTitle = ownedTestEntityName('conv');
 
-  it('B1 share — dev-1 shares from the whiteboard editor UI', async () => {
-    const wb = trackForCleanup(await dev1.sdk.Whiteboard.create(wbName));
+  it('B1 share — dev-1 shares from the chart editor UI', async () => {
+    const wb = await dev1.sdk.Chart.create(wbName, 'excalidraw');
     wbId = wb.id!;
-    // Whiteboard files materialize lazily on first editor persist; a fresh
+    // Chart files materialize lazily on first editor persist; a fresh
     // entity has an empty folder and the board.json read never settles. Seed
     // the minimal board files the way the editor's first save would (the
     // instances run on this host, and asset_ref is a real local path).
@@ -427,39 +449,33 @@ describe('B. asset-page share: whiteboard', () => {
         `${assetRef}/board.json`,
         JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
       );
-      await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
+      await nodeFs.writeFile(`${assetRef}/CHART.md`, `# ${wbName}\n`);
     }
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}?viewMode=advanced`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/chart/typeid/chart-${wbId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
     // Wait for the editor to finish mounting (board.json read settles) before
     // the share click — clicking mid-mount is what intermittently dropped the
     // share dispatch.
-    await p1.page.getByTestId('whiteboard-editor').waitFor({ timeout: 25_000 });
-    await p1.page.getByTestId('whiteboard-editor-share').click({ timeout: 25_000 });
+    await p1.page.getByTestId('chart-excalidraw').waitFor({ timeout: 25_000 });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 25_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
-      note: `here is a whiteboard ${ts}`,
+      note: `here is a chart ${ts}`,
       title: convTitle,
     });
     convId = await conversationIdByTitle(dev1, convTitle);
-    trackTypeId('conversation', convId);
     expect(convId).toBeTruthy();
   });
 
-  it('B2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2, convId);
+  it('B2 receive — dev-2 opens its assigned conversation', async () => {
+    await openAssignedConversationInUI(p2, convId);
   });
 
-  // Receiver materializes the shared whiteboard under the same id (see A3) —
-  // its folder rides the bundle and the id is injected into WHITE_BOARD.md.
-  it('B3 open — dev-2 opens the shared whiteboard with a clean console', async () => {
-    await downloadAndOpenAssetClean(
-      p2,
-      convId,
-      `entity-chip-whiteboard-${wbId}`,
-      '[data-testid="whiteboard-editor"]',
-    );
+  // Receiver materializes the shared chart under the same id (see A3) —
+  // its folder rides the bundle and the id is injected into CHART.md.
+  it('B3 open — dev-2 opens the shared chart with a clean console', async () => {
+    await downloadAndOpenAssetClean(p2, convId, `entity-chip-chart-${wbId}`, '[data-testid="chart-excalidraw"]');
   });
 
   it('B4 reply — dev-2 replies; dev-1 sees it arrive', async () => {
@@ -476,14 +492,16 @@ describe('B. asset-page share: whiteboard', () => {
 describe('C. forward a message', () => {
   let srcConvId: string;
   let fwdConvId: string;
-  const fwdDstTitle = testEntityName('conv');
+  const fwdDstTitle = ownedTestEntityName('conv');
 
   it('C1 seed — dev-1 has a conversation with a sent message', async () => {
-    // Seed a source conversation with a text message via the SDK (the entry
-    // point under test is the FORWARD UI, not this send).
-    const conv = trackForCleanup(new dev1.sdk.Conversation({ title: testEntityName('conv') }));
+    // Seed a LOCAL source conversation with a text message via the SDK (the
+    // entry point under test is the FORWARD UI, not this send). Only the
+    // dialog-created destination belongs to this scenario's cloud contract;
+    // sharing both sides creates an unrelated invitation/watch/sync lifecycle
+    // that competes with the forward write.
+    const conv = new dev1.sdk.Conversation({ title: ownedTestEntityName('conv') });
     await conv.save();
-    await conv.share([dev2.email]);
     const r = await fetch(`${dev1.apiUrl}/api/v1/graph/conversation/${conv.id}/add_message`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -496,24 +514,27 @@ describe('C. forward a message', () => {
   it('C2 forward — dev-1 forwards the message via the bubble UI', async () => {
     await openConversation(p1, srcConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
-    await p1.page.getByTestId('message-forward').first().click({ timeout: 15_000 });
+    // Forward lives in the bubble's ⋮ menu.
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forward').click({ timeout: 15_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       title: fwdDstTitle,
     });
     fwdConvId = await conversationIdByTitle(dev1, fwdDstTitle);
-    trackTypeId('conversation', fwdConvId);
     expect(fwdConvId).not.toBe(srcConvId);
   });
 
   it('C3 provenance — the clone renders the forwarded marker on dev-1', async () => {
     await openConversation(p1, fwdConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
-    await p1.page.getByTestId('message-forwarded-marker').first().waitFor({ timeout: 15_000 });
+    // The forwarded note heads the clone's ⋮ menu.
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forwarded-marker').waitFor({ timeout: 15_000 });
   });
 
-  it('C4 accept + receive — dev-2 accepts and sees the forwarded text', async () => {
-    await acceptInvitationInUI(p2, fwdConvId);
+  it('C4 receive — dev-2 opens the assignment and sees the forwarded text', async () => {
+    await openAssignedConversationInUI(p2, fwdConvId);
     await openConversation(p2, fwdConvId);
     await waitForMessageText(p2, `forward me ${ts}`);
   });

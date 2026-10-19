@@ -16,13 +16,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from dataclasses import dataclass
+from typing import Any, Optional
 
-from flow_sdk import inbox
-from typing import Any, Callable, Optional
-
+from flow_sdk import stream_inbox
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
+from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.preferences import message_status_sharing_enabled
+from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,21 @@ logger = logging.getLogger(__name__)
 # is clickable — otherwise the asset editor's ``useEntityByPath`` discover
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
-_ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "whiteboard",
-})
+_ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
+    {
+        "skill",
+        "subagent",
+        "markdown",
+        "spec",
+        "chart",
+        "project",
+    }
+)
 
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / whiteboard).
+    asset entity (skill / agent / markdown / spec / chart).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a
@@ -49,16 +56,10 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type != "type_id":
             continue
-        data = (
-            att.get("data") if isinstance(att, dict)
-            else getattr(att, "data", None)
-        )
+        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
         if not isinstance(data, str):
             continue
         dash = data.find("-")
@@ -78,19 +79,48 @@ def _has_session_carrier_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type != "type_id":
             continue
-        data = (
-            att.get("data") if isinstance(att, dict)
-            else getattr(att, "data", None)
-        )
+        data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
         if isinstance(data, str) and data.startswith("remote_worker_session-"):
             return True
     return False
+
+
+def _is_session_traffic(payload: dict) -> bool:
+    """True for a live-session message that lives ONLY in the session view —
+    follow-up prompts, replies, lifecycle lines. Those must not raise the
+    thread's "new message" desktop notification (they are not thread rows).
+    The prompt that OPENS a session is thread traffic (its card asks the host
+    to approve), so it keeps its notification: it is the one session message
+    whose carrier carries the ``session_start`` marker."""
+    from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY, carrier_marker  # noqa: PLC0415
+
+    atts = payload.get("attachment") or []
+    if not _has_session_carrier_attachment(atts) and not payload.get("remote_worker_session_id"):
+        return False
+    return SESSION_START_MARKER_KEY not in (carrier_marker(atts) or {})
+
+
+def _attachment_only_body(payload: dict) -> str:
+    """The notification line for a message with no text. ``Sent you: <type>`` is a fixed
+    sentence the UI matches and rebuilds in the person's language (``localizedBody``)."""
+    from flow_sdk.builtin.flow_message import BODY_FILENAME  # noqa: PLC0415
+
+    for a in payload.get("attachment") or []:
+        if not isinstance(a, dict) or a.get("attachment_type") != "type_id":
+            continue
+        entity_type = str(a.get("data") or "").split("-", 1)[0]
+        # A prompt call and its answer are values, not things sent: say what happened.
+        if entity_type == "process_call":
+            return "Sent you a prompt to run"
+        if entity_type == "returned_value":
+            return "Ran your prompt"
+        if entity_type and entity_type not in ("conversation", "flow_message"):
+            return f"Sent you: {entity_type}"
+    filename = (payload.get("attachment_filename") or "").strip()
+    return filename if filename and filename != BODY_FILENAME else "Sent you a message"
 
 
 def _has_prompt_attachment(attachments: Any) -> bool:
@@ -106,20 +136,22 @@ def _has_prompt_attachment(attachments: Any) -> bool:
     if not attachments:
         return False
     for att in attachments:
-        att_type = (
-            att.get("attachment_type") if isinstance(att, dict)
-            else getattr(att, "attachment_type", None)
-        )
+        att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type == "prompt":
             return True
         if att_type == "type_id":
-            data = (
-                att.get("data") if isinstance(att, dict)
-                else getattr(att, "data", None)
-            )
+            data = att.get("data") if isinstance(att, dict) else getattr(att, "data", None)
             if isinstance(data, str) and data.split("-", 1)[0] == "prompt":
                 return True
     return False
+
+
+def _is_session_request(attachments: Any) -> bool:
+    """True iff ``attachments`` carry a guest's ``requested`` live-session line —
+    a session opened before any prompt (its carrier marker names the event)."""
+    from flow_sdk.builtin.flow_message import LIVE_SESSION_EVENT_MARKER_KEY, carrier_marker  # noqa: PLC0415
+
+    return (carrier_marker(attachments or []) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY) == "requested"
 
 
 # In-flight bundle pulls keyed by fm_id — guards against the bridge
@@ -151,7 +183,15 @@ async def _maybe_eager_pull_bundle(
     _INFLIGHT_BUNDLE_PULLS.add(fm_id)
     try:
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
-        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
+
+        await _download_and_unpack_bundle(
+            fm_id,
+            attachment_filename,
+            # Live WS arrival: no hub list payload in hand, and the send-time is
+            # ~now anyway, so the bundle's own pointer index is the right source.
+            hub_updated=None,
+            body_status=body_status,
+        )
         logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
@@ -159,31 +199,53 @@ async def _maybe_eager_pull_bundle(
         _INFLIGHT_BUNDLE_PULLS.discard(fm_id)
 
 
-@dataclass
-class _Subscription:
-    """Internal record for ``HubWsBridge.subscribe()`` filters."""
+async def _fill_empty_blobs(cls: Any, entity_type: str, entity_id: str, data: Any) -> Any:
+    """Refill blob fields a hub op left empty, from one ``expand=blobs`` GET.
 
-    callback: Callable
-    scope_id: Optional[str]
-    entity_type: Optional[str]
-    op: Optional[str]
+    The hub op usually embeds the in-memory entity (blobs included), but a
+    payload built from the hub's DB row carries blob fields EMPTY — they're
+    db-excluded. Materializing that leaves the row bodyless, and on a row we
+    already hold it would BLANK a body we have. So when a blob-declaring type
+    arrives with every blob field empty, fetch the expanded entity once and
+    merge. Harmless when the body is genuinely empty; a no-op for types with no
+    blob fields.
+
+    Shared by every inbound op that materializes an entity (children and tasks
+    alike) — the guard belongs to the boundary, not to one handler.
+    """
+    blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
+    if not blob_fields or not isinstance(data, dict) or any(data.get(f) for f in blob_fields):
+        return data
+    try:
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+        from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+        expanded = await hub_get(BuiltinEntityType(entity_type), entity_id, params={"expand": "blobs"})
+        if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
+            return {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
+    except Exception:  # noqa: BLE001
+        logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", entity_type, entity_id, exc_info=True)
+    return data
 
 
-def _parse_to_entity(to_entity: Any) -> tuple[Optional[str], Optional[str]]:
-    """Normalize the to_entity field of a data_op_msg into (type, id)."""
-    if isinstance(to_entity, str):
-        if "-" in to_entity:
-            etype, eid = to_entity.split("-", 1)
-            return etype, eid
-        if ":" in to_entity:
-            etype, eid = to_entity.split(":", 1)
-            return etype, eid
-        return None, None
-    if isinstance(to_entity, dict):
-        return to_entity.get("type"), to_entity.get("id")
-    if hasattr(to_entity, "type") and hasattr(to_entity, "id"):
-        return to_entity.type, to_entity.id
-    return None, None
+async def _conversation_allows_inbound_materialization(conversation_id: str) -> bool:
+    """Authorize a message frame whose parent is absent from the local mirror.
+
+    Hub delivery and local cleanup can cross in flight: a queued FlowMessage
+    CREATE may execute after its Conversation was owner-deleted. Materializing
+    that stale frame would recreate the deleted parent. A locally present parent
+    is already authorized; otherwise the exact Hub row must still be readable
+    and live. Missed assignment frames remain recoverable, while tombstoned or
+    inaccessible parents reject the stale child.
+    """
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+    from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+    if await Conversation.get_one({"id": conversation_id}) is not None:
+        return True
+    hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conversation_id)
+    return bool(isinstance(hub_conv, dict) and hub_conv.get("id") == conversation_id and not hub_conv.get("deleted_at"))
 
 
 class HubWsBridge:
@@ -196,17 +258,59 @@ class HubWsBridge:
         # used by the UI Reply path to decide whether to push outbound via
         # hub_ws_bridge.add_message() vs the local-only append path.
         self._hub_conv_ids: set[str] = set()
-        # Generic subscribers — see ``subscribe()``. Used by
-        # ``Entity.cloud_watch()`` to expose the hub event stream scoped to
-        # any entity (its own UPDATEs + its children's CREATE/UPDATE/DELETE).
-        self._subscriptions: list = []
+        # Process-lifetime tombstones for conversations deleted locally. A
+        # detached inbound materializer may already be in flight when DELETE
+        # lands; this set lets it abort before write or roll its write back.
+        self._deleted_conv_ids: set[str] = set()
+        # The subset of the above owned by the CURRENT cloud session rather than
+        # by a real delete: logout's bulk wipe tombstones every hub conversation
+        # to protect its purge, but those conversations still exist on the hub.
+        # Tracked separately so the next login can release exactly these and
+        # leave a genuine delete's tombstone standing.
+        self._session_deleted_conv_ids: set[str] = set()
+        # Inbound CREATE persists still running, by message id. The hub sends a
+        # message's UPDATEs right behind its CREATE, and the persist is detached —
+        # an UPDATE handled before it lands finds no row. It waits for the
+        # persist instead of being dropped (see the UPDATE branch).
+        self._inbound_persists: dict[str, asyncio.Task] = {}
 
     def install(self) -> None:
         """Register inbound handlers on the manager. Idempotent."""
         if self._installed:
             return
         self.manager.register_handler("data_op_msg", self._on_data_op)
+        self.manager.register_handler("install_request", self._on_install_request)
+        self.manager.register_handler("oauth_msg", self._on_oauth_msg)
+        from flow_sdk.cloud_client import webhook_relay  # noqa: PLC0415
+
+        # A desktop webhook's delivery (the hub's public URL for this laptop): replayed here, then acked.
+        self.manager.register_handler("webhook_delivery", webhook_relay.on_delivery)
+        self.manager.register_handler("source_nudge", self._on_source_nudge)
         self._installed = True
+
+    async def _on_source_nudge(self, message: dict) -> None:
+        """The hub holds something new for a driver's sources here (a message waiting for them): poll
+        them now instead of on the next cadence tick. Names the DRIVER as data, so no driver is known here."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+        driver = str(message.get("driver") or "")
+        if driver:
+            await DataSource.nudge(driver)
+
+    async def _on_oauth_msg(self, message: dict) -> None:
+        """The hub says a grant it runs ended: finish the matching flow here too.
+
+        Covers a browser whose return to this instance never arrives (tab closed,
+        redirect blocked). Same completion as the landing route and the poll.
+        """
+        from flow_sdk.app.actions.oauth_action import complete_hub_flow  # noqa: PLC0415
+        from flow_sdk.core.oauth.flows import AuthFlowKind, get_flow  # noqa: PLC0415
+
+        flow_id = str(message.get("oauth_request_id") or "")
+        flow = get_flow(flow_id)
+        if flow is None or flow.kind != AuthFlowKind.HUB_CODE:
+            return
+        await complete_hub_flow(flow.provider, flow_id)
 
     def is_hub_conversation(self, conversation_id: str) -> bool:
         """Whether this conversation has been seen on the hub WS — i.e., is
@@ -217,46 +321,37 @@ class HubWsBridge:
         if conversation_id:
             self._hub_conv_ids.add(conversation_id)
 
-    def subscribe(
-        self,
-        callback,
-        *,
-        scope_id: Optional[str] = None,
-        entity_type: Optional[str] = None,
-        op: Optional[str] = None,
-    ):
-        """Generic inbound subscription on the hub event stream.
+    def suppress_conversation_materialization(self, conversation_id: str, *, session_scoped: bool = False) -> None:
+        """Prevent queued Hub children from recreating a locally deleted parent.
 
-        ``callback(event: EntityEvent)`` is invoked synchronously inside the
-        bridge's inbound dispatcher for every hub ``data_op_msg`` that
-        matches all the (optional) filters:
-
-        - ``scope_id``    — match when the event's ``entity_id`` *or*
-                            ``parent_id`` equals this id (covers "events
-                            about me" + "events about my children").
-        - ``entity_type`` — match when ``entity_type`` equals this string.
-        - ``op``          — match when ``op`` equals this string
-                            ("create"/"update"/"delete").
-
-        Returns an unsubscribe callable. Safe to register from any task.
+        ``session_scoped`` marks a tombstone that belongs to the current cloud
+        session instead of to a real delete — logout's wipe sets it, and the next
+        login releases exactly those. Default False: a genuine delete's tombstone
+        outlives any number of logins, as it must.
         """
-        from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
+        if conversation_id:
+            self._deleted_conv_ids.add(conversation_id)
+            self._hub_conv_ids.discard(conversation_id)
+            if session_scoped:
+                self._session_deleted_conv_ids.add(conversation_id)
 
-        sub = _Subscription(
-            callback=callback,
-            scope_id=scope_id,
-            entity_type=entity_type,
-            op=op,
-        )
-        self._subscriptions.append(sub)
+    def conversation_materialization_suppressed(self, conversation_id: str) -> bool:
+        return conversation_id in self._deleted_conv_ids
 
-        def _unsub() -> None:
-            try:
-                self._subscriptions.remove(sub)
-            except ValueError:
-                pass
+    def release_session_conversation_suppressions(self) -> None:
+        """Release the tombstones logout's wipe set — call when a cloud session begins.
 
-        return _unsub
+        The tombstone is an in-flight guard, not an account-scoped one: it stops a
+        queued hub materializer from recreating a parent a delete just removed.
+        Logout's bulk wipe (``clear_stream_inbox``) borrows the same guard, but logout is
+        not delete — those conversations still exist on the hub and the next login's
+        catch-up pulls them back. The tombstones are memory-only and nothing else
+        clears them, so a stale one silently drops every future inbound frame for
+        that conversation, the catch-up's own backlog included, for the rest of the
+        process. Only the session-scoped ids go: a genuine delete keeps its guard.
+        """
+        self._deleted_conv_ids -= self._session_deleted_conv_ids
+        self._session_deleted_conv_ids.clear()
 
     def _dispatch_event(
         self,
@@ -268,57 +363,69 @@ class HubWsBridge:
         parent_id: Optional[str],
         data: dict,
     ) -> None:
-        """Fan a hub event to matching generic subscribers.
+        """Relay a hub event onto the unified bus.
 
         Called from the inbound ``_on_data_op`` dispatcher AFTER any
-        type-specific materialization, so subscribers observe the local
-        store in its post-event state.
+        type-specific materialization, so listeners observe the local store in
+        its post-event state.
         """
-        from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
-
         # Unified-bus dual-publish (docs/flow-events.md phase 6): hub-origin
         # events relay under their OWN family — see hub_on_tag.py.
         from flow_sdk.cloud_client.hub_on_tag import emit_hub_entity
 
-        emit_hub_entity(op, entity_type, entity_id, parent_type, parent_id,
-                        str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None)
-
-        if not self._subscriptions:
-            return
-        event = EntityEvent(
-            op=op,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            parent_type=parent_type,
-            parent_id=parent_id,
-            data=data,
+        emit_hub_entity(
+            op,
+            entity_type,
+            entity_id,
+            parent_type,
+            parent_id,
+            str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None,
         )
-        for sub in list(self._subscriptions):
-            if sub.entity_type and sub.entity_type != entity_type:
-                continue
-            if sub.op and sub.op != op:
-                continue
-            if sub.scope_id and sub.scope_id not in (entity_id, parent_id):
-                continue
-            try:
-                sub.callback(event)
-            except Exception:
-                logger.exception("hub_bridge: subscriber raised entity=%s/%s op=%s", entity_type, entity_id, op)
+
+    async def _on_install_request(self, message: dict) -> None:
+        """Hub → this desktop: "install this published asset". The hub only
+        relays the row (typeid + origin + provenance); nothing is fetched or
+        written here. Every open window gets a ``ui_command`` that opens the
+        Add-asset dialog — the person picks the project and confirms there —
+        plus a desktop notification for a window that is not in front."""
+        from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+        from flow_sdk.notifications.ui_command import broadcast_ui_command  # noqa: PLC0415
+
+        envelope = {"message_type", "message_id", "instance_id"}
+        request = {k: v for k, v in (message or {}).items() if k not in envelope}
+        if not request.get("typeid"):
+            logger.warning("[hub-bridge] install_request without a typeid: %s", message)
+            return
+        await broadcast_ui_command("install_request", request=request)
+        try:
+            await notify_desktop(
+                "install",
+                title=f"Install {request.get('name') or request.get('typeid')}",
+                body=f"from {request.get('source_project_name') or 'a project'} — open Flowpad to add it",
+            )
+        except Exception:  # noqa: BLE001 — the dialog is the real surface
+            logger.debug("[hub-bridge] desktop notification skipped", exc_info=True)
 
     async def _on_data_op(self, message: dict) -> None:
         """Inbound data_op_msg dispatcher.
 
-        Routes by the changed entity's type. Currently handles flow_message
-        (create + update), conversation (any op as a passive upsert), and
-        invitation (nudge → invitation-sync pull).
+        Routes by the changed entity's type. Membership-container assignments
+        use the same mirror materializer as invitation acceptance.
         """
+        from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
+
         op = str(message.get("op") or "").lower()
-        etype, eid = _parse_to_entity(message.get("to_entity"))
+        etype, eid = parse_target(message.get("to_entity"))
         # Parent envelope: hub sends a flow_message CREATE with from_entity =
         # the parent conversation. Used as the authoritative source for
         # conversation_id since the FlowMessage payload doesn't carry it.
-        from_etype, from_eid = _parse_to_entity(message.get("from_entity"))
+        from_etype, from_eid = parse_target(message.get("from_entity"))
         data = message.get("data")
+        # The hub's row delete carries no payload (``data: null``) -- the row is
+        # already gone. Dropping it here left every mirror of a deleted team or
+        # organization behind, offered in pickers forever.
+        if op == "delete" and data is None and eid:
+            data = {"id": eid}
         if not etype or not eid or not isinstance(data, dict):
             logger.debug("hub_bridge: ignoring data_op_msg with missing parts: %s", message)
             return
@@ -348,15 +455,25 @@ class HubWsBridge:
                 await self._handle_invitation_op(op, eid, data)
             elif etype == "task":
                 await self._handle_task_op(op, eid, data)
+            elif etype == "deployment":
+                await self._handle_deployment_op(op, eid, data)
+            elif etype == "llm_endpoint":
+                await self._handle_llm_endpoint_op(op, eid, data)
+            elif etype == "diagnosis_request":
+                if op == "update":
+                    from flow_sdk.builtin.diagnosis_request import DiagnosisRequest  # noqa: PLC0415
+
+                    await DiagnosisRequest.take_hub_update(eid, data)
+            elif etype in MEMBERSHIP_MIRROR_TYPES:
+                await self._handle_membership_container_op(op, etype, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
             logger.exception("hub_bridge: error handling data_op_msg type=%s op=%s id=%s", etype, op, eid)
 
-        # Generic fan-out to ``Entity.cloud_watch()`` subscribers — runs for
-        # EVERY data_op_msg regardless of whether a type-specific handler
-        # materialized it locally. Subscribers see entities the bridge does
-        # not natively understand (rooms, devices, …) as plain events.
+        # Unified-bus relay — runs for EVERY data_op_msg regardless of whether
+        # a type-specific handler materialized it locally, so listeners see
+        # entities the bridge does not natively understand (rooms, devices, …).
         # For flow_message CREATE the bridge resolved the conversation_id
         # via parents_path; pass it as parent_id so subscribers scoped to a
         # conversation receive child events even when the hub omitted
@@ -418,25 +535,7 @@ class HubWsBridge:
         # hub container (e.g. the conversation, used only for fanout).
         if isinstance(data, dict) and not data.get("id"):
             data = {**data, "id": child_id}
-        # Blob fallback: the hub op usually embeds the in-memory entity (blobs
-        # included), but a payload built from the hub's DB row carries blob
-        # fields EMPTY (they're db-excluded). Materializing that would clobber
-        # nothing locally yet still leave the child bodyless — so when a
-        # blob-declaring type arrives with all blob fields empty, fetch the
-        # expanded entity once and merge. Harmless when the body is genuinely
-        # empty; skipped entirely for types without blob fields.
-        blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
-        if blob_fields and isinstance(data, dict) and not any(data.get(f) for f in blob_fields):
-            try:
-                from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
-                from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
-
-                etype = BuiltinEntityType(child_type)
-                expanded = await hub_get(etype, child_id, params={"expand": "blobs"})
-                if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
-                    data = {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
-            except Exception:  # noqa: BLE001
-                logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", child_type, child_id, exc_info=True)
+        data = await _fill_empty_blobs(cls, child_type, child_id, data)
         envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None
@@ -471,6 +570,7 @@ class HubWsBridge:
             # ``User`` row uses a different per-machine id).
             try:
                 from flow_sdk.cli.app_config import get_user as _get_cloud_user
+
                 cloud_user = _get_cloud_user() or {}
                 cloud_user_id = cloud_user.get("id")
                 if cloud_user_id and payload.get("sender_id") == cloud_user_id:
@@ -518,7 +618,9 @@ class HubWsBridge:
             self.remember_hub_conversation(conversation_id)
             logger.info(
                 "[bridge] flow_message CREATE received fm=%s conv=%s sender=%s",
-                fm_id, conversation_id, payload.get("sender_id"),
+                fm_id,
+                conversation_id,
+                payload.get("sender_id"),
             )
 
             local_user = await User.get_local()
@@ -537,8 +639,23 @@ class HubWsBridge:
             # a full reload. Correctness wins — emit both through materialize.
             async def _persist_inbound() -> None:
                 try:
+                    if self.conversation_materialization_suppressed(conversation_id):
+                        logger.info(
+                            "[bridge] suppressed inbound skipped fm=%s conv=%s",
+                            fm_id,
+                            conversation_id,
+                        )
+                        return
+                    if not await _conversation_allows_inbound_materialization(conversation_id):
+                        logger.info(
+                            "[bridge] stale inbound skipped fm=%s conv=%s (parent absent/deleted)",
+                            fm_id,
+                            conversation_id,
+                        )
+                        return
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
-                    await materialize_flow_message(
+
+                    materialized = await materialize_flow_message(
                         payload,
                         conversation_id=conversation_id,
                         someone_typeid=someone_typeid,
@@ -550,20 +667,48 @@ class HubWsBridge:
                         # Inbound from the hub: this row mirrors a hub counterpart.
                         remote=True,
                     )
+                    # DELETE can land while materialize_flow_message is doing
+                    # filesystem/DB work. Roll back deterministically if the
+                    # tombstone appeared after our pre-write check.
+                    if self.conversation_materialization_suppressed(conversation_id):
+                        try:
+                            await materialized.destroy()
+                            from flow_sdk.app.actions.flow_message_action import _hard_delete_local_conversation
+                            from flow_sdk.builtin.conversation import Conversation
+
+                            recreated = await Conversation.get_one({"id": conversation_id})
+                            if recreated is not None:
+                                await _hard_delete_local_conversation(recreated)
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "hub_bridge: suppressed inbound rollback failed fm=%s conv=%s",
+                                fm_id,
+                                conversation_id,
+                            )
+                        return
                     logger.info(
-                        "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
+                        "[bridge] inbound persisted fm=%s conv=%s",
+                        fm_id,
+                        conversation_id,
                     )
 
                     # Republish the unread projection now that the row + pointer
                     # projection have settled (never on the intermediate CREATE).
-                    inbox.touch("inbound-message")
+                    stream_inbox.touch("inbound-message")
+
+                    # Announce it to message automations — after the row landed, so the
+                    # rule's subject reads it. Our own echoes are refused by the subject.
+                    if not _is_session_traffic(payload):
+                        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_conversation_message_tag
+
+                        emit_conversation_message_tag(fm_id, conversation_id)
 
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is
-                    # persisted — not alongside the persist task: the renderer
-                    # re-derives the unread count via ``listInboxMessages`` on
-                    # receipt, so broadcasting before the row lands would count a
-                    # stale inbox and the badge/pip would never increment.
+                    # persisted — not alongside the persist task: the unread count
+                    # is recomputed from the persisted rows (``stream_inbox.touch``
+                    # above), so broadcasting before the row lands would count a
+                    # stale stream inbox and the badge/pip would never increment.
                     # Broadcast to every desktop window so a backgrounded window
                     # still fires the banner/badge/dock-bounce. Skipped for our
                     # own messages (self-sends the hub echoes back — same guard as
@@ -573,16 +718,15 @@ class HubWsBridge:
                         local_user
                         and payload.get("sender_id")
                         and payload["sender_id"] != local_user.id
+                        and not _is_session_traffic(payload)
                     ):
                         try:
                             from flow_sdk.notifications import notify_desktop
+
                             text = " ".join((payload.get("text") or "").split())
                             preview = text if len(text) <= 80 else text[:77] + "..."
                             if not preview:
-                                preview = (
-                                    (payload.get("attachment_filename") or "").strip()
-                                    or "Sent you a message"
-                                )
+                                preview = _attachment_only_body(payload)
                             # Message → generic payload flattening lives HERE
                             # (the Layer-2 consumer); the notification service
                             # renders it blind. The click target is the same
@@ -600,13 +744,14 @@ class HubWsBridge:
                         except Exception as _notify_err:
                             logger.warning(
                                 "[bridge] desktop notify failed fm=%s (non-fatal): %s",
-                                fm_id, _notify_err,
+                                fm_id,
+                                _notify_err,
                             )
 
-                    # Auto-run a permitted contact's prompt (the receiver's local
-                    # ContactPermission policy decides). Cheap pre-check on the raw
-                    # payload so a plain text message never spawns the task (and its
-                    # DB fetch). Detached so a slow/failed run never blocks persist
+                    # Route a contact's prompt through the session gate (the
+                    # session's state — and a standing grant — decide). Cheap
+                    # pre-check on the raw payload so a plain text message never
+                    # spawns the task (and its DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
                     #
                     # But a body-bearing prompt (image/file attached) must NOT run
@@ -615,24 +760,45 @@ class HubWsBridge:
                     # on-disk path, and download_body refuses until body_status=READY —
                     # so running now would strand the prompt with an unreadable
                     # relative VFS path (e.g. ``prompt/image.png``). Defer to the
-                    # body_status→READY UPDATE below, which re-fires this hook; the
-                    # ``prompt_auto_handled`` marker keeps the two trigger points
-                    # idempotent (only one run executes).
+                    # UPDATE below that leaves the row READY, which re-fires this
+                    # hook; the ``prompt_auto_handled`` marker keeps the trigger
+                    # points idempotent (only one run executes).
+                    #
+                    # Decided from the ROW, not this frame: a conversation catch-up
+                    # can pull the body (and stamp READY) before this frame is even
+                    # handled, and then no UPLOADING→READY UPDATE is left to come —
+                    # deferring on the frame's stale "uploading" stranded the prompt.
                     if _has_prompt_attachment(payload.get("attachment")):
-                        if payload.get("body_status") == "uploading":
+                        row = await FlowMessage.get_one({"id": fm_id})
+                        if getattr(row, "body_status", None) in ("uploading", "failed"):  # str-Enum values
                             logger.info(
-                                "[bridge] prompt body still uploading — deferring "
-                                "auto-run until READY fm=%s", fm_id,
+                                "[bridge] prompt body still uploading — deferring auto-run until READY fm=%s",
+                                fm_id,
                             )
                         else:
-                            from flow_sdk.app.actions.execute_prompt import process_inbound_message
-                            asyncio.create_task(process_inbound_message(fm_id, conversation_id))
+                            from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
+
+                            asyncio.create_task(process_inbound_prompt(fm_id, conversation_id))
+                    elif _is_session_request(payload.get("attachment")):
+                        # A session opened before any prompt: the host's own
+                        # identity on the row, and a standing grant's approval.
+                        from flow_sdk.app.actions.execute_prompt import process_session_request
+
+                        asyncio.create_task(process_session_request(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
-                        "[bridge] inbound persist failed fm=%s (non-fatal): %s", fm_id, _err,
+                        "[bridge] inbound persist failed fm=%s (non-fatal): %s",
+                        fm_id,
+                        _err,
                     )
 
-            asyncio.create_task(_persist_inbound())
+            persist = asyncio.create_task(_persist_inbound())
+            self._inbound_persists[fm_id] = persist
+            persist.add_done_callback(
+                lambda t, _id=fm_id: (
+                    self._inbound_persists.pop(_id, None) if self._inbound_persists.get(_id) is t else None
+                )
+            )
 
             # Eager bundle pull for asset-bearing FMs — see
             # ``_maybe_eager_pull_bundle``. Only fires when body_status is
@@ -640,12 +806,14 @@ class HubWsBridge:
             # bridge saw the message); the READY transition for messages we
             # observed mid-upload arrives as an UPDATE op handled below.
             if payload.get("body_status") == "ready":
-                asyncio.create_task(_maybe_eager_pull_bundle(
-                    fm_id,
-                    (payload.get("attachment_filename") or "").strip(),
-                    payload.get("attachment") or [],
-                    body_status=payload.get("body_status"),
-                ))
+                asyncio.create_task(
+                    _maybe_eager_pull_bundle(
+                        fm_id,
+                        (payload.get("attachment_filename") or "").strip(),
+                        payload.get("attachment") or [],
+                        body_status=payload.get("body_status"),
+                    )
+                )
 
             # Auto-ack delivery only when this user chose to share message
             # status. The preference belongs to the reporting user, not to the
@@ -656,18 +824,31 @@ class HubWsBridge:
                 and payload.get("sender_id")
                 and payload["sender_id"] != local_user.id
             ):
-                self.manager.send({
-                    "message_type": "rest_api_msg",
-                    "message_id": str(uuid.uuid4()),
-                    "method": "POST",
-                    "scope": [],
-                    "direct_resource_type": "flow_message",
-                    "action": "mark_delivered",
-                    "body": {"flow_message_ids": [fm_id]},
-                })
+                self.manager.send(
+                    {
+                        "message_type": "rest_api_msg",
+                        "message_id": str(uuid.uuid4()),
+                        "method": "POST",
+                        "scope": [],
+                        "direct_resource_type": "flow_message",
+                        "action": "mark_delivered",
+                        "body": {"flow_message_ids": [fm_id]},
+                    }
+                )
             return
 
         if op == "update":
+            pending = self._inbound_persists.get(fm_id)
+            if pending is not None and not pending.done():
+                # The CREATE is still persisting. Dropping this UPDATE lost the
+                # body READY frame for good — the row stayed UPLOADING and a
+                # deferred prompt never ran. Apply it once the row exists.
+                async def _after_create() -> None:
+                    await asyncio.wait([pending])
+                    await self._handle_flow_message_op(op, fm_id, data, parent_conv_id)
+
+                asyncio.create_task(_after_create())
+                return
             existing = await FlowMessage.get_one({"id": fm_id})
             if existing is None:
                 # Update before create — race or out-of-order delivery. Best
@@ -679,13 +860,16 @@ class HubWsBridge:
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
             from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
-            # ``is_read`` / ``is_archived`` are LOCAL_ONLY_FIELDS (see
-            # flow_message.py) — per-machine inbox state the hub must NOT
+
+            # ``is_read`` / ``is_archived`` are declared ``Sharing.HUB_WRITE`` (see
+            # flow_message.py) — per-machine stream inbox state the hub must NOT
             # dictate. A body-READY UPDATE fans the full FlowMessage back to
             # every participant *including the sender*, carrying the hub's
             # is_read=False; copying it here clobbered the local read state
             # (e.g. re-marked the sender's own just-sent message unread). Only
             # sync the delivery/body fields the hub actually owns.
+            persisted = None
+            last_field = ""
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -695,6 +879,16 @@ class HubWsBridge:
             ):
                 if field not in data:
                     continue
+                if (
+                    field == "body_status"
+                    and getattr(existing, "body_status", None) == "ready"
+                    and data[field] != "ready"
+                ):
+                    # READY is terminal on the hub; a lower status here is an older
+                    # frame delivered late (the entity auto-notify and the
+                    # conversation fan-out race). Taking it rolled a READY row back
+                    # to UPLOADING.
+                    continue
                 if field == "delivery_status" and not delivery_advances(
                     getattr(existing, "delivery_status", None), data[field]
                 ):
@@ -703,8 +897,34 @@ class HubWsBridge:
                     # carries a stale "created", or an out-of-order frame, must
                     # not knock "sent"/"delivered" backward.
                     continue
-                setattr(existing, field, data[field])
-            await existing.save(someone_typeid, notify=True)
+                # ONE TARGETED UPDATE PER FIELD, never a whole-row save. ``existing``
+                # was read at the top of this handler, and the handler is slow (a hub
+                # round-trip); a ``save()`` here round-trips that stale copy and
+                # silently rolls back whatever another task wrote to the row in the
+                # meantime. That is not hypothetical: it un-consumed a prompt's
+                # ``prompt_auto_handled`` marker mid-turn, so the turn ran twice and
+                # the guest got two replies. ``is_read`` / ``is_archived`` / ``is_draft``
+                # are per-machine state sitting behind the same race — the "don't copy
+                # the hub's value" note above only stops the hub supplying a wrong
+                # value, not this handler overwriting a local one.
+                row, patched = await existing._db.update_existing_data_field(
+                    existing.id, existing.get_type(), field, data[field]
+                )
+                if patched and row is not None:
+                    persisted, last_field = row, field
+                    # Keep the in-memory copy current for the code below WITHOUT
+                    # dirtying it — nothing may save this stale object again.
+                    was_dirty = existing._dirty
+                    setattr(existing, field, getattr(row, field))
+                    existing._dirty = was_dirty
+            if persisted is not None:
+                from flow_sdk.core.entity.entity_model import (  # noqa: PLC0415
+                    _publish_server_managed_field_update,
+                )
+
+                # Publish the freshly persisted row, the way every other
+                # server-managed field write does (``mark-edit`` is the precedent).
+                await _publish_server_managed_field_update(existing, persisted, last_field)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
             # no-op when the FM carries no asset TYPE_ID attachments.
@@ -718,42 +938,68 @@ class HubWsBridge:
             is_self_send = False
             try:
                 from flow_sdk.cli.app_config import get_user as _get_cloud_user
+
                 cloud_user_id = (_get_cloud_user() or {}).get("id")
                 sender_id = getattr(existing, "sender_id", None)
                 if cloud_user_id and sender_id and sender_id == cloud_user_id:
                     is_self_send = True
             except Exception:
                 pass
-            if (
-                new_body_status == "ready"
-                and prev_body_status != "ready"
-                and not is_self_send
-            ):
-                asyncio.create_task(_maybe_eager_pull_bundle(
-                    fm_id,
-                    (getattr(existing, "attachment_filename", "") or "").strip(),
-                    getattr(existing, "attachment", None) or [],
-                    body_status=new_body_status,
-                ))
+            if new_body_status == "ready" and not is_self_send:
+                if prev_body_status != "ready":
+                    asyncio.create_task(
+                        _maybe_eager_pull_bundle(
+                            fm_id,
+                            (getattr(existing, "attachment_filename", "") or "").strip(),
+                            getattr(existing, "attachment", None) or [],
+                            body_status=new_body_status,
+                        )
+                    )
                 # A body-bearing prompt whose auto-run was deferred at CREATE (the
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
                 # attachment to an absolute path. Idempotent via prompt_auto_handled
-                # (and re-checked inside the hook: drafts, our own sends, missing
-                # permission all no-op), so this is safe for prompts already run or
-                # never ours to run.
+                # (and re-checked inside the gate: drafts, our own sends, a parked
+                # or terminal session all no-op), so this is safe for prompts
+                # already run or never ours to run.
+                #
+                # On the READY STATE, not the UPLOADING→READY transition: the
+                # conversation catch-up stamps READY when it pulls the body, and
+                # it can do that between the deferral and this frame. The frame
+                # then sees prev=READY, nothing fires, and the prompt was stranded
+                # — the session's last prompt had no later arrival to drain it.
+                #
+                # A row already consumed is skipped up front: no save clears
+                # ``prompt_auto_handled`` (``FlowMessage.preserved_fields_on_save``),
+                # so a True here is final and the task would only no-op.
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
-                if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
-                    from flow_sdk.app.actions.execute_prompt import process_inbound_message
-                    asyncio.create_task(process_inbound_message(fm_id, conv_id))
+                if (
+                    conv_id
+                    and not getattr(existing, "prompt_auto_handled", False)
+                    and _has_prompt_attachment(getattr(existing, "attachment", None))
+                ):
+                    from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
+
+                    asyncio.create_task(process_inbound_prompt(fm_id, conv_id))
             return
 
         if op == "delete":
             existing = await FlowMessage.get_one({"id": fm_id})
-            conv_id = parent_conv_id or (
-                getattr(existing, "conversation_id", None) if existing is not None else None
-            )
+            conv_id = parent_conv_id or (getattr(existing, "conversation_id", None) if existing is not None else None)
             if existing is not None:
+                # Detach the child edge first — membership is the edge, so the
+                # pointer prune below is not enough on its own, and after
+                # ``destroy()`` the child no longer resolves for the detach to
+                # find. Announces CHILD_DELETED to watchers of the conversation.
+                if conv_id:
+                    try:
+                        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+                        parent = await Conversation.get_one({"id": conv_id})
+                        if parent is not None:
+                            await parent.detach_child(existing.typeid, notify=True)
+                    except Exception:
+                        logger.exception("hub_bridge: child detach failed fm=%s conv=%s", fm_id, conv_id)
                 # Erase the message's entire existence — DB row + relationships
                 # AND the on-disk record folder (body bundle, metadata, .hash).
                 # ``delete_by_id`` would leave the folder behind.
@@ -765,6 +1011,7 @@ class HubWsBridge:
                 from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
                 from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
                 from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
                 try:
                     rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
                     await prune_message_pointer(rec, fm_id, notify=True)
@@ -782,65 +1029,137 @@ class HubWsBridge:
 
         Drops projection-guarded fields (``message_count``, ``message_ids``)
         before save — those are owned by ``ConversationRecord.sync_to_db``."""
-        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
         from flow_sdk.builtin.user import User
 
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None
 
-        # Strip fields not on the local model or guarded against direct write.
-        _PROJECTED = {"message_count", "message_ids"}
+        if op == "delete" or data.get("deleted_at"):
+            self.suppress_conversation_materialization(conv_id)
+            await Conversation.delete_by_id(conv_id)
+            return
+        if self.conversation_materialization_suppressed(conv_id):
+            return
+
+        # Strip fields not on the local model. Projection-owned fields are
+        # deliberately absent from this allowlist.
         _LOCAL_FIELDS = {
-            "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "git_sharing_enabled",
+            "id",
+            "type",
+            "title",
+            # Hub-authoritative, and the reason the close reaches the OTHER side:
+            # `_set_settlement` fans out over this path, so a `status` missing
+            # from the allowlist is silently dropped and the desk's app keeps
+            # showing a settled ticket as open until some HTTP sync re-reads it.
+            "status",
+            "remote_project_id",
+            "remote_project_name",
+            "participants",
+            "git_sharing_enabled",
             "shared_context_entities",
         }
-        clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
+        clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS}
         clean["id"] = conv_id
-        # Wire adapter: the hub sends the roster under the ``participants`` key
-        # (its Conversation field + fanout contract); the local cache field is
-        # ``members`` (generic, on the Entity base). Map it at ingest.
-        if "participants" in clean:
-            clean["members"] = clean.pop("participants")
+        # A Conversation arriving over the hub bridge is, by definition, a
+        # hub-backed local mirror. Manual invitation acceptance used to repair
+        # this bit later; immediate assignment has no accept transition, so the
+        # bridge must establish the invariant at the ingest boundary.
+        clean["remote"] = True
+        # Wire adapter: the roster's hub key (``participants``) → the local
+        # ``members`` cache, from the one declaration on ``Conversation``.
+        clean = HubSerializer.unwire(Conversation, clean)
 
         self.remember_hub_conversation(conv_id)
 
-        existing = await Conversation.get_one({"id": conv_id})
-        if existing is None:
-            if op == "delete":
+        # One writer at a time per row — see ``conversation_row_lock``.
+        async with conversation_row_lock(conv_id):
+            existing = await Conversation.get_one({"id": conv_id})
+            if existing is None:
+                # Identity mirror — a remote row is a pure reflection of the hub
+                # row. The hub's owner field (``initiated_by``) is the only
+                # legitimate creator; when the hub doesn't carry one, fall back to
+                # the neutral 'system' sentinel — NEVER the local user (the driver
+                # would otherwise stamp the request-context user, surfacing
+                # received conversations as created by the recipient).
+                clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
+                try:
+                    new_conv = Conversation.model_validate(clean)
+                except Exception:
+                    logger.exception("hub_bridge: conversation validate failed conv=%s data=%s", conv_id, clean)
+                    return
+                if not new_conv.id:
+                    new_conv.id = conv_id
+                await new_conv.save(someone_typeid, notify=True)
                 return
-            # Identity mirror — a remote row is a pure reflection of the hub
-            # row. The hub's owner field (``initiated_by``) is the only
-            # legitimate creator; when the hub doesn't carry one, fall back to
-            # the neutral 'system' sentinel — NEVER the local user (the driver
-            # would otherwise stamp the request-context user, surfacing
-            # received conversations as created by the recipient).
-            clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
-            try:
-                new_conv = Conversation.model_validate(clean)
-            except Exception:
-                logger.exception("hub_bridge: conversation validate failed conv=%s data=%s", conv_id, clean)
-                return
-            if not new_conv.id:
-                new_conv.id = conv_id
-            await new_conv.save(someone_typeid, notify=True)
-            return
 
-        if op == "delete":
-            await Conversation.delete_by_id(conv_id)
-            return
+            for field in (
+                "title",
+                "status",
+                "git_sharing_enabled",
+                "members",
+                "remote_project_id",
+                "remote_project_name",
+                "shared_context_entities",
+            ):
+                # A hub ``None`` is "the hub has nothing", not "clear it": a guest
+                # ticket carries no title on the hub while the local row titles it
+                # from the opening line. Same rule as the HTTP twin
+                # (``_upsert_hub_conversation_metadata``'s update path).
+                if field in clean and clean[field] is not None:
+                    setattr(existing, field, clean[field])
+            existing.remote = True
+            # Adopt the hub's owner when it carries one — keeps the local mirror
+            # converged with the hub row (same rule as the HTTP sync path in
+            # ``_upsert_hub_conversation_metadata``).
+            hub_owner = data.get("initiated_by")
+            if hub_owner and existing.created_by != hub_owner:
+                existing.created_by = hub_owner
+            await existing.save(someone_typeid, notify=True)
 
-        for field in ("title", "git_sharing_enabled", "members",
-                      "remote_project_id", "remote_project_name", "shared_context_entities"):
-            if field in clean:
-                setattr(existing, field, clean[field])
-        # Adopt the hub's owner when it carries one — keeps the local mirror
-        # converged with the hub row (same rule as the HTTP sync path in
-        # ``_upsert_hub_conversation_metadata``).
-        hub_owner = data.get("initiated_by")
-        if hub_owner and existing.created_by != hub_owner:
-            existing.created_by = hub_owner
-        await existing.save(someone_typeid, notify=True)
+    async def _handle_llm_endpoint_op(self, op: str, eid: str, data: dict) -> None:
+        """A budget this user holds a role on changed on the hub.
+
+        These frames were already arriving and falling through to the "no handler" debug
+        line, which is why a box went on spending a budget that had been deleted -- and on
+        DESKTOP nothing else ever told it: the hub's other route (``configure_llm_endpoint``)
+        dials into a box by ``ComputeNode`` row, and a desktop install has none. This is the
+        route both kinds of box already share, so it needs no new transport and cannot wake a
+        sleeping sandbox: a sleeping box holds no connection, so there is nothing to deliver
+        to.
+
+        Two things happen, and only two:
+
+        * the cached listing is dropped, because any change makes our picture of "what may I
+          spend" stale -- a new share to offer, a limit moved, a row gone;
+        * a binding naming an endpoint that was just DELETED is cleared, so the resolver falls
+          back down its own ladder instead of pointing every spawn at a row the hub will
+          answer ``Entity ... not found`` for.
+
+        What deliberately does NOT happen is re-selecting a different budget. On desktop the
+        binding is an explicit user choice, and quietly moving someone onto another pot is the
+        exact failure the "an explicit preference is a constraint" rule exists to prevent. The
+        hub re-selects for a SANDBOX through ``setup_llm_endpoint``, where it knows the
+        accountable principal; here we only ever clear.
+
+        A refresh is attempted afterwards so a newly shared budget is spendable without the
+        user opening a screen -- best effort, because the listing is repaired on the next read
+        either way and an unreachable hub must not raise into the bridge's dispatcher.
+        """
+        from flow_sdk.instance_settings import llm_endpoint as settings
+
+        settings.invalidate_endpoint_listing()
+
+        bound = settings.get_hub_llm_endpoint()
+        if bound is not None and bound.endpoint_typeid == f"llm_endpoint-{eid}":
+            if op == "delete" or data.get("deleted_at"):
+                settings.clear_hub_llm_endpoint()
+                logger.info("hub_bridge: bound LLM endpoint %s was deleted on the hub; binding cleared", eid)
+
+        try:
+            await settings.fetch_hub_llm_endpoints()
+        except Exception as e:  # noqa: BLE001 -- the listing repairs itself on the next read
+            logger.debug("hub_bridge: llm_endpoint listing refresh failed: %s", e)
 
     async def _handle_invitation_op(self, op: str, inv_id: str, data: dict) -> None:
         """A new/updated Invitation was pushed by the hub.
@@ -865,6 +1184,49 @@ class HubWsBridge:
             return
         await handle_invitation_sync(local_user.typeid)
 
+    async def _handle_membership_container_op(
+        self,
+        op: str,
+        entity_type: str,
+        entity_id: str,
+        data: dict,
+    ) -> None:
+        """Materialize an Organization, Team, or Project assignment locally.
+
+        The Hub grants these targets immediately and pushes their full payload;
+        there is no later invitation-accept transition to create the local
+        mirror. Project payloads also carry value-free shared context and secret
+        declarations, which the shared membership materializer expands.
+        """
+        from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
+            materialize_remote_membership_entity,
+        )
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        cls = SchemaRegistry.get_entity_cls(entity_type)
+        if cls is None:
+            logger.debug("hub_bridge: membership op for unknown type %s", entity_type)
+            return
+        if op == "delete" or data.get("deleted_at"):
+            await cls.delete_by_id(entity_id)
+            return
+
+        local_user = await User.get_local()
+        someone_typeid = local_user.typeid if local_user else None
+        entity = await materialize_remote_membership_entity(
+            cls,
+            {**data, "id": entity_id},
+            someone_typeid,
+            notify=True,
+        )
+        logger.info(
+            "[bridge] membership op %s materialized %s-%s",
+            op,
+            entity_type,
+            getattr(entity, "id", None),
+        )
+
     async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
         """A task was handed to this user — materialize it locally.
 
@@ -881,7 +1243,7 @@ class HubWsBridge:
         """
         if op == "delete":
             return
-        from flow_sdk.app.actions.group_task_action import (
+        from flow_sdk.app.actions.task_receive import (
             materialize_accepted_task_invitation,
             materialize_remote_task,
         )
@@ -897,11 +1259,58 @@ class HubWsBridge:
         # the child's folder. Once it's local, an update is just this row — the
         # parent almost never changes, and re-pulling it on every status flip
         # would double the hub traffic and re-notify a parent nobody touched.
-        if await Task.get_one({"id": task_id}) is None:
+        existing = await Task.get_one({"id": task_id})
+        if existing is None:
             task = await materialize_accepted_task_invitation(task_id, local_user.typeid)
         else:
-            task = await materialize_remote_task({**data, "id": task_id}, local_user.typeid)
+            # The sender receives its OWN op too, so check staleness before doing
+            # any work: an echo would otherwise spend a hub round-trip refilling
+            # blobs for a merge that then declines to run.
+            if not Task.is_stale(existing, data):
+                return
+            # Same blob guard the child path uses: a DB-row payload carries
+            # ``description`` empty, and this row already HAS a body — merging
+            # the empty value would blank the issue text on a status flip.
+            payload = await _fill_empty_blobs(Task, "task", task_id, {**data, "id": task_id})
+            task = await materialize_remote_task(payload, local_user.typeid)
         logger.info("[bridge] task op %s materialized %s", op, getattr(task, "id", None))
+
+    async def _handle_deployment_op(self, op: str, deployment_id: str, data: dict) -> None:
+        """A placement changed on the hub — mirror it here, at the same id.
+
+        This is what makes "open a remote resource and it is correct" true
+        without anything polling: the hub is the only party that can see the
+        provider, so it re-observes and pushes, and the desktop takes the answer
+        through the ordinary staleness kernel.
+
+        A delete is honoured rather than ignored (unlike a task's): the row IS
+        the record of a cloud resource, so keeping a local copy of a placement
+        the hub no longer has would show a box that does not exist.
+        """
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        existing = await Deployment.get_one({"id": deployment_id})
+        if op == "delete":
+            if existing is not None:
+                existing.remote = False  # the hub already deleted it: nothing to ask the hub
+                await existing.delete()
+            return
+
+        payload = {**(data or {}), "id": deployment_id}
+        if existing is None:
+            await Deployment.adopt_from_hub(payload)
+            logger.info("[bridge] deployment op %s materialized %s", op, deployment_id)
+            return
+
+        # The sender receives its OWN op too, so check staleness before doing any
+        # work — an echo would otherwise re-save and re-broadcast every time.
+        if not Deployment.is_stale(existing, payload):
+            return
+        merged = Deployment.merge_hub_payload(existing, payload)
+        refreshed = Deployment(**merged)
+        refreshed.remote = True
+        await refreshed.save()
+        logger.info("[bridge] deployment op %s refreshed %s", op, deployment_id)
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that
@@ -937,10 +1346,13 @@ class HubWsBridge:
         *,
         conversation_id: str,
         text: str,
+        flow_message_id: Optional[str] = None,
         sender_name: Optional[str] = None,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
+        if flow_message_id:
+            body["id"] = flow_message_id
         if sender_name:
             body["sender_name"] = sender_name
         return await self.manager.send_request(
@@ -959,6 +1371,7 @@ class HubWsBridge:
         """Walk the ownership chain via HTTP /flow_message/<id>/parents_path
         and return the conversation entry, or None."""
         import httpx
+
         from flow_sdk.cli.auth.credentials import load_credentials
         from flow_sdk.cloud_client.client import ApiConfig
 

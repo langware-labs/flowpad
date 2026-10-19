@@ -1,0 +1,177 @@
+"""NavigationDecision: a typed request in, a dock to navigate OR a prompt for the assistant out.
+
+    outcome = await decide({"utterance": "open data sources", "here": here})
+    outcome.address   # '/dock/data-sources'  (and outcome.dock, the tab)   -- navigate
+    outcome.prompt    # 'summarize the README'                              -- or ask
+
+The input is the NavigationSpec's request (``navigator.request``: the utterance and
+``navigation.here``); the output is ``navigation.outcome`` -- both defined in the SmartNavigator
+dataset, so a logged decision IS a dataset row (``flow_sdk.core.navigation_log``).
+
+The ENGINE is ``flow_sdk.core.navigator.route`` (rules, then one decision API call acted on at
+>= 0.85, off without a decision API). Anything that answers ``NavigatorRoute`` can stand in for
+it -- a classifier trained on the logged rows included -- and nothing above this line changes.
+
+**The dock is built here for every target the backend can address**: a screen (its dock
+address, query included), an entity (its asset editor, else the screen named after its type --
+``conversation/<id>``), an app (``app/artifact-<id>``). A file, URL or web-app port leaves the
+dock empty and keeps the target: the vfs and editor-for-path rules live in TypeScript
+(``dockForTarget``), and a second owner of them here would drift. Every other answer -- agentic,
+unsure, no decision API, a target nothing can open -- is the PROMPT: the utterance, unchanged,
+for the assistant.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+from flow_sdk.core.dock_address import VIEW_META, ViewType, canonical_address, dock_url, parse_dock_url, parse_view_type
+from flow_sdk.core.navigation import kind
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
+from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
+
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.navigator_spec import NavigatorResult
+
+logger = logging.getLogger(__name__)
+
+#: Targets the UI carries out itself: a file, URL or web-app port it turns into a dock
+#: (``dockForTarget``), an action it runs (``runUiAction``) -- handled, never a prompt.
+UI_BUILT = ("file", "url", "webapp", "action")
+
+
+def decision_of(answer: NavigatorRoute) -> dict[str, Any]:
+    """An engine's answer as a ``navigator.decision`` (its confidence kept; the reason is run detail)."""
+    out: dict[str, Any] = {"route": answer.route, "confidence": answer.confidence}
+    if answer.route == "quick" and answer.target is not None:
+        out["target"] = answer.target.model_dump(mode="json")
+        out["verb"] = answer.verb
+    return out
+
+
+def address_of(target: NavigationTarget) -> Optional[str]:
+    """The dock address a target opens, or None when the backend cannot address it."""
+    if target.kind == "view":
+        return f"/dock/{target.value}" if parse_dock_url(f"/dock/{target.value}") else None
+    if target.kind == "app":
+        return f"/dock/app/artifact-{target.value}"
+    if target.kind == "entity":
+        from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+        type_name, _, ident = target.value.partition("-")
+        if (editor := editor_for_type(type_name)) is not None:
+            return f"/dock/assets/editor/{editor.value}/typeid/{target.value}"
+        view = parse_view_type(type_name)
+        if view is not None and VIEW_META[view].addressable and VIEW_META[view].pointer.value != "none":
+            return f"/dock/{view.value}/{ident}"
+        # The screen that is its own page (a data source's page, a trigger in Automations).
+        from flow_sdk.core.navigation import forms_for, open_form, place_address  # noqa: PLC0415
+
+        for place, form, what in forms_for(type_name):
+            if what == "page" and (pointer := open_form(form, {"typeid": target.value})) is not None:
+                return f"/dock/{place_address(place, pointer)}"
+    return None
+
+
+def same_place(a: NavigationTarget, b: NavigationTarget) -> bool:
+    """``a`` and ``b`` land the person in one place: the same target, the same canonical dock
+    address (a session as an entity and as its screen; a screen and its default tab), or the same
+    page (a web-app port is its localhost URL)."""
+
+    def plain(t: NavigationTarget) -> NavigationTarget:
+        return NavigationTarget(kind="url", value=f"http://localhost:{t.value}") if t.kind == "webapp" else t
+
+    a, b = plain(a), plain(b)
+    if (a.kind, a.value) == (b.kind, b.value):
+        return True
+    there, here = address_of(a), address_of(b)
+    return there is not None and here is not None and canonical_address(there) == canonical_address(here)
+
+
+async def entity_app_address(typeid: str) -> Optional[str]:
+    """The editor app an entity opens in when nothing else addresses it (a dataset in the
+    dataset editor): the best one ``editors_for`` ranks, opened on the entity."""
+    from flow_sdk.builtin.faas.editors import editors_for  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+
+    try:
+        subject = await Entity.get_by_typeid(typeid)
+        apps = await editors_for(subject) if subject is not None else []
+    except Exception as exc:  # noqa: BLE001 -- an address is a nicety; without one it is the prompt
+        logger.debug("no editor app for %s: %s", typeid, exc)
+        return None
+    return dock_url(ViewType.APP, str(apps[0]["typeid"]), {"subject": typeid}) if apps else None
+
+
+def _dock(address: str) -> Optional[DockPointerSpec]:
+    """The tab an address opens; None for a surface that is no tab (Home is full-bleed)."""
+    parsed = parse_dock_url(address)
+    if parsed is None:
+        return None
+    try:
+        return DockPointerSpec(viewType=parsed.view_type.value, pointer=parsed.pointer or "")
+    except ValueError:
+        return None
+
+
+async def decide(request: Any, *, candidates: Optional[list[dict]] = None) -> Any:
+    """``navigator.request`` (or its dict) -> a validated ``navigation.outcome``.
+
+    ``request.candidates`` is not a field: the navigator searches, and what it offered rides back on
+    the outcome. An eval passes ``candidates`` -- a row's recorded matches -- so it replays exactly.
+    """
+    return (await decide_run(request, candidates=candidates))[0]
+
+
+async def decide_run(
+    request: Any, *, candidates: Optional[list[dict]] = None
+) -> tuple[Any, NavigatorRoute]:
+    """``decide``, plus the engine's own answer (its ``reason`` and ``latency_ms``) for the log.
+
+    ``candidates``: the search matches to offer; searched for when None. An eval passes the ones a
+    row recorded, so the row replays on exactly the options it was labelled against."""
+    from flow_sdk.core.navigator import route  # noqa: PLC0415
+
+    req = kind("navigator.request").model_validate(request)
+    here = req.here.model_dump(mode="json", exclude_none=True) if req.here else None
+    if candidates is None and req.replay is not None:
+        candidates = [c.model_dump(mode="json", exclude_none=True) for c in req.replay.candidates]
+    answer = await route(req.utterance, here=here, candidates=candidates)
+    outcome: dict[str, Any] = {"decision": decision_of(answer), "candidates": answer.offered}
+    target = answer.target if answer.route == "quick" else None
+    if target is not None and target.kind == "log":
+        from flow_sdk.core.navigation_log import address as log_address  # noqa: PLC0415
+
+        address = await log_address()
+    else:
+        address = address_of(target) if target is not None else None
+        if address is None and target is not None and target.kind == "entity":
+            address = await entity_app_address(target.value)
+    if address:
+        outcome["address"] = address
+        outcome["dock"] = _dock(address)
+    elif target is None or target.kind not in UI_BUILT:
+        outcome["prompt"] = req.utterance
+    out = kind("navigation.outcome").model_validate({k: v for k, v in outcome.items() if v is not None})
+    return out, answer
+
+
+#: The shipped ``smart-navigator`` FlowCall block: ``navigator.request`` -> ``navigation.outcome``.
+BLOCK = Path(__file__).resolve().parents[1] / "system_projects" / "flowpad_assistant" / "agentic-assets" / "compute_op" / "smart-navigator"
+
+
+async def call(request: Any) -> "NavigatorResult":
+    """Call the ``smart-navigator`` block -- THE way in: ``navigator.request`` -> a ``NavigatorResult``
+    whose value is the ``navigation.outcome``. Read from its shipped folder, not the index: the magic
+    line must route before (and without) a scan. The block logs live decisions; a ``replay`` is not logged."""
+    from flow_sdk.core.compute_op import run_op  # noqa: PLC0415
+    from flow_sdk.core.compute_op.context import CallContext  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec  # noqa: PLC0415
+
+    spec = ComputeOpSpec.model_validate_json((BLOCK / "compute_op.json").read_text())
+    return await run_op(spec, input=request, trusted=True, context=CallContext(asset_folder=BLOCK, shipped=True))
+
+
+__all__ = ["BLOCK", "UI_BUILT", "address_of", "call", "decide", "decide_run", "decision_of", "entity_app_address"]

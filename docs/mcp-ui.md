@@ -22,7 +22,7 @@ interchangeable.
 
 | Address | Example | Owner | Purpose |
 | --- | --- | --- | --- |
-| Dock URL | `/dock/shell/agentic_process-<id>?viewMode=vibe...` | Flowpad router | Opens the process workspace. It does not name the MCP UI file and does not fetch app HTML. |
+| Dock URL | `/dock/vibe/agentic_process-<id>...` (the Vibe host tab) | Flowpad router | Opens the process workspace. It does not name the MCP UI file and does not fetch app HTML. |
 | MCP resource URI | `ui://flowpad-local/%2FUsers%2F...%2Fform.mcp.html` | MCP Apps host | Identifies the displayed file as a resource for `@mcp-ui/client`. It is not a browser URL. |
 | Sandbox URL | `/mcp-sandbox/sandbox_proxy.html` on the backend origin | Flowpad backend | Serves the sandbox proxy iframe that receives and hosts the guest HTML. |
 
@@ -118,6 +118,12 @@ origin does not execute generated MCP UI code directly.
   supporting context, not the final delivery trigger by itself.
 - Tool calls from the guest are not routed through the Vibe MCP preview today;
   unsupported tool calls return an error result.
+- A guest may use the Flowpad SDK instead: the host sets
+  `__FLOWPAD_API_URL__` / `__FLOWPAD_PROCESS_ID__` in a head prelude and passes a
+  sandbox CSP allowing the backend origin (HTTP, WebSocket, `/sdk/flowpad-sdk.js`).
+  Live page state goes through `process.setDisplayContext(data)`, which reaches the
+  agent every turn — unlike `ui/update-model-context`, which only rides the next
+  `ui/message`. See "Display context" in `docs/interface/agentic-process.md`.
 - The host may normalize legacy/simple message shapes, but new MCP UI files
   should emit the structured MCP Apps methods described in the `mcp-ui` skill.
 
@@ -132,7 +138,7 @@ origin does not execute generated MCP UI code directly.
 | Sandbox proxy HTML | `ui/public/sandbox_proxy.html` |
 | Backend sandbox route and CSP headers | `flow_sdk/server/routes/ui.py` |
 | Agent-facing MCP UI contract | `flow_sdk/system_projects/flowpad_assistant/.claude/skills/mcp-ui/SKILL.md` |
-| Vibe agent routing to the skill | `flow_sdk/system_projects/flowpad_assistant/.claude/agents/vibe.md` |
+| Vibe sub-agent persona routing to the skill | `flow_sdk/system_projects/flowpad_assistant/.claude/agents/vibe.md` |
 
 ## Debug Checklist
 

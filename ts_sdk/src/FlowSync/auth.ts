@@ -1,6 +1,10 @@
+import { lazyAssets } from '../lazy/registry';
 import { AxiosError, AxiosResponse } from 'axios';
 import { EventEmitter } from 'events';
-import { config, dataManager } from '..';
+import config from '../config';
+import { getUtmParams } from '../utils/utm';
+export { getUtmParams };
+import { dataManager } from '../APIEntity';
 import apiClient, { invalidRefreshTokenMessage, invalidTokenMessage } from '../client';
 import { LocalLoginStatus, LoginSlot, makeLoginSlot } from '../services/cloud_status';
 import { defineGlobal } from '../utils/globals';
@@ -56,22 +60,6 @@ export interface VisitorData {
 export interface LogoutData {
   success: boolean;
   message?: string;
-}
-
-/**
- * Extract all UTM parameters from the current URL.
- * Returns an object with all query params starting with 'utm_'.
- */
-export function getUtmParams(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  const utm: Record<string, string> = {};
-  params.forEach((value, key) => {
-    if (key.startsWith('utm_')) {
-      utm[key] = value;
-    }
-  });
-  return utm;
 }
 
 export class AuthManager extends EventEmitter {
@@ -133,6 +121,9 @@ export class AuthManager extends EventEmitter {
   }
   set currentUser(user: any) {
     this._currentUser = user;
+    const scope = user?.id ?? 'anonymous';
+    lazyAssets.setScope(scope);
+    dataManager.adoptReadScope(scope);
   }
   private async setupClientInterceptor() {
     apiClient.interceptors.response.use(
@@ -145,11 +136,11 @@ export class AuthManager extends EventEmitter {
           return Promise.reject(error);
         }
 
-        // Only handle auth-related errors (401, 403, token errors)
-        // For server errors (5xx) and other non-auth errors, pass through silently
+        // The hub also uses 401/403 for entity/action permission denials.
+        // Those do not invalidate the authenticated user. Only explicit token
+        // rejection clears this session; identity loading and the cloud login
+        // channel own the remaining authentication-state transitions.
         const isAuthError =
-          error.response?.status === 401 ||
-          error.response?.status === 403 ||
           (error.response?.data as any)?.message === invalidRefreshTokenMessage ||
           error.message === invalidTokenMessage;
 
@@ -278,7 +269,10 @@ export class AuthManager extends EventEmitter {
         params.set(key, value);
       });
       const queryString = params.toString();
-      const response = await apiClient.get(`/visit${queryString ? '?' + queryString : ''}`);
+      // Typed as the two shapes the line below actually reads: the id itself,
+      // or a `{data}` wrapper. `/visit` is a hub-side route (no local backend
+      // handler), so the wrapper branch is kept rather than narrowed away.
+      const response = await apiClient.get<string | { data?: string }>(`/visit${queryString ? '?' + queryString : ''}`);
 
       const visitorId = typeof response === 'string' ? response : response.data;
 

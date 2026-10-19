@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from typing import Any
 
 import httpx
 
-from flow_sdk.cli.auth.credentials import load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
@@ -16,6 +14,30 @@ from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 
 class HubAuthExpiredError(httpx.RequestError):
     """Raised when a request is aborted before network due to local expiry."""
+
+
+# Request-extension marker set by ``CloudProxy``: this response's body is streamed
+# straight back to the caller, so the hooks must not read it. Reading consumes the
+# stream, and the proxy's ``aiter_raw()`` then raises ``StreamConsumed`` *after* the
+# headers (carrying the hub's Content-Length) have already gone out — the caller
+# gets a zero-byte body against a non-zero Content-Length, which the browser
+# reports as a bare "Network Error" instead of the hub's real status and message.
+PASSTHROUGH_EXTENSION = "flowpad_passthrough"
+# A request whose ENTITY ID is the credential (``public_role``: a diagnosis request's
+# ``brief``/``submit``). This box's login is neither attached nor consulted -- a lapsed one must
+# not stop a call that never needed it -- and the hub's answer to it can sign no one out here.
+ANONYMOUS_EXTENSION = "flowpad_anonymous"
+
+
+def _is_passthrough(response: httpx.Response) -> bool:
+    try:
+        return bool(response.request.extensions.get(PASSTHROUGH_EXTENSION))
+    except RuntimeError:  # no request bound to the response
+        return False
+
+
+def _is_anonymous(request: httpx.Request) -> bool:
+    return bool(request.extensions.get(ANONYMOUS_EXTENSION))
 
 
 def build_event_hooks() -> dict[str, list[Any]]:
@@ -29,17 +51,12 @@ def _is_public_auth_path(path: str) -> bool:
 
 @lru_cache(maxsize=1)
 def _local_machine_id() -> str:
-    """This machine's id, derived exactly like the hub's probe derives it.
+    """This machine's id, a stable per-host fingerprint sent as ``X-Machine-ID``.
 
-    Must stay byte-identical to ComputeNode.get_machine_id's script on the hub:
-    the hub machine-binds the workspace sandbox's login key to the value ITS
-    probe computed, and the header we send is compared against that (hashed).
-    Computed locally rather than read from env because the hub's set_env lands
-    in ~/.bashrc, which the non-interactive service process never sources.
+    Sent on every hub call so a hub that chooses to machine-bind a key has
+    something to compare against; the workspace login key is not machine-bound
+    today, so a hub without an allowlist simply ignores it.
     """
-    machine_id = os.environ.get("FLOWPAD_MACHINE_ID")
-    if machine_id:
-        return machine_id
     import hashlib  # noqa: PLC0415
     import platform  # noqa: PLC0415
     import uuid  # noqa: PLC0415
@@ -58,7 +75,10 @@ def _local_machine_id() -> str:
         elif system == "Windows":
             import subprocess  # noqa: PLC0415
 
-            out = subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode()
+            # Windows 11 dropped wmic; through a shell, cmd printed "'wmic' is not recognized"
+            # onto the user's console on every CLI run. Without a shell, a missing wmic is a
+            # quiet FileNotFoundError and the id stays the base parts it already was there.
+            out = subprocess.check_output(["wmic", "csproduct", "get", "uuid"], stderr=subprocess.DEVNULL).decode()
             parts.append(out.splitlines()[1].strip())
     except Exception:  # noqa: BLE001 — id still works from the base parts
         pass
@@ -68,9 +88,8 @@ def _local_machine_id() -> str:
 def attach_machine_id(headers) -> None:
     """Send this machine's id on every hub call.
 
-    The hub machine-binds the workspace sandbox's delegating login key; without
-    the X-Machine-ID header those requests fail closed. On machines whose keys
-    carry no machine allowlist (normal desktops) the header is simply ignored.
+    Harmless when the key carries no machine allowlist (the normal case): the hub
+    ignores the header. Kept so a machine-bound key can still be honoured.
     """
     try:
         headers["X-Machine-ID"] = _local_machine_id()
@@ -78,39 +97,65 @@ def attach_machine_id(headers) -> None:
         pass
 
 
-async def _on_request(request: httpx.Request) -> None:
-    attach_machine_id(request.headers)
-    if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
-        return
+async def resolve_hub_credential(request: httpx.Request | None = None) -> str | None:
+    """THE answer to "what does a hub call authenticate with" — None when nothing.
 
+    The instance ``cloud_api_key`` (headless / e2b) first, else this user's stored login.
+    The user record (``is_logged_in``) and the stored credential are separate, and they
+    disagree when the credential is missing or unreadable: the UI says signed in while every
+    call goes out bare. That disagreement signs the user out here, so the one record everyone
+    reads tells the truth. An expired credential also aborts the call before it reaches the
+    network (``HubAuthExpiredError``).
+    """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     api_key = get_instance_settings().cloud_api_key
     if api_key:
-        request.headers["Authorization"] = f"Bearer {api_key}"
-        return
+        return api_key
+
+    from flow_sdk.cli.auth.credentials import load_credentials  # lazy: cli imports cloud_client
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
     creds = load_credentials()
     if not creds:
-        return
+        if is_logged_in():
+            await invalidate_hub_login("credentials_missing")
+        return None
 
     if creds.is_expired(EXPIRY_LEEWAY_SECONDS):
         await invalidate_hub_login("expired")
         raise HubAuthExpiredError("hub auth expired", request=request)
+    return creds.api_key
 
-    request.headers["Authorization"] = f"Bearer {creds.api_key}"
+
+async def _on_request(request: httpx.Request) -> None:
+    attach_machine_id(request.headers)
+    if _is_anonymous(request) or "Authorization" in request.headers or _is_public_auth_path(request.url.path):
+        return
+    credential = await resolve_hub_credential(request)
+    if credential:
+        request.headers["Authorization"] = f"Bearer {credential}"
 
 
 async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
+    # A proxied response belongs to the caller downstream — inspect status only.
+    passthrough = _is_passthrough(response)
+    # No credential went out, so no answer to it says anything about this box's login.
+    anonymous = _is_anonymous(response.request)
     if status_code < 400:
-        if await _is_auth_failure_envelope(response):
+        if not passthrough and not anonymous and await _is_auth_failure_envelope(response):
             # HTTP-layer auth failure (envelope status=fail with auth marker).
             # This is a real credential rejection from the hub's identity
             # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected")
         return
 
-    await response.aread()
+    if not passthrough:
+        await response.aread()
+        # The one code that means the credential is dead (the hub sets it on nothing else).
+        if not anonymous and _error_code(response) == "unauthenticated":
+            await invalidate_hub_login("rejected")
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI
     # (createHubRequestFailedWarning), carrying method/path/status/message
@@ -124,8 +169,19 @@ async def _on_response(response: httpx.Response) -> None:
         status_code=status_code,
         method=response.request.method,
         path=request_path(response.request.url),
-        message=_response_message(response),
+        # The body is off-limits on a passthrough; the status still gets reported,
+        # and the caller receives the hub's message verbatim in the proxied body.
+        message=f"HTTP {status_code}" if passthrough else _response_message(response),
     )
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    """The FAIL envelope's ``data.error_code``, or None."""
+    try:
+        data = (response.json() or {}).get("data")
+    except Exception:  # noqa: BLE001 — not JSON: a load balancer page carries no code
+        return None
+    return data.get("error_code") if isinstance(data, dict) else None
 
 
 async def _is_auth_failure_envelope(response: httpx.Response) -> bool:

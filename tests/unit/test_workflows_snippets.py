@@ -1,0 +1,172 @@
+"""``docs/snippets/workflows.md`` §1–4 and §6, run as written.
+
+The provider is a ``ScriptedSource`` registered under the snippet's own provider name and the
+worker is ``MockDriver``, so each program runs verbatim with no network: one inbound message,
+one agent turn, one reply, one ack. What is pinned is the shape — every item gets exactly one
+of ``ack()`` / ``reply()`` — not the words the mock replies with.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.data_source import DataSource
+from tests.utils.fake_source import scripted_provider
+from tests.utils.mock_worker import MockDriver
+from tests.utils.snippets import doc, fence_under, opening_programs, run_fence_until
+
+pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+
+DOC = "workflows.md"
+
+
+@pytest.fixture
+def worker(monkeypatch, tmp_path):
+    driver = MockDriver(tmp_path / "mock-transcripts")
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: driver)
+    return driver
+
+
+async def _agent(name: str) -> Agent:
+    """Get-or-create: an Agent is an asset, and the fences name theirs."""
+    from flow_sdk.builtin.agent_registry import get_agent
+
+    existing = await get_agent(name)
+    if existing is not None:
+        return existing
+    agent = Agent(name=name, worker_type="claude", system_prompt="Be brief.")
+    await agent.save()
+    return agent
+
+
+async def _run(section: str, provider: str, ns: dict, driver, *, nth: int = 0) -> dict:
+    source = fence_under(doc(DOC), section, nth=nth)
+    return await run_fence_until(source, ns, driver.settled, filename=f"{DOC} § {section}")
+
+
+async def test_1_mail_concierge(worker):
+    await _agent("email-summarizer")
+    with scripted_provider("agentmail") as mail:
+        mail.push({"name": "Probe", "body": "are we on?", "author": "alice@example.com", "thread_key": "t1"})
+        await _run("1.", "agentmail", {"KEY": "not-a-real-key"}, mail)
+    assert worker.received_prompts == ["are we on?"]
+    assert len(mail.sent) == 1 and mail.sent[0]["to"] == "alice@example.com"
+    assert mail.sent[0]["text"].startswith("Mock reply")
+
+
+async def test_1_control_flow_acks_what_it_ignores(worker):
+    await _agent("email-summarizer")
+    with scripted_provider("agentmail") as mail:
+        mail.push(
+            {"name": "newsletter", "body": "ignore me", "author": "boss@corp.com", "thread_key": "t1"},
+            {"name": "URGENT: prod", "body": "help", "author": "boss@corp.com", "thread_key": "t2"},
+        )
+        await _run("1.", "agentmail", {"KEY": "k"}, mail, nth=1)
+    assert worker.received_prompts == ["help"], "the newsletter never reached the agent"
+    assert len(mail.sent) == 1 and mail.sent[0]["thread_key"] == "t2"
+    # The ignored item was acked, not skipped: the loop variable is the LAST item and it is
+    # acked by reply(); an offset ack covers the newsletter before it. The ephemeral position
+    # is not in the DB (no workflow), so the shape is the proof — one send, one prompt.
+
+
+async def test_2_telegram(worker):
+    await _agent("support-agent")
+    with scripted_provider("telegram") as bot:
+        bot.push({"body": "hi bot", "author": "12345", "thread_key": "12345/7"})
+        await _run("2.", "telegram", {"TOKEN": "000:token"}, bot)
+    assert worker.received_prompts == ["hi bot"] and len(bot.sent) == 1
+
+
+async def test_3_slack(worker):
+    await _agent("slack-summarizer")
+    with scripted_provider("slack") as slack:
+        slack.push({"body": "summarize?", "author": "U1", "thread_key": "1700000000.000100"})
+        await _run("3.", "slack", {}, slack)
+    assert worker.received_prompts == ["summarize?"] and len(slack.sent) == 1
+
+
+async def test_a_second_run_under_the_same_name_resumes_after_the_reply(worker):
+    """The position is durable under the workflow name: the answered item is not seen again."""
+    await _agent("email-summarizer")
+    name = f"mail-concierge-{mint_uuid()}"
+    text = doc(DOC).replace('workflow("mail-concierge")', f'workflow("{name}")')
+    source = fence_under(text, "1.")
+    with scripted_provider("agentmail") as mail:
+        mail.push({"body": "first", "author": "a@x", "thread_key": "t1"})
+        await run_fence_until(source, {"KEY": "k"}, mail.settled, filename=DOC)
+        mail.settled.clear()
+        mail.push({"body": "second", "author": "a@x", "thread_key": "t1"})
+        await run_fence_until(source, {"KEY": "k"}, mail.settled, filename=DOC)
+    assert worker.received_prompts == ["first", "second"], "one turn per item, none repeated"
+    assert len(mail.sent) == 2
+
+
+#: The channel's own id a stream inbox is about, per channel of the matrix; who writes in and whose
+#: address it is come from the driver's ``Double`` (``tests/unit/_stream_inbox_matrix``).
+_MATRIX_ADDRESSES = {
+    "gmail": "me@gmail.com",
+    "slack": "C0123456789",
+    "whatsapp": "15551234567",
+    "telegram": "@my_bot",
+    "cloud_email": "agent-7@mail.flowpad.ai",
+}
+
+
+@pytest.mark.parametrize("owner_kind", ["user", "agent"])
+@pytest.mark.parametrize("channel", list(_MATRIX_ADDRESSES))
+async def test_4_the_same_loop_on_every_channel_for_a_user_or_an_agent(worker, owner_kind, channel):
+    """One fence, ten cells: the loop body never names the channel, and the source it adopts is
+    the owner's — a user's stream inbox or the agent's own."""
+    from flow_sdk.stream_inbox.projection import owner_of
+    from tests.unit._stream_inbox_matrix import double_for, local_user_typeid, not_applicable
+
+    if reason := not_applicable(owner_kind, channel):
+        pytest.skip(f"n/a: {reason}")
+    helper = await _agent("channel-helper")
+    owner = await _agent(f"channel-owner-{channel}") if owner_kind == "agent" else None
+    address = _MATRIX_ADDRESSES[channel]
+    sender = double_for(channel).sender
+    with scripted_provider(channel) as script:
+        script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
+        await _run("4.", channel, {"CHANNEL": channel, "ADDRESS": address, "OWNER": owner}, script)
+        sources = [s for s in await DataSource.get_all({"provider": channel}) if s.account_key == address or (s.config or {}).get("address") == address]
+    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
+    assert sources, "the fence adopted or created the owner's source"
+    expected = owner.typeid if owner is not None else await local_user_typeid()
+    assert str(await owner_of(sources[-1])) == str(expected)
+    assert helper.id != (owner.id if owner else None)
+
+
+OPENING = opening_programs()
+
+
+@pytest.mark.parametrize("channel", list(OPENING))
+async def test_6_the_opening_program_runs_as_shown_on_every_channel(worker, channel):
+    from tests.unit._stream_inbox_matrix import double_for
+
+    await _agent("channel-helper")
+    sender = double_for(channel).sender
+    with scripted_provider(channel) as script:
+        script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
+        await run_fence_until(OPENING[channel], {}, script.settled, filename=f"{DOC} § 6 ({channel})")
+    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
+
+
+async def test_5_values_only_runs_as_written():
+    """§5, verbatim: three messages, three answers to "who does a reply go to"."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
+    assert ns["reply"].to == ["alice@example.com"] and ns["reply"].subject == "Re: Probe coffee?"
+
+
+async def test_6_every_channel_line_constructs():
+    """§6's second fence — the one line each channel changes — runs as written."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "6.", nth=1), {}, filename=f"{DOC} §6b")
+    assert ns["stream_inbox"].provider == "whatsapp"

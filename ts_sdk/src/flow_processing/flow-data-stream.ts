@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { v4 as uuid } from 'uuid';
-import { FlowData } from './flow-data';
+import { FlowData, FlowDataAttribute } from './flow-data';
+import { toplog } from '../services/toplog';
 import { FlowElementType, FlowElementTypes, isStreamableElementType } from './flow-element-types';
 import { FlowDataEvents, FlowEvents } from './flow-events';
 
@@ -247,17 +248,29 @@ export class FlowDataStream extends EventEmitter {
     const elementType = item.elementType;
     const groupId = item.groupId;
 
+    if (elementType === FlowElementTypes.CHAT) {
+      toplog.log(
+        'chat_delivery',
+        `ingest src=${(item as { source?: unknown }).source} group=${groupId ?? 'none'} ` +
+          `t=${item.attributes['t'] ?? 'none'} i=${item.attributes['i'] ?? 'none'} ` +
+          `role=${item.attributes.role ?? 'none'} len=${String(item.content ?? '').length} ` +
+          `known_groups=${this._ownItems.filter((e) => e.elementType === FlowElementTypes.CHAT).length}`,
+      );
+    }
+
+    // A user message is a duplicate only if it is the SAME transcript entry
+    // arriving again (history, then an observe-turn replay of it). Text is not
+    // identity: a user who sends "yes" twice made two turns, and matching on
+    // content swallowed the second one until a reload (FLOWPAD-2196). Rows
+    // without a transcript id (the optimistic echo, most live frames) pass.
     if (elementType === FlowElementTypes.USER_MESSAGE) {
-      const role = item.attributes.role ?? '';
-      const existing = [...this._ownItems]
-        .reverse()
-        .find(
-          (entry) =>
-            entry.elementType === FlowElementTypes.USER_MESSAGE &&
-            (entry.attributes.role ?? '') === role &&
-            entry.content === item.content,
-        );
-      if (existing) {
+      const id = item.transcriptEntryId;
+      if (
+        id &&
+        this._ownItems.some(
+          (entry) => entry.elementType === FlowElementTypes.USER_MESSAGE && entry.transcriptEntryId === id,
+        )
+      ) {
         return null;
       }
     }
@@ -360,12 +373,73 @@ export class FlowDataStream extends EventEmitter {
       return null;
     }
 
-    // New group = add and track
+    // New group = add and track — unless another still-open group (started
+    // via the other ingestion mode) already carries this exact message. Two
+    // live channels can legitimately both be delivering the SAME turn (e.g. a
+    // headless queue-drain broadcasts over the WS while this client's
+    // `observe-turn` stream is also open) — see FLOWPAD-2022. Content and
+    // role were captured verbatim off a live backend, but the two frames
+    // carry no shared identity, so this is where they meet.
+    const duplicate = this._findDuplicateOpenGroup(item);
+    if (duplicate) {
+      console.debug(`${logPrefix} DUPLICATE across channels - matches open group ${duplicate.groupId}, ignoring`);
+      return null;
+    }
+    // …and the same twin once its group has CLOSED: `observe-turn` replays a
+    // message the pane already holds, under a group-id of its own.
+    if (this._heldTwin(item)) return null;
     this._ownItems.push(item);
     this._openGroups.set(groupId, item);
     this.emit('data', [item], this);
     console.debug(`${logPrefix} NEW GROUP (${item.elementType}) - added to items, count=${this._ownItems.length}`);
     return item;
+  }
+
+  /**
+   * A different still-open group already carrying `item`'s exact content —
+   * the cross-channel duplicate case (see `_ingestWithGroupId`'s "New group"
+   * branch and `_ingestRaw`'s). Deliberately exact-match, not prefix/substring:
+   * this only needs to catch the same complete message arriving twice, and a
+   * looser match would risk swallowing legitimately repeated short content.
+   */
+  /**
+   * A turn we already hold, replayed. `_findDuplicateOpenGroup` catches the
+   * cross-channel twin only while that twin's group is still OPEN — but
+   * `observe-turn` re-delivers messages whose group closed long ago (a pane
+   * that reconnects, or one whose `after_entry_id` watermark is behind the
+   * transcript). The replayed copy then starts its own group — grouped or raw,
+   * both modes mint one — and the answer renders twice, until a reload rebuilds
+   * from history. Match on what both copies carry the moment they arrive: role
+   * and the ORIGINATING `t`. Not content — a replayed copy can arrive empty and
+   * be filled by `appendContent` afterwards, so there is nothing to compare yet.
+   */
+  private _heldTwin(item: FlowData): FlowData | null {
+    if (item.elementType !== FlowElementTypes.CHAT) return null;
+    const originatedAt = item.attributes['t'];
+    if (!originatedAt) return null;
+    const twin = this._ownItems.find(
+      (entry) =>
+        entry !== item &&
+        entry.elementType === FlowElementTypes.CHAT &&
+        entry.ready &&
+        entry.attributes['t'] === originatedAt &&
+        (entry.attributes.role ?? '') === (item.attributes.role ?? ''),
+    );
+    if (twin) {
+      toplog.log('chat_delivery', `replay_dropped t=${originatedAt} src=${(item as { source?: unknown }).source}`);
+    }
+    return twin ?? null;
+  }
+
+  private _findDuplicateOpenGroup(item: FlowData): FlowData | null {
+    if (!item.content) return null;
+    for (const tracked of this._openGroups.values()) {
+      if (tracked === item) continue;
+      if (tracked.elementType !== item.elementType) continue;
+      if ((tracked.attributes?.role ?? '') !== (item.attributes?.role ?? '')) continue;
+      if (tracked.content === item.content) return tracked;
+    }
+    return null;
   }
 
   /**
@@ -404,8 +478,29 @@ export class FlowDataStream extends EventEmitter {
       return item;
     }
 
+    // A turn we already hold, replayed. `_findDuplicateOpenGroup` below catches
+    // the cross-channel twin only while that twin's group is still OPEN — but
+    // `observe-turn` re-delivers messages whose group closed long ago (a pane
+    // that reconnects, or one whose `after_entry_id` watermark is behind the
+    // transcript). The replayed copy then starts its own group and the answer
+    // renders twice, until a reload rebuilds from history. Match on what both
+    // copies carry the moment they arrive: role and the ORIGINATING `t`. Not
+    // content — a replayed copy arrives empty and is filled by `appendContent`
+    // afterwards, so there is nothing to compare yet.
+    if (this._heldTwin(item)) return null;
+
     // Check if we should start new group or continue current
     if (this._shouldStartNewGroup(elementType)) {
+      // Same cross-channel duplicate as `_ingestWithGroupId`'s "New group"
+      // branch — a groupless WS chunk can restate content an already-open
+      // grouped stream (e.g. `observe-turn`) delivered first. Check before
+      // touching any raw-group state, so a genuine duplicate leaves the
+      // current raw group (if any, of a different element type) untouched.
+      const duplicate = this._findDuplicateOpenGroup(item);
+      if (duplicate) {
+        return null;
+      }
+
       this._closeCurrentGroup();
 
       // Generate group-id for this item
@@ -421,6 +516,14 @@ export class FlowDataStream extends EventEmitter {
     } else {
       // Consolidate into current group
       const tracked = this._openGroups.get(this._currentGroupId!)!;
+      // A group only grows from the channel that opened it. Two live channels can
+      // carry the same message (a queue drain: observe-turn + the WS broadcast);
+      // the other channel's copy is a twin, not this row's next chunk (FLOWPAD-2042).
+      const owner = tracked.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      const from = item.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      if (owner && from && owner !== from) {
+        return null;
+      }
       if (this._isDuplicateChunk(item, this._currentGroupId!)) {
         return null;
       }
@@ -458,6 +561,30 @@ export class FlowDataStream extends EventEmitter {
       tracked.markReady();
     }
     this._openGroups.clear();
+  }
+
+  /**
+   * Drop the own-items matching `predicate`.
+   *
+   * For retiring placeholders an authoritative source has since replaced — see
+   * `FlowData.isOptimisticEcho`. Substreams are left alone: this stream doesn't
+   * own them.
+   *
+   * NOTE it does not rewind `_openGroups`/`_currentGroupId`, so retracting a row
+   * that heads an open group would leave the group pointing at a removed item
+   * and the next chunk would consolidate into a detached object. Safe for
+   * non-streamable element types (a user message is never a group head); give
+   * this a group-aware path before retracting CHAT or other streamable rows.
+   */
+  retract(predicate: (fd: FlowData) => boolean): void {
+    const kept = this._ownItems.filter((item) => !predicate(item));
+    if (kept.length === this._ownItems.length) return;
+    this._ownItems = kept;
+    // Membership changed. `emit` is the single invalidation chokepoint, so the
+    // items cache is dropped there. The payload is the conventional "items just
+    // added" — empty here, because this only removes; subscribers re-read
+    // `.items`.
+    this.emit('data', [], this);
   }
 
   clear(): void {
@@ -521,6 +648,16 @@ export class FlowDataStream extends EventEmitter {
     keyed.sort((a, b) => a.t - b.t || a.i - b.i);
     this._itemsCache = keyed.map((k) => k.item);
     return this._itemsCache;
+  }
+
+  /** The newest row's time in ms (rows carry the worker host's clock), or `null` when empty. */
+  latestTimestampMs(): number | null {
+    let latest = -Infinity;
+    for (const item of this.items) {
+      const t = Date.parse(item.timestamp);
+      if (t > latest) latest = t;
+    }
+    return Number.isFinite(latest) ? latest : null;
   }
 
   get isEmpty(): boolean {

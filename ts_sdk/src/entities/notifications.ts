@@ -4,6 +4,9 @@ import { ActionInfo } from '../models/ActionInfo';
 export interface SendReplyExtras {
   /** Inline prompt text to attach as a PROMPT attachment. */
   promptText?: string;
+  /** A one-shot prompt for the receiver to approve and run once: rides the message as a
+   *  `process_call-<id>` value (never a Prompt entity); the receiver answers with a status. */
+  callPrompt?: string;
   /** Files to attach as PROMPT attachments (each stored under prompt/<filename>). */
   promptFiles?: File[];
   /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
@@ -17,11 +20,23 @@ export interface SendReplyExtras {
     transferMode?: 'copy' | 'git';
     /** Mint a FAVORITE bookmark on the receiver at install. Default off. */
     createBookmark?: boolean;
+    /** The sender saw which files git excludes and chose to send them. Without it a copy-mode send
+     *  that would carry such files is refused once (`share_has_gitignored`). */
+    includeGitignored?: boolean;
   };
   /** Live-session grouping key. The backend stamps it on the FlowMessage and
    *  auto-appends the authoritative `remote_worker_session-<id>` TYPE_ID
    *  carrier attachment (the hub drops unknown header fields). */
   remoteWorkerSessionId?: string;
+  /** Session settings, honored only on the prompt that OPENS a session
+   *  (a prompt send without `remoteWorkerSessionId`). */
+  replyPolicy?: 'auto' | 'review';
+  /** The message this send answers: it quotes it and joins the thread rooted at it
+   *  (the backend derives the thread root). Must be a message of the same conversation. */
+  replyToId?: string | null;
+  /** Write into the thread of this message (an open thread's root) without quoting anyone.
+   *  Ignored when `replyToId` is set — the answered message decides the thread then. */
+  threadRootId?: string | null;
 }
 
 /** Serialize shareConfig to the backend's snake_case share_config shape.
@@ -30,6 +45,7 @@ function serializeShareConfig(cfg: SendReplyExtras['shareConfig']): Record<strin
   return {
     transfer_mode: cfg?.transferMode ?? 'copy',
     ...(cfg?.createBookmark ? { create_bookmark: true } : {}),
+    ...(cfg?.includeGitignored ? { include_gitignored: true } : {}),
   };
 }
 
@@ -38,12 +54,17 @@ export interface SendReplyTarget {
   conversationId: string;
 }
 
+/** What a send answers with: the new message's row id (a draft send answers too). */
+export interface SentReply {
+  id: string | null;
+}
+
 export async function sendReply(
   target: SendReplyTarget,
   message: string,
   files?: File[],
   extras?: SendReplyExtras,
-): Promise<void> {
+): Promise<SentReply> {
   const conversationId = target?.conversationId ?? null;
   if (!conversationId) {
     throw new Error('sendReply requires a conversationId');
@@ -62,6 +83,7 @@ export async function sendReply(
     const form = new FormData();
     form.append('message', message);
     if (extras?.promptText) form.append('prompt_text', extras.promptText);
+    if (extras?.callPrompt) form.append('call_prompt', extras.callPrompt);
     for (const file of files ?? []) {
       form.append('files', file, file.name);
     }
@@ -80,24 +102,84 @@ export async function sendReply(
     if (extras?.remoteWorkerSessionId) {
       form.append('remote_worker_session_id', extras.remoteWorkerSessionId);
     }
+    if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
+    if (extras?.replyToId) form.append('reply_to_id', extras.replyToId);
+    if (extras?.threadRootId) form.append('thread_root_id', extras.threadRootId);
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
-    await dataManager.callAction(action);
+    return sentReply(await dataManager.callAction(action));
   } else {
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
+    if (extras?.callPrompt) body.call_prompt = extras.callPrompt;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;
+    if (extras?.replyPolicy) body.reply_policy = extras.replyPolicy;
+    if (extras?.replyToId) body.reply_to_id = extras.replyToId;
+    if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.
-    await dataManager.callActionPreferWS(action);
+    return sentReply(await dataManager.callActionPreferWS(action));
   }
+}
+
+function sentReply(data: unknown): SentReply {
+  const id = (data as { id?: unknown } | null | undefined)?.id;
+  return { id: typeof id === 'string' && id ? id : null };
 }
 
 export async function refreshNotifications(projectPath?: string): Promise<void> {
   const action = new ActionInfo('refresh', 'notification', null, 'POST');
   action.bodyParameters = { project_path: projectPath ?? '' };
+  await dataManager.callAction(action);
+}
+
+
+/**
+ * Reply into the cloud channel a conversation came from (Gmail, later Slack).
+ *
+ * A separate endpoint from `sendReply`, not a flag on it: that path carries
+ * hub semantics — cloud-login gates, remote-send forks, body uploads, delivery
+ * receipts — none of which apply to an email.
+ *
+ * Resolves once DISPATCHED, not once delivered. An agent turn takes tens of
+ * seconds; the reply appears in the conversation by the ordinary ingest route
+ * when the worker records it.
+ */
+export interface ChannelSendExtras {
+  /** The message this reply quotes (a FlowMessage id); on a thread-only channel it answers in its thread. */
+  replyToId?: string | null;
+  /** Files to send — the channel refuses what it cannot take, with the reason. */
+  files?: File[];
+}
+
+export async function sendToChannel(
+  conversationId: string,
+  text: string,
+  agentId?: string,
+  extras: ChannelSendExtras = {},
+): Promise<void> {
+  if (!conversationId) {
+    throw new Error('sendToChannel requires a conversationId');
+  }
+  const action = new ActionInfo('send_external', 'conversation', conversationId, 'POST');
+  const files = extras.files ?? [];
+  if (files.length > 0) {
+    // Multipart: binary bodies only travel over REST.
+    const form = new FormData();
+    form.append('text', text);
+    if (agentId) form.append('agent_id', agentId);
+    if (extras.replyToId) form.append('reply_to_id', extras.replyToId);
+    for (const file of files) form.append('files', file, file.name);
+    action.bodyParameters = form;
+  } else {
+    action.bodyParameters = {
+      text,
+      ...(agentId ? { agent_id: agentId } : {}),
+      ...(extras.replyToId ? { reply_to_id: extras.replyToId } : {}),
+    };
+  }
   await dataManager.callAction(action);
 }

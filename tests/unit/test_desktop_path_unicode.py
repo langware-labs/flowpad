@@ -105,7 +105,7 @@ def test_pty_runs_in_exact_cwd_with_space(tmp_path):
     short form found no transcript and exited within seconds. With the rewrite
     gone, the child's reported cwd is byte-for-byte the requested path.
     """
-    workdir = tmp_path / "Flowpad workspace" / "teachpal-zone"
+    workdir = tmp_path / "Flowpad workspace" / "initech-portal"
     workdir.mkdir(parents=True)
     requested = str(workdir)
 
@@ -154,7 +154,7 @@ def test_winpty_safe_cwd_keeps_ansi_path_with_space(tmp_path):
 
     No mocks: real directory, real syscall, real ``_winpty_safe_cwd``.
     """
-    workdir = tmp_path / "Flowpad workspace" / "teachpal-zone"
+    workdir = tmp_path / "Flowpad workspace" / "initech-portal"
     workdir.mkdir(parents=True)
     long_form = str(workdir)
 

@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 /**
  * GraphContext — a frozen snapshot of the global context (a list of typeids).
@@ -12,6 +12,12 @@ export interface IGraphContext extends IEntity {
   /** ContextEntitiesEnum slot name → typeid string, for grouping/labeling. */
   slot_map?: Record<string, string>;
 }
+
+// `implements IGraphContext` only checks the class; it contributes no members, so every
+// field declared solely on IGraphContext read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface GraphContext extends EntityMerge<IGraphContext> {}
 
 @registerEntity
 export class GraphContext extends APIEntity<GraphContext> implements IGraphContext {

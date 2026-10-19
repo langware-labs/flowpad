@@ -1,6 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { TypeId } from '../models/TypeId';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface ISpec extends IEntity {
   title?: string | null;
@@ -9,6 +8,12 @@ export interface ISpec extends IEntity {
   author_id?: string | null;
   // NOTE: plan_id moved into context_entities. Use spec.firstContextOfType('plan').
 }
+
+// `implements ISpec` only checks the class; it contributes no members, so every
+// field declared solely on ISpec read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Spec extends EntityMerge<ISpec> {}
 
 @registerEntity
 export class Spec extends APIEntity<Spec> implements ISpec {

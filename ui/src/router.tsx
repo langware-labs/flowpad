@@ -4,12 +4,15 @@ import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import DeveloperLayout from '@src/components/developer-layout/developer-layout';
 import { FloatingChatWindow } from '@src/components/floating-chat';
 import { WizardHost } from '@src/components/wizard/WizardHost';
+import { TerminalPool } from '@src/components/terminal/TerminalPool';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
 // the entity layer. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
 import DiscoverPage from '@src/pages/discover-page/discover-page';
+import DiscoverDetailPage from '@src/pages/discover-page/DiscoverDetailPage';
+import { loadDiscover, loadDiscoverDetail } from '@src/routes/loaders/load-discover';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
@@ -17,8 +20,16 @@ import InvitePage from '@src/pages/entry/InvitePage';
 import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
+import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
+import InstallLanding from '@src/pages/entry/InstallLanding';
+import EntityLanding from '@src/pages/entry/EntityLanding';
+import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
+import DiagnosisRequestLanding from '@src/pages/entry/DiagnosisRequestLanding';
+import { HubOnly } from '@src/pages/entry/entry-shell';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
+import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
+import { devToDockPath } from '@src/navigation/url-builder';
 import {
   createBrowserRouter,
   createRoutesFromElements,
@@ -26,8 +37,13 @@ import {
   Outlet,
   Route,
   useLocation,
+  useParams,
   type ShouldRevalidateFunctionArgs,
 } from 'react-router';
+import { bindHistoryPosition } from '@src/navigation/history-position-store';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import { toplog } from '@sdk';
+import { useEffect } from 'react';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -37,10 +53,32 @@ import {
  * stale links, or hand-typed URLs. Without this redirect, the root catch-all
  * NotFound swallows them — surprising and unhelpful.
  */
+/**
+ * `/dock/skills` — the standalone Skills view was folded into the Assets
+ * browser. Without this the slug falls through to the full Home dashboard, so
+ * a stale link silently lands somewhere unrelated rather than where it says.
+ * `ViewType.SKILLS` stays in the SDK enum for persisted-DockPointer
+ * back-compat; only the route-level redirect is added here. The target comes
+ * from the DockPointer grammar, never hand-concatenated.
+ */
+function SkillsRedirect() {
+  return <Navigate to={skillsRedirectTarget()} replace />;
+}
+
+/**
+ * `/dock/markdown/<id>` — a bare markdown pointer renders an empty "No
+ * markdown file selected" state. Redirect to the canonical asset-editor URL,
+ * or NotFound when `<id>` cannot form a valid markdown TypeId.
+ */
+function MarkdownRedirect() {
+  const { id } = useParams();
+  const target = markdownRedirectTarget(id);
+  return target ? <Navigate to={target} replace /> : <NotFound />;
+}
+
 function DevToDockRedirect() {
   const location = useLocation();
-  const rest = location.pathname.replace(/^\/dev\/?/, '');
-  const target = `/dock/${rest}${location.search}${location.hash}`;
+  const target = `${devToDockPath(location.pathname)}${location.search}${location.hash}`;
   return <Navigate to={target} replace />;
 }
 
@@ -55,11 +93,30 @@ function DevToDockRedirect() {
  * `<App>`) own the open/close state across route changes.
  */
 function RootLayout() {
+  // `tab_switch` paint point for EVERY tab kind — home, the dock, the `/win`
+  // focus window: this is the one parent of every body, and a parent's effect
+  // runs after its children committed, so the rAF lands on the first frame that
+  // shows the new URL. Kinds with async content (terminal replay, chat
+  // history…) add their own `ready` line.
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    if (!toplog.isOn('tab_switch')) return;
+    const [, layout, viewType] = pathname.split('/');
+    const frame = requestAnimationFrame(() => {
+      toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${viewType || layout || 'home'} path=${pathname}`);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pathname, search]);
+
   return (
     <App>
       <Outlet />
       <WizardHost />
       <FloatingChatWindow />
+      {/* Every terminal runtime lives here, above every layout, for the life of its
+          tab — a layout swap moves a terminal, it never rebuilds one
+          (docs/navigation/dock-loading.md, I6). */}
+      <TerminalPool />
     </App>
   );
 }
@@ -94,6 +151,13 @@ export const router = createBrowserRouter(
       path="/"
       element={<RootLayout />}
       loader={loadRoot}
+      // `loadRoot` is init-once (see its header). React-Router re-runs a loader whenever
+      // the search string changes — and the first tab switch after a page load does
+      // change it (`?viewMode=…&scope-…` → `?scope-…&viewMode=…`). Re-running it
+      // re-activates the SAME locale, Lingui announces a change, and every i18n consumer
+      // re-renders past its `memo`: a 900-row chat took 2.7 s (FLOWPAD-2193). A loader that
+      // failed still re-runs — its data is `undefined`, which RR treats as never loaded.
+      shouldRevalidate={() => false}
       errorElement={<ErrorScreen />}
       HydrateFallback={() => (
         <div className="flex min-h-screen items-center justify-center">
@@ -113,7 +177,8 @@ export const router = createBrowserRouter(
       {/* Discover — full-page asset marketplace. Sits inside RootLayout (so
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
-      <Route path="discover" element={<DiscoverPage />} />
+      <Route path="discover" element={<DiscoverPage />} loader={loadDiscover} />
+      <Route path="discover/:typeid" element={<DiscoverDetailPage />} loader={loadDiscoverDetail} />
       {/* Entry journeys — full-screen pages the hub BACKEND sends users to
           (invite emails, accept-flow redirects, post-accept landings). Inside
           RootLayout so initSdk/bootstrap has run, outside the dock subtrees so
@@ -123,7 +188,41 @@ export const router = createBrowserRouter(
       <Route path="flow_message/:messageId" element={<MessageLanding />} />
       {/* One-click "try this repo": /launch?repo=<git url> asks before it
           launches anything (the link came from outside the app). */}
+      {/* Where a sandbox share invitation lands: says "preparing" and then
+          goes, instead of a blank tab or a hunt for the card.
+          Addressed `<entity type>/<id>` like `flow_message/:messageId` above —
+          and it is the URL the hub's own `build_entity_url` already emits as the
+          post-accept landing, so nothing has to steer the invitation here. */}
+      <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
+      <Route path="install" element={<InstallLanding />} />
+      {/* Project share landing: `Project.share` sets it as the invitation's `callback_override`. */}
+      <Route
+        path="project/:projectId"
+        element={
+          <HubOnly>
+            <ProjectShareLanding />
+          </HubOnly>
+        }
+      />
+      {/* Where a diagnosis request's "a run came back" email lands (the hub's `build_entity_url`). */}
+      <Route
+        path="diagnosis_request/:requestId"
+        element={
+          <HubOnly>
+            <DiagnosisRequestLanding />
+          </HubOnly>
+        }
+      />
+      {/* Generic landing for the hub's post-accept `/<type>/<id>`; the static routes around it outrank it. */}
+      <Route
+        path=":entityType/:entityId"
+        element={
+          <HubOnly>
+            <EntityLanding />
+          </HubOnly>
+        }
+      />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route
         path="dock"
@@ -133,6 +232,10 @@ export const router = createBrowserRouter(
         errorElement={<ErrorScreen />}
       >
         <Route index element={<Navigate to="/" replace />} />
+        {/* Dead/legacy slugs → canonical asset routes. Static segments outrank
+            the `:viewType` dynamic match, so these must stay above it. */}
+        <Route path="skills" element={<SkillsRedirect />} />
+        <Route path="markdown/:id" element={<MarkdownRedirect />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>
@@ -147,7 +250,14 @@ export const router = createBrowserRouter(
       <Route path="dev" element={<DeveloperLayout />} loader={loadAgentApp}>
         <Route index element={<SessionsView />} />
         <Route path="main" element={<SessionsView />} />
-        <Route path="main/api-keys" element={<ApiKeysView />} />
+        <Route
+          path="main/api-keys"
+          element={
+            <div className="h-full overflow-auto p-4">
+              <ApiKeysView className="max-w-4xl" />
+            </div>
+          }
+        />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
         <Route path="*" element={<DevToDockRedirect />} />
@@ -166,3 +276,29 @@ export const router = createBrowserRouter(
     basename: BASE_PATH,
   },
 );
+
+/**
+ * The router is the sole event source for "where am I in history", which the
+ * nav bar's Back/Forward buttons read. Bound here, at module scope, because by
+ * this point `createBrowserHistory` has already stamped its initial `idx` — and
+ * because subscribing here catches pops the app never initiated (browser chrome
+ * buttons, the macOS swipe, the Electron mouse buttons) for free.
+ */
+bindHistoryPosition(router);
+
+/**
+ * `tab_switch` commit point: the router went loading → idle, i.e. every loader
+ * of the navigation settled and the new URL is what renders. One line per
+ * settled navigation; `painted` / `ready` follow from the views.
+ */
+let lastNavigationState = 'idle';
+router.subscribe((state) => {
+  const now = state.navigation.state;
+  if (now === 'idle' && lastNavigationState !== 'idle' && toplog.isOn('tab_switch')) {
+    toplog.log(
+      'tab_switch',
+      `committed ${sinceTabSwitch()} action=${state.historyAction} path=${state.location.pathname} error=${state.errors ? 'yes' : 'no'}`,
+    );
+  }
+  lastNavigationState = now;
+});

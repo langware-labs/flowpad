@@ -68,6 +68,18 @@ def load_actions():
     except ImportError:
         pass  # LM keys action not available
 
+    # Import credentials action to register it
+    try:
+        from flow_sdk.app.actions import credentials_action  # noqa: F401
+    except ImportError:
+        pass  # Credentials action not available
+
+    # Import token-plan read-through (desk → hub) to register it
+    try:
+        from flow_sdk.app.actions import token_plan_action  # noqa: F401
+    except ImportError:
+        pass  # Token plan action not available
+
     # Import desktop-notify action to register it
     try:
         from flow_sdk.app.actions import desktop_notify_action  # noqa: F401
@@ -98,12 +110,6 @@ def load_actions():
     # the graph catch-all's handle_request() to consume the request body
     # before the handler reads it, leading to a hang.
 
-    # Import lm-proxy action to register it
-    try:
-        from flow_sdk.app.actions import lm_proxy  # noqa: F401
-    except ImportError:
-        pass  # LM proxy action not available
-
     # Import repo action to register it
     try:
         from flow_sdk.app.actions import repo_actions  # noqa: F401
@@ -122,8 +128,7 @@ def load_actions():
     except ImportError:
         pass  # OAuth action not available
 
-    # Import mcp_app action to register it
-    from flow_sdk.actions import mcp_app_action  # noqa: F401
+    # Import the asset-editor action to register it
 
 
 async def is_new_instance(existing, entity_data: dict) -> bool:

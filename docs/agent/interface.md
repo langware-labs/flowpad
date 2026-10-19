@@ -1,3 +1,7 @@
+---
+id: 6f04c78e-637e-4d6a-9c2a-a546bd32cea2
+---
+
 # AgenticProcess interface — rendered demo
 
 This page is a visual contract tour of the current `AgenticProcess` implementation.
@@ -83,17 +87,18 @@ properties:
   last_started_snapshot: "dict[str, Any] | null"
   additional_dirs: "list[str]"
   load_flowpad_assistant: "bool | null"
-  embedded_agent_ids: "list[str]"
+  embedded_subagent_ids: "list[str]"
   embedded_asset_refs: "list[TypeId]"
   worker_type: "WorkerType | null"
   plan_path: "str | null"
   markdown_docs: "list[dict]"
   status_report: "dict | null"
 methods:
-  run: "async (instruction, workdir=None, **kwargs) -> RunResult"
+  run: "async (instruction, workdir=None, *, input=None, output_spec=None, **kwargs) -> PromptResult — input: a DataSpec saved to execution/input; output_spec: the DataSpec loaded from execution/output into value"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
   start_pty: "async (instruction=None, visible=None, retry=false, session_id_override=None) -> ApiResponse"
-  prompt: "async (instruction) -> Any"
+  prompt: "async (instruction) -> ApiResponse"
+  send_turn: "async (instruction) -> PromptResult — OK = accepted; NOT_YET ran=False if not taken"
   wait: "async (timeout=None) -> AgenticProcess"
   restart: "async () -> ApiResponse"
   close: "async () -> ApiResponse"
@@ -101,7 +106,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 630
 ```
@@ -123,7 +128,7 @@ returns: "one coherent process contract"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 679
 ```
@@ -134,24 +139,23 @@ source:
 name: AgenticProcess.helper_types
 description: Supporting contracts defined beside the entity or exported by its package.
 params:
-  AssetSource: "embedded | inline | project_dir | user_dir | workdir | additional_dir | context_dir | system | external"
+  AssetSource: "embedded | inline | project_dir | user_dir | workdir | additional_dir | context_dir (a dependency) | system | external"
   AssetUsageKind: "embedded_asset | inline_persona | transcript_file_read | skill_invoked"
   AssetUsage: "{kind, path?, entry_id?, timestamp?, label?}"
   AssetDescriptor: "{typeid, source, posix_path, source_dir?, project_id?, usage[]}"
   TranscriptSubpath: "plan | prompt | prompts | full"
-  SystemInstructionAssets: "{assets_dir, instructions, claude_file}"
+  SystemInstructionAssets: "{assets_dir, instructions?, claude_file?} — the MOUNT; text is optional"
   PromptQueue: "{enabled, entries} file-backed FIFO"
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
   ModelTier: "sm | md | lg"
-  RunResult: "one-shot run result"
+  PromptResult: "a turn's FlowCall answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
   StreamEvent: "streamed execution event"
-  ProcessError: "typed process failure"
 returns: "supporting Python contracts"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 142
 ```
@@ -164,7 +168,7 @@ source:
 name: AgenticProcess.factories
 description: Class-level construction, environment checks, session adoption, and lookup.
 params:
-  run: "async (instruction, workdir=None, **kwargs) -> RunResult"
+  run: "async (instruction, workdir=None, *, input=None, output_spec=None, **kwargs) -> PromptResult — input: a DataSpec saved to execution/input; output_spec: the DataSpec loaded from execution/output into value"
   is_installed: "async (worker_type=None) -> bool"
   is_logged_in: "async (worker_type=None) -> WorkerAuthResult"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
@@ -174,7 +178,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 912
 ```
@@ -202,7 +206,7 @@ errors: [InvalidTransition, StartFailure, WorkerBusy]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1147
 ```
@@ -227,7 +231,7 @@ errors: [WorkerBusy, ProcessStopping, ProcessFailed]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1991
 ```
@@ -242,7 +246,7 @@ params:
   transcript_path: "property -> Path | null"
   on_transcript_change: "async (jsonl_path, entries) -> void"
   driver: "property -> WorkerDriver"
-  cli_options: "property -> WorkerCLIOptions"
+  cli_options: "property -> AgentOptions"
   cmd_line: "property -> str"
   fetch_worker_status: "async () -> WorkerStatus | null"
   get_status: "async () -> status, busy, worker_status, and readiness payload"
@@ -261,7 +265,7 @@ returns: "backend-owned runtime projection"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 3814
 ```
@@ -273,7 +277,7 @@ name: AgenticProcess.context_and_assets
 description: Process-local assets, assistant instructions, graph context, display focus, and plans.
 params:
   load_skill: "async (skill) -> ApiResponse"
-  load_embedded_agent: "(agent) -> void"
+  load_embedded_subagent: "(subagent) -> void"
   get_agents_json: "() -> dict | null"
   embedded_assets: "property -> AssetDir | null"
   ensure_embedded_assets: "() -> AssetDir"
@@ -300,7 +304,7 @@ returns: "updated process context or projected assets"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 4065
 ```
@@ -308,7 +312,7 @@ source:
 ## Backend action surface
 
 Every action uses `/api/v1/graph/agentic_process/{id}/{action}`. These five cards
-contain all **42 actions defined directly on `AgenticProcess`**.
+contain all **42 actions defined directly on** **`AgenticProcess`**.
 
 ### Lifecycle — 9 actions
 
@@ -330,7 +334,7 @@ errors: ["400", "409", "500"]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 1581
 ```
@@ -355,7 +359,7 @@ errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 2163
 ```
@@ -378,7 +382,7 @@ errors: ["400", "409", "500"]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 2892
 ```
@@ -392,7 +396,7 @@ params:
   transcript: "POST /{plan | prompts | full} -> transcript projection"
   get-plan: "POST {} -> legacy plan projection"
   get-history: "GET -> {history: FlowData[]}"
-  load-embedded-agent: "POST {asset_ref} -> loaded agent"
+  load-embedded-subagent: "POST {asset_ref} -> loaded sub-agent"
   load-embedded-skill: "POST {asset_ref} -> loaded skill"
   attach-embedded-asset: "POST {entity_ref} -> materialized entity"
   detach-embedded-asset: "POST {entity_ref} -> detached entity"
@@ -403,7 +407,7 @@ errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 3874
 ```
@@ -417,17 +421,16 @@ params:
   restart-info: "GET -> loaded-versus-current launch diff"
   cmd-line: "GET -> {cmd_line}"
   status: "GET | POST -> {status, busy, worker_status, ready_for_input}"
-  get-host: "GET | POST {port, redirect?} -> host payload"
   set-graph-context: "POST {graph_context_id} -> bound GraphContext"
   add-dir: "POST {path} -> additional_dirs"
   remove-dir: "POST {path} -> additional_dirs"
-  input-dir: "GET -> {abs_path, compute_node_id}"
+  input-dir: "GET -> {abs_path (execution/input), compute_node_id}"
 returns: ApiResponse
 errors: ["400", "404"]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: flow_sdk/builtin/agentic_process/agentic_process.py
   line: 5402
 ```
@@ -453,7 +456,7 @@ returns: "public AgenticProcess support contracts"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 64
 ```
@@ -508,7 +511,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 247
 ```
@@ -537,16 +540,16 @@ params:
   sharedContextEntities: "string[]"
   targetVfsPath: "string | undefined"
   outputFormat: "string | undefined"
-  workerType: "claude_code | codex | copilot"
+  workerType: "claude_code | codex | copilot | opencode"
   processType: "ProcessKind | undefined"
   contextData: "Record<string, unknown>"
 returns: "Record<string, unknown> via serializeAgenticContext"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
-  line: 37
+  line: 36
 ```
 
 ```interface
@@ -560,7 +563,7 @@ returns: IAgenticProcessOptions
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
   line: 114
 ```
@@ -581,7 +584,7 @@ returns: SpawnResult
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-context.ts
   line: 124
 ```
@@ -604,7 +607,7 @@ returns: AgenticProcess
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 428
 ```
@@ -615,7 +618,6 @@ source:
 name: AgenticProcess.state_and_navigation
 description: URL-first navigation targets, reflected state, runtime handles, and computed projections.
 params:
-  getWebAppHostUrl: "(port) -> string"
   openTerminalDock: "(extraOptions?) -> void"
   isHeadless: "getter -> boolean"
   terminalDockPointer: "getter -> DockPointerData"
@@ -623,11 +625,11 @@ params:
   dockPointer: "getter -> DockPointerData"
   searchDockPointer: "getter -> DockPointerData"
   wasRestoredFromSession: "getter -> boolean"
-  icon: "getter -> ProcessIconKey"
+  processIconKey: "getter -> ProcessIconKey"
   status: "getter -> ProcessStatus"
   busy: "getter -> boolean"
   workerStatus: "getter -> WorkerStatus"
-  cliOptions: "getter/setter -> ClaudeCliOptions"
+  cliOptions: "getter/setter -> ClaudeAgentOptions"
   ptyConnection: "getter -> PtyConnection | undefined"
   workDirVfs: "getter -> VFSPath | null"
   shellEntity: "getter -> Shell | null"
@@ -643,9 +645,9 @@ returns: "derived SDK view of backend state"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
-  line: 403
+  line: 524
 ```
 
 ### Prompting and queue
@@ -667,7 +669,8 @@ params:
   submit: "async (instruction?, options?) -> void"
   cancelPrompt: "async () -> void"
   interruptTurn: "async () -> void"
-  executeInstruction: "async (instruction, options?) -> void"
+  sendTurn: "async (instruction, {workerSessionId}?) -> PromptResult — FlowCall admission, no echo or completion wait"
+  executeInstruction: "async (instruction, options?) -> void — legacy echo and optional completion wait"
   sendInput: "async (text) -> void"
   inject: "async (instruction) -> {instructionId, injectedQueueSize}"
 returns: "action completion or streamed turn"
@@ -675,7 +678,7 @@ errors: [ActionError, AbortError]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1071
 ```
@@ -708,7 +711,7 @@ returns: "stream state or unsubscribe callback"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1129
 ```
@@ -734,7 +737,7 @@ errors: [ActionError, WorkerBusy]
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 2337
 ```
@@ -751,7 +754,7 @@ params:
   removeDir: "async (path) -> void"
   setGraphContext: "async (graphContextId) -> void"
   show: "async ({typeid? | path? | port?}) -> void"
-  loadEmbeddedAgent: "async (sourcePath) -> void"
+  loadEmbeddedSubagent: "async (sourcePath, setApPersona) -> void"
   loadEmbeddedSkill: "async (sourcePath) -> void"
   getAssets: "async () -> AssetDescriptor[]"
   embeddedAssets.attach: "async (entity | TypeId | string) -> void"
@@ -763,27 +766,31 @@ returns: "updated reflected entity or requested plan operation"
 source:
   origin:
     kind: local
-    base: /Users/shlom/Documents/dev/flowpad-oss
+    base: /Users/alice/flowpad-oss
     rel_path: ts_sdk/src/process/agentic-process.ts
   line: 1004
 ```
 
 ## Reading the cards
 
-- **Interface** shows the rendered contract.
-- **Code** shows the exact YAML stored in this Markdown file.
-- Moving the caret into a fence forces Code mode so edits never happen invisibly.
-- In editable mode, values can be edited inline and are committed back through a
-  normal ProseMirror transaction.
-- The source chip is read-only navigation: it remains available even when this
+* **Interface** shows the rendered contract.
+
+* **Code** is the fully editable YAML stored in this Markdown file when the
+  document is in Editor mode; View mode keeps it read-only.
+
+* YAML is parsed and schema-validated as it changes. An error stays visible
+  below the active pane while the last good Interface render is preserved.
+
+* Moving the caret into a fence forces Code mode so edits never happen invisibly.
+
+* In editable mode, names, types, signatures, optional flags, and existing
+  descriptions can be edited inline and are committed back through a normal
+  ProseMirror transaction. Structural changes belong in Code.
+
+* The source chip is read-only navigation: it remains available even when this
   document itself is in view mode.
 
 The architectural narrative remains in
 [`docs/interface/agentic-process.md`](../interface/agentic-process.md); this page
 is intentionally the visual, source-grounded demo.
 
-<!-- flowpad:capsule identity
-version: 1
-data:
-  id: 17b8d472-a962-490e-8766-36946071ee75
-flowpad:endcapsule identity -->

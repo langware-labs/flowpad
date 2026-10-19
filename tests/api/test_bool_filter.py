@@ -7,11 +7,11 @@ json_extract(data, '$.visible') = 'True' matches 0 rows.
 """
 
 import json
-import pytest
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.core import Entity, QueryFilter
-from flow_sdk.responses.response import ApiResponse
 from typing import Optional
+
+from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.core import Entity
+from flow_sdk.responses.response import ApiResponse
 
 
 class BoolFilterEntity(Entity):
@@ -32,7 +32,6 @@ async def test_filter_by_bool_true_returns_matching_entities(bootstrapped_client
     await e_hidden.create(user.typeid)
 
     # Filter by visible=True
-    import urllib.parse
     filter_json = json.dumps({"match": {"visible": True}})
     response = await client.get(endpoint, params={"filter": filter_json})
     assert response.status_code == 200, response.text

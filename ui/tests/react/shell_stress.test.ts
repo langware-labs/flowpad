@@ -290,6 +290,13 @@ describe('Shell / PTY lifecycle stress — integration', () => {
       await shell.attachPty({ cols: 80, rows: 24 });
 
       expect(shell.attached).toBe(true);
+      // Stimulate live output AFTER attach. The attach-time repaint only emits
+      // bytes once the shell is at its line editor; a zsh still sourcing the
+      // user's rc files (pyenv/nvm — seconds under host load) redraws nothing,
+      // and its first prompt can land past the deadline. The tty echoes this
+      // newline whatever state the shell is in, so the chunk under test is
+      // this cycle's own live output, not a race against rc-file startup.
+      await sendNewline(computeNode.id, shell.id);
       await waitForChunks(shell);
 
       // No live-output bleed: gate is open, subscribe, then close
@@ -398,7 +405,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
   // ── 6. Shell.run() round-trip ──────────────────────────────────────────────
 
-  it('Shell.run() executes a command and returns stdout + exitCode=0', async () => {
+  it('Shell.run() executes a command and returns stdout + returncode=0', async () => {
     const computeNode = await get_local_compute_node(`stress-run-${Date.now()}`);
     await computeNode.setup();
 
@@ -407,9 +414,9 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await new Promise((r) => setTimeout(r, 400));
 
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
-    const result = await shell.run('echo stress-test-ok');
+    const result = await shell.runDetached('echo stress-test-ok');
 
-    expect(result.exitCode).toBe(0);
+    expect(result.returncode).toBe(0);
     expect(result.stdout).toContain('stress-test-ok');
 
     await closePtyRaw(computeNode.id, shellId);

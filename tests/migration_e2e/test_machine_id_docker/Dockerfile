@@ -4,7 +4,7 @@
 # The test script (in_container.sh) walks through M1-M8 exercising the
 # cache-first contract under Linux.
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     jq procps \
@@ -15,7 +15,7 @@ ENV KEYRING_PYTHON_KEYRING_BACKEND=keyring.backends.null.Null \
     HOME=/root \
     PYTHONUNBUFFERED=1
 
-# python:3.10-slim doesn't ship /etc/machine-id (systemd writes it at
+# python:3.11-slim doesn't ship /etc/machine-id (systemd writes it at
 # first boot; slim images skip it). Synthesize a known-stable value so
 # the test exercises the linux:/etc/machine-id derivation branch.
 RUN echo "1234567890abcdef1234567890abcdef" > /etc/machine-id

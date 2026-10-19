@@ -34,6 +34,6 @@ async def remote_access(request: Request):
     if not clone_url:
         return ApiFailResponse(message="clone_url is required", status_code=400)
 
-    token, _ = await _get_github_token_for_current_user()
+    token = await _get_github_token_for_current_user()
     accessible, default_branch = await git_remote_access(clone_url, token=token)
     return ApiSuccessResponse(data={"accessible": accessible, "default_branch": default_branch})

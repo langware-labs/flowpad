@@ -4,10 +4,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { Checkbox } from '@src/components/ui/checkbox';
 import { SideDrawer } from '@src/components/ui/side-drawer';
 import { TooltipProvider } from '@src/components/ui/tooltip';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { providerKeyFor, providerMetaFor } from '@src/tabs/provider-meta';
 import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal/interactive-terminal/side-windows';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProject } from '@src/hooks/useProject';
@@ -39,20 +38,6 @@ function pickLastPrompt(entry: WorkerHistoryEntry): string | null {
   return v ? v : null;
 }
 
-function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
 function formatFullDate(iso: string | null | undefined): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -65,14 +50,20 @@ function formatFullDate(iso: string | null | undefined): string {
   });
 }
 
+/** Vendor glyph via `PROVIDER_META` — the same shared table `WorkerIcon` in
+ *  `entity-execution-panel/history-row.tsx` reads. This was a duplicate
+ *  if-ladder that enumerated codex/copilot and fell through to Claude, so an
+ *  opencode row in this modal wore Claude's mark. Two hand-rolled copies of one
+ *  registry is how that drift happened; both now read the registry. */
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
-  if (workerType === 'codex') {
-    return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
-  }
-  if (workerType === 'copilot') {
-    return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
-  }
-  return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
+  const meta = providerMetaFor(workerType);
+  // `data-provider` rather than an aria-label: the row already carries the
+  // session's name as text, so announcing the vendor twice is noise — but which
+  // vendor a row wears is exactly what a test needs to see, and it is the
+  // attribute `tab-row-item` already uses for the same purpose.
+  return (
+    <meta.Icon className={`h-3.5 w-3.5 shrink-0 ${meta.iconClassName}`} data-provider={providerKeyFor(workerType)} />
+  );
 }
 
 interface HistoryModalProps {
@@ -87,12 +78,28 @@ function entryKey(entry: WorkerHistoryEntry): string {
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
   const { t } = useLingui();
-  const { entries, isLoading, refetch } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
   const { indexProjectSessions } = useSystemTools();
   const [refreshing, setRefreshing] = useState(false);
 
   const [allProjects, setAllProjects] = usePreference<boolean>(PrefKey.HISTORY_ALL_PROJECTS);
+
+  // No active project → nothing to scope to; behave as "all projects".
+  const effectiveAllProjects = allProjects || !currentProject;
+
+  // The scope goes to the BACKEND, exactly as the Chats side-menu does it
+  // (`useChatHistory`). Fetching unscoped and filtering by `project_id` here does
+  // not work: the unscoped walk labels a session with the project derived from its
+  // cwd, while the scoped walk labels it with the id its `AgenticProcess` carries.
+  // When those two disagree — two Project rows over one checkout — the client-side
+  // filter matched nothing and the modal read "No recent sessions" while the Chats
+  // panel, scoped server-side, listed the same sessions. The cap is per-project
+  // there too, so an under-active project is no longer squeezed out of a global top-N.
+  const { entries, isLoading, refetch } = useWorkerHistory(30, {
+    enabled: open,
+    projectIds: !effectiveAllProjects && currentProject ? [currentProject.id] : undefined,
+  });
+
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [peekKey, setPeekKey] = useState<string | null>(null);
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
@@ -101,9 +108,6 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-
-  // No active project → nothing to scope to; behave as "all projects".
-  const effectiveAllProjects = allProjects || !currentProject;
 
   // Reset selection + peek + search when modal closes so a new open starts clean.
   useEffect(() => {
@@ -124,15 +128,16 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   }, [searchOpen]);
 
   const visible = useMemo(() => {
-    const currentProjectId = currentProject?.id ?? null;
-    const projectScoped = effectiveAllProjects ? entries : entries.filter((e) => e.project_id === currentProjectId);
+    // `entries` arrives already scoped to the active project (the request carries
+    // `projectIds`) and with empty chats filtered out (useWorkerHistory). Search
+    // is the only filter left to apply here.
     const q = query.trim().toLowerCase();
     const filtered = q
-      ? projectScoped.filter((e) => {
+      ? entries.filter((e) => {
           const hay = [e.name, e.last_prompt, e.project_name].filter(Boolean).join(' ').toLowerCase();
           return hay.includes(q);
         })
-      : projectScoped;
+      : entries;
     const sorted = [...filtered];
     sorted.sort((a, b) => {
       const ta = a.last_active_time ? Date.parse(a.last_active_time) : 0;
@@ -140,7 +145,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       return sortDir === 'desc' ? tb - ta : ta - tb;
     });
     return sorted;
-  }, [entries, effectiveAllProjects, currentProject?.id, sortDir, query]);
+  }, [entries, sortDir, query]);
 
   // Drop selections that are no longer visible after a filter change.
   useEffect(() => {
@@ -263,9 +268,11 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         }}
       >
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2 pr-7">
+          <div className="flex items-center justify-between gap-2 pe-7">
             <div className="flex items-center gap-3">
-              <DialogTitle className="text-sm font-semibold"><Trans>Recent Sessions</Trans></DialogTitle>
+              <DialogTitle className="text-sm font-semibold">
+                <Trans>Recent Sessions</Trans>
+              </DialogTitle>
               <label
                 className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground"
                 title={currentProject ? undefined : t`No active project`}
@@ -277,7 +284,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                   onCheckedChange={(v) => setAllProjects(v === true)}
                   disabled={!currentProject}
                 />
-                <span><Trans>All projects</Trans></span>
+                <span>
+                  <Trans>All projects</Trans>
+                </span>
               </label>
             </div>
             <div className="flex items-center gap-0.5">
@@ -369,7 +378,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           )}
           data-testid="history-selection-bar"
         >
-          <span className="text-[11px] text-muted-foreground"><Trans>{selectedKeys.size} selected</Trans></span>
+          <span className="text-[11px] text-muted-foreground">
+            <Trans>{selectedKeys.size} selected</Trans>
+          </span>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -392,7 +403,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {isLoading && visible.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground"><Trans>Loading…</Trans></p>
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                <Trans>Loading…</Trans>
+              </p>
             ) : visible.length === 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">
                 {query.trim() ? <Trans>No matching sessions</Trans> : <Trans>No recent sessions</Trans>}
@@ -411,7 +424,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                       <li
                         key={key}
                         className={cn(
-                          'flex min-w-0 items-center gap-1.5 rounded pl-1 hover:bg-muted',
+                          'flex min-w-0 items-center gap-1.5 rounded ps-1 hover:bg-muted',
                           isPeeking && 'bg-muted',
                         )}
                         data-testid="history-row"
@@ -426,7 +439,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                           />
                         </span>
                         <button
-                          className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-left text-sm"
+                          className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-start text-sm"
                           onClick={() => {
                             if (selectedKeys.size > 0) {
                               // Selection mode: a click adds/removes this row from the
@@ -477,17 +490,17 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             ) : null}
                           </span>
                           <span
-                            className="ml-2 flex shrink-0 flex-col items-end leading-tight text-muted-foreground"
+                            className="ms-2 flex shrink-0 flex-col items-end leading-tight text-muted-foreground"
                             data-testid="history-row-time"
                           >
-                            <span className="text-xs">{timeAgo(entry.last_active_time)}</span>
+                            <span className="text-xs">{formatTimeAgoShort(entry.last_active_time)}</span>
                             <span className="text-[10px] opacity-70">{formatFullDate(entry.last_active_time)}</span>
                           </span>
                         </button>
                         <button
                           type="button"
                           className={cn(
-                            'mr-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm transition-colors',
+                            'me-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm transition-colors',
                             isPeeking
                               ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
                               : 'border-border bg-background text-foreground hover:border-muted-foreground/40 hover:bg-muted-foreground/10 hover:text-foreground',
@@ -499,7 +512,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                           data-testid="history-row-prompts-button"
                         >
                           <MessageSquare className="h-3 w-3" />
-                          <span><Trans>Prompts</Trans></span>
+                          <span>
+                            <Trans>Prompts</Trans>
+                          </span>
                         </button>
                       </li>
                     );
@@ -521,9 +536,13 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             >
               <div className="flex h-full min-h-0 flex-col">
                 {peekResolving || (peekPromptsLoading && peekPromptEntries.length === 0) ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>Loading prompts…</Trans></p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    <Trans>Loading prompts…</Trans>
+                  </p>
                 ) : peekPromptEntries.length === 0 ? (
-                  <p className="px-3 py-4 text-center text-xs text-muted-foreground"><Trans>No prompts found</Trans></p>
+                  <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                    <Trans>No prompts found</Trans>
+                  </p>
                 ) : (
                   <PromptIndexPanel
                     prompts={peekPromptEntries}

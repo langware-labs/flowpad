@@ -1,0 +1,13 @@
+{
+  "type": "data_schema",
+  "id": "8fbe2b19-7de2-4885-861f-bb8fa1d038e2",
+  "name": "navigator.replay",
+  "fields": {
+    "candidates": {
+      "shape": [
+        "navigator.candidate"
+      ],
+      "description": "The search matches to offer instead of searching -- a recorded row's, so it replays exactly."
+    }
+  }
+}

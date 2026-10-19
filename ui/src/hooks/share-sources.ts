@@ -14,6 +14,7 @@
  * reuses the same payload instead of re-resolving.
  */
 import {
+  ActionInfo,
   AgenticProcess,
   Artifact,
   dataManager,
@@ -21,7 +22,6 @@ import {
   TypeId,
   type ConversationSendPayload,
 } from '@sdk';
-import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 
 export interface SharePrepPayload {
   /** Serialized TypeIds → TYPE_ID attachments on the FlowMessage. */
@@ -53,6 +53,10 @@ export interface SharePrepOptions {
 export interface ShareSource {
   /** Chip text in the dialog header. */
   label: string;
+  /** Canonical entity whose project owns this share (never the active project). */
+  ownerRef?: TypeId;
+  /** Exact entity references that can be removed without preparing the source. */
+  previewAssets?: { ref: TypeId; label: string }[];
   /** Short type badge (e.g. "SESSION", "PLAN"). */
   typeLabel?: string;
   /** Default new-conversation / Task title when the source supplies one. */
@@ -76,6 +80,18 @@ export interface ShareSource {
    *  pushed Git worktree with a usable origin; the toggle enables only when it
    *  does, and packing revalidates (never silently falls back to copy). */
   gitPreflightRef?: TypeId;
+  /** The entity whose MEMBERSHIP the recipients must be granted for this share
+   *  to mean anything. A Project is the case: the conversation is only the
+   *  delivery channel, and without a project role edge the hub never pushes the
+   *  row, so the recipient gets a message and no project to install. The dialog
+   *  grants this BEFORE sending, through the entity's own `share(recipients)` —
+   *  the same call the team Share panel makes — so the recipient receives a
+   *  project invitation whose accept materializes and clones it. */
+  accessGrantRef?: TypeId;
+  /** Sharing a thing (an asset, artifact, file or folder): a new conversation
+   *  titled "<Name> has shared <thing>", git or copy by project membership, and
+   *  an invite link at the end. */
+  shareAsThing?: boolean;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -92,7 +108,7 @@ function resolveOnce(
 }
 
 /**
- * Plain entity/doc (markdown, whiteboard, …): rides as a TYPE_ID attachment +
+ * Plain entity/doc (markdown, chart, …): rides as a TYPE_ID attachment +
  * shared context. No fork, no Task.
  */
 export function genericEntityShareSource(
@@ -105,6 +121,9 @@ export function genericEntityShareSource(
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
     bookmarkable: true,
+    shareAsThing: true,
+    ownerRef: typeId,
+    previewAssets: [{ ref: typeId, label: opts.label ?? ref }],
     // File-backed assets may be shared by their Git origin — the dialog's Git
     // toggle preflights this ref; eligibility is decided backend-side.
     gitPreflightRef: typeId,
@@ -118,7 +137,36 @@ export function genericEntityShareSource(
 }
 
 /**
- * Context-folder share. A folder ALWAYS travels as a Git origin the receiver
+ * Project share. Two things have to happen and only one of them is a message:
+ * the recipient needs a ROLE on the project (that is what makes the hub push
+ * the row to them), and the thread carries the note that it happened.
+ *
+ * Unlike an asset, a project is NOT carried as a TYPE_ID attachment: the bundle
+ * has no family that can pack one (`_pack_attachment_entry` has no project
+ * case), so an asset reference would ride as a permanently-missing attachment
+ * and render as a chip that resolves to nothing. It travels as shared context,
+ * and the files travel by Git origin as they always have.
+ */
+export function projectShareSource(typeId: TypeId, opts: { label?: string } = {}): ShareSource {
+  const ref = typeId.toString();
+  return {
+    label: opts.label ?? ref,
+    typeLabel: typeId.type,
+    defaultTitle: opts.label,
+    bookmarkable: true,
+    gitPreflightRef: typeId,
+    accessGrantRef: typeId,
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [],
+        sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
+ * Dependency-folder share. A folder ALWAYS travels as a Git origin the receiver
  * clones — never as copied bytes — so Git here is the POLICY, not a per-share
  * option: `shareConfig.transferMode` is pinned and `gitPreflightRef` is
  * deliberately omitted, which is what keeps the dialog's Git toggle from
@@ -136,6 +184,7 @@ export function folderShareSource(folderTypeId: TypeId, opts: { label: string })
     typeLabel: 'FOLDER',
     defaultTitle: opts.label,
     bookmarkable: true,
+    shareAsThing: true,
     shareConfig: { transferMode: 'git' },
     prepare: resolveOnce(() =>
       Promise.resolve({
@@ -163,6 +212,9 @@ export function artifactShareSource(
     typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     bookmarkable: true,
+    shareAsThing: true,
+    ownerRef: artifact.typeId,
+    previewAssets: [{ ref: artifact.typeId, label: opts.label ?? artifact.displayName ?? ref }],
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by
     // the backend preflight against this ref, not the artifact's cached origin.
     gitPreflightRef: artifact.typeId,
@@ -176,13 +228,12 @@ export function artifactShareSource(
 }
 
 /**
- * AgenticProcess session: share the session's ClaudeTranscript
- * (``claude_session`` entity — its id IS the Claude session id). The
- * transcript rides as the TYPE_ID attachment (the message chip) and the
- * shared context carries transcript + process, so the backend's mutual
- * context linking connects process ↔ message. Optionally attaches the raw
- * transcript jsonl as a file. No fork, no Task — the transcript is the
- * shared artifact.
+ * AgenticProcess session: share the session's transcript entity (any worker:
+ * ``claude_session``, ``codex_session``, ``copilot_session``). The transcript
+ * rides as the TYPE_ID attachment (the message chip) and the shared context
+ * carries transcript + process, so the backend's mutual context linking
+ * connects process ↔ message. Optionally attaches files. No fork, no Task —
+ * the transcript is the shared artifact.
  */
 export function agenticProcessShareSource(
   typeId: TypeId,
@@ -198,56 +249,28 @@ export function agenticProcessShareSource(
   };
 }
 
-/**
- * Read a vibe/agentic session's transcript: resolve the process, then load the
- * raw jsonl through the shared attach rules (own session, else the fork parent
- * trimmed to the fork point). The single owner of "which session, which bytes"
- * — every surface that offers an attach-transcript toggle goes through here, so
- * the chip id and the file can't drift apart.
- *
- * `files` seeds the list so a caller with its own attachments keeps them.
- * Never throws: a missing transcript comes back as `attached: false` with a
- * reason the caller can surface.
- */
-export async function loadSessionTranscript(
-  typeId: TypeId,
-  { attach = true, files = [] }: { attach?: boolean; files?: File[] } = {},
-): Promise<{ files: File[]; sessionId?: string; attached: boolean; failureReason?: string }> {
-  const proc = await dataManager
-    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
+/** The transcript entity a share attaches for a process (any worker), as the backend's
+ *  ``session-transcript`` action names it; undefined when it has none. Never throws. */
+export async function loadSessionTranscript(typeId: TypeId): Promise<string | undefined> {
+  const action = new ActionInfo('session-transcript', AgenticProcess.type, typeId.id, 'POST');
+  const result = await dataManager
+    .callAction<Record<string, never>, { type_id: string | null }>(action)
     .catch(() => null);
-  const result = await loadOptionalTranscript(files, {
-    attach,
-    proc: proc ?? undefined,
-    projectPath: (proc as { workdir?: string } | null)?.workdir ?? undefined,
-  });
-  return {
-    files: result.files,
-    sessionId: proc?.session_id ?? undefined,
-    attached: result.attached,
-    failureReason: result.failureReason,
-  };
+  return result?.type_id ?? undefined;
 }
 
-/** Shared transcript prep for the AgenticProcess (session) shares: resolves the
- *  process, optionally attaches the raw jsonl, and rides the ClaudeTranscript
- *  (`claude_session-<id>`) as the chip + shared context. */
-async function prepareProcessTranscript(
-  typeId: TypeId,
-  o: SharePrepOptions,
-): Promise<SharePrepPayload> {
-  const { files, sessionId } = await loadSessionTranscript(typeId, {
-    attach: o.attachTranscript !== false,
-    files: o.files ?? [],
-  });
+/** Share prep for an AgenticProcess (session): the session's transcript is
+ *  the chip and rides the shared context alongside the process, so the
+ *  backend's mutual context linking connects the two. */
+async function prepareProcessTranscript(typeId: TypeId, o: SharePrepOptions): Promise<SharePrepPayload> {
+  const transcriptRef = o.attachTranscript === false ? undefined : await loadSessionTranscript(typeId);
 
-  const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
   const processRef = `${AgenticProcess.type}-${typeId.id}`;
   return {
     // The chip: the transcript when a session exists, else the process.
     assetReferences: [transcriptRef ?? processRef],
     sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
-    files: files.length > 0 ? files : undefined,
+    files: o.files?.length ? o.files : undefined,
   };
 }
 
@@ -258,10 +281,7 @@ async function prepareProcessTranscript(
  * When no session process is active yet (`typeId` is null), falls back to a
  * title-only invite with nothing attached, so the modal still works.
  */
-export function collaborateShareSource(
-  typeId: TypeId | null,
-  opts: { label?: string } = {},
-): ShareSource {
+export function collaborateShareSource(typeId: TypeId | null, opts: { label?: string } = {}): ShareSource {
   return {
     label: opts.label ?? 'Collaborate',
     typeLabel: 'COLLABORATE',
@@ -282,10 +302,7 @@ export function collaborateShareSource(
  * bytes ride as a FILE attachment in the body bundle — the same mechanism as
  * pasted screenshots. No entity is minted; the receiver gets the file itself.
  */
-export function fileShareSource(args: {
-  computeNodeTypeId: TypeId;
-  absPath: string;
-}): ShareSource {
+export function fileShareSource(args: { computeNodeTypeId: TypeId; absPath: string }): ShareSource {
   const fileName = args.absPath.split('/').pop() || args.absPath;
   return {
     label: fileName,
@@ -316,9 +333,7 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
     label,
     typeLabel,
     defaultTitle: label,
-    prepare: resolveOnce(() =>
-      Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
-    ),
+    prepare: resolveOnce(() => Promise.resolve({ assetReferences: [], sharedContextEntities: [] })),
   };
 }
 

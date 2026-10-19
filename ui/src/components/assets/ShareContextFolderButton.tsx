@@ -8,17 +8,17 @@ import { ShareToConversationDialog } from '@src/components/share-to-conversation
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import { folderShareSource } from '@src/hooks/share-sources';
 import { useGitShareGate } from '@src/hooks/use-git-share-gate';
-import type { ContextFolderTarget } from '@src/hooks/use-context-folder-for-rel';
+import type { DependencyFolderTarget } from '@src/hooks/use-dependency-for-rel';
 
 interface ShareContextFolderButtonProps {
-  /** The context folder to share — resolved by `useContextFolderForRel`. */
-  folder: ContextFolderTarget;
+  /** The dependency folder to share — resolved by `useDependencyForRel`. */
+  folder: DependencyFolderTarget;
   /** The scoped project — anchors the wizard + the conversation options. */
   project: Project | null | undefined;
 }
 
 /**
- * Share a context folder from the Assets header. Folders always travel over
+ * Share a dependency folder from the Assets header. Folders always travel over
  * Git, so the click preflights first: a folder that isn't Git-ready gets the
  * gate (set up git / commit & push) and only a ready one opens the share dialog.
  *
@@ -37,7 +37,7 @@ export function ShareContextFolderButton({
   const [phase, setPhase] = useState<'none' | 'gate' | 'share'>('none');
   // A folder the user is merely browsing has no linked Folder entity. Mint one
   // (get-or-create — Folder ids are deterministic) on click, so Share works on
-  // any directory without silently attaching it as a context folder.
+  // any directory without silently attaching it as a dependency folder.
   const [mintedTypeid, setMintedTypeid] = useState<string | null>(null);
   const [minting, setMinting] = useState(false);
   const typeid = folder.typeid ?? mintedTypeid;

@@ -1,0 +1,427 @@
+"""``Source`` — the session every source is, and ``CollectionSource`` — the read path most
+sources share.
+
+A source is constructed from one ``SourceBinding`` and does no I/O until entered. Entering
+prepares access; exiting releases it, closes what it opened, and never suppresses the body's
+exception. One instance holds at most one active session; sequential reopening is fine.
+Every source accepts notifications: one async ``on_change`` handler per session, delivered
+through ``notify`` one at a time and awaited to completion.
+
+Traits are ``ClassVar``s the runtime reads off the class; a source never branches on its own
+name and the runtime never branches on a source's.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import errno
+import inspect
+from abc import ABC, abstractmethod
+from contextvars import ContextVar
+from typing import Any, AsyncGenerator, Callable, ClassVar, Mapping, Optional, Sequence, TypeVar
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.sources import _paging
+from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.credentials import ResolvedSecrets
+from flow_sdk.sources.errors import AccessDenied, NotFound, SourceError, SourceUnavailable, Unsupported
+from flow_sdk.sources.values.event import ChangeHandler, DataSourceEvent
+from flow_sdk.sources.values.items import SourceItemSpec
+from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.page import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, DataPage
+from flow_sdk.sources.values.query import DataQuery
+
+T = TypeVar("T")
+
+_dispatching: ContextVar[Optional["Source"]] = ContextVar("flow_source_dispatching", default=None)
+
+
+class Altitude(StrEnum):
+    """Where a source's code runs. ``HOST`` — a subprocess the runtime spawns — is the default;
+    ``IN_PROCESS`` is reserved for generic local sources that read this machine's own tree."""
+
+    HOST = "host"
+    IN_PROCESS = "in_process"
+
+
+class Family(StrEnum):
+    """What a source's items ARE, and so where they land. Declared by the base a driver extends —
+    ``ObjectSource``, ``RecordSource`` or ``MessageSource`` (``flow_sdk.sources.families``) — never
+    set by hand. Capabilities (``ByteStore``, ``Mutable``, ``Messaging``) stay discovered."""
+
+    #: Files: reflected onto disk and indexed as assets; a page of changes is a ``SourceChange``.
+    OBJECT = "object"
+    #: Records: ``SourceItem`` rows, updated in place when their content changes.
+    RECORD = "record"
+    #: Messages: records threaded into the stream inbox, answered through the source.
+    MESSAGE = "message"
+
+
+class Source:
+    # ── traits ──────────────────────────────────────────────────────────────
+    #: The family, from the base the driver extends. Unset on ``Source`` itself: a driver must pick one.
+    family: ClassVar[Family]
+    #: Registry key and manifest ``name``.
+    provider: ClassVar[str] = ""
+    #: The origin ``kind`` this source stamps; defaults to ``provider``.
+    origin_kind: ClassVar[str] = ""
+    altitude: ClassVar[Altitude] = Altitude.HOST
+    page_size: ClassVar[int] = DEFAULT_PAGE_SIZE
+    #: The source hands back a ``resume_cursor`` the application may persist across sessions.
+    durable_cursor: ClassVar[bool] = False
+    #: The source reads BACKWARDS on demand: its query takes a ``before`` narrow and answers the page just
+    #: older than it, newest first — what a list paged past its oldest held row asks for. One page per ask (the
+    #: next ask moves ``before`` to the oldest it got; ``next_cursor`` may be None), never a backfill, and it never
+    #: moves the forward cursor. Undeclared, a ``before`` narrow is ``Unsupported``.
+    pages_backward: ClassVar[bool] = False
+    #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
+    attention_poll_seconds: ClassVar[Optional[int]] = None
+    #: A pass read from the start to the end lists the WHOLE collection (a table, a CRM object): a
+    #: record it no longer lists is GONE in the outside system, and the application drops its copy.
+    #: False for a source that lists a window (a feed's recent entries, a mailbox since last week),
+    #: where absence proves nothing.
+    lists_everything: ClassVar[bool] = False
+    #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
+    #: allows one request per interval declares 1.
+    pages_per_pass: ClassVar[Optional[int]] = None
+    #: The config field naming WHICH remote account a row serves.
+    identity_config_key: ClassVar[str] = "address"
+    #: The machine-level connection this source reads with, when the credential is not in the row.
+    connection: ClassVar[Optional[str]] = None
+    #: The typed config this driver takes (``flow_sdk.sources.config.SourceConfig``). The manifest's
+    #: ``config`` catalog holds only the form hints for these fields; the loader checks they agree.
+    Config: ClassVar[Optional[type["SourceConfig"]]] = None
+
+    # ── what the application asks the class ─────────────────────────────────
+    # Everything the application needs to know about ONE source, the source says itself — so no
+    # table outside its asset folder ever names it. Optional capabilities are methods a class
+    # defines when it has them, discovered with ``hasattr``: ``message_for`` (how the application's
+    # send arguments address this channel), ``choices_for`` (a field whose options are application
+    # state), ``webhook_challenge`` / ``webhook_account`` / ``events_from_webhook`` (push delivery),
+    # ``webhook_authentic`` (the provider's signature over a delivery's raw body; declared, it is required).
+
+    @classmethod
+    def build(cls, binding: SourceBinding) -> "Source":
+        """The configured source. A class that runs over an application transport (a hub, a mailbox,
+        a harness worker) builds it here, where the application — never a test — constructs it."""
+        return cls(binding)
+
+    @classmethod
+    def configure(cls, row: Any) -> Mapping[str, Any]:
+        """Config the application derives for a row beyond what it stores (the agent a mailbox serves)."""
+        return {}
+
+    def __init__(self, binding: SourceBinding) -> None:
+        if not isinstance(binding, SourceBinding):
+            raise TypeError(f"expected SourceBinding, got {type(binding).__name__}")
+        cls = type(self)
+        self.binding = binding
+        self._scope = Scope(cls.origin_kind_for(binding.config), cls.namespace_for(binding))
+        self._session: Optional[object] = None
+        self._handler: Optional[ChangeHandler] = None
+        self._notify_lock: Optional[asyncio.Lock] = None
+
+    # ── the one stream this source reads ────────────────────────────────────
+    def query(self) -> Optional[DataQuery]:
+        """What this source lists, from its config: a channel's history, a feed, a prefix. ``None`` for
+        a source whose listing needs no parameters."""
+        return None
+
+    def effective_query(self, narrow: Optional[Mapping[str, Any]] = None) -> Optional[DataQuery]:
+        """``query()`` with ``narrow`` applied for one read (``since``, ``prefix``). A narrowing names a
+        field the query has; a source with no query cannot be narrowed."""
+        query = self.query()
+        if not narrow:
+            return query
+        if "before" in narrow and not type(self).pages_backward:
+            raise Unsupported(f"{type(self).__name__} cannot read backwards")
+        if query is None:
+            raise ValueError(f"{type(self).__name__} lists without a query; nothing to narrow")
+        unknown = sorted(set(narrow) - set(type(query).model_fields))
+        if unknown:
+            raise ValueError(f"{type(query).__name__} has no field {unknown[0]!r} to narrow")
+        return query.model_copy(update=dict(narrow))
+
+    # ── what a subclass says about a configuration ──────────────────────────
+    @classmethod
+    def origin_kind_for(cls, config: Mapping[str, Any]) -> str:
+        return cls.origin_kind or cls.provider
+
+    @classmethod
+    def account_part(cls, config: Mapping[str, Any]) -> str:
+        """What narrows a source to PART of its account (one group of a number), or ``""`` for a source
+        that is its whole account. Two sources on one account are twins only when this agrees."""
+        return ""
+
+    @classmethod
+    def namespace_for(cls, binding: SourceBinding) -> str:
+        """The per-row scope prefix of every origin this source produces: the account it reads
+        as. A source whose ids repeat across containers (a Slack ``ts`` per channel) joins the
+        container on per origin (``origin(key, channel)``)."""
+        return binding.account_key
+
+    @property
+    def config(self) -> Mapping[str, Any]:
+        return self.binding.config
+
+    @property
+    def credentials(self) -> ResolvedSecrets:
+        return self.binding.credentials
+
+    @property
+    def effective_page_size(self) -> int:
+        return self.binding.page_size or type(self).page_size
+
+    def origin(self, key: str, *within: str) -> CloudOrigin:
+        """The identity of ``key`` within this source's scope, narrowed by ``within`` (the container
+        a provider's ids are unique in: a channel, a feed). No I/O."""
+        return self._scope.origin(key, *within)
+
+    # ── session ─────────────────────────────────────────────────────────────
+    async def __aenter__(self) -> "Source":
+        if self._session is not None:
+            raise RuntimeError(f"{type(self).__name__} session is already active")
+        self._session = object()
+        self._notify_lock = asyncio.Lock()
+        try:
+            await self._open()
+        except BaseException:
+            await self.__aexit__(None, None, None)
+            raise
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        self._session = None
+        self._handler = None
+        await self._close()
+
+    async def _open(self) -> None:
+        """Acquire session resources."""
+
+    async def _close(self) -> None:
+        """Release session resources, including anything still open."""
+
+    def _require_open(self) -> object:
+        if self._session is None:
+            raise RuntimeError(f"{type(self).__name__} session is not active")
+        return self._session
+
+    def _require_writable(self) -> None:
+        """Refuse a write to the remote before any I/O when the row is pull-only (``binding.read_only``)."""
+        if self.binding.read_only:
+            from flow_sdk.sources.errors import AccessDenied  # noqa: PLC0415
+
+            raise AccessDenied(f"{self.binding.name or type(self).__name__} source is read-only: it never writes back")
+
+    # ── notifications ───────────────────────────────────────────────────────
+    async def teardown(self) -> str:
+        """Undo what this source set up at its provider -- a webhook it registered, a subscription it made --
+        before the source (or the machine it runs on) goes. Open; its credentials are loaded. Returns a short
+        report ("" = nothing to undo). Must leave everything it did not set up alone. Default: nothing."""
+        return ""
+
+    def on_change(self, handler: ChangeHandler) -> None:
+        self._require_open()
+        if not _is_async_callable(handler):
+            raise TypeError("handler must be an async function")
+        if self._handler is not None:
+            raise RuntimeError("a change handler is already registered for this session")
+        self._handler = handler
+
+    async def notify(self, event: DataSourceEvent) -> None:
+        if not isinstance(event, DataSourceEvent):
+            raise TypeError(f"expected DataSourceEvent, got {type(event).__name__}")
+        session = self._require_open()
+        if _dispatching.get() is self:
+            raise RuntimeError("a change handler cannot notify its own source; it would wait on itself")
+        assert self._notify_lock is not None
+        async with self._notify_lock:
+            if self._session is not session:
+                raise RuntimeError("the session ended before this notification was handled")
+            if self._handler is None:
+                raise RuntimeError("no change handler is registered")
+            token = _dispatching.set(self)
+            try:
+                await self._handler(event)
+            finally:
+                _dispatching.reset(token)
+
+    # ── blocking I/O ────────────────────────────────────────────────────────
+    async def _blocking(
+        self,
+        fn: Callable[..., T],
+        /,
+        *args: object,
+        origin: Optional[CloudOrigin] = None,
+        undo: Optional[Callable[[T], object]] = None,
+    ) -> T:
+        """Run a blocking call in a worker thread and translate OS failures.
+
+        A thread cannot be interrupted. On cancellation the call is allowed to finish, its
+        result is handed to ``undo`` so nothing stays half-done, and only then does
+        ``CancelledError`` propagate — a cancelled operation never changes anything after it
+        raises.
+        """
+        future = asyncio.ensure_future(asyncio.to_thread(fn, *args))
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            await _settle(future, undo)
+            raise
+        except SourceError:
+            raise
+        except OSError as exc:
+            translated = self._translate(exc, origin)
+            if translated is exc:
+                raise
+            raise translated from exc
+
+    def _translate(self, exc: OSError, origin: Optional[CloudOrigin]) -> Exception:
+        """Map an OS failure to the family. A provider overrides for its own client's errors."""
+        if isinstance(exc, IsADirectoryError):
+            return exc
+        if exc.errno == errno.ENAMETOOLONG:
+            return ValueError(f"name is too long: {exc.filename}")
+        if isinstance(exc, PermissionError):
+            return AccessDenied(str(exc), origin=origin)
+        if isinstance(exc, FileNotFoundError):
+            return NotFound(str(exc), origin=origin)
+        return SourceUnavailable(str(exc), origin=origin)
+
+
+class CollectionSource(Source, ABC):
+    """Implement ``_lookup``, ``_scan`` and ``_item``; ``get``, ``fetch`` and ``iterate`` follow."""
+
+    supported_queries: ClassVar[tuple[type[DataQuery], ...]] = ()
+    page_type: ClassVar[type[DataPage]] = DataPage
+    #: The listing the current traversal pages: ``(session, query token, entries)``; None between sessions.
+    _listing: Optional[tuple[object, str, Sequence[tuple[str, Any]]]] = None
+
+    async def __aexit__(self, exc_type, exc, traceback) -> None:
+        self._listing = None        # a listing is a session's: never pinned past it
+        await super().__aexit__(exc_type, exc, traceback)
+
+    async def get(self, origin: CloudOrigin) -> Optional[SourceItemSpec]:
+        self._require_open()
+        key = self._key_of(origin)
+        raw = await self._lookup(key)
+        return None if raw is None else self._item(key, raw)
+
+    async def fetch(
+        self,
+        cursor: Optional[str] = None,
+        *,
+        page_size: Optional[int] = None,
+        narrow: Optional[Mapping[str, Any]] = None,
+    ) -> DataPage:
+        """One page. A fetch with no cursor SCANS the collection; a fetch that continues a cursor pages
+        the scan that cursor came from (kept for the session, per query) -- one listing per traversal,
+        whatever the page size, and every page of it from one consistent snapshot. A new traversal
+        (no cursor), a new session or another query scans again."""
+        session = self._require_open()
+        query = self.effective_query(narrow)
+        self._check_query(query)
+        limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        token = _paging.query_token(query)
+        after = None if cursor is None else _paging.decode(cursor, token)
+        listing = self._listing
+        if after is None or listing is None or listing[0] is not session or listing[1] != token:
+            listing = (session, token, await self._scan(query))
+            self._listing = listing
+        entries, last = _paging.slice_after(listing[2], after, limit)
+        return self.page_type(
+            items=tuple(self._item(key, raw) for key, raw in entries),
+            next_cursor=None if last is None else _paging.encode(last, token),
+        )
+
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[SourceItemSpec, None]:
+        cursor: Optional[str] = None
+        while True:
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
+            for item in page.items:
+                yield item
+            if (cursor := page.next_cursor) is None:
+                return
+
+    def _key_of(self, origin: object) -> str:
+        """The key of an origin this source would produce — exactly what ``origin(key)`` gives,
+        so a source that narrows its scope by default is answered like any other."""
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        if origin != self.origin(origin.key):
+            raise ValueError(f"{origin!r} is outside this source's scope")
+        return origin.key
+
+    def _check_query(self, query: object) -> None:
+        if query is None:
+            return
+        if not isinstance(query, DataQuery):
+            raise TypeError(f"expected DataQuery, got {type(query).__name__}")
+        if not isinstance(query, self.supported_queries):
+            raise Unsupported(f"{type(self).__name__} does not support {type(query).__name__}")
+
+    @abstractmethod
+    async def _lookup(self, key: str) -> Any:
+        """The raw state at ``key``, or ``None`` when the source establishes absence."""
+
+    @abstractmethod
+    async def _scan(self, query: Optional[DataQuery]) -> Sequence[tuple[str, Any]]:
+        """``(key, raw)`` pairs matching ``query`` (this source's ``query()``, possibly narrowed), sorted by key."""
+
+    @abstractmethod
+    def _item(self, key: str, raw: Any) -> SourceItemSpec:
+        """The concrete item for one raw entry."""
+
+
+class Scope:
+    """Maps a source's keys to origins and back; refuses origins from another scope."""
+
+    __slots__ = ("kind", "namespace")
+
+    def __init__(self, kind: str, namespace: str) -> None:
+        CloudOrigin(kind=kind, namespace="-", key="-")  # validate the kind eagerly
+        self.kind = kind
+        self.namespace = namespace
+
+    def origin(self, key: str, *within: str) -> CloudOrigin:
+        """``namespace`` joined with ``within`` — ``<account>/<container>``, or whichever exists."""
+        namespace = "/".join(part for part in (self.namespace, *within) if part)
+        return CloudOrigin(kind=self.kind, namespace=namespace, key=key)
+
+    def key(self, origin: object) -> str:
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        if origin.kind != self.kind or origin.namespace != self.namespace:
+            raise ValueError(f"{origin!r} is outside this source's scope")
+        return origin.key
+
+
+def positive_int(value: object, name: str, maximum: Optional[int] = None) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an int, got {type(value).__name__}")
+    if value <= 0:
+        raise ValueError(f"{name} must be positive")
+    if maximum is not None and value > maximum:
+        raise ValueError(f"{name} must be at most {maximum}")
+    return value
+
+
+def _is_async_callable(obj: object) -> bool:
+    return inspect.iscoroutinefunction(obj) or (callable(obj) and inspect.iscoroutinefunction(obj.__call__))
+
+
+async def _settle(future: "asyncio.Future[T]", undo: Optional[Callable[[T], object]]) -> None:
+    """Wait for ``future`` despite further cancellation, then undo a successful result."""
+    while not future.done():
+        try:
+            await asyncio.wait({future})
+        except asyncio.CancelledError:
+            continue
+    if undo is not None and not future.cancelled() and future.exception() is None:
+        undo(future.result())
+
+
+__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int"]

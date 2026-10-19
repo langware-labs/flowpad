@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core';
 /**
  * TimeCohortTabs - Pill-style tabs for selecting time periods.
  */
@@ -22,7 +23,7 @@ export function TimeCohortTabs({ selected, onSelect }: TimeCohortTabsProps) {
               : 'text-muted-foreground hover:text-foreground'
           }`}
         >
-          {cohort.label}
+          {i18n._(cohort.label)}
         </button>
       ))}
     </div>

@@ -1,32 +1,10 @@
 from datetime import datetime
 from typing import Any, List, Optional
 
-from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
-
-
-class TaskEventType(StrEnum):
-    TASK_CREATED = "task_created"
-    TASK_UPDATED = "task_updated"
-
-
-class TaskStatus(StrEnum):
-    TO_DO = "to_do"
-    IN_PROGRESS = "in_progress"
-    DONE = "done"
-
-
-class TaskType(StrEnum):
-    TASK = "Task"
-    ANALYSIS = "analysis"
-    SKILL_CREATION = "skill_creation"
-
-
-class TaskKind(StrEnum):
-    STANDARD = "standard"
-    GROUP = "group"
+from flow_sdk.fs_store.origin.field import OriginField
+from flow_sdk.schema.data_spec.task_spec import TaskKind, TaskStatus, TaskType
 
 
 class Task(Entity):
@@ -34,7 +12,7 @@ class Task(Entity):
     title: str = APIField("")
     # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
     # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)
@@ -47,13 +25,18 @@ class Task(Entity):
     reporter: Optional[str] = APIField(None)
     workspace_id: Optional[str] = APIField(None)  # Should be a reference to organisation entity
     task_type: str = APIField(TaskType.TASK)
-    # Group tasks: ``group`` = the overview task that owns one child ("member
-    # task") per contacts-group member; children stay ``standard``.
+    # GROUP-ONLY (``create_group_task`` is the sole writer of both): ``group`` =
+    # the overview task that owns one child ("member task") per contacts-group
+    # member; children stay ``standard``. Handing a task to ONE person does NOT
+    # touch these — that is a plain share (``task_assign_action``), one row, no
+    # flip. Anything reading them is rendering the group surface.
     kind: str = APIField(TaskKind.STANDARD)
-    # Name of the contacts group a ``group`` task was assigned to — shown as
+    # Name of the contacts group a ``group`` task was fanned out to — shown as
     # "Owner: <group_name>" on the overview task. Stamped by create-group-task.
     group_name: Optional[str] = APIField(None)
-    # Group-task parent pointer; "" = top-level. Children own only their
+    # Generic sub-task pointer; "" = top-level. NOT group vocabulary: the asset
+    # tree nests any task under any task with it, and ``search.py`` exports it for
+    # that. A group's member task is one USE of it, and such a child owns only its
     # status — every display field resolves from the parent at render time.
     parent_id: str = APIField("")
     # The member's deliverable (repo / PR / doc / app URL) is NOT a field — a
@@ -63,10 +46,10 @@ class Task(Entity):
     # the hub, and the owner (authorized on the child) pulls it during
     # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
-    tags: List[str] = APIField([])
+    tags: List[str] = APIField([], sharing=Sharing.PRIVATE)
     shared_by_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
-    my_process_id: Optional[str] = APIField(None)
+    my_process_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     shared_process_id: Optional[str] = APIField(None)
     # NOTE: spec_id, conversation_id, links — moved into the unified
     # ``context_entities`` list on the base ``Entity``. Read via
@@ -88,9 +71,9 @@ class Task(Entity):
     folder_name: Optional[str] = APIField(None)
     output_dir: Optional[str] = APIField(None)
     process_id: Optional[str] = APIField(None)
-    project_name: Optional[str] = APIField(None)
-    project_root: Optional[str] = APIField(None)
-    git_origin: Optional[GitOrigin] = APIField(None)
+    project_name: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    project_root: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    origin: OriginField = APIField(None, sharing=Sharing.PRIVATE)
     recipient_email: Optional[str] = APIField(None)
     result_uname: Optional[str] = APIField(None)
     sender_email: Optional[str] = APIField(None)
@@ -102,6 +85,54 @@ class Task(Entity):
     task_type_label: Optional[str] = APIField(None)
     team_space_id: Optional[str] = APIField(None)
     worker_session_id: Optional[str] = APIField(None)
+
+    #: Where the row lives. ``repo`` (a person's task): a folder asset in the project, in git.
+    #: ``instance`` (a task an agent delegated): the DB and this machine's record shadow only —
+    #: runtime bookkeeping never touches the project's git tree. ``flow task keep`` promotes one.
+    placement: str = APIField("repo", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+
+    def is_file_backed(self) -> bool:
+        return bool(self.asset_ref) or self.placement != "instance"
+
+    async def save(self, owner=None, notify: bool = True) -> "Task":
+        """Save, and record a local change of status, assignee or title as history (``task_changes``)."""
+        from flow_sdk.builtin import task_changes  # noqa: PLC0415
+
+        before = await task_changes.before(self)
+        saved = await super().save(owner, notify)
+        if before is not None:
+            await task_changes.record(saved, before)
+        return saved
+
+    async def find_existing_for_create(self) -> "Task | None":
+        """One message, at most one task: a create for a message already made a task ("Task it")
+        answers with that task — a double click, a second tab, or Send racing the bubble."""
+        if not self.origin_message:
+            return None
+        return next(iter(await Task.get_all({"origin_message": self.origin_message})), None)
+
+    # ── a delegated task: the task ledger (``flow_sdk/tasks/ledger.py`` is the one writer) ──
+    #: Who asked for it, as a typed ref: ``agent:<id>`` / ``user:<id>``.
+    creator: Optional[str] = APIField(None)
+    #: Who does it: ``subagent:<name>`` / ``agent:<id>`` / ``user:<email>``. Not ``assignee``,
+    #: which stays the human share field.
+    owner: Optional[str] = APIField(None)
+    #: The conversation the request came from — where the creator reports back. For a task handed to
+    #: a person (``Task.assign``) it is the conversation it was asked in, which opening the task opens.
+    #: PRIVATE: a local row id — a shared task's hub copy has no such field, and a save round-tripped
+    #: through the hub would otherwise come back without it.
+    origin_conversation: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The message it was made from ("Task it" on a conversation message) — PRIVATE for the same
+    #: reason as ``origin_conversation``: a local row id. One message, at most one task.
+    origin_message: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The creator's session (its process's target — a conversation, or its chat) — where task news
+    #: wakes it, so it answers with the memory of the request.
+    origin_session: Optional[str] = APIField(None)
+    budget_usd: Optional[float] = APIField(None)
+    budget_turns: Optional[int] = APIField(None)
+    cost_usd: Optional[float] = APIField(None)
+    #: The outcome in a sentence or two; files ride ``artifacts`` / ``output_dir``.
+    result: Optional[str] = APIField(None)
 
     # NOTE: per-subclass implicit context projections (project_id /
     # assignee / my_process_id / shared_process_id) used to live here as

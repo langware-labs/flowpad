@@ -1,4 +1,4 @@
-"""Tests for CodexCliOptions — Codex CLI switch and spawn scenarios."""
+"""Tests for CodexAgentOptions — Codex CLI switch and spawn scenarios."""
 
 import sys
 
@@ -10,7 +10,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10 compatibility
     import tomli as tomllib
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
-from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
 
 
 @pytest.fixture(autouse=True)
@@ -19,7 +19,7 @@ def force_posix(monkeypatch):
 
 
 def test_default_shell_string_uses_headless_json_exec():
-    cmd = CodexCliOptions(workdir="/repo")
+    cmd = CodexAgentOptions(workdir="/repo")
     result = cmd.to_shell_string()
 
     assert result.startswith("cd /repo && codex exec")
@@ -32,14 +32,14 @@ def test_default_shell_string_uses_headless_json_exec():
 
 
 def test_permission_mode_default_omits_bypass_flag():
-    cmd = CodexCliOptions(permission_mode="default", workdir="/repo")
+    cmd = CodexAgentOptions(permission_mode="default", workdir="/repo")
     result = cmd.to_shell_string()
 
     assert "--dangerously-bypass-approvals-and-sandbox" not in result
 
 
 def test_model_add_dirs_resume_and_skills_in_shell_string():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -59,18 +59,18 @@ def test_model_add_dirs_resume_and_skills_in_shell_string():
 
 
 def test_model_tier_persists_raw_and_emits_resolved_model():
-    cmd = CodexCliOptions(model="sm", workdir="/repo")
+    cmd = CodexAgentOptions(model="sm", workdir="/repo")
 
     assert cmd.model == "sm"
     assert cmd.to_json()["model"] == "sm"
 
     argv, _env = cmd.to_spawn_args()
-    assert argv[argv.index("-m") + 1] == "gpt-5.4-mini"
-    assert "-m gpt-5.4-mini" in cmd.to_shell_string()
+    assert argv[argv.index("-m") + 1] == "gpt-5.6-luna"
+    assert "-m gpt-5.6-luna" in cmd.to_shell_string()
 
 
 def test_json_spawn_args_read_prompt_from_stdin():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -103,7 +103,7 @@ def test_json_spawn_args_read_prompt_from_stdin():
 
 
 def test_interactive_spawn_args_use_bare_codex():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc-123",
         resume=True,
         model="gpt-5.2",
@@ -136,7 +136,7 @@ def test_interactive_spawn_args_use_bare_codex():
 
 
 def test_interactive_spawn_respects_non_bypass_permissions():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         permission_mode="default",
         json_stream=False,
         ephemeral=False,
@@ -161,7 +161,7 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     ],
 )
 def test_interactive_trust_override_encodes_exact_workdir_as_toml_data(workdir):
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir=workdir,
         json_stream=False,
         ephemeral=False,
@@ -180,7 +180,7 @@ def test_interactive_trust_override_uses_canonical_existing_workdir(tmp_path):
     alias = tmp_path / "alias"
     alias.symlink_to(real_workdir, target_is_directory=True)
 
-    argv, _ = CodexCliOptions(
+    argv, _ = CodexAgentOptions(
         workdir=str(alias),
         json_stream=False,
         ephemeral=False,
@@ -193,14 +193,39 @@ def test_interactive_trust_override_uses_canonical_existing_workdir(tmp_path):
 
 
 def test_headless_bypass_does_not_add_interactive_trust_override():
-    argv, _ = CodexCliOptions(workdir="/repo").to_spawn_args()
+    argv, _ = CodexAgentOptions(workdir="/repo").to_spawn_args()
 
     assert not any("trust_level" in arg for arg in argv)
     assert "check_for_update_on_startup=false" not in argv
+    assert "--dangerously-bypass-hook-trust" not in argv
+
+
+@pytest.mark.parametrize("json_stream", [False, True])
+def test_process_hook_trust_and_structured_overrides_are_launch_only_argv(json_stream):
+    cmd = CodexAgentOptions(json_stream=json_stream, bypass_hook_trust=True)
+    cmd.extra_config_overrides = [
+        ("features.hooks", True),
+        (
+            "hooks.UserPromptSubmit",
+            [{"hooks": [{"type": "command", "command": "flow hooks report"}]}],
+        ),
+    ]
+
+    argv, _ = cmd.to_spawn_args()
+
+    assert argv.count("--dangerously-bypass-hook-trust") == 1
+    overrides = [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "-c"]
+    assert "features.hooks=true" in overrides
+    hook_override = next(value for value in overrides if value.startswith("hooks.UserPromptSubmit="))
+    assert tomllib.loads(hook_override) == {
+        "hooks": {"UserPromptSubmit": [{"hooks": [{"type": "command", "command": "flow hooks report"}]}]}
+    }
+    assert "bypass_hook_trust" not in cmd.to_json()
+    assert "extra_config_overrides" not in cmd.to_json()
 
 
 def test_interactive_non_bypass_does_not_add_trust_override():
-    argv, _ = CodexCliOptions(
+    argv, _ = CodexAgentOptions(
         permission_mode="default",
         workdir="/repo",
         json_stream=False,
@@ -218,7 +243,7 @@ def test_pty_shell_string_uses_bare_codex_not_codex_exec():
     always emitted the headless shape so ``cmd_line`` lied about the launch
     command on every PTY codex tab.
     """
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir="/repo",
         model="gpt-5.2",
         add_dirs=["/extra"],
@@ -249,7 +274,7 @@ def test_pty_shell_string_matches_spawn_argv_token_for_token():
     (after shell-quoting) as ``to_spawn_args``. Catches future drift."""
     import shlex
 
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         workdir="/path with space",
         model="gpt-5.2",
         json_stream=False,
@@ -261,7 +286,7 @@ def test_pty_shell_string_matches_spawn_argv_token_for_token():
 
 
 def test_to_json_roundtrip():
-    cmd = CodexCliOptions(
+    cmd = CodexAgentOptions(
         session_id="abc",
         resume=True,
         model="gpt-5.2",
@@ -273,30 +298,52 @@ def test_to_json_roundtrip():
         json_stream=False,
         ephemeral=False,
     )
-    loaded = CodexCliOptions.from_json(cmd.to_json())
+    cmd.fork_session_id = "parent-session"
+    cmd.system_prompt_file = "/tmp/system-prompt"
+    cmd.developer_instructions = "launch derived"
+    cmd.extra_config_overrides = [("provider.name", "runtime")]
+    cmd.bypass_hook_trust = True
+    data = cmd.to_json()
+    loaded = CodexAgentOptions.from_json(data)
 
-    assert loaded.session_id == "abc"
-    assert loaded.resume is True
-    assert loaded.model == "gpt-5.2"
-    assert loaded.permission_mode == "default"
-    assert loaded.skill_names == ["reviewer"]
-    assert loaded.workdir == "/repo"
-    assert loaded.env_vars == {"X": "1"}
-    assert loaded.add_dirs == ["/extra"]
-    assert loaded.json_stream is False
-    assert loaded.ephemeral is False
+    assert data == {
+        "workdir": "/repo",
+        "env_vars": {"X": "1"},
+        "worker_type": "codex",
+        "session_id": "abc",
+        "fork_session_id": "parent-session",
+        "resume": True,
+        "model": "gpt-5.2",
+        "permission_mode": "default",
+        "skill_names": ["reviewer"],
+        "add_dirs": ["/extra"],
+        "json_stream": False,
+        "ephemeral": False,
+    }
+    assert loaded.to_json() == data
+
+
+def test_launch_only_config_fields_emit_process_local_overrides():
+    cmd = CodexAgentOptions(workdir="/repo")
+    cmd.developer_instructions = "Review O'Brien's change"
+    cmd.extra_config_overrides = [("model_provider", "openrouter")]
+
+    argv, _env = cmd.to_spawn_args()
+
+    assert "developer_instructions=\"Review O'Brien's change\"" in argv
+    assert 'model_provider="openrouter"' in argv
 
 
 def test_factory_returns_codex_cli_cmd():
     cmd = factory({"resume": True, "session_id": "x"}, worker_type="codex")
 
-    assert isinstance(cmd, CodexCliOptions)
+    assert isinstance(cmd, CodexAgentOptions)
     assert cmd.resume is True
     assert cmd.session_id == "x"
 
 
 def test_from_json_defaults():
-    cmd = CodexCliOptions.from_json({})
+    cmd = CodexAgentOptions.from_json({})
 
     assert cmd.session_id is None
     assert cmd.resume is False
@@ -308,3 +355,33 @@ def test_from_json_defaults():
     assert cmd.add_dirs == []
     assert cmd.json_stream is True
     assert cmd.ephemeral is True
+
+
+@pytest.mark.parametrize("json_stream", [True, False])
+def test_worker_path_is_handed_to_codex_as_its_shell_path(json_stream, monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers.codex import cli as codex_cli
+
+    monkeypatch.setattr(codex_cli, "worker_bin_folder", lambda worker_type: None)
+    pinned = "/backend/.venv/bin:/usr/bin"
+    flags = CodexAgentOptions(workdir="/repo", env_vars={"PATH": pinned}, json_stream=json_stream)._emit_flags()
+
+    assert f'shell_environment_policy.set.PATH="{pinned}"' in flags
+    assert "allow_login_shell=false" in flags
+
+
+def test_shell_path_is_the_spawn_path_with_the_codex_folder_behind_the_pin(monkeypatch):
+    from flow_sdk.builtin.agentic_process.cli_drivers import cli_worker_base_driver as base
+    from flow_sdk.builtin.agentic_process.cli_drivers.codex import cli as codex_cli
+
+    monkeypatch.setattr(codex_cli, "worker_bin_folder", lambda worker_type: "/nvm/bin")
+    env_vars = {"PATH": "/backend/.venv/bin:/usr/bin"}
+    flags = CodexAgentOptions(workdir="/repo", env_vars=env_vars)._emit_flags()
+
+    spawn_path = base.insert_capability_path_dir("/nvm/bin", env_vars["PATH"])
+    assert f'shell_environment_policy.set.PATH="{spawn_path}"' in flags
+
+
+def test_no_worker_path_adds_no_shell_path_override():
+    flags = CodexAgentOptions(workdir="/repo")._emit_flags()
+
+    assert not any("shell_environment_policy" in f or "allow_login_shell" in f for f in flags)

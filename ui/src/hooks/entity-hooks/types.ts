@@ -1,35 +1,7 @@
-import { APIEntity, ApiError, ExpansionRequest } from '@sdk';
-
-export type useEntityOptions<T extends APIEntity<T>> = {
-  watch?: boolean;
-  query?: ExpansionRequest;
-  enabled?: boolean;
-  staleTime?: number;
-  refetchInterval?: number;
-  initialData?: T | null;
-};
-
-export interface UseEntityResult<T> {
-  data: T | null | undefined;
-  isLoading: boolean;
-  isFetching: boolean;
-  isError: boolean;
-  error: ApiError | null;
-  isSuccess: boolean;
-  /**
-   * True when the backend returned 404 for this typeId. This is a terminal
-   * "missing row" state, not a transient request error, so callers can render an
-   * unavailable target without re-fetching on every remount.
-   */
-  notFound: boolean;
-  refetch: () => Promise<void>;
-}
-
-export interface UseEntitiesQueryResult<T> {
-  data: T[] | undefined;
-  isLoading: boolean;
-  error: ApiError | null;
-  isError: boolean;
-  isSuccess: boolean;
-  refetch: () => Promise<void>;
-}
+/**
+ * Re-export of the SDK hook — see `@sdk/react/hooks/entity-hooks/types`.
+ *
+ * The UI once carried its own copy; the two drifted apart and were both loaded
+ * into the same bundle. The SDK module is the single implementation.
+ */
+export type { useEntityOptions, UseEntityResult, UseEntitiesQueryResult } from '@sdk/react/hooks/entity-hooks/types';

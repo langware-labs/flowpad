@@ -1,4 +1,8 @@
-import { ActionInfo, dataContext, dataManager } from '../index';
+import { lazyAssets, LazyAsset } from '../lazy';
+import { ActionInfo } from '../models/ActionInfo';
+import { dataContext } from '../FlowSync/context';
+import { dataManager } from '../APIEntity';
+import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models';
 
 /**
@@ -26,6 +30,9 @@ export interface RepoSummary {
 export interface BranchSummary {
   name: string;
   protected: boolean;
+  /** ISO timestamp of the branch's last commit; '' when the backend fell back
+   *  to REST, which reports no date at all. */
+  updated_at: string;
 }
 
 export interface RepoInvitation {
@@ -81,7 +88,11 @@ async function _fetchReposPage(provider: GitProvider, page: number): Promise<Lis
  *    so the caller can render an explicit error state.
  *  - Safety cap at 50 pages (≈5000 repos).
  */
-export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
+export function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
+  return lazyAssets.load(LazyAsset.GitRepos, { provider });
+}
+
+export async function fetchRepos(provider: GitProvider): Promise<RepoSummary[]> {
   const first = await _fetchReposPage(provider, 1);
   const all: RepoSummary[] = [...first.repos];
   let cursor = first.next_page;
@@ -103,13 +114,77 @@ export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
   return all;
 }
 
+/** Who the connected account is, and the organizations the provider reports for it. An org that
+ *  restricts third-party apps is not among them even for a member — the provider hides it. */
+export interface GitOrgs {
+  login: string;
+  orgs: { login: string; avatar_url: string }[];
+}
+
+/** One organization's repos the connected account can see. `restricted`: the org exists but shows
+ *  nothing — what an org that restricts third-party apps looks like (or an empty one). */
+export interface GitOrgRepos {
+  owner: string;
+  repos: RepoSummary[];
+  restricted: boolean;
+}
+
+export async function fetchOrgs(provider: GitProvider): Promise<GitOrgs> {
+  const user = _userInfo();
+  const info = new ActionInfo('repo', user.type, user.id, 'POST');
+  info.subpath = 'orgs';
+  info.bodyParameters = { provider };
+  const res = await dataManager.callAction<unknown, GitOrgs>(info);
+  if (!res || !Array.isArray(res.orgs)) throw new Error('Invalid /repo/orgs response');
+  return res;
+}
+
+/** Every page of one org's repos (same cursor walk and cap as `fetchRepos`). */
+export async function fetchOrgRepos(provider: GitProvider, owner: string): Promise<GitOrgRepos> {
+  const user = _userInfo();
+  const page = async (n: number) => {
+    const info = new ActionInfo('repo', user.type, user.id, 'POST');
+    info.subpath = 'org-repos';
+    info.bodyParameters = { provider, owner, page: n };
+    const res = await dataManager.callAction<unknown, ListReposPage & { restricted: boolean }>(info);
+    if (!res || !Array.isArray(res.repos)) throw new Error('Invalid /repo/org-repos response');
+    return res;
+  };
+  const first = await page(1);
+  const repos = [...first.repos];
+  let cursor = first.next_page;
+  let last = 1;
+  while (cursor != null && cursor > last && last < 50) {
+    const next = await page(cursor);
+    repos.push(...next.repos);
+    last = cursor;
+    cursor = next.next_page;
+  }
+  return { owner, repos, restricted: first.restricted };
+}
+
+/** Create an initialized private repository owned by the connected GitHub user. */
+export async function createPrivateRepo(provider: GitProvider, name: string): Promise<RepoSummary> {
+  const user = _userInfo();
+  const info = new ActionInfo('repo', user.type, user.id, 'POST');
+  info.subpath = 'create';
+  info.bodyParameters = { provider, name };
+  const res = await dataManager.callAction<unknown, { repo?: RepoSummary }>(info);
+  if (!res?.repo) throw new Error('Invalid /repo/create response');
+  return res.repo;
+}
+
 function _isBranchSummary(x: unknown): x is BranchSummary {
   if (!x || typeof x !== 'object') return false;
   const o = x as Record<string, unknown>;
   return typeof o.name === 'string';
 }
 
-export async function getBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
+export function getBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
+  return lazyAssets.load(LazyAsset.GitBranches, repo);
+}
+
+export async function fetchBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
   const user = _userInfo();
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'branches';
@@ -123,13 +198,23 @@ export async function getBranches(repo: { git_origin: GitOrigin }): Promise<Bran
     return res.filter(_isBranchSummary).map((b) => ({
       name: b.name,
       protected: Boolean(b.protected),
+      updated_at: typeof b.updated_at === 'string' ? b.updated_at : '',
     }));
   }
   console.warn('[git-providers] unexpected /repo/branches response shape', res);
   return [];
 }
 
-export async function getInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+export function getInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+  return lazyAssets.load(LazyAsset.GitInvitations, { provider });
+}
+
+export async function fetchInvitations(provider: GitProvider): Promise<RepoInvitation[]> {
+  // The hub's `repo` action serves branches/list/create and nothing else, so
+  // asking it for invitations earns a 500 on every clone-dialog open. Gated
+  // here rather than at the call site so `respondInvitation` and any future
+  // caller inherit the same answer: on a hub there are no invitations to show.
+  if (isHubOnly()) return [];
   const user = _userInfo();
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'invitations';
@@ -143,6 +228,7 @@ export async function respondInvitation(
   invitationId: number,
   action: 'accept' | 'decline',
 ): Promise<void> {
+  if (isHubOnly()) return;
   const user = _userInfo();
   const subpath = action === 'accept' ? 'invitation-accept' : 'invitation-decline';
   const info = new ActionInfo('repo', user.type, user.id, 'POST');

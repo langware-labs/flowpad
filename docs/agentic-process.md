@@ -26,7 +26,9 @@ The process has two independent axes, and it is important not to conflate them:
 | **Visibility** | `visible` | Is this process shown as a terminal tab? | tab-strip membership, footer worker chip, restart-recovery, the transcript-vs-terminal open path |
 
 These were historically the same flag (`headless == !visible`), and the
-chat⇄terminal toggle (`switch-mode`) still flips them **together** so the
+chat⇄terminal toggle drives both directions since FLOWPAD-2105 — though not
+through one endpoint: `→cli` is the `switch-mode` action, `→interactive` is
+`start()` / `open` — and either way it still flips them **together**, so the
 shorthand usually holds. But they are now separate `APIField`s with separate
 setters (`set-visible` vs the transport-carrying open/prompt paths), so code
 must route on the correct axis:
@@ -111,7 +113,7 @@ The backend entity stores the durable state:
 | `worker_status` | Computed field exposed on serialization from worker transcript/history. |
 | `ready_for_input` | Computed send-prompt predicate. |
 | `visible` | Tab visibility only — whether the process is shown as a terminal tab. **Not** the transport selector (that is `pty_mode`). Set on open (`true`) / close (`false`); also settable in isolation via `set-visible`. |
-| `pty_mode` | Durable transport intent: `true` → interactive PTY, `false` → headless JSON-stream. This is the routing key for `prompt`, queue cold-start, and the loader's PTY attach. Seeds `visible` at launch; the chat⇄terminal toggle keeps the two in lock-step. |
+| `pty_mode` | Durable transport intent: `true` → interactive PTY, `false` → headless JSON-stream. This is the routing key for `prompt`, queue cold-start, and the loader's PTY attach. Seeds `visible` at launch; the chat⇄terminal toggle keeps the two in lock-step in both directions. Only `_perform_open(visible=True)` sets it back to `True`; only `_enter_cli_mode` sets it to `False`. |
 | `shell_id` | Linked `Shell` entity when a terminal runtime exists. |
 | `cli_config` | Serialized CLI options, including model, permissions, chrome/debug/worktree, resume/fork metadata, add-dir, and agents. |
 | `workdir` | Worker working directory. |
@@ -129,12 +131,29 @@ discovery value — the same source actual spawns use) and
 `unknown`, never `logged_out`). The result also carries an `auth_mode`
 (`device` / `api`) describing how the harness authenticates.
 
-A harness can authenticate two ways, selected by the per-harness `Capability`
-row's persisted `auth_mode` field:
+A worker is funded one of three ways, and which one is decided per spawn by
+`resolve_llm_endpoint` (`cli_drivers/llm_source.py`) rather than read off a field.
+It returns an `LLMSource` — the one value type covering all three — carrying
+`eligible`/`reason`/`reason_code`, `auto`, `authority` and `origin`, so the same list
+the picker renders is the list a spawn chooses from, and a spawn failure is a rendering
+of it. Funding is layered on the status record (`flow_sdk/core/status`): a harness whose
+CLI is not installed is funded by nothing (`reason_code=not_installed`), and a device
+login funds a turn only once a probe has confirmed it — never presumed. A spawn (an
+action) probes a never-checked login first (`check_unchecked_login`); a GET never does.
+
+The ladder, most specific first: `AgenticProcess.llm_endpoint_typeid`, then
+`Project.llm_endpoint_typeid`, then the user's explicit `Capability.auth_mode` /
+`api_provider`, then the default order `device → api key → hub endpoint`. Everything
+explicit is a constraint that fails loudly when it cannot be honoured; only the default
+order yields. Resolution makes no network call.
+
+The three sources, of which the first two are selected by the per-harness `Capability`
+row's `auth_mode` field:
 
 * **Device login** (`auth_mode = "device"`, the default) — the vendor's
   link(+code) sign-in flow, driven through the `Capability` entity's
-  `device_login_spec` trait and `device-login`/`auth-status` actions.
+  `device_login_spec` trait and `device-login`/`auth-status` actions; its verdict is
+  the status record's `login`.
 * **API key** (`auth_mode = "api"`) — the harness spawns against a stored
   LLM-provider key instead of vendor credentials. The chosen provider lives in
   `Capability.api_provider`; the key is stored via `flow_sdk.lm_api`
@@ -145,6 +164,23 @@ row's persisted `auth_mode` field:
   `resolve_worker_api_auth` folds that env into the spawn via
   `apply_worker_secret_env` and overrides the model slug before argv is frozen.
   `auth-status` reports `logged_in` iff a key is stored for the provider.
+* **Hub `LLMEndpoint`** — the box spends a hub-authorized budget, signing with the
+  hub login key it already holds (there is no `lm_api.flowpad` secret; see
+  `flow_sdk/instance_settings/llm_endpoint.py`). The hub pushes the binding over the
+  `llm-endpoint` box action after login. That push is an **offer**, not an order: it
+  no longer rewrites `auth_mode`, so a user's stored choice survives it.
+
+  A **public** endpoint is the one hub budget that needs no hub login: the hub admits
+  whoever holds its id, so `flow llm user use <endpoint-id> [--hub URL]` binds a box that
+  never signed in. The binding carries `public` and the hub origin it was told about (a
+  loginless box has no hub of its own for `FLOWPAD_HUB_URL` to name); the resolver treats a
+  hub candidate as spendable when the box is logged in **or** the endpoint is public, and
+  the spawn sends `PUBLIC_ENDPOINT_TOKEN` — a placeholder the hub ignores, because every
+  harness refuses an empty token variable. See
+  [llm-endpoints §7](snippets/llm-endpoints.md).
+
+`Capability.auth_mode` is therefore a *preference* — what the user asked for, honoured
+while it is available — not a record of what a given spawn actually did.
 
 ## PTY Mode Runtime
 
@@ -224,8 +260,14 @@ caller awaits launchWizard(name, data)
   status: 'done' | 'cancel' | 'error'
   data: T | null
   errorStr?: string | null
+  answer?: WizardResult   // the same close, as every wizard run answers
 }
 ```
+
+`status` is the agent's own word and keeps a cancel apart from an error for the
+person. `answer` is the backend's `WizardResult` for the same close: `OK` with
+`data` as its value when done, `NOT_YET` with the reason otherwise — absent only
+for a result the UI made up locally (a failed prompt, a second wizard).
 
 There are two equivalent completion paths. The modal footer calls
 `completeWizard(process, result)`, which posts the generic `entity-event`
@@ -268,12 +310,23 @@ any -> failed
 - `error`
 - `unknown`
 
-`ready_for_input` is true only when:
+`ready_for_input` is true only when no turn is in flight and the process is up,
+freshly headless, or headless-idle (`is_ready_for_input` in
+`flow_sdk/builtin/agentic_process/status_predicates.py`):
 
 ```text
-status == running
-and worker_status in { idle, complete, interrupted }
+not is_turn_busy(p)
+and (
+  status == running
+  or (status == new and not pty_mode)
+  or (status == stopped and not pty_mode and session_id)
+)
 ```
+
+`is_turn_busy` counts a mid-turn `worker_status` only for PTY processes; headless
+turns are tracked by the prompt lock, the registered worker, or `_turn_in_flight` —
+except a worker *parked* on background work, which is registered but between turns
+(`busy` false, `background_work` true; see `agent/agentic_process_statuses.md` §3).
 
 The transcript parser lives in `flow_sdk/fs_records/agent_status.py`. The
 TypeScript mirror lives in `ts_sdk/src/process/agentic-types.ts`.
@@ -343,23 +396,17 @@ sends keyboard input through the shell's `PtyConnection`.
 ## Architectural concerns (transport vs visibility)
 
 The `visible`/`pty_mode` decoupling is real in the data model and the hot paths,
-but the derived helpers have not fully caught up, which leaves two mixed-axis
-seams worth tracking:
+and the two derived helpers that used to mix the axes now key on the transport:
 
-- **`WorkerMode` / `get_worker_mode` still derive from `visible`**
-  (`status_predicates.py:60`) even though the transport is `pty_mode`. Today this
-  is only used by `switch-mode` label parsing, where `visible` and `pty_mode`
-  move together, so it is correct by coincidence. If a caller ever sets
-  `visible` in isolation via `set-visible` (a supported action) and then reads
-  `get_worker_mode`, it will report the wrong transport. The safe fix is to
-  derive it from `pty_mode`.
-- **Restart recovery keys on `visible`, not `pty_mode`**
-  (`reconcile_orphaned_workers`, `pty_recovery.py:157`; `run_pty_recovery`
-  respawns visible PTYs). A process that is `pty_mode=true` but `visible=false`
-  (a live PTY whose tab was hidden via `set-visible`) would be treated as a
-  headless orphan and stamped `STOPPED` on restart rather than respawned. Whether
-  that state is reachable in practice depends on whether any UI path hides a PTY
-  tab without also flipping `pty_mode` — worth an explicit check.
+- **`WorkerMode` / `get_worker_mode` derive from `pty_mode`**
+  (`status_predicates.py:80`): a hidden live PTY (`visible=false`,
+  `pty_mode=true`) still reports `INTERACTIVE`, so `set-visible` alone never
+  changes the reported transport.
+- **Restart recovery keys on `pty_mode`, not `visible`**:
+  `reconcile_orphaned_workers` (`pty_recovery.py:126`) stamps only headless
+  (`pty_mode=false`) orphans `STOPPED`, and `run_pty_recovery`
+  (`pty_recovery.py:184`) respawns every `pty_mode=true` process — so a PTY whose
+  tab was hidden is respawned on restart, not treated as a headless orphan.
 - **`ExecutionMode.classify_execution_mode` labels the footer chip from
   `visible`.** A hidden-but-PTY process would be miscategorized as `BACKGROUND`.
 

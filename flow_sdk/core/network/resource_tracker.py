@@ -6,94 +6,38 @@ Sends websocket entity notifications for create/update/delete operations.
 import asyncio
 import json
 import logging
-import re
 from datetime import datetime, timezone
-from typing import Any, Optional
+from functools import lru_cache
+from itertools import count
+from typing import Any
 from uuid import uuid4
 
 from fastapi.encoders import jsonable_encoder
 
+from flow_sdk.tags.envelope import parse_target
+
 logger = logging.getLogger(__name__)
 
 
-class DataOpMessage:
-    """Entity operation message for WebSocket notifications."""
-
-    _counter: int = 0
-
-    def __init__(self, op: str, to_entity, data: Optional[dict] = None, message_id: Optional[str] = None):
-        """
-        Initialize DataOpMessage.
-
-        Args:
-            op: Operation type (create, update, delete)
-            to_entity: TypeId or string in format "type-id" or "type:id"
-            data: Optional entity data
-            message_id: Optional message ID (will be generated if not provided)
-        """
-        DataOpMessage._counter += 1
-        self.instance_id = DataOpMessage._counter
-        self.message_type = "data_op_msg"
-        self.message_id = message_id or str(uuid4())
-        self.op = op
-        # Handle TypeId or string
-        if isinstance(to_entity, str):
-            self.to_entity = to_entity
-        else:
-            # Assume it's a TypeId object
-            self.to_entity = f"{to_entity.type}-{to_entity.id}"
-        self.data = data
-
-    def to_dict(self) -> dict:
-        """Convert to JSON-serializable dict."""
-        msg = {
-            "message_type": self.message_type,
-            "message_id": self.message_id,
-            "instance_id": self.instance_id,
-            "op": self.op,
-            "to_entity": self.to_entity,
-        }
-        if self.data is not None:
-            msg["data"] = self.data
-        return msg
-
-
-# UUID pattern (8-4-4-4-12 hex chars) at the end of a "type-uuid" string.
-_UUID_SUFFIX_RE = re.compile(
-    r"^(.+)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
-    re.IGNORECASE,
-)
+# Producers each carry a private ``BaseMessage._counter``; those values cannot
+# order a mixed stream. Stamp the authoritative sequence at the one outbound
+# funnel, before per-connection send tasks can complete out of order. A
+# reconnect gets a new socket and the client resets its accepted-sequence map.
+_DATA_OP_WIRE_SEQUENCE = count(1)
 
 
 def _extract_entity_parts(to_entity: Any) -> tuple[str | None, str | None, str | None]:
     """Normalize to_entity into (type, id, type-id string)."""
-    entity_type: str | None = None
-    entity_id: str | None = None
-
-    if isinstance(to_entity, str):
-        if ":" in to_entity:
-            entity_type, entity_id = to_entity.split(":", 1)
-        elif "-" in to_entity:
-            # TypeId serializes as "type-uuid". UUIDs contain hyphens, so rsplit("-", 1)
-            # would incorrectly split inside the UUID. Use a UUID regex to find the
-            # boundary, preserving hyphenated type names like "compute-node".
-            m = _UUID_SUFFIX_RE.match(to_entity)
-            if m:
-                entity_type, entity_id = m.group(1), m.group(2)
-            else:
-                entity_type, entity_id = to_entity.rsplit("-", 1)
-    elif isinstance(to_entity, dict):
-        entity_type = to_entity.get("type")
-        entity_id = to_entity.get("id")
-    elif hasattr(to_entity, "type") and hasattr(to_entity, "id"):
-        entity_type = getattr(to_entity, "type")
-        entity_id = getattr(to_entity, "id")
-
+    entity_type, entity_id = parse_target(to_entity)
     if not entity_type or not entity_id:
         return None, None, None
+    return str(entity_type), str(entity_id), f"{entity_type}-{entity_id}"
 
-    type_id = f"{entity_type}-{entity_id}"
-    return str(entity_type), str(entity_id), type_id
+
+@lru_cache(maxsize=None)
+def _api_fields(entity_cls: type) -> tuple[str, ...]:
+    """An entity class's API fields — fixed per class, so asked once, not on every frame."""
+    return tuple(key for key in entity_cls.model_fields if entity_cls.is_api_field(key))
 
 
 def _to_message_dict(op_message: Any) -> dict:
@@ -101,16 +45,30 @@ def _to_message_dict(op_message: Any) -> dict:
     if isinstance(op_message, dict):
         data = op_message
     elif hasattr(op_message, "model_dump"):
-        data = op_message.model_dump()  # Pydantic models (api.messages.DataOpMessage)
-    elif hasattr(op_message, "to_dict"):
-        data = op_message.to_dict()  # Local compatibility wrapper
+        data = op_message.model_dump()  # DataOpMessage (api_types.messages)
     else:
         raise TypeError(f"Unsupported op_message type: {type(op_message)}")
 
     if not isinstance(data, dict):
         raise TypeError(f"Serialized op_message is not a dict: {type(data)}")
 
-    return jsonable_encoder(data, exclude_none=True)
+    message = jsonable_encoder(data, exclude_none=True)
+    # A cleared field is a value, not an absence. The client MERGES an update into
+    # the row it holds, so an API field dropped for being None (a reopened
+    # conversation's `ended_at`) kept its old value there until a reload.
+    entity = getattr(op_message, "data", None)
+    if callable(getattr(entity, "is_api_field", None)) and isinstance(message.get("data"), dict):
+        for key in _api_fields(type(entity)):
+            if key not in message["data"] and getattr(entity, key) is None:
+                message["data"][key] = None
+    return message
+
+
+def _prepare_data_op_message(op_message: Any) -> dict:
+    """Serialize one DataOp and assign its process-wide wire order."""
+    message = _to_message_dict(op_message)
+    message["instance_id"] = next(_DATA_OP_WIRE_SEQUENCE)
+    return message
 
 
 def _resolve_recipients(
@@ -139,7 +97,11 @@ def _resolve_recipients(
     # Webhook fallback: when no explicit watchers exist (e.g. webhook endpoints
     # with no user session), broadcast to all local connections so the frontend
     # entity queries receive the update.  Safe in desktop mode (single user).
-    if not recipients and op in ("update", "delete"):
+    # child_* ops route like update/delete — addressed to the parent, delivered
+    # to whoever watches it — so they need the same fallback. Without them here
+    # a child frame with no explicit parent watcher resolves to zero recipients
+    # and is silently dropped.
+    if not recipients and op in ("update", "delete", "child_created", "child_updated", "child_deleted"):
         return set(active_connections.keys())
 
     return recipients
@@ -181,7 +143,7 @@ async def _send_payloads(ws, payloads: list[dict]):
             logger.warning("Failed to send entity notification: %s", e)
 
 
-def _sync_handle_entity_op(op_message: DataOpMessage):
+def _sync_handle_entity_op(op_message: Any):
     """
     Synchronous wrapper to handle entity operations and queue WebSocket notifications.
 
@@ -199,7 +161,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
             logger.debug("No active connections, skipping notifications")
             return
 
-        message = _to_message_dict(op_message)
+        message = _prepare_data_op_message(op_message)
         op = str(message.get("op", "")).lower()
         entity_type, entity_id, type_id = _extract_entity_parts(message.get("to_entity"))
         if type_id:
@@ -213,11 +175,21 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         # file→process cross-link (private_context_entities) never reaches the
         # watching client and its cached entity goes stale.
         from flow_sdk.app.actions.watch_registry import get_watched_by
+
         explicit_watchers: set[str] = set()
-        if entity_type and entity_id and op in ("update", "delete"):
-            explicit_watchers = {
-                c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections
-            }
+        if (
+            entity_type
+            and entity_id
+            and op
+            in (
+                "update",
+                "delete",
+                "child_created",
+                "child_updated",
+                "child_deleted",
+            )
+        ):
+            explicit_watchers = {c for c in get_watched_by(f"{entity_type}:{entity_id}") if c in active_connections}
 
         # Skip notifications for non-API-visible entity types UNLESS an explicit
         # watcher asked for this entity. The create / broadcast-to-all fallback
@@ -225,6 +197,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         if entity_type and not explicit_watchers:
             try:
                 from flow_sdk.core.entity.entity_model import Entity
+
                 if not Entity.api_visible_by_type(entity_type):
                     logger.debug(f"Skipping WS notification for non-API-visible type: {entity_type}")
                     return
@@ -271,7 +244,7 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         logger.error(f"Error handling entity op: {e}", exc_info=True)
 
 
-async def handle_entity_op(op_message: DataOpMessage):
+async def handle_entity_op(op_message: Any):
     """Async wrapper to handle entity operations and notify watchers."""
     _sync_handle_entity_op(op_message)
 
@@ -339,12 +312,14 @@ async def broadcast_progress(to_entity: str, flow_data: dict) -> None:
         active_connections = get_all_connections()
         if not active_connections:
             return
-        message = json.dumps({
-            "message_type": "flow_data_msg",
-            "message_id": str(uuid4()),
-            "to_entity": to_entity,
-            "flow_data": flow_data,
-        })
+        message = json.dumps(
+            {
+                "message_type": "flow_data_msg",
+                "message_id": str(uuid4()),
+                "to_entity": to_entity,
+                "flow_data": flow_data,
+            }
+        )
         for ws in active_connections.values():
             try:
                 await ws.send_text(message)
@@ -368,14 +343,17 @@ def make_flow_message_progress_emitter(fm_id: str, phase: str):
 
     async def _emit(bytes_done: int, bytes_total: int) -> None:
         try:
-            await broadcast_progress(to_entity, {
-                "element_type": element_type,
-                "attributes": {
-                    "flow_message_id": fm_id,
-                    "bytes_done": bytes_done,
-                    "bytes_total": bytes_total,
+            await broadcast_progress(
+                to_entity,
+                {
+                    "element_type": element_type,
+                    "attributes": {
+                        "flow_message_id": fm_id,
+                        "bytes_done": bytes_done,
+                        "bytes_total": bytes_total,
+                    },
                 },
-            })
+            )
         except Exception:  # noqa: BLE001
             pass
 

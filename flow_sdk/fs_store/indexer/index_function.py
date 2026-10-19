@@ -31,8 +31,9 @@ from flow_sdk.fs_store.indexer.progress_table import (
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.fs_store.path_owners import PathOwnerIndex
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
+from flow_sdk.server.search_filters import PROJECT_LIKE_SCOPES, SCOPED_RECORD_TYPES, ScopeFilter
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
 # don't materialize records at all (USER_HOME_FOLDER, SYSTEM_ROOT, FOLDER,
@@ -50,6 +51,51 @@ _PROGRESS_HIDDEN_TYPES: set[RecordType] = {
 }
 
 _PROGRESS_THROTTLE_S = 0.2
+
+class _ProgressEmitter:
+    """Throttled progress fan-out for one indexer job.
+
+    ``index()`` and ``scan()`` build different tables (locked-in totals vs a
+    growing count), but the bookkeeping around them is identical: hold the
+    record type currently being walked, rebuild a table on demand, and drop
+    emits that arrive inside ``_PROGRESS_THROTTLE_S`` of the previous one
+    unless forced. ``rows_fn`` supplies the job's rows (already sorted) and
+    ``total_fn`` the table-level total for them.
+    """
+
+    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn, roots=()) -> None:
+        self._on_progress = on_progress
+        self._roots = tuple(r.path for r in roots)
+        self._job_name = job_name
+        self._rows_fn = rows_fn
+        self._total_fn = total_fn
+        self._last_emit_at = 0.0
+        self.current: "RecordType | None" = None
+
+    def table(self, text: str | None = None) -> IndexProgressTable:
+        rows = self._rows_fn()
+        current = self.current
+        return IndexProgressTable(
+            job_name=self._job_name,
+            rows=tuple(rows),
+            current=(str(current) if current is not None and current not in _PROGRESS_HIDDEN_TYPES else None),
+            done=sum(r.done for r in rows),
+            total=self._total_fn(rows),
+            text=text,
+            roots=self._roots,
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
+
+    async def emit(self, text: str | None = None, force: bool = False) -> None:
+        if self._on_progress is None:
+            return
+        now = time.perf_counter()
+        if not force and now - self._last_emit_at < _PROGRESS_THROTTLE_S:
+            return
+        self._last_emit_at = now
+        await self._on_progress(self.table(text=text))
+
+
 
 # Per chunk node budget for FSIndexer.scan(): amortizes asyncio.to_thread
 # dispatch cost across many node visits while still yielding the event loop
@@ -187,26 +233,40 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
-def ref_typeid(ref) -> str | None:
+def ref_typeid(
+    ref, owners: "PathOwnerIndex | None" = None, memo: "dict[tuple[str, str], str | None] | None" = None
+) -> str | None:
     """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
-    identity API. None when the ref is absent, isn't a repo asset, or has no id
-    resolver. The single ref→typeid primitive shared by the enclosure-parent
-    derivation (below) and the bundle's descendant collector."""
+    identity API. None when the ref is absent, isn't a repo asset, the type
+    refuses the path, or has no id resolver. The single ref→typeid primitive
+    shared by the enclosure-parent derivation (below) and the bundle's
+    descendant collector.
+
+    ``owners`` matters here: this resolves the PARENT folder asset, so minting
+    would stamp a fresh capsule into a skill/task folder and fork it on the
+    next walk. ``memo`` (per run) answers the same parent once."""
     if ref is None or ref.record_type is None:
         return None
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     rtype = str(ref.record_type)
+    key = (rtype, str(ref._path))
+    if memo is not None and key in memo:
+        return memo[key]
     if rtype not in SchemaRegistry.get_repo_types():
         return None
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+
     info = SchemaRegistry.get(rtype)
-    if info is None:
-        return None
     try:
-        rid = info.extract_id(ref) or info.mint_id(ref)
+        owner = owners.owner_for(rtype, key[1]) if owners is not None else None
+        rid = reconcile(info, info.layout_for(ref), owner, None, write=not ref.read_only, ref=ref)
     except Exception:
-        return None
-    return f"{rtype}-{rid}" if rid else None
+        rid = None
+    out = f"{rtype}-{rid}" if rid else None
+    if memo is not None:
+        memo[key] = out
+    return out
 
 
 def _is_async_walker(fn: Any) -> bool:
@@ -228,6 +288,22 @@ def _is_async_walker(fn: Any) -> bool:
 _SCOPE_UNREADABLE: tuple[None, None] = (None, None)
 
 
+def _read_disk_metadata(type_name: str, eid: str) -> dict | None:
+    """A record home's metadata.json as a dict, or ``None`` when it is missing /
+    unreadable / not a dict."""
+    import json  # noqa: PLC0415
+
+    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
+
+    try:
+        blob = json.loads((shadow_dir_for(type_name, eid) / "metadata.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(blob, dict):
+        return None
+    return blob["data"] if isinstance(blob.get("data"), dict) else blob
+
+
 def _read_disk_record_scope(
     type_name: str,
     eid: str,
@@ -240,24 +316,9 @@ def _read_disk_record_scope(
     match a narrowing filter (safer for DELETE: corrupt metadata can't bleed
     cross-scope).
     """
-    import json  # noqa: PLC0415
-
-    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
-
-    _META_JSON = "metadata.json"
-
-    path = shadow_dir_for(type_name, eid) / _META_JSON
-    try:
-        raw = path.read_text(encoding="utf-8")
-    except (FileNotFoundError, OSError):
+    data = _read_disk_metadata(type_name, eid)
+    if data is None:
         return _SCOPE_UNREADABLE
-    try:
-        blob = json.loads(raw)
-    except json.JSONDecodeError:
-        return _SCOPE_UNREADABLE
-    if not isinstance(blob, dict):
-        return _SCOPE_UNREADABLE
-    data = blob.get("data", blob) if isinstance(blob.get("data"), dict) else blob
     return (str(data.get("scope") or ""), str(data.get("project_id") or ""))
 
 
@@ -294,11 +355,127 @@ def _scope_filter_keeps(
         return False
     if scope == "user":
         return sf.user
-    if scope == "project":
+    if scope in PROJECT_LIKE_SCOPES:
         record_projects = tuple(getattr(sf, "record_projects", ()) or ())
         return pid in set((*sf.projects, *record_projects))
     # Genuinely-empty scope (scope == "" or other falsy).
     return _empty_scope_keeps(type_name)
+
+
+@dataclass
+class OwnerPreload:
+    """What the store already knows about a set of types, read ONCE before a
+    walk touches a path: the live row ids per type (skip-fresh's row check),
+    each id's stored path and scope (dedup / freshness), the stored
+    occurrences the collision resolver re-validates, and the path→owner index
+    that keeps a source whose capsule was wiped on its OWN row instead of
+    minting a fork. Every consumer of the index pipeline — the walk and the
+    resource-browser scan alike — starts from this one preload."""
+
+    ids: dict[str, set[str]] = field(default_factory=dict)
+    paths: dict[str, dict[str, str]] = field(default_factory=dict)
+    scopes: dict[str, dict[str, tuple[str | None, str | None]]] = field(default_factory=dict)
+    occurrences: StoredOccurrenceMap = field(default_factory=StoredOccurrenceMap)
+    owners: PathOwnerIndex = field(default_factory=lambda: PathOwnerIndex({}))
+
+
+
+async def preload_owners(driver: Any, type_names: "Collection[Any]") -> OwnerPreload:
+    """One lean SELECT per type into an :class:`OwnerPreload`. A driver
+    without ``list_entity_sources_by_type`` or a failing preload yields an
+    EMPTY preload — identity then degrades to the historic carrier-or-mint
+    behaviour and freshness to sentinel-only, never to adopting a wrong row."""
+    preload = OwnerPreload()
+    if not hasattr(driver, "list_entity_sources_by_type"):
+        return preload
+    try:
+        for rt in type_names:
+            rows = await driver.list_entity_sources_by_type(str(rt))
+            preload.ids[str(rt)] = set(rows.keys())
+            preload.paths[str(rt)] = {rid: src[0] for rid, src in rows.items() if src and src[0]}
+            preload.scopes[str(rt)] = {rid: (src[1], src[2]) for rid, src in rows.items()}
+            type_occurrences = stored_asset_occurrences(str(rt), rows)
+            preload.occurrences.update(type_occurrences)
+            preload.occurrences.synthetic_keys.update(getattr(type_occurrences, "synthetic_keys", ()))
+    except Exception:
+        logging.warning(
+            "[FSIndexer] could not preload DB ids for skip-fresh row check; "
+            "falling back to sentinel-only freshness",
+            exc_info=True,
+        )
+        return OwnerPreload()
+    preload.owners = PathOwnerIndex.from_preload(preload.paths)
+    # Only a preload that HELD rows yet yielded no owners is a problem — a
+    # first index legitimately has type keys with no rows behind them.
+    if any(preload.paths.values()) and not preload.owners:
+        logging.warning(
+            "[FSIndexer] preloaded %d row(s) but resolved no path owners; "
+            "a source whose identity carrier was wiped will mint a NEW id and fork its entity",
+            sum(len(v) for v in preload.paths.values()),
+        )
+    return preload
+
+
+def resolve_ref_identity(info: Any, ref: FSRef, preload: OwnerPreload) -> tuple[str, str]:
+    """``(entity_id, canonical_path)`` for one walked ref — the ONE identity
+    step of the pipeline. Owner-first: a source whose capsule was wiped by a
+    full-content rewrite is NOT a new asset; minting there forks the entity and
+    the same-path sweep then reaps the row every reference points at. Raises
+    when the type refuses the path (``UnclaimedPath``) or the carrier fails;
+    no fallback id may bypass ``TypeInfo``."""
+    from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    rtype = str(ref.record_type)
+    canon_path = canonical_posix_path(str(ref._path))
+    ref_id = reconcile(
+        info,
+        info.layout_for(ref),
+        preload.owners.owner_for(rtype, str(ref._path), canon_path),
+        preload.ids.get(rtype),
+        write=not ref.read_only,
+        ref=ref,
+    )
+    return ref_id, canon_path
+
+
+def resolve_collisions(
+    candidates: "list[Any]",
+    stored: "StoredOccurrenceMap | dict",
+    live_identity: "Callable[[Any], tuple[str, str, str] | None]",
+):
+    """One primary path per ``(type, id)`` across the live ``candidates`` and
+    the ``stored`` occurrences — ``resolve_asset_collisions`` with the stored
+    side re-validated READ-ONLY: a stored path counts only while its file still
+    carries that very id. ``live_identity`` names a live candidate's
+    ``(type, id, canonical path)`` (None ⇒ unresolved). Synchronous and
+    file-bound; run it off the loop."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.utils.git import git_assets_introduction  # noqa: PLC0415
+
+    stored_identities: dict[str, tuple[str, str, str]] = {}
+    for (type_name, entity_id), occurrences in stored.items():
+        info = SchemaRegistry.get(type_name)
+        if info is None:
+            continue
+        for occurrence in occurrences:
+            try:
+                path = occurrence.path
+                if not Path(path).exists():
+                    continue
+                rid = info.read_id(FSRef(path, record_type=RecordType(type_name)))
+                if rid == entity_id:
+                    stored_identities[path] = (type_name, entity_id, path)
+            except Exception:
+                continue
+
+    def identity(candidate):
+        if isinstance(candidate, str):
+            return stored_identities.get(canonical_posix_path(candidate))
+        return live_identity(candidate)
+
+    return resolve_asset_collisions(candidates, stored, identity, git_assets_introduction, datetime.now(timezone.utc))
 
 
 def _same_path_dupe_groups(
@@ -329,28 +506,38 @@ def _same_path_dupe_groups(
     return out
 
 
-def _db_missing_orphans(
+def _source_gone_orphans(
+    type_name: str,
+    candidates: set[str],
     db_rows: dict[str, tuple],
-    seen: set[str],
-    disk_ids: set[str],
 ) -> set[str]:
-    """DB-row orphan candidates among ``db_rows``.
+    """The orphans among ``candidates`` — ids this walk did not see.
 
-    Obeys the strict orphan definition (``FSRecord.orphan``): a DECLARED
-    source (asset_ref) that no longer exists. Rows without an asset_ref
-    aren't file-backed → never orphan. Rows whose asset_ref still exists are
-    alive even when the walk derived a different id for that file (e.g. an
-    API-minted v4 row beside a path-minted v5 twin) — id-set arithmetic alone
-    would misclassify those as orphan. Stat-per-row — callers run this
-    off-loop via ``asyncio.to_thread``.
+    Not seeing a record is not the same as its source being gone: a walk covers
+    the roots it was given, and a record under any other root (the shipped
+    system project, a project outside the scope) goes unseen with its file
+    right where it was. So every candidate, whether it has a record home on
+    disk or only a DB row, obeys the strict orphan definition
+    (``FSRecord.orphan``): a DECLARED source (asset_ref) that no longer
+    exists. The declaration is read from the row, else from the record home's
+    metadata.json. A record that declares no source isn't file-backed → never
+    orphan. A source under an UNREACHABLE root (an unmounted volume) is not
+    gone either — absence there is not deletion. Stat-per-candidate — callers
+    run this off-loop via ``asyncio.to_thread``.
     """
+    from flow_sdk.fs_store.path_utils import source_gone  # noqa: PLC0415
+
+    def _declared_source(eid: str) -> str:
+        row = db_rows.get(eid)
+        if row:
+            return str(row[0] or "")
+        return str((_read_disk_metadata(type_name, eid) or {}).get("asset_ref") or "")
+
     return {
         eid
-        for eid, source in db_rows.items()
-        if (aref := source[0] if source else None)
-        and eid not in seen
-        and eid not in disk_ids
-        and not Path(str(aref)).exists()
+        for eid in candidates
+        # An unreachable root is not a deletion — see ``source_gone``.
+        if source_gone(_declared_source(eid))
     }
 
 
@@ -378,7 +565,7 @@ def _scope_filtered_orphans(
         scope, pid = row[1], row[2]
         if scope == "user":
             return sf.user
-        if scope == "project":
+        if scope in PROJECT_LIKE_SCOPES:
             return str(pid or "") in sf_projects
         # Empty/None scope.
         return _empty_scope_keeps(type_name)
@@ -418,6 +605,39 @@ class FSIndexer:
 
     def add_root(self, node: FSRef) -> None:
         self._roots.append(node)
+
+    def terminal_output_types(self) -> list[RecordType]:
+        """The record types this indexer WRITES — derived from its own graph.
+
+        Union of every registered function's declared outputs, kept when the
+        type has a ``from_disk_fn``: the walker emits it AND the registry can
+        turn the ref into a row. That parser slot is the whole test, and it is
+        what drops the traversal scaffolds ``folder``, ``claude_hook_source``
+        and ``mcp_server_source`` — they are emitted only to be walked further,
+        and nothing parses them into a record.
+
+        Returned in registry order, so positional slices (``[:limit_types]``)
+        are deterministic across processes. A function registered with
+        ``output_type=None`` contributes nothing here: it declared no output,
+        so there is nothing to derive.
+        """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        emitted: set[str] = set()
+        for fns in self._functions.values():
+            for _fn, output_types in fns:
+                if output_types is None:
+                    continue
+                emitted.update(str(t) for t in output_types)
+        out: list[RecordType] = []
+        for name in SchemaRegistry.get_all_types():
+            if name not in emitted:
+                continue
+            info = SchemaRegistry.get(name)
+            if info is None or not _has_dispatch(info):
+                continue
+            out.append(RecordType(name))
+        return out
 
     def _compute_needed_output_types(self, requested: tuple[RecordType, ...]) -> set[RecordType] | None:
         """Reverse-reachability over the registration graph.
@@ -510,12 +730,12 @@ class FSIndexer:
         # Imports localized to break cycles
         from flow_sdk.db import get_db_driver
         from flow_sdk.db import session as _db_session
+        from flow_sdk.db.drivers.sqlite.connection import writers_waiting, yield_to_waiting_writers
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-        # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
-        # sentinel (``index_required``). The per-record index loop makes ZERO
-        # DB reads — it never queries the store it produces. Orphan detection
-        # (post-loop) unions the record homes on disk
+        # Skip-fresh combines the on-disk ``.hash`` sentinel with preloaded
+        # row existence and ownership. The per-record loop makes no DB reads.
+        # Orphan detection (post-loop) unions the record homes on disk
         # (``_discover_records_dir_ids``) with the type's DB row ids (one lean
         # SELECT per type) so rows without a shadow dir are still sweepable.
 
@@ -545,6 +765,9 @@ class FSIndexer:
                 "errors": 0,
                 "duration_ms": 0.0,
                 "skipped": 0,
+                # Files parsed this run. ``indexed`` counts RECORDS, and one file can
+                # yield several, so progress counts files to stay on the files total.
+                "parsed_refs": 0,
                 "orphans_found": 0,
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
@@ -560,52 +783,35 @@ class FSIndexer:
         # gone. Populated before the skip/index decision so a fresh-skip counts.
         seen_ids: dict[RecordType, set[str]] = {}
         fts_batch: list = []
-        current_rt: RecordType | None = None
-        last_emit_at = 0.0
-
-        def make_table(text: str | None = None) -> IndexProgressTable:
+        def index_rows() -> list[TypeProgressRow]:
             rows: list[TypeProgressRow] = []
             for rt, total in per_type_totals.items():
                 if rt in _PROGRESS_HIDDEN_TYPES:
                     continue
                 acc = per_type_counts[rt]
-                done = int(acc["indexed"]) + int(acc["skipped"])
                 rows.append(
                     TypeProgressRow(
                         type_name=str(rt),
-                        done=done,
+                        done=int(acc["parsed_refs"]) + int(acc["skipped"]),
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
                     )
                 )
             rows.sort(key=lambda r: -r.total)
-            current_name = (
-                str(current_rt) if current_rt is not None and current_rt not in _PROGRESS_HIDDEN_TYPES else None
-            )
-            return IndexProgressTable(
-                job_name="index",
-                rows=tuple(rows),
-                current=current_name,
-                done=sum(r.done for r in rows),
-                total=sum(r.total for r in rows),
-                text=text,
-                ts=datetime.now(timezone.utc).isoformat(),
-            )
+            return rows
 
-        async def emit(text: str | None = None, force: bool = False) -> None:
-            nonlocal last_emit_at
-            if on_progress is None:
-                return
-            now = time.perf_counter()
-            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
-                return
-            last_emit_at = now
-            await on_progress(make_table(text=text))
+        progress = _ProgressEmitter(
+            on_progress,
+            job_name="index",
+            rows_fn=index_rows,
+            roots=opts.roots if opts.roots is not None else self._roots,
+            total_fn=lambda rows: sum(r.total for r in rows),
+        )
 
         # Initial snapshot — totals known, all done=0. Lets the UI render the
         # full table immediately instead of waiting for the first record.
-        await emit(force=True)
+        await progress.emit(force=True)
 
         # Hoist a single DB session over the entire per-record loop + FTS
         # flush. The driver's `_session_ctx` contextvar handshake makes
@@ -644,29 +850,12 @@ class FSIndexer:
         # existing entity ids per dispatchable type — one lean SELECT each —
         # and gate freshness on membership. An empty ``existing_db_ids`` means
         # "couldn't enumerate" → fall back to sentinel-only (prior behaviour).
-        existing_db_ids: dict[str, set[str]] = {}
-        # ``{type: {id: asset_ref}}`` — the incumbent path an id already lives at.
-        # Powers dedup-on-adopt (move vs copy). Same lean SELECT as the id set.
-        existing_db_paths: dict[str, dict[str, str]] = {}
-        stored_occurrences = StoredOccurrenceMap()
-        if hasattr(driver, "list_entity_sources_by_type"):
-            try:
-                for rt in per_type_totals:
-                    rows = await driver.list_entity_sources_by_type(str(rt))
-                    existing_db_ids[str(rt)] = set(rows.keys())
-                    existing_db_paths[str(rt)] = {rid: src[0] for rid, src in rows.items() if src and src[0]}
-                    type_occurrences = stored_asset_occurrences(str(rt), rows)
-                    stored_occurrences.update(type_occurrences)
-                    stored_occurrences.synthetic_keys.update(getattr(type_occurrences, "synthetic_keys", ()))
-            except Exception:
-                logging.warning(
-                    "[FSIndexer] could not preload DB ids for skip-fresh row check; "
-                    "falling back to sentinel-only freshness",
-                    exc_info=True,
-                )
-                existing_db_ids.clear()
-                existing_db_paths.clear()
-                stored_occurrences.clear()
+        preload = await preload_owners(driver, per_type_totals)
+        existing_db_ids = preload.ids
+        existing_db_paths = preload.paths
+        stored_occurrences = preload.occurrences
+        path_owners = preload.owners
+        parent_typeids: dict[tuple[str, str], str | None] = {}   # ref_typeid memo for this run
 
         # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
         # one id at two paths): paths already claimed by MORE THAN ONE row.
@@ -697,10 +886,17 @@ class FSIndexer:
 
         project_mounts = await load_project_mounts()
         # No nesting anywhere → every walk root's own project is already the
-        # deepest containing mount, so drop the snapshot and let the stamp
-        # site stay a straight chain-inherit (no per-record realpath).
-        if not has_nested_project_mounts(project_mounts):
-            project_mounts = ()
+        # deepest containing mount, so a project-rooted ref stays a straight
+        # chain-inherit (no per-record realpath). A ref with NO project still
+        # checks: a user-scope walk (the one-shot scan of a freshly cloned
+        # project, a context folder) can reach into a project's folder.
+        nested_mounts = has_nested_project_mounts(project_mounts)
+        # A walk run FOR a project (POST /graph/project/<id>/…, e.g. add-context-dir)
+        # leaves a record with no project as it is: the save then stamps the
+        # requesting project (Entity._resolve_scope_project) — who linked the folder
+        # owns what it brings. Only a walk no project asked for (the one-shot scan
+        # of a fresh clone) files such a record under the project whose folder it is in.
+        requested_by_project = _walk_requested_by_project()
 
         async def _flush_fts() -> None:
             """Flush the accumulated FTS batch (if any) and reset it."""
@@ -717,12 +913,31 @@ class FSIndexer:
             only after its row is durably committed, so a crash before commit
             leaves no sentinel (skip-fresh re-indexes next run). Every commit
             site must go through here — never stamp ``_pending_hashes`` ad hoc.
+            It also restarts the batch count: the writer lock is free again.
             """
+            nonlocal _since_commit
             await _flush_fts()
             await _idx_session.commit()
+            _since_commit = 0
             for pr in _pending_hashes:
                 pr.write_hash()
             _pending_hashes.clear()
+
+        async def _hand_over_if_waited_on() -> None:
+            """Commit early and let a queued writer in before this run writes again.
+
+            The batch keeps the writer lock for up to _INDEX_COMMIT_BATCH records
+            of parse + link resolution + disk writes — seconds on a cold index —
+            and the busy handler never gets a waiter in on the gap between two
+            batches (see ``writers_waiting``). Checked once per record, so a
+            user's write waits for at most the record in hand. Only while this
+            run holds writes (``_since_commit``): with nothing written since the
+            last commit it holds no lock, and there is nothing to hand over.
+            """
+            if not _since_commit or not writers_waiting():
+                return
+            await _commit_batch()
+            await yield_to_waiting_writers()
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -734,9 +949,8 @@ class FSIndexer:
             """
             out: list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]] = []
             for ref, info in items:
-                canon_path = canonical_posix_path(str(ref._path))
                 try:
-                    ref_id = info.extract_id(ref) or info.mint_id(ref)
+                    ref_id, canon_path = resolve_ref_identity(info, ref, preload)
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the
@@ -758,6 +972,7 @@ class FSIndexer:
                     ref_id = None
                     probe = None
                     fresh = False
+                    canon_path = canonical_posix_path(str(ref._path))
                 out.append((ref, info, ref_id, probe, fresh, canon_path))
             return out
 
@@ -768,43 +983,44 @@ class FSIndexer:
             chunk = dispatchable[chunk_start : chunk_start + _PROBE_CHUNK_REFS]
             all_probed.extend(await asyncio.to_thread(_probe_chunk, chunk))
 
-        def _resolve_occurrences():
-            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-            from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
+        # The resolver re-validates every stored occurrence it is handed by
+        # re-reading the file's identity carrier, so handing a SCOPED run the
+        # whole corpus prices a one-file project index at one frontmatter read
+        # per record on the machine — and the auto-index fires one such run per
+        # project selection. A scoped run can only change the groups it walked:
+        # keep a key when this run holds a live candidate for it, or when a
+        # stored path lies under a walked root (so a deletion inside the scope
+        # is still pruned). Everything else belongs to some other root's run.
+        # An unscoped run keeps the full view: it is the sweep that prunes what
+        # no root reaches any more.
+        resolver_occurrences = stored_occurrences
+        if opts.roots is not None or opts.scope_filter is not None:
+            walk_roots = list(opts.roots) if opts.roots is not None else self._roots
+            walk_prefixes = tuple(
+                canonical_posix_path(str(root._path)).rstrip("/") + "/" for root in walk_roots
+            )
+            walked_keys = {
+                (str(ref.record_type), ref_id) for ref, _info, ref_id, _probe, _fresh, _canon in all_probed if ref_id
+            }
 
-            stored_identities: dict[str, tuple[str, str, str]] = {}
-            for (type_name, entity_id), occurrences in stored_occurrences.items():
-                info = SchemaRegistry.get(type_name)
-                if info is None:
-                    continue
-                for occurrence in occurrences:
-                    try:
-                        path = occurrence.path
-                        if not Path(path).exists():
-                            continue
-                        rid = info.extract_id(FSRef(path, record_type=RecordType(type_name)))
-                        if rid == entity_id:
-                            stored_identities[path] = (type_name, entity_id, path)
-                    except Exception:
-                        continue
+            def _under_walk(path: str) -> bool:
+                return any(path == prefix[:-1] or path.startswith(prefix) for prefix in walk_prefixes)
 
-            def identity(candidate):
-                if isinstance(candidate, str):
-                    return stored_identities.get(canonical_posix_path(candidate))
-                ref, _info, ref_id, _probe, _fresh, canon_path = candidate
-                if ref_id is None:
-                    return None
-                return (str(ref.record_type), ref_id, canon_path)
-
-            return resolve_asset_collisions(
-                all_probed,
-                stored_occurrences,
-                identity,
-                git_asset_introduction,
-                datetime.now(timezone.utc),
+            resolver_occurrences = StoredOccurrenceMap()
+            for key, occurrences in stored_occurrences.items():
+                if key in walked_keys or any(_under_walk(occurrence.path) for occurrence in occurrences):
+                    resolver_occurrences[key] = occurrences
+            resolver_occurrences.synthetic_keys.update(
+                key for key in stored_occurrences.synthetic_keys if key in resolver_occurrences
             )
 
-        collision_decisions = await asyncio.to_thread(_resolve_occurrences)
+        def _live_identity(candidate):
+            ref, _info, ref_id, _probe, _fresh, canon_path = candidate
+            return None if ref_id is None else (str(ref.record_type), ref_id, canon_path)
+
+        collision_decisions = await asyncio.to_thread(
+            resolve_collisions, all_probed, resolver_occurrences, _live_identity
+        )
         collision_by_key = {(item.type_name, item.entity_id): item for item in collision_decisions}
         duplicate_paths = {
             (item.type_name, item.entity_id, path) for item in collision_decisions for path in item.duplicate_paths
@@ -833,8 +1049,17 @@ class FSIndexer:
 
         async with _db_session() as _idx_session:
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
-                current_rt = ref.record_type
+                await _hand_over_if_waited_on()
+                progress.current = ref.record_type
                 acc = per_type_counts[ref.record_type]
+                # Start the per-type clock at the TOP of the ref, not after the
+                # skip branches. `t_start` used to be set only on the parse
+                # path, so a type whose refs were all fresh-skipped reported
+                # duration_ms=0.0 even though enumerating and hash-checking
+                # them cost real time — measured on a live backend: 25 of 30
+                # type rows at 0.0, and the 5 non-zero rows summed to 11.4s of
+                # a 19.6s request. Every exit below accumulates.
+                t_ref = time.perf_counter()
 
                 # Per-type cap: once we've processed `limit_per_type` records of
                 # this type (parsed or skip-fresh), skip further refs of the same
@@ -847,7 +1072,8 @@ class FSIndexer:
 
                 if ref_id is None or probe is None:
                     acc["errors"] += 1
-                    await emit()
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
+                    await progress.emit()
                     continue
 
                 # Track this id as "seen" before any skip/index decision so the
@@ -858,17 +1084,49 @@ class FSIndexer:
 
                 if (str(ref.record_type), ref_id, canon_path) in duplicate_paths:
                     acc["skipped"] += 1
-                    await emit()
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
+                    await progress.emit()
                     continue
 
-                if fresh and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
+                # Walk-time scope/project_id from the FSRef parent-chain.
+                # Loop-invariant — read once, stamp on each record.
+                ref_scope = ref.scope
+                ref_pid = ref.project_id
+                unowned = ref_pid is None and not requested_by_project
+                nested_owned = nested_mounts and ref_pid is not None
+                if project_mounts and (nested_owned or unowned) and str(ref_scope) != "system":
+                    # Association rule: deepest project wins. The walk
+                    # root's project may be an umbrella containing a
+                    # nested project — re-associate to the innermost
+                    # mount that contains this record's path. A root
+                    # with no project that reaches into one's folder
+                    # (a workspace project lives under the user home)
+                    # files the record under that project, as project
+                    # content — not as the user's.
+                    try:
+                        ref_pid = deepest_project_id_for_path(
+                            canonical_posix_path(str(ref._path)),
+                            project_mounts,
+                            default=ref_pid,
+                        )
+                    except OSError:
+                        pass
+                    if unowned and ref_pid is not None:
+                        ref_scope = "project"
+                stored_scope, stored_pid = preload.scopes.get(str(ref.record_type), {}).get(ref_id, (None, None))
+                ownership_matches = (ref_scope is None or str(ref_scope) == stored_scope) and (
+                    ref_pid is None or str(ref_pid) == stored_pid
+                )
+                # Content freshness cannot hide a changed filesystem owner.
+                if fresh and ownership_matches and (str(ref.record_type), ref_id, canon_path) not in primary_swaps:
                     acc["skipped"] += 1
+                    acc["duration_ms"] += (time.perf_counter() - t_ref) * 1000
                     # seen_ids already holds ref_id (added above), so a fresh
                     # skip is not misclassified as orphan.
-                    await emit()
+                    await progress.emit()
                     continue
 
-                t_start = time.perf_counter()
+                t_start = t_ref
                 try:
                     # Loop is gated by _has_dispatch → from_disk_fn is set.
                     from_disk = info.from_disk_fn
@@ -876,23 +1134,6 @@ class FSIndexer:
                         records = await from_disk(ref, ref_id)
                     else:
                         records = await asyncio.to_thread(from_disk, ref, ref_id)
-                    # Walk-time scope/project_id from the FSRef parent-chain.
-                    # Loop-invariant — read once, stamp on each record.
-                    ref_scope = ref.scope
-                    ref_pid = ref.project_id
-                    if ref_pid is not None and project_mounts:
-                        # Association rule: deepest project wins. The walk
-                        # root's project may be an umbrella containing a
-                        # nested project — re-associate to the innermost
-                        # mount that contains this record's path.
-                        try:
-                            ref_pid = deepest_project_id_for_path(
-                                canonical_posix_path(str(ref._path)),
-                                project_mounts,
-                                default=ref_pid,
-                            )
-                        except OSError:
-                            pass
                     # Enclosure-derived parenthood: a repo asset physically
                     # nested inside another repo asset's folder inherits it as
                     # its parent, so a child re-indexed purely from disk (e.g.
@@ -900,7 +1141,7 @@ class FSIndexer:
                     # parented. Loop-invariant — derive once from the FSRef
                     # parent chain. Only when the enclosing ref is itself a
                     # repo asset (not the walk root).
-                    parent_typeid = ref_typeid(getattr(ref, "_parent", None))
+                    parent_typeid = ref_typeid(getattr(ref, "_parent", None), path_owners, parent_typeids)
                     for rec in records:
                         if ref_scope is not None:
                             object.__setattr__(rec, "scope", ref_scope)
@@ -920,6 +1161,7 @@ class FSIndexer:
                             object.__setattr__(rec, "project_id", cwd_pid)
                         await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                     acc["indexed"] += len(records)
+                    acc["parsed_refs"] += 1
                     # Same-path reconciliation: a successful parse enumerates
                     # the file's COMPLETE record set (all landed in seen_ids
                     # just above), so any other pre-existing id anchored to
@@ -949,7 +1191,7 @@ class FSIndexer:
                     )
                 acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
 
-                await emit()
+                await progress.emit()
 
                 # Bounded-batch commit: flush this batch's FTS then commit the
                 # session, releasing the writer lock so concurrent requests
@@ -957,7 +1199,6 @@ class FSIndexer:
                 _since_commit += 1
                 if _since_commit >= _INDEX_COMMIT_BATCH:
                     await _commit_batch()
-                    _since_commit = 0
 
             # Commit + stamp the trailing partial batch (records since the last
             # bounded-batch commit). The commit was implicit on session exit
@@ -967,179 +1208,233 @@ class FSIndexer:
 
             # Reflect the complete collision view only after all primaries have
             # been parsed/skipped, so a newly-created row is available too.
+            # Reflections are writes, so they carry the SAME bounded-batch
+            # discipline as the record loop — on the same counter, because it is
+            # the same question: how many records have been written since the
+            # writer lock was last released. Without it every reflection landed in
+            # ONE transaction released only when the session closed, holding the
+            # lock for the whole pass (measured: a 7.7s hold starting 1.3s before
+            # the record loop ended and running 6.4s past it) and starving
+            # concurrent writes past busy_timeout into "database is locked". The
+            # record loop's batching never reached here, which is why tuning
+            # _INDEX_COMMIT_BATCH did nothing to it.
             for (type_name, entity_id), decision in collision_by_key.items():
                 if not decision.changed:
                     continue
+                await _hand_over_if_waited_on()
                 entity = await driver.get_by_id(entity_id, type_name)
-                if entity is not None and hasattr(entity, "reflect_asset_occurrences"):
-                    await entity.reflect_asset_occurrences(
-                        decision.occurrences,
-                        notify=True,
+                if entity is None or not hasattr(entity, "reflect_asset_occurrences"):
+                    continue
+                await entity.reflect_asset_occurrences(decision.occurrences, notify=True)
+                _since_commit += 1
+                if _since_commit >= _INDEX_COMMIT_BATCH:
+                    await _commit_batch()
+            await _commit_batch()
+
+        # The writer session ends above, before the potentially long orphan
+        # discovery below. Discovery is read-only and may walk every record
+        # home/type even for an empty project; keeping BEGIN IMMEDIATE open
+        # across it starves unrelated control-plane writes (tab close, process
+        # create) until the whole index finishes. Duplicate/orphan removals
+        # still open their own short writer sessions through the driver.
+        #
+        # Phase marker before the (potentially long) orphan sweep: without
+        # it the last loop snapshot (done==total, no text) is what watchers
+        # and refresh-time activity-status replay see for the whole sweep —
+        # a stalled-looking 100% bar. Any non-complete text works; the
+        # activity stays alive until the terminal emit below.
+        await progress.emit(text="sweeping", force=True)
+
+        # ----- Superseded-identity sweep -----
+        # A re-keying leaves residue no other pass can reach. When a type's
+        # identity rule changes (FLOWPAD-2070 moved data-source specs from the
+        # install path to the name), the run that mints the new id CANNOT see
+        # the fork: `dupe_ids_by_path` is the pre-walk preload, taken while the
+        # path still had one claimant. Every later run then skips the file as
+        # fresh — its bytes never moved — so the sweep below, which nominates
+        # from PARSED refs only, never hears about it. Both rows outlive every
+        # heartbeat; the provider picker drew one tile per row.
+        #
+        # Nominating needs no parse: an id equal to what the OLD path-derived
+        # rule would mint for this very path is, by construction, that rule's
+        # residue. It cannot be confused with the API-minted v4 twin that
+        # `_source_gone_orphans` deliberately keeps alive — those are random.
+        # And the `- seen_ids` subtraction below is the safety net: on a type
+        # still keyed by path that id IS the live one, lands in `seen_ids`
+        # (a fresh-skip counts), and is protected without a special case.
+        if dupe_ids_by_path:
+            from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+            by_name = {str(rt): rt for rt in stale_dupe_candidates}
+            for tname, by_path in dupe_ids_by_path.items():
+                for canon, ids in by_path.items():
+                    # The same call the old rule made: `mint_uuid(<resolved path>)`.
+                    legacy = mint_uuid(canon)
+                    if legacy not in ids:
+                        continue
+                    rt = by_name.get(tname) or next(
+                        (r for r in seen_ids if str(r) == tname), None
                     )
+                    if rt is not None:
+                        stale_dupe_candidates.setdefault(rt, set()).add(legacy)
 
-            # Phase marker before the (potentially long) orphan sweep: without
-            # it the last loop snapshot (done==total, no text) is what watchers
-            # and refresh-time activity-status replay see for the whole sweep —
-            # a stalled-looking 100% bar. Any non-complete text works; the
-            # activity stays alive until the terminal emit below.
-            await emit(text="sweeping", force=True)
-
-            # ----- Same-path duplicate sweep -----
-            # Positive-evidence cleanup, independent of ``orphan_action``: each
-            # candidate's path was walked AND parsed this run and resolved to a
-            # different id, so a candidate that nothing else claimed
-            # (``seen_ids`` is global for the run) is an unreachable duplicate
-            # row. Remove row + FTS + records dir via the same machinery as an
-            # orphan DELETE. The source file is never touched — it belongs to
-            # the surviving id.
-            for rt, cands in stale_dupe_candidates.items():
-                stale = sorted(cands - seen_ids.get(rt, set()))
-                if not stale:
-                    continue
-                db_removed, _ = await self._apply_orphan_action(
-                    rt,
-                    stale,
-                    OrphanAction.DELETE,
-                )
-                # rt was necessarily indexed via per_type_counts[rt] when the
-                # parse loop nominated its candidates — always present.
-                per_type_counts[rt]["dupes_removed"] += db_removed
-                logging.info(
-                    "[FSIndexer] removed %d stale same-path duplicate row(s) for %s: %s",
-                    db_removed,
-                    rt,
-                    stale,
-                )
-
-            # ----- Orphan handling -----
-            # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
-            # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
-            # condition is independent of which materializations remain — DB
-            # row only, fs_record dir only, or both. We detect by looking at
-            # BOTH known materializations and asking the same question for each:
-            # was this id seen during the scan (meaning Layer 1 still exists)?
-            #
-            #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
-            #
-            # ``opts.scope_filter`` is applied on top: orphan-ness is determined
-            # globally (so a cross-scope reference still rescues a record), but
-            # only orphans whose (scope, project_id) match the filter are
-            # reported and acted on. The callers wiring this on top MUST walk
-            # every source — the all-projects root set (USER_HOME + one
-            # REAL_PROJECT_CWD per project), NOT default_roots() — so
-            # ``seen_ids`` is global; otherwise records under a project tree
-            # that wasn't walked would falsely appear orphan. (See the
-            # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
-            #
-            # SAFETY GUARD: a destructive orphan_action with a narrowed walk
-            # (custom roots) and no scope_filter would silently wipe records
-            # referenced from outside the walked subtree. Refuse — fall back
-            # to INDEX (non-destructive) and emit a warning. The caller's
-            # ScopeFilter-aware wrapper is responsible for either widening the
-            # walk to global or supplying a scope_filter.
-            effective_orphan_action = opts.orphan_action
-            if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
-                logging.warning(
-                    "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
-                    "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
-                    effective_orphan_action,
-                )
-                effective_orphan_action = OrphanAction.INDEX
-            orphan_records: dict[RecordType, list[str]] = {}
-            orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
-            # Disk walks (records-root iterdir, per-type dir enumeration) run
-            # in the thread pool — same off-loop discipline as the probe chunks.
-            orphan_filter_types = await asyncio.to_thread(
-                self._resolve_orphan_filter_types,
-                opts.types,
+        # ----- Same-path duplicate sweep -----
+        # Positive-evidence cleanup, independent of ``orphan_action``: each
+        # candidate's path was walked AND parsed this run and resolved to a
+        # different id, so a candidate that nothing else claimed
+        # (``seen_ids`` is global for the run) is an unreachable duplicate
+        # row. Remove row + FTS + records dir via the same machinery as an
+        # orphan DELETE. The source file is never touched — it belongs to
+        # the surviving id.
+        for rt, cands in stale_dupe_candidates.items():
+            stale = sorted(cands - seen_ids.get(rt, set()))
+            if not stale:
+                continue
+            db_removed, _ = await self._apply_orphan_action(
+                rt,
+                stale,
+                OrphanAction.DELETE,
             )
-            # Both materializations feed the candidate set (per the DEFINITION
-            # above): record homes on disk, plus DB rows — a row whose shadow
-            # dir was never created (or already removed) would otherwise be
-            # invisible to the sweep forever. One lean SELECT per type.
-            disk_ids_per_type = await asyncio.to_thread(
-                self._discover_records_dir_ids,
-                orphan_filter_types,
+            # rt was necessarily indexed via per_type_counts[rt] when the
+            # parse loop nominated its candidates — always present.
+            per_type_counts[rt]["dupes_removed"] += db_removed
+            logging.info(
+                "[FSIndexer] removed %d stale same-path duplicate row(s) for %s: %s",
+                db_removed,
+                rt,
+                stale,
             )
-            db_rows_known = hasattr(driver, "list_entity_sources_by_type")
-            db_rows_per_type: dict[str, dict[str, tuple]] = {}
-            if db_rows_known:
-                for type_name in orphan_filter_types:
-                    db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
+        # ----- Orphan handling -----
+        # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
+        # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
+        # condition is independent of which materializations remain — DB
+        # row only, fs_record dir only, or both. We detect by looking at
+        # BOTH known materializations and asking the same question for each:
+        # was this id seen during the scan (meaning Layer 1 still exists)?
+        #
+        #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
+        #
+        # ``opts.scope_filter`` is applied on top: orphan-ness is determined
+        # globally (so a cross-scope reference still rescues a record), but
+        # only orphans whose (scope, project_id) match the filter are
+        # reported and acted on. The callers wiring this on top MUST walk
+        # every source — the all-projects root set (USER_HOME + one
+        # REAL_PROJECT_CWD per project), NOT default_roots() — so
+        # ``seen_ids`` is global; otherwise records under a project tree
+        # that wasn't walked would falsely appear orphan. (See the
+        # ``orphan_action != INDEX`` branch in fs_records_actions.index.)
+        #
+        # SAFETY GUARD: a destructive orphan_action with a narrowed walk
+        # (custom roots) and no scope_filter would silently wipe records
+        # referenced from outside the walked subtree. Refuse — fall back
+        # to INDEX (non-destructive) and emit a warning. The caller's
+        # ScopeFilter-aware wrapper is responsible for either widening the
+        # walk to global or supplying a scope_filter.
+        effective_orphan_action = opts.orphan_action
+        if effective_orphan_action != OrphanAction.INDEX and opts.roots is not None and opts.scope_filter is None:
+            logging.warning(
+                "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
+                "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
+                effective_orphan_action,
+            )
+            effective_orphan_action = OrphanAction.INDEX
+        orphan_records: dict[RecordType, list[str]] = {}
+        orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
+        # Disk walks (records-root iterdir, per-type dir enumeration) run
+        # in the thread pool — same off-loop discipline as the probe chunks.
+        orphan_filter_types = await asyncio.to_thread(
+            self._resolve_orphan_filter_types,
+            opts.types,
+        )
+        # Both materializations feed the candidate set (per the DEFINITION
+        # above): record homes on disk, plus DB rows — a row whose shadow
+        # dir was never created (or already removed) would otherwise be
+        # invisible to the sweep forever. One lean SELECT per type.
+        disk_ids_per_type = await asyncio.to_thread(
+            self._discover_records_dir_ids,
+            orphan_filter_types,
+        )
+        db_rows_known = hasattr(driver, "list_entity_sources_by_type")
+        db_rows_per_type: dict[str, dict[str, tuple]] = {}
+        if db_rows_known:
             for type_name in orphan_filter_types:
-                try:
-                    rt = RecordType(type_name)
-                except ValueError:
-                    continue
+                db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
-                disk_ids = disk_ids_per_type.get(type_name, set())
-                db_rows = db_rows_per_type.get(type_name, {})
-                seen = seen_ids.get(rt, set())
-                # DB-only candidates per ``_db_missing_orphans`` (strict orphan
-                # definition). Stat-per-row work — off the loop with the other
-                # disk probes.
-                db_missing = await asyncio.to_thread(
-                    _db_missing_orphans,
+        for type_name in orphan_filter_types:
+            try:
+                rt = RecordType(type_name)
+            except ValueError:
+                continue
+
+            disk_ids = disk_ids_per_type.get(type_name, set())
+            db_rows = db_rows_per_type.get(type_name, {})
+            seen = seen_ids.get(rt, set())
+            # Unseen is only a candidate; ``_source_gone_orphans`` keeps the
+            # ones whose declared source is gone (strict orphan definition).
+            # Stat-per-candidate work — off the loop with the other disk probes.
+            missing = sorted(
+                await asyncio.to_thread(
+                    _source_gone_orphans,
+                    type_name,
+                    (disk_ids | db_rows.keys()) - seen,
                     db_rows,
-                    seen,
-                    disk_ids,
                 )
-                missing = sorted((disk_ids - seen) | db_missing)
+            )
+            if not missing:
+                continue
+
+            if opts.scope_filter is not None:
+                # Reads each disk orphan's metadata.json — file I/O, keep
+                # it off the loop.
+                missing = await asyncio.to_thread(
+                    _scope_filtered_orphans,
+                    opts.scope_filter,
+                    type_name,
+                    missing,
+                    disk_ids,
+                    db_rows,
+                )
                 if not missing:
                     continue
 
-                if opts.scope_filter is not None:
-                    # Reads each disk orphan's metadata.json — file I/O, keep
-                    # it off the loop.
-                    missing = await asyncio.to_thread(
-                        _scope_filtered_orphans,
-                        opts.scope_filter,
-                        type_name,
-                        missing,
-                        disk_ids,
-                        db_rows,
-                    )
-                    if not missing:
-                        continue
+            orphan_records[rt] = missing
+            if db_rows_known:
+                orphan_sources[rt] = {eid: {"on_disk": eid in disk_ids} for eid in missing}
 
-                orphan_records[rt] = missing
-                if db_rows_known:
-                    orphan_sources[rt] = {eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids} for eid in missing}
-
-            for rt, ids in orphan_records.items():
-                acc = per_type_counts.setdefault(
+        for rt, ids in orphan_records.items():
+            acc = per_type_counts.setdefault(
+                rt,
+                {
+                    "indexed": 0,
+                    "errors": 0,
+                    "duration_ms": 0.0,
+                    "skipped": 0,
+                    "orphans_found": 0,
+                    "orphans_db_removed": 0,
+                    "orphans_disk_removed": 0,
+                    "orphan_ids": [],
+                    "dupes_removed": 0,
+                    "duplicate_groups": 0,
+                    "duplicate_occurrences": 0,
+                },
+            )
+            acc["orphans_found"] = len(ids)
+            acc["orphan_ids"] = list(ids)
+            # Orphan-ness is the dynamic ``FSRecord.orphan`` (source gone) —
+            # nothing to persist. Only an explicit IGNORE/DELETE sweep acts.
+            db_removed = 0
+            disk_removed = 0
+            if effective_orphan_action != OrphanAction.INDEX:
+                db_removed, disk_removed = await self._apply_orphan_action(
                     rt,
-                    {
-                        "indexed": 0,
-                        "errors": 0,
-                        "duration_ms": 0.0,
-                        "skipped": 0,
-                        "orphans_found": 0,
-                        "orphans_db_removed": 0,
-                        "orphans_disk_removed": 0,
-                        "orphan_ids": [],
-                        "dupes_removed": 0,
-                        "duplicate_groups": 0,
-                        "duplicate_occurrences": 0,
-                    },
+                    ids,
+                    effective_orphan_action,
+                    id_sources=orphan_sources.get(rt),
                 )
-                acc["orphans_found"] = len(ids)
-                acc["orphan_ids"] = list(ids)
-                # Orphan-ness is the dynamic ``FSRecord.orphan`` (source gone) —
-                # nothing to persist. Only an explicit IGNORE/DELETE sweep acts.
-                db_removed = 0
-                disk_removed = 0
-                if effective_orphan_action != OrphanAction.INDEX:
-                    db_removed, disk_removed = await self._apply_orphan_action(
-                        rt,
-                        ids,
-                        effective_orphan_action,
-                        id_sources=orphan_sources.get(rt),
-                    )
 
-                acc["orphans_db_removed"] = db_removed
-                acc["orphans_disk_removed"] = disk_removed
+            acc["orphans_db_removed"] = db_removed
+            acc["orphans_disk_removed"] = disk_removed
 
         # Build per-type result for the IndexResult return value.
         per_type: dict[RecordType, PerTypeIndexResult] = {}
@@ -1164,9 +1459,9 @@ class FSIndexer:
         # Terminal snapshot — current=None, text=PROGRESS_TEXT_COMPLETE. The
         # authoritative (and only) completion signal; consumers clear UI state
         # and InProcessActivity.is_complete latches on it.
-        current_rt = None
+        progress.current = None
         if on_progress is not None:
-            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
+            await on_progress(progress.table(text=PROGRESS_TEXT_COMPLETE))
 
         return IndexResult(
             per_type=per_type,
@@ -1200,19 +1495,19 @@ class FSIndexer:
         # is always empty). A subsequent IGNORE/DELETE sweep would wipe
         # them. This is data loss: those rows have no Layer 1 source, so
         # "source missing" doesn't apply.
-        from flow_sdk.fs_store.indexer.builtin import INDEXABLE_TYPES  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.builtin import indexable_types  # noqa: PLC0415
 
-        indexable = {str(t) for t in INDEXABLE_TYPES}
+        indexable = {str(t) for t in indexable_types()}
 
         if types:
             requested = {str(t) for t in types}
-            # Intersect with INDEXABLE_TYPES so an explicit caller can't
+            # Intersect with the derived set so an explicit caller can't
             # accidentally enable orphan detection on a non-indexable type.
             return requested & indexable
 
         # Union of "types with DB rows" and "types with a records dir on disk"
         # so we never miss a records-dir orphan just because no DB row exists.
-        # Then intersect with INDEXABLE_TYPES — see comment above.
+        # Then intersect with the derived set — see comment above.
         from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
         result: set[str] = set()
@@ -1272,19 +1567,15 @@ class FSIndexer:
         - DELETE: remove DB row + FTS entry if present, AND rmtree the records
           dir at ``records_root/<type>/<stem>/`` if present.
 
-        Cleanup chain for a DB-side orphan goes through ``Entity.delete()`` so
-        the orphan removal benefits from the same downstream invalidation a
-        normal API delete would: entity cache, auth cache, uname cache, wiki
-        edges. Without this, ~1000 orphan ids would leave their wiki backlinks
-        and cache references in place until the next natural eviction.
+        Row removal (DB row + FTS + wiki edges) is ``remove_orphan_row`` —
+        the same type-scoped delete the push path uses, deliberately NOT
+        ``Entity.delete()`` (see ``fs_store/orphan_removal.py`` for why).
+        It runs for every orphan, DB row or not, because wiki edges can
+        outlive a row that was deleted previously without proper cleanup.
 
-        For records-dir-only orphans (no DB row), we still issue a best-effort
-        ``wiki.delete_for_id`` because wiki edges can outlive an entity row
-        that was deleted previously without proper cleanup.
-
-        ``id_sources`` (optional) maps each id to ``{"in_db": bool, "on_disk":
-        bool}``. When omitted we attempt every removal — driver returns False
-        harmlessly for missing rows.
+        ``id_sources`` (optional) maps each id to ``{"on_disk": bool}`` — whether
+        a records dir exists to rmtree. The row removal is attempted for every
+        id regardless; the driver returns False harmlessly for a missing row.
 
         Failures are tolerated per-id so a single bad row doesn't abort the sweep.
         """
@@ -1292,51 +1583,23 @@ class FSIndexer:
             return 0, 0
 
         # Lazy imports keep this module a leaf in import topology.
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
         from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
 
-        driver = get_db_driver()
         type_name = str(rt)
         db_removed = 0
         disk_removed = 0
 
         for eid in ids:
-            sources = (id_sources or {}).get(eid, {"in_db": True, "on_disk": True})
-            in_db = sources.get("in_db", True)
-            on_disk = sources.get("on_disk", True)
+            on_disk = (id_sources or {}).get(eid, {}).get("on_disk", True)
 
-            # Best-effort wiki edge cleanup — idempotent, runs for every orphan
-            # regardless of whether the DB row currently exists. Stale edges
-            # pointing at a previously-deleted id would otherwise persist.
             try:
-                from flow_sdk import wiki  # noqa: PLC0415
+                if await remove_orphan_row(eid, type_name):
+                    db_removed += 1
+            except Exception as e:
+                import logging  # noqa: PLC0415
 
-                await wiki.delete_for_id(type_name, eid)
-            except Exception:
-                pass
-
-            if in_db:
-                # Type-scoped driver delete only. We deliberately do NOT go
-                # through ``Entity.get_one(...).delete()`` here because that
-                # path triggers relationship-cascade cleanup that can
-                # unintentionally affect bootstrap-required rows (e.g.
-                # deleting a "project" orphan via the typed-entity path can
-                # ripple through membership relationships and unbind the
-                # ``@local`` compute_node). Orphan sweeps want minimal,
-                # type-scoped row removal — anything beyond FTS belongs in
-                # the regular API delete path.
-                try:
-                    if hasattr(driver, "fts_delete"):
-                        try:
-                            await driver.fts_delete(eid)
-                        except Exception:
-                            pass
-                    if await driver.delete_by_id(eid, type_name):
-                        db_removed += 1
-                except Exception as e:
-                    import logging  # noqa: PLC0415
-
-                    logging.debug(f"[FSIndexer] driver.delete_by_id for {type_name}:{eid}: {e}")
+                logging.debug(f"[FSIndexer] remove_orphan_row for {type_name}:{eid}: {e}")
 
             if action == OrphanAction.DELETE and on_disk:
                 try:
@@ -1369,10 +1632,7 @@ class FSIndexer:
         visited: list[FSRef] = []
         seen: set[tuple[str, RecordType | None, str | None]] = set()
         per_type_counts: dict[RecordType, int] = {}
-        current_rt: RecordType | None = None
-        last_emit_at = 0.0
-
-        def make_table(text: str | None = None) -> IndexProgressTable:
+        def scan_rows() -> list[TypeProgressRow]:
             rows = [
                 # total=0: during discovery the per-type total is unknown — the
                 # running count IS the total-so-far — so the UI shows a growing
@@ -1384,30 +1644,17 @@ class FSIndexer:
                 if rt not in _PROGRESS_HIDDEN_TYPES
             ]
             rows.sort(key=lambda r: -r.done)
-            current_name = (
-                str(current_rt) if current_rt is not None and current_rt not in _PROGRESS_HIDDEN_TYPES else None
-            )
-            return IndexProgressTable(
-                job_name="scan",
-                rows=tuple(rows),
-                current=current_name,
-                done=sum(r.done for r in rows),
-                total=0,  # 0 = unknown for scan; UI hides percentage
-                text=text,
-                ts=datetime.now(timezone.utc).isoformat(),
-            )
+            return rows
 
-        async def emit(text: str | None = None, force: bool = False) -> None:
-            nonlocal last_emit_at
-            if on_progress is None:
-                return
-            now = time.perf_counter()
-            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
-                return
-            last_emit_at = now
-            await on_progress(make_table(text=text))
+        progress = _ProgressEmitter(
+            on_progress,
+            job_name="scan",
+            rows_fn=scan_rows,
+            roots=roots_for_walk,
+            total_fn=lambda _rows: 0,  # 0 = unknown for scan; UI hides percentage
+        )
 
-        await emit(force=True)
+        await progress.emit(force=True)
 
         # Chunked DFS: process up to _SCAN_CHUNK_NODES sync-walker visits per
         # thread-pool roundtrip so per-call to_thread overhead doesn't pile up
@@ -1438,7 +1685,6 @@ class FSIndexer:
             hit_limit) — the caller awaits each pending async walker on the
             main loop, then extends the stack from its children.
             """
-            nonlocal current_rt
             pending: list[tuple[FSRef, Any]] = []
             processed = 0
             hit_limit = False
@@ -1457,7 +1703,7 @@ class FSIndexer:
                     logging.debug("[indexer] visit type=%s path=%s", node.record_type, node.path)
                 if node.record_type is not None:
                     per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
-                    current_rt = node.record_type
+                    progress.current = node.record_type
                 fns = functions.get(node.record_type, []) if node.record_type is not None else []
                 for fn, output_types in fns:
                     if (
@@ -1486,15 +1732,24 @@ class FSIndexer:
             for node, fn in pending:
                 children = await fn([node], opts)
                 stack.extend(reversed(children))
-            await emit()
+            await progress.emit()
             if hit_limit:
                 break
 
-        current_rt = None
+        progress.current = None
         if on_progress is not None:
-            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
+            await on_progress(progress.table(text=PROGRESS_TEXT_COMPLETE))
 
         return visited
 
 
 # reload-trigger 1778603346.7940538
+
+
+def _walk_requested_by_project() -> bool:
+    """Is this walk running for a project-scoped request (``/graph/project/<id>/…``)?"""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    info = get_current_request_info()
+    target = getattr(info, "target_entity_typeid", None) if info is not None else None
+    return target is not None and target.type == "project"

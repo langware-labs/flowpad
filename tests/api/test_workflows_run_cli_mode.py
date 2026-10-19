@@ -20,11 +20,12 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.status_predicates import (
-    get_worker_mode,
     WorkerMode,
+    get_worker_mode,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 
 @pytest.mark.asyncio
@@ -32,7 +33,7 @@ async def test_workflow_run_created_in_cli_mode(bootstrapped_client, user):
     """A workflow-run-shaped process starts in WorkerMode.CLI and carries stream-json."""
     client = bootstrapped_client
 
-    cli_opts = ClaudeCliOptions(
+    cli_opts = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         print_mode=True,
         output_format="stream-json",
@@ -75,7 +76,7 @@ async def test_open_action_flips_visible_true(bootstrapped_client, user):
     """POST /open with visible=true flips WorkerMode.CLI → WorkerMode.Interactive."""
     client = bootstrapped_client
 
-    cli_opts = ClaudeCliOptions(
+    cli_opts = ClaudeAgentOptions(
         permission_mode="bypassPermissions",
         print_mode=True,
         output_format="stream-json",

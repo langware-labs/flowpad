@@ -34,9 +34,9 @@ import { trackForCleanup } from '../_cleanup';
 import {
   HUB_INST_1 as INST_1,
   HUB_INST_2 as INST_2,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 
@@ -61,7 +61,11 @@ const get = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r
 /** A bare `file://` remote + a pushed worktree: a folder in the only state that
  *  preflights as eligible (in a repo, real origin, clean, everything pushed). */
 function makeGitFolder(token: string) {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'flowpad-folder-share-'));
+  // Resolved up front: on macOS a tmpdir is a symlink (/var → /private/var), and a
+  // `file://` origin is identified by its path — the backend writes the dependency
+  // as the RESOLVED remote, so a worktree cloned from the symlinked spelling is a
+  // different origin and gets a second clone instead of being reused.
+  const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'flowpad-folder-share-')));
   tempRoots.push(root);
   const remote = path.join(root, 'remote.git');
   const worktree = path.join(root, 'alice-worktree');
@@ -83,20 +87,21 @@ function makeGitFolder(token: string) {
   return { root, remote, worktree };
 }
 
-/** Attach `dir` to a fresh project as a context folder; return the Folder typeid
+/** Add `dir` to a fresh project as a dependency; return the Folder typeid
  *  the backend minted for it (context_dir_infos carries it). */
 async function addContextFolder(inst: ResolvedInstance, dir: string): Promise<{ projectId: string; folderId: string }> {
   // The backend canonicalizes the path (realpath), and on macOS a tmpdir is a
   // symlink (/tmp → /private/tmp) — compare against the resolved path or the
   // match never lands.
   const real = realpathSync(dir);
+  // The project gets its own default mount: a project cannot depend on its own
+  // folder (add-dependency refuses the root and anything inside it).
   const project = trackForCleanup(
-    new inst.sdk.Project({ name: `folder-share-${randomUUID().slice(0, 8)}`, fs_storage_mount_path: real } as any),
+    new inst.sdk.Project({ name: `folder-share-${randomUUID().slice(0, 8)}` } as any),
   );
   await project.save();
-  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-context-dir`, {
-    path: real,
-    scope: 'private',
+  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-dependency`, {
+    source: real,
   });
   expect(res.status, JSON.stringify(res)).toBe('SUCCESS');
 
@@ -106,7 +111,7 @@ async function addContextFolder(inst: ResolvedInstance, dir: string): Promise<{ 
     return infos.find((i) => i.path === real)?.typeid || null;
   }, 15_000, 'context_dir_infos carries the minted Folder typeid');
 
-  return { projectId: project.id!, folderId: typeid.split('-').slice(1).join('-') };
+  return { projectId: project.id, folderId: typeid.split('-').slice(1).join('-') };
 }
 
 beforeAll(async () => {
@@ -177,13 +182,8 @@ describe('context folder share over git — two instances', () => {
     ).data.flow_message_id as string;
     await post(alice.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
 
-    // 3. Bob accepts + downloads → the attachment STAGES with a GitOrigin.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(bob, conv.id!),
-      20_000,
-      'pending invitation on bob',
-    );
-    await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+    // 3. Bob receives the assignment + downloads → the attachment STAGES with a GitOrigin.
+    await syncAssignedConversation(bob, conv.id);
     const receivedFm = await pollUntil(async () => {
       const fm = await bob.sdk.FlowMessage.getById(fmId).catch(() => null);
       return fm && (fm as any).body_status === 'ready' ? fm : null;
@@ -198,7 +198,7 @@ describe('context folder share over git — two instances', () => {
       return rows.find((r) => r.asset_id === folderId) ?? null;
     }, 20_000, 'staged folder MessageAttachment on bob');
     // The origin travelled; the repository bytes did NOT.
-    expect(staged.git_origin?.provider).toBe('file');
+    expect(staged.origin?.provider).toBe('file');
     expect(staged.transfer_mode).toBe('git');
 
     // 4. Install → the row materializes. Deliberately NO clone at this gate.

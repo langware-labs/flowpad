@@ -26,7 +26,6 @@ import pytest
 
 from .conftest import run_cell
 
-
 _OUTCOME_RE = re.compile(r"RUNNER_OUTCOME:\s*(\{.*\})")
 
 

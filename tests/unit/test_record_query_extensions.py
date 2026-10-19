@@ -68,7 +68,6 @@ class TestToProviderParams:
             types=["note"],
             status="active",
             ids=["id1"],
-            parent_id="p1",
             scope=Scope.PROJECT,
             limit=10,
             offset=5,
@@ -84,7 +83,7 @@ class TestToProviderParams:
         assert params["types"] == ["note"]
         assert params["status"] == "active"
         assert params["ids"] == ["id1"]
-        assert params["parent_id"] == "p1"
+        assert "parent_id" not in params
         assert params["scope"] == "project"
         assert params["limit"] == 10
         assert params["offset"] == 5

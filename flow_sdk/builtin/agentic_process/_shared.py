@@ -2,18 +2,35 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from flow_sdk.builtin.worker_status import WorkerStatus
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+def _now_iso(timespec: str = "auto") -> str:
+    return datetime.now(timezone.utc).isoformat(timespec=timespec).replace("+00:00", "Z")
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    """Lenient ISO-8601 → timezone-aware datetime (naive values assumed UTC).
+
+    Accepts an already-parsed ``datetime`` and ``Z``-suffixed strings; returns
+    None for anything unparseable.
+    """
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 class AgenticContext(BaseModel):
@@ -74,19 +91,6 @@ class CreateProcessRequest(BaseModel):
 # ── Result types ──────────────────────────────────────────────────────────────
 
 @dataclass
-class RunResult:
-    """Return value from AgenticProcess.run() / prompt()."""
-
-    text: str
-    session_id: str
-    status: "WorkerStatus"
-    ok: bool                        # False when status is error or interrupted
-    duration_ms: int | None = None
-    models_used: list[str] = field(default_factory=list)
-    token_usage: dict | None = None
-
-
-@dataclass
 class StreamEvent:
     """A single event yielded by AgenticProcess.stream()."""
 
@@ -97,11 +101,3 @@ class StreamEvent:
     result: str | None = None
     error: str | None = None
 
-
-class ProcessError(Exception):
-    """Raised by AgenticProcess.run() when status is error or interrupted."""
-
-    def __init__(self, status: "WorkerStatus", session_id: str):
-        self.status = status
-        self.session_id = session_id
-        super().__init__(f"Process ended with status={status} session_id={session_id}")

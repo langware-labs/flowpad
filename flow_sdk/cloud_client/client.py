@@ -36,6 +36,23 @@ class ApiConfig(BaseModel):
         """Create ApiConfig from environment variables"""
         return cls()
 
+    @property
+    def app_base_url(self) -> Optional[str]:
+        """Hub browser-app origin corresponding to :attr:`api_base_url`.
+
+        ``FLOWPAD_HUB_URL`` names the Hub application.  ``ApiConfig`` appends
+        ``/api/v1`` for API traffic; browser links must use the application
+        origin instead of accidentally nesting dock routes below the API
+        prefix.  Explicit ``api_base_url`` values retain the same contract.
+        """
+        explicit_web_url = os.environ.get("FLOWPAD_HUB_WEB_URL", "").strip()
+        if explicit_web_url:
+            return explicit_web_url.rstrip("/")
+        if not self.api_base_url:
+            return None
+        normalized = self.api_base_url.rstrip("/")
+        return normalized[: -len(API_PREFIX)] if normalized.endswith(API_PREFIX) else normalized
+
     def _get_full_url(self, path: Optional[str]) -> str:
         """Combine api_base_url with a relative path, or return as-is if absolute."""
         if not path:
@@ -145,6 +162,7 @@ class FlowpadClient:
         content: Any = None,
         headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
+        extensions: dict[str, Any] | None = None,
     ) -> httpx.Response:
         """Make a raw HTTP request with hub hooks attached.
 
@@ -164,6 +182,7 @@ class FlowpadClient:
                 content=content,
                 headers=headers,
                 timeout=timeout,
+                extensions=extensions,
             )
         except HubAuthExpiredError:
             raise
@@ -184,8 +203,12 @@ class FlowpadClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
+        json: Any = None,
     ):
         """Return an httpx streaming-response context manager.
+
+        ``json`` is the request body for a POST whose RESPONSE streams — a
+        relayed ``prompt`` — and is sent verbatim.
 
         For large downloads consumed chunk-by-chunk (``resp.aiter_bytes()``)
         instead of buffered whole into ``resp.content`` — lets a caller report
@@ -196,7 +219,7 @@ class FlowpadClient:
                     ...
         """
         client = await self._get_client()
-        return client.stream(method, path, params=params, headers=headers, timeout=timeout)
+        return client.stream(method, path, params=params, headers=headers, timeout=timeout, json=json)
 
     @staticmethod
     def _request_path(url_or_path: Any) -> str:
@@ -225,6 +248,7 @@ class FlowpadClient:
         user_data = await self.get("/current-user")
         if "id" not in user_data:
             import json
+
             raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")
         return user_data
 
@@ -235,8 +259,15 @@ class FlowpadClient:
         *,
         files: Any = None,
         timeout: float | httpx.Timeout | None = None,
+        idempotent: bool = False,
     ) -> Any:
-        """Make a POST request and return the unwrapped response data."""
+        """Make a POST request and return the unwrapped response data.
+
+        ``idempotent=True`` treats a 409 ("already exist") as success and
+        returns ``None`` instead of raising — for create-or-no-op paths where
+        the post-condition (the row exists on the hub) is already satisfied,
+        e.g. re-sharing an already-shared entity to invite another member.
+        """
         response = await self.request(
             "POST",
             path,
@@ -244,6 +275,8 @@ class FlowpadClient:
             files=files,
             timeout=timeout,
         )
+        if idempotent and response.status_code == 409:
+            return None
         return self._unwrap(response)
 
     async def put(

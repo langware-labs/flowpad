@@ -2,7 +2,7 @@
 
 ## 1. Pick a template
 
-List candidates in `<project root>/assets/deck-templates/` (or record-search
+List candidates in `<project root>/agentic-assets/deck_template/` (or record-search
 `deck_template` entities). If none exists, bootstrap one first
 ([building-templates.md](building-templates.md)).
 
@@ -17,14 +17,14 @@ reusable) rather than inlining one-off markup in the deck.
 
 ## 3. Write `deck.json`
 
-Output folder: `<project root>/assets/decks/<deck name>/` (kebab-case).
+Output folder: `<project root>/agentic-assets/deck/<deck name>/` (kebab-case).
 `deck.json` is the regenerable build record — the deck HTML is derived from
 it, so edits go here, then rebuild:
 
 ```json
 {
   "title": "Q3 Review",
-  "template": "../../deck-templates/<template name>",
+  "template": "../../deck_template/<template name>",
   "slides": [
     { "layout": "cover-centered",
       "slots": { "title": "Q3 Review", "subtitle": "October 2026" } },
@@ -70,13 +70,13 @@ missing media.
 
 ## 5. Index and show it
 
-A generated deck is a first-class `deck` entity (folder under `assets/decks/`).
+A generated deck is a first-class `deck` entity (folder under `agentic-assets/deck/`).
 Persist it, then present it via the entity — the deck opens in the bespoke
 **deck viewer** (full-bleed, fullscreen, provenance link to its template):
 
 ```bash
 flow record index "<project root>"          # persist the deck as a browseable entity
-flow show file "<project root>/assets/decks/<deck name>"   # the FOLDER, not the .html
+flow show file "<project root>/agentic-assets/deck/<deck name>"   # the FOLDER, not the .html
 ```
 
 `flow show file` on the deck **folder** resolves to the `deck` entity (via its

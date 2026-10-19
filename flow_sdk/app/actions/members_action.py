@@ -52,6 +52,11 @@ def _members_local(self: Entity) -> ApiSuccessResponse:
     info = get_current_request_info()
     method = (getattr(info, "method", None) or "GET").upper()
     if method == "GET":
+        # Strict callers use absence as evidence for an invitation suggestion.
+        # Reflection GET does not forward local query parameters to the hub.
+        require_authoritative = (getattr(info, "request_parameters", None) or {}).get("require_authoritative")
+        if require_authoritative is True or str(require_authoritative).lower() in {"true", "1"}:
+            raise HTTPException(status_code=409, detail="Project membership could not be confirmed with Flowpad Cloud.")
         return ApiResponse.success(data=_members(self))
     raise HTTPException(status_code=409, detail=_OFFLINE_DETAIL)
 

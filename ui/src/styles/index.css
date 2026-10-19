@@ -27,11 +27,18 @@
     --primary: 0 0% 9%;
     --primary-foreground: 0 0% 98%;
 
+    /* Brand blue. `--primary` is theme-local (near-black in light,
+       near-white in dark), so a call-to-action that must read as OUR blue
+       everywhere — Invite — cannot use it. Same hue the vibe theme sets. */
+    --brand: 221 87% 45%;
+    --brand-foreground: 0 0% 100%;
+
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
 
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
+    --cloud-entity: 221 83% 53%;
 
     --accent: 0 0% 96.1%;
     --accent-foreground: 0 0% 9%;
@@ -85,11 +92,15 @@
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
 
+    --brand: 221 87% 58%;
+    --brand-foreground: 0 0% 100%;
+
     --secondary: 0 0% 14.9%;
     --secondary-foreground: 0 0% 98%;
 
     --muted: 0 0% 14.9%;
     --muted-foreground: 0 0% 63.9%;
+    --cloud-entity: 213 94% 68%;
 
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
@@ -250,19 +261,30 @@
 
   /* Vibe skin: swap the animated app background for a calm warm-black canvas and
      the system stack for the Plus Jakarta Sans display font (Lovable lookalike). */
+  :root {
+    --font-vibe: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
   [data-view='vibe'] body {
-    font-family:
-      'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font-family: var(--font-vibe);
     background: hsl(var(--background));
     animation: none;
   }
 
   /* Tight, poster-like display headings — mirrors Lovable's ~-0.025em tracking
      at large sizes. Body text keeps normal tracking. */
-  [data-view='vibe'] h1,
-  [data-view='vibe'] h2,
-  [data-view='vibe'] h3 {
+  [data-view='vibe'] :is(h1, h2, h3):not([data-pane-view]:not([data-pane-view='vibe']) *),
+  [data-pane-view='vibe'] :is(h1, h2, h3) {
     letter-spacing: -0.022em;
+  }
+
+  /* A session pane keeps the text metrics of ITS OWN mode, whatever skin the
+     document wears: panes are kept alive off screen, and one whose font followed
+     the place on screen reflowed there and lost the reader's scroll position. */
+  [data-pane-view]:not([data-pane-view='vibe']) {
+    font-family: theme('fontFamily.sans');
+  }
+  [data-pane-view='vibe'] {
+    font-family: var(--font-vibe);
   }
 
   @keyframes view-mode-glow-flicker {
@@ -281,6 +303,48 @@
       inset 0 0 0 1px hsl(var(--ring) / 0.28),
       inset 0 0 36px hsl(var(--ring) / 0.2);
     animation: view-mode-glow-flicker 640ms ease-out forwards;
+  }
+}
+
+/* Developer mode: the avatar's border is on fire — a ring of flame colours
+   behind it that turns and flickers. Compositor-only on purpose (the rail avatar
+   is always mounted): the gradient and its blur are STATIC, the ring spins with
+   `transform` and flickers with `opacity` — no per-frame repaint. `isolation`
+   keeps the ring (z-index -1) above the host's background and below the avatar.
+   Reduced motion: a still ring. */
+@keyframes dev-fire-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dev-fire-flicker {
+  0% { opacity: 0.7; }
+  40% { opacity: 1; }
+  70% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+.dev-fire-ring {
+  isolation: isolate;
+}
+
+.dev-fire-ring::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: conic-gradient(#f97316, #ef4444, #facc15, #f97316, #dc2626, #fb923c, #f97316);
+  filter: blur(1.5px);
+  animation:
+    dev-fire-spin 1.6s linear infinite,
+    dev-fire-flicker 0.45s ease-in-out infinite alternate;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev-fire-ring::before {
+    animation: none;
   }
 }
 
@@ -439,4 +503,27 @@
 .flowpad-deep-link-line {
   background-color: hsl(var(--primary) / 0.15);
   box-shadow: inset 2px 0 0 0 hsl(var(--primary) / 0.6);
+}
+
+/*
+ * Asset row tracks — see `AssetGridRow` in AssetManagerPopover.tsx for the
+ * column layout. The row's host div is the container, so the row adapts to
+ * whatever panel hosts it rather than the window. When narrow, the scope
+ * track shrinks to its icon (which carries the tooltip) and the asset name
+ * gets the width back. Raw @container because no
+ * @tailwindcss/container-queries plugin is installed.
+ */
+.asset-grid-row-host {
+  container: asset-row / inline-size;
+}
+.asset-grid-row {
+  grid-template-columns: minmax(0, 1fr) 6.25rem 1.5rem 1.5rem 1.5rem;
+}
+@container asset-row (max-width: 22rem) {
+  .asset-grid-row {
+    grid-template-columns: minmax(0, 1fr) 1.25rem 1.5rem 1.5rem 1.5rem;
+  }
+  .asset-grid-row .asset-scope-label {
+    display: none;
+  }
 }

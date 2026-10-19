@@ -17,14 +17,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
+}));
+
 import { instancePreferences, PrefKey } from '@sdk';
-import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setDev, setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
-import {
-  openerToWorker,
-  useLastWorkerType,
-  workerToOpener,
-} from '@src/components/terminal/openers/useLastWorkerType';
+import { openerToWorker, useLastWorkerType, workerToOpener } from '@src/components/terminal/openers/useLastWorkerType';
 import { renderHook } from '@testing-library/react';
 import { resetOpenerPrefs } from '../utils/opener-prefs';
 
@@ -36,6 +36,7 @@ beforeEach(() => {
   localStorage.clear();
   resetOpenerPrefs();
   setViewMode(ViewMode.Standard);
+  setDev(false); // the "Dev view" test below turns it on
 });
 
 describe('WorkerToolbar — display modes', () => {
@@ -45,6 +46,14 @@ describe('WorkerToolbar — display modes', () => {
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-more')).toBeNull();
+  });
+
+  it('each vendor glyph wears its vendor tint, not the plain foreground', () => {
+    render(<WorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
+    const glyph = (worker: string) => screen.getByTestId(`t-launch-${worker}`).firstElementChild;
+    expect(glyph('claude_code')?.getAttribute('class')).toContain('text-orange-500');
+    expect(glyph('codex')?.getAttribute('class')).toContain('text-emerald-500');
+    expect(glyph('copilot')?.getAttribute('class')).toContain('text-sky-500');
   });
 
   it('Standard view defaults to lastOpened: one worker + chevron', () => {
@@ -57,7 +66,7 @@ describe('WorkerToolbar — display modes', () => {
   });
 
   it('Dev view defaults to all (no chevron)', () => {
-    setViewMode(ViewMode.Dev);
+    setDev(true); // Dev is a switch now, not a view mode
     render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     expect(screen.getByTestId('t-launch-codex')).toBeTruthy();
     expect(screen.getByTestId('t-launch-copilot')).toBeTruthy();
@@ -97,9 +106,7 @@ describe('WorkerToolbar — launch + persistence', () => {
 
   it('hasProcess short-circuits to the Open button', () => {
     const onOpen = vi.fn();
-    render(
-      <WorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />,
-    );
+    render(<WorkerToolbar onLaunch={() => {}} hasProcess onOpen={onOpen} testIdPrefix="t" />);
     expect(screen.getByTestId('t-open-session')).toBeTruthy();
     expect(screen.queryByTestId('t-launch-claude_code')).toBeNull();
   });

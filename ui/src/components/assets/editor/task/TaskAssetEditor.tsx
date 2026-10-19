@@ -1,6 +1,7 @@
+import { t } from '@lingui/core/macro';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
-import { PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
-import { openArtifact } from '@src/components/task-bar/task-utils';
+import { PRIORITY_CONFIG, STATUS_LABELS, statusLabel } from '@src/components/task-bar/constants';
+import { isDelegatedTask, openArtifact, STATUS_FAMILIES, statusFamily } from '@src/components/task-bar/task-utils';
 import { Input } from '@src/components/ui/input';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useParentTask } from '@src/hooks/use-parent-task';
@@ -12,10 +13,12 @@ import { notify } from '@src/notifications';
 import { Archive, ArrowLeft, FileText, User as UserIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
+import { DelegationBlock } from './DelegationBlock';
 import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
+import { TaskDescription } from './TaskDescription';
 import { AssetCollisionBadge } from '../AssetCollisionUI';
 import { TaskComments } from './TaskComments';
 
@@ -26,7 +29,7 @@ interface TaskAssetEditorProps {
   task?: Task;
 }
 
-const STATUS_OPTIONS: { value: string; label: string }[] = ['to_do', 'in_progress', 'done'].map((value) => ({
+const STATUS_OPTIONS: { value: string; label: string }[] = STATUS_FAMILIES.map((value) => ({
   value,
   label: STATUS_LABELS[value],
 }));
@@ -54,7 +57,8 @@ function toDateInput(v?: Date | string | null): string {
  * Task asset editor — the redesigned task surface. Task is a folder asset:
  * `task.md` holds the fields (owns_main_ref ⇒ the entity is the source of truth,
  * re-rendered on every save). The metadata is edited through a purpose-built
- * header bound to the entity, and the body is the Attachments section (the
+ * header bound to the entity, and the body is the editable Description (free
+ * text, stored in `description`) over the Attachments section (the
  * files/folders this task is about, stored in `artifacts`). Received tasks
  * (`shared_by_id`) fall through to the collaboration `SharedTaskView`.
  *
@@ -94,18 +98,35 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   }, [parentId, taskKey]);
 
   const save = useCallback(async (patch: Partial<Task>) => {
-    const t = taskRef.current;
-    if (!t) return;
-    Object.assign(t, patch);
+    // NOT `t`: that shadowed the lingui `t` macro, so the catch below called the
+    // Task entity as a tagged template instead of translating the error title.
+    const current = taskRef.current;
+    if (!current) return;
+    const changed = Object.entries(patch).some(
+      ([key, value]) => (current as unknown as Record<string, unknown>)[key] !== value,
+    );
+    if (!changed) return;
+    Object.assign(current, patch);
     try {
-      await t.save();
+      await current.save();
+      current.markEdit();
     } catch (e) {
       notify.error({
-        title: 'Could not save task',
+        title: t`Could not save task`,
         message: e instanceof Error ? e.message : 'Save failed.',
       });
     }
   }, []);
+
+  /**
+   * "Leave this task" is a DESTINATION, not a history step — the same shape
+   * ConversationRoute uses to leave a conversation. It lands in the task list
+   * every time, including for a task opened by deep link, where a history step
+   * would have had nowhere to go. The navigation bar owns going back.
+   */
+  const closeTask = useCallback(() => {
+    navigation.openDock(DockPointer.forTasks());
+  }, [navigation]);
 
   const commitTitle = useCallback(() => {
     const trimmed = title.trim();
@@ -130,7 +151,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
 
   // Received / shared tasks keep the collaboration surface (mapping + conversation).
   if (task.shared_by_id) {
-    return <SharedTaskView task={task} conversationId={null} onClose={() => navigation.goBack()} />;
+    return <SharedTaskView task={task} conversationId={null} onClose={closeTask} />;
   }
 
   const status = normStatus(task.status);
@@ -142,16 +163,23 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   const memberMode = !!parentId && !!parent;
 
   // Status segmented control — always the task's OWN status (a member task owns
-  // nothing but this), so it's identical in both modes.
-  const statusControl = (
+  // nothing but this), so it's identical in both modes. A delegated task's status
+  // is the ledger's to write (its owner reports it): shown, not set.
+  const family = statusFamily(status);
+  const statusControl = isDelegatedTask(task) ? (
+    <span className="rounded-full border px-3 py-1 text-xs font-medium" data-testid="task-ledger-status">
+      {statusLabel(status)}
+    </span>
+  ) : (
     <div className="inline-flex overflow-hidden rounded-full border">
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
           onClick={() => applyStatus(opt.value)}
+          data-testid={`task-editor-status-${opt.value}`}
           className={cn(
             'px-3 py-1 text-xs font-medium transition-colors',
-            status === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
+            family === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
           )}
         >
           {opt.label}
@@ -164,7 +192,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
     <button
       onClick={() => void save({ status: 'archived', archived_at: new Date().toISOString() })}
       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      title="Archive task"
+      title={t`Archive task`}
     >
       <Archive className="h-3.5 w-3.5" />
       Archive
@@ -178,7 +206,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
         <div className="flex items-center justify-between border-b px-6 py-3">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => navigation.goBack()}
+              onClick={closeTask}
               className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
@@ -211,7 +239,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           {/* Parent's comments, read-only — collapsible and collapsed by
               default, always present as an affordance (even with no comments). */}
           <div className="shrink-0">
-            <TaskComments task={parent} readOnly collapsible title="Parent comments" />
+            <TaskComments task={parent} readOnly collapsible title={t`Parent comments`} />
           </div>
 
           {/* This task — only the child's OWN data, nothing repeated from above. */}
@@ -260,7 +288,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       <div className="flex flex-col gap-3 border-b px-6 py-4">
         <div className="flex items-center justify-between">
           <button
-            onClick={() => navigation.goBack()}
+            onClick={closeTask}
             className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -280,11 +308,12 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             onKeyDown={(e) => {
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
-            placeholder="Untitled task"
+            placeholder={t`Untitled task`}
+            data-testid="task-editor-title"
             size={Math.max((title || 'Untitled task').length, 1)}
             className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />
-          <OwnerButton task={task} save={save} />
+          <OwnerButton task={task} />
           <AssetCollisionBadge />
         </div>
 
@@ -351,6 +380,10 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           TaskAttachments' internal `flex-1` is neutralized by the plain block
           wrapper so it can't grow and overlap the comments below it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <DelegationBlock task={task} />
+        <div className="shrink-0">
+          <TaskDescription task={task} save={save} />
+        </div>
         <MemberTasksSection task={task} />
         <div className="shrink-0">
           <TaskAttachments task={task} save={save} />

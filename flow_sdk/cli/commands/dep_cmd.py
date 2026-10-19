@@ -1,0 +1,159 @@
+"""``flow dep`` — a project's dependencies (``flow.json``), through the running app.
+
+    flow dep list                                  # every declared dependency and its state here
+    flow dep add data_source-7c1e… --label "Team knowledge"   # an asset, by id
+    flow dep add data_source-0a9d… --asset data_source-7c1e…  # declared in THAT asset's flow.json
+    flow dep add ../handbook                       # a folder in git is written as its repo
+    flow dep add git+https://github.com/acme/handbook#main --path legal --optional
+    flow dep add hub:8c1f0b2e-…                    # a hub project
+    flow dep add ../notes --local                  # a local package: this device only, never committed
+    flow dep remove handbook                       # leaves the folder on disk alone
+    flow dep sync [--update]                       # fetch what is missing; --update pulls Flowpad's clones
+    flow dep install policies                      # bring in an optional one
+    flow dep load policies [--approve]             # check/load; explicit approval permits setup
+    flow dep check handbook                        # exit 0 when it is ready here, 4 when not
+
+``--project`` names the project; the default is the project whose folder is the working
+directory. Every command prints one JSON envelope.
+"""
+from __future__ import annotations
+
+import os
+from typing import NoReturn, Optional
+
+import typer
+from typing_extensions import Annotated
+
+from flow_sdk.cli.commands._common import (
+    caller_abs_path,
+    discover_port,
+    fail,
+    get_graph_json,
+    graph_url,
+    ok,
+    post_graph_json,
+    project_for_path,
+)
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+dep_app = typer.Typer(name="dep", help="A project's dependencies (flow.json).", add_completion=False, no_args_is_help=True)
+
+#: A dependency can be a clone: allow for one.
+FETCH_SECONDS = 600
+
+ProjectOpt = Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")]
+
+
+def _refused(status: int, body: dict) -> NoReturn:
+    code = int(ExitCode.NOT_FOUND) if status == 404 else int(ExitCode.REFUSED)
+    fail(code, "REFUSED", str(body.get("message") or f"HTTP {status}"), body.get("data") or None)
+
+
+def _project(port: int, project: Optional[str]) -> str:
+    if project:
+        return project.removeprefix("project-")
+    found = project_for_path(port, os.getcwd(), create=False)
+    if not found:
+        fail(int(ExitCode.NOT_FOUND), "NO_PROJECT", f"{os.getcwd()} is not a project folder; pass --project or cd into one")
+    return found
+
+
+def _url(port: int, project_id: str, action: str) -> str:
+    return graph_url(port, f"project/{project_id}/{action}")
+
+
+@dep_app.command("list")
+def list_(
+    project: ProjectOpt = None,
+    declarers: Annotated[bool, typer.Option("--declarers", help="Also list every asset whose own flow.json declares dependencies, with all its entries.")] = False,
+) -> None:
+    """Every declared dependency and its state on this machine."""
+    port = discover_port(required=True)
+    url = _url(port, _project(port, project), "dependencies") + ("?declarers=1" if declarers else "")
+    ok(get_graph_json(url, on_error=_refused) or {})
+
+
+@dep_app.command("add")
+def add(
+    source: Annotated[str, typer.Argument(help="An id (<type>-<uuid> / <kind>.id.<uuid>), a folder, a git URL, or git+…/hub:…/file:… .")],
+    name: Annotated[Optional[str], typer.Option("--name", help="The dependency's name (default: the folder or repo name).")] = None,
+    path: Annotated[Optional[str], typer.Option("--path", help="A folder inside the source.")] = None,
+    optional: Annotated[bool, typer.Option("--optional", help="Declare it under optionalDependencies.")] = False,
+    local: Annotated[bool, typer.Option("--local", help="Keep it on this device only: never written to flow.json or any project file.")] = False,
+    label: Annotated[Optional[str], typer.Option("--label", help="A human-friendly name for the entry.")] = None,
+    description: Annotated[Optional[str], typer.Option("--description", help="What it is for.")] = None,
+    asset: Annotated[Optional[str], typer.Option("--asset", help="Declare it in this asset's own flow.json (a TypeId); ids only.")] = None,
+    project: ProjectOpt = None,
+) -> None:
+    """Declare SOURCE in flow.json (the project's, or --asset's) and resolve it."""
+    port = discover_port(required=True)
+    raw = source.strip()
+    if not raw.startswith(("git+", "hub:", "file:")) and os.path.isdir(os.path.expanduser(raw)):
+        raw = caller_abs_path(raw)   # a folder is the CALLER's, not the server's working directory
+    body = {"source": raw, "name": name or "", "path": path or "", "optional": optional, "local": local,
+            "label": label or "", "description": description or "", "asset": asset or ""}
+    ok(post_graph_json(_url(port, _project(port, project), "add-dependency"), body, timeout=FETCH_SECONDS, on_error=_refused))
+
+
+@dep_app.command("remove")
+def remove(name: Annotated[str, typer.Argument(help="The dependency's name.")], project: ProjectOpt = None) -> None:
+    """Drop NAME from flow.json; the folder on disk is never touched."""
+    port = discover_port(required=True)
+    ok(post_graph_json(_url(port, _project(port, project), "remove-dependency"), {"name": name}, on_error=_refused))
+
+
+@dep_app.command("sync")
+def sync(
+    update: Annotated[bool, typer.Option("--update", help="Fast-forward the clones Flowpad made.")] = False,
+    project: ProjectOpt = None,
+) -> None:
+    """Fetch every dependency that is missing here, link and index it."""
+    port = discover_port(required=True)
+    ok(post_graph_json(_url(port, _project(port, project), "resolve-dependencies"), {"update": update},
+                       timeout=FETCH_SECONDS, on_error=_refused))
+
+
+@dep_app.command("install")
+def install(name: Annotated[str, typer.Argument(help="An optional dependency's name.")], project: ProjectOpt = None) -> None:
+    """Bring in the optional dependency NAME."""
+    port = discover_port(required=True)
+    ok(post_graph_json(_url(port, _project(port, project), "install-dependency"), {"name": name},
+                       timeout=FETCH_SECONDS, on_error=_refused))
+
+
+@dep_app.command("check")
+def check(
+    name: Annotated[str, typer.Argument(help="The dependency's name in the project's flow.json, or the id a deeper one names.")],
+    project: ProjectOpt = None,
+) -> None:
+    """Exit 0 when NAME is ready here, NOT_YET otherwise — the setup wizard's completion check."""
+    port = discover_port(required=True)
+    data = get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {}
+    rows = data.get("dependencies") or []
+    # ``project_dependencies.requirement_key``: its name in the project's own file, else the id it names.
+    row = next((d for d in rows if (d.get("source") if d.get("via") else d.get("name")) == name), None)
+    if row is None:
+        fail(int(ExitCode.NOT_FOUND), "NOT_FOUND", f"{name!r} is not a dependency of this project")
+    if row.get("state") != "ready":
+        fail(int(ExitCode.NOT_YET), "NOT_READY", f"{name}: {row.get('state')} — {row.get('reason') or ''}".rstrip(" —"), {"dependency": row})
+    ok({"dependency": row})
+
+
+@dep_app.command("load")
+def load(
+    name: Annotated[str, typer.Argument(help="The dependency's name.")],
+    approve: Annotated[bool, typer.Option("--approve", help="Approve required setup, then load the service.")] = False,
+    project: ProjectOpt = None,
+) -> None:
+    """Load NAME through the same approval gate as Open; never prompts or approves implicitly."""
+    port = discover_port(required=True)
+    data = get_graph_json(_url(port, _project(port, project), "dependencies"), on_error=_refused) or {}
+    row = next((d for d in data.get("dependencies", []) if d.get("name") == name and not d.get("via")), None)
+    if row is None or not row.get("project_id"):
+        fail(int(ExitCode.NOT_FOUND), "NO_PROVIDER", f"{name!r} has no resolved provider project")
+    result = post_graph_json(_url(port, row["project_id"], "load"), {"approved": approve}, on_error=_refused)
+    if result.get("state") == "setup_required":
+        fail(int(ExitCode.NOT_YET), "SETUP_REQUIRED", result.get("detail") or f"{name} requires setup", result)
+    if result.get("state") == "failed":
+        fail(int(ExitCode.NOT_YET), "LOAD_FAILED", result.get("detail") or f"Could not load {name}", result)
+    ok(result)

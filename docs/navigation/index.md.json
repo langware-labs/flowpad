@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-b91806c7-b7c9-5289-8493-a79f197f9c51",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "navigation",
+  "folder_name": "navigation",
+  "inputs_hash": "3110f20bb8fefc700e51f00bdd666800f9ede8d0f1caa1689f38c4678a88c276",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "How Flowpad navigates: the seven-step dock URL loading algorithm and its invariants, the screen map with you-are-here context and where-to-go routing, the home page a project opens on, and the catalogs of example sentences each mapped to its navigation target.",
+  "files": [
+    {
+      "name": "dock-loading.md",
+      "rel_path": "dock-loading.md",
+      "title": "Dock loading — one algorithm, seven steps",
+      "summary": "Seven-step dock URL loading algorithm (parse, canonicalize, resolve, commit, layout, render, attach), its six invariants, enforcing tests, PTY replay checkpoints, past traps and speed budgets.",
+      "content_hash": "74c8388f1d4c5ded572f34ef0473ae47f22de0ea7026a09b55195a19593eae19",
+      "size_bytes": 14762
+    },
+    {
+      "name": "navigation-sentences.md",
+      "rel_path": "navigation-sentences.md",
+      "title": "Navigation sentences — the whole Flowpad UX surface",
+      "summary": "Two hundred navigation requests mapped to screens, entities, files, URLs, logs, or assistant actions for classifier coverage.",
+      "content_hash": "20b7d439c22c4292135bd825ba1f727ab71640be2ab367be31b408fbdac7e32f",
+      "size_bytes": 12981
+    },
+    {
+      "name": "navigation-spec.md",
+      "rel_path": "navigation-spec.md",
+      "title": "Navigation spec — the map, you are here, where to go",
+      "summary": "Navigation spec: the screen map, the you-are-here context, the NavigationDecision routing to a dock or assistant prompt, and the SmartNavigationLog dataset.",
+      "content_hash": "e7c88b368b80ea667c569acdb2ec7294150ce068106d547bcd8194e51c2ebc8f",
+      "size_bytes": 6914
+    },
+    {
+      "name": "navigation_medium.md",
+      "rel_path": "navigation_medium.md",
+      "title": "Smart navigation — 200 medium sentences",
+      "summary": "Two hundred contextual navigation sentences covering indirect wording, typos, source screens, expected destinations, and assistant handoffs.",
+      "content_hash": "a6bb37a4c362ee9685fad592e74e49258d37105f51a89bc89e58a24f9ae2d394",
+      "size_bytes": 28569
+    },
+    {
+      "name": "project-home-page.md",
+      "rel_path": "project-home-page.md",
+      "title": "Project home page — what a project opens on",
+      "summary": "Project home page: home_page manifest declaration naming an agent or web app, how it is set, resolved and loaded, and when the redirect opens it.",
+      "content_hash": "944f50fab5064aeeb00c741bd3296aeb1112b5a46a5a553485492a52ac88c3b5",
+      "size_bytes": 3185
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
+  "latest_process_ref": ""
+}

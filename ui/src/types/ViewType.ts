@@ -1,3 +1,8 @@
+import type * as lucideExports from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { DOCK_KEYWORD, ViewType } from '@sdk';
 
 /**
@@ -33,46 +38,30 @@ export type ViewTypeValue = `${ViewType}`;
  * Viewer metadata registry
  * Single source of truth for all viewer information
  */
+/** Every `lucide-react` export that is an icon component — what `lucideByName` can resolve. */
+type LucideExportName = {
+  [K in keyof typeof lucideExports]: (typeof lucideExports)[K] extends LucideIcon ? K : never;
+}[keyof typeof lucideExports];
+
 export interface ViewerMeta {
-  title: string;
-  /** Icon component name (string to avoid JSX in shared package) */
-  iconName:
-    | 'Code'
-    | 'Terminal'
-    | 'Globe'
-    | 'Variable'
-    | 'GitCompare'
-    | 'ListCheck'
-    | 'Activity'
-    | 'MessageSquare'
-    | 'Monitor'
-    | 'FileQuestion'
-    | 'FileText'
-    | 'Brain'
-    | 'Hand'
-    | 'Key'
-    | 'KeyRound'
-    | 'LogIn'
-    | 'BookOpen'
-    | 'ListChecks'
-    | 'Webhook'
-    | 'Cpu'
-    | 'FolderOpen'
-    | 'Sparkles'
-    | 'Settings'
-    | 'PlaySquare'
-    | 'Eye'
-    | 'Home'
-    | 'Zap'
-    | 'CheckSquare'
-    | 'BadgeCheck'
-    | 'SearchIcon'
-    | 'Workflow'
-    | 'GitGraph'
-    | 'BrainCircuit'
-    | 'Users'
-    | 'Mail'
-    | 'Stethoscope';
+  title: MessageDescriptor;
+  /**
+   * Icon component name (a string, to keep JSX out of this shared module).
+   *
+   * Derived from `lucide-react`'s own export map rather than hand-listed. The
+   * hand-maintained 40-name allowlist that used to sit here had drifted from
+   * the table it constrains — `Building2`, `Hash`, `RadioTower` and
+   * `LayoutGrid` were all in use below and all missing from it, 7 errors —
+   * and every icon added since would have drifted the same way. `lucideByName`
+   * resolves these against exactly this namespace, so this is the real
+   * constraint, it still catches a typo, and it cannot go stale.
+   *
+   * The NAMESPACE, not lucide's `icons` map: the map has dropped the
+   * deprecated aliases (`Home`, `FileQuestion`, `CheckSquare`, `SearchIcon`),
+   * which the namespace still exports and `lucideByName` still resolves. The
+   * map would have flagged four working icons as typos.
+   */
+  iconName: LucideExportName;
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -84,6 +73,11 @@ export interface ViewerMeta {
    * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
    */
   chrome?: 'fullbleed' | 'workspace';
+  /**
+   * How a win/ focus window frames this viewer alone: `'bare'` (default) is the
+   * view and nothing else; `'browser'` keeps the top nav bar and the footer.
+   */
+  focusChrome?: 'bare' | 'browser';
   /**
    * When true, every sub-pointer of this viewType folds into ONE tab — the
    * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
@@ -99,11 +93,39 @@ export interface ViewerMeta {
    * browsers (Assets, Explorer) where in-tab navigation must stay in one chip.
    */
   scopeKeyed?: boolean;
+  /**
+   * When true, tab identity is the FIRST pointer segment — the HOST — and every
+   * deeper segment is sub-state *within* that host (a selected message inside a
+   * conversation, a route inside an app). One tab per host, however deep the URL
+   * goes. The third fold: `foldsPointer` above is one tab per VIEW, `scopeKeyed`
+   * one per SCOPE, this one per HOST.
+   *
+   * ONLY when segment 0 is an ENTITY IDENTITY. NOT for a view whose first segment
+   * is a DISCRIMINATOR — `lens` (`<category>/<type>/<ref>`), `k-browser`
+   * (`vfs|typeid/<value>`), `graph` (`<type>/<id>`) — where folding would merge
+   * every claude lens, or the entire knowledge browser, into one chip. The
+   * failure is silent (tabs merge, nothing errors), so check this before setting
+   * the flag on a new view.
+   *
+   * Prefer OPTIONS for new sub-state (`forStreamInbox` puts `conversation`/`message`
+   * there, and options are excluded from `tabHash` for free). Use this flag when
+   * the sub-state is already a documented, deep-linkable PATH that cannot move
+   * without breaking existing links.
+   */
+  foldsSubPointer?: boolean;
+  /**
+   * When true, this view is a HOST tab: it draws its own nested strip of child
+   * tabs (`Tab.parent_tab_id` = this tab's id), one level deep — a host is never
+   * a child. Which docks a host accepts as children lives in
+   * `navigation/tab-hosts.ts` (mirrored by `_HOST_CHILD_RULES` in
+   * `flow_sdk/builtin/tab.py`). Vibe is the first host.
+   */
+  hostsTabs?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.HOME]: {
-    title: 'Home',
+    title: msg`Home`,
     iconName: 'Home',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -112,134 +134,108 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // Hub entity list by type (page=hub). Standard workspace chrome; the pointer
   // (the OSS entity type) selects which list, so it stays part of tab identity.
   [ViewType.HUB_RECORDS]: {
-    title: 'Records',
+    title: msg`Records`,
     iconName: 'ListChecks',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   // Hub single-entity viewer (page=hub). Pointer = `<type>/<id>`.
   [ViewType.HUB_ENTITY]: {
-    title: 'Entity',
+    title: msg`Entity`,
     iconName: 'FileText',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SYSTEM_PROFILE]: {
-    title: 'System Profile',
+    title: msg`System Profile`,
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.ANALYSIS]: {
-    title: 'Analysis',
-    iconName: 'Sparkles',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.CHAT]: {
-    title: 'Chat',
-    iconName: 'MessageSquare',
-    tabLocation: 'overview',
-    canAddAsTab: false,
-  },
+  // ANALYSIS / CHAT / REASONING / UNSUPPORTED deliberately have NO row. A registry
+  // row is what makes a view addressable (see `addressable` in the Python
+  // ViewMeta), and none of these four has a case in the content panel — a dock URL
+  // naming one falls through to `default: <HomeLanding/>`. They kept their rows for
+  // years, so `flow schema views` advertised them and `flow show view chat` returned
+  // exit 0 while showing the user Home. Retiring the row is what makes the catalogue
+  // honest; the enum members stay, because old URLs must keep decoding.
   [ViewType.SHELL]: {
-    title: 'Worker',
+    title: msg`Worker`,
     iconName: 'Terminal',
     tabLocation: 'overview',
     canAddAsTab: true,
   },
   [ViewType.EDITOR]: {
-    title: 'Code Editor',
+    title: msg`Code Editor`,
     iconName: 'Code',
     tabLocation: 'overview',
     canAddAsTab: true,
   },
   [ViewType.WEB_APP]: {
-    title: 'Web App',
+    title: msg`Web App`,
     iconName: 'Globe',
     tabLocation: 'overview',
     canAddAsTab: true,
+    focusChrome: 'browser',
   },
-  [ViewType.ENVIRONMENT]: {
-    title: 'Environment',
-    iconName: 'KeyRound',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.CONNECTIONS]: {
-    title: 'Connections',
-    iconName: 'LogIn',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
+  [ViewType.APP]: {
+    title: msg`App`,
+    iconName: 'Globe',
+    tabLocation: 'overview',
+    // Not manually openable: an app is reached by showing/running one, never by
+    // picking "App" from a menu — its pointer is a specific artifact.
+    canAddAsTab: false,
   },
   [ViewType.DIFF]: {
-    title: 'Diff Viewer',
+    title: msg`Diff Viewer`,
     iconName: 'GitCompare',
     tabLocation: 'overview',
     canAddAsTab: false, // Only opened via checkpoint clicks, not manually
   },
   [ViewType.ARTIFACTS]: {
-    title: 'Artifacts',
+    title: msg`Artifacts`,
     iconName: 'ListCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.REASONING]: {
-    title: 'Reasoning',
-    iconName: 'Brain',
-    tabLocation: 'overview',
-    canAddAsTab: false,
-  },
-  [ViewType.UNSUPPORTED]: {
-    title: 'Unsupported',
-    iconName: 'FileQuestion',
-    tabLocation: 'overview',
-    canAddAsTab: false,
-  },
   [ViewType.MARKDOWN]: {
-    title: 'Markdown',
+    title: msg`Markdown`,
     iconName: 'FileText',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
   [ViewType.DOCS]: {
-    title: 'Docs',
+    title: msg`Docs`,
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.ASSISTANCE]: {
-    title: 'Assistance',
+    title: msg`Assistance`,
     iconName: 'Hand',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SURVEY]: {
-    title: 'Survey',
+    title: msg`Survey`,
     iconName: 'ListChecks',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
-  [ViewType.API_KEYS]: {
-    title: 'API Keys',
-    iconName: 'Key',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.HOOKS]: {
-    title: 'Hooks',
+    title: msg`Hooks`,
     iconName: 'Webhook',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via dev menu, not as dock tab
   },
   [ViewType.MACHINE]: {
-    title: 'Machine',
+    title: msg`Machine`,
     iconName: 'Cpu',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.EXPLORER]: {
-    title: 'Files',
+    title: msg`Files`,
     iconName: 'FolderOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -250,37 +246,57 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // back-compat with persisted DockPointers but the registry no longer
   // surfaces it as a navigable view.
   [ViewType.AI_CONFIG]: {
-    title: 'AI Configuration',
+    title: msg`AI Configuration`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.SHOW]: {
-    title: 'Show',
+    title: msg`Show`,
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  // A question waiting on a person. Never a tab: it replaces the content area
+  // (dock) or is the whole window (`win/`, when no tab was listening), and it
+  // stops existing once answered.
+  [ViewType.ASK]: {
+    title: msg`Ask`,
+    iconName: 'MessageCircleQuestion',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // No workspace frame around the question; the rail and tab strip stay.
+    chrome: 'fullbleed',
+  },
   [ViewType.APPS]: {
-    title: 'App',
+    title: msg`App`,
     iconName: 'Sparkles',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+    // Pointer is `<uname>/<routerPath>`: the app is the host, its internal route
+    // is sub-state the guest repoints on every `navigate-app` message.
+    foldsSubPointer: true,
   },
   [ViewType.GRAPH]: {
-    title: 'Graph',
+    title: msg`Graph`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.WORLDVIEW]: {
-    title: 'WorldView',
+    title: msg`WorldView`,
     iconName: 'GitGraph',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.ORGANIZATION]: {
+    title: msg`Organization`,
+    iconName: 'Building2',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.TAG]: {
-    title: 'Tag Graph',
+    title: msg`Tag Graph`,
     iconName: 'Hash',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -288,21 +304,97 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // tag folds into one tab chip (PREFERENCES precedent).
     foldsPointer: true,
   },
+  [ViewType.CREDENTIALS]: {
+    title: msg`Credentials`,
+    iconName: 'KeyRound',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // The pointer is internal tab + project selection, so every combination
+    // folds into one chip rather than spawning a tab per tab (PREFERENCES
+    // precedent).
+    foldsPointer: true,
+  },
+  // Hub LLM endpoints (page=hub). Pointer = `<id>[/<overview|usage|models>]`:
+  // in-view selection + tab, so it folds into one chip (CREDENTIALS precedent).
+  [ViewType.LLM_ENDPOINTS]: {
+    title: msg`LLM Endpoints`,
+    iconName: 'Waypoints',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
+  // Hub token plan (page=hub). Pointer = the scope (`me` | `team[/<id>]` | `org`):
+  // an in-view selection, so it folds into one chip (LLM_ENDPOINTS precedent).
+  [ViewType.TOKEN_PLAN]: {
+    title: msg`Token plan`,
+    iconName: 'Gauge',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
+  // What funds this machine's harnesses (page=desk, NOT hub: a device token, a stored key
+  // and the endpoint binding are all box facts, and the producing box action 404s on the
+  // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.
+  [ViewType.LLM_SOURCES]: {
+    title: msg`LLM sources`,
+    // An LLM is not a key — a source may be a device login or a hub endpoint. Sparkles is
+    // the LLM glyph (LLM_SETUP wears it too).
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    foldsPointer: true,
+  },
+  // The chooser `flow llm set auto` opens when the box can fund nothing. `canAddAsTab` is
+  // false: it is a one-question screen you pass through once, not somewhere to keep open —
+  // LLM_SOURCES is the screen you come back to.
+  [ViewType.LLM_SETUP]: {
+    title: msg`Set up LLM`,
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: false,
+  },
+  // The Flowpad Assistant popped out of its floating window. Never a tab: it is
+  // opened in `win/`, where it IS the window (ASK precedent).
+  [ViewType.ASSISTANT]: {
+    title: msg`Flowpad Assistant`,
+    iconName: 'MessageCircle',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    chrome: 'fullbleed',
+  },
+  // A process shown as the Vibe workspace: chat + Display + its nested child tabs.
+  // `DockPointer.tabHash` folds it onto the process's SHELL identity — one process,
+  // one Tab row, re-pointed between the two.
+  [ViewType.VIBE]: {
+    title: msg`Vibe`,
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    hostsTabs: true,
+  },
+  // Inbound routing (page=hub AND desk): the hub's webhook claims and where each one's messages go. No pointer.
+  [ViewType.INBOUND]: {
+    title: msg`Inbound`,
+    iconName: 'Webhook',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
   [ViewType.SUBGRAPH]: {
-    title: 'Subgraph',
+    title: msg`Subgraph`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,
   },
   [ViewType.K_BROWSER]: {
-    title: 'Knowledge Browser',
+    title: msg`Knowledge Browser`,
     iconName: 'Brain',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
   [ViewType.LENS]: {
-    title: 'Lens',
+    title: msg`Lens`,
     iconName: 'Eye',
     tabLocation: 'dedicated',
     canAddAsTab: false,
@@ -310,117 +402,174 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // ViewType.SESSION removed — legacy /dock/session URLs redirect to
   // /dock/shell/<agentic_process>. The old live-workflow viewer is gone.
   [ViewType.TASKS]: {
-    title: 'Tasks',
+    title: msg`Tasks`,
     iconName: 'CheckSquare',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.SETTINGS]: {
-    title: 'Settings',
+    title: msg`Settings`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.PREFERENCES]: {
-    title: 'Preferences',
+    title: msg`Preferences`,
     iconName: 'Settings',
     tabLocation: 'dedicated',
     canAddAsTab: false,
     foldsPointer: true,
   },
   [ViewType.AGENTIC_PROCESS]: {
-    title: 'Process',
+    title: msg`Process`,
     iconName: 'Monitor',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.LIVE_SESSION]: {
-    title: 'Live Session',
+    title: msg`Live Session`,
     iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.HELPDESK]: {
+    title: msg`Help desk`,
+    iconName: 'LifeBuoy',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // Reading a guide must not mint a tab per article — the portal is one
+    // destination. NOT `chrome: 'fullbleed'`, which would drop the tab chip
+    // entirely (DockPointer.tabHash returns null for it).
+    foldsPointer: true,
+  },
   [ViewType.SEARCH]: {
-    title: 'Search',
+    title: msg`Search`,
     iconName: 'SearchIcon',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.TRIGGERS]: {
-    title: 'Triggers',
+  [ViewType.AUTOMATIONS]: {
+    title: msg`Automations`,
     iconName: 'Zap',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    // The pointer is the place — the list, `runs`, `bus` (automations-pointer.ts) —
+    // so every level folds into one chip.
+    foldsPointer: true,
   },
   [ViewType.CAPABILITIES]: {
-    title: 'Capabilities',
+    title: msg`Capabilities`,
     iconName: 'BadgeCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.AGENTIC_FLOWS]: {
-    title: 'Agentic Flows',
+  [ViewType.GRAPH_WORKFLOWS]: {
+    title: msg`Graph Workflows`,
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  // `Antenna` matches DATA_SOURCE.icon in the backend TypeInfo, so the tab chip
+  // and the type glyph (which comes from the registry via iconForType) agree.
+  [ViewType.DATA_SOURCES]: {
+    title: msg`Data sources`,
+    iconName: 'Antenna',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // The pointer is the drivers list / one driver nested under the sources
+    // (data-sources-pointer.ts), so every level folds into one chip.
+    foldsPointer: true,
+  },
+  [ViewType.ASSET_LIST]: {
+    title: msg`Assets`,
+    iconName: 'Table',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  // `Brain` matches RAG_INDEX.icon in the backend TypeInfo, so the tab chip and the type glyph
+  // (which comes from the registry via iconForType) agree.
+  [ViewType.RAG]: {
+    title: msg`Search indexes`,
+    iconName: 'Brain',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.SCHEMA_TREE]: {
+    title: msg`Schema`,
+    iconName: 'ListTree',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // A project's screen: the project is the address's scope, so there is one chip per
+    // project and the pointer (the kinds unfolded down to the selection) stays in it.
+    scopeKeyed: true,
+  },
+  [ViewType.PROCESS_RUNS]: {
+    title: msg`Runs`,
+    iconName: 'History',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PLAN]: {
-    title: 'Plan',
+    title: msg`Plan`,
     iconName: 'FileText',
     tabLocation: 'overview',
     canAddAsTab: false,
   },
-  [ViewType.CRON]: {
-    title: 'Cron',
-    iconName: 'Zap',
-    tabLocation: 'dedicated',
-    canAddAsTab: false, // Only accessible via direct URL /dock/cron
-  },
   [ViewType.ASSETS]: {
-    title: 'Assets',
+    title: msg`Assets`,
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
     scopeKeyed: true,
   },
   [ViewType.PROJECT]: {
-    title: 'Collaboration',
+    title: msg`Collaboration`,
     iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.INBOX]: {
-    title: 'Inbox',
+  [ViewType.AGENT]: {
+    title: msg`Agent`,
+    iconName: 'Bot',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.STREAM_INBOX]: {
+    title: msg`Stream Inbox`,
     iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.CONVERSATION]: {
-    title: 'Conversation',
+    title: msg`Conversation`,
     iconName: 'MessageSquare',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+    // Pointer is `<conversationId>[/message/<messageId>]`: the message is a
+    // selected bubble inside the conversation, the same kind of sub-state
+    // `thread`/`agentId` already ride as options.
+    foldsSubPointer: true,
   },
   [ViewType.SPEC]: {
-    title: 'Spec',
+    title: msg`Spec`,
     iconName: 'FileText',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.GRAPH_CONTEXT]: {
-    title: 'Context',
+    title: msg`Context`,
     iconName: 'BrainCircuit',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.DIAGNOSIS]: {
-    title: 'Diagnosis',
+    title: msg`Diagnosis`,
     iconName: 'Stethoscope',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
   [ViewType.DESKTOP]: {
-    title: 'Desktop',
+    title: msg`Desktop`,
     iconName: 'LayoutGrid',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -430,3 +579,24 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     scopeKeyed: true,
   },
 };
+
+/**
+ * The view's display title, translated.
+ *
+ * `VIEWER_REGISTRY` is module-level, so its titles are held as lazy `msg`
+ * descriptors — an eager macro out there would bind the language at import and
+ * never follow a locale switch. Read a title through here rather than off
+ * `.title`, so the resolution happens once, at render, in one place.
+ */
+export function viewerTitle(viewType: ViewType | string | null | undefined): string | undefined {
+  if (!viewType) return undefined;
+  const descriptor = VIEWER_REGISTRY[viewType as ViewType]?.title;
+  return descriptor ? i18n._(descriptor) : undefined;
+}
+
+/** Is this view a HOST tab (it draws its own nested strip of child tabs)? The one
+ *  read of `ViewerMeta.hostsTabs`; which children a host accepts lives in
+ *  `navigation/tab-hosts.ts`. */
+export function viewHostsTabs(viewType: ViewType | string | null | undefined): boolean {
+  return !!viewType && !!VIEWER_REGISTRY[viewType as ViewType]?.hostsTabs;
+}

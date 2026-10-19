@@ -59,14 +59,30 @@ describe('CloudManager hub identity', () => {
     expect(sdk.dataContext.cloudUserTypeId?.toString()).toBe(`user-${HUB_USER.id}`);
   });
 
-  it('maps an absent bootstrap user to a logged-out cloud identity', async () => {
+  it('maps an absent bootstrap user to a logged-out identity and redirects to hub login', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
 
-    await sdk.cloudManager.bootstrap({
+    // The hub surface has no anonymous mode: a session-less bootstrap must
+    // send the browser to the provider login rather than render signed-out.
+    const assign = vi.fn();
+    const redirected = new Promise<void>((resolve) => assign.mockImplementation(() => resolve()));
+    delete (window as unknown as { location?: Location }).location;
+    (window as unknown as { location: Partial<Location> }).location = {
+      origin: originalLocation.origin,
+      href: originalLocation.href,
+      pathname: '/dock/hub/home',
+      search: '',
+      assign,
+    };
+
+    // Not awaited: the redirect holds bootstrap open for good (the page is
+    // leaving), so the redirect itself is what this waits for.
+    void sdk.cloudManager.bootstrap({
       user: null,
       desktop_info: null,
     });
+    await redirected;
 
     expect(sdk.cloudManager.loginStatus).toBe('logged_out');
     expect(sdk.cloudManager.isLoggedIn).toBe(false);
@@ -75,24 +91,37 @@ describe('CloudManager hub identity', () => {
     expect(sdk.dataContext.cloudLoginAvailable).toBe(false);
     expect(sdk.dataContext.cloudUser).toBeNull();
     expect(sdk.dataContext.cloudUserTypeId).toBeNull();
+    // Deep link preserved: target_path returns the browser to the URL it
+    // asked for once the provider round-trip completes.
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/login?target_path=%2Fdock%2Fhub%2Fhome');
   });
 
   it('redirects through hub auth routes without desktop API or secret probes', async () => {
     const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
-    await sdk.cloudManager.bootstrap({
-      user: null,
-      desktop_info: null,
-    });
 
+    // Mocked BEFORE bootstrap: a user-less hub bootstrap itself navigates to
+    // login now, and jsdom's real location.assign is unimplemented.
     const assign = vi.fn();
+    const redirected = new Promise<void>((resolve) => assign.mockImplementationOnce(() => resolve()));
     delete (window as unknown as { location?: Location }).location;
     (window as unknown as { location: Partial<Location> }).location = {
       origin: originalLocation.origin,
       href: originalLocation.href,
+      pathname: '/',
+      search: '',
       assign,
     };
-    const post = vi.mocked(sdk.apiClient.post);
+
+    // Not awaited: the redirect holds bootstrap open for good.
+    void sdk.cloudManager.bootstrap({
+      user: null,
+      desktop_info: null,
+    });
+    await redirected;
+    expect(assign).toHaveBeenLastCalledWith('/api/v1/login');
+
+    const post = vi.spyOn(sdk.apiClient, 'post');
     post.mockClear();
     const secretProbe = vi.spyOn(sdk.secretsService, 'isEnabled');
 
@@ -101,6 +130,11 @@ describe('CloudManager hub identity', () => {
     expect(post).not.toHaveBeenCalled();
     expect(secretProbe).not.toHaveBeenCalled();
 
+    // Logout is a top-level navigation to the hub's OWN /logout, not to
+    // /login: the hub chain (/logout → IdP /v2/logout → returnTo) is what
+    // actually ends the SSO session. Sending the browser straight to /login
+    // left that session alive, so the next /login silently re-authenticated
+    // the same account and logout appeared to do nothing.
     await sdk.cloudManager.logout();
     expect(assign).toHaveBeenLastCalledWith('/api/v1/logout');
     expect(post).not.toHaveBeenCalled();
@@ -153,6 +187,75 @@ describe('CloudManager hub identity', () => {
       error: null,
     });
     expect(sdk.cloudManager.connectionSlot).toEqual({ status: 'verified', error: null });
+  });
+
+  it('adopts the cloud identity from the bootstrap seed alone', async () => {
+    // The sandbox identity race. A cloud sandbox is signed in by the hub over
+    // loopback, but the box's own bootstrap carried no cloud user — so the UI
+    // painted `currentUser = cloudUser ?? localUser`, i.e. the template's local
+    // user ("E2B Local"), and only corrected itself once an async /cloud/status
+    // landed. On a cold resume that call loses the race against the still-waking
+    // backend, and the wrong account is what the user sees.
+    //
+    // This file stubs /cloud/status to null (see beforeEach), and THAT STUB IS
+    // THE RACE: it reproduces "the status call never lands". So everything
+    // asserted below has to come from the bootstrap seed by itself.
+    const { sdk } = await createIdentityRealm('http://localhost:6001/api/v1');
+    sdk.setSupportedPagesForHubMode(['desk']);
+
+    await sdk.cloudManager.bootstrap({
+      user: LOCAL_USER,
+      desktop_info: {
+        cloud_url: 'https://cloud.flowpad.test',
+        login: {
+          status: 'logged_in',
+          user: { id: 'b0b00000-0000-4000-8000-000000000001', type: 'user', email: 'bob@local.test', name: 'Bob' },
+          reason: null,
+        },
+        connection: { status: 'connecting', error: null },
+      },
+    });
+
+    expect(sdk.cloudManager.loginStatus).toBe('logged_in');
+    expect(sdk.dataContext.cloudUser?.email).toBe('bob@local.test');
+    // The whole point: `currentUser` is `cloudUser ?? localUser`, so an unset
+    // cloudUser is what made the box render its own local account. (localUser is
+    // seeded by the SDK bootstrap in main.ts, not by cloudManager.bootstrap, so
+    // this test does not exercise the `??` fallback itself — the sibling test
+    // above covers the logged-out side.)
+    expect(sdk.dataContext.currentUser?.email).toBe('bob@local.test');
+  });
+
+  it('announces a connection change learned from a status refresh', async () => {
+    // Staging 2026-09-15: the bootstrap seed carried no connection slot, and the
+    // /cloud/status refresh applied `connected` silently. Login did not change,
+    // so nothing emitted and the Connections row read "Not connected" for a
+    // signed-in account with a live hub socket.
+    const { sdk } = await createIdentityRealm('http://localhost:6001/api/v1');
+    sdk.setSupportedPagesForHubMode(['desk']);
+    const login = {
+      status: 'logged_in' as const,
+      user: { id: 'b0b00000-0000-4000-8000-000000000001', type: 'user', email: 'bob@local.test', name: 'Bob' },
+      reason: null,
+    };
+    await sdk.cloudManager.bootstrap({
+      user: LOCAL_USER,
+      desktop_info: { cloud_url: 'https://cloud.flowpad.test', login },
+    });
+    expect(sdk.cloudManager.connectionSlot.status).toBe('disconnected');
+
+    vi.spyOn(sdk.apiClient, 'get').mockResolvedValue({
+      cloud_url: 'https://cloud.flowpad.test',
+      login,
+      connection: { status: 'connected', error: null },
+    } as never);
+    const changed = vi.fn();
+    sdk.cloudManager.on('connection_status_changed', changed);
+
+    await sdk.cloudManager.fetchStatus();
+
+    expect(sdk.cloudManager.connectionSlot).toEqual({ status: 'connected', error: null });
+    expect(changed).toHaveBeenCalledWith({ status: 'connected', error: null });
   });
 
   it('bypasses desktop secret provisioning before hub navigation login', async () => {

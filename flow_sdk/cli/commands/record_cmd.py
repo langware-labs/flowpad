@@ -15,17 +15,28 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, Optional
+import sys
+from pathlib import Path
+from typing import Any, NoReturn, Optional
 
 import requests
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
 )
 from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
 )
 from flow_sdk.cli.commands._common import (
     ok as _ok,
@@ -44,6 +55,10 @@ record_app = typer.Typer(
 
 EXIT_OK = 0
 EXIT_INVALID_ARG = 2
+#: "You need to do something, nothing is damaged." Distinct from ACTION_FAILED
+#: (7) so an agent can tell a fixable gate from a broken operation without
+#: parsing prose.
+EXIT_SHARE_BLOCKED = 3
 EXIT_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
 EXIT_INDEX_FAILED = 6
@@ -103,14 +118,14 @@ def index_record(
 
     for params in calls:
         try:
-            resp = requests.post(url, params=params, timeout=120)
+            resp = _local_post(url, params=params, timeout=120)
         except requests.exceptions.RequestException as e:
             _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
             return
         try:
             out = resp.json()
         except ValueError:
-            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
             return
 
         if resp.status_code != 200 or out.get("status") != "SUCCESS":
@@ -157,6 +172,197 @@ def index_record(
             "typeids": typeids,
         }
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `flow record url` — the record's clickable deep link, for THIS instance
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Route `error_code` → exit code. Several failures share exit 4; the code in
+#: the envelope is what lets an agent tell "not indexed yet" from "wrong kind
+#: of thing" without parsing prose.
+_URL_EXIT_CODES = {
+    "INVALID_ARG": EXIT_INVALID_ARG,
+    "NOT_FOUND": EXIT_NOT_FOUND,
+    "NOT_INDEXED": EXIT_NOT_FOUND,
+    "NO_ASSET_EDITOR": EXIT_NOT_FOUND,
+}
+
+
+@record_app.command(
+    "url",
+    help=(
+        "Print the asset-editor deep link for a record — a URL a human can "
+        "click, resolved against this instance and env. Takes the path the "
+        "record was written to, or its TypeId. Read-only: never indexes."
+    ),
+)
+def url_record(
+    target: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "A file path, or a TypeId ('<type>-<uuid>'). An existing path "
+                "always wins — that is what an agent has just written."
+            )
+        ),
+    ],
+) -> None:
+    """Resolve a record's canonical editor URL.
+
+    The URL is built SERVER-side, not here. In a dev instance the UI is served
+    by Vite on a different port than the API, and ``_discover_port`` returns the
+    API's — a link built locally would 404 there. The server knows both.
+
+    Exit codes (the ``error_code`` in the failure envelope distinguishes the
+    three exit-4 cases, so an agent need not parse prose):
+
+        0 — resolved; ``url`` is in the payload
+        2 — INVALID_ARG: empty argument, or neither a path nor a TypeId
+        4 — NOT_FOUND / NOT_INDEXED / NO_ASSET_EDITOR
+        5 — INSTANCE_NOT_RUNNING / CONNECTION_ERROR
+        7 — anything else the server refused
+    """
+    raw = (target or "").strip()
+    if not raw:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "target is required")
+
+    # An existing path wins over TypeId parsing: the agent just wrote the file,
+    # and a file literally named `<type>-<uuid>` is the far stranger case.
+    expanded = os.path.abspath(os.path.expanduser(raw))
+    if os.path.exists(expanded):
+        body = {"path": expanded}
+    elif "-" in raw:
+        body = {"typeid": raw}
+    else:
+        _fail(
+            EXIT_INVALID_ARG,
+            "INVALID_ARG",
+            f"Not an existing path and not a TypeId: {raw!r}",
+        )
+
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/display/url"
+
+    def _on_error(status_code: int, rbody: dict) -> NoReturn:
+        # Branch on the body's `error_code`, never the transport status:
+        # `ApiFailResponse.status_code` is a body field, so these all arrive as
+        # HTTP 200 and every failure would otherwise collapse into one code.
+        code = str((rbody.get("data") or {}).get("error_code") or "ACTION_FAILED")
+        _fail(
+            _URL_EXIT_CODES.get(code, EXIT_ACTION_FAILED),
+            code,
+            str(rbody.get("message") or f"HTTP {status_code}"),
+        )
+
+    data = _post_graph_json(url, body, timeout=15, on_error=_on_error)
+    _ok({"target": raw, **data})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# `flow record share` — put an asset in the cloud, get a reviewer's link
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Route `error_code` → exit code. Everything a user can fix is exit 3; only a
+#: genuinely broken operation is 7.
+_SHARE_EXIT_CODES = {
+    "INVALID_ARG": EXIT_INVALID_ARG,
+    "NOT_PUBLISHABLE": EXIT_INVALID_ARG,
+    "NOT_FOUND": EXIT_NOT_FOUND,
+    "NOT_INDEXED": EXIT_NOT_FOUND,
+    "NO_PROJECT": EXIT_NOT_FOUND,
+    "PROJECT_NOT_LINKED": EXIT_SHARE_BLOCKED,
+    "CLOUD_LOGIN_REQUIRED": EXIT_SHARE_BLOCKED,
+    "AUTHENTICATED_USER_REQUIRED": EXIT_SHARE_BLOCKED,
+    "LOCAL_MODE": EXIT_SHARE_BLOCKED,
+    # From AssetPublishCode — a gate the user can act on.
+    "PROJECT_NOT_PUBLISHED": EXIT_SHARE_BLOCKED,
+}
+
+
+@record_app.command(
+    "share",
+    help=(
+        "Put an asset in the cloud and print a link a reviewer can open. When the "
+        "project folder is a git checkout, commits ONLY the paths named — the asset "
+        "plus each --with — and pushes its branch. Read-only until every gate has passed."
+    ),
+)
+def share_record(
+    target: Annotated[
+        str,
+        typer.Argument(help="A file path, or a TypeId ('<type>-<uuid>'). An existing path wins."),
+    ],
+    with_paths: Annotated[
+        Optional[list[str]],
+        typer.Option("--with", help="Another repo path to commit alongside it (repeatable)."),
+    ] = None,
+    message: Annotated[Optional[str], typer.Option("--message", "-m", help="Commit message.")] = None,
+    link_project: Annotated[
+        bool,
+        typer.Option(
+            "--link-project",
+            help="Also link the owning project to the cloud if it isn't already. Off by default: "
+            "linking publishes a repo declaration to every member, so it is never a side effect.",
+        ),
+    ] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report every gate, mutate nothing.")] = False,
+    no_commit: Annotated[
+        bool, typer.Option("--no-commit", help="Publish only; assume the paths are already committed and pushed.")
+    ] = False,
+) -> None:
+    """Share an asset and print its cloud URL.
+
+    Exit codes:
+
+        0 — shared; ``url`` is in the payload
+        2 — INVALID_ARG / NOT_PUBLISHABLE
+        3 — a gate you can fix (project not linked, not logged in to the cloud);
+            nothing was committed or pushed
+        4 — NOT_FOUND / NOT_INDEXED / NO_PROJECT
+        5 — the instance or the server is unreachable
+        7 — the operation itself failed (commit, push, or hub registration)
+    """
+    raw = (target or "").strip()
+    if not raw:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "target is required")
+
+    # Same rule as `flow record url`: an existing path wins, because that is
+    # what the agent just wrote.
+    expanded = os.path.abspath(os.path.expanduser(raw))
+    if os.path.exists(expanded):
+        body = {"path": expanded}
+    elif "-" in raw:
+        body = {"typeid": raw}
+    else:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not an existing path and not a TypeId: {raw!r}")
+    body.update(
+        {
+            "with_paths": [os.path.abspath(os.path.expanduser(p)) for p in (with_paths or [])],
+            "link_project": link_project,
+            "dry_run": dry_run,
+            "no_commit": no_commit,
+        }
+    )
+    if message:
+        body["message"] = message
+
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/assets/share"
+
+    def _on_error(status_code: int, rbody: dict) -> "NoReturn":
+        data = rbody.get("data") or {}
+        code = str(data.get("error_code") or "ACTION_FAILED")
+        extra = {k: v for k, v in data.items() if k != "error_code"}
+        _fail(
+            _SHARE_EXIT_CODES.get(code, EXIT_ACTION_FAILED),
+            code,
+            str(rbody.get("message") or f"HTTP {status_code}"),
+            extra or None,
+        )
+
+    data = _post_graph_json(url, body, timeout=180, on_error=_on_error)
+    _ok({"target": raw, **data})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -259,14 +465,14 @@ def search_record(
     params = {"q": query, "limit": fetch_limit}
 
     try:
-        resp = requests.get(url, params=params, timeout=15)
+        resp = _local_get(url, params=params, timeout=15)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
@@ -302,7 +508,7 @@ def search_record(
 
 def _parse_typeid(raw: str) -> tuple[str, str]:
     """Split a `<type>-<id>` TypeId string into (type, id). Validates via TypeId."""
-    from flow_sdk.api.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
     try:
         tid = TypeId(raw)
@@ -344,6 +550,73 @@ def _post_action(action_name: str, typeid_raw: str, payload: Optional[dict] = No
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/graph/{entity_type}/{entity_id}/{action_name}"
     return _post_json(url, payload, timeout=15, not_found_hint=f"Entity not found: {typeid_raw}")
+
+
+#: Types whose birth path is NOT "materialize a file, then index it".
+#: ``source_item`` is minted by the ingestor, which resolves the row by its
+#: natural key and gates on the content digest — so creating one means posting it through the
+#: ingest route, and re-creating the same item is an idempotent upsert rather
+#: than a duplicate. Data, not an ``if``: the second such type just adds a row.
+_INGESTED_TYPES: dict[str, str] = {
+    "source_item": "/api/v1/ingest/items",
+}
+
+
+@record_app.command(
+    "create",
+    help=(
+        "Create a record from JSON. Types the ingestor owns (source_item) go "
+        "through the ingest chokepoint, so re-creating the same item updates it "
+        "in place instead of duplicating. Other types are file-backed — "
+        "materialize the file and use `flow record index` instead."
+    ),
+)
+def create_record(
+    type_name: Annotated[
+        str,
+        typer.Argument(metavar="TYPE", help="Entity type, e.g. 'source_item'."),
+    ],
+    json_path: Annotated[
+        Optional[str],
+        typer.Option(
+            "--json",
+            "-j",
+            help="Path to a JSON file, or '-' for stdin. One object, or an array to batch.",
+        ),
+    ] = None,
+) -> None:
+    type_name = (type_name or "").strip()
+    route = _INGESTED_TYPES.get(type_name)
+    if not route:
+        _fail(
+            EXIT_INVALID_ARG,
+            "INVALID_ARG",
+            f"'{type_name}' is not an ingested type. File-backed records are created by "
+            f"writing the file and running `flow record index <path> --types {type_name}`.",
+        )
+
+    if not json_path:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "--json is required (a file path, or '-' for stdin)")
+    try:
+        raw = sys.stdin.read() if json_path == "-" else Path(json_path).read_text(encoding="utf-8")
+    except OSError as e:
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Cannot read {json_path}: {e}")
+    try:
+        parsed = json.loads(raw)
+    except ValueError as e:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Not valid JSON: {e}")
+
+    items = parsed if isinstance(parsed, list) else [parsed]
+    if not items:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "No items to create")
+
+    url = f"http://127.0.0.1:{_discover_port()}{route}"
+
+    def _on_error(status_code: int, body: dict) -> None:
+        _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", body.get("message") or f"Create failed (HTTP {status_code})")
+
+    data = _post_graph_json(url, {"items": items}, on_error=_on_error)
+    _ok({"type": type_name, **data})
 
 
 @record_app.command(
@@ -493,14 +766,14 @@ def comment_list(
     # ``expand=blobs`` so the blob-excluded ``raw_content`` is served.
     url = f"http://127.0.0.1:{port}/api/v1/graph/{parent_type}/{parent_id}/comment"
     try:
-        resp = requests.get(url, params={"expand": "blobs"}, timeout=15)
+        resp = _local_get(url, params={"expand": "blobs"}, timeout=15)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
     try:
         body = resp.json()
     except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
     if resp.status_code != 200 or body.get("status") != "SUCCESS":
         _fail(

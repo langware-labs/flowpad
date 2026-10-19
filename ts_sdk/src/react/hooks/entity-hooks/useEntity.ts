@@ -1,7 +1,39 @@
-import { APIEntity, ApiError, dataManager, TypeId } from '@sdk';
+import { APIEntity, dataManager } from '../../../APIEntity';
+import { ApiError } from '../../../ApiResponse';
+import { TypeId } from '../../../models/TypeId';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useEntityOptions, UseEntityResult } from './types';
 import { useWatch } from './useWatch';
+
+type EntityQueryState<T> = {
+  data: T | null | undefined;
+  isLoading: boolean;
+  isFetching: boolean;
+  error: ApiError | null;
+  isError: boolean;
+  isSuccess: boolean;
+  notFound: boolean;
+};
+
+/** The state a target starts in. A target the cache already holds starts READY with it: the
+ *  subscribe below runs only after commit, so starting `undefined` here rendered every cached
+ *  target as missing for one commit — a list row whose latest-message pointer moved to a known
+ *  message vanished and came back. */
+function initialState<T>(typeId: TypeId | null, enabled: boolean): EntityQueryState<T> {
+  const cached = typeId && enabled ? (dataManager.getByTypeIdFromCache(typeId) as T | null) : null;
+  if (cached) {
+    return { data: cached, isLoading: false, isFetching: false, error: null, isError: false, isSuccess: true, notFound: false };
+  }
+  return {
+    data: typeId && enabled ? undefined : null,
+    isLoading: !!(typeId && enabled),
+    isFetching: false,
+    error: null,
+    isError: false,
+    isSuccess: false,
+    notFound: false,
+  };
+}
 
 export function useEntity<T extends APIEntity<T>>(
   typeId: TypeId | null,
@@ -11,26 +43,22 @@ export function useEntity<T extends APIEntity<T>>(
   const queryJsonStringified = JSON.stringify(query);
 
   // State refs to track query state
-  const stateRef = useRef<{
-    data: T | null | undefined;
-    isLoading: boolean;
-    isFetching: boolean;
-    error: ApiError | null;
-    isError: boolean;
-    isSuccess: boolean;
-    notFound: boolean;
-  }>({
-    data: typeId && enabled ? undefined : null,
-    isLoading: !!(typeId && enabled),
-    isFetching: false,
-    error: null,
-    isError: false,
-    isSuccess: false,
-    notFound: false,
-  });
+  const stateRef = useRef<EntityQueryState<T>>(initialState(typeId, enabled));
 
   // Cache the snapshot to prevent unnecessary re-renders
   const snapshotRef = useRef(stateRef.current);
+
+  // A TypeId/query switch must never expose the previous entity for even one
+  // render. Consumers commonly key dependent queries from the new TypeId; a
+  // stale entity here can otherwise populate that new cache key with bytes from
+  // the old target (for example, rapid Wiki word navigation).
+  const inputKey = `${enabled}:${typeId?.type ?? ''}:${typeId?.id ?? ''}:${queryJsonStringified}`;
+  const inputKeyRef = useRef(inputKey);
+  if (inputKeyRef.current !== inputKey) {
+    inputKeyRef.current = inputKey;
+    stateRef.current = initialState(typeId, enabled);
+    snapshotRef.current = stateRef.current;
+  }
 
   // Ref to the useSyncExternalStore notify callback so refetch() can trigger re-renders
   const notifyRef = useRef<(() => void) | null>(null);
@@ -54,19 +82,23 @@ export function useEntity<T extends APIEntity<T>>(
         return () => {};
       }
 
-      // Set loading state immediately when subscribing
-      stateRef.current = {
-        data: undefined,
-        isLoading: true,
-        isFetching: true,
-        error: null,
-        isError: false,
-        isSuccess: false,
-        notFound: false,
-      };
-      callback(); // Trigger re-render immediately with loading state
+      // Set loading state immediately when subscribing — unless the cache already answers
+      // (`initialState`), which `initialize` confirms without a fetch.
+      if (stateRef.current.data === undefined) {
+        stateRef.current = {
+          data: undefined,
+          isLoading: true,
+          isFetching: true,
+          error: null,
+          isError: false,
+          isSuccess: false,
+          notFound: false,
+        };
+        callback(); // Trigger re-render immediately with loading state
+      }
 
       let unsubscribe: (() => void) | undefined;
+      let cancelled = false;
 
       // Async initialization
       const initialize = async () => {
@@ -74,6 +106,7 @@ export function useEntity<T extends APIEntity<T>>(
           // Check cache first to avoid unnecessary API calls
           const cachedEntity = dataManager.getByTypeIdFromCache<T>(typeId);
           if (cachedEntity) {
+            if (cancelled) return;
             stateRef.current = {
               data: cachedEntity,
               isLoading: false,
@@ -87,6 +120,7 @@ export function useEntity<T extends APIEntity<T>>(
           } else {
             // Only fetch from API if not in cache
             const entity = await dataManager.getByTypeId<T>(typeId, query);
+            if (cancelled) return;
             // A null result with the ref flagged not-found is a terminal 404 —
             // the entity has no local row. Surface it as ``notFound`` (not an
             // error) so consumers can render an "unavailable" state, and so the
@@ -106,6 +140,7 @@ export function useEntity<T extends APIEntity<T>>(
 
           // Subscribe to updates from data manager
           unsubscribe = dataManager.subscribe<T>(typeId, (updatedEntity) => {
+            if (cancelled) return;
             stateRef.current = {
               data: updatedEntity,
               isLoading: false,
@@ -120,6 +155,7 @@ export function useEntity<T extends APIEntity<T>>(
             callback(); // Trigger re-render with updated data
           });
         } catch (err) {
+          if (cancelled) return;
           console.error('useEntity.ts: Error fetching entity by type ID:', typeId, err);
           stateRef.current = {
             data: null,
@@ -137,6 +173,7 @@ export function useEntity<T extends APIEntity<T>>(
       void initialize();
 
       return () => {
+        cancelled = true;
         if (unsubscribe) {
           unsubscribe();
         }
@@ -181,7 +218,12 @@ export function useEntity<T extends APIEntity<T>>(
     }
 
     try {
-      const entity = await dataManager.getByTypeId<T>(typeId, query);
+      // A refetch reads the backend, never the cache: the caller asks because it learned
+      // the entity changed (a `projected` tag, a reload button) — and a change that reached
+      // it without an entity op left the cached entry stale, which the cache-first
+      // `getByTypeId` would hand straight back.
+      // `fetchByTypeId` already loads when `query.load` asks for it.
+      const entity = (await dataManager.refreshByTypeId(typeId, query)) as T | null;
       const notFound = entity === null && dataManager.isNotFound(typeId);
       stateRef.current = {
         data: entity,

@@ -22,7 +22,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const SKILL_ID = '55555555-5555-4555-8555-555555555555';
 const URL_PID = 'dd682350-c185-52c9-a92b-d0667141b069'; // the project segment in the URL
 const ASSET_PID = '66666666-6666-4666-8666-666666666666'; // the skill's OWN project (differs)
-const MACHINE_PATH = '/Users/shlom/Documents/dev/flowpad-oss/.claude/skills/rca';
+const MACHINE_PATH = '/Users/alice/Documents/dev/flowpad-oss/.claude/skills/rca';
 
 afterEach(() => vi.restoreAllMocks());
 

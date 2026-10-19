@@ -15,17 +15,27 @@ migrated to per-dim entries.
 
 from __future__ import annotations
 
+from flow_sdk.flowpad_types.vendors import VENDORS
+
 from .base import ItemPrice, ModelPricing
 from .claude import CLAUDE_PRICING
 from .claude import pricing_for as _claude_pricing_for
 from .codex import CODEX_PRICING
 from .codex import pricing_for as _codex_pricing_for
+from .opencode import OPENCODE_PRICING
+from .opencode import pricing_for as _opencode_pricing_for
+
+_TABLES = {"claude": _claude_pricing_for, "codex": _codex_pricing_for, "opencode": _opencode_pricing_for}
+# (vendor key, model prefixes, table) for every vendor WITH a table — copilot has
+# none and falls to the claude default like any unknown model.
+_DISPATCH = tuple((v.key, v.model_prefixes, _TABLES[v.key]) for v in VENDORS if v.key in _TABLES)
 
 __all__ = [
     "ItemPrice",
     "ModelPricing",
     "CLAUDE_PRICING",
     "CODEX_PRICING",
+    "OPENCODE_PRICING",
     "pricing_for",
     "legacy_input_output_rates",
     "total_cost_usd",
@@ -61,14 +71,14 @@ def total_cost_usd(worker: str, jsonl_path) -> float:
 def pricing_for(model: str | None, worker: str | None = None) -> ModelPricing:
     """Resolve a price table for a model.
 
-    Worker hint short-circuits the dispatch; otherwise we match on model
-    name prefix (claude/gpt). Falls back to the Claude default table so
-    cost reporting degrades gracefully on unknown models.
+    Worker hint short-circuits the dispatch; otherwise we match on the model
+    prefixes ``VENDORS`` declares (claude/gpt/openrouter). Falls back to the
+    Claude table — also the documented answer for copilot, which has no table
+    of its own — so cost reporting degrades gracefully on unknown models.
     """
-    if worker == "claude" or (model and model.startswith("claude")):
-        return _claude_pricing_for(model)
-    if worker == "codex" or (model and model.startswith("gpt")):
-        return _codex_pricing_for(model)
+    for key, prefixes, table in _DISPATCH:
+        if worker == key or (model and model.startswith(prefixes)):
+            return table(model)
     return _claude_pricing_for(model)
 
 

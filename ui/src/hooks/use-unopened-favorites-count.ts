@@ -4,19 +4,18 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { defaultScopeFilter } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
 import { useContext } from './useContext';
+import { canNavigateFavorite } from '@src/navigation/favorite-nav';
+import { useHiddenFavoriteIds } from './favorites-pending-delete';
 import { isFavoriteBookmark, isUnopened } from './use-favorites';
 import { useMemo } from 'react';
 
 /**
- * How many never-opened favorites are in scope — the rail's Bookmarks badge.
+ * How many never-opened favorites are new HERE — the nav star's badge.
  *
- * Scoped to the current project, via the same `defaultScopeFilter` the menu
- * seeds itself with: the badge is a summary of what opening the menu will show,
- * so counting favorites the menu then filters out would be lying. (An unscoped
- * favorite is personal and counts under every project — see `bookmarkInScope`.)
- * The menu's scope is local, user-togglable state, so flipping it to "All"
- * makes it show more than the badge counts; the badge tracks the default view,
- * which is the one it stands for.
+ * Counts the current project's favorites plus the personal (unscoped) ones:
+ * the two buckets that belong to where you are. Other projects' buckets carry
+ * their own badges inside the menu. Rows the menu cannot show (inside an undo
+ * window, or with a target that no longer resolves) never count.
  *
  * Queries directly instead of reusing `useFavorites()`, for two reasons:
  *
@@ -27,7 +26,7 @@ import { useMemo } from 'react';
  * 2. It costs nothing to query again. `WatchedQuery.key` is
  *    `${type}:${queryKey}:${scopeKey}` — `name` is not part of it — so this
  *    resolves to the SAME WatchedQuery, results array and notify fan-out as the
- *    bookmarks slider. Rail and flyout agree structurally rather than by
+ *    bookmarks menu. Rail and flyout agree structurally rather than by
  *    anyone remembering to keep them in sync, and there's no extra fetch.
  */
 export function useUnopenedFavoritesCount(): number {
@@ -46,12 +45,21 @@ export function useUnopenedFavoritesCount(): number {
   const { project } = useContext();
   const currentProjectId = project?.id ?? null;
   const scope = useMemo(() => defaultScopeFilter(currentProjectId), [currentProjectId]);
+  // Count only what the menu can show: not a row inside an undo window, not a
+  // favorite whose target no longer resolves (the menu hides those).
+  const hidden = useHiddenFavoriteIds();
 
   return useMemo(
     () =>
       bookmarks.filter(
-        (b) => isFavoriteBookmark(b) && isUnopened(b) && bookmarkInScope(b, scope, currentProjectId),
+        (b) =>
+          isFavoriteBookmark(b) &&
+          isUnopened(b) &&
+          !(b.id && hidden.has(b.id)) &&
+          bookmarkInScope(b, scope, currentProjectId) &&
+          // Last: it parses the stored pointer, so only for rows still counted.
+          canNavigateFavorite(b),
       ).length,
-    [bookmarks, scope, currentProjectId],
+    [bookmarks, hidden, scope, currentProjectId],
   );
 }

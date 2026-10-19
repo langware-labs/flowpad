@@ -2,6 +2,7 @@ import { APIEntity, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FSRef } from '../fs/FSRef';
 import { DockPointerData } from '../models/DockPointer';
+import { mainFileForType } from '../models/asset-editor';
 
 /**
  * AssetCleanupReport entity — a garbage-asset scan summary produced by the
@@ -37,21 +38,22 @@ export class AssetCleanupReport extends APIEntity<AssetCleanupReport> {
   }
 
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('asset_cleanup_report') ?? this.dockPointer;
-  }
 
   /** FsRef for report.json. Resolves compute node from dataContext. */
   get doc(): FSRef | null {
     const typeId = dataContext.computeNodeTypeId;
     if (!typeId || !this.asset_ref) return null;
-    return new FSRef(this.asset_ref, typeId);
+    // `asset_ref` is the folder; a row from before the unification may still
+    // name the inner file, so append only when it is not already there.
+    const base = this.asset_ref.replace(/\\/g, '/').replace(/\/+$/, '');
+    const main = mainFileForType(AssetCleanupReport.type, 'report.json') as string;
+    return new FSRef(base.endsWith(`/${main}`) ? base : `${base}/${main}`, typeId);
   }
 }

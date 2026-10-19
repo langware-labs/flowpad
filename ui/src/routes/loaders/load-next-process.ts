@@ -20,9 +20,8 @@
  * branches that used to live in `routeProcessPointer` / `routePlainShellPointer`.
  */
 
-import { AgenticProcess, Shell, TypeId } from '@sdk';
-import { closeTerminalTab, getTerminalTabsSnapshot } from '@src/tabs/useTabs';
-import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
+import { t } from '@lingui/core/macro';
+import { AgenticProcess, Shell, tabManager, tabTargetKey, tabsForProject } from '@sdk';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 
@@ -34,15 +33,13 @@ export type CleanupKind =
   | 'process_no_shell'
   | 'process_project_missing'
   | 'shell_not_found'
-  | 'shell_error_status'
-  | 'shell_start_failed';
+  | 'shell_error_status';
 
 export interface CleanupRecord {
   kind: CleanupKind;
   processId?: string;
   shellId?: string;
-  /** User-friendly description of what went wrong — used for the toast on the
-   * single-cleanup path. */
+  /** User-friendly description of what went wrong — shown in the cleanup notification. */
   title: string;
   description?: string;
 }
@@ -80,8 +77,8 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
       return {
         kind: 'process_not_found',
         processId: e.processId,
-        title: 'Session not found',
-        description: 'Agentic process does not exist.',
+        title: t`Session not found`,
+        description: t`Agentic process does not exist.`,
       };
     case 'network_error': {
       const desc = describeProcessStartError(e.cause ?? e);
@@ -89,7 +86,7 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         kind: 'process_start_failed',
         processId: e.processId,
         shellId: e.shellId ?? undefined,
-        title: 'Couldn’t reach backend',
+        title: t`Couldn’t reach backend`,
         description: desc.description,
       };
     }
@@ -110,16 +107,16 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         kind: 'process_no_shell',
         processId: e.processId,
         shellId: e.shellId ?? undefined,
-        title: 'Session unavailable',
-        description: 'No shell is linked to this process.',
+        title: t`Session unavailable`,
+        description: t`No shell is linked to this process.`,
       };
     case 'project_missing':
       return {
         kind: 'process_project_missing',
         processId: e.processId,
         shellId: e.shellId ?? undefined,
-        title: 'Project not found',
-        description: 'Could not recover this session’s project.',
+        title: t`Project not found`,
+        description: t`Could not recover this session’s project.`,
       };
     default: {
       // Exhaustiveness guard: a missing kind type-errors here; at runtime it
@@ -131,58 +128,44 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         kind: 'process_start_failed',
         processId: e.processId,
         shellId: e.shellId ?? undefined,
-        title: 'Session unavailable',
-        description: 'Failed to restore this session.',
+        title: t`Session unavailable`,
+        description: t`Failed to restore this session.`,
       };
     }
   }
 }
 
-async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
+export function buildShellCleanup(e: ShellLoadError): CleanupRecord {
   switch (e.kind) {
     case 'not_found':
       return {
         kind: 'shell_not_found',
         shellId: e.shellId,
-        title: 'Shell not found',
-        description: 'This terminal no longer exists.',
+        title: t`Shell not found`,
+        description: t`This terminal no longer exists.`,
       };
     case 'error_status':
       return {
         kind: 'shell_error_status',
         shellId: e.shellId,
-        title: 'Shell unavailable',
+        title: t`Shell unavailable`,
         description: e.errorMessage ?? 'Shell error',
       };
-    case 'start_failed': {
-      // Best-effort close so the user isn't stuck with a zombie row
-      // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
-      const desc = describeProcessStartError(e.cause ?? e);
-      return {
-        kind: 'shell_start_failed',
-        shellId: e.shellId,
-        title: desc.title,
-        description: desc.description,
-      };
-    }
   }
 }
 
 // ── public entry point ──────────────────────────────────────────────────────
 
-export async function loadNextProcess(
-  options: LoadNextProcessOptions = {},
-): Promise<LoadNextProcessResult> {
+export async function loadNextProcess(options: LoadNextProcessOptions = {}): Promise<LoadNextProcessResult> {
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await getTerminalTabsSnapshot('all');
+  const allTabs = await tabManager.getTerminalTabsSnapshot('all');
   const projectId = options.projectId ?? null;
-  const tabs = projectId == null ? allTabs : allTabs.filter((t) => t.project_id === projectId);
+  const tabs = projectId == null ? allTabs : tabsForProject(allTabs, projectId);
 
   while (true) {
-    const tab = resolveNextTab(tabs, tried);
+    const tab = tabManager.resolveNext(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }
@@ -217,7 +200,7 @@ export async function loadNextProcess(
       return { loaded: { kind: 'shell', shell }, cleaned };
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
-      cleaned.push(await buildShellCleanup(e));
+      cleaned.push(buildShellCleanup(e));
       tried.add(shellId);
       continue;
     }

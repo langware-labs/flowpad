@@ -8,12 +8,15 @@ import asyncio
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
@@ -22,6 +25,7 @@ if TYPE_CHECKING:
 import anyio
 import psutil
 
+from flow_sdk import toplog
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
@@ -32,6 +36,7 @@ from ..compute_provider import (
     ListDirItem,
     get_remote_paths_and_data_for_files,
 )
+from ..env_prefix import command_environment
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,7 @@ def _pty_return_code(pty_process: Any) -> int | None:
         return -signal_status
     return None
 
+
 _INHERITED_NO_COLOR_ENV_VARS = (
     "NO_COLOR",
     "NODE_DISABLE_COLORS",
@@ -53,6 +59,11 @@ _INHERITED_NO_COLOR_ENV_VARS = (
     # inherit the parent automation contract.
     "CODEX_CI",
 )
+
+# The terminal the SERVER was launched from. A Flowpad PTY is its own xterm, not
+# that app: inherited, ``TERM_PROGRAM=Apple_Terminal`` makes zsh load Apple's
+# session save, whose exit chatter ("Saving session...") then lands in output.
+_INHERITED_HOST_TERMINAL_ENV_VARS = ("TERM_PROGRAM", "TERM_PROGRAM_VERSION", "TERM_SESSION_ID")
 
 _FALSEY_COLOR_ENV_VARS = (
     "CLICOLOR",
@@ -72,9 +83,8 @@ _FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
 # makes interactive ``claude`` skip writing its ``~/.claude/projects/<cwd>/<id>.jsonl``
 # transcript, so Flowpad's transcript-derived ``worker_status`` is stuck at
 # INITIALIZING forever (Fork / Open-Transcript never enable). Scrub the whole
-# family so each PTY worker is a clean top-level session.
-_CLAUDE_INHERITED_ENV_PREFIXES = ("CLAUDECODE", "CLAUDE_CODE_")
-_CLAUDE_INHERITED_ENV_VARS = ("ENABLE_IDE_INTEGRATION",)
+# family so each PTY worker is a clean top-level session — through
+# ``claude_env.without_inherited_claude_session``, the one strip the headless spawns share.
 
 
 def _build_interactive_pty_env(
@@ -89,11 +99,11 @@ def _build_interactive_pty_env(
     Claude/Codex/plain shells by default. Explicit per-worker env still wins
     through ``extra_env``.
     """
-    env = {k: v for k, v in os.environ.items() if not k.startswith(_CLAUDE_INHERITED_ENV_PREFIXES)}
-    for key in _CLAUDE_INHERITED_ENV_VARS:
-        env.pop(key, None)
+    from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
 
-    for key in _INHERITED_NO_COLOR_ENV_VARS:
+    env = without_inherited_claude_session(os.environ)
+
+    for key in (*_INHERITED_NO_COLOR_ENV_VARS, *_INHERITED_HOST_TERMINAL_ENV_VARS):
         env.pop(key, None)
 
     for key in _FALSEY_COLOR_ENV_VARS:
@@ -105,9 +115,113 @@ def _build_interactive_pty_env(
         env["COLORTERM"] = "truecolor"
     env["FLOWPAD_PTY_SESSION_ID"] = session_id
 
+    # Fallback Python for the in-app terminal: when the machine has no real
+    # `python` on PATH, resolve it to THIS backend's venv (the uv-managed
+    # interpreter). An installed Python is left in charge. On Windows the Store
+    # "App Execution Alias" stub (…\Microsoft\WindowsApps\python.exe, which just
+    # opens the Microsoft Store) does not count as installed and is sorted last.
+    fallback = _python_fallback_path(env.get("PATH"))
+    if fallback is not None:
+        env["PATH"] = fallback
+
     if extra_env:
         env.update(extra_env)
     return env
+
+
+def _is_store_alias_dir(entry: str) -> bool:
+    """Windows "App Execution Alias" dir — its python.exe opens the Microsoft Store."""
+    return sys.platform == "win32" and bool(re.search(r"[\\/]Microsoft[\\/]WindowsApps[\\/]?$", entry, re.I))
+
+
+def _python_fallback_path(existing_path: str | None) -> str | None:
+    """``existing_path`` with this venv's bin dir added as the Python FALLBACK.
+
+    Returns None (leave PATH alone) when we are not running from the flowpad
+    tool venv (no ``flow`` next to ``sys.executable``) or when a real
+    ``python``/``python3`` already resolves on ``existing_path``. Otherwise the
+    venv dir is placed after every real entry and before any Windows Store
+    alias dirs, so an installed Python keeps winning, ours fills the gap, and
+    the Store stub never does. Idempotent.
+    """
+    bin_dir = Path(sys.executable).parent
+    exe = "flow.exe" if sys.platform == "win32" else "flow"
+    if not (bin_dir / exe).exists():
+        return None
+    entries = [e for e in (existing_path or "").split(os.pathsep) if e]
+    if str(bin_dir) in entries:
+        return existing_path
+    for name in ("python", "python3"):
+        found = shutil.which(name, path=existing_path)
+        if found and not _is_store_alias_dir(str(Path(found).parent)):
+            return existing_path  # a real Python is installed — leave it in charge
+    real = [e for e in entries if not _is_store_alias_dir(e)]
+    store = [e for e in entries if _is_store_alias_dir(e)]
+    return os.pathsep.join([*real, str(bin_dir), *store])
+
+
+#: Defines `python3` for the interactive PTY session it opens — ONLY when it
+#: does not already resolve. A stock Windows ships `python3` as the Store
+#: alias stub (opens the Store, never runs code) even with a real Python
+#: installed as `python`/`py`; every terminal this app opens goes through
+#: `get_or_create_pty_session`, which is the one place that reaches all of
+#: them.
+#:
+#: A real FILE on PATH, not a shell alias — proven the hard way (on a real
+#: Windows 11 box) to be the only form that actually works here:
+#:
+#: * A PowerShell `Set-Alias` only resolves bare commands typed at THAT
+#:   session's own prompt. It does nothing for a child process the session
+#:   spawns (`npm run build` calling `python3` internally sees no alias at
+#:   all) — an alias does not cross a process boundary; a PATH entry does.
+#: * `cmd.exe`'s equivalent, a `doskey` macro, is worse: it expands ONLY for
+#:   interactively typed input, never for a batch file — confirmed live: the
+#:   exact `doskey python3=python $*` sequence, run then used inside one
+#:   `.cmd` file, left `python3` "not recognized". A shim file has no such
+#:   distinction; `/k <command>` vs. typing has never mattered to it.
+#:
+#: `_python3_shim_dir` builds this dir once and reuses it; the win32 spawn
+#: path prepends it to `env["PATH"]` — nothing shell-specific left to inject.
+_PYTHON3_SHIM_DIRNAME = "flowpad-python3-shim"
+
+
+def _python3_shim_dir(
+    path: str | None,
+    *,
+    platform: str = "",
+    which: Callable[..., str | None] = shutil.which,
+) -> str | None:
+    """A directory holding a `python3.cmd` shim, or ``None`` when there is
+    nothing to do — `python3` already resolves on *path*, or nothing does.
+
+    *path* is the PTY's own spawn PATH, not this process's: resolve against
+    what the child will actually see, the same rule `find_command` follows.
+    Idempotent — the file is written once and reused by every later session.
+
+    *platform* and *which* are injected seams, not knobs for production —
+    the defaults ARE production. `shutil.which`'s own win32 branch calls into
+    `_winapi`, a Windows-only extension module that is absent everywhere
+    else, so a test proving this off Windows must inject both rather than
+    monkeypatch `sys.platform` and crash on that exact line.
+    """
+    if (platform or sys.platform) != PLATFORM_WIN32:
+        return None
+    if which("python3", path=path):
+        return None
+    real_python = which("python", path=path)
+    if real_python is None:
+        return None
+    shim_dir = Path(tempfile.gettempdir()) / _PYTHON3_SHIM_DIRNAME
+    shim = shim_dir / "python3.cmd"
+    try:
+        shim_dir.mkdir(exist_ok=True)
+        if not shim.exists():
+            # `%*` forwards every argument verbatim; `@` suppresses cmd.exe's
+            # own command-echo, so this shim is silent like the real thing.
+            shim.write_text("@python %*\r\n")
+    except OSError:
+        return None  # a read-only or missing temp dir: no shim, no crash
+    return str(shim_dir)
 
 
 def find_command(command: str, path: str | None = None) -> str | None:
@@ -187,6 +301,56 @@ def get_shell_rc_file() -> str:
         return "~/.bashrc"
 
 
+
+def default_terminal_shell() -> str:
+    """The shell a terminal (a bare PTY) runs: PowerShell, else cmd.exe, on Windows; the user's
+    ``$SHELL`` elsewhere, else zsh on macOS and bash (or sh) on Linux. ONE answer — the spawn uses it,
+    and so does whatever types into the terminal and must speak its grammar (``Shell.sentinel_command``)."""
+    if sys.platform == PLATFORM_WIN32:
+        # Windows: prefer PowerShell, fallback to cmd.exe
+        shell_cmd = None
+
+        # Try to find PowerShell using PATH (works regardless of install location)
+        for pwsh_name in ["pwsh", "powershell"]:
+            found_pwsh = shutil.which(pwsh_name)
+            if found_pwsh:
+                shell_cmd = found_pwsh
+                break
+
+        # If PowerShell not found in PATH, try common locations
+        if shell_cmd is None:
+            system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+            program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+
+            pwsh_paths = [
+                os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
+                os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+            ]
+            for path in pwsh_paths:
+                if os.path.exists(path):
+                    shell_cmd = path
+                    break
+
+        # Fallback to cmd.exe
+        if shell_cmd is None:
+            shell_cmd = os.environ.get("COMSPEC")
+            if not shell_cmd:
+                system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+                shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
+    else:
+        # Unix-like: use user's default shell
+        user_shell = os.environ.get("SHELL", "")
+        if user_shell and os.path.exists(user_shell):
+            shell_cmd = user_shell
+        elif sys.platform == "darwin":
+            # macOS defaults to zsh
+            shell_cmd = "/bin/zsh"
+        else:
+            # Linux/Unix - try bash, fallback to sh
+            shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+    return shell_cmd
+
+
 def get_set_env_cmd(name: str, value: str | None) -> str:
     """
     Generate a command to set or remove an environment variable persistently.
@@ -224,6 +388,16 @@ def get_set_env_cmd(name: str, value: str | None) -> str:
             f"touch {rc_file}; sed -i '' '/^export {name}=/d' {rc_file} 2>/dev/null || sed -i '/^export {name}=/d' {rc_file}; "
             f"echo \"export {name}='{escaped_value}'\" >> {rc_file}"
         )
+
+
+async def _terminate_pty(process: Any) -> None:
+    """Force-terminate a live PTY in a thread: terminate(force=True) sleeps between HUP/INT/KILL (~0.4s)."""
+
+    def _terminate() -> None:
+        if process.isalive():
+            process.terminate(force=True)
+
+    await asyncio.to_thread(_terminate)
 
 
 class LocalComputeProvider(ComputeProvider):
@@ -456,12 +630,6 @@ class LocalComputeProvider(ComputeProvider):
                 f"set_env command returned non-zero exit code: {result.exit_code}, stderr: {result.all_stderr}"
             )
 
-    async def configure_lm_proxy_env(
-        self, provider_node_id: str, api_key: str, backend_url: str, lm_proxy_url: str, machine_id: str
-    ) -> None:
-        # Intentionally do nothing - local machines should use their own Anthropic API keys
-        pass
-
     async def get_machine_status(self, provider_node_id: str) -> dict:
         """Get machine status (CPU, memory, processes, network).
 
@@ -550,41 +718,11 @@ class LocalComputeProvider(ComputeProvider):
         logger.info(f"Running command in local working directory: {command}")
         message_id = str(uuid.uuid4())
         cmd = CLICommand(command, message_id=message_id)
-        self.running_commands[message_id] = cmd
-
-        env_prefix = ""
-        if env:
-            env_assignments = []
-            for flow_env in env:
-                # Extract the actual value from SecretStr
-                env_value = (
-                    flow_env.value.get_secret_value()
-                    if hasattr(flow_env.value, "get_secret_value")
-                    else str(flow_env.value)
-                )
-
-                if sys.platform == PLATFORM_WIN32:
-                    escaped_value = (
-                        env_value.replace("&", "^&")
-                        .replace("|", "^|")
-                        .replace("<", "^<")
-                        .replace(">", "^>")
-                        .replace("^", "^^")
-                    )
-                    env_assignments.append(f"set {flow_env.name}={escaped_value}")
-                else:
-                    escaped_value = env_value.replace("'", "'\\''")
-                    env_assignments.append(f"{flow_env.name}='{escaped_value}'")
-
-            if sys.platform == PLATFORM_WIN32:
-                env_prefix = " && ".join(env_assignments) + " && "
-            else:
-                env_prefix = " ".join(env_assignments) + " "
 
         try:
-            full_command = env_prefix + command if env_prefix else command
             process = await asyncio.create_subprocess_shell(
-                full_command,
+                command,
+                env={**os.environ, **command_environment(env)},
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=self._node_dirs.get(provider_node_id, self._default_working_dir),
@@ -597,13 +735,13 @@ class LocalComputeProvider(ComputeProvider):
                 try:
                     stdout_data, stderr_data = await process.communicate()
                     if stdout_data:
-                        cmd.append_stdout(stdout_data.decode())
+                        cmd.append_stdout(stdout_data.decode(errors="replace"))
                     if stderr_data:
-                        cmd.append_stderr(stderr_data.decode())
-                    cmd.mark_complete(process.returncode or 0)
+                        cmd.append_stderr(stderr_data.decode(errors="replace"))
+                    cmd.mark_complete(process.returncode)
                 except Exception as e:
                     logger.error(f"Error running foreground command: {str(e)}")
-                    cmd.mark_complete(-1)
+                    cmd.mark_complete(None)
                 return cmd
 
             # Background mode: stream output line by line
@@ -611,7 +749,7 @@ class LocalComputeProvider(ComputeProvider):
                 """Read from a stream and append to command output."""
                 if stream is not None:
                     async for line in stream:
-                        append_func(line.decode())
+                        append_func(line.decode(errors="replace"))
 
             # Read stdout and stderr concurrently
             stdout_task = asyncio.create_task(
@@ -636,12 +774,19 @@ class LocalComputeProvider(ComputeProvider):
                     cmd.mark_complete(return_code)
                 except Exception as e:
                     logger.error(f"Error handling command output on local compute: {str(e)}")
-                    cmd.mark_complete(-1)
+                    cmd.mark_complete(None)
                 finally:
                     # Clean up completed stream tasks
                     if provider_node_id in self._stream_tasks:
                         self._stream_tasks[provider_node_id] = [
                             t for t in self._stream_tasks[provider_node_id] if t not in [stdout_task, stderr_task]
+                        ]
+                    # ...and this command's own task, same rule. Rebind rather
+                    # than mutate in place: shutdown() may be iterating the list.
+                    if provider_node_id in self._commands_tasks:
+                        me = asyncio.current_task()
+                        self._commands_tasks[provider_node_id] = [
+                            t for t in self._commands_tasks[provider_node_id] if t is not me
                         ]
 
             # Background mode: start async task to wait for completion
@@ -658,7 +803,7 @@ class LocalComputeProvider(ComputeProvider):
             return cmd
         except Exception as e:
             logger.error(f"Error running command: {str(e)}")
-            cmd.mark_complete(-1)
+            cmd.mark_complete(None)
             return cmd
 
     async def get_or_create_pty_session(
@@ -705,57 +850,26 @@ class LocalComputeProvider(ComputeProvider):
         if pty_key not in self._pty_processes:
             env = _build_interactive_pty_env(session_id, extra_env)
 
+            # python3 aliased in for every PTY this reaches — shell or a
+            # direct CLI spawn alike, since PATH (unlike a shell alias)
+            # reaches a spawned child's own children too. See
+            # `_python3_shim_dir`.
+            shim_dir = _python3_shim_dir(env.get("PATH"))
+            if shim_dir:
+                env["PATH"] = shim_dir + os.pathsep + (env.get("PATH") or "")
+
             if spawn_args is not None:
                 # Direct spawn: caller provides exact argv (e.g. Claude CLI directly)
                 final_spawn_args = spawn_args
             else:
-                # Shell spawn: detect and configure the user's default shell
-                if sys.platform == PLATFORM_WIN32:
-                    # Windows: prefer PowerShell, fallback to cmd.exe
-                    shell_cmd = None
-
-                    # Try to find PowerShell using PATH (works regardless of install location)
-                    for pwsh_name in ["pwsh", "powershell"]:
-                        found_pwsh = shutil.which(pwsh_name)
-                        if found_pwsh:
-                            shell_cmd = found_pwsh
-                            break
-
-                    # If PowerShell not found in PATH, try common locations
-                    if shell_cmd is None:
-                        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
-
-                        pwsh_paths = [
-                            os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
-                            os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-                        ]
-                        for path in pwsh_paths:
-                            if os.path.exists(path):
-                                shell_cmd = path
-                                break
-
-                    # Fallback to cmd.exe
-                    if shell_cmd is None:
-                        shell_cmd = os.environ.get("COMSPEC")
-                        if not shell_cmd:
-                            system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                            shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
-                else:
-                    # Unix-like: use user's default shell
-                    user_shell = os.environ.get("SHELL", "")
-                    if user_shell and os.path.exists(user_shell):
-                        shell_cmd = user_shell
-                    elif sys.platform == "darwin":
-                        # macOS defaults to zsh
-                        shell_cmd = "/bin/zsh"
-                    else:
-                        # Linux/Unix - try bash, fallback to sh
-                        shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+                # Shell spawn: the user's default shell (``default_terminal_shell``)
+                shell_cmd = default_terminal_shell()
 
                 # Configure spawn arguments (command + flags) based on shell type
                 if sys.platform == PLATFORM_WIN32:
-                    # Windows: PowerShell or cmd.exe
+                    # Windows: PowerShell or cmd.exe. python3 is aliased in via
+                    # `env["PATH"]` above (a shim dir), not a shell flag here —
+                    # neither shell needs to know.
                     if shell_cmd and ("powershell" in shell_cmd.lower() or "pwsh" in shell_cmd.lower()):
                         final_spawn_args = [shell_cmd, "-NoProfile", "-NoLogo"]
                     else:
@@ -879,7 +993,20 @@ class LocalComputeProvider(ComputeProvider):
                     raise
 
             try:
+                spawn_t0 = time.monotonic()
                 pty_process = await asyncio.to_thread(_resolve_and_spawn)
+                toplog.log(
+                    "pty",
+                    "spawn session=%s pid=%s backend_pid=%s argv0=%s size=%sx%s cwd=%s spawn_ms=%.0f",
+                    session_id,
+                    pty_process.pid,
+                    os.getpid(),
+                    final_spawn_args[0] if final_spawn_args else None,
+                    cols,
+                    rows,
+                    pty_working_dir,
+                    (time.monotonic() - spawn_t0) * 1000,
+                )
 
                 pty_session_running = {"value": True}
 
@@ -935,6 +1062,14 @@ class LocalComputeProvider(ComputeProvider):
                                 exit_code = _pty_return_code(pty_process)
                         except Exception:
                             pass
+                        toplog.log(
+                            "pty",
+                            "reader_exit session=%s pid=%s exit_code=%s stopped=%s",
+                            session_id,
+                            pty_process.pid,
+                            exit_code,
+                            not pty_session_running["value"],
+                        )
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)
@@ -963,6 +1098,27 @@ class LocalComputeProvider(ComputeProvider):
         session = self._pty_processes.get((provider_node_id, session_id))
         return session["pid"] if session else None
 
+    def get_pty_foreground_pgid(self, provider_node_id: str, session_id: str) -> int | None:
+        """The PTY's foreground process group (``tcgetpgrp`` on its master): the shell's own at the
+        prompt, a command's job while one runs — never a background helper the prompt spawns.
+        ``None`` without a POSIX PTY (Windows)."""
+        session = self._pty_processes.get((provider_node_id, session_id))
+        fd = getattr(session["process"], "fd", None) if session else None
+        if not isinstance(fd, int):
+            return None
+        try:
+            return os.tcgetpgrp(fd)
+        except OSError:
+            return None
+
+    def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
+        """Return the live working directory of this PTY session's shell, or None."""
+        pid = self.get_pty_shell_pid(provider_node_id, session_id)
+        try:
+            return psutil.Process(pid).cwd() if pid else None
+        except (psutil.Error, OSError):
+            return None
+
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
         """Check if a process is alive (cross-platform)."""
@@ -985,12 +1141,11 @@ class LocalComputeProvider(ComputeProvider):
             process = pty_info.get("process")  # type: ignore[assignment]
             if process:
                 try:
-                    if process.isalive():
-                        process.terminate(force=True)
+                    await _terminate_pty(process)
                 except Exception:
                     pass
 
-            del self._pty_processes[pty_key]
+            self._pty_processes.pop(pty_key, None)
 
     async def _fail_dead_pty(
         self, pty_key: tuple[str, str], log_msg: str, reason: str, raise_msg: str, *, warn: bool = False
@@ -1138,20 +1293,24 @@ class LocalComputeProvider(ComputeProvider):
         pick_file = mode == "file"
 
         if sys.platform == PLATFORM_DARWIN:
-            # Activate Finder to bring the dialog in front, close any Finder
-            # windows so only the picker is visible, then choose the path.
+            # The dialog belongs to `osascript` itself — never drive Finder.
+            # Scripting another app is an Apple event, which the hardened,
+            # signed desktop app can't send (no `com.apple.security.automation
+            # .apple-events` entitlement), so a `tell application "Finder"`
+            # block aborts the whole script and NO picker ever appears. A bare
+            # `choose folder` needs no permission and opens in the floating
+            # window layer, above every normal window including ours. The
+            # prompt names us so a user hunting for it knows what asked.
             if initial_dir:
-                default_location = f'default location POSIX file "{initial_dir}"'
+                escaped_dir = initial_dir.replace("\\", "\\\\").replace('"', '\\"')
+                default_location = f'default location POSIX file "{escaped_dir}"'
             else:
                 default_location = ""
             chooser = "choose file" if pick_file else "choose folder"
+            what = "file" if pick_file else "folder"
             apple_script = (
-                'tell application "Finder"\n'
-                "    activate\n"
-                "    close every window\n"
-                "end tell\n"
-                "delay 0.1\n"
-                f"set thePath to {chooser} {default_location}\n"
+                "tell me to activate\n"
+                f'set thePath to {chooser} with prompt "Flowpad — select a {what}" {default_location}\n'
                 "return POSIX path of thePath"
             )
             result = subprocess.run(
@@ -1171,23 +1330,44 @@ class LocalComputeProvider(ComputeProvider):
             # break the script. Force UTF-8 on the dialog's stdout (and decode
             # it as UTF-8) so a returned non-ASCII path survives intact instead
             # of being mangled by the console's cp1252 default.
+            #
+            # An OWNERLESS dialog inherits the z-order of the background
+            # PowerShell process, and Windows' foreground lock forbids a
+            # background process from raising itself — so the picker opened
+            # BEHIND the Flowpad window and all the user got was a taskbar
+            # blink. Give it a hidden, centered, topmost owner form: an owned
+            # window always sits above its owner, and an owner in the topmost
+            # band puts the dialog there too — visible over every normal
+            # window no matter who holds the foreground.
+            owner_lines = (
+                "$owner = New-Object System.Windows.Forms.Form; "
+                "$owner.FormBorderStyle = 'None'; $owner.Opacity = 0; "
+                "$owner.Width = 1; $owner.Height = 1; "
+                "$owner.ShowInTaskbar = $false; $owner.TopMost = $true; "
+                "$owner.StartPosition = 'CenterScreen'; "
+                "$owner.Show(); $owner.Activate(); "
+            )
             if pick_file:
                 initial_line = f"$d.InitialDirectory = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.OpenFileDialog; "
                     f"{initial_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.FileName } else { '' }"
                 )
             else:
                 selected_path_line = f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
                 ps_script = (
                     "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
                     "Add-Type -AssemblyName System.Windows.Forms; "
+                    f"{owner_lines}"
                     "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
                     f"{selected_path_line}"
-                    "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+                    "$r = $d.ShowDialog($owner); $owner.Close(); "
+                    "if ($r -eq 'OK') { $d.SelectedPath } else { '' }"
                 )
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_script],
@@ -1234,14 +1414,13 @@ class LocalComputeProvider(ComputeProvider):
             process = pty_info.get("process")  # type: ignore[assignment]
             if process:
                 try:
-                    if process.isalive():
-                        process.terminate(force=True)
+                    await _terminate_pty(process)
                 except Exception as e:
                     message = str(e)
                     if "there was no child process" not in message and "waitpid" not in message:
                         logger.warning(f"Error terminating PTY process: {message}")
 
-            del self._pty_processes[pty_key]
+            self._pty_processes.pop(pty_key, None)
 
     def list_pty_sessions(self, cn_id: str) -> list[dict]:
         """Return [{shell_id, connection_id, name}] for all active sessions on this node."""

@@ -1,0 +1,722 @@
+"""``GmailSource`` — a Gmail mailbox over IMAP and SMTP, standard library only.
+
+The row stores only the address; the way in reaches the source as the ``gmail`` credential, never as
+configuration — one of two ways, the one the person set up (``credentials.choice``): a Google sign-in
+(``GMAIL_GOOGLE``: the grant's token, logged in with XOAUTH2) or an app password (``GMAIL_APP_PASSWORD``). IMAP is blocking, so every mailbox call runs in a worker thread and a cancellation
+settles before it propagates.
+
+**The cursor is the UID pair.** IMAP UIDs are monotonic within one UIDVALIDITY, so the resume
+cursor is ``(uid_validity, last_uid)``; a changed UIDVALIDITY starts the mailbox over. RFC
+Message-ID stays the record's identity (shared with every other mail transport); the UID pair is
+only the stable fallback for mail without one.
+
+**Replies route from the answered message.** Its sender, subject and thread come from All Mail —
+where our own sent mail also lives, so a reply to a message we sent routes too. A conversation
+send continues the thread's latest message, because email continues a thread by replying.
+
+**Files ride the message.** Outgoing files are MIME attachments of the one message (up to Gmail's
+25 MB); inbound attachments are named ``<message key>#<n>`` in the order the message lists them.
+The traversal already holds the whole RFC822, so ``open`` serves this session's copy, and re-fetches
+the message from All Mail by its key when handed an attachment the session never read.
+"""
+from __future__ import annotations
+
+import imaplib
+import re
+import smtplib
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from email import policy
+from email.message import EmailMessage, Message
+from email.parser import BytesParser
+from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
+from functools import partial
+from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Sequence
+
+from flow_sdk.sources.base import positive_int
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.email import EmailAddressing
+from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
+from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.protocols import Verdict
+from flow_sdk.sources.files import FileSupport, check_files, chunked, kind_of, read_file
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    UserProfile,
+)
+from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
+from flow_sdk.sources.values.query import MessageQuery
+
+IMAP_HOST = "imap.gmail.com"
+IMAP_SSL_PORT = 993
+SMTP_HOST = "smtp.gmail.com"
+SMTP_SSL_PORT = 465
+#: A host here is reached in the clear: a test double on this machine, never Google.
+INBOX = "INBOX"
+#: The ``gmail`` credential's sign-in way (its other way is ``app_password``).
+GOOGLE_WAY = "google"
+ALL_MAIL = "[Gmail]/All Mail"
+#: One bounded prefix per page; the UID cursor resumes at the next message.
+PAGE_LIMIT = 50
+
+_RESUME = "uid:"
+_FULL = "(UID X-GM-THRID RFC822)"
+_DATED = "(UID BODY.PEEK[HEADER.FIELDS (DATE)])"
+_ROUTING = "(UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (MESSAGE-ID FROM TO REPLY-TO SUBJECT)])"
+_UID_RE = re.compile(rb"\bUID\s+(\d+)\b", re.IGNORECASE)
+_THREAD_RE = re.compile(rb"\bX-GM-THRID\s+(\d+)\b", re.IGNORECASE)
+_UID_VALIDITY_RE = re.compile(rb"(?:UIDVALIDITY\s+)?(\d+)", re.IGNORECASE)
+
+
+class GmailMessageData(EmailMessageData):
+    spec_kind: ClassVar[str] = "ingest.message.email.gmail"
+    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+
+    raw: Optional[dict] = None
+
+
+@dataclass(frozen=True)
+class FetchedMessage:
+    uid: int
+    thread_id: str
+    raw: bytes
+
+
+@dataclass(frozen=True)
+class Snapshot:
+    uid_validity: str
+    messages: tuple[FetchedMessage, ...]
+    more: bool = False
+
+
+class LoginRefused(Exception):
+    """An IMAP login refusal, told apart from protocol and network failures."""
+
+
+class GmailConfig(SourceConfig):
+    """What a gmail source is configured with. The hosts are ``host[:port]``; empty is Google's own
+    server over SSL, a loopback host is a local double reached without TLS."""
+
+    address: str = ""
+    imap_host: str = ""
+    smtp_host: str = ""
+
+
+class GmailSource(EmailAddressing, MessageSource):
+
+    Config = GmailConfig
+    provider = "gmail"
+    durable_cursor = True
+    page_size = PAGE_LIMIT
+    pages_per_pass = 1
+    pages_backward = True
+    identity_config_key = "address"
+    #: Gmail's own ceiling is 25 MB a message, attachments together.
+    files = FileSupport(kinds=frozenset(FileKind), per_message=50, max_message_bytes=25_000_000)
+
+    async def _open(self) -> None:
+        await super()._open()
+        #: Attachment bytes of the messages this session read — ``open`` serves them without a round trip.
+        self._blobs: dict[CloudOrigin, bytes] = {}
+
+    async def _close(self) -> None:
+        self._blobs = {}
+        await super()._close()
+
+    # ── setup ───────────────────────────────────────────────────────────────
+    async def verify(self) -> Verdict:
+        """One IMAP login with the way the person set up: none yet, or one Google refuses, is a setup still owed."""
+        try:
+            mailbox = self._mailbox()
+            await self._imap(check_login, mailbox)
+        except (AccessDenied, Rejected) as exc:
+            return Verdict(ready=False, detail=f"{exc}")
+        return Verdict(ready=True, detail=f"Reading {mailbox.address}.")
+
+    @classmethod
+    def resume_at(cls, uid_validity: str, last_uid: int) -> str:
+        return f"{_RESUME}{uid_validity}:{int(last_uid)}"
+
+    # ── what the application asks ───────────────────────────────────────────
+    @classmethod
+    def permalink(cls, external_id: str, thread_key: str = "") -> str:
+        """Gmail's own UI, by thread (else the message). A formula, never a model-composed string:
+        the link is digested, so a URL formatted differently on the next poll would rewrite the corpus."""
+        if not (external_id or thread_key):
+            return ""
+        return f"https://mail.google.com/mail/u/0/#all/{thread_key or external_id}"
+
+    @property
+    def address(self) -> str:
+        """The row's own address (so aliases are explicit), else the operator's ``GMAIL_ADDRESS``, else the
+        Google account that signed in (``credentials.identity``)."""
+        fallback = self.credentials.values.get("GMAIL_ADDRESS")
+        address = str(
+            self.config.get("address") or (fallback.get_secret_value() if fallback else "") or self.credentials.identity or ""
+        ).strip()
+        if not address:
+            raise Rejected("config.address, GMAIL_ADDRESS or a Google sign-in is required")
+        return address
+
+    def origin(self, key: str, *within: str) -> CloudOrigin:
+        return super().origin(key, *(within or (INBOX,)))
+
+    def thread_origin(self, thread_id: str) -> CloudOrigin:
+        return self.origin(f"{self.address.casefold()}:{thread_id}")
+
+    # ── read ────────────────────────────────────────────────────────────────
+    def query(self) -> MessageQuery:
+        """The inbox, whole."""
+        return MessageQuery()
+
+    async def fetch(
+        self, cursor: Optional[str] = None, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> ChangePage:
+        self._require_open()
+        query = self.effective_query(narrow)
+        if query.conversation is not None:
+            raise Unsupported("Gmail lists the inbox; it does not read one thread")
+        limit = self.effective_page_size if page_size is None else positive_int(page_size, "page_size", MAX_PAGE_SIZE)
+        if query.before is not None:
+            # One page of history, newest first: no cursor read or written, no `since` window.
+            snapshot = await self._imap(list_before, self._mailbox(), query.before, limit)
+            return ChangePage(items=tuple(self._item(snapshot.uid_validity, message) for message in snapshot.messages))
+        validity, floor = _decode(cursor)
+        since = query.since if cursor is None else None
+        snapshot = await self._imap(list_inbox, self._mailbox(), validity, floor, since, limit)
+        floor = floor if validity == snapshot.uid_validity else 0
+        last = max((message.uid for message in snapshot.messages), default=floor)
+        token = self.resume_at(snapshot.uid_validity, last) if last else None
+        return ChangePage(
+            items=tuple(self._item(snapshot.uid_validity, message) for message in snapshot.messages),
+            next_cursor=token if snapshot.more and token else None,
+            resume_cursor=token,
+        )
+
+    async def iterate(
+        self, *, page_size: Optional[int] = None, narrow: Optional[Mapping[str, Any]] = None
+    ) -> AsyncGenerator[MessageItem, None]:
+        cursor: Optional[str] = None
+        while True:
+            page = await self.fetch(cursor, page_size=page_size, narrow=narrow)
+            for item in page.items:
+                yield item
+            if (cursor := page.next_cursor) is None:
+                return
+
+    async def find_reply(self, message_id: str) -> Optional[MessageItem]:
+        """The newest inbox message whose ``In-Reply-To`` names ``message_id``, or ``None``."""
+        snapshot = await self._imap(find_reply_inbox, self._mailbox(), message_id)
+        return self._item(snapshot.uid_validity, snapshot.messages[-1]) if snapshot.messages else None
+
+    def _item(self, uid_validity: str, fetched: FetchedMessage) -> MessageItem:
+        message = BytesParser(policy=policy.default).parsebytes(fetched.raw)
+        name, sender = parseaddr(str(message.get("From") or ""))
+        message_id = str(message.get("Message-ID") or "").strip()
+        replied = str(message.get("In-Reply-To") or "").strip()
+        thread = fetched.thread_id.strip()
+        key = message_id or f"imap:{uid_validity}:{fetched.uid}"
+        attachments, blobs = [], getattr(self, "_blobs", None)
+        for index, (file_name, media_type, payload) in enumerate(message_attachments(message)):
+            origin = self.origin(f"{key}#{index}")
+            if blobs is not None:
+                blobs[origin] = payload
+            file = MessageFileData(name=file_name, media_type=media_type, size=len(payload), as_=kind_of(media_type))
+            attachments.append(FileItem(origin=origin, data=file))
+        pairs = getaddresses([str(message.get("To") or ""), str(message.get("Cc") or "")])
+        data = GmailMessageData(
+            subject=str(message.get("Subject") or "") or None,
+            text=body if (body := message_body(message)).strip() else None,
+            conversation=self.thread_origin(thread) if thread else None,
+            sender=UserProfile(origin=self.origin(sender), name=name or sender or None, address=sender) if sender else None,
+            sent_at=message_date(message),
+            in_reply_to=self.origin(replied) if replied else None,
+            recipients=tuple(UserProfile(origin=self.origin(addr), name=n or None, address=addr) for n, addr in pairs if addr),
+            attachments=tuple(attachments),
+            raw={
+                "imap_uid": fetched.uid, "uid_validity": uid_validity, "gmail_thread_id": thread, "message_id": message_id,
+                "in_reply_to": replied, "from": str(message.get("From") or ""), "to": str(message.get("To") or ""),
+                "subject": str(message.get("Subject") or ""),
+            },
+        )
+        return MessageItem(origin=self.origin(key), data=data)
+
+    # ── files ───────────────────────────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        self._require_open()
+        return self._stream(file, chunk_size)
+
+    @asynccontextmanager
+    async def _stream(self, file: FileItem, chunk_size: int) -> AsyncIterator[AsyncIterator[bytes]]:
+        blob = self._blobs.get(file.origin)
+        if blob is None:
+            message_key, _, index = self._key_of(file.origin).rpartition("#")
+            if not message_key or not index.isdigit():
+                raise NotFound("not a Gmail attachment", origin=file.origin)
+            fetched = await self._imap(fetch_full, self._mailbox(), message_key)
+            if fetched is None:
+                raise NotFound(f"no message {message_key} in this mailbox", origin=file.origin)
+            self._item(fetched[0], fetched[1])
+            blob = self._blobs.get(file.origin)
+            if blob is None:
+                raise NotFound(f"message {message_key} has no attachment {index}", origin=file.origin)
+        yield chunked(blob, chunk_size)
+
+    # ── send ────────────────────────────────────────────────────────────────
+    async def send(self, data: MessageData) -> MessageItem:
+        self._require_open()
+        _check_outgoing(data)
+        if (data.conversation is None) == (not data.recipients):
+            raise ValueError("address exactly one of a conversation or recipients")
+        if data.conversation is not None:
+            latest = await self._imap(latest_in_thread, self._mailbox(), self._thread_of(data.conversation))
+            if latest is None:
+                raise NotFound("no message in that Gmail thread to continue")
+            return await self._reply_to(latest, data, None, conversation=data.conversation)
+        if len(data.recipients) != 1:
+            raise Unsupported("a Gmail send has exactly one recipient")
+        recipient = data.recipients[0].address or data.recipients[0].origin.key
+        sent = await self._smtp(recipient, data, subject=getattr(data, "subject", None) or "", in_reply_to="")
+        found = await self._imap(find_message, self._mailbox(), sent.origin.key)
+        thread = found.thread_id if found is not None else ""
+        return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"conversation": self.thread_origin(thread) if thread else None}))
+
+    async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
+        self._require_open()
+        _check_outgoing(data)
+        if data.conversation is not None or data.recipients:
+            raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
+        answered = await self._imap(find_message, self._mailbox(), self._key_of(origin))
+        if answered is None:
+            raise NotFound(f"no message {origin.key} in this mailbox", origin=origin)
+        return await self._reply_to(answered, data, origin)
+
+    async def _reply_to(self, answered: FetchedMessage, data: MessageData, answered_origin: Optional[CloudOrigin], *, conversation: Optional[CloudOrigin] = None) -> MessageItem:
+        headers = BytesParser(policy=policy.default).parsebytes(answered.raw, headersonly=True)
+        message_id = str(headers.get("Message-ID") or "").strip()
+        author = parseaddr(str(headers.get("Reply-To") or headers.get("From") or ""))[1]
+        if author.casefold() == self.address.casefold():
+            # Answering our own message continues with whoever it was addressed to.
+            author = next((addr for _, addr in getaddresses([str(headers.get("To") or "")]) if addr), author)
+        subject = getattr(data, "subject", None) or _reply_subject(str(headers.get("Subject") or ""))
+        sent = await self._smtp(author, data, subject=subject, in_reply_to=message_id)
+        thread = conversation or (self.thread_origin(answered.thread_id) if answered.thread_id else None)
+        update = {"conversation": thread, "in_reply_to": answered_origin or self.origin(message_id)}
+        return MessageItem(origin=sent.origin, data=sent.data.model_copy(update=update))
+
+    async def _smtp(self, recipient: str, data: MessageData, *, subject: str, in_reply_to: str) -> MessageItem:
+        # Built in a worker thread: the attachments are read from disk.
+        message = await self._blocking(partial(
+            smtp_message, sender=self.address, recipient=recipient, text=data.text or "", subject=subject, in_reply_to=in_reply_to, files=data.attachments
+        ))
+        try:
+            await self._blocking(send_smtp, self._mailbox(self.config.get("smtp_host")), message)
+        except smtplib.SMTPAuthenticationError as exc:
+            raise AccessDenied(f"Gmail refused the SMTP login: {exc}") from exc
+        except smtplib.SMTPRecipientsRefused as exc:
+            raise Rejected(f"Gmail refused the recipient: {exc}") from exc
+        except smtplib.SMTPException as exc:
+            raise SourceUnavailable(f"SMTP: {exc}") from exc
+        sent = EmailMessageData(text=data.text, subject=subject or None, sent_at=datetime.now(timezone.utc), attachments=data.attachments)
+        return MessageItem(origin=self.origin(str(message["Message-ID"])), data=sent)
+
+    # ── transport ───────────────────────────────────────────────────────────
+    def _mailbox(self, host: Any = None) -> "Mailbox":
+        """The account and the way in: the Google sign-in's token when that is the way handed
+        (``credentials.choice``), else the app password. ``host`` is the server (default: the IMAP one)."""
+        host = str((self.config.get("imap_host") if host is None else host) or "")
+        if self.credentials.choice == GOOGLE_WAY:
+            token = self.credentials.token.get_secret_value() if self.credentials.token is not None else ""
+            if not token:
+                raise AccessDenied("Not signed in with Google — sign in again, or add an app password instead")
+            return Mailbox(self.address, "", host, token=token)
+        return Mailbox(self.address, self._password(), host)
+
+    def _password(self) -> str:
+        """``GMAIL_APP_PASSWORD``, with presentation whitespace dropped — Google shows an app password
+        in four spaced groups."""
+        secret = self.credentials.values.get("GMAIL_APP_PASSWORD")
+        password = "".join(secret.get_secret_value().split()) if secret is not None else ""
+        if not password:
+            raise AccessDenied("Sign in with Google or add an app password")
+        return password
+
+    async def _imap(self, fn: Any, *args: Any) -> Any:
+        try:
+            return await self._blocking(fn, *args)
+        except LoginRefused as exc:
+            raise AccessDenied(f"Gmail refused the login: {exc}") from exc
+        except (imaplib.IMAP4.error, EOFError) as exc:
+            raise SourceUnavailable(f"IMAP: {exc}") from exc
+
+    def _key_of(self, origin: object) -> str:
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        if origin != self.origin(origin.key):
+            raise ValueError(f"{origin!r} is outside this source's scope")
+        return origin.key
+
+    def _thread_of(self, conversation: object) -> str:
+        prefix, _, thread = self._key_of(conversation).rpartition(":")
+        if prefix != self.address.casefold() or not thread.isdigit():
+            raise NotFound(f"{conversation!r} is not a Gmail thread in this mailbox")
+        return thread
+
+
+# ── blocking IMAP / SMTP, run in a worker thread ────────────────────────────
+
+
+@dataclass(frozen=True)
+class Mailbox:
+    """One login: the account, its secret and where its server is (``""`` is Google's). ``token``, when set, is a
+    Google sign-in's access token and the login is XOAUTH2; else ``password`` is an app password."""
+
+    address: str
+    password: str
+    host: str = ""
+    token: str = ""
+
+    def xoauth2(self) -> str:
+        """Google's SASL XOAUTH2 initial response, unencoded (the client libraries base64 it)."""
+        return f"user={self.address}\x01auth=Bearer {self.token}\x01\x01"
+
+
+def endpoint(spec: str, default_host: str, default_port: int) -> tuple[str, int, bool]:
+    """``[scheme://]host[:port]`` → ``(host, port, tls)``. TLS unless the scheme says plain
+    (``imap://`` / ``smtp://``); empty parts take the defaults. The value decides the transport —
+    never the hostname, so a tunnelled mailbox on localhost still speaks TLS unless told otherwise."""
+    scheme, _, rest = str(spec or "").strip().rpartition("://")
+    host, _, port = rest.rpartition(":")
+    if not host:
+        host, port = port, ""
+    return host or default_host, int(port) if port.isdigit() else default_port, scheme.lower() not in ("imap", "smtp")
+
+
+def imap_client(host_spec: str = "") -> imaplib.IMAP4:
+    host, port, tls = endpoint(host_spec, IMAP_HOST, IMAP_SSL_PORT)
+    return imaplib.IMAP4_SSL(host, port) if tls else imaplib.IMAP4(host, port)
+
+
+def smtp_client(host_spec: str = "") -> smtplib.SMTP:
+    host, port, tls = endpoint(host_spec, SMTP_HOST, SMTP_SSL_PORT)
+    return smtplib.SMTP_SSL(host, port) if tls else smtplib.SMTP(host, port)
+
+
+def list_inbox(mailbox: Mailbox, saved_validity: str, floor: int, since: Optional[datetime], limit: int) -> Snapshot:
+    client, uid_validity = open_inbox(mailbox)
+    try:
+        floor = floor if saved_validity == uid_validity else 0
+        if floor:
+            status, data = client.uid("SEARCH", None, f"UID {floor + 1}:*")
+        elif since is not None:
+            status, data = client.uid("SEARCH", None, "SINCE", since.strftime("%d-%b-%Y"))
+        else:
+            status, data = client.uid("SEARCH", None, "ALL")
+        _require_ok(status, "search INBOX")
+        # `UID n:*` answers the highest UID even when nothing is newer: filter, never trust.
+        uids = [uid for uid in _uids(data) if uid > floor]
+        return Snapshot(uid_validity, _fetch_messages(client, uids[:limit]), more=len(uids) > limit)
+    finally:
+        close_inbox(client)
+
+
+def find_reply_inbox(mailbox: Mailbox, message_id: str) -> Snapshot:
+    client, uid_validity = open_inbox(mailbox)
+    try:
+        return Snapshot(uid_validity, _find_reply_messages(client, message_id))
+    finally:
+        close_inbox(client)
+
+
+def find_message(mailbox: Mailbox, message_id: str) -> Optional[FetchedMessage]:
+    """The routing headers of one message in All Mail. The tail first — a message being answered is
+    almost always recent, and Gmail's server-side HEADER search scans the whole mailbox (45s on a
+    12k-message account) — then that search as the fallback."""
+    client, _ = open_inbox(mailbox, ALL_MAIL)
+    try:
+        status, data = client.uid("SEARCH", None, "ALL")
+        _require_ok(status, "list All Mail")
+        wanted = message_id.strip().casefold()
+        tail = [m for m in _fetch_message_parts(client, _uids(data)[-PAGE_LIMIT:], _ROUTING) if _message_id_of(m.raw) == wanted]
+        if tail:
+            return tail[-1]
+        status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", message_id)
+        _require_ok(status, "search Message-ID")
+        found = _fetch_message_parts(client, _uids(data)[-1:], _ROUTING)
+        return found[-1] if found else None
+    finally:
+        close_inbox(client)
+
+
+def latest_in_thread(mailbox: Mailbox, thread_id: str) -> Optional[FetchedMessage]:
+    client, _ = open_inbox(mailbox, ALL_MAIL)
+    try:
+        status, data = client.uid("SEARCH", None, "X-GM-THRID", thread_id)
+        _require_ok(status, "search thread")
+        found = _fetch_message_parts(client, _uids(data)[-1:], _ROUTING)
+        return found[-1] if found else None
+    finally:
+        close_inbox(client)
+
+
+def fetch_full(mailbox: Mailbox, message_key: str) -> Optional[tuple[str, FetchedMessage]]:
+    """One whole message by the key ``_item`` gave it: an ``imap:<validity>:<uid>`` key is an INBOX
+    UID (gone if the mailbox's UIDVALIDITY moved on), anything else a Message-ID searched in All Mail."""
+    if message_key.startswith("imap:"):
+        validity, _, uid = message_key[len("imap:"):].rpartition(":")
+        client, current = open_inbox(mailbox)
+        try:
+            found = _fetch_messages(client, [int(uid)]) if validity == current and uid.isdigit() else ()
+            return (current, found[-1]) if found else None
+        finally:
+            close_inbox(client)
+    client, current = open_inbox(mailbox, ALL_MAIL)
+    try:
+        status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", message_key)
+        _require_ok(status, "search Message-ID")
+        found = _fetch_messages(client, _uids(data)[-1:])
+        return (current, found[-1]) if found else None
+    finally:
+        close_inbox(client)
+
+
+def mailbox_arg(name: str) -> str:
+    """A mailbox name as an IMAP quoted string (RFC 3501): `[Gmail]/All Mail` unquoted is "Could not
+    parse command", and a quote or backslash inside a name must be escaped."""
+    return '"' + name.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def login(client: imaplib.IMAP4, account: Mailbox) -> None:
+    """Authenticate ``client`` as ``account`` — XOAUTH2 with a sign-in's token, else the app password."""
+    try:
+        if account.token:
+            client.authenticate("XOAUTH2", lambda _challenge: account.xoauth2().encode())
+        else:
+            client.login(account.address, account.password)
+    except imaplib.IMAP4.abort:
+        raise
+    except imaplib.IMAP4.error as exc:
+        # imaplib carries the server's words as bytes: Google's own sentence, not ``b'…'``.
+        said = exc.args[0] if exc.args else ""
+        raise LoginRefused(said.decode(errors="replace") if isinstance(said, bytes) else str(exc)) from exc
+
+
+def open_inbox(account: Mailbox, mailbox: str = INBOX) -> tuple[imaplib.IMAP4, str]:
+    """Authenticate and select ``mailbox`` read-only, cleaning up a partial open."""
+    client = imap_client(account.host)
+    try:
+        login(client, account)
+        status, _ = client.select(mailbox_arg(mailbox), readonly=True)
+        _require_ok(status, f"select {mailbox}")
+        return client, _uid_validity(client, mailbox)
+    except Exception:
+        close_inbox(client)
+        raise
+
+
+def close_inbox(client: imaplib.IMAP4) -> None:
+    # The mailbox is always selected read-only, so CLOSE has nothing to commit; Gmail sometimes
+    # stalls on it, and LOGOUT leaves the selected state and the connection in one round trip.
+    try:
+        client.logout()
+    except (imaplib.IMAP4.error, OSError, EOFError):
+        pass
+
+
+def _find_reply_messages(client: imaplib.IMAP4, message_id: str) -> tuple[FetchedMessage, ...]:
+    """A response to a message just sent is at the tail: list UIDs, fetch one page of tiny
+    ``In-Reply-To`` headers, compare locally, then hydrate the single newest match."""
+    status, data = client.uid("SEARCH", None, "ALL")
+    _require_ok(status, "list reply candidates")
+    headers = _fetch_message_parts(client, _uids(data)[-PAGE_LIMIT:], "(UID X-GM-THRID BODY.PEEK[HEADER.FIELDS (IN-REPLY-TO)])")
+    wanted = str(message_id or "").strip().casefold()
+    matches = [fetched.uid for fetched in headers if wanted in _in_reply_to_ids(fetched.raw)]
+    return _fetch_messages(client, matches[-1:])
+
+
+def list_before(mailbox: Mailbox, before: datetime, limit: int) -> Snapshot:
+    """The newest ``limit`` INBOX messages sent strictly before ``before``, newest first. IMAP's
+    ``BEFORE`` is day-granular, so the server narrows to the day after the bound and the exact cut
+    is made here on each message's Date header, walking down from the highest UID."""
+    client, uid_validity = open_inbox(mailbox)
+    try:
+        bound = before.astimezone(timezone.utc)
+        day_after = (bound + timedelta(days=1)).strftime("%d-%b-%Y")
+        status, data = client.uid("SEARCH", None, "BEFORE", day_after)
+        _require_ok(status, "search INBOX")
+        uids = sorted(set(_uids(data)), reverse=True)
+        chosen: list[tuple[datetime, int]] = []
+        step = max(limit * 2, 20)
+        for start in range(0, len(uids), step):
+            for header in _fetch_message_parts(client, uids[start:start + step], _DATED):
+                sent = message_date(BytesParser(policy=policy.default).parsebytes(header.raw, headersonly=True))
+                if sent is not None and sent < bound:
+                    chosen.append((sent, header.uid))
+            if len(chosen) >= limit:
+                break
+        chosen = sorted(chosen, reverse=True)[:limit]
+        by_uid = {message.uid: message for message in _fetch_messages(client, [uid for _, uid in chosen])}
+        return Snapshot(uid_validity, tuple(by_uid[uid] for _, uid in chosen))
+    finally:
+        close_inbox(client)
+
+
+def _fetch_messages(client: imaplib.IMAP4, uids: list[int]) -> tuple[FetchedMessage, ...]:
+    """Fetch one UID page in one round trip."""
+    return _fetch_message_parts(client, uids, _FULL)
+
+
+def _fetch_message_parts(client: imaplib.IMAP4, uids: list[int], query: str) -> tuple[FetchedMessage, ...]:
+    if not uids:
+        return ()
+    uid_set = ",".join(str(uid) for uid in uids)
+    status, parts = client.uid("FETCH", uid_set, query)
+    _require_ok(status, f"fetch UIDs {uid_set}")
+    messages: list[FetchedMessage] = []
+    for part in parts or []:
+        if not isinstance(part, tuple) or len(part) < 2 or not isinstance(part[1], bytes):
+            continue
+        metadata = part[0] if isinstance(part[0], bytes) else str(part[0]).encode()
+        uid_match, thread_match = _UID_RE.search(metadata), _THREAD_RE.search(metadata)
+        if not uid_match:
+            raise imaplib.IMAP4.error("fetch response carried no UID")
+        messages.append(FetchedMessage(int(uid_match.group(1)), thread_match.group(1).decode("ascii") if thread_match else "", part[1]))
+    if len(messages) != len(uids):
+        raise imaplib.IMAP4.error(f"fetch requested {len(uids)} message(s), returned {len(messages)}")
+    return tuple(sorted(messages, key=lambda message: message.uid))
+
+
+def check_login(account: Mailbox) -> None:
+    """Log in and out, nothing selected — what ``verify`` asks of the mailbox."""
+    client = imap_client(account.host)
+    try:
+        login(client, account)
+    finally:
+        close_inbox(client)
+
+
+def send_smtp(account: Mailbox, message: EmailMessage) -> None:
+    with smtp_client(account.host) as client:
+        if account.token:
+            client.ehlo()
+            client.auth("XOAUTH2", lambda challenge=None: account.xoauth2(), initial_response_ok=True)
+        else:
+            client.login(account.address, account.password)
+        client.send_message(message)
+
+
+def smtp_message(
+    *, sender: str, recipient: str, text: str, subject: str, in_reply_to: str, files: Sequence[FileItem] = ()
+) -> EmailMessage:
+    """An outbound message carrying the cross-transport reply headers, ``files`` as its attachments."""
+    if not str(recipient or "").strip():
+        raise ValueError("a Gmail send needs one recipient")
+    message = EmailMessage(policy=policy.default)
+    message["From"] = sender
+    message["To"] = recipient
+    message["Subject"] = subject
+    message["Date"] = formatdate(localtime=False)
+    message["Message-ID"] = make_msgid(domain=sender.rsplit("@", 1)[-1] if "@" in sender else None)
+    if in_reply_to:
+        message["In-Reply-To"] = in_reply_to
+        message["References"] = in_reply_to
+    message.set_content(text)
+    for file in files:
+        maintype, _, subtype = (file.data.media_type or "application/octet-stream").partition("/")
+        message.add_attachment(read_file(file), maintype=maintype, subtype=subtype or "octet-stream", filename=file.data.name or "file")
+    return message
+
+
+def message_attachments(message: Message) -> list[tuple[str, str, bytes]]:
+    """``(name, media type, bytes)`` of each attachment, in the order the message lists them."""
+    if not isinstance(message, EmailMessage) or not message.is_multipart():
+        return []
+    out = []
+    for index, part in enumerate(message.iter_attachments()):
+        payload = part.get_payload(decode=True)
+        out.append((part.get_filename() or f"attachment-{index}", part.get_content_type(), payload if isinstance(payload, bytes) else b""))
+    return out
+
+
+def message_body(message: Message) -> str:
+    part = message.get_body(preferencelist=("plain", "html")) if message.is_multipart() else message
+    if part is None:
+        return ""
+    content = part.get_content()
+    return content.decode(part.get_content_charset() or "utf-8", errors="replace") if isinstance(content, bytes) else str(content)
+
+
+def message_date(message: Message) -> Optional[datetime]:
+    raw = str(message.get("Date") or "").strip()
+    try:
+        value = parsedate_to_datetime(raw) if raw else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return value if value is None or value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _uid_validity(client: imaplib.IMAP4, mailbox: str) -> str:
+    _, values = client.response("UIDVALIDITY")
+    match = _UID_VALIDITY_RE.search(b" ".join(v for v in (values or []) if isinstance(v, bytes)))
+    if match:
+        return match.group(1).decode("ascii")
+    status, values = client.status(mailbox_arg(mailbox), "(UIDVALIDITY)")
+    _require_ok(status, "read UIDVALIDITY")
+    match = re.search(rb"UIDVALIDITY\s+(\d+)", b" ".join(v for v in (values or []) if isinstance(v, bytes)), re.IGNORECASE)
+    if not match:
+        raise imaplib.IMAP4.error(f"{mailbox} did not report UIDVALIDITY")
+    return match.group(1).decode("ascii")
+
+
+def _uids(data: Any) -> list[int]:
+    raw = b" ".join(value for value in (data or []) if isinstance(value, bytes))
+    return sorted({int(value) for value in raw.split() if value.isdigit()} - {0})
+
+
+def _in_reply_to_ids(raw: bytes) -> set[str]:
+    value = str(BytesParser(policy=policy.default).parsebytes(raw, headersonly=True).get("In-Reply-To") or "").strip().casefold()
+    return set(re.findall(r"<[^>]+>", value) or ([value] if value else []))
+
+
+def _message_id_of(raw: bytes) -> str:
+    return str(BytesParser(policy=policy.default).parsebytes(raw, headersonly=True).get("Message-ID") or "").strip().casefold()
+
+
+def _reply_subject(subject: str) -> str:
+    return subject if not subject or subject.lower().startswith("re:") else f"Re: {subject}"
+
+
+def _require_ok(status: Any, operation: str) -> None:
+    if str(status or "").upper() != "OK":
+        raise imaplib.IMAP4.error(f"{operation} failed: {status}")
+
+
+def _decode(cursor: object) -> tuple[str, int]:
+    if cursor is None:
+        return "", 0
+    if not isinstance(cursor, str):
+        raise TypeError(f"cursor must be a string, got {type(cursor).__name__}")
+    validity, _, last = cursor[len(_RESUME):].rpartition(":") if cursor.startswith(_RESUME) else ("", "", "")
+    if not validity or not last.isdigit():
+        raise InvalidCursor("not a Gmail cursor")
+    return validity, int(last)
+
+
+def _check_outgoing(data: object) -> None:
+    if not isinstance(data, MessageData):
+        raise TypeError(f"expected MessageData, got {type(data).__name__}")
+    if not (data.text or "").strip() and not data.attachments:
+        raise ValueError("a Gmail message needs text or a file")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    check_files(data.attachments, GmailSource.files, title="Gmail", text=data.text)
+
+
+__all__ = ["ALL_MAIL", "INBOX", "PAGE_LIMIT", "GmailMessageData", "GmailSource", "Mailbox", "endpoint", "message_attachments", "message_body", "message_date", "smtp_message"]

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-from flow_sdk.fs_store.indexer.functions.task import extract_task
 from flow_sdk.fs_store.fs_record import FSRecord
+
 TaskResource = FSRecord  # noqa: F401
 from tests.test_settings import test_service_config
 

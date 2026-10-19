@@ -1,3 +1,6 @@
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react/macro';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIndexStatus } from '@src/hooks/use-index-status';
@@ -18,19 +21,20 @@ import { activityFooterLabel } from './activity-labels';
 
 function idleLabel(iso: string | null): string {
   const ago = formatTimeAgo(iso);
-  return ago ? `indexed ${ago}` : 'never indexed';
+  return ago ? i18n._(msg`indexed ${ago}`) : i18n._(msg`never indexed`);
 }
 
 function idleTooltip(iso: string | null): string {
-  return iso
-    ? `Last indexed: ${new Date(iso).toLocaleString()}`
-    : 'Never indexed';
+  if (!iso) return i18n._(msg`Never indexed`);
+  const when = new Date(iso).toLocaleString();
+  return i18n._(msg`Last indexed: ${when}`);
 }
 
 export function IndexerStatusPill() {
   const { currentActivity, progressTable } = useSystemTools();
   const { state: indexStatus, refresh } = useIndexStatus();
   const { navigation } = useDockNavigation();
+  const { t } = useLingui();
 
   // Activity → idle transition: refetch last_indexed_at so the label updates
   // the moment a run completes. Without this, the pill stays stale until the
@@ -52,7 +56,7 @@ export function IndexerStatusPill() {
         type="button"
         onClick={openScanner}
         className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        title={`${label} — click to open Records Scanner`}
+        title={t`${label} — click to open Records Scanner`}
         aria-label={label}
         data-testid="footer-indexing-indicator"
       >
@@ -62,21 +66,34 @@ export function IndexerStatusPill() {
     );
   }
 
-  // Idle: never render during the initial fetch to avoid flicker.
-  if (indexStatus.phase !== 'ready') return null;
+  if (indexStatus.phase === 'loading')
+    return <Loader2 aria-label={t`Loading index status`} className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
+  if (indexStatus.phase === 'error')
+    return (
+      <button
+        type="button"
+        onClick={refresh}
+        className="px-1.5 text-[10px] text-muted-foreground"
+        title={indexStatus.error.message}
+      >
+        {t`Index status unavailable · Retry`}
+      </button>
+    );
 
   const iso = indexStatus.status.last_indexed_at;
+  const tooltip = idleTooltip(iso);
+  const idle = idleLabel(iso);
   return (
     <button
       type="button"
       onClick={openScanner}
       className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      title={`${idleTooltip(iso)} — click to open Records Scanner`}
-      aria-label={`${idleLabel(iso)} — open Records Scanner`}
+      title={t`${tooltip} — click to open Records Scanner`}
+      aria-label={t`${idle} — open Records Scanner`}
       data-testid="footer-indexing-indicator"
     >
       <RefreshCw className="h-3.5 w-3.5 shrink-0" />
-      <span>{idleLabel(iso)}</span>
+      <span>{idle}</span>
     </button>
   );
 }

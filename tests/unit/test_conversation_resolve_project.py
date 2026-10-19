@@ -15,7 +15,7 @@ import pytest
 
 # Importing the entity registers the type (Entity.__init_subclass__).
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.whiteboard import Whiteboard  # noqa: F401
+from flow_sdk.builtin.chart import Chart  # noqa: F401
 
 
 @pytest.mark.asyncio
@@ -23,12 +23,12 @@ async def test_resolves_from_shared_entity_over_ambient_fallback() -> None:
     # A shared entity owned by project B, while the request's ambient project is A.
     project_b = str(uuid.uuid4())
     wb_id = str(uuid.uuid4())
-    wb = Whiteboard.model_validate({"id": wb_id, "project_id": project_b})
+    wb = Chart.model_validate({"id": wb_id, "name": wb_id, "project_id": project_b})
     await wb.save(None)
 
     project_a = str(uuid.uuid4())
     resolved = await Conversation.resolve_project_id(
-        [f"whiteboard-{wb_id}"], fallback=project_a
+        [f"chart-{wb_id}"], fallback=project_a
     )
 
     assert resolved == project_b, (
@@ -45,7 +45,7 @@ async def test_falls_back_when_no_shared_entity_resolves() -> None:
     assert await Conversation.resolve_project_id(None, fallback=fallback) == fallback
     # An entity that doesn't exist locally resolves to no project → fallback.
     missing = await Conversation.resolve_project_id(
-        [f"whiteboard-{uuid.uuid4()}"], fallback=fallback
+        [f"chart-{uuid.uuid4()}"], fallback=fallback
     )
     assert missing == fallback
 
@@ -64,10 +64,10 @@ async def test_first_resolvable_entity_wins() -> None:
     # the fallback — the resolver skips it and keeps scanning.
     project_c = str(uuid.uuid4())
     wb_id = str(uuid.uuid4())
-    await Whiteboard.model_validate({"id": wb_id, "project_id": project_c}).save(None)
+    await Chart.model_validate({"id": wb_id, "name": wb_id, "project_id": project_c}).save(None)
 
     resolved = await Conversation.resolve_project_id(
-        [f"whiteboard-{uuid.uuid4()}", f"whiteboard-{wb_id}"],
+        [f"chart-{uuid.uuid4()}", f"chart-{wb_id}"],
         fallback=str(uuid.uuid4()),
     )
     assert resolved == project_c

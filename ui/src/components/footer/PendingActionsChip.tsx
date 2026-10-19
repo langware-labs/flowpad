@@ -1,4 +1,5 @@
-import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, WorkerStatus } from '@sdk';
+import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -7,8 +8,13 @@ import { workerStatusConfig } from '@src/components/agentic-progress/shared/stat
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { agenticProcessName, openAgenticProcess, resolveAgenticProcessName } from '@src/navigation/agentic-process-open';
+import {
+  agenticProcessName,
+  openAgenticProcess,
+  resolveAgenticProcessName,
+} from '@src/navigation/agentic-process-open';
 import {
   acknowledgePending,
   formatTimeAgo,
@@ -17,6 +23,8 @@ import {
   type WorkerListEntry,
 } from '@src/store/pending-actions-store';
 import { cn } from '@src/lib/utils';
+import { useActivities } from '@src/store/activity-store';
+import { ActivityRow } from './ActivityRow';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { executionModeLabel, iconForExecutionMode } from './execution-mode-icons';
 import { useNotificationPulse } from './useNotificationPulse';
@@ -63,6 +71,16 @@ type WorkerRowData = ReturnType<typeof buildWorkerRow>;
  * Row name and project name come from ``*.getByIdFromCache(id)`` and are NOT
  * reactive; both the linked session/shell and the row's Project are lazily
  * fetched into the cache when the popover opens so the names resolve.
+ *
+ * It also lists ACTIVITIES — the generic progress mechanism every kind of long-running
+ * work reports through (an index, a walk, a RAG pass, a QA cycle). One chip, one count:
+ * "what is happening on this machine" is a single question and deserves a single answer.
+ *
+ * Process-scoped activities are filtered OUT of that list. A running process reports as an
+ * activity on the backend (which is what makes `flow progress list` and every other
+ * consumer see one model), but here it already has a worker row — and that row is the
+ * richer one, carrying inline rename, execution-mode classification and the attach/lens
+ * routing. Showing both would double-count the same work.
  */
 export function PendingActionsChip() {
   const isAdvanced = useIsAdvanced();
@@ -70,6 +88,14 @@ export function PendingActionsChip() {
 
   const allRows = useWorkerList(supported);
   const counts = useWorkerCountsByMode(supported);
+  // See the note above: a process's own activity is represented by its worker row.
+  // Memoized on the snapshot identity — the store hands out a new array only when
+  // something actually changed, and this list is a render dependency below.
+  const allActivities = useActivities();
+  const activities = useMemo(
+    () => allActivities.filter((a) => !a.subject_entity?.startsWith(`${AgenticProcess.type}-`)),
+    [allActivities],
+  );
   const [open, setOpen] = useState(false);
   // Empty = all supported modes shown (mirrors AssetPickerPopover).
   const [selected, setSelected] = useState<string[]>([]);
@@ -79,14 +105,8 @@ export function PendingActionsChip() {
   // The shown set: the user's selection, or all supported modes when nothing
   // is narrowed. Memoized so the `filtered` memo below stays stable across
   // renders where neither input changed.
-  const effective: readonly string[] = useMemo(
-    () => (selected.length ? selected : supported),
-    [selected, supported],
-  );
-  const filtered = useMemo(
-    () => allRows.filter((e) => effective.includes(e.mode)),
-    [allRows, effective],
-  );
+  const effective: readonly string[] = useMemo(() => (selected.length ? selected : supported), [selected, supported]);
+  const filtered = useMemo(() => allRows.filter((e) => effective.includes(e.mode)), [allRows, effective]);
 
   // When the popover opens, lazily fetch each row's process (+ its ClaudeSession
   // / Shell) and its Project so the cached names replace the id fragments. Both
@@ -155,14 +175,32 @@ export function PendingActionsChip() {
     [navigation],
   );
 
-  // Hide the chip only when there are no supported workers at all. When the user
-  // has narrowed to an empty mode (e.g. External in v1) the chip stays visible
-  // showing 0 so the popover remains reachable to reset the filter. MUST come
-  // after every hook above — see the handlePick note.
-  if (allRows.length === 0) return null;
+  // A wizard's own top-level activity is scoped to ITSELF when attended (see
+  // `Wizard.run`: `subject_entity=None if unattended else str(self.typeid)`),
+  // so its row can be picked straight back to the editor page it was
+  // minimized from — no lookup needed, the address already IS the typeid.
+  // Every other activity kind (an index walk, a RAG pass) has nowhere of its
+  // own to reopen, so this is deliberately a no-op for them.
+  const handlePickActivity = useCallback(
+    (spec: ActivityProgressSpec) => {
+      if (!spec.subject_entity?.startsWith('wizard-')) return;
+      setOpen(false);
+      void showWizard(navigation, new TypeId(spec.subject_entity));
+    },
+    [navigation],
+  );
 
-  const count = rows.length;
-  const tooltipText = `${count} active agent${count === 1 ? '' : 's'}`;
+  // Hide the chip only when there is nothing happening at all — no supported workers AND
+  // no activities. When the user has narrowed to an empty mode (e.g. External in v1) the
+  // chip stays visible showing 0 so the popover remains reachable to reset the filter.
+  // MUST come after every hook above — see the handlePick note.
+  if (allRows.length === 0 && activities.length === 0) return null;
+
+  const count = rows.length + activities.length;
+  const tooltipText =
+    activities.length === 0
+      ? `${count} active agent${count === 1 ? '' : 's'}`
+      : `${count} thing${count === 1 ? '' : 's'} in progress`;
 
   const chipClass = [
     'flex h-5 min-w-5 items-center justify-center rounded-md bg-primary px-1 text-[10px] font-semibold tabular-nums text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus:outline-none focus:ring-1 focus:ring-ring',
@@ -201,10 +239,7 @@ export function PendingActionsChip() {
               keeps the bar in place; only the scrollable body below it changes
               when a filter is toggled, so the header never moves. */}
           {supported.length > 1 && (
-            <div
-              className="flex shrink-0 items-center border-b px-2 py-1.5"
-              data-testid="worker-mode-bar"
-            >
+            <div className="flex shrink-0 items-center border-b px-2 py-1.5" data-testid="worker-mode-bar">
               <EntityTypeBar
                 selected={selected}
                 onChange={setSelected}
@@ -220,27 +255,48 @@ export function PendingActionsChip() {
               (which opens upward) never resizes when the filtered count
               changes, so the pinned filter bar above stays put. */}
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
-          {rows.length === 0 ? (
-            <div
-              className="px-2 py-3 text-center text-xs text-muted-foreground"
-              data-testid="worker-list-empty"
-            >
-              {effective.length === 1 && effective[0] === ExecutionMode.External
-                ? 'No external workers detected'
-                : 'No agents match this filter'}
-            </div>
-          ) : (
-            <ul className="flex flex-col">
-              {rows.map((row) => (
-                <WorkerRow
-                  key={row.processId}
-                  row={row}
-                  onPick={handlePick}
-                  onRenamed={bumpNameTick}
-                />
-              ))}
-            </ul>
-          )}
+            {rows.length === 0 && activities.length === 0 ? (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
+                {effective.length === 1 && effective[0] === (ExecutionMode.External as string)
+                  ? 'No external workers detected'
+                  : 'No agents match this filter'}
+              </div>
+            ) : (
+              <>
+                {rows.length > 0 && (
+                  <ul className="flex flex-col">
+                    {rows.map((row) => (
+                      <WorkerRow key={row.processId} row={row} onPick={handlePick} onRenamed={bumpNameTick} />
+                    ))}
+                  </ul>
+                )}
+                {activities.length > 0 && (
+                  <>
+                    {/* A heading only when both kinds are present — a lone section needs
+                        no label to tell it apart from the other one. */}
+                    {rows.length > 0 && (
+                      <div
+                        className="px-2 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                        data-testid="activity-section-heading"
+                      >
+                        Activity
+                      </div>
+                    )}
+                    <ul className="flex flex-col" data-testid="activity-list">
+                      {/* Keyed by scope+path: an activity's address is its identity, and a
+                          recycled address is a new activity rather than a moved row. */}
+                      {activities.map((spec) => (
+                        <ActivityRow
+                          key={`${spec.subject_entity ?? ''}::${spec.path}`}
+                          spec={spec}
+                          onPick={handlePickActivity}
+                        />
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -265,6 +321,7 @@ const WorkerRow = memo(function WorkerRow({
 }) {
   const rename = useInlineRename(row.name, async (next) => {
     await AgenticProcess.renameById(row.processId, next);
+    AgenticProcess.markEditById(row.processId);
     onRenamed();
   });
   const StatusIcon = row.statusIcon?.icon;
@@ -291,14 +348,14 @@ const WorkerRow = memo(function WorkerRow({
   }
 
   const rowClass = [
-    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm',
+    'flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-start text-sm',
     row.pending ? 'animate-pending-glow' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <li className="group flex items-center rounded pr-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
+    <li className="group flex items-center rounded pe-1 hover:bg-muted" data-pending={row.pending ? 'true' : undefined}>
       <button
         type="button"
         onClick={() => void onPick(row.processId, row.mode)}
@@ -328,7 +385,7 @@ const WorkerRow = memo(function WorkerRow({
       >
         <Pencil className="h-3 w-3" />
       </button>
-      <span className="shrink-0 pl-1 text-xs tabular-nums text-muted-foreground">{row.lastActive}</span>
+      <span className="shrink-0 ps-1 text-xs tabular-nums text-muted-foreground">{row.lastActive}</span>
     </li>
   );
 });

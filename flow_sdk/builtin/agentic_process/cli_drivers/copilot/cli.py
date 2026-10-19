@@ -6,16 +6,16 @@ import logging
 import os
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
 from flow_sdk.builtin.agentic_process.model_tiers import COPILOT_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CopilotCliOptions(WorkerCLIOptions):
+class CopilotAgentOptions(AgentOptions):
     """Builds Copilot CLI argv for headless JSON streaming or visible PTY mode."""
 
-    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    # Native sm/md/lg delegate to Copilot auto by omitting --model at emission.
     MODEL_TIERS = COPILOT_MODEL_TIERS
 
     def __init__(
@@ -35,6 +35,7 @@ class CopilotCliOptions(WorkerCLIOptions):
         no_custom_instructions: bool = True,
         allow_all: bool = True,
         custom_instruction_dirs: list[str] | None = None,
+        plugin_dirs: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -50,10 +51,10 @@ class CopilotCliOptions(WorkerCLIOptions):
         self.no_custom_instructions = no_custom_instructions
         self.allow_all = allow_all
         self.custom_instruction_dirs: list[str] = list(custom_instruction_dirs or [])
+        self.plugin_dirs: list[str] = list(plugin_dirs or [])
 
     EXECUTABLE = "copilot"
     PROMPT_CHANNEL = "stdin"  # copilot reads the prompt from stdin
-    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
     def _common_tail(self) -> list[str]:
         """Flags shared by both transports: cwd, model, effort, add-dirs, session."""
@@ -66,6 +67,13 @@ class CopilotCliOptions(WorkerCLIOptions):
             tail.extend(["--effort", self.effort])
         for directory in self.add_dirs:
             tail.extend(["--add-dir", directory])
+        for directory in self.plugin_dirs:
+            tail.extend(["--plugin-dir", directory])
+        if self.mcp_config_json:
+            # AUGMENTS ~/.copilot/mcp-config.json for this session — there is no
+            # strict counterpart to set. Undocumented on docs.github.com; see
+            # ``copilot --help`` on 1.0.81.
+            tail.extend(["--additional-mcp-config", self.mcp_config_json])
         if self.resume and self.session_id:
             tail.append(f"--resume={self.session_id}")
         elif self.session_id:
@@ -98,7 +106,9 @@ class CopilotCliOptions(WorkerCLIOptions):
             self.env_vars["COPILOT_ALLOW_ALL"] = "true"
         if not self.custom_instruction_dirs:
             return
-        existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "")
+        existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get(
+            "COPILOT_CUSTOM_INSTRUCTIONS_DIRS", ""
+        )
         parts = [p for p in existing.split(",") if p]
         for directory in self.custom_instruction_dirs:
             if directory not in parts:
@@ -106,10 +116,10 @@ class CopilotCliOptions(WorkerCLIOptions):
         self.env_vars["COPILOT_CUSTOM_INSTRUCTIONS_DIRS"] = ",".join(parts)
 
     def to_spawn(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
+        self, instruction: str | None = None
     ) -> tuple[list[str], dict[str, str], str | None]:
         self._sync_custom_instruction_env()
-        return super().to_spawn(instruction=instruction, system_prompt_append=system_prompt_append)
+        return super().to_spawn(instruction=instruction)
 
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
         self._sync_custom_instruction_env()
@@ -119,43 +129,40 @@ class CopilotCliOptions(WorkerCLIOptions):
         self._sync_custom_instruction_env()
         return super().to_shell_string(instruction=instruction)
 
-    def to_json(self) -> dict[str, Any]:
-        data = super().to_json()
-        data.update({
-            "worker_type": "copilot",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "effort": self.effort,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-            "no_ask_user": self.no_ask_user,
-            "no_auto_update": self.no_auto_update,
-            "no_custom_instructions": self.no_custom_instructions,
-            "allow_all": self.allow_all,
-        })
-        return data
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CopilotCliOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            model=data.get("model"),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            effort=data.get("effort"),
-            skill_names=list(data.get("skill_names") or []),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            add_dirs=list(data.get("add_dirs") or []),
-            json_stream=bool(data.get("json_stream", True)),
-            no_ask_user=bool(data.get("no_ask_user", True)),
-            no_auto_update=bool(data.get("no_auto_update", True)),
-            no_custom_instructions=bool(data.get("no_custom_instructions", True)),
-            allow_all=bool(data.get("allow_all", True)),
-        )
+    WORKER_TYPE = "copilot"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "model",
+        "permission_mode",
+        "effort",
+        "skill_names",
+        "add_dirs",
+        "json_stream",
+        "no_ask_user",
+        "no_auto_update",
+        "no_custom_instructions",
+        "allow_all",
+    )
+    _COERCE = {
+        "resume": bool,
+        "json_stream": bool,
+        "no_ask_user": bool,
+        "no_auto_update": bool,
+        "no_custom_instructions": bool,
+        "allow_all": bool,
+        "skill_names": lambda v: list(v or []),
+        "add_dirs": lambda v: list(v or []),
+    }
 
     def _allow_all_enabled(self) -> bool:
         return self.allow_all and self.permission_mode == "bypassPermissions"
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = CopilotAgentOptions

@@ -21,7 +21,8 @@ function lastTurnStart(process: AgenticProcess): number | null {
     const it = items[i];
     const role = it.attributes?.role as string | undefined;
     if (it.elementType === 'user-message' || (it.elementType === 'chat' && role === 'user')) {
-      return tsToMs(it.timestamp);
+      // Measured against the browser's now: the echo's browser submit time, not its host `t`.
+      return tsToMs(it.submittedAt ?? it.timestamp);
     }
   }
   return null;

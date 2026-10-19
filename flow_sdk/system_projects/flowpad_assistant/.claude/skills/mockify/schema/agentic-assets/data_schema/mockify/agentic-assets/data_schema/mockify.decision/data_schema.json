@@ -1,0 +1,8 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id":       {"shape": "string", "description": "D1, D2… — unique across the mock; a screen marks it with data-decision=\"D2\"."},
+    "question": {"shape": "string", "description": "The question, as the reviewer reads it."},
+    "shown":    {"shape": "?string", "description": "What the mock shows today for it."}
+  }
+}

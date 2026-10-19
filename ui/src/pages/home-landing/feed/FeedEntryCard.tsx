@@ -3,11 +3,23 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgentTrace, AssetCleanupReport, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import {
+  AgentTrace,
+  AssetCleanupReport,
+  DiagnosisRequest,
+  TypeId,
+  FlowMessage,
+  Markdown,
+  MessageSuggest,
+  UsageReport,
+  UserNote,
+  type FeedEntry,
+} from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { WikiLabel } from '@src/components/wiki-tip/WikiLabel';
@@ -40,8 +52,14 @@ export function FeedEntryCard({
 }: FeedEntryCardProps) {
   const feedData = useMemo(() => FeedData.fromEntry(entry), [entry]);
   const targetTypeId = feedData.targetTypeId;
+  // ``watch:false`` — the parent (``HomeFeedColumn``) batch-hydrates every
+  // card's target with one ``$IN`` query per type (X2), warming the shared
+  // cache and providing a single live ``watchQuery`` subscription. So this
+  // ``useEntity`` resolves straight from cache with no per-card GET and no
+  // per-card ``/watch`` POST. (It still subscribes client-side for live row
+  // updates, which is network-free.)
   const { data: entity, isLoading } = useEntity(targetTypeId, {
-    watch: true,
+    watch: false,
     enabled: !!targetTypeId,
   });
 
@@ -130,6 +148,18 @@ export function FeedEntryCard({
     );
   }
 
+  if (entity.getType() === DiagnosisRequest.type) {
+    return (
+      <DiagnosisRequestFeedEntryCard
+        entry={entry}
+        request={entity as DiagnosisRequest}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
   if (entity.getType() === AssetCleanupReport.type) {
     return (
       <AssetCleanupReportFeedEntryCard
@@ -181,7 +211,7 @@ function FeedEntryFrame({
       ref={ref}
       data-highlighted={highlight || undefined}
       className={cn(
-        'relative flex max-h-96 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-left transition-all duration-500',
+        'relative flex max-h-96 flex-col rounded border border-border bg-muted/40 px-2.5 py-2 text-start transition-all duration-500',
         highlight && 'border-primary bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background',
         pulsing && 'animate-pulse',
       )}
@@ -521,7 +551,7 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(trace.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
@@ -557,7 +587,7 @@ function AssetCleanupReportFeedEntryCard({
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
@@ -593,7 +623,7 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
     <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
       <button
         type="button"
-        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => navigation.openDock(report.editorDockPointer)}
       >
         <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
@@ -603,6 +633,51 @@ function UsageReportFeedEntryCard({ entry, report, busy, feedData, onDismiss }: 
           ${report.total_cost_usd.toFixed(2)} · {report.session_count} sessions ·{' '}
           {formatDuration(report.total_duration_ms)} active · {report.prompt_count} prompts
         </p>
+      </button>
+    </FeedEntryFrame>
+  );
+}
+
+interface DiagnosisRequestFeedEntryCardProps {
+  entry: FeedEntry;
+  request: DiagnosisRequest;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+/** A run of a diagnosis request came back from the person it was sent to; opens the request. */
+function DiagnosisRequestFeedEntryCard({
+  entry,
+  request,
+  busy,
+  feedData,
+  onDismiss,
+}: DiagnosisRequestFeedEntryCardProps) {
+  const { navigation } = useDockNavigation();
+  const Icon = iconForType(DiagnosisRequest.type);
+  const title = request.title || request.name;
+
+  return (
+    <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
+      <button
+        type="button"
+        className="block w-full rounded text-start outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() =>
+          navigation.openDock(
+            DockPointer.forAssetEditorByTypeId(DiagnosisRequest.type, new TypeId(DiagnosisRequest.type, request.id)),
+          )
+        }
+        data-testid="feed-diagnosis-request"
+      >
+        <p className="flex min-w-0 items-center gap-1.5 text-xs font-medium leading-snug text-foreground">
+          <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <Trans>Your diagnosis request came back</Trans>
+        </p>
+        {title && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{title}</p>}
+        {request.summary && (
+          <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{request.summary}</p>
+        )}
       </button>
     </FeedEntryFrame>
   );

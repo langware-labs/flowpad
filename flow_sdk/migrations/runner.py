@@ -27,6 +27,8 @@ import asyncio
 import importlib.util
 import os
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -52,7 +54,35 @@ class Recipe:
     """
 
     script_path: Path | None = None  # <version>/scripts/migrate.py
-    skill_dir: Path | None = None    # <version>/skill/ (contains SKILL.md)
+    skill_dir: Path | None = None  # <version>/skill/ (contains SKILL.md)
+
+
+@contextmanager
+def load_script_module(mod_name: str, script_path: Path) -> "Iterator[Any]":
+    """Import a migration script by PATH under ``mod_name``, yield it, and drop
+    it from ``sys.modules`` on the way out.
+
+    The registration order is the load-bearing part and the easy thing to get
+    wrong: the module must be in ``sys.modules`` BEFORE ``exec_module``, because
+    dataclasses (and anything else resolving type annotations) look themselves up
+    via ``sys.modules[cls.__module__]`` — a missing entry raises
+    ``AttributeError("'NoneType' object has no attribute '__dict__'")`` when the
+    decorator runs at module top level. ``mod_name`` must be unique per load so a
+    re-run doesn't hit the import cache.
+
+    Shared by the runner itself, by a recipe re-driving stranded sibling recipes,
+    and by the test that reads a recipe's ``STRANDED`` declaration.
+    """
+    spec = importlib.util.spec_from_file_location(mod_name, script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"could not load migration script spec from {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = module
+    try:
+        spec.loader.exec_module(module)
+        yield module
+    finally:
+        sys.modules.pop(mod_name, None)
 
 
 def _is_process_alive(pid: int | None) -> bool:
@@ -61,14 +91,14 @@ def _is_process_alive(pid: int | None) -> bool:
         return False
     try:
         from flow_sdk.server.launch import is_process_alive
+
         return is_process_alive(pid)
     except Exception:
-        # Fallback to os.kill(pid, 0)
-        try:
-            os.kill(pid, 0)
-            return True
-        except (OSError, ProcessLookupError):
-            return False
+        # Fallback: pid_probe, never os.kill(pid, 0) — signal 0 is CTRL_C_EVENT
+        # on Windows, so the "probe" would Ctrl-C this process's console group.
+        from flow_sdk.pid_probe import pid_is_alive
+
+        return pid_is_alive(pid)
 
 
 def _resolve_recipe(version: str) -> Recipe | None:
@@ -92,6 +122,7 @@ def _resolve_recipe(version: str) -> Recipe | None:
         migrations_root = Path(override)
     else:
         from flow_sdk.config import flowpad_assistant_project_root
+
         migrations_root = flowpad_assistant_project_root() / "migrations"
 
     base = migrations_root / version
@@ -123,6 +154,7 @@ def _resolve_status_dir() -> Path:
     latent SoT violation.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     return get_instance_settings().migrations_status_dir
 
 
@@ -165,6 +197,7 @@ async def _bootstrap_local() -> Any:
         get_or_create_local_project,
         get_or_create_local_user,
     )
+
     await init_db()
     user = await get_or_create_local_user()
     project = await get_or_create_local_project(desktop_user=user)
@@ -197,22 +230,10 @@ def _drive_migration_script(
     try:
         # Unique module name per version so re-runs don't hit sys.modules cache.
         mod_name = f"_flowpad_migration_{version.replace('.', '_').replace('-', '_')}"
-        spec = importlib.util.spec_from_file_location(mod_name, script_path)
-        if spec is None or spec.loader is None:
-            raise RuntimeError(f"could not load migration script spec from {script_path}")
-        module = importlib.util.module_from_spec(spec)
-        # Register in sys.modules BEFORE exec_module: dataclasses (and others)
-        # resolve type annotations via sys.modules[cls.__module__], and a missing
-        # entry raises AttributeError("'NoneType' object has no attribute '__dict__'")
-        # when the dataclass decorator runs at module top-level.
-        sys.modules[mod_name] = module
-        try:
-            spec.loader.exec_module(module)
+        with load_script_module(mod_name, script_path) as module:
             if not hasattr(module, "run"):
                 raise AttributeError(f"{script_path} has no run() entry point")
             module.run()
-        finally:
-            sys.modules.pop(mod_name, None)
     except (KeyboardInterrupt, asyncio.CancelledError):
         terminal = running.transition(MigrationStatus.ERROR, error_msg="interrupted")
         migration_status.write(status_dir, terminal)
@@ -245,18 +266,9 @@ async def _drive_migration(
     ``started`` record. We update it to ``running`` once the agent first
     writes its transcript, then to ``completed``/``error``.
     """
-    from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment
 
     cn = await _bootstrap_local()
-
-    # Run capability discovery so the headless worker can resolve its CLI binary.
-    # `flow migrate run` can execute standalone (no server), where the background
-    # discovery sweep never runs — without this `worker_path_env(...)` is None and
-    # the worker dies before writing a transcript, tripping the warmup guard below
-    # with a misleading "never wrote a transcript" message. Idempotent; no-op once
-    # a sweep has completed (e.g. when invoked during `flow start`).
-    await ensure_discovered()
 
     skill_md = (recipe_dir / "SKILL.md").read_text(encoding="utf-8")
     prompt_text = (
@@ -266,18 +278,23 @@ async def _drive_migration(
         f"--- BEGIN RECIPE ---\n{skill_md}\n--- END RECIPE ---"
     )
 
-    ap = AgenticProcess(
+    # The `migration-runner` Agent owns the bundle (bypassPermissions, model);
+    # only the compute node and workdir are per-run.
+    deployment = await get_agent_local_deployment("migration-runner")
+    ap = await deployment.create_process(
+        prompt_text,
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
         workdir=str(Path.cwd()),
-        visible=False,
         name=f"Migration: {version}",
     )
-    # Note: NOT calling ap.save([]) — the exist_in_db gate at
-    # agentic_process.py:1088-1097 was dropped for visible=False precisely
-    # so the migration runner can spawn without a pre-saved record.
+    # NOT saved: the exist_in_db gate at agentic_process.py:1088-1097 was
+    # dropped for visible=False precisely so the migration runner can spawn
+    # without a pre-saved record.
 
-    await ap.prompt(prompt_text)
+    taken = await ap.send_turn(prompt_text)
+    if not taken.ok:
+        # Not taken: there is no turn to wait for, and waiting would read as a stall.
+        raise RuntimeError(f"migration {version}: {taken.detail}")
 
     # Wait for Claude to write its first transcript line. The driver
     # pre-assigns ``ap.session_id`` so that alone is unreliable;
@@ -337,6 +354,7 @@ async def _run_if_needed_async(
 ) -> int:
     if version is None:
         from flow_sdk._version import __version__
+
         version = __version__
 
     recipe = _resolve_recipe(version)
@@ -352,18 +370,12 @@ async def _run_if_needed_async(
     try:
         lock.acquire(timeout=0)
     except Timeout:
-        typer.echo(
-            f"Migration {version} already in progress on this machine "
-            "(another process holds the lock)."
-        )
+        typer.echo(f"Migration {version} already in progress on this machine (another process holds the lock).")
         return 0
 
     try:
         existing = migration_status.read(status_dir, version)
-        pid_alive = (
-            existing is not None
-            and _is_process_alive(existing.pid)
-        )
+        pid_alive = existing is not None and _is_process_alive(existing.pid)
         decision = migration_status.decide_action(existing, pid_alive=pid_alive)
 
         if decision == Decision.SKIP_COMPLETED:
@@ -371,17 +383,13 @@ async def _run_if_needed_async(
             return 0
         if decision == Decision.SKIP_IN_FLIGHT:
             assert existing is not None
-            typer.echo(
-                f"Migration {version} already running "
-                f"(pid {existing.pid}, started {existing.started_at})."
-            )
+            typer.echo(f"Migration {version} already running (pid {existing.pid}, started {existing.started_at}).")
             return 0
 
         # decision == Decision.RUN (first run, error retry, or orphan retry).
         if existing is not None and existing.status == MigrationStatus.ERROR.value:
             typer.echo(
-                f"Previous attempt at migration {version} errored "
-                f"({existing.error_msg!r}); retrying best-effort."
+                f"Previous attempt at migration {version} errored ({existing.error_msg!r}); retrying best-effort."
             )
         elif existing is not None:
             typer.echo(
@@ -451,8 +459,7 @@ def run_if_needed(
 
     # We're inside a loop already — bounce to a worker thread.
     from concurrent.futures import ThreadPoolExecutor
+
     with ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(
-            lambda: asyncio.run(_run_if_needed_async(version, transcript_timeout))
-        )
+        fut = pool.submit(lambda: asyncio.run(_run_if_needed_async(version, transcript_timeout)))
         return fut.result()

@@ -5,8 +5,8 @@
  *
  * Live repro: dock URL points at AgenticProcess `de2d24af` (project_id =
  * `dd682350…` = the oss checkout) yet carries `scope-activeProjectId=72fac107…`
- * (= sapora-streams, ambient at click). The Chats navigator reads
- * `currentDock.scopeFilter`, so it lists sapora-streams' chats while an oss chat
+ * (= acme-streams, ambient at click). The Chats navigator reads
+ * `currentDock.scopeFilter`, so it lists acme-streams' chats while an oss chat
  * is open.
  *
  * Invariant (user-stated): the opened entity's `project_id` wins over all — it is
@@ -20,7 +20,8 @@
  * A) → the rejects-with-redirect expectation fails (red). After: redirect carries
  * scope B (green).
  */
-import { AgenticProcess, dataManager } from '@sdk';
+import { AgenticProcess, dataManager, instancePreferences, PrefKey } from '@sdk';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { projectScope } from '@src/lib/scope-filter';
 import { loadShellRoute } from '@src/routes/loaders/load-shell';
@@ -30,7 +31,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Two distinct, valid entity ids (UUID v4 — the dock-URL codec validates
 // `activeProjectId` on decode and drops anything that isn't v4/v5).
-const AMBIENT_PROJECT_A = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'; // sapora-streams analog (active at click → seeded on URL)
+const AMBIENT_PROJECT_A = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'; // acme-streams analog (active at click → seeded on URL)
 const PROCESS_PROJECT_B = 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb'; // the opened chat's own project (oss analog)
 const PROCESS_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
@@ -72,14 +73,36 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
     expect(scope?.activeProjectId).toBe(PROCESS_PROJECT_B); // the opened entity's project wins
   });
 
-  it('does NOT redirect when the URL scope already matches the process project', async () => {
+  it('does NOT redirect when the URL scope already matches the process project and states its mode', async () => {
     const process = arrange();
     const pointer = process.terminalDockPointer.pointer;
 
-    // Already aligned → no redirect-loop.
+    // Already aligned and stated → no redirect-loop.
     await expect(
-      loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }),
+      loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B), viewMode: ViewMode.Advanced }),
     ).resolves.toBeUndefined();
+  });
+
+  // A resumed tab, a cold deep link, a hard refresh: an aligned URL that states
+  // no mode takes ONE redirect, decided with the scope before a tab is minted,
+  // onto the session's own memory — else the last mode the user selected.
+  it.each([
+    ['remembered', ViewMode.Advanced, ViewMode.Advanced],
+    ['no memory', null, ViewMode.Advanced],
+  ])('an aligned URL stating no mode redirects once onto the session mode (%s)', async (_label, lastMode, expected) => {
+    const process = arrange();
+    process.last_mode = lastMode;
+    instancePreferences.set(PrefKey.VIEW_MODE, ViewMode.Advanced);
+    const pointer = process.terminalDockPointer.pointer;
+
+    const location = await loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }).then(
+      () => null,
+      (e: unknown) => redirectLocation(e),
+    );
+
+    expect(location).toContain('/dock/shell/');
+    expect(DockPointer.fromUrl(location!).viewMode).toBe(expected);
+    expect(DockPointer.fromUrl(location!).scopeFilter?.activeProjectId).toBe(PROCESS_PROJECT_B);
   });
 
   it('still aligns the scope when the PTY runtime soft-fails (entity + project are known)', async () => {

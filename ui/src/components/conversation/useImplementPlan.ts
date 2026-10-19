@@ -1,18 +1,12 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  AgenticProcess,
-  FlowMessage,
-  QueryRequest,
-  Task,
-  TypeId,
-} from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
+import { AgenticProcess, type DockPointerData, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
+import { ClaudeAgentOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { DockPointer } from '@src/navigation/DockPointer';
 import { resolveWorkdir } from './apply-project-choice';
 import { buildReceiverContextPrompt } from './useMyProcess';
 
@@ -24,8 +18,7 @@ interface UseImplementPlanOptions {
    *  plan-implementation session (live or in-flight). Reference-stable while
    *  the underlying Conversation entity hasn't changed. */
   pointers: readonly ConversationMessagePointer[];
-  /** Wraps any action that needs a `cwd`/project — same gate `useApproveAndExecute`
-   *  expects. When provided, the start-session run is deferred until the
+  /** Wraps any action that needs a `cwd`/project. When provided, the start-session run is deferred until the
    *  mapping dialog has resolved. */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
@@ -46,7 +39,7 @@ interface UseImplementPlanResult {
 }
 
 /**
- * Implement Plan lifecycle for a conversation, parallel to `useApproveAndExecute`.
+ * Implement Plan lifecycle for a conversation.
  *
  * Two halves:
  *   1. **runImplementPlan(messageId)** — spawns an AgenticProcess with the
@@ -73,9 +66,7 @@ export function useImplementPlan({
   // the watched query notices the new entity. The watched-query result
   // (`planSessionByMessageId`) takes over once it catches up — pending stays
   // in the map but loses to live in `conversationPlanSession` below.
-  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointer>>(
-    () => new Map(),
-  );
+  const [pendingPlanPointers, setPendingPlanPointers] = useState<Map<string, DockPointerData>>(() => new Map());
 
   const runImplementPlan = useCallback(
     (messageId: string) => {
@@ -83,7 +74,7 @@ export function useImplementPlan({
       const run = async () => {
         const workdir = await resolveWorkdir(task.project_id);
         if (!workdir) {
-          notify.warning({ title: 'Map this conversation to a local project first.' });
+          notify.warning({ title: t`Map this conversation to a local project first.` });
           return;
         }
         try {
@@ -93,7 +84,7 @@ export function useImplementPlan({
             task.sender_name ?? undefined,
           );
           const fmTypeIdString = new TypeId(FlowMessage.type, messageId).toString();
-          const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+          const cliConfig = new ClaudeAgentOptions({ permission_mode: 'bypassPermissions' });
           const proc = await new AgenticProcess({
             cli_config: cliConfig.toJson(),
             context_data: { project_id: task.project_id ?? undefined },
@@ -110,7 +101,7 @@ export function useImplementPlan({
           proc.openTerminalDock();
         } catch (err) {
           console.error('[useImplementPlan] failed', err);
-          notify.error({ title: 'Failed to start session' });
+          notify.error({ title: t`Failed to start session` });
         }
       };
       if (ensureMapped) ensureMapped(run);
@@ -125,12 +116,13 @@ export function useImplementPlan({
   // only one that's meaningful here); for a tie we keep the most recently
   // created so users land in the latest run after re-clicks.
   const planSessionsQuery = useMemo(
-    () => new QueryRequest({
-      type: AgenticProcess.type,
-      scope: [],
-      name: `conv-plan-sessions:${conversationId}`,
-      query: undefined,
-    }),
+    () =>
+      new QueryRequest({
+        type: AgenticProcess.type,
+        scope: [],
+        name: `conv-plan-sessions:${conversationId}`,
+        query: undefined,
+      }),
     [conversationId],
   );
   const { data: planSessionCandidates = [] } = useEntitiesQuery<AgenticProcess>(planSessionsQuery, {
@@ -155,8 +147,8 @@ export function useImplementPlan({
   // One session per conversation: as soon as ANY thread message has a session
   // (live or pending), every spec-bearing bubble flips to point at it. Live
   // wins over pending; among live picks, most-recent wins.
-  const conversationPlanSession = useMemo<DockPointer | null>(() => {
-    let bestPointer: DockPointer | null = null;
+  const conversationPlanSession = useMemo<DockPointerData | null>(() => {
+    let bestPointer: DockPointerData | null = null;
     let bestTs = -1;
     for (const ptr of pointers) {
       const live = planSessionByMessageId.get(ptr.id);

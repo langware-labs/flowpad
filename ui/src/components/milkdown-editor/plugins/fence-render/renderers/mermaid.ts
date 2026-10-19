@@ -1,12 +1,12 @@
 /**
  * ```mermaid fences render as diagrams.
  *
- * The whiteboard editor already writes these blocks into markdown documents
- * (`WhiteboardAssetEditor.tsx` → `spliceMermaidBlock`), so this closes a loop
+ * The chart editor already writes these blocks into markdown documents
+ * (`chart/chartDoc.ts` → `spliceMermaidBlock`), so this closes a loop
  * the app was already half-way through.
  *
  * `mermaid` is a direct dependency but a heavy one — loaded lazily through a
- * module-level cached import, matching how `WhiteboardAssetEditor` pulls in
+ * module-level cached import, matching how `ExcalidrawChartView` pulls in
  * `@excalidraw/mermaid-to-excalidraw`.
  */
 

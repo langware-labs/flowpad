@@ -5,10 +5,22 @@ FlowEvent in a ``tag_msg`` WS frame and broadcasts it. Strictly ONE-WAY
 (nothing here re-emits onto the bus, so no relay cycle can exist); the
 app→backend direction is deferred until the first real subscriber needs it
 (docs/flow-events.md, phase-1 scope cut).
+
+This module also keeps the **recent-envelope ring** that seeds the Signals feed
+on open. It lives here rather than in the bus because the bus stores tag NAMES
+only and, more importantly, because ``emit`` skips building an envelope at all
+when nothing is subscribed (bus.py's zero-subscriber fast path — the reason
+``entity.*`` costs one dict poke today). Recording here rides an envelope that
+was already built for a tag already known to be app-visible, so the ring is
+free: no hot-path change, and law 4 kept intact (persistence is a subscriber's
+job, never the bus's).
 """
 from __future__ import annotations
 
+import json
 import logging
+from collections import deque
+from typing import Any
 
 from flow_sdk.tags.bus import event_bus
 from flow_sdk.tags.envelope import FlowEvent
@@ -17,11 +29,89 @@ logger = logging.getLogger(__name__)
 
 # The declared-forward allowlist. Phase 2 (flow-boundary emitter) is the first
 # consumer; grow this list per-pattern, never wildcard-everything.
+#
+# `ingest.*.sync.*` and NOT `ingest.*` is deliberate. The per-item lane is
+# bounded only by ``STORM_CAP_PER_MINUTE`` (``ingest/models.py``) per stream —
+# a source can emit dozens of frames per cycle, with every due
+# source firing on the same heartbeat tick — and broadcast() awaits one
+# send_text per connected client, serially. That is the storm phase 3 refused
+# for `entity.*`. The sync lane is exactly 2 frames per source per cycle
+# regardless of item volume and already carries `changed_ids`, so the UI can
+# hydrate the items on demand instead.
+#
+# `agent.status` is safe on the same test: it is emitted from the CHANGE-GATED
+# status-report seam (agent_on_tag.py), so a running worker costs one frame per
+# actual lifecycle transition — not one per turn and certainly not one per
+# token. The Runs view needs it because a run launched outside a flow (an
+# ingest driver's worker, an agent started from its profile) produces no
+# `graph_workflow.*` at all.
+#
+# `stream_inbox.*.message.projected` is the post-commit lane for message placement.
+# Unlike `ingest.*.item.*`, projection already suppresses this event when a
+# batch exceeds the ingest storm cap. The UI needs this exact boundary: a sync
+# completion races the detached projection handler, while this event fires only
+# after the FlowMessage and its conversation pointer have both been written.
+#
+# `voice.call.*` is a live call's transient: the caller mid-sentence (`partial`, at most
+# 500 chars, one frame per provider delta). It is never stored — the finished sentence arrives
+# as a projected message — so without forwarding, nobody watching the call would see it.
+#
+# `task.*` is the task ledger: one frame per lifecycle event of a delegated task (created, started,
+# note, asked, replied, done, failed, canceled, stalled) — written by people and runs, never a stream.
+# The Tasks board and a task's thread show its state move without polling.
+#
+# `deployment.timeline` says a deployment's timeline moved — a message reached one of its channels,
+# a turn started, a reply went out, a sender was refused. One frame per such fact; the timeline
+# itself is read from the rows (`deployment/<id>/timeline`). Emitted by the deployment's own
+# process and relayed to the app (`tags/relay.py`).
+#
+# `app.ready` is an exact tag, not a glob, and fires at most once per boot —
+# the cheapest possible entry on this list. It is forwarded because a client
+# that is up when the backend finishes starting should hear so directly rather
+# than infer it. Delivery is BEST-EFFORT by construction: the bus has no
+# durability, so a client connecting afterwards gets nothing, and the durable
+# record of what the event caused is the fired trigger's own row.
+# `dataset.rows.changed` says rows of a dataset were written (put, deleted, renamed, synced): one
+# frame per write CALL — a sync of two thousand rows is one frame — naming at most 100 keys and
+# never a value. An app showing those rows re-reads them instead of polling.
+# `stream_inbox.*.message.status` is an agent here taking a channel message (handling): one frame per message,
+# never stored — the open conversation draws it.
+# `stream_inbox.*.reply.failed` is a reply the person sent that did not go (the channel refused it): one frame
+# per failed send — the send runs after its request returned, so this is how the person hears.
 FORWARDED_TAG_PATTERNS: list[str] = [
-    "flow.*",
+    "app.ready",
+    "graph_workflow.*",
+    "ingest.*.sync.*",
+    "stream_inbox.*.message.projected",
+    "stream_inbox.*.message.status",
+    "stream_inbox.*.reply.failed",
+    "agent.status",
+    "voice.call.*",
+    "task.*",
+    "deployment.timeline",
+    "dataset.rows.changed",
 ]
 
+#: Envelopes retained for the Signals feed's initial paint. Bounded because the
+#: bus persists nothing (law 4) — this is a debug tail, never a log.
+RECENT_EVENTS_CAP = 200
+
+#: Per-envelope payload budget. Two forwarded families carry unbounded `data`:
+#: a node's `finished` detail holds stdout+stderr tails, and an agent node's
+#: `done` carries the agent's ENTIRE output. Retaining those verbatim would pin
+#: megabytes for the process lifetime whether or not anyone opens Signals — and
+#: the feed only renders a one-line gist until a row is expanded.
+MAX_RETAINED_DATA_CHARS = 2_000
+
+_recent: "deque[dict[str, Any]]" = deque(maxlen=RECENT_EVENTS_CAP)
+
 _started = False
+
+
+def forwarding_started() -> bool:
+    """Is this process the one that forwards tags to the app — the server? What a writer asks to
+    know whether its own bus reaches the app, or it must tell the server (``Dataset.announce``)."""
+    return _started
 
 
 def start_tag_forwarding() -> None:
@@ -35,7 +125,33 @@ def start_tag_forwarding() -> None:
     logger.info("tags: backend→app forwarding armed for %s", FORWARDED_TAG_PATTERNS)
 
 
+def recent_events() -> list[dict[str, Any]]:
+    """Newest-last tail of forwarded envelopes, oldest first (feed order)."""
+    return list(_recent)
+
+
+def _retainable(event: FlowEvent) -> dict[str, Any]:
+    """Serialize once, at record time, with an oversized payload elided.
+
+    Dumping here rather than in ``recent_events`` means the ring holds plain
+    dicts a reader can hand straight to the route, and — the point — a huge
+    ``data`` never survives into long-lived memory.
+    """
+    dumped = event.model_dump(mode="json")
+    data = dumped.get("data")
+    if data is not None:
+        rendered = json.dumps(data, default=str)
+        if len(rendered) > MAX_RETAINED_DATA_CHARS:
+            dumped["data"] = {
+                "_elided": f"{len(rendered)} chars — read the record for the full payload",
+            }
+    return dumped
+
+
 async def _forward(event: FlowEvent) -> None:
+    # Recorded before the send: what reached the app is not the interesting
+    # question here, and a client-side failure must not blind the feed.
+    _recent.append(_retainable(event))
     try:
         from flow_sdk.api.messages import TagMessage
         from flow_sdk.server.routes.websocket import broadcast
@@ -49,6 +165,10 @@ def reset_for_tests() -> None:
     """Drop the started latch (the bus itself is cleared by the test)."""
     global _started
     _started = False
+    _recent.clear()
 
 
-__all__ = ["FORWARDED_TAG_PATTERNS", "start_tag_forwarding", "reset_for_tests"]
+__all__ = [
+    "FORWARDED_TAG_PATTERNS", "RECENT_EVENTS_CAP",
+    "start_tag_forwarding", "recent_events", "reset_for_tests",
+]

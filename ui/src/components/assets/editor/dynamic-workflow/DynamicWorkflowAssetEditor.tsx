@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { DynamicWorkflow, FSRef, ProcessKind, TypeId } from '@sdk';
+import { t } from '@lingui/core/macro';
+import { useState } from 'react';
+import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel/EntityExecutionPanel';
-import { ShareButton } from '@src/components/entity-actions/ShareButton';
-import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { Button } from '@src/components/ui/button';
-import { genericEntityShareSource } from '@src/hooks/share-sources';
+import { useFSRefContent } from '@src/hooks/use-fs-ref-content';
 import { notify } from '@src/notifications';
 import { Boxes, Play, Save, Zap } from 'lucide-react';
 
@@ -23,61 +22,35 @@ interface DynamicWorkflowAssetEditorProps {
  * (slick P1 — it never decides routing).
  */
 export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowAssetEditorProps) {
-  const [script, setScript] = useState<string | null>(null);
-  const [dirty, setDirty] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [shareOpen, setShareOpen] = useState(false);
+  // Manual save only — a workflow script must not be written mid-keystroke.
+  const { content: script, setContent, dirty, saving, isLoading, save: writeScript } = useFSRefContent(fsRef, {
+    autoSave: false,
+  });
+  const [launching, setLaunching] = useState(false);
+  const busy = saving || launching;
 
   const fileName = fsRef.path.split('/').pop() ?? 'workflow.js';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
-  const shareSource = useMemo(
-    () =>
-      genericEntityShareSource(
-        new TypeId(workflow.type, workflow.id),
-        { label: workflow.name || fileName },
-      ),
-    [workflow.id, workflow.name, workflow.type, fileName],
-  );
-
-  useEffect(() => {
-    let alive = true;
-    fsRef
-      .read()
-      .then((raw) => {
-        if (!alive) return;
-        setScript(raw);
-        setDirty(false);
-      })
-      .catch(() => alive && setScript(''));
-    return () => {
-      alive = false;
-    };
-  }, [fsRef]);
 
   const save = async () => {
-    if (script === null) return;
-    setBusy(true);
     try {
-      await fsRef.write(script);
-      setDirty(false);
-      notify.success({ title: 'Workflow saved' });
+      await writeScript();
+      notify.success({ title: t`Workflow saved` });
     } catch (err) {
-      notify.error({ title: 'Save failed', message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setBusy(false);
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
     }
   };
 
   const run = async (ptyMode: boolean) => {
-    setBusy(true);
+    setLaunching(true);
     try {
-      if (dirty) await fsRef.write(script ?? '').then(() => setDirty(false));
+      if (dirty) await writeScript();
       await workflow.run(undefined, { ptyMode });
-      if (!ptyMode) notify.success({ title: 'Workflow launched', message: 'Running in the background.' });
+      if (!ptyMode) notify.success({ title: t`Workflow launched`, message: t`Running in the background.` });
     } catch (err) {
-      notify.error({ title: 'Failed to launch', message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Failed to launch`, message: err instanceof Error ? err.message : String(err) });
     } finally {
-      setBusy(false);
+      setLaunching(false);
     }
   };
 
@@ -89,12 +62,6 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         dirty={dirty}
         actions={
           <div className="flex items-center gap-2">
-            <ShareButton
-              variant="compact"
-              onClick={() => setShareOpen(true)}
-              tooltip="Share to a conversation"
-              testId="dynamic-workflow-editor-share"
-            />
             <Button
               size="sm"
               variant="outline"
@@ -102,17 +69,11 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               onClick={() => void save()}
               data-testid="dw-save"
             >
-              <Save className="mr-1 h-4 w-4" />
+              <Save className="me-1 h-4 w-4" />
               Save
             </Button>
-            <Button
-              size="sm"
-              variant="default"
-              disabled={busy}
-              onClick={() => void run(true)}
-              data-testid="dw-run"
-            >
-              <Play className="mr-1 h-4 w-4" />
+            <Button size="sm" variant="default" disabled={busy} onClick={() => void run(true)} data-testid="dw-run">
+              <Play className="me-1 h-4 w-4" />
               Run
             </Button>
             <Button
@@ -122,7 +83,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
               onClick={() => void run(false)}
               data-testid="dw-run-headless"
             >
-              <Zap className="mr-1 h-4 w-4" />
+              <Zap className="me-1 h-4 w-4" />
               Run headless
             </Button>
           </div>
@@ -140,16 +101,16 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           data-testid="dw-script"
           className="flex-1 resize-none rounded-md border bg-muted/20 p-3 font-mono text-xs leading-relaxed outline-none focus:ring-1 focus:ring-ring"
           spellCheck={false}
-          value={script ?? ''}
-          placeholder={script === null ? 'Loading…' : ''}
+          value={script}
+          placeholder={isLoading ? 'Loading…' : ''}
           onChange={(e) => {
-            setScript(e.target.value);
-            setDirty(true);
+            setContent(e.target.value);
+            workflow.markEdit();
           }}
         />
       </div>
 
-      {/* "Runs of this workflow" — the same EntityExecutionPanel the Agent/Skill
+      {/* "Runs of this workflow" — the same EntityExecutionPanel the SubAgent/Skill
           editors mount, keyed by this workflow's typeId. Runs launched via the
           Run buttons are tagged target_typeid_str=Execution, so they appear here. */}
       <div className="h-[280px] flex-shrink-0 border-t" data-testid="dw-runs">
@@ -160,13 +121,6 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           className="h-full"
         />
       </div>
-      {shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
     </div>
   );
 }

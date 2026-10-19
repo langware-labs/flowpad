@@ -3,7 +3,7 @@ import { DockPointerData } from '../models/DockPointer';
 
 /**
  * Deck entity — a generated presentation, backed by a DeckRecord on disk
- * (<project>/assets/decks/<name>/), produced by the `decker` skill.
+ * (<project>/agentic-assets/deck/<name>/), produced by the `decker` skill.
  *
  * Folder layout:
  *   <name>/deck.json    — build record {title, template, slides[]}
@@ -39,14 +39,11 @@ export class Deck extends APIEntity<Deck> {
 
   /** Default open target: the deck presenter viewer (URL-first target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('deck') ?? this.dockPointer;
-  }
 }

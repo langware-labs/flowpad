@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar, Optional
 
-from pydantic import field_validator, model_validator
+from pydantic import model_validator
 
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.builtin.fs_origin_field import FSOriginField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.fs_store.origin.local_origin import local_origin_for_path
 from flow_sdk.schema.types import EntityType
-from flow_sdk.worldview.ontology import kind_matches, normalize_kind
+from flow_sdk.worldview.ontology import KindStr, kind_matches
 
 LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
     "WEBAPP": "application.web",
@@ -25,25 +25,17 @@ LEGACY_ARTIFACT_KIND_MAP: dict[str, str] = {
 }
 
 
-def _legacy_origin(data: dict[str, Any]) -> dict[str, Any] | None:
-    origin = data.get("origin") or data.get("git_origin")
-    metadata = data.get("metadata")
-    if origin is None and isinstance(metadata, dict):
-        origin = metadata.get("git_origin")
-    if isinstance(origin, dict):
-        normalized = dict(origin)
-        normalized.setdefault("kind", "git")
-        return normalized
+#: The kind of an artifact that stands for one shared file (see ``for_shared_file``).
+#: Every shared file travels as one — a page, a doc, an image, a video — so a
+#: share is always the same message: a git pointer when every recipient can read
+#: the repo, a copy otherwise.
+SHARED_FILE_KIND = "content.file.text"
 
-    raw_path = str(data.get("path") or "").strip()
-    if not raw_path:
-        return None
-    path = Path(raw_path).expanduser()
-    if not path.is_absolute():
-        return None
-    if path.name:
-        return {"kind": "local", "base": str(path.parent), "rel_path": path.name}
-    return {"kind": "local", "base": str(path), "rel_path": "."}
+
+def _is_single_file(origin) -> bool:
+    """A git origin that names one file (``docs/mock.html``), not a folder."""
+    rel = (getattr(origin, "rel_path", "") or "").strip()
+    return getattr(origin, "kind", None) == "git" and bool(Path(rel).suffix) and rel not in (".", "")
 
 
 class Artifact(Entity):
@@ -55,11 +47,39 @@ class Artifact(Entity):
 
     type: str = APIField(default=EntityType.ARTIFACT.value)
     name: str = APIField(description="Display name")
-    kind: str = APIField(description="Open dot-path ontology kind")
+    kind: KindStr = APIField(description="Open dot-path ontology kind")
     description: str | None = APIField(default=None, description="Human-readable description")
-    origin: FSOriginField | None = APIField(
+    #: An artifact REFERENCES an asset; it never owns the path. Both rows carry
+    #: the same ``asset_ref``, so without this the artifact would compete with
+    #: the real entity in ``Entity.get_by_asset_ref`` and win or lose by registry
+    #: order. Resolution goes the other way: read ``asset_ref``, then ask
+    #: ``get_by_asset_ref`` for the entity that does own it.
+    owns_asset_ref: ClassVar[bool] = False
+
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
+    target_type_id: str | None = APIField(
         default=None,
-        description="Optional source locator (for example GitOrigin or LocalOrigin)",
+        description=(
+            "TypeId of the entity this artifact references, e.g. "
+            "``source_item-<uuid>``. ``asset_ref`` addresses a deliverable that "
+            "is a *file*; this addresses one that is a *row*. A message an agent "
+            "sent, a task it opened, a record it created — none of them have a "
+            "path, and without this the artifact would carry an empty "
+            "``asset_ref`` and point at nothing at all. Both may be set: a "
+            "file-backed entity has a path AND an identity."
+        ),
+    )
+    generated_by: str | None = APIField(
+        default=None,
+        description=(
+            "TypeId of the run that produced this artifact, e.g. "
+            "``agentic_process-<uuid>``. A TypeId rather than a bare uuid so a "
+            "graph-workflow run or a subagent can be a producer too. The edge "
+            "lives here, not as a list on the process: 'this run's artifacts' is "
+            "a match query, so concurrent registrations cannot clobber one "
+            "another. Deliberately NOT a revival of the retired "
+            "``generating_flow_id`` — provenance that was dropped stays dropped."
+        ),
     )
 
     def __init__(self, **data: Any) -> None:
@@ -77,25 +97,312 @@ class Artifact(Entity):
         if not data.get("kind"):
             old_type = str(data.get("artifact_type") or "FILE").strip().upper()
             data["kind"] = LEGACY_ARTIFACT_KIND_MAP.get(old_type, "content.file")
-        if data.get("origin") is None:
-            origin = _legacy_origin(data)
-            if origin is not None:
-                data["origin"] = origin
+        raw_path = str(data.get("path") or "").strip()
+        if data.get("origin") is None and raw_path and Path(raw_path).expanduser().is_absolute():
+            # The registration input names a PATH; the origin is its local locator.
+            data["origin"] = local_origin_for_path(Path(raw_path).expanduser())
         return data
 
-    @field_validator("kind", mode="before")
     @classmethod
-    def _valid_kind(cls, value: Any) -> str:
-        return normalize_kind(value)
+    async def find_existing(
+        cls,
+        *,
+        generated_by: str | None = None,
+        project_id: str | None = None,
+        asset_ref: str | None = None,
+        target_type_id: str | None = None,
+        origin_path: str | None = None,
+        kind: str | None = None,
+    ) -> "Artifact | None":
+        """The artifact already registered for this address in this scope, or None.
+
+        THE idempotency seam for registration. Re-registering converges here
+        rather than on a derived id: an id is a name, not a fact about the
+        thing, and a key baked into one can never change afterwards. Same shape
+        as ``Deployment.find_existing`` / ``SourceItem.find_existing``.
+
+        **Scope is the caller's, and the two differ on purpose:**
+
+        * ``generated_by`` — RUN scope, for a file or a row. One run
+          re-registering the same deliverable converges; a DIFFERENT run
+          producing the same path gets its own artifact, because provenance is
+          per-run and an artifact may itself be an event ("a message it sent").
+        * ``project_id`` — PROJECT scope, for a web app. An app is a durable
+          asset of the project, not of the run that happened to build it, so
+          any run re-registering it converges on the one row.
+
+        ``asset_ref`` and ``target_type_id`` are plain indexed columns, so they
+        go INTO the query — one row comes back instead of every artifact in the
+        scope. That matters here in a way it does not for
+        ``Deployment.find_existing``, whose scope is one element: a project's
+        artifact scope is every file, message and row an agent ever registered
+        there, and a run's grows for the life of the run.
+
+        ``origin_path`` cannot: it is the canonical POSIX path of a LOCAL
+        origin, which lives inside a JSON column. That one case still scans the
+        scope in Python, the way ``Deployment.target.provider`` does.
+
+        ``kind`` narrows exact-or-DESCENDANT, never by equality — the ontology
+        is hierarchical, so a row refined to ``application.web.react`` is still
+        the web app at that path. It keeps a deliverable of one kind from
+        converging onto an unrelated row that merely shares an address.
+        """
+        if (generated_by is None) == (project_id is None):
+            raise ValueError("find_existing takes exactly one scope: generated_by or project_id")
+        if not (asset_ref or target_type_id or origin_path):
+            # No address is not a wildcard — it is a caller bug that would
+            # otherwise converge on an arbitrary row of the scope.
+            return None
+
+        scope = {"generated_by": generated_by} if generated_by is not None else {"project_id": project_id}
+        for column, value in (("asset_ref", asset_ref), ("target_type_id", target_type_id)):
+            if not value:
+                continue
+            row = cls._first_matching_kind(await cls.get_all({"match": {**scope, column: value}}), kind)
+            if row is not None:
+                return row
+        if origin_path:
+            rows = await cls.get_all({"match": scope})
+            return cls._first_matching_kind(rows, kind, origin_path=origin_path)
+        return None
+
+    @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None):
+        """An artifact rides as its origin in git mode. With no transportable
+        origin it packs no reference: the byte-copy carrier
+        (``_pack_webapp_artifact_attachment``) takes it instead."""
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            ReferencePack,
+            graph_entity_metadata,
+            resolve_git_reference_origin,
+        )
+        from flow_sdk.builtin.message_attachment import TransferMode  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+
+        if transfer_mode != TransferMode.GIT.value:
+            return None
+        ent = await cls.get_one({"id": entity_id})
+        if ent is None:
+            return None
+        raw_origin = getattr(ent, "origin", None)
+        stored = None
+        if raw_origin is not None:
+            try:
+                stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
+            except Exception:
+                stored = None
+        origin = await resolve_git_reference_origin(ent, stored, repo_cache)
+        if origin is None:
+            return None
+        return ReferencePack(
+            metadata=graph_entity_metadata(EntityType.ARTIFACT.value, entity_id, ent),
+            origin=origin,
+        )
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Persist the received declaration and GitOrigin only. The checkout
+        stays unresolved until the receiver opens the artifact and the git
+        setup wizard provides a local path."""
+        from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError  # noqa: PLC0415
+
+        payload = {
+            "type": EntityType.ARTIFACT.value,
+            "id": entity_id,
+            "name": metadata.get("name") or f"artifact-{entity_id[:8]}",
+            "kind": metadata.get("kind") or "application.web",
+            "description": metadata.get("description"),
+            "origin": origin.model_dump(mode="python"),
+        }
+        existing = await cls.get_one({"id": entity_id})
+        if existing is not None and not overwrite:
+            same_share = existing.origin is not None and existing.origin.key() == origin.key()
+            if not same_share:
+                raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+            if getattr(existing.origin, "head_commit", None) == getattr(origin, "head_commit", None):
+                return True  # the same version again: nothing to do
+            # The same shared asset at a newer commit is a new VERSION of it: re-open below.
+        if _is_single_file(origin):
+            # A single shared file (an .html page) opens straight away, at the
+            # exact commit it was shared at — no setup wizard has anything to do.
+            from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+            from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
+
+            root, project_id = await get_origin_driver(origin.kind).materialize_pinned(origin)
+            file = safe_join(root, origin.rel_path)
+            if file is None or not file.is_file():
+                raise FileNotFoundError(f"shared file not found: {root / origin.rel_path}")
+            payload["asset_ref"] = str(file)
+            if project_id:
+                payload["project_id"] = project_id
+        artifact = cls.model_validate(payload)
+        artifact.id = entity_id
+        await artifact.save(owner_typeid)
+        return True
+
+    @classmethod
+    async def shared_file_at(cls, path: str) -> "Artifact | None":
+        """The shared-file artifact whose file is at ``path``, in any spelling the
+        path reaches this machine in — a viewer's ``/Users/…`` is this Windows
+        machine's ``C:\\Users\\…`` (``asset_ref_spellings`` resolves it). Read-only."""
+        from flow_sdk.fs_store.path_utils import asset_ref_spellings  # noqa: PLC0415
+
+        for ref in asset_ref_spellings(path):
+            found = cls._first_matching_kind(await cls.get_all({"match": {"asset_ref": ref}}), SHARED_FILE_KIND)
+            if found is not None:
+                return found
+        return None
+
+    @classmethod
+    async def for_shared_file(cls, path: str) -> "Artifact":
+        """The artifact that stands for one file being shared, found by its path
+        in its project or registered once. Sharing it by git then sends a pointer
+        to the file at a commit, which the receiver opens and finds by name;
+        otherwise it travels as a copy."""
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import owning_project_id  # noqa: PLC0415
+        from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
+
+        file = Path(path).expanduser().resolve()
+        if not file.is_file():
+            raise FileNotFoundError(f"not a file: {file}")
+        # The project that holds the file — any folder, git or not. Only a repo
+        # nobody opened as a project yet gets one, rooted at the repo.
+        project_id = await owning_project_id(file)
+        if project_id is None:
+            root = find_project_root(str(file.parent))
+            project = await Project.recover_by_path(root) if root else None
+            project_id = project.id if project else None
+        kind = SHARED_FILE_KIND
+        # The address IS the file: one artifact per shared path, whatever project
+        # (if any) it sits in.
+        existing = cls._first_matching_kind(await cls.get_all({"match": {"asset_ref": str(file)}}), kind)
+        if existing is not None:
+            return existing
+        artifact = cls(name=file.name, kind=kind, path=str(file), asset_ref=str(file), project_id=project_id,
+                       description=f"Shared file {file.name}")
+        await artifact.save()
+        return artifact
+
+    @classmethod
+    def _first_matching_kind(cls, rows, kind: str | None, *, origin_path: str | None = None):
+        """First row passing the kind gate (and the local-origin path, if given)."""
+        for row in rows:
+            if kind is not None and not kind_matches(kind, row.kind):
+                continue
+            if origin_path is not None and row.local_origin_path() != origin_path:
+                continue
+            return row
+        return None
+
+    @classmethod
+    async def register(
+        cls,
+        *,
+        generated_by: str,
+        name: str,
+        kind: str,
+        description: str | None = None,
+        asset_ref: str = "",
+        target_type_id: str | None = None,
+        project_id: str | None = None,
+    ) -> "Artifact":
+        """Record what a run produced — minting the row, or converging on the
+        one this run already registered for the same deliverable.
+
+        RUN-scoped by construction: the lookup passes ``generated_by``, so a
+        retry within one run updates its row while a different run producing
+        the same path still gets its own (see :meth:`find_existing`).
+
+        The no-op case has to be a REAL no-op. An agent may re-register the
+        same deliverable on every turn, and a save costs a SQL UPDATE, a WS
+        broadcast to every connected client and a metadata write. Change
+        detection dumps both sides to JSON and compares once, the way
+        ``Deployment.upsert`` does — a per-field ``!=`` walk looks equivalent
+        and is not, because comparing a pydantic model against a plain dict
+        returns ``NotImplemented`` and so reads as "changed" every time.
+        """
+        from flow_sdk.worldview.ontology import normalize_kind  # noqa: PLC0415
+
+        body: dict[str, Any] = {
+            "name": name,
+            "kind": normalize_kind(kind),
+            "description": description,
+            "asset_ref": asset_ref,
+            "target_type_id": target_type_id,
+            "generated_by": generated_by,
+        }
+        if project_id is not None:
+            body["project_id"] = project_id
+
+        existing = await cls.find_existing(
+            generated_by=generated_by,
+            asset_ref=asset_ref or None,
+            target_type_id=target_type_id,
+        )
+        if existing is None:
+            artifact = cls(**body)
+            await artifact.save()
+            return artifact
+
+        keys = set(body)
+        candidate = cls(id=existing.id, **body)
+        if existing.model_dump(mode="json", include=keys) != candidate.model_dump(mode="json", include=keys):
+            existing.apply_field_updates(body)
+            await existing.save()
+        return existing
+
+    def local_origin_path(self) -> str | None:
+        """Canonical POSIX path of this artifact's LOCAL origin, else None.
+
+        A git-backed origin deliberately answers None: two checkouts of one repo
+        are the same origin but different paths, so a path match there would
+        converge rows that are not the same placement.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        origin = self.origin
+        if getattr(origin, "kind", None) != "local":
+            return None
+        return canonical_posix_path(str(Path(origin.base) / origin.rel_path))
 
     async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
-        """Only application.web artifacts invoke the artifact setup skill."""
+        """Only application.web artifacts are set up on receive.
+
+        The fast lane first: an app that declares itself (a ``webapp.json`` in its folder) is a node of its
+        project's setup tree — installed, built, started, each with its check — and the display opens on
+        it while that runs (``WebappDisplay`` shows the setup). Only an app that says nothing about itself
+        goes to the ``artifact-setup`` agent, which works out how it runs."""
 
         if kind_matches("application.web", self.kind):
+            fast = await self._setup_declared_app(project_id)
+            if fast is not None:
+                return fast
             return await super().setup_on_receive(project_id=project_id, workdir=workdir)
         from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
 
         return _entity_payload(self)
+
+    async def _setup_declared_app(self, project_id) -> Optional[dict]:
+        """Start the setup of the declared web app this artifact's folder holds, and answer it to display;
+        ``None`` when the folder declares none (or has no project to set it up in)."""
+        from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+        from flow_sdk.core.setup.load import bring_up  # noqa: PLC0415
+
+        folder = str(getattr(self, "path", "") or "").rstrip("/")
+        if not folder or not project_id:
+            return None
+        apps = await WebApp.get_all({"match": {"project_id": str(project_id)}})
+        app = next((a for a in apps if a.asset_ref and (a.asset_ref.rstrip("/") == folder
+                                                       or a.asset_ref.startswith(folder + "/"))), None)
+        project = await Project.get_by_id(str(project_id)) if app is not None else None
+        if project is None:
+            return None
+        # The one way an app comes up: validate → load → setup → fix.
+        await bring_up(project, asset=app)
+        return _entity_payload(app)
 
 
 __all__ = ["Artifact", "LEGACY_ARTIFACT_KIND_MAP"]

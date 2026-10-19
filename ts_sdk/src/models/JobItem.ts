@@ -1,5 +1,7 @@
-import { Job } from '../entities/job';
-import { JobExecution } from '../entities/job_execution';
+// Wire shapes, not the hydrated classes: this module is in the model layer, which
+// loads while `APIEntity` is still loading (see entities/*-types.ts).
+import { IJob } from '../entities/job-types';
+import { IJobExecution } from '../entities/job_execution-types';
 
 export interface JobCounts {
   total: number;
@@ -32,10 +34,10 @@ export interface JobItem {
 }
 
 // Utility function to merge Job and JobExecution data
-export function mergeJobWithExecution(job: Job, jobExecution: JobExecution): JobItem {
+export function mergeJobWithExecution(job: IJob, jobExecution: IJobExecution): JobItem {
   return {
-    id: jobExecution.id,
-    jobId: job.id,
+    id: jobExecution.id!,
+    jobId: job.id!,
     title: job.job_name!,
     jobType: job.job_type!,
     status: jobExecution.status as

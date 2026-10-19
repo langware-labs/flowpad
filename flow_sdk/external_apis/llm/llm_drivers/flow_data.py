@@ -5,10 +5,11 @@ import random
 import re
 import time
 from datetime import datetime, timezone
-from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, computed_field
+
+from flow_sdk._compat import StrEnum
 
 
 def _escape_xml_attribute(value: str) -> str:
@@ -142,6 +143,7 @@ class FlowElementType(StrEnum):
     CONTINUE = "continue"
     TOOL_CALL = "tool-call"
     TOOL_RESULT = "tool-result"
+    WORKER_UNAVAILABLE = "worker-unavailable"
     PROGRESS_REPORT = "progress_report"
 
     @classmethod
@@ -431,7 +433,8 @@ class FlowData(BaseModel):
         return True
 
     def __repr__(self):
-        return f"FlowData({self.element_type}, {self.data_type}, {self.flow_value[:10]}..., index={self.index})"
+        # flow_value is Any (a dict by default), so preview its text, never slice the value itself.
+        return f"FlowData({self.element_type}, {self.data_type}, {str(self.flow_value)[:10]}..., index={self.index})"
 
 
 class FlowCheckpointData(FlowData):

@@ -8,15 +8,14 @@ lives in the entity's ``asset_ref`` file (``.claude/usage_reports/<name>/report.
 and the viewer streams it via FSRef.
 
 ``report`` is a create-time ferry (db-excluded): it carries the JSON payload
-through the create POST into ``default_body_fn`` (which materializes report.json)
+through the create POST into the serializer (which materializes report.json as the ``FreeSection``)
 and is never persisted or returned on GET.
 """
 from __future__ import annotations
 
-import json
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -39,10 +38,10 @@ class UsageReport(Entity):
     agent_spawns: int = APIField(0)
     cache_hit_rate: float = APIField(0.0)
 
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Create-time ferry only: JSON text consumed by default_body_fn (which
     # materializes report.json at asset_ref). Never persisted to DB/blob.
-    report: Optional[str] = NoDBAPIField(default=None)
+    report: Optional[dict] = NoDBAPIField(default=None)
 
     @classmethod
     def from_data(cls, data, *, name: str | None = None, markdown: str | None = None) -> "UsageReport":
@@ -70,5 +69,5 @@ class UsageReport(Entity):
             skill_invocations=int(d.get("skill_invocations") or 0),
             agent_spawns=int(d.get("agent_spawns") or 0),
             cache_hit_rate=float(d.get("cache_hit_rate") or 0.0),
-            report=json.dumps(payload),
+            report=payload,
         )

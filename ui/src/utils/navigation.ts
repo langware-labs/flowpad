@@ -1,4 +1,4 @@
-import { Agent } from '@sdk';
+import { SubAgent } from '@sdk';
 
 /**
  * Redirects to the console for a given agent ID
@@ -11,7 +11,7 @@ export const redirectToConsole = (agentId: string | undefined, openInNewTab: boo
     return;
   }
 
-  const url = `/${Agent.type}/${agentId}`;
+  const url = `/${SubAgent.type}/${agentId}`;
 
   if (openInNewTab) {
     window.open(url, '_blank');

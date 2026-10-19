@@ -2,11 +2,10 @@
 from __future__ import annotations
 
 import json
+
 import pytest
-from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef, JSONFsRef, TextFsRef
-
 
 # ---------------------------------------------------------------------------
 # JSONFsRef tests

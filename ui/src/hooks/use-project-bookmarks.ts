@@ -1,7 +1,10 @@
 import { Bookmark, QueryRequest } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+
+// Stable "no data yet" value, so the sort memo below doesn't churn before load.
+const EMPTY: Bookmark[] = [];
 
 /**
  * Hook to fetch all bookmarks visible to the current user.
@@ -18,47 +21,27 @@ export function useProjectBookmarks() {
   const { project } = useProject();
   const projectTypeId = project?.typeId;
 
-  // Optimistic exclusion: IDs hidden from the returned data until next refetch completes
-  const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
+  const queryRequest = useMemo(
+    () => new QueryRequest({ type: 'bookmark', scope: [], name: 'useProjectBookmarks' }),
+    [],
+  );
 
-  const queryRequest = new QueryRequest({
-    type: 'bookmark',
-    scope: [],
-    name: 'useProjectBookmarks',
-  });
-
-  const {
-    data: bookmarks = [],
-    isLoading,
-    error,
-    refetch: rawRefetch,
-  } = useEntitiesQuery<Bookmark>(queryRequest, {
+  const { data: bookmarks = EMPTY, refetch } = useEntitiesQuery<Bookmark>(queryRequest, {
     // Hub mode: the hub backend has no `bookmark` entity (graph/bookmark 422s);
     // skip the fetch and fall back to an empty list.
     enabled: !!projectTypeId && !isHubOnly(),
   });
 
-  // Wrap refetch to clear exclusions after it completes
-  const refetch = useCallback(async () => {
-    await rawRefetch();
-    setExcludeIds(new Set());
-  }, [rawRefetch]);
-
-  // Optimistically hide bookmarks by ID (cleared on next refetch)
-  const excludeBookmarks = useCallback((ids: string[]) => {
-    setExcludeIds((prev) => {
-      const next = new Set(prev);
-      for (const id of ids) next.add(id);
-      return next;
-    });
-  }, []);
-
-  // Sort bookmarks by created_date descending (immutable — no in-place mutation)
-  const sortedBookmarks = [...bookmarks].sort((a, b) => {
-    const aTime = new Date(a.created_date || 0).getTime();
-    const bTime = new Date(b.created_date || 0).getTime();
-    return bTime - aTime;
-  });
+  // Newest first. Memoised on the query's own result array, which keeps its
+  // identity until the data changes: a fresh array every render would defeat
+  // every memo downstream (useFavorites derives its whole tree from this).
+  const sortedBookmarks = useMemo(
+    () =>
+      [...bookmarks].sort(
+        (a, b) => new Date(b.created_date || 0).getTime() - new Date(a.created_date || 0).getTime(),
+      ),
+    [bookmarks],
+  );
 
   // Auto-reopen pending bookmarks whose remind_at has passed
   const reopenedRef = useRef<Set<string>>(new Set());
@@ -80,17 +63,5 @@ export function useProjectBookmarks() {
     }
   }, [sortedBookmarks]);
 
-  // Apply optimistic exclusion filter
-  const filteredBookmarks = excludeIds.size > 0
-    ? sortedBookmarks.filter((m) => !m.id || !excludeIds.has(m.id))
-    : sortedBookmarks;
-
-  return {
-    data: filteredBookmarks,
-    isLoading,
-    error,
-    refetch,
-    excludeBookmarks,
-    projectTypeId,
-  };
+  return { data: sortedBookmarks, refetch };
 }

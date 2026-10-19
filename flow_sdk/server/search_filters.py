@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "whiteboard", "task",
+    "skill", "subagent", "markdown", "chart", "task",
     "claude_hook", "claude_rules", "claude_memory", "claude_md",
     "claude_session", "codex_session", "command", "spec",
     "plan", "prompt",
@@ -178,8 +178,8 @@ async def resolve_project_scope(
         return sf
     if sf.record_projects:
         return sf
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_store.identifier import is_valid_uuid  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
         get_cached_projects,
@@ -334,6 +334,67 @@ def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str
         filtered = [e for e in filtered if (getattr(e, "parent_path", None) or "") == parent_path]
     if vault_root:
         filtered = [e for e in filtered if (getattr(e, "vault_root", None) or "") == vault_root]
+    return filtered
+
+
+def _parent_type_of(entity) -> str:
+    """The TYPE half of an entity's ``parent_type_id`` (``"<type>-<uuid>"``).
+
+    Empty string when unparented. A malformed pointer (a bare uuid, say) yields
+    its first hyphen-delimited segment, which is not a registered type name — so
+    it fails the browseable lookup and counts as "no asset parent". Callers must
+    therefore only ever TEST this against the type registry, never trust it as a
+    type on its own. The SQL twin in ``count_nested_entities_by_type`` splits the
+    same way, so both tiers classify a malformed pointer identically.
+    """
+    ptid = getattr(entity, "parent_type_id", None) or ""
+    head, sep, _rest = ptid.partition("-")
+    return head if sep else ""
+
+
+def apply_containment_filter(
+    entities: list,
+    top_level: bool = False,
+    parent_type_id: str | None = None,
+) -> list:
+    """Filter by CONTAINMENT — the ``parent_type_id`` pointer, not location.
+
+    Two opposite selections over the same edge:
+
+    * ``top_level`` drops any entity nested inside another entity that HAS ITS
+      OWN asset-tree root (``TypeInfo.browseable_by is not None``), because the
+      child is already reachable there. An asset parented to a *project* stays:
+      ``project`` is not browseable, so its children have nowhere else to show.
+      This is what stops an Agent's own copy of an Mcp/Skill (a deliberate
+      self-contained copy, see ``Agent.add_mcp``) from rendering as a duplicate
+      top-level row next to the project-level asset it was copied from.
+    * ``parent_type_id`` keeps only the direct children of one entity — the
+      other half of the same edge, used to fill those nested rows in.
+
+    Parentage rides on the pointer, never on the path: ``repo_assets_fn`` is
+    explicit that location does not imply parentage.
+    """
+    if not top_level and not parent_type_id:
+        return entities
+    filtered = entities
+    if parent_type_id:
+        filtered = [e for e in filtered if (getattr(e, "parent_type_id", None) or "") == parent_type_id]
+    if top_level:
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        # Resolved once per call, not per entity: a listing page is up to a few
+        # hundred rows over a handful of distinct parent types.
+        browseable: dict[str, bool] = {}
+
+        def _nested(entity) -> bool:
+            ptype = _parent_type_of(entity)
+            if not ptype:
+                return False
+            if ptype not in browseable:
+                browseable[ptype] = SchemaRegistry.browseable_by(ptype) is not None
+            return browseable[ptype]
+
+        filtered = [e for e in filtered if not _nested(e)]
     return filtered
 
 

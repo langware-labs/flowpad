@@ -1,13 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useMemo, useState } from 'react';
-import {
-  ActionInfo,
-  dataManager,
-  isProcessRunning,
-  ProcessKind,
-  type APIEntity,
-  type FSRefJson,
-  type Translation,
-} from '@sdk';
+import { ActionInfo, dataManager, isProcessRunning, ProcessKind, type APIEntity, type Translation, type FSRefJson, type AnyEntity } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { runSkillWorker } from '@src/components/assets/editor/skill/skill-eval-analysis';
@@ -35,7 +28,7 @@ interface AddTranslationResult {
 
 interface UseTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset). */
-  entity: APIEntity<APIEntity<unknown>> | null;
+  entity: AnyEntity | null;
   /** VFS path the translator process is keyed to (the asset TypeId string). */
   chatTarget: string | null;
   /** On-disk path of the source (original) doc — used in the translator prompt. */
@@ -74,11 +67,7 @@ interface UseTranslationsResult {
  * moment its worker leaves a running state, which the editor uses to bump its
  * reload key and re-read the now-filled file.
  */
-export function useTranslations({
-  entity,
-  chatTarget,
-  assetRef,
-}: UseTranslationsArgs): UseTranslationsResult {
+export function useTranslations({ entity, chatTarget, assetRef }: UseTranslationsArgs): UseTranslationsResult {
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
   const [isAdding, setIsAdding] = useState(false);
@@ -116,7 +105,7 @@ export function useTranslations({
   );
 
   const activeView = useMemo(
-    () => (rawLang ? translations.find((t) => t.lang === rawLang) ?? null : null),
+    () => (rawLang ? (translations.find((t) => t.lang === rawLang) ?? null) : null),
     [translations, rawLang],
   );
   // Effective active language: the found translation's lang (=== rawLang), or
@@ -137,7 +126,7 @@ export function useTranslations({
     async (lang: string) => {
       const typeId = entity?.typeId;
       if (!typeId || !chatTarget) {
-        notify.error({ title: 'Cannot translate', message: 'This file has no backing entity yet.' });
+        notify.error({ title: t`Cannot translate`, message: t`This file has no backing entity yet.` });
         return;
       }
       setIsAdding(true);
@@ -176,7 +165,7 @@ export function useTranslations({
         }
       } catch (err) {
         console.error('[translations] addTranslation failed', err);
-        notify.error({ title: 'Failed to start translation' });
+        notify.error({ title: t`Failed to start translation` });
       } finally {
         setIsAdding(false);
       }

@@ -1,0 +1,247 @@
+"""The curation seam over HTTP: a dataset bound to a source takes its items as
+examples (``promote``) and gold labels (``annotate``); counts follow the disk."""
+
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
+
+import pytest
+
+from tests.unit._project_names import unique_project_name
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("fresh_user_scope")]
+
+SHAPE = {"rows": [{"input": "ingest.source_item", "output": {"sentiment": "string"}}]}
+
+
+@pytest.fixture
+def fresh_user_scope(tmp_path, monkeypatch):
+    """The user scope rooted at ``tmp_path/home`` for one test. NON-autouse.
+
+    Mirrors ``tests/unit/conftest.py``'s fixture of the same name: ``_source_with_items`` below
+    creates a ``DataSource`` with no project context, so it resolves under ``Scope.USER`` and
+    would otherwise land in the real repo checkout instead of an isolated directory.
+    """
+    import flow_sdk.builtin.asset_placement as placement
+    from flow_sdk.assets.placement import Scope
+
+    real = placement.root_for_scope
+    home = tmp_path / "home"
+
+    def root_for_scope(scope, *, project_mount=None, asset_class=None):
+        return home if scope == Scope.USER else real(scope, project_mount=project_mount)
+
+    monkeypatch.setattr(placement, "root_for_scope", root_for_scope)
+    return home
+
+
+async def _project(client, tmp_path) -> str:
+    resp = await client.post(
+        "/api/v1/graph/project", json={"type": "project", "name": unique_project_name("curate"), "fs_storage_mount_path": str(tmp_path)}
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    return resp.json()["data"]["id"]
+
+
+async def _source_with_items(client, n: int = 2) -> str:
+    resp = await client.post(
+        "/api/v1/graph/data_source",
+        json={
+            "name": f"feed {uuid.uuid4().hex[:8]}",
+            "provider": "rss",
+            "kind": "content.feed",
+            "config": {"feed_url": "http://127.0.0.1:1/x"},
+        },
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    sid = resp.json()["data"]["id"]
+    items = [
+        {
+            "data_source_id": sid,
+            "provider": "rss",
+            "kind": "content.feed.item",
+            "external_id": f"e{i}",
+            "name": f"Post {i}",
+            "body": f"body {i}",
+        }
+        for i in range(n)
+    ]
+    resp = await client.post("/api/v1/ingest/items", json={"items": items})
+    assert resp.status_code == 200, resp.text
+    return sid
+
+
+async def _items(client, sid: str) -> list[dict]:
+    resp = await client.get("/api/v1/graph/source_item", params={"filter": json.dumps({"data_source_id": sid})})
+    return resp.json()["data"]
+
+
+async def _dataset(client, pid: str, sid: str, **extra) -> dict:
+    body = {
+        "type": "dataset",
+        "name": "labels",
+        "title": "Labels",
+        "data_layout": "io_folder",
+        "source_id": sid,
+        "spec": SHAPE,
+        **extra,
+    }
+    resp = await client.post(f"/api/v1/graph/project/{pid}/dataset", json=body)
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    return resp.json()["data"]
+
+
+async def test_promote_then_annotate_lands_on_disk_and_in_counts(bootstrapped_client, user, tmp_path):
+    client = bootstrapped_client
+    pid = await _project(client, tmp_path)
+    sid = await _source_with_items(client)
+    ds = await _dataset(client, pid, sid)
+    assert ds["source_id"] == sid and ds["spec"] == SHAPE
+    folder = Path(ds["asset_ref"])
+    assert (folder / "dataset.json").is_file()
+    manifest = json.loads((folder / "dataset.json").read_text())["metadata"]
+    assert manifest["source_id"] == sid, "the binding is authored in the manifest"
+
+    items = await _items(client, sid)
+    resp = await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
+    assert resp.status_code == 200, resp.text
+    [eid] = resp.json()["data"]["ids"]
+    assert resp.json()["data"]["num_rows"] == 1
+    item_doc = json.loads((folder / "rows" / "0001" / "input" / "item.json").read_text())
+    assert item_doc["external_id"] == items[0]["external_id"] and item_doc["body"] == items[0]["body"]
+
+    resp = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate",
+        json={"row_id": eid, "ground_truth": {"sentiment": "positive"}},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["num_annotated"] == 1
+    assert json.loads((folder / "rows" / "0001" / "ground_truth" / "label.json").read_text()) == {
+        "sentiment": "positive"
+    }
+
+    row = (await client.get(f"/api/v1/graph/dataset/{ds['id']}")).json()["data"]
+    assert row["num_rows"] == 1 and row["num_annotated"] == 1
+    listed = (await client.get("/api/v1/graph/dataset", params={"filter": json.dumps({"source_id": sid})})).json()[
+        "data"
+    ]
+    assert [d["id"] for d in listed] == [ds["id"]]
+
+
+async def test_shape_and_layout_are_enforced(bootstrapped_client, user, tmp_path):
+    client = bootstrapped_client
+    pid = await _project(client, tmp_path)
+    sid = await _source_with_items(client, 1)
+    ds = await _dataset(client, pid, sid)
+    [item] = await _items(client, sid)
+    [eid] = (
+        await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [item["id"]]})
+    ).json()["data"]["ids"]
+
+    bad = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"mood": "x"}}
+    )
+    assert bad.status_code == 400 and "schema" in bad.json()["data"], bad.text
+    missing = await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": "nope", "ground_truth": {"sentiment": "p"}}
+    )
+    assert missing.status_code == 404
+
+    csv_ds = await _dataset(client, pid, sid, name="csvset", data_layout="csv")
+    refused = await client.post(f"/api/v1/graph/dataset/{csv_ds['id']}/promote", json={"source_item_ids": [item["id"]]})
+    assert refused.status_code == 400 and "io_folder" in refused.json()["message"]
+
+    plain = await _dataset(client, pid, sid, name="plain", spec=None)
+    refused = await client.post(f"/api/v1/graph/dataset/{plain['id']}/promote", json={"source_item_ids": [item["id"]]})
+    assert refused.status_code == 400 and "ingest.source_item" in refused.json()["message"]
+
+
+async def test_rows_listing_reports_promoted_items_and_gold(bootstrapped_client, user, tmp_path):
+    client = bootstrapped_client
+    pid = await _project(client, tmp_path)
+    sid = await _source_with_items(client, 2)
+    ds = await _dataset(client, pid, sid)
+    items = await _items(client, sid)
+    [eid] = (
+        await client.post(f"/api/v1/graph/dataset/{ds['id']}/promote", json={"source_item_ids": [items[0]["id"]]})
+    ).json()["data"]["ids"]
+    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
+    assert listed == [{"row_id": eid, "key": "0001", "item_id": items[0]["id"], "kind": "train", "annotated": False}]
+    await client.post(
+        f"/api/v1/graph/dataset/{ds['id']}/annotate", json={"row_id": eid, "ground_truth": {"sentiment": "neutral"}}
+    )
+    listed = (await client.get(f"/api/v1/graph/dataset/{ds['id']}/row-index")).json()["data"]["rows"]
+    assert listed[0]["annotated"] is True
+
+
+# ── typed rows: append / example / validate on a dataset whose spec is a DECLARED kind ─────
+
+
+def _declare_nav_kinds(root: Path) -> str:
+    """Define the row kinds as data schema FOLDERS (no Python) and register them; returns the tag."""
+    from flow_sdk.schema.data_spec import declared
+
+    ns = f"apitest{uuid.uuid4().hex[:8]}"
+
+    def spec(parent: Path, kind: str, body: dict) -> Path:
+        folder = parent / "agentic-assets" / "data_schema" / kind
+        folder.mkdir(parents=True)
+        (folder / "data_schema.json").write_text(json.dumps({"type": "data_schema", "ns": ns, **body}))
+        return folder
+
+    top = spec(root, "nav.dataset", {"rows": {"input": "nav.request", "output": "nav.decision"}})
+    spec(top, "nav.request", {"fields": {"utterance": {"shape": "string"}}})
+    spec(top, "nav.decision", {"fields": {"route": {"shape": "enum:quick|agentic"}, "target": {"shape": "?string"}}})
+    assert set(declared.load_root(root).values()) == {""}
+    return f"--{ns}--.nav.dataset"
+
+
+async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client, user, tmp_path):
+    client = bootstrapped_client
+    pid = await _project(client, tmp_path)
+    tag = _declare_nav_kinds(tmp_path / "kinds")
+    resp = await client.post(
+        f"/api/v1/graph/project/{pid}/dataset",
+        json={"type": "dataset", "name": "nav", "title": "Nav", "data_layout": "io_folder", "spec": tag},
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    ds = resp.json()["data"]
+    base = f"/api/v1/graph/dataset/{ds['id']}"
+
+    # One bad row (an enum value the kind does not allow) refuses the whole batch: nothing written.
+    bad = await client.post(f"{base}/append", json={"rows": [
+        {"input": {"utterance": "open data sources"}, "ground_truth": {"route": "quick", "target": "view:data-sources"}},
+        {"input": {"utterance": "x"}, "ground_truth": {"route": "maybe"}},
+    ]})
+    assert bad.status_code == 400 and bad.json()["data"]["errors"], bad.text
+    assert not list((Path(ds["asset_ref"]) / "rows").glob("*")), "a refused batch writes no row"
+
+    resp = await client.post(f"{base}/append", json={"rows": [
+        {"kind": "eval", "input": {"utterance": "open data sources"},
+         "ground_truth": [{"route": "quick", "target": "view:data-sources"}, {"route": "quick", "target": "view:connectors"}],
+         "data": {"tags": ["alias"]}},
+        {"input": {"utterance": "summarize the zoom task"}},
+    ]})
+    assert resp.status_code == 200, resp.text
+    first, second = resp.json()["data"]["ids"]
+    assert resp.json()["data"]["num_rows"] == 2
+
+    got = (await client.get(f"{base}/row/{first}")).json()["data"]
+    assert got["input"] == {"utterance": "open data sources"}
+    assert got["ground_truth"] == [{"route": "quick", "target": "view:data-sources"}, {"route": "quick", "target": "view:connectors"}]
+    assert got["kind"] == "eval" and got["data"] == {"tags": ["alias"]}
+
+    resp = await client.post(f"{base}/annotate", json={"row_id": second, "ground_truth": {"route": "agentic"}})
+    assert resp.status_code == 200 and resp.json()["data"]["num_annotated"] == 2, resp.text
+    assert (await client.get(f"{base}/row/{second}")).json()["data"]["ground_truth"] == {"route": "agentic", "target": None}
+
+    checked = (await client.post(f"{base}/validate")).json()["data"]
+    assert checked == {"checked": 2, "problems": []}, checked
+    # A hand-edited row that no longer fits is named, not fatal.
+    gold = Path(ds["asset_ref"]) / "rows" / "0002" / "ground_truth" / "decision.json"
+    assert gold.is_file(), "annotate writes the typed gold as the shape's own document"
+    gold.write_text('{"route": "sideways"}')
+    problems = (await client.post(f"{base}/validate")).json()["data"]["problems"]
+    assert [p["row_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems

@@ -1,9 +1,9 @@
 /**
  * "No harness found" startup warning, end to end through the real
- * `useWarnings` hook: with every harness capability checked-and-unavailable
+ * `useWarnings` hook: with every harness CLI `not_installed` on the status record
  * the popover shows the warning, and clicking it opens the "Harness login
  * required" modal (no targetView navigation). The only stubs are the
- * capability snapshots and desktop-mode bootstrap env.
+ * status record and desktop-mode bootstrap env.
  *
  * NOTE ON THE CONTRACT: this warning used to open the "Install a harness" wiki
  * modal directly (ec5b92d3). The device-login flow (2bcc9349) deliberately
@@ -16,10 +16,28 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { capabilityManager, dataContext } from '@sdk';
+import { dataContext } from '@sdk';
 import { useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import { WarningsPopover } from '@src/components/warnings-popover/warnings-popover';
 import { useWikiModalStore } from '@src/components/wiki-tip/wiki-modal';
+
+const h = vi.hoisted(() => ({ install: 'not_installed' }));
+// The status record, as the backend serves it once the boot sweep has looked: every CLI
+// `h.install`. Funding is not read here (null), so only the install warning can fire.
+vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
+  useLazyAsset: (asset: string) => ({
+    data:
+      asset === 'status'
+        ? {
+            harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
+              kind: `harness.${w}.cli`,
+              install: h.install,
+            })),
+          }
+        : null,
+    isLoading: false,
+  }),
+}));
 
 const openTab = vi.fn();
 vi.mock('@src/navigation', () => ({
@@ -29,10 +47,7 @@ vi.mock('@src/navigation', () => ({
 describe('WarningsPopover — no harness found', () => {
   beforeEach(() => {
     dataContext.bootstrapInfo = { env: { env_name: 'desktop' } };
-    vi.spyOn(capabilityManager, 'getSnapshot').mockReturnValue({
-      checked: true,
-      available: false,
-    } as ReturnType<typeof capabilityManager.getSnapshot>);
+    h.install = 'not_installed';
   });
 
   afterEach(() => {
@@ -64,10 +79,7 @@ describe('WarningsPopover — no harness found', () => {
   });
 
   it('stays quiet when a harness is available', async () => {
-    vi.spyOn(capabilityManager, 'getSnapshot').mockReturnValue({
-      checked: true,
-      available: true,
-    } as ReturnType<typeof capabilityManager.getSnapshot>);
+    h.install = 'installed';
     render(<WarningsPopover />);
 
     // Let the useWarnings effect write the computed list, then assert the

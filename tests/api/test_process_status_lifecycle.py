@@ -6,10 +6,10 @@ import pytest
 
 from flow_sdk.responses.response import ApiResponse
 
-
 # Wire ``status`` values for a live process — the raw lifecycle FSM value is
 # emitted verbatim now (turn-in-flight is the separate ``busy`` boolean).
 LIVE_WIRE_STATUSES = {"running"}
+pytestmark = pytest.mark.usefixtures("usable_claude_source")
 
 # Raw ``worker_status`` is nullable on the wire (None = "nothing found yet").
 PRE_PROMPT_WORKER_STATUSES = {

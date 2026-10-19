@@ -30,12 +30,10 @@ import time
 import uuid
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from flow_sdk._compat import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Callable
 
-if TYPE_CHECKING:
-    from flow_sdk.fs_store.fs_record import FSRecord as AgentRecord
+from flow_sdk._compat import StrEnum
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "claude_plugin_test"
 
@@ -43,6 +41,26 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "claude_plugin_test"
 # ---------------------------------------------------------------------------
 # Platform detection
 # ---------------------------------------------------------------------------
+
+# A process started from inside a Claude Code session inherits its session/IDE markers:
+# the legacy bare ``CLAUDECODE`` and the 2.x ``CLAUDE_CODE_*`` family
+# (``CLAUDE_CODE_CHILD_SESSION``, ``CLAUDE_CODE_SESSION_ID`` …) plus
+# ``ENABLE_IDE_INTEGRATION``. A worker ``claude`` that sees them runs as a CHILD of
+# that session — ``CLAUDE_CODE_CHILD_SESSION`` turns its transcript saving OFF, so a
+# later ``--resume`` finds "No conversation found". Every spawn of a worker CLI
+# strips the whole family through this one function.
+CLAUDE_INHERITED_ENV_PREFIXES = ("CLAUDECODE", "CLAUDE_CODE_")
+CLAUDE_INHERITED_ENV_VARS = ("ENABLE_IDE_INTEGRATION",)
+
+
+def without_inherited_claude_session(env: "dict[str, str] | os._Environ[str]") -> dict[str, str]:
+    """``env`` minus the parent Claude Code session's markers."""
+    return {
+        k: v
+        for k, v in env.items()
+        if not k.startswith(CLAUDE_INHERITED_ENV_PREFIXES) and k not in CLAUDE_INHERITED_ENV_VARS
+    }
+
 
 def _current_platform() -> str:
     """Return ``'darwin'``, ``'win32'``, or ``'linux'``."""
@@ -70,7 +88,7 @@ def _rmtree_onexc(func, path, exc):
 
 
 def _rmtree_safe(path) -> None:
-    """rmtree with error handler, compatible with Python 3.10–3.12+."""
+    """rmtree with error handler: ``onexc`` from Python 3.12, ``onerror`` before it."""
     if sys.version_info >= (3, 12):
         shutil.rmtree(path, onexc=_rmtree_onexc)
     else:
@@ -127,9 +145,6 @@ def open_terminal(
             if command
             else f"{clean_env}{export_prefix}cd {cwd}"
         )
-        # DEBUG: dump exact terminal command for troubleshooting
-        _dbg = Path("/tmp/_open_terminal_debug.txt")
-        _dbg.write_text(inner)
         inner_escaped = inner.replace("\\", "\\\\").replace('"', '\\"')
         script = (
             'tell application "Terminal"\n'
@@ -316,7 +331,6 @@ class ClaudeProjectEnvManager:
 
         self._clean = clean
         self._env_vars: dict[str, str] = {}
-        self._mcp_config_path: Path | None = None
         self._debug_file: Path | None = None
         self._dump_activations = False
         self._plugin_root = Path(plugin_root) if plugin_root else None
@@ -463,161 +477,13 @@ class ClaudeProjectEnvManager:
         sets UTF-8 encoding, and overlays any variables set via
         ``env_set()``.
         """
-        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        env = without_inherited_claude_session(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env.update(self._env_vars)
         return env
 
     # Backward-compat alias (skillit tests use _build_env)
     _build_env = build_env
-
-    # -- Rules engine integration ---------------------------------------------
-
-    @property
-    def user_rules(self):
-        """Return user-level rules (~/.flow/skill_rules).
-
-        Empty if ``include_user_home`` is False.
-        """
-        from flow_sdk.rules.engine import RulesPackage
-
-        if not self._include_user_home:
-            return RulesPackage(source="user", rules=[])
-        from flow_sdk.rules.rule_loader import get_user_rules_dir
-
-        return RulesPackage.from_folder(get_user_rules_dir(), source="user")
-
-    @property
-    def project_rules(self):
-        """Return project-level rules (<root>/.flow/skill_rules)."""
-        from flow_sdk.rules.engine import RulesPackage
-
-        rules_path = self._root / ".flow" / "skill_rules"
-        rules_path.mkdir(parents=True, exist_ok=True)
-        return RulesPackage.from_folder(rules_path, source="project")
-
-    @property
-    def all_rules(self):
-        """Return merged rules (user + project, project overrides user)."""
-        from flow_sdk.rules.engine import RulesPackage
-
-        user_path = None
-        if self._include_user_home:
-            from flow_sdk.rules.rule_loader import get_user_rules_dir
-
-            user_path = get_user_rules_dir()
-        return RulesPackage.from_multiple_folders(
-            user_path=user_path,
-            project_path=self._root / ".flow" / "skill_rules",
-        )
-
-    @property
-    def rule_engine(self):
-        """Return RuleEngine for this environment."""
-        from flow_sdk.rules.engine import RuleEngine
-
-        return RuleEngine(project_dir=str(self._root))
-
-    def load_rule(self, rule_path: str) -> None:
-        """Copy a rule into the env's .flow/skill_rules folder.
-
-        Args:
-            rule_path: Full path to a rule directory.
-        """
-        rule_src = Path(rule_path).expanduser()
-        if not rule_src.exists():
-            raise FileNotFoundError(f"Rule not found: {rule_path}")
-        rules_dir = self._root / ".flow" / "skill_rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(rule_src, rules_dir / rule_src.name)
-
-    def load_all_user_rules(self) -> None:
-        """Copy all rules from the per-instance skill_rules dir into the env."""
-        from flow_sdk.instance_settings import get_instance_settings
-        user_rules = get_instance_settings().skill_rules_dir
-        if not user_rules.exists():
-            return
-        rules_dir = self._root / ".flow" / "skill_rules"
-        rules_dir.mkdir(parents=True, exist_ok=True)
-        for rule_dir in user_rules.iterdir():
-            if rule_dir.is_dir() and (rule_dir / "trigger.py").exists():
-                shutil.copytree(
-                    rule_dir, rules_dir / rule_dir.name, dirs_exist_ok=True
-                )
-
-    # -- Agent management -----------------------------------------------------
-
-    def load_agent(self, agent: "AgentRecord | str | Path") -> None:
-        """Copy an agent definition into ``.claude/agents/``.
-
-        Accepts:
-          - ``Record`` (AGENT type): renders via ``render_agent_markdown`` and writes it
-          - ``str``: treated as agent name, loaded via ``load_agent`` from operations
-          - ``Path``: path to a ``.md`` file, copied directly
-        """
-        from flow_sdk.fs_store.operations.agent import (  # noqa: PLC0415
-            load_agent as _load_agent,
-            render_agent_markdown,
-        )
-
-        if isinstance(agent, Path):
-            dest = self.agents_dir / agent.name
-            dest.write_text(agent.read_text(encoding="utf-8"), encoding="utf-8")
-        elif isinstance(agent, str):
-            loaded = _load_agent(agent)
-            if loaded is None:
-                raise FileNotFoundError(f"Agent {agent!r} not found")
-            self._write_agent_md(loaded)
-        else:
-            self._write_agent_md(agent)
-
-    def _write_agent_md(self, agent: "AgentRecord") -> None:
-        from flow_sdk.fs_store.operations.agent import render_agent_markdown  # noqa: PLC0415
-        name = agent.name or agent.id or "agent"
-        dest = self.agents_dir / f"{name}.md"
-        dest.write_text(render_agent_markdown(agent), encoding="utf-8")
-
-    # -- System prompt --------------------------------------------------------
-
-    def set_system_prompt(self, content: str) -> None:
-        """Write *content* to ``CLAUDE.md`` (overwrites)."""
-        self.claude_md_path.write_text(content, encoding="utf-8")
-
-    def append_system_prompt(self, content: str) -> None:
-        """Append *content* to ``CLAUDE.md``."""
-        with self.claude_md_path.open("a", encoding="utf-8") as f:
-            f.write(content)
-
-    def load_system_prompt(self, file_path: str | Path) -> None:
-        """Copy file content into the env's CLAUDE.md.
-
-        Args:
-            file_path: Path to the file whose content becomes CLAUDE.md.
-        """
-        src = Path(file_path).expanduser()
-        if not src.exists():
-            raise FileNotFoundError(f"System prompt file not found: {src}")
-        shutil.copy2(src, self._root / "CLAUDE.md")
-
-    # -- MCP config -----------------------------------------------------------
-
-    def set_mcp_config(self, config: dict[str, Any]) -> None:
-        """Write ``mcp.json`` to the project root."""
-        mcp_path = self._root / "mcp.json"
-        mcp_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
-
-    def loadMcp(self) -> None:
-        """Write an MCP config pointing to the flow-sdk MCP server."""
-        mcp_config = {
-            "mcpServers": {
-                "flow_sdk": {
-                    "command": shutil.which("flow-sdk-mcp") or "flow-sdk-mcp",
-                    "args": [],
-                }
-            }
-        }
-        self._mcp_config_path = self._root / "mcp.json"
-        self._mcp_config_path.write_text(json.dumps(mcp_config, indent=2))
 
     # -- Plugin installation --------------------------------------------------
 
@@ -830,8 +696,6 @@ class ClaudeProjectEnvManager:
             "--dangerously-skip-permissions",
             *self._session_args(),
         ]
-        if self._mcp_config_path:
-            cmd.extend(["--mcp-config", str(self._mcp_config_path)])
         if self._debug_file:
             cmd.extend(["--debug-file", str(self._debug_file)])
 

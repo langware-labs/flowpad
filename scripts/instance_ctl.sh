@@ -58,12 +58,36 @@ in_list() {
 RESERVED_PORTS="5001"
 port_reserved() { in_list "$1" "$RESERVED_PORTS"; }
 
-# find_free_port <band_base> <preferred>  -> echoes a free port in [preferred, band_base+99]
+# port_claimed_by_other <port> <self-name> -> true when ANOTHER instance's
+# launcher registry records <port>. A sibling that is still booting is not
+# listening yet, so the listener check alone hands its port out twice — and a
+# later `kill` of either one then takes down both.
+port_claimed_by_other() {
+  local port="$1" self="$2" reg own
+  own="$(registry "$self")"
+  for reg in "$FLOW_HOME"/instances/*/launcher.json; do
+    [ -f "$reg" ] || continue
+    [ "$reg" = "$own" ] && continue
+    grep -qE "\"(backend|frontend)_port\": *$port[^0-9]" "$reg" && return 0
+  done
+  return 1
+}
+
+# port_free_for <port> <self-name> -> true when <self-name> may take <port>
+port_free_for() {
+  ! port_reserved "$1" && ! port_claimed_by_other "$1" "$2" && ! port_in_use "$1"
+}
+
+# registry_port <name> <frontend|backend> -> the port <name>'s launcher registry records, or nothing
+registry_port() {
+  grep -oE "\"$2_port\": *[0-9]+" "$(registry "$1")" 2>/dev/null | grep -oE '[0-9]+$' || true
+}
+
+# find_free_port <band_base> <preferred> <self-name> -> echoes a free port in [preferred, band_base+99]
 find_free_port() {
-  local base="$1" pref="$2" p
+  local base="$1" pref="$2" self="${3:-}" p
   for (( p=pref; p<=base+99; p++ )); do
-    port_reserved "$p" && continue
-    port_in_use "$p" || { echo "$p"; return 0; }
+    port_free_for "$p" "$self" && { echo "$p"; return 0; }
   done
   return 1
 }
@@ -124,15 +148,28 @@ cmd_gc() {
   local ps_env_dump
   ps_env_dump="$(ps eww -ax -o command= 2>/dev/null || true)"
 
-  # bash-3.2-safe accumulation (no arrays under set -u): names are plain tokens.
-  local candidates="" count=0 d name
+  # An ARRAY, not a whitespace-joined string. The previous accumulation assumed
+  # "names are plain tokens" and word-split on read, which destroyed a live
+  # instance on 2026-08-18: a mis-quoted launch had left a directory literally
+  # named `prod TESTING=true SQLITE_DATABASE_PATH=/tmp/flowpad_test.db`. It
+  # passed the protection check (that full string is not in the list), then the
+  # delete loop split it on spaces and `rm -rf`'d the FIRST word — the real
+  # `prod` instance, database included. `launch` runs `cmd_gc --yes`, so it
+  # happened with no prompt.
+  local candidates=() count=0 d name
   for d in "$root"/*/; do
     [ -d "$d" ] || continue
     name="$(basename "$d")"
+    # A well-formed instance name is one plain token. Anything else is residue
+    # from a mis-quoted launch and is NEVER a gc candidate: it cannot be deleted
+    # by name safely, and its words may name real instances.
+    case "$name" in
+      *[[:space:]]*|*/*) log "gc: skipping malformed instance dir: $name"; continue;;
+    esac
     in_list "$name" "$PROTECTED_INSTANCES" && continue
     [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
     [ -n "$(find "$d" -type f -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
-    candidates="$candidates $name"; count=$((count + 1))
+    candidates[${#candidates[@]}]="$name"; count=$((count + 1))
   done
 
   if [ "$count" = 0 ]; then
@@ -142,7 +179,7 @@ cmd_gc() {
 
   log "gc: dead instances idle >${age_days}d:"
   local n
-  for n in $candidates; do echo "    $n"; done
+  for n in "${candidates[@]}"; do echo "    $n"; done
 
   if [ "$yes" != 1 ]; then
     printf 'Delete these %d instance dir(s)? [y/N] ' "$count"
@@ -150,7 +187,14 @@ cmd_gc() {
     case "$reply" in y|Y|yes) ;; *) log "gc: aborted"; return 0;; esac
   fi
 
-  for n in $candidates; do
+  for n in "${candidates[@]}"; do
+    # Re-checked at the point of deletion, not only at selection. This is the
+    # last gate before an irreversible `rm -rf`, so it must not rely on the
+    # selection loop having been right.
+    if in_list "$n" "$PROTECTED_INSTANCES"; then
+      log "gc: refusing to delete protected instance '$n'"
+      continue
+    fi
     rm -rf "$(instance_dir "$n")"
     rm -f "$(env_file "$n")"
   done
@@ -181,17 +225,25 @@ cmd_launch() {
   # Sweep dead, abandoned instances before allocating a new one.
   cmd_gc --yes || true
 
-  # If already running, tear it down first (idempotent relaunch).
+  # If already running, tear it down first (idempotent relaunch) — and remember its ports: a
+  # relaunch is the same instance, and whatever holds its address (a test tier's env, an open
+  # tab) must still reach it. Scanning from the name's preferred port again moved a relaunched
+  # instance down to any lower port a sibling had freed in the meantime.
+  local prev_fe="" prev_be=""
   if [ -f "$(registry "$name")" ]; then
+    prev_fe="$(registry_port "$name" frontend)"
+    prev_be="$(registry_port "$name" backend)"
     warn "instance '$name' already has a registry — killing it first"
     cmd_kill "$name" --keep-env || true
   fi
 
   local idx; idx="$(name_index "$name")"
   local pref_fe=$((5000 + idx)) pref_be=$((6000 + idx))
-  local fe_port be_port
-  fe_port="$(find_free_port 5000 "$pref_fe")" || die "no free frontend port in 50xx band"
-  be_port="$(find_free_port 6000 "$pref_be")" || die "no free backend port in 60xx band"
+  local fe_port="" be_port=""
+  if [ -n "$prev_fe" ] && port_free_for "$prev_fe" "$name"; then fe_port="$prev_fe"; fi
+  if [ -n "$prev_be" ] && port_free_for "$prev_be" "$name"; then be_port="$prev_be"; fi
+  [ -n "$fe_port" ] || fe_port="$(find_free_port 5000 "$pref_fe" "$name")" || die "no free frontend port in 50xx band"
+  [ -n "$be_port" ] || be_port="$(find_free_port 6000 "$pref_be" "$name")" || die "no free backend port in 60xx band"
   [ "$fe_port" = "$pref_fe" ] || warn "frontend pref $pref_fe busy -> using $fe_port"
   [ "$be_port" = "$pref_be" ] || warn "backend  pref $pref_be busy -> using $be_port"
 
@@ -223,6 +275,19 @@ cmd_launch() {
   # ---- 2. write the single per-instance env file (vite + backend both read it) ----
   # FLOWPAD_SKIP_DOTENV=true is load-bearing: run.py does load_dotenv(override=True)
   # on .env.local, which would otherwise clobber the values we inject here.
+  # FLOWPAD_SKIP_FIRST_RUN_SETUP=true: every launch/reset is a fresh install, so the
+  # fire-once llm-setup popup would open over the first tab and block every click.
+  # A relaunch REWRITES this file, so read back any credential the instance
+  # already had BEFORE truncating it. `launch` is how a running instance is
+  # restarted (the terminal matrix does exactly that mid-suite, via execFileSync),
+  # and that caller's environment has no E2B_KEY — so the rewrite silently dropped
+  # the key and every sandbox test after it timed out at 60s with no sandbox ever
+  # booted. A restart must not cost an instance a capability it already had.
+  local prior_e2b=""
+  if [ -f "$ef" ]; then
+    prior_e2b=$(grep -m1 '^E2B_KEY=' "$ef" 2>/dev/null | cut -d= -f2- || true)
+  fi
+
   cat > "$ef" <<EOF
 # Auto-generated by instance_ctl.sh for instance '$name'. Safe to delete.
 FLOW_INSTANCE=$name
@@ -234,7 +299,18 @@ FLOWPAD_CLOUD_USER_EMAIL=$email
 FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
+FLOWPAD_SKIP_FIRST_RUN_SETUP=true
 EOF
+  # The isolated backend intentionally skips the repo dotenv so its injected
+  # ports/identity cannot be clobbered. Carry the explicitly exported E2B
+  # credential through that boundary so provider-backed QA instances retain
+  # the same sandbox capability as the source checkout. Never print it.
+  # Prefer an explicitly exported key (a fresh launch from the source checkout);
+  # otherwise carry forward what this instance was already using.
+  local e2b_key="${E2B_KEY:-$prior_e2b}"
+  if [ -n "$e2b_key" ]; then
+    printf 'E2B_KEY=%s\n' "$e2b_key" >> "$ef"
+  fi
 
   # ---- 3. launch backend (detached) ----
   local be_log="$dir/launcher-backend.log" fe_log="$dir/launcher-frontend.log"
@@ -284,9 +360,9 @@ EOF
   done
   if [ "$up" = 1 ]; then
     log "backend is up — triggering cloud login"
-    curl -s -m 10 -X POST "http://localhost:$be_port/api/v1/cloud/login" \
-      -H 'content-type: application/json' \
-      -d "{\"email\":\"$email\",\"password\":\"$password\"}" >/dev/null 2>&1 || \
+    # No body: the backend logs in with FLOWPAD_CLOUD_USER_EMAIL/PASSWORD from the env file above
+    # (env mode). A body is the browser-mode {browser, profile} choice -- credentials there are a 422.
+    curl -s -m 10 -X POST "http://localhost:$be_port/api/v1/cloud/login" >/dev/null 2>&1 || \
       warn "cloud login call failed (check $be_log)"
     local st
     st="$(curl -s -m 5 "http://localhost:$be_port/api/v1/cloud/status" || true)"
@@ -338,6 +414,12 @@ cmd_kill() {
   # Port-based fallback (handles re-parented strays not under the recorded PIDs).
   for p in "$be_port" "$fe_port"; do
     [ -n "$p" ] || continue
+    # The listener on a port another instance's registry records is THAT
+    # instance — never ours to kill.
+    if port_claimed_by_other "$p" "$name"; then
+      warn "port $p belongs to another instance's registry — not killing its listener"
+      continue
+    fi
     local pids; pids=$(lsof -nP -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null || true)
     if [ -n "$pids" ]; then
       log "killing leftover PIDs on port $p: $pids"
@@ -362,34 +444,24 @@ cmd_kill() {
 # ---------------------------------------------------------------------------
 # status / list
 # ---------------------------------------------------------------------------
-_status_one() {
-  local name="$1" reg; reg="$(registry "$name")"
-  [ -f "$reg" ] || { echo "  $name: (no registry)"; return; }
-  local fe be; fe=$(grep -oE '"frontend_port": *[0-9]+' "$reg" | grep -oE '[0-9]+')
-  be=$(grep -oE '"backend_port": *[0-9]+' "$reg" | grep -oE '[0-9]+')
-  local be_state="down" fe_state="down"
-  port_in_use "$be" && be_state="UP"
-  port_in_use "$fe" && fe_state="UP"
-  printf "  %-10s backend :%s [%s]   frontend :%s [%s]\n" "$name" "$be" "$be_state" "$fe" "$fe_state"
-}
-
-cmd_status() {
-  if [ -n "${1:-}" ]; then _status_one "$1"; return; fi
-  cmd_list
-}
-
-cmd_list() {
-  local root="$FLOW_HOME/instances" found=0
-  log "instances with a launcher registry:"
-  if [ -d "$root" ]; then
-    local d
-    for d in "$root"/*/; do
-      [ -f "$d/launcher.json" ] || continue
-      _status_one "$(basename "$d")"; found=1
-    done
+# status / list are served by `flow instance ctl`, which decides liveness by
+# process OWNERSHIP rather than port occupancy. The bash implementation these
+# replace reported "[UP]" whenever anything listened on a recorded port, so on
+# a machine where four stale registries all claimed :5007 it printed four UPs
+# for one unrelated vite.
+#
+# The text output is NOT a contract. Callers that need a value must use
+# `flow instance ctl status --json`, `... port <name>` or `... is-up <name>`.
+_ctl_py() {
+  if command -v flow >/dev/null 2>&1; then
+    flow instance ctl "$@"
+  else
+    (cd "$REPO_ROOT" && uv run flow instance ctl "$@")
   fi
-  [ "$found" = 0 ] && echo "  (none)"
 }
+
+cmd_status() { _ctl_py status "$@"; }
+cmd_list()   { _ctl_py list "$@"; }
 
 # ---------------------------------------------------------------------------
 main() {

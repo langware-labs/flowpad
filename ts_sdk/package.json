@@ -2,10 +2,11 @@
   "name": "@flowpad/sdk",
   "version": "0.1.0",
   "description": "TypeScript SDK for Flowpad",
-  "author": "Langware Labs <eran@langware.ai>",
+  "author": "Langware Labs <diagnosis@langware.ai>",
   "homepage": "https://flowpad.ai",
   "type": "module",
   "dependencies": {
+    "@tanstack/query-core": "5.90.17",
     "dotenv": "^17.3.1"
   }
 }

@@ -29,7 +29,7 @@ async def _make_conversation(client) -> str:
     project_id = await _local_project_id(client)
     resp = await client.post(
         "/api/v1/graph/conversation-create",
-        json={"project_id": project_id, "participants": [{"email": "tzahi@example.com", "name": "Tzahi"}]},
+        json={"project_id": project_id, "participants": [{"email": "frank@example.com", "name": "Frank"}]},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["conversation_id"]
@@ -128,16 +128,18 @@ async def test_add_message_git_share_config_reaches_background_upload(
         tasks.append(task)
         return task
 
+    # The header answers ``HubFailure | None``: None is "the hub has it".
     monkeypatch.setattr(
         "flow_sdk.app.actions.notification_action._send_conversation_message_header",
-        AsyncMock(return_value=True),
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         "flow_sdk.app.actions.notification_action._upload_body_and_finalize",
         fake_upload,
     )
     monkeypatch.setattr(
-        "flow_sdk.app.actions.notification_action.asyncio.create_task",
+        # ``Conversation.kick_delivery`` schedules the body off the request.
+        "flow_sdk.builtin.conversation.asyncio.create_task",
         capture_task,
     )
 
@@ -181,7 +183,7 @@ async def test_conversation_summary_action_renders_header_and_messages(
     assert "first message" in summary
     assert "second message" in summary
     # Participant roster appears in the header.
-    assert "Tzahi" in summary
+    assert "Frank" in summary
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

@@ -121,7 +121,7 @@ test 18: R08 P1 config-write race with restart and switch
   newer-and-pending; never clean-with-diff, two workers, or session drift
 
 test 19: R09 P1 Codex-specific controls and command rendering
-- open CLI Options and Session Info for Codex in both transports
+- open the debug menu's CLI Options (terminal transport only) and Session Info (session actions menu) for Codex in both transports
 - validate unsupported Claude Chrome/Debug controls are absent or inert, Full
   Trust maps to the Codex bypass flag, and displayed commands begin with codex
 

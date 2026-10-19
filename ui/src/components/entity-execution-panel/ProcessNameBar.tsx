@@ -17,13 +17,11 @@ export function ProcessNameBar({ process }: { process: AgenticProcess }) {
   const label = resolveProcessDisplayName(process);
   const rename = useInlineRename(label, async (next) => {
     await AgenticProcess.renameById(process.id, next);
+    process.markEdit();
   });
 
   return (
-    <div
-      className="flex flex-shrink-0 items-center border-b px-2 py-1"
-      data-testid="entity-execution-process-name-bar"
-    >
+    <div className="flex flex-shrink-0 items-center border-b px-2 py-1" data-testid="entity-execution-process-name-bar">
       {rename.editing ? (
         <InlineRenameInput
           rename={rename}
@@ -36,7 +34,7 @@ export function ProcessNameBar({ process }: { process: AgenticProcess }) {
           type="button"
           onClick={() => rename.startEditing()}
           title={label}
-          className="min-w-0 flex-1 truncate text-left text-xs font-medium text-foreground/90 hover:text-foreground"
+          className="min-w-0 flex-1 truncate text-start text-xs font-medium text-foreground/90 hover:text-foreground"
           data-testid="vibe-process-name"
         >
           {label}

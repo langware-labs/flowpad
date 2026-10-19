@@ -34,6 +34,14 @@ ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_CODEX_HOME = "CODEX_HOME"
+# Copilot publishes no home env var of its own (unlike CLAUDE_CONFIG_DIR /
+# CODEX_HOME), so this is Flowpad's own override — used by test sandboxes and
+# isolated instances that must not read or write the real ``~/.copilot``.
+ENV_FLOWPAD_COPILOT_HOME = "FLOWPAD_COPILOT_HOME"
+# OpenCode resolves its data/config roots from the XDG base directories rather
+# than from an env var of its own, so these are what redirect it.
+ENV_XDG_DATA_HOME = "XDG_DATA_HOME"
+ENV_XDG_CONFIG_HOME = "XDG_CONFIG_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
 ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
@@ -48,7 +56,26 @@ ENV_FLOWPAD_DESKTOP = "FLOWPAD_DESKTOP"
 ENV_SOD_ENC_KEY = "SOD_ENC_KEY"
 
 DEFAULT_PROD_PORT = 9007
+#: The two audience doors a gated box publishes beside its own UI — fixed, so the hub
+#: can address them on any publishing provider without asking. Not 9008/9009: those
+#: are the dev and test instances' own ports on a desktop. Same numbers on the hub
+#: (``flowpad.config.AUDIENCE_PORTS``); a parity test pins them.
+AUDIENCE_PORTS: dict[str, int] = {"admin": 9017, "app": 9027}
+#: Per-instance override of a door's port, for several instances on one host (``LOCAL_SERVER_PORT``'s
+#: sibling): ``AUDIENCE_PORT_ADMIN`` / ``AUDIENCE_PORT_APP``. A box runs one instance and keeps the defaults.
+ENV_AUDIENCE_PORT = "AUDIENCE_PORT_{audience}"
 DEFAULT_DB_DRIVER = "sqlite"
+
+
+def audience_ports() -> dict[str, int]:
+    """The port each audience door listens on here: the fixed default, or this instance's override."""
+    ports = {}
+    for audience, default in AUDIENCE_PORTS.items():
+        env = os.environ.get(ENV_AUDIENCE_PORT.format(audience=audience.upper()))
+        ports[audience] = int(env) if env and env.isdigit() else default
+    return ports
+
+
 DEFAULT_MINIHUB_HOST = "0.0.0.0"
 
 
@@ -56,11 +83,13 @@ def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
     """Normalize a configured path without touching the filesystem."""
     return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
 
+
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
 COOKIE_GATE_MARKER_FILENAME = ".cookie_gate_armed"
+DESKTOP_MARKER_FILENAME = ".desktop_managed"
 SODOT_FILENAME = "sodot"
 
 # Sentinel for the per-instance memoized key/store fields, set on the frozen
@@ -69,6 +98,12 @@ SODOT_FILENAME = "sodot"
 # there is no separate module-level key cache — the keychain prompt fires at
 # most once per process, the first time a real secret is read or written.
 _UNSET = object()
+
+
+def _user_asset_home(instance_name: str) -> Path | None:
+    from flow_sdk.instances.paths import user_asset_home  # noqa: PLC0415
+
+    return user_asset_home(instance_name)
 
 
 class SecretsNotEnabledError(RuntimeError):
@@ -85,7 +120,7 @@ class BaseInstanceSettings:
     """Resolved per-instance config. Defaults are prod values."""
 
     # ---- Identity ----
-    instance_name: str           # "prod" | "dev" | "test"
+    instance_name: str  # "prod" | "dev" | "test"
     is_dev: bool
 
     # ---- Networking ----
@@ -93,6 +128,8 @@ class BaseInstanceSettings:
     server_json_path: Path
     server_pid_path: Path
     server_lock_path: Path
+    monitor_pid_path: Path
+    monitor_lock_path: Path
     server_log_path: Path
 
     # ---- Storage roots (per-instance) ----
@@ -108,7 +145,7 @@ class BaseInstanceSettings:
     # ---- Logs ----
     logs_dir: Path
     monitor_log_path: Path
-    inbox_last_fetch_path: Path
+    stream_inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
     transcript_cursors_path: Path
     worker_history_cache_path: Path
@@ -117,7 +154,7 @@ class BaseInstanceSettings:
     toplog_config_path: Path
 
     # ---- Database ----
-    db_driver: str               # "sqlite" | "neo4j" | "networkx"
+    db_driver: str  # "sqlite" | "neo4j" | "networkx"
 
     # ---- User-level (intentionally shared across instances unless overridden) ----
     user_home: Path
@@ -128,7 +165,11 @@ class BaseInstanceSettings:
     claude_commands_dir: Path
     claude_plans_dir: Path
     claude_workflows_dir: Path
-    claude_docs_dir: Path
+    # NOT a Claude Code directory — ``~/.claude/docs`` was flowpad's own
+    # invention. Markdown is ``AssetClass.DOCS``, so the user's docs live at
+    # ``<user_home>/docs``; kept in this dataclass (rather than derived) so the
+    # one owner of the path stays a setting.
+    user_docs_dir: Path
     claude_tasks_dir: Path
     claude_history_path: Path
     claude_mcp_json_path: Path
@@ -141,6 +182,18 @@ class BaseInstanceSettings:
     codex_config_path: Path
     codex_history_path: Path
     codex_session_index_path: Path
+
+    # Copilot (~/.copilot). User-level — shared across instances unless overridden.
+    copilot_home: Path
+    copilot_session_state_dir: Path
+    copilot_config_path: Path
+
+    # OpenCode. Unlike the other three it publishes no home env var of its own
+    # (``OPENCODE_DATA_DIR`` is not read — verified against 1.18.16); it resolves
+    # both roots from the XDG base directories, so those are what redirect it.
+    # Sessions live in a SQLite database, not a per-session file tree.
+    opencode_data_dir: Path
+    opencode_config_dir: Path
 
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
@@ -170,6 +223,11 @@ class BaseInstanceSettings:
     # Default off; flip to true to opt in. Frontend reads the resulting
     # bootstrap.sniffer_hook payload (null when disabled). ----
     sniffer_enabled: bool = False
+
+    # ---- Where this instance's USER-scope repo assets (``agentic-assets/<family>``)
+    # live. ``None`` means ``user_home`` — prod, and any settings a test builds
+    # around a temporary home. Read it through ``user_asset_root``. ----
+    user_asset_home: Path | None = None
 
     # ---- External-worker scan: opt-in gate for the (deferred) OS-cmdline
     # scanner that surfaces workers running outside the app in the footer's
@@ -207,7 +265,11 @@ class BaseInstanceSettings:
 
     @staticmethod
     def _build_from_env(
-        *, cls: type, instance_name: str, is_dev: bool, default_port: int,
+        *,
+        cls: type,
+        instance_name: str,
+        is_dev: bool,
+        default_port: int,
     ) -> "BaseInstanceSettings":
         """Shared from_env body — Phase F consolidation.
 
@@ -220,6 +282,7 @@ class BaseInstanceSettings:
         flow_home = cls._resolve_flow_home()
         claude_home = cls._resolve_claude_home()
         codex_home = cls._resolve_codex_home()
+        copilot_home = cls._resolve_copilot_home()
         instance_dir = flow_home / "instances" / instance_name
         records_root = cls._resolve_records_root_in(instance_dir)
         db_path = cls._resolve_db_path_in(instance_dir)
@@ -232,6 +295,8 @@ class BaseInstanceSettings:
             server_json_path=instance_dir / "server.json",
             server_pid_path=instance_dir / "server.pid",
             server_lock_path=instance_dir / "server.lock",
+            monitor_pid_path=instance_dir / "server.monitor.pid",
+            monitor_lock_path=instance_dir / "server.monitor.lock",
             # server_log_path is dead — launch.py writes timestamped files
             # under logs_dir/server/<ts>.log. Kept as a placeholder so the
             # field still exists for back-compat readers.
@@ -251,7 +316,7 @@ class BaseInstanceSettings:
             # monitor_log_path is also dead (see Phase B audit note); kept
             # as a placeholder under the canonical logs dir.
             monitor_log_path=instance_dir / "logs" / "monitor.log",
-            inbox_last_fetch_path=instance_dir / "inbox.json",
+            stream_inbox_last_fetch_path=instance_dir / "stream_inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
             transcript_cursors_path=instance_dir / "transcript_cursors.json",
             worker_history_cache_path=instance_dir / "worker_history_cache.sqlite",
@@ -267,7 +332,19 @@ class BaseInstanceSettings:
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            claude_docs_dir=claude_home / "docs",
+            # ``~/docs`` is prod's. Every other instance sharing the user's home
+            # (``oss``, ``dev-1``, an e2e ``test-*``) keeps its user docs in its own
+            # instance dir — a test that leaves a document behind otherwise leaves
+            # it in the user's real vault, where prod lists it as theirs (906 test
+            # files had piled up there by 2026-09-28). Same rule as ``workspace_root``.
+            user_docs_dir=(Path.home() / "docs") if instance_name == "prod" else instance_dir / "docs",
+            # ``~/agentic-assets`` is prod's, for the same reason as ``~/docs``: the
+            # hub tiers run on ``dev-1``/``dev-2`` and saved their user-scope specs,
+            # agents and prompts there, and every run that died before teardown
+            # left them for prod to list (188 by 2026-10-04, 67 of them unreadable).
+            # Not under the instance dir: nothing under ``flow_home`` is user
+            # content, so an asset there could never be deleted (``is_protected_path``).
+            user_asset_home=_user_asset_home(instance_name),
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
@@ -278,6 +355,11 @@ class BaseInstanceSettings:
             codex_config_path=codex_home / "config.toml",
             codex_history_path=codex_home / "history.jsonl",
             codex_session_index_path=codex_home / "session_index.jsonl",
+            copilot_home=copilot_home,
+            copilot_session_state_dir=copilot_home / "session-state",
+            copilot_config_path=copilot_home / "config.json",
+            opencode_data_dir=cls._resolve_opencode_data_dir(),
+            opencode_config_dir=cls._resolve_opencode_config_dir(),
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
@@ -339,6 +421,27 @@ class BaseInstanceSettings:
     def _resolve_codex_home() -> Path:
         env = os.environ.get(ENV_CODEX_HOME)
         return Path(env) if env else Path.home() / ".codex"
+
+    @staticmethod
+    def _resolve_copilot_home() -> Path:
+        env = os.environ.get(ENV_FLOWPAD_COPILOT_HOME)
+        return Path(env) if env else Path.home() / ".copilot"
+
+    @staticmethod
+    def _resolve_opencode_data_dir() -> Path:
+        """``$XDG_DATA_HOME/opencode``, else ``~/.local/share/opencode``.
+
+        This is the redirect opencode itself honours; there is no
+        ``OPENCODE_DATA_DIR``.
+        """
+        env = os.environ.get(ENV_XDG_DATA_HOME)
+        return (Path(env) if env else Path.home() / ".local" / "share") / "opencode"
+
+    @staticmethod
+    def _resolve_opencode_config_dir() -> Path:
+        """``$XDG_CONFIG_HOME/opencode``, else ``~/.config/opencode``."""
+        env = os.environ.get(ENV_XDG_CONFIG_HOME)
+        return (Path(env) if env else Path.home() / ".config") / "opencode"
 
     @staticmethod
     def _resolve_records_root(flow_home: Path, default_subdir: str) -> Path:
@@ -412,6 +515,29 @@ class BaseInstanceSettings:
     # spans instances, like the migration ledger.
 
     @property
+    def vendor_homes(self) -> dict[str, Path]:
+        """Each harness vendor's home directory, by vendor key — wherever it was redirected to.
+
+        A home's own name says nothing: ``CLAUDE_CONFIG_DIR`` may point anywhere. Whoever
+        asks which vendor a file belongs to asks here rather than reading a dot-dir off the path.
+        """
+        from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+        homes = ((v.key, getattr(self, f"{v.key}_home", None)) for v in VENDORS)
+        return {key: home for key, home in homes if home is not None}
+
+    @property
+    def ui_port(self) -> int:
+        """The port a BROWSER should be pointed at to reach this instance's UI.
+
+        Not the same as ``port`` whenever Vite is serving the frontend, which is
+        every dev instance — so any deep link built against ``port`` 404s there.
+        One owner for that rule: the notification redirect and ``flow record
+        url`` both read it here rather than each re-deriving the fallback.
+        """
+        return self.vite_port if self.vite_port is not None else self.port
+
+    @property
     def global_dir(self) -> Path:
         """``<flow_home>/global`` — cross-instance shared state."""
         return self.flow_home / "global"
@@ -441,6 +567,48 @@ class BaseInstanceSettings:
         return self.instances_root / self.instance_name
 
     @property
+    def user_asset_root(self) -> Path:
+        """The USER scope root for repo assets — ``<it>/agentic-assets/<family>``.
+        ``user_home`` for prod; another instance's own folder otherwise. Harness
+        dirs (``~/.claude/skills``) stay under ``user_home`` for every instance."""
+        return self.user_asset_home or self.user_home
+
+    @property
+    def workspace_root(self) -> Path:
+        """Where this instance's projects live — the agent mount ROOT.
+
+        ``~/Flowpad workspace`` is prod's. Any other instance sharing the user's
+        home (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>``,
+        so nothing it creates lands among the user's real projects. Not under the
+        instance dir: nothing under ``flow_home`` may be a project (``is_protected_path``).
+        """
+        if self.instance_name == "prod":
+            return self.user_home / "Flowpad workspace"
+        return self.user_home / "Flowpad workspaces" / self.instance_name
+
+    @property
+    def workspaces_home(self) -> Path:
+        """Where a NEW user-created workspace's folder goes by default — ``<it>/<name>``.
+
+        ``~/Flowpad`` is prod's. Any other instance gets a dot-dir under ``~/Flowpad
+        workspaces`` (the ``.home/<name>`` precedent of ``user_asset_home``): never inside
+        a workspace root, whose top-level folders are projects, and never ``~/Flowpad
+        workspaces/<name>``, which IS another instance's root.
+        """
+        if self.instance_name == "prod":
+            return self.user_home / "Flowpad"
+        return self.user_home / "Flowpad workspaces" / ".workspaces" / self.instance_name
+
+    @property
+    def deepagents_data_dir(self) -> Path:
+        """The Deep Agents worker's session store (one LangGraph checkpoint DB per session).
+
+        Ours, not a vendor's home — so it lives under ``instance_dir`` and is per-instance and
+        test-sandboxed by construction, with no redirect env var to invent.
+        """
+        return self.instance_dir / "deepagents"
+
+    @property
     def sodot_path(self) -> Path:
         """Encrypted secrets file under ``instance_dir``."""
         return self.instance_dir / SODOT_FILENAME
@@ -466,6 +634,28 @@ class BaseInstanceSettings:
         ``flow_sdk/instance_settings/cookie_gate.py``.
         """
         return self.instance_dir / COOKIE_GATE_MARKER_FILENAME
+
+    @property
+    def desktop_marker_path(self) -> Path:
+        """Desktop-managed marker. Presence ⇔ the Electron app owns this instance.
+
+        Written by the backend at startup when it sees ``FLOWPAD_DESKTOP=1``
+        (``server/startup.py::mark_desktop_managed``), which is set only by
+        ``electron/uv-manager.js``. It exists because that env var lives in the
+        backend process alone: ``flow`` CLI invocations are separate processes
+        and cannot see it, so without a persisted fact they cannot tell a
+        desktop install from a sandbox. ``cookie_gate.set_cookie_gate`` reads
+        this to refuse arming a gate that would lock the desktop app out of its
+        own health check.
+
+        Positive evidence rather than the absence of a hub runtime assignment:
+        a sandbox has no assignment either until ``/auth/login_callback`` lands,
+        so keying on "unassigned" would refuse legitimate arming on a box that
+        has not finished starting.
+
+        Holds no secret; the same stat()-only trick as the markers above.
+        """
+        return self.instance_dir / DESKTOP_MARKER_FILENAME
 
     @property
     def sod_key(self) -> bytes:
@@ -524,6 +714,7 @@ class BaseInstanceSettings:
         if cached is not _UNSET:
             return cached
         from flow_sdk.sod.file_sod import FileSodStorage
+
         store = FileSodStorage(key_provider=lambda: self.sod_key, file_path=self.sodot_path)
         object.__setattr__(self, "_sod_store_memo", store)
         return store
@@ -605,6 +796,7 @@ def _read_legacy_keyring_key(instance_name: str) -> str | None:
     unavailable. Kept local to avoid a circular import with the secrets layer."""
     try:
         import keyring
+
         return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     except Exception:  # noqa: BLE001
         return None

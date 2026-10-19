@@ -42,12 +42,39 @@ export interface EnvVarStatus {
   ref_type?: string;
   ref_name?: string;
   icon?: string;
+  /** OAUTH_PROVIDER_ID rows: which OAuth grant runs ('code' | 'loopback' | 'device'). */
+  oauth_kind?: string;
+  /** OAUTH_PROVIDER_ID rows: the scopes the flow requests, when published. */
+  oauth_scopes?: string[];
+  /** Explicit provider label; older servers encoded it in `description`. */
+  oauth_display_name?: string;
+  /** True only when the owning provider declares a live read-only verifier. */
+  oauth_verifiable?: boolean;
+  /** Version of the correlated wait/cancel + strict verification protocol. */
+  oauth_protocol?: number;
+  /** Epoch seconds the access token expires. The hub carries this from the user's
+   *  token row onto the provider row (`_carry_oauth_freshness`); absent means the
+   *  provider never said, which the hub treats as "never expires". */
+  expires_at?: number;
+  /** The hub tried to refresh and was permanently refused — the credential is
+   *  held but dead, and only a new grant fixes it. Deliberately separate from
+   *  `var_status`, which answers "do we hold it and may this project use it",
+   *  not "does it still work". */
+  needs_reauth?: boolean;
   sod_status?: EnvStatusEnum;
   var_status?: EnvStatusEnum;
 }
 
 export interface EntityEnvVars {
   values: EnvVarStatus[];
+}
+
+/** Provider label from the explicit protocol field, with the legacy description fallback. */
+export function oauthProviderDisplayName(
+  envVar: Pick<EnvVarStatus, 'name' | 'description' | 'oauth_display_name'>,
+): string {
+  if (envVar.oauth_display_name) return envVar.oauth_display_name;
+  return envVar.description?.match(/OAuth integration for (.+)/)?.[1] || envVar.name;
 }
 
 // ============================================================================

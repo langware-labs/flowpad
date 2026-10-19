@@ -244,7 +244,7 @@ login keychain is in any unusual state, macOS pops the **catastrophic**
 "Keychain Not Found" dialog (offers "Reset To Defaults" → wipes ALL
 stored passwords).
 
-**Fix**: `tests/conftest.py` registers a process-wide `_InMemoryKeyring`
+**Fix**: `tests/pytest_plugin.py` (loaded by the repo-root `conftest.py`) registers a process-wide `_InMemoryKeyring`
 backend at module top BEFORE any flow_sdk import. Also `enable_secrets()`
 short-circuits when the consent marker already exists, so it never
 re-hits the keychain after first consent. Both layers exist defensively;
@@ -312,7 +312,7 @@ real `flow record create` flow or a known-good API path.
 | `tests/migration_e2e/run.sh` | Host driver: preflight + wheel build + image build + container run. |
 | `tests/migration_e2e/browser_validate.py` | Phase 4 debugMCP checklist (not auto-run). |
 | `tests/migration_e2e/test_docker_migration.py` | Pytest wrapper, `DOCKER_E2E=1` opt-in. |
-| `tests/conftest.py` | Registers `_InMemoryKeyring` backend at module top — keeps the OS keychain dialogs from ever firing. |
+| `tests/pytest_plugin.py` | Registers `_InMemoryKeyring` backend at module top — keeps the OS keychain dialogs from ever firing. Loaded by the repo-root `conftest.py`. |
 
 ### Plans
 

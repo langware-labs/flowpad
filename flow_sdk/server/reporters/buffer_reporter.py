@@ -4,7 +4,8 @@ Buffer reporter - stores hook events in memory.
 
 import asyncio
 import threading
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+
 from .base import BaseReporter
 
 

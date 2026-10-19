@@ -6,41 +6,16 @@ import json
 import logging
 import os
 import platform
-
-from starlette.responses import RedirectResponse
+import sys
 
 from flow_sdk.builtin.faas.system_profile_types import SystemProfile
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk import config as flow_config
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 
 class DesktopActionsMixin:
-    def _desktop_get_host(self, port: int, redirect: bool = True):
-        """Get the host URL for a given port on this compute node.
-
-        Args:
-            port: The port number (must be between 1024 and 65535)
-            redirect: If True, returns a redirect response. If False, returns JSON with URL.
-
-        Returns:
-            RedirectResponse or ApiResponse with host URL
-        """
-        int_port = int(port)
-        if not 1024 <= int_port <= 65535:
-            return ApiFailResponse(message="Invalid port")
-
-        if not self.node_provider_id:
-            return ApiFailResponse(message="Compute node provider ID not set")
-
-        host = self.get_host(int_port)
-
-        if not redirect:
-            return ApiResponse(data={"url": host, "port": int_port})
-
-        return RedirectResponse(url=host)
-
     async def _desktop_get_machine_status(self) -> ApiResponse:
         """Get machine status (processes, network, CPU, memory) from this compute node.
 
@@ -122,7 +97,7 @@ class DesktopActionsMixin:
             else:
                 relative_path = expanded_path.lstrip("/\\")
                 candidate_paths = [
-                    os.path.join(AGENT_MOUNT_FOLDER, relative_path),
+                    os.path.join(str(flow_config.agent_workspace_root()), relative_path),
                     os.path.join(os.sep, relative_path),
                     os.path.abspath(expanded_path),
                 ]
@@ -232,6 +207,56 @@ class DesktopActionsMixin:
         except Exception as e:
             logging.exception(f"Failed to open terminal: {e}")
             return ApiFailResponse(message=str(e))
+
+    async def _desktop_worker_launch_commands(self) -> ApiResponse:
+        """The shell lines this machine would run to start each harness — and a
+        bare shell — interactively in ``cwd``.
+
+        POST body:
+            cwd: The working directory the commands should start in.
+
+        Returns:
+            ApiSuccessResponse with ``{"commands": [{"key", "command"}, ...]}``,
+            ``key`` being the vendor's ``worker_type`` (plus ``"shell"``).
+
+        Every line is DERIVED from the vendor's real ``AgentOptions``, so this
+        cannot drift from what the spawn path runs — which is the only reason
+        the caller (an "open it outside" debug affordance) is worth having. It
+        composes nothing itself: a vendor that changes a flag changes this.
+
+        A vendor whose options fail to build is OMITTED rather than failing the
+        request — one broken harness must not cost the user the other three.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import quote_shell_arg  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+            interactive_launch_command,
+        )
+        from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+
+        body = await request_info.get_post_data()
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Invalid request body (expected JSON object)")
+        cwd = body.get("cwd")
+        if not cwd or not isinstance(cwd, str):
+            return ApiFailResponse(message="cwd field is required")
+
+        commands: list[dict[str, str]] = []
+        for vendor in VENDORS:
+            if not vendor.interactive:
+                continue  # headless-only: there is no TUI to launch in a terminal
+            try:
+                commands.append({"key": vendor.worker_type, "command": interactive_launch_command(vendor.worker_type, cwd)})
+            except Exception:
+                logging.exception(f"Failed to build launch command for {vendor.worker_type}")
+        # The plain shell is not a vendor and has no options object: `cd` is the
+        # whole command. Quoted for THIS platform's shell, the same way every
+        # vendor line quotes its own workdir.
+        commands.append({"key": "shell", "command": f"cd {quote_shell_arg(cwd, sys.platform)}"})
+        return ApiSuccessResponse(data={"commands": commands})
 
     async def _desktop_pick_folder(self) -> ApiResponse:
         """Open a native OS folder-picker dialog and return the selected path.

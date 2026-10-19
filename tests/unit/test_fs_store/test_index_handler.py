@@ -10,45 +10,10 @@ from typing import Any
 
 import pytest
 
-from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
-from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.indexer import reset_shared_indexer
 from flow_sdk.fs_store.record_types import RecordType
-
-
-class FakeQueryParams:
-    def __init__(self, params: dict):
-        self._p = params
-
-    def get(self, key, default=""):
-        return self._p.get(key, default)
-
-
-class FakeRequest:
-    def __init__(self, params: dict):
-        self.query_params = FakeQueryParams(params)
-
-
-class FakeRequestInfo:
-    def __init__(self, params: dict):
-        self.request = FakeRequest(params)
-
-
-class _Handler(FsRecordsActionsMixin):
-    def __init__(self):
-        self.typeid = "test-compute-node"
-        self._activity: InProcessActivity | None = None
-
-    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        self._activity = InProcessActivity(
-            job_name=job_name, entity_id=self.typeid,
-            timeout_seconds=timeout_seconds,
-        )
-        return self._activity
-
-    def _complete_activity(self, job_name: str) -> None:
-        self._activity = None
+from tests.unit.test_fs_store._index_handler_fakes import FakeRequestInfo, _Handler
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +43,7 @@ async def clean_target_types():
     targets = [
         RecordType.CLAUDE_SESSION, RecordType.PROJECT, RecordType.PLAN,
         RecordType.MARKDOWN, RecordType.CLAUDE_MD, RecordType.CLAUDE_RULES,
-        RecordType.SKILL, RecordType.AGENT,
+        RecordType.SKILL, RecordType.SUBAGENT,
         RecordType.COMMAND, RecordType.CLAUDE_MEMORY, RecordType.SPEC,
         RecordType.CLAUDE_HOOK, RecordType.TASK,
     ]
@@ -95,9 +60,31 @@ async def clean_target_types():
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_handler_single_type_writes_to_db(
-    captured_progress, clean_target_types,
+    captured_progress, clean_target_types, tmp_path,
 ):
     """?type=claude_session → only CLAUDE_SESSION rows written."""
+    # Give discovery one real registered cwd, the way every real machine has
+    # them: a ~/.claude/projects/<encoded>/ dir whose session JSONL carries the
+    # authoritative `cwd`. Without this the sandbox registry is empty, nothing
+    # is discoverable, and the scope phase has no work — which is why the
+    # side-effect assertion below cannot fire on an empty sandbox.
+    import json as _json
+    import pathlib
+
+    from flow_sdk.instance_settings import get_instance_settings
+
+    # NOT tmp_path: pytest's tmp_path lives under /var/folders, which
+    # `is_valid_project_cwd` correctly rejects as a temp path, so a tmp cwd is
+    # never discoverable. Use the repo checkout — a real, non-temp directory
+    # that exists. Nothing is written to it; only its path is registered.
+    known_cwd = pathlib.Path(__file__).resolve().parents[3]
+    projects_dir = get_instance_settings().claude_projects_dir
+    entry = projects_dir / "-known-cwd"
+    entry.mkdir(parents=True, exist_ok=True)
+    (entry / "session.jsonl").write_text(
+        _json.dumps({"cwd": str(known_cwd)}) + "\n", encoding="utf-8"
+    )
+
     h = _Handler()
     resp = await h._handle_fs_records_index(
         FakeRequestInfo({"type": str(RecordType.CLAUDE_SESSION)})
@@ -117,6 +104,20 @@ async def test_index_handler_single_type_writes_to_db(
     # >= count (UPSERTs on branched sessionIds keep indexed ahead of count).
     assert resp.data["indexed"] >= count, (
         f"indexed ({resp.data['indexed']}) must be >= count ({count})"
+    )
+
+    # An index of ONE type must not mint projects as a side effect.
+    # `_handle_fs_records_index` resolves its scope via
+    # `get_all_scope_filter(create_missing=True)` BEFORE it takes the index
+    # single-flight guard, so every discovered cwd without a row is
+    # materialized (project + its wiki child) on what is a read path.
+    # Measured on the endpoint: 38.854s in that phase on a cold DB vs 1.4s
+    # warm, while the index job itself is 2.4s — and a second request that
+    # arrives during it gets `409 Job 'index' already running`.
+    projects = await clean_target_types.count_entities_by_type(str(RecordType.PROJECT))
+    assert projects == 0, (
+        f"indexing ?type=claude_session minted {projects} project rows; "
+        "scope resolution must not create entities on the index read path"
     )
 
 
@@ -169,6 +170,11 @@ async def test_direct_file_skips_global_scope_and_preserves_known_project(
 
     assert isinstance(resp, ApiSuccessResponse)
     entity_id = resp.data["typeid"].removeprefix("markdown-")
+    # This branch parses and syncs the file, so it must report a real duration.
+    # The expected payload below used to pin `duration_ms: 0.0`, locking in a
+    # hardcoded placeholder — a single-file index advertised itself as free.
+    direct_ms = resp.data["types"][0]["duration_ms"]
+    assert direct_ms > 0.0, f"direct-file index reported duration_ms={direct_ms}"
     assert resp.data == {
         "type": "markdown",
         "indexed": 1,
@@ -184,7 +190,7 @@ async def test_direct_file_skips_global_scope_and_preserves_known_project(
             "new": 1,
             "skipped": 0,
             "errors": 0,
-            "duration_ms": 0.0,
+            "duration_ms": direct_ms,
             "orphans_found": 0,
             "orphans_db_removed": 0,
             "orphans_disk_removed": 0,
@@ -281,3 +287,113 @@ async def test_index_handler_emits_table_snapshots(
     final = snapshots[-1]
     assert final["text"] == "complete"
     assert final["current"] is None
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_index_status_reports_a_type_with_pending_changes_as_stale(
+    clean_target_types, tmp_path,
+):
+    """`stale` must mean "changes pending next index" — the endpoint's own contract.
+
+    Regression: `index_log.get_index_status` hardcodes `stale=False` on
+    every per-type row (schema_registry.py:1279) and on the unscoped rollup
+    (:1301), so the freshness signal is a constant. Only the single-project
+    branch (:1292) computes it, from the project record's `index_required`.
+    Measured on a live backend: `stale: False` for all 33 types while a full
+    index was re-parsing 5,428 records every run, and `total_orphans: 0` while
+    a scan of the same instance reported 778 orphans.
+    """
+    import os
+    import time as _time
+
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
+    from flow_sdk.fs_store.indexer.walkers.generic import walker_for
+
+    root = tmp_path / "proj"
+    (root / "docs").mkdir(parents=True)
+    doc = root / "docs" / "a.md"
+    doc.write_text("# a\n", encoding="utf-8")
+
+    idx = FSIndexer()
+    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
+    r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    assert r1.per_type[RecordType.MARKDOWN].indexed == 1
+
+    # Make it GENUINELY stale — real edit, real mtime bump.
+    new_ts = _time.time() + 2
+    doc.write_text("# a changed\n", encoding="utf-8")
+    os.utime(doc, (new_ts, new_ts))
+
+    # Ground truth (precondition, not the assertion): the REAL row id, read
+    # back from the DB, must report index_required — i.e. changes are pending.
+    rows = await clean_target_types.list_entity_sources_by_type(str(RecordType.MARKDOWN))
+    assert len(rows) == 1, f"expected exactly one markdown row, got {len(rows)}"
+    row_id = next(iter(rows))
+    probe = FSRecord(type=str(RecordType.MARKDOWN), id=row_id, asset_ref=FSRef(doc))
+    assert probe.index_required is True, (
+        "precondition: the edited file must read as index_required"
+    )
+
+    h = _Handler()
+    resp = await h._handle_fs_records_index_status(FakeRequestInfo({}))
+    from flow_sdk.responses.response import ApiSuccessResponse
+    assert isinstance(resp, ApiSuccessResponse)
+    row = next(t for t in resp.data["per_type"] if t["type_name"] == str(RecordType.MARKDOWN))
+    assert row["stale"] is True, (
+        f"markdown has an edited, un-reindexed file but index-status reports "
+        f"stale={row['stale']} — the freshness signal is hardcoded"
+    )
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("type_name", "layout"),
+    [
+        ("agent", {"agent.json": '{"title": "Probe"}', "system_prompt.md": "You probe.\n"}),
+        ("skill", {"SKILL.md": "---\nname: probe-skill\ndescription: Probes folder indexing of a skill asset.\n---\nbody\n"}),
+    ],
+)
+async def test_a_folder_asset_indexes_when_its_own_folder_is_named(
+    clean_target_types, tmp_path, type_name, layout,
+):
+    """`flow record index <asset folder> --types <t>` must index THAT asset. The
+    direct branch used to run for files only, so a folder path fell through to the
+    subtree walk, which looks inside the folder and never at the folder itself —
+    `ok: true, indexed: 0, typeid: null` for every agent and skill named by folder."""
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    family = {"agent": "agentic-assets/agent", "skill": ".claude/skills"}[type_name]
+    folder = tmp_path / family / "probe"
+    folder.mkdir(parents=True)
+    for name, body in layout.items():
+        (folder / name).write_text(body, encoding="utf-8")
+
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": type_name, "path": str(folder)}))
+
+    assert isinstance(resp, ApiSuccessResponse)
+    assert resp.data["indexed"] == 1, resp.data
+    assert resp.data["typeid"].startswith(f"{type_name}-"), resp.data
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_a_plain_folder_is_still_walked_for_the_assets_inside(clean_target_types, tmp_path):
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    # A ``docs`` folder: project markdown is only indexed inside a doc folder.
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "inside.md").write_text("# inside\n", encoding="utf-8")
+
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": "markdown", "path": str(tmp_path / "docs")}))
+
+    assert isinstance(resp, ApiSuccessResponse)
+    # The walk answers the single-type shape: `indexed`, and no one TypeId.
+    assert resp.data["indexed"] >= 1 and resp.data["typeid"] is None, resp.data

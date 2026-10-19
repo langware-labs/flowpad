@@ -1,18 +1,18 @@
 import { type AssetDescriptor } from '@sdk';
-import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
-import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
+import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
+import { displayLabelForDescriptor, parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
-import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
+import { favoriteTargetForDock } from '@src/components/favorites/favorite-target';
 import { useLingui } from '@lingui/react/macro';
 import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 /**
- * The "add here" row rendered as the last child of every level of the bookmarks
- * tree menu — so you build the tree while browsing it. Everything it creates
+ * The "add here" row that leads each level of the bookmarks tree menu that can
+ * take a row — so you build the tree while browsing it. Everything it creates
  * files into `parentId` ('' = root), the level it sits under.
  *
  * Leads with a green "+" marker (not a button) so the row reads as a create
@@ -21,12 +21,18 @@ import { useState, type ReactNode } from 'react';
  *    refuses folders). Named INLINE, not in a modal — the menu is a fast
  *    surface; a full dialog is too heavy for a one-word name.
  *  - Asset — any registered asset, via the same picker used elsewhere. Files
- *    that are assets (markdown, whiteboards, decks…) are reachable here.
+ *    that are assets (markdown, charts, decks…) are reachable here.
  *  - Current — bookmarks whatever is open: an entity-backed view by its typeid,
  *    anything else (web app, shell, lens) by its dock pointer (restored with
  *    openDock). Only disabled on a full-bleed surface (Home) with no tab.
+ *
+ * `mirrored` must match the hosting tree's: BrowseableTree puts a mirrored
+ * level's indent on the TRAILING edge, so a row whose own content is still
+ * laid out leading-first ignores it and draws at the same x on every level —
+ * which is how three nested add-rows once read as three identical mystery
+ * rows. Reversing the axis here is what makes the indent visible.
  */
-export function FavoritesAddRow({ parentId }: { parentId: string }) {
+export function FavoritesAddRow({ parentId, mirrored }: { parentId: string; mirrored?: boolean }) {
   const { t } = useLingui();
   const { createFolder, addFavorite } = useFavorites();
   const { activeEntity, activeEntityTypeId } = useContext();
@@ -47,50 +53,39 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
       {
         entityType: type,
         entityId: id,
-        title: displayLabelForTypeid(d.typeid),
+        title: displayLabelForDescriptor(d),
         nav: d.posix_path ? { asset_ref: d.posix_path } : undefined,
       },
       parentId,
     );
   };
 
-  // "Bookmark what's open" works for ANY open view. An entity-backed dock
-  // (editor, task, project, session) bookmarks that entity, so it navigates back
-  // relocation-proof via its typeid. Anything else (a web app, a shell, a lens)
-  // bookmarks the DOCK itself — the whole pointer, restored by openDock. Only a
-  // full-bleed surface like Home has no tab identity, so nothing to bookmark.
+  // "Bookmark what's open" — the entity-vs-dock rule lives in
+  // `favoriteTargetForDock` so this row and the navigation bar's star can't
+  // disagree about what a given screen bookmarks AS. Resolved at click time, not
+  // subscribed, so a tab change doesn't re-render the whole menu.
+  const currentTarget = () =>
+    favoriteTargetForDock(
+      currentDock,
+      activeEntityTypeId && activeEntity ? { typeId: activeEntityTypeId, entity: activeEntity } : null,
+      t`Bookmarked view`,
+    );
   const hasCurrent = !!(activeEntityTypeId && activeEntity) || (!activeEntity && !!currentDock);
   const addCurrent = () => {
-    if (activeEntityTypeId && activeEntity) {
-      void addFavorite(
-        { entityType: activeEntityTypeId.type, entityId: activeEntityTypeId.id, title: activeEntity.displayName },
-        parentId,
-      );
-      return;
-    }
-    if (!activeEntity && currentDock) {
-      const dockPointer = currentDock.toJSON();
-      // Snapshot, not the useAllTabs hook: the title is only needed at click
-      // time, and subscribing would re-render this row on every tab change.
-      const tab = getAllTabsSnapshot().find((t) => t.getKey() === currentDock.tabHash);
-      void addFavorite(
-        {
-          entityType: 'dock',
-          entityId: currentDock.tabHash ?? dockPointer,
-          title: tab?.name || t`Bookmarked view`,
-          nav: { pointer: dockPointer },
-        },
-        parentId,
-      );
-    }
+    const ref = currentTarget();
+    if (ref) void addFavorite(ref, parentId);
   };
 
   return (
-    <div className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground">
+    <div
+      className={`flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground ${
+        mirrored ? 'flex-row-reverse' : ''
+      }`}
+    >
       {/* A green "+" marks the row as a create toolbar. Not a button — no
           hover, default cursor. `text-green-500` is the app's cross-theme green
           (reads on both light and dark). */}
-      <Plus className="mr-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
+      <Plus className="mx-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
 
       {folderName !== null ? (
         <input
@@ -116,23 +111,25 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
         />
       ) : (
         <>
-          <AddButton icon={<FolderPlus className="h-3.5 w-3.5" />} label={t`New folder`} onClick={() => setFolderName('')} />
+          <AddButton
+            icon={<FolderPlus className="h-3.5 w-3.5" />}
+            label={t`New folder`}
+            onClick={() => setFolderName('')}
+          />
 
           {/* The visible button is standalone; the picker opens as a centered
-              modal from the controlled `open` state. In centered mode its own
-              `trigger` is discarded, so it gets an incidental hidden one. */}
+              modal from the controlled `open` state — which is also what lets it
+              escape the enclosing bookmarks-tree menu. */}
           <AddButton
             icon={<PackagePlus className="h-3.5 w-3.5" />}
             label={t`Bookmark an asset`}
             onClick={() => setPickerOpen(true)}
           />
-          <AssetPickerPopover
-            trigger={<span className="sr-only" aria-hidden />}
+          <AssetManagerPopover
             centered
             open={pickerOpen}
             onOpenChange={setPickerOpen}
             onPick={addAsset}
-            filter={() => true}
             searchPlaceholder={t`Search assets…`}
           />
 

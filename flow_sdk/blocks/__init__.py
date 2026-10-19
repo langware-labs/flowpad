@@ -1,0 +1,642 @@
+"""flow_sdk.blocks — the plain-Python workflow surface.
+
+No engine, no hidden graph, no operators: blocks are ordinary classes, the
+script's own ``async for`` loop is the orchestration, and every value that
+moves between blocks is a DataSpec. A ``MessageBlock`` request is an ephemeral
+DataSpec whose source-owned correlation completes its sender. The rule
+throughout: **the SDK introduces vocabulary, never rows** — entity-backed
+blocks are views over entities that already exist (``DataSource``, ``Agent``,
+``AgenticProcess``, the ingest and projection machinery), while
+``MessageBlock`` owns only a transient queue. Nothing here persists state of
+its own.
+
+The canonical program::
+
+    async with workflow("mail-concierge"):
+        stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
+        agent        = await Agent.by_name("email-summarizer")
+
+        async with agent.process_messages():
+            async for m in stream_inbox.listen():         # m: Delivered[SourceItemSpec]
+                out   = await agent.process_message(m)    # out: PromptResult
+                await m.reply(out.text)                   # send → record → ack
+
+Verbs live on their owners (``listen``, ``process_message``, ``send``);
+control flow — allow lists, branches, errors, prints — is never configuration,
+it is the Python between the calls.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import contextvars
+import logging
+from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, AsyncIterator, Callable, Sequence
+
+from flow_sdk.builtin.source_item import EmailMessageSpec, MessageSpec, SlackMessageSpec, TelegramMessageSpec
+from flow_sdk.schema.data_spec.dataset_spec import FileRef
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
+
+from .arrivals import arrivals, until
+from .delivery import Delivered, DeliveredPage
+from .folder_changes import FolderChange, FolderChanges
+from .merge import listen, pages
+from .message_block import MessageBlock, MessageRequest, _MessageRequestExpired
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.agent_registry import AgentRef
+
+__all__ = [
+    "Delivered",
+    "DeliveredPage",
+    "EmailMessageSpec",
+    "FolderChange",
+    "FolderChanges",
+    "FileRef",
+    "MessageSpec",
+    "MessageRequest",
+    "MessageBlock",
+    "StreamInbox",
+    "PromptResult",
+    "listen",
+    "pages",
+    "SlackMessageSpec",
+    "TelegramMessageSpec",
+    "workflow",
+]
+
+logger = logging.getLogger(__name__)
+
+_AgentInput = SourceItemSpec | MessageRequest
+
+_active_agent_runners: contextvars.ContextVar[dict[str, "_AgentRunner"] | None] = contextvars.ContextVar(
+    "active_agent_runners", default=None
+)
+
+#: The active workflow name — a grouping stamp for observability, nothing more.
+#: v1 carries it so spawned processes can be attributed; no engine reads it.
+current_workflow: contextvars.ContextVar[str] = contextvars.ContextVar("current_workflow", default="")
+
+
+@contextlib.asynccontextmanager
+async def workflow(name: str):
+    """Name the work happening inside — a stamp, not an engine.
+
+    Everything a block does in this scope carries the name (process
+    ``context_data``), so the observed activity can be grouped and rendered.
+    The script remains the source of truth; exiting changes nothing.
+    """
+    token = current_workflow.set(name)
+    try:
+        yield
+    finally:
+        current_workflow.reset(token)
+
+
+class SessionsExhausted(RuntimeError):
+    """Every session slot of a runner is taken — ``max_processes`` is reached.
+
+    Raised by the spawn primitive; ``_AgentRunner.run`` answers it as ``busy``:
+    nothing ran, and a slot frees when a session closes.
+    """
+
+
+class _AgentRunner:
+    """Runs an ``Agent``, one ``AgenticProcess`` per session.
+
+    ``agent`` is the REAL ``Agent`` entity (``flow_sdk/builtin/agent.py``) or
+    anything the registry resolves to one — a name or a TypeId. No SDK-side
+    wrapper: the entity that answers *who* already exists, and resolution is
+    lazy (``get_agent_local_deployment`` raises ``LookupError`` loudly for an
+    unknown agent at first spawn — a constructor cannot await).
+
+    ``session_key`` maps an inbound spec to a session identity: the SAME key
+    routes to the SAME process (the conversation continues with its context),
+    a new key spawns a fresh one from the agent. The default keys by
+    provider thread — "each email thread is its own session".
+
+    Plain class, no persistence: ``processes`` is an ordinary dict you can
+    inspect; the processes themselves are the entities the rest of the system
+    already knows.
+    """
+
+    def __init__(
+        self,
+        agent: "AgentRef",
+        session_key: Callable[[_AgentInput], str] = lambda m: str(m.thread_key or m.external_id),
+        max_processes: int = 4,
+    ):
+        if not agent or (isinstance(agent, str) and not agent.strip()):
+            raise ValueError("agent message processing needs an agent (entity, name, or id)")
+        self.agent = agent
+        self.session_key = session_key
+        self.max_processes = int(max_processes)
+        self.processes: dict[str, object] = {}
+        self.closed = False
+        self._spawn_lock = asyncio.Lock()
+
+    def _ensure_open(self) -> None:
+        if self.closed:
+            raise RuntimeError("agent message processing scope is closed")
+
+    async def process_for(self, m: _AgentInput):
+        """The session's process — reused on a key hit, spawned on a miss.
+
+        The spawn goes through the agent's ``Deployment`` (the one sanctioned
+        spawner from a persona) so worker, model, permission mode and
+        subagents are the ones the ``agent.json`` declares — never hand-rolled.
+        """
+        self._ensure_open()
+        key = str(self.session_key(m))
+        async with self._spawn_lock:
+            return await self._find_or_spawn(key)
+
+    async def _find_or_spawn(self, key: str):
+        """Admit one spawn at a time so key reuse and the cap stay atomic."""
+        self._ensure_open()
+        existing = self.processes.get(key)
+        if existing is not None:
+            return existing
+        if len(self.processes) >= self.max_processes:
+            raise SessionsExhausted(
+                f"max_processes={self.max_processes} live sessions reached; key {key!r} would exceed the budget"
+            )
+        from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
+
+        deployment = await get_agent_local_deployment(self.agent)
+        self._ensure_open()
+        options: dict = {"visible": False}
+        wf = current_workflow.get()
+        if wf:
+            options["context_data"] = {"workflow": wf, "session_key": key}
+        ap = await deployment.create_process("", **options)
+        await self._discard_if_closed(ap)
+        await ap.save()
+        await self._discard_if_closed(ap)
+        self.processes[key] = ap
+        return ap
+
+    async def run(self, m: _AgentInput) -> PromptResult:
+        """One turn: route by session, prompt with the message body, and answer
+        with a ``PromptResult`` — ``text`` the reply, ``value`` that reply read as
+        the persona's declared shape, ``executor`` the process. Never raises for
+        an outcome: a prompt the process refuses is ``NOT_YET`` with ``ran=False``.
+
+        **Safe to call twice with the same message.** The turn runs through the
+        agent's one turn engine (``builtin/agent_serve``), which records it on the
+        process before the prompt and its text after — a redelivery is answered
+        from the record, never by a second turn.
+        """
+        from flow_sdk.builtin.agent_serve import (  # noqa: PLC0415
+            Turn,
+            TurnEngine,
+            outbox_files,
+            reply_outbox,
+            turn_body,
+            turn_key,
+        )
+        from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
+
+        try:
+            ap = await self.process_for(m)
+        except SessionsExhausted as full:
+            # Every session slot is taken: busy, and it frees when one closes.
+            return PromptResult.held(str(full))
+        except AgentUnavailable as gone:
+            return gone.answer()
+        executor = str(ap.typeid)
+        # A channel message: the agent reads its quote and files, and saves files to answer with in
+        # its outbox — ``files`` on the answer, absolute paths, ready for ``reply_spec(files=…)``.
+        outbox = None
+        if callable(getattr(m, "_source", None)):
+            outbox = reply_outbox(await m._source(), turn_key(m))
+        body = turn_body(m, outbox=outbox) if outbox is not None else (m.body or m.name or "")
+        turn = Turn(session=str(ap.typeid), key=turn_key(m), body=body or m.name or "")
+        outcome = await TurnEngine(self.agent, None).run(turn, process=ap)
+        if not outcome.ok:
+            # Not taken, busy, errored or out of time — the engine's own answer,
+            # with ``busy``, ``timed_out`` and ``executor`` intact.
+            return outcome
+        files = outbox_files(outbox)
+        return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran, "files": files})
+
+    def _output(self, text: str, executor: str) -> PromptResult:
+        """The turn's reply as a value, held to the persona's declared shape.
+
+        The one value-bearing return goes through here, and ``TurnEngine``
+        answers the same way whether the turn was live or replayed from a
+        record — so the two produce the same shape, not merely the same text. A
+        turn that was not answered returns before this: it has no reply to shape.
+        """
+        from flow_sdk.core.compute.declared_value import (  # noqa: PLC0415
+            DeclaredShapeError,
+            to_declared,
+            value_from_reply,
+        )
+
+        shape = getattr(self.agent, "output", None)
+        if shape is None:
+            return PromptResult.satisfied("The agent replied.", text=text, executor=executor)
+        try:
+            value = to_declared(value_from_reply(text), shape)
+        except DeclaredShapeError as error:
+            # The turn happened; the reply is kept so a person can still read it.
+            name = getattr(self.agent, "name", None) or "agent"
+            return PromptResult.not_yet(
+                f"{name}: the reply does not match this agent's declared output — {error}",
+                text=text, executor=executor,
+            )
+        return PromptResult.satisfied("The agent replied.", value=value, text=text, executor=executor)
+
+    @staticmethod
+    async def _exit_process(ap) -> None:
+        """Exit one process without letting teardown mask the caller."""
+        try:
+            await ap.exit()
+        except Exception:  # noqa: BLE001 — teardown must not mask the run
+            logger.debug("blocks: process exit failed", exc_info=True)
+
+    async def _discard_if_closed(self, ap) -> None:
+        if self.closed:
+            await self._exit_process(ap)
+            self._ensure_open()
+
+    async def close(self) -> None:
+        """Exit every live session. Best-effort; safe to call twice."""
+        self.closed = True
+        for ap in list(self.processes.values()):
+            await self._exit_process(ap)
+        self.processes.clear()
+
+
+def _agent_runner_key(agent: "AgentRef") -> str:
+    return str(getattr(agent, "id", agent))
+
+
+@contextlib.asynccontextmanager
+async def _process_messages(agent: "AgentRef"):
+    """Scope one private runner so repeated messages preserve their sessions."""
+    key = _agent_runner_key(agent)
+    active = _active_agent_runners.get() or {}
+    if key in active:
+        raise RuntimeError("this agent is already processing messages in the current context")
+
+    runner = _AgentRunner(agent)
+    token = _active_agent_runners.set({**active, key: runner})
+    try:
+        yield
+    finally:
+        try:
+            await runner.close()
+        finally:
+            _active_agent_runners.reset(token)
+
+
+async def _process_message(agent: "AgentRef", message: _AgentInput) -> PromptResult:
+    """Run one message, reusing the active scope or closing a one-shot runner."""
+    runner = (_active_agent_runners.get() or {}).get(_agent_runner_key(agent))
+    if runner is not None:
+        return await runner.run(message)
+    runner = _AgentRunner(agent)
+    try:
+        return await runner.run(message)
+    finally:
+        await runner.close()
+
+
+@contextlib.asynccontextmanager
+async def _respond_to(agent: "AgentRef", source: MessageBlock):
+    """Run ``agent`` behind ``source`` for the lifetime of this scope."""
+    async with _process_messages(agent):
+        async with source.listen() as messages:
+
+            async def serve() -> None:
+                try:
+                    async for message in messages:
+                        answer = await _process_message(agent, message)
+                        if not answer.ok or not answer.text:
+                            # Not taken, errored or out of time: nothing to say.
+                            # Replying `answer.text` anyway sent an empty message.
+                            logger.info("agent: no reply to a message (%s)", answer.detail)
+                            continue
+                        try:
+                            await message.reply(answer.text)
+                        except _MessageRequestExpired:
+                            continue
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    source._fail(exc)
+                    raise
+
+            task = asyncio.create_task(serve())
+            body_failed = False
+            try:
+                yield source
+            except BaseException:
+                body_failed = True
+                raise
+            finally:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    if not body_failed:
+                        raise
+
+
+def _cadence(poll_every, driver) -> float:
+    """Seconds between cycles: the caller's ask, else the driver's attention cadence, else 3."""
+    if isinstance(poll_every, timedelta):
+        return max(0.0, poll_every.total_seconds())
+    if poll_every is not None:
+        return max(0.0, float(poll_every))
+    declared = getattr(driver, "attention_poll_seconds", None) if driver is not None else None
+    return float(declared) if declared else 3.0
+
+
+class StreamInbox:
+    """One watched mailbox: the conversation surface of a message source.
+
+    A view over the existing pair — the ``DataSource`` that watches the
+    address (connected or reused here) and the projection that turns its
+    items into conversations. No third "stream inbox" thing is created.
+    """
+
+    def __init__(
+        self,
+        address: str,
+        *,
+        api_key: str = "",
+        provider: str = "agentmail",
+        senders: Sequence[str] = (),
+        owner=None,
+        **config,
+    ):
+        """``address`` is the mailbox/handle the block is ABOUT (an email
+        address, a bot's @username); the provider decides what identifies the
+        source (the driver's ``identity_config_key``). Provider-specific
+        config passes as keywords. A keyword the driver's ``auth`` names as a
+        secret (``api_key=...``, ``bot_token=...``) is saved to the current
+        project's secret store under its variable name — never into the
+        source's config, which is a file a project may share.
+
+        ``owner`` says whose stream inbox this is — a user or Agent ``TypeId``, or an
+        ``Agent`` entity. Omitted, the block is the local user's. ``agent_id=``
+        in the config keeps working as the compatibility alias: it is the
+        cloud mailbox driver's identity key and implies ``owner`` when none is
+        given."""
+        self.address = str(address).strip()
+        self.provider = provider
+        self.senders = {s.strip().lower() for s in senders if s.strip()}
+        self._config = {k: v for k, v in config.items() if v is not None}
+        if api_key:
+            self._config["api_key"] = api_key
+        self._owner_arg = owner
+        self._source = None
+
+    @classmethod
+    def of(cls, source) -> "StreamInbox":
+        """The block over a source that already exists — no adoption step, no connection check.
+
+        What a runtime that already holds its rows uses (an agent's serve loop): the
+        account was connected when the source was made, and looking it up again by
+        address would only find the same row.
+        """
+        block = cls("", provider=source.provider, owner=source.owner)
+        block._source = source
+        return block
+
+    def _owner(self):
+        """The ``TypeId`` this block's source belongs to, or None for the local
+        user (the DataSource stamps that itself on save)."""
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        given = self._owner_arg
+        if given is not None:
+            if isinstance(given, TypeId):
+                return given
+            typeid = getattr(given, "typeid", None)
+            return typeid if isinstance(typeid, TypeId) else TypeId(str(given))
+        agent_id = str(self._config.get("agent_id") or "").strip()
+        return TypeId(type=EntityType.AGENT.value, id=agent_id) if agent_id else None
+
+    def _identity(self) -> tuple[str, str]:
+        """(config key, value) that names WHICH account this block watches —
+        the driver owns the key; the value is the address unless the config
+        already carries that key (a telegram bot's identity is its token)."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        driver = DataDriver.loaded(self.provider)
+        key = getattr(driver, "identity_config_key", "address") if driver else "address"
+        if not key:  # the driver names its account itself (a bot's getMe), not a config field
+            return "", self.address
+        return key, str(self._config.get(key) or self.address).strip()
+
+    async def ensure_source(self):
+        """The ``DataSource`` behind this block — adopted if one already watches
+        the address, else created — ``DataSource.save`` adopts the same way, and
+        this adds the connection check before any row exists.
+        """
+        if self._source is not None:
+            return self._source
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.connections import require  # noqa: PLC0415
+
+        # A provider that reads with a machine-level connection (Slack, Drive)
+        # is checked HERE, before any row exists: ``NotConnected`` names the
+        # fix, whereas a source created without it parks on its first poll.
+        driver = DataDriver.loaded(self.provider)
+        if driver is not None and driver.connection:
+            await require(driver.connection)
+
+        key, value = self._identity()
+        owner = self._owner()
+        config = await self._store_secrets(driver)
+        existing = await DataSource.find_for_account(self.provider, key, value, owner=owner)
+        if existing is not None:
+            self._source = existing
+            return existing
+        # The name is the asset folder, and the user and an agent may each watch one account.
+        whose = getattr(self._owner_arg, "name", "") or (owner.id[:8] if owner is not None else "")
+        source = DataSource(
+            name=f"{self.provider} {self.address} for {whose}" if whose else f"{self.provider} {self.address}",
+            provider=self.provider,
+            config={key: value, **config} if key else config,
+            account_key="" if key else value,
+            owner=owner,
+        )
+        await source.save()
+        self._source = source
+        return source
+
+    async def _store_secrets(self, driver) -> dict:
+        """The keyword config minus the secrets the driver's ``auth`` names; those are saved to the
+        default secret store (the current project's) under the name the resolver reads them by."""
+        auth = getattr(getattr(driver, "manifest", None), "auth", None)
+        if auth is None:
+            return dict(self._config)
+        names = {**{k: k for k in auth.secrets}, **auth.vars}
+        secrets = {names[k]: v for k, v in self._config.items() if k in names and v}
+        if secrets:
+            from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+            await (await SecretStore.get()).save(secrets)
+        return {k: v for k, v in self._config.items() if k not in names}
+
+    async def pages(
+        self,
+        *,
+        size: int = 50,
+        poll_every: "float | timedelta | None" = None,
+        poll: bool = True,
+    ) -> AsyncIterator["DeliveredPage"]:
+        """Async-iterate inbound messages as they arrive, ``size`` at a time, each page with an
+        ``ack()`` that commits it whole.
+
+        ``poll=False`` drains only: the loop never asks the provider, it reads what the
+        app's own ingest lands (the heartbeat, a push, the attention lane) — woken by
+        each arrival, the cadence only a DB re-read. That is the app's agent serve loop:
+        a consumer, not a poller; it says it is waiting through ``note_attention``.
+
+        THE drain — ``listen()`` is this, flattened. Each cycle polls the source through the
+        poller's slot (a poll already in flight is skipped, not stacked), then drains what landed
+        in INGEST order from the consumer's position, a page of rows at a time. The position is
+        durable inside a named ``workflow()`` — a restart resumes from the last ``ack()`` and hands
+        back anything that was in flight with ``redelivered=True``. Outside a workflow it lives
+        for the loop.
+
+        Items already present when a position is first created are the baseline: a stream inbox
+        yields arrivals, not history. Our own sent copies and senders outside ``senders`` are
+        dropped from the page — and still covered by its ack, so a filtered row never becomes a
+        gap the next drain stops at. A page with nothing left is acked and skipped.
+
+        ``poll_every`` defaults to the driver's attention cadence when it declares one, else
+        3 s. The row's own ``poll_interval_seconds`` still governs the heartbeat; this is the
+        rate of THIS loop — and only its fallback: an item pushed into the source (a webhook, a
+        hub mirror) wakes the next cycle at once.
+        """
+        from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.ingest.models import IngestMode  # noqa: PLC0415
+        from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
+        from flow_sdk.stream_inbox.stream_inbox_on_tag import emit_message_status  # noqa: PLC0415
+
+        source = await self.ensure_source()
+        position = await ConsumerPosition.ensure_for(
+            current_workflow.get(), str(source.id), baseline=await SourceItem.newest_for(str(source.id))
+        )
+        cadence = _cadence(poll_every, self._driver())
+        # The drain's own cursor. The durable watermark moves only on ack(); paging from it
+        # alone would re-read every unacked item each cycle. On restart this is gone, so
+        # everything after the watermark is yielded again — that IS the redelivery.
+        last_seen = position.watermark()
+        in_flight_at_start = position.in_flight_key()
+
+        # A pushed item wakes the next cycle at once; the cadence is the fallback (``blocks/arrivals``).
+        async with arrivals(str(source.id)) as arrived:
+            while True:
+                arrived.clear()
+                if poll:
+                    await poll_source(source, datetime.now(timezone.utc))
+                while True:
+                    rows = await SourceItem.page_after(str(source.id), last_seen, limit=max(1, int(size)))
+                    if not rows:
+                        break
+                    handed: list[Delivered] = []
+                    # A page is a storm when the ingest lane would call it a backfill — more than it
+                    # announces in a minute (``reconcile_source``'s own rule, for the same reason).
+                    storm = IngestMode.for_run(item_count=len(rows)) is IngestMode.BACKFILL
+                    for item in rows:
+                        key = key_of(item)
+                        last_seen = key
+                        redelivered = in_flight_at_start is not None and key <= in_flight_at_start
+                        # Place it in its conversation regardless of the filters below — the
+                        # stream inbox UI shows everything; the LOOP only acts on what passes.
+                        # The placement is ANNOUNCED (once, on first placement): when this drain runs in a
+                        # deployment's own process it is the only thing that places these messages — the
+                        # app polls none of its channels — and the announcement, relayed to the app
+                        # (``tags/relay``), is how anyone watching learns a message arrived. Silent only
+                        # in a storm (an import must not put a frame per item on every client) — except
+                        # our OWN outgoing copy: whoever watches the conversation waits to see the reply.
+                        own = item.is_ours(source)
+                        try:
+                            await project_source_item(item, source=source, announce=own or not storm)
+                        except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
+                            logger.exception("blocks: projection failed for %s", item.id)
+                        sender = str(item.author_external_id or "").strip().lower()
+                        if own or (
+                            self.senders and sender not in self.senders
+                        ):
+                            # Acked now while nothing in this page has been handed over — an ack is an
+                            # offset, so once something has, the page's own ack (or a later item's) covers it.
+                            if not handed and position.advance_to(item):
+                                await position.commit()
+                            continue
+                        spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
+                        quoted = None
+                        if item.reply_to_external_id and item.origin is not None:
+                            # The identity lookup (indexed, and scoped like the item: a Slack ts repeats
+                            # across channels) — the one the projection just used for the same parent.
+                            quoted = await SourceItem.find_existing(
+                                str(source.id), item.origin.model_copy(update={"key": item.reply_to_external_id, "url": None})
+                            )
+                        handed.append(Delivered(
+                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered, quoted=quoted
+                        ))
+                        # Handed to whoever answers it: its conversation says so until the reply lands (once —
+                        # a redelivery after a restart was already said).
+                        if item.origin is not None and not redelivered:
+                            emit_message_status(source, item.origin.key)
+                    page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
+                    if not handed:
+                        await page.ack()          # nothing to hand over; the filtered rows are covered
+                        continue
+                    # The in-flight stamp names the LAST row handed, so a restart redelivers the page.
+                    if position.mark_in_flight(rows[-1]):
+                        await position.commit()
+                    yield page
+                if not await until(arrived, cadence):
+                    return
+
+    async def listen(
+        self,
+        *,
+        poll_every: "float | timedelta | None" = None,
+        page: int = 100,
+    ) -> AsyncIterator["Delivered[SourceItemSpec]"]:
+        """Async-iterate inbound messages as they arrive, each with an ``ack()`` — ``pages()``
+        flattened, one delivery at a time. ``page`` is the size of the read underneath."""
+        async for delivered_page in self.pages(size=page, poll_every=poll_every):
+            for m in delivered_page:
+                yield m
+
+    def _driver(self):
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+        return DataDriver.loaded(self.provider)
+
+    async def reply_spec(self, item, *, body: str, files=(), quote: bool = True) -> MessageSpec:
+        """The reply to ``item``, in this stream inbox's own channel shape — the rule
+        and the reason are ``DataSource.reply_spec``'s."""
+        source = await self.ensure_source()
+        return source.reply_spec(item, body=body, files=files, quote=quote)
+
+    async def send(self, spec: MessageSpec) -> str:
+        """Deliver an outbound spec through the source's messaging seam.
+
+        Returns the provider's id for the created message — identity is born
+        at the provider. The sent copy re-ingests on a later sync and joins
+        its thread like any other message.
+        """
+        source = await self.ensure_source()
+        outcome = await source.send(spec)
+        return str(outcome.external_id or "")

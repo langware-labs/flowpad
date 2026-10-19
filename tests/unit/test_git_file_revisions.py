@@ -6,6 +6,7 @@ a thin adapter that runs the assembled git command locally — the git output an
 log/version parsing under test are entirely real.
 """
 
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,14 +14,17 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.faas.git_repo import GitRepo
+from flow_sdk.compute.providers.env_prefix import command_environment
 from flow_sdk.schema.type_info import register_all
 
 
 class _LocalNode:
     """Runs ``GitRepo``'s assembled shell command locally (real git)."""
 
-    async def run_command(self, command: str, background: bool = False):
-        r = subprocess.run(command, shell=True, capture_output=True, text=True)
+    async def run_command(self, command: str, background: bool = False, env=None):
+        # ``env`` is how GitRepo hands git its variables, as on a real node.
+        r = subprocess.run(command, shell=True, capture_output=True, text=True,
+                           env={**os.environ, **command_environment(env)})
         return SimpleNamespace(all_stdout=r.stdout, all_stderr=r.stderr, exit_code=r.returncode)
 
 

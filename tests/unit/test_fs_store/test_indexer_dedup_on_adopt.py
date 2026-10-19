@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.capsules import AssetCapsule
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -32,8 +31,10 @@ from tests.unit.test_fs_store._md_harness import (
 
 
 def _capsule_id(path: Path) -> str | None:
-    data = AssetCapsule.from_path(path).read("identity")
-    return str(data.data["id"]) if data is not None else None
+    """The id the markdown carries — its frontmatter ``id:`` now."""
+    from tests.fixtures.identity import frontmatter_id
+
+    return frontmatter_id(path)
 
 
 @pytest.mark.asyncio
@@ -84,6 +85,28 @@ async def test_copy_skip_is_idempotent(tmp_path: Path) -> None:
     await idx.index(IndexerOptions(**_OPTS, force=True))
     assert set(await _sources()) == ids_after_first == {aid}
     assert b.read_bytes() == b_bytes, "the duplicate capsule is never rewritten"
+
+
+@pytest.mark.asyncio
+async def test_targeted_reindex_drops_a_deleted_copy(tmp_path: Path) -> None:
+    """A copy has no row — only the primary's occurrences name it — so the
+    targeted ``invalidate`` path (resync the survivor, report the copy deleted)
+    must refresh the projection itself; before, only a full index pass did and
+    the collision badge kept counting a file that was gone."""
+    from flow_sdk.fs_store.reindex import reindex_paths
+
+    idx, a, aid = await _seed_one(tmp_path)
+    b = a.with_name("b.md")
+    shutil.copyfile(a, b)
+    await idx.index(IndexerOptions(**_OPTS))
+    assert len((await _sources())[aid][3]) == 2
+
+    b.unlink()
+    await reindex_paths([str(a)], [str(b)])
+
+    src = await _sources()
+    assert (src[aid][0] or "").endswith("a.md")
+    assert [item["path"] for item in src[aid][3]] == [str(a.resolve())]
 
 
 @pytest.mark.asyncio
@@ -144,7 +167,7 @@ async def test_no_incumbent_uses_canonical_path_winner(
         lambda _path: None,
     )
     await get_db_driver().delete_entities_by_type("markdown")
-    docs = tmp_path / "proj" / ".claude" / "docs"
+    docs = tmp_path / "proj" / "docs"
     docs.mkdir(parents=True)
     aid = "8858ca29-5b9a-4d1e-a74f-2b988586f71c"
     b = docs / "b.md"

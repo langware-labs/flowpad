@@ -1,0 +1,20 @@
+{
+  "title": "Bug triage",
+  "description": "Takes a bug Ami reports in New BUGS, reproduces it, asks him for what's missing, runs RCA + RCA test, and sends Gadi a private report.",
+  "avatar": "🐞",
+  "worker_type": "claude",
+  "model": "lg",
+  "effort": "high",
+  "load_flowpad_assistant": true,
+  "disallowed_tools": [
+    "Bash(git push:*)",
+    "Bash(gh pr:*)",
+    "Bash(gh release:*)",
+    "Bash(pkill:*)",
+    "Bash(killall:*)",
+    "Bash(flow stop:*)",
+    "Bash(flow upgrade:*)",
+    "Bash(rm -rf:*)"
+  ],
+  "id": "958ab772-f93d-42e3-9595-32207575f0b3"
+}

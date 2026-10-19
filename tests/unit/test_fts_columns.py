@@ -133,3 +133,25 @@ async def test_fts_upsert_via_driver(fts_driver):
     assert hit is not None
     assert getattr(hit, "_fts_title", None) == "BookmarkTitle"
     assert getattr(hit, "_fts_description", None) == "BookmarkDesc"
+
+
+@pytest.mark.asyncio
+async def test_a_sentence_finds_its_thing_with_any_of_its_words(fts_driver):
+    # A request names its thing with a few of its words, never all of them: every term required
+    # finds nothing, any term ranks the thing that matches most of them first.
+    driver, sf = fts_driver
+    await _insert_entity_and_fts(sf, "t1", "task", name="Stripe webhook retries", title="Stripe webhook retries")
+    await _insert_entity_and_fts(sf, "t2", "task", name="Q4 launch", title="Q4 launch")
+    await _insert_entity_and_fts(sf, "c1", "credential", name="stripe-live-secret-key", title="stripe-live-secret-key")
+    sentence = "one about stripe webhook retries open that"
+    assert await driver.fts_search(sentence, limit=5) == []
+    found = await driver.fts_search(sentence, limit=5, match="any")
+    assert [e.id for e in found][:1] == ["t1"] and "t2" not in {e.id for e in found}
+
+
+@pytest.mark.asyncio
+async def test_an_or_the_caller_writes_is_an_operator_not_a_word(fts_driver):
+    driver, sf = fts_driver
+    await _insert_entity_and_fts(sf, "p1", "task", name="plumber", title="plumber")
+    found = await driver.fts_search("plumber OR zzzz", limit=5)
+    assert [e.id for e in found] == ["p1"]

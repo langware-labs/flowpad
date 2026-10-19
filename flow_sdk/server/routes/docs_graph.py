@@ -19,13 +19,20 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
+from flow_sdk.activity import Activity
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
 from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
-from flow_sdk.fs_store.operations.markdown_index import entity_data_dir, file_summaries_dir
+from flow_sdk.fs_store.operations.markdown_index import (
+    entity_data_dir,
+    entity_id_for_root,
+    file_summaries_dir,
+)
 from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.diff import MAX_DIFF_BYTES, git_unified_diff, is_binary_bytes
 from flow_sdk.llm_index.indexer import ScanTick
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
+from flow_sdk.utils.git_usable import git_usable
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,19 +41,18 @@ router = APIRouter()
 # progress_report by job_name). A docs scan is a scan; reuse that activity.
 _JOB = "scan"
 
-_TYPE_PREFIX = "markdown_index-"
-
-# Stamp is an explicit user action; serialize concurrent stamps per root.
-_stamp_locks: dict[str, asyncio.Lock] = {}
+# Stamp is an explicit user action; serialize concurrent stamps per root. Weak-valued
+# (``stream_inbox/_locks``): a root's lock lives only while a stamp holds or awaits it.
+_stamp_locks = new_registry()
 
 
 def _indexer(root_path: Path) -> LLMIndexer:
     """LLMIndexer wired to this vault's per-entity data dir (baseline + blobs).
 
     Same entity id the rest of the system uses for the vault: uuid5 of the
-    resolved root path (``typeid_for``), data dir via ``entity_data_dir``.
+    resolved root path, via the shared ``entity_id_for_root`` derivation.
     """
-    entity_uuid = typeid_for(root_path).removeprefix(_TYPE_PREFIX)
+    entity_uuid = entity_id_for_root(root_path)
     base = entity_data_dir(entity_uuid)
     return LLMIndexer(
         # Shared with the LLM rebuild flow — its per-file summaries (content-
@@ -77,14 +83,16 @@ async def _emit(
     current: str | None,
     complete: bool = False,
 ) -> None:
-    activity.latest_table = IndexProgressTable(
-        job_name=_JOB,
-        rows=(TypeProgressRow(type_name="markdown", done=files, total=0),),
-        current=None if complete else current,
-        done=files,
-        total=0,
-        text=PROGRESS_TEXT_COMPLETE if complete else None,
-        ts=datetime.now(timezone.utc).isoformat(),
+    activity.set_table(
+        IndexProgressTable(
+            job_name=_JOB,
+            rows=(TypeProgressRow(type_name="markdown", done=files, total=0),),
+            current=None if complete else current,
+            done=files,
+            total=0,
+            text=PROGRESS_TEXT_COMPLETE if complete else None,
+            ts=datetime.now(timezone.utc).isoformat(),
+        )
     )
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())
 
@@ -99,9 +107,7 @@ async def docs_graph_doc(root: str = Query(...), rel: str = Query(...)) -> dict:
         raise HTTPException(status_code=403, detail="path escapes root")
     if not target.is_file():
         raise HTTPException(status_code=404, detail=f"Not a file: {rel}")
-    text = await asyncio.to_thread(
-        lambda: target.read_text(encoding="utf-8", errors="replace")
-    )
+    text = await asyncio.to_thread(lambda: target.read_text(encoding="utf-8", errors="replace"))
     from flow_sdk.llm_index import MarkdownDocument  # noqa: PLC0415
 
     doc = MarkdownDocument.from_text(text, path=target)
@@ -120,11 +126,9 @@ async def docs_graph_stamp(root: str = Query(...)) -> dict:
     stores content blobs (CAS) for later line diffs and GC's orphans.
     """
     root_path = _resolve_root(root)
-    lock = _stamp_locks.setdefault(str(root_path), asyncio.Lock())
+    lock = keyed_loop_lock(_stamp_locks, str(root_path))
     async with lock:
-        stats = await asyncio.to_thread(
-            lambda: _indexer(root_path).scan(root_path).stamp()
-        )
+        stats = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path).stamp())
     return {"status": "SUCCESS", "message": "success", "data": asdict(stats)}
 
 
@@ -132,9 +136,7 @@ async def docs_graph_stamp(root: str = Query(...)) -> dict:
 async def docs_graph_changes(root: str = Query(...)) -> dict:
     """Manifest diff since the last stamp: added/removed/modified/renamed."""
     root_path = _resolve_root(root)
-    changes = await asyncio.to_thread(
-        lambda: _indexer(root_path).scan(root_path).diff_since_baseline()
-    )
+    changes = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path).diff_since_baseline())
     return {"status": "SUCCESS", "message": "success", "data": changes}
 
 
@@ -161,7 +163,7 @@ async def docs_graph_diff(root: str = Query(...), rel: str = Query(...)) -> dict
                 if len(old_bytes) > MAX_DIFF_BYTES or is_binary_bytes(old_bytes):
                     return {"diff": "", "skipped": "binary_or_large", "rel_path": rel}
                 old_text = old_bytes.decode("utf-8", "replace")
-            else:
+            elif git_usable():  # not on a Mac without the Command Line Tools: that opens Apple's installer dialog
                 proc = subprocess.run(
                     ["git", "-C", str(root_path), "show", f"HEAD:./{rel}"],
                     capture_output=True,
@@ -189,7 +191,22 @@ async def docs_graph_diff(root: str = Query(...), rel: str = Query(...)) -> dict
 async def docs_graph(root: str = Query(...)) -> dict:
     """Native scan of ``root`` → ``{nodes, edges, counts, duration_ms}``."""
     root_path = _resolve_root(root)
-    activity = InProcessActivity(job_name=_JOB, entity_id=typeid_for(root_path))
+    # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
+    # names itself honestly, so a docs scan and a real index no longer share one address.
+    activity = InProcessActivity(
+        job_name=_JOB,
+        entity_id=typeid_for(root_path),
+        # ``job_name`` stays "scan" so the legacy footer pill still labels it; the ACTIVITY
+        # names itself honestly, so a docs scan and a real index no longer share an address.
+        #
+        # Scoped to the BOX, not to the folder's typeid: scanning a directory on this
+        # machine is the instance's work, and an entity-scoped activity is delivered only
+        # to clients watching that entity — which for a scanned folder is nobody, so the
+        # scan would advance perfectly and appear in no browser at all. One address per
+        # box means two concurrent scans of different roots share a row; `current` names
+        # which root is in hand.
+        activity=Activity.get("docs.scan"),
+    )
 
     # Plain counters mutated by the (sync) scan thread; the async pump reads them
     # and broadcasts — no cross-thread event-loop access.
@@ -217,9 +234,14 @@ async def docs_graph(root: str = Query(...)) -> dict:
     pump_task = asyncio.create_task(pump())
     started = time.perf_counter()
     try:
-        graph = await asyncio.to_thread(
-            lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph()
-        )
+        graph = await asyncio.to_thread(lambda: _indexer(root_path).scan(root_path, on_tick=on_tick).to_graph())
+    except BaseException:
+        # Without this the activity never reaches a terminal state, so the monitor keeps a
+        # permanently "running" root per scanned folder and the chip reports work that
+        # stopped. The terminal table is only sent on the happy path below.
+        if activity.activity is not None:
+            activity.activity.fail("docs scan failed")
+        raise
     finally:
         counter["done"] = True
         await pump_task

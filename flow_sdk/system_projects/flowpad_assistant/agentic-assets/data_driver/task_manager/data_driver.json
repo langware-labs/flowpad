@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "name": "task_manager",
+  "title": "Tasks",
+  "icon_name": "ListChecks",
+  "channel_icon_names": {
+    "tasks": "ListChecks"
+  },
+  "description": "Tasks as a channel: every task its principal asked, owns, is assigned or reported is a thread, every change and comment on it a message, and a message sent into the thread is a comment on the task. One driver, two kinds of row: the local person's (user:local, created automatically) and a Chief of Staff agent's, which is woken here when its staff finish, fail, ask or stall.",
+  "kind": "datasource.internal.tasks",
+  "config": {
+    "principal": {
+      "type": "text",
+      "label": "Principal",
+      "placeholder": "user:local | agent:<id>",
+      "hint": "Whose tasks this channel carries — the local person (user:local) or an agent (agent:<id>, set when Chief of Staff mode is turned on)."
+    }
+  }
+}

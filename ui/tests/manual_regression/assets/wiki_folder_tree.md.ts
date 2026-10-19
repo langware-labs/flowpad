@@ -1,20 +1,52 @@
-import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { apiBase } from '../_shared/api';
 
-async function dismissSetupModal(page: import('@playwright/test').Page) {
+const API = apiBase();
+
+async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
   });
 }
 
+async function seedIndexedMarkdown(request: APIRequestContext): Promise<void> {
+  const bootstrap = await request.get(`${API}/api/v1/graph/bootstrap?domain=localhost`);
+  expect(bootstrap.status(), await bootstrap.text()).toBe(200);
+  const bootstrapData = (await bootstrap.json()).data;
+  const project =
+    bootstrapData.default_project ??
+    bootstrapData.local_project ??
+    bootstrapData.project;
+  const projectId = typeof project === 'string' ? project : project?.id;
+  expect(projectId, 'bootstrap returned no default project id').toBeTruthy();
+
+  const created = await request.post(`${API}/api/v1/graph/project/${projectId}/markdown`, {
+    data: { name: `qa-wiki-tree-${randomUUID()}` },
+  });
+  expect(created.status(), await created.text()).toBe(200);
+  const assetRef = (await created.json()).data.asset_ref as string;
+  expect(assetRef, 'seeded markdown has an asset_ref').toBeTruthy();
+
+  const indexed = await request.post(
+    `${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`,
+    { data: { paths: [assetRef], deleted_paths: [] } },
+  );
+  expect(indexed.status(), await indexed.text()).toBe(200);
+}
+
 test.describe('Wiki folder tree (asset browseable tree)', () => {
+  test.beforeEach(async ({ request }) => {
+    await seedIndexedMarkdown(request);
+  });
+
   // ── Test 1: Folder tree renders markdown vault roots on expand ────────────
   // Environment-dependent: only asserts vault children when the user has
   // markdown vaults configured (AssetTypeInfo.vaults non-empty). Otherwise
   // just validates the chevron expanded successfully.
   test('Folder tree renders markdown vault roots on expand', async ({ page, request }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').first();
@@ -31,8 +63,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     }
 
     // Probe the backend for markdown vaults to decide what to assert.
-    const apiUrl = apiBase();
-    const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
+    const typesRes = await request.get(`${API}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {
       const body = await typesRes.json().catch(() => null);
@@ -61,7 +92,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
   // Skipped (soft) when no markdown vaults exist — there is nothing to click.
   test('Clicking a vault-root folder navigates to folder URL and shows breadcrumb', async ({ page, request }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     // The markdown root is auto-expanded by ``expandParentsForPointer`` for
@@ -76,8 +107,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
       await chevron.click();
     }
 
-    const apiUrl = apiBase();
-    const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
+    const typesRes = await request.get(`${API}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {
       const body = await typesRes.json().catch(() => null);
@@ -100,7 +130,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
   // ── Test 9: Scan toolbar action on the Markdown root triggers reindex ─────
   test('Scan toolbar action on markdown root triggers POST /fs-records/index?type=markdown', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/markdown');
+    await page.goto('/dock/assets/list/markdown?scope-mode=all');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     // Collect console errors for the "no console errors" assertion.
@@ -111,7 +141,12 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
 
     // The toolbar button is rendered inside the aria-level=1 markdown type row.
     // Hover over the row to reveal the toolbar (in case visibility is hover-gated).
-    const typeRow = page.locator('[role="treeitem"][aria-level="1"]').filter({ hasText: /markdown/i }).first();
+    // The root's label comes from the type registry ("Documents"); identify it
+    // by the chevron testid prefix (spec rule), never by label text.
+    const typeRow = page
+      .locator('[role="treeitem"][aria-level="1"]')
+      .filter({ has: page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]') })
+      .first();
     await expect(typeRow).toBeVisible({ timeout: 10_000 });
     await typeRow.hover();
 

@@ -1,9 +1,9 @@
 """``DeckTemplate`` — a folder-backed, reusable slide-deck template.
 
-A deck template is a folder under ``assets/deck-templates/<slug>/`` holding one
+A deck template is a folder under ``agentic-assets/deck_template/<slug>/`` holding one
 isolated HTML component per slide layout plus the shared design system:
 
-    assets/deck-templates/<slug>/
+    agentic-assets/deck_template/<slug>/
       template.json                # {"metadata": {id?, title, description, page_types, …}, "data": {…}}
       layouts/<layout name>.html   # one <section> slide component per layout
       common/<part>.<js|ts|css|html>  # tokens.css / theme.css / deck.js shared by all layouts
@@ -13,7 +13,7 @@ isolated HTML component per slide layout plus the shared design system:
 ``template.json`` is a two-section document (``{"metadata": {...}, "data": {...}}``,
 same convention as ``dataset.json``) and is the walker's marker file. The
 container is the entity; individual layouts are files read on demand, not
-child entities. Generated decks (``assets/decks/<name>/``) are plain folders —
+child entities. Generated decks (``agentic-assets/deck/<name>/``) are plain folders —
 only the template is a first-class type.
 
 The walker + extractor + id-mint slot functions live in
@@ -26,7 +26,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 
 
@@ -46,8 +46,8 @@ class DeckTemplate(Entity):
     created_at: Optional[datetime] = APIField(None)
 
     # Absolute path of the template folder on disk, stamped by the indexer /
-    # ``Entity.from_fs_ref``. A plain string, mirrors DATASET/WHITEBOARD.
-    asset_ref: str = APIField(default="")
+    # ``Entity.from_fs_ref``. A plain string, mirrors DATASET/CHART.
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     def layout_html(self, name: str) -> Optional[str]:
         """Lazily read one layout component's HTML from disk, else ``None``."""

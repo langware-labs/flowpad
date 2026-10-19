@@ -6,7 +6,7 @@ registered next to their definitions in ``fs_store/indexer/functions/<type>``.
 These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
-from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
+from flow_sdk.assets.identity_carrier import Derived
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -18,7 +18,7 @@ def test_slots_excluded_from_schema_hash():
     with_slots = TypeInfo(
         **base,
         from_disk_fn=lambda ref, resolved_id: [],
-        identity_backend=DerivedIdentityBackend(),
+        identity_carrier=Derived(),
         id_stable_key_fn=lambda ref: "key",
         asset_hash_fn=lambda ref: 1.0,
     )
@@ -29,13 +29,13 @@ def test_register_merge_fills_but_never_clobbers():
     """Re-register fills an unset slot but never overwrites a set one with None."""
     t = "_slot_merge_probe"
     fn_a = lambda ref: ["a"]  # noqa: E731
-    backend = DerivedIdentityBackend()
+    backend = Derived()
 
     # First registration sets from_disk_fn only.
     SchemaRegistry.register(TypeInfo(type_name=t, from_disk_fn=fn_a))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.identity_backend is None
+    assert info.identity_carrier is None
 
     # Second registration (e.g. entity __init_subclass__) passes no slots —
     # must NOT clobber the existing from_disk_fn with None.
@@ -45,10 +45,10 @@ def test_register_merge_fills_but_never_clobbers():
     assert info.icon == "Probe"
 
     # Third registration fills the previously-unset identity reader.
-    SchemaRegistry.register(TypeInfo(type_name=t, identity_backend=backend))
+    SchemaRegistry.register(TypeInfo(type_name=t, identity_carrier=backend))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.identity_backend is backend
+    assert info.identity_carrier is backend
 
 
 def test_builtin_types_have_dispatch_slots_wired():
@@ -56,23 +56,23 @@ def test_builtin_types_have_dispatch_slots_wired():
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — side-effect registration
 
     for t in (
-        "skill", "markdown", "plan", "claude_md", "agent", "command", "task",
-        "whiteboard", "spec", "claude_session", "codex_session",
+        "skill", "markdown", "plan", "claude_md", "subagent", "command", "task",
+        "chart", "spec", "claude_session", "codex_session",
         "markdown_index", "project", "claude_memory", "claude_rules",
     ):
         info = SchemaRegistry.get(t)
         assert info is not None, f"{t}: no TypeInfo registered"
         assert info.from_disk_fn is not None, f"{t}: from_disk_fn missing"
-        assert info.identity_backend is not None, f"{t}: identity backend missing"
+        assert info.identity_carrier is not None, f"{t}: identity backend missing"
 
 
 def test_asset_hash_fn_only_for_folder_inner_file_types():
-    """Folder-backed asset types (skill, whiteboard, task) carry a custom
+    """Folder-backed asset types (skill, chart, task) carry a custom
     asset_hash_fn; flat-file types fall back to the generic mtime hash."""
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
     assert SchemaRegistry.get("skill").asset_hash_fn is not None
-    assert SchemaRegistry.get("whiteboard").asset_hash_fn is not None
+    assert SchemaRegistry.get("chart").asset_hash_fn is not None
     assert SchemaRegistry.get("task").asset_hash_fn is not None
     assert SchemaRegistry.get("markdown").asset_hash_fn is None
 
@@ -96,12 +96,25 @@ def test_registry_presentation_getters_read_through():
     assert SchemaRegistry.get_icon("skill") == "FileBadge"
     assert SchemaRegistry.browseable_by("skill") is ViewMode.STANDARD
     assert SchemaRegistry.is_browseable_in("skill", ViewMode.STANDARD) is True
-    # reclassified types: claude_memory is Advanced+ only, flowpad_diagnosis Dev only
+    # reclassified types: claude_memory is Advanced+ only; flowpad_diagnosis is
+    # developer-only — a FLAG on top of its tier, shown only with Dev on
     assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.STANDARD) is False
     assert SchemaRegistry.is_browseable_in("claude_memory", ViewMode.ADVANCED) is True
     assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.ADVANCED) is False
-    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.DEV) is True
+    assert SchemaRegistry.is_browseable_in("flowpad_diagnosis", ViewMode.ADVANCED, dev=True) is True
     assert SchemaRegistry.is_creatable("skill") is True
     # public-entity list is derived from info.api_visible, not entity_cls deref
     assert "skill" in SchemaRegistry.get_public_entity_types()
     assert SchemaRegistry.is_public_entity("skill") is True
+
+
+def test_a_stored_dev_tier_reads_as_advanced_plus_dev_only():
+    """Dev was a third tier; it is a flag now. A TypeInfo persisted with
+    ``browseable_by: "dev"`` must still load — as Advanced, developer-only."""
+    from flow_sdk.fs_store.schema_registry import TypeInfo
+
+    info = TypeInfo.from_dict({"type_name": "legacy_dev_type", "browseable_by": "dev"})
+    assert info.browseable_by is ViewMode.ADVANCED
+    assert info.dev_only is True
+    assert info.to_dict()["browseable_by"] == "advanced"
+    assert info.to_dict()["dev_only"] is True

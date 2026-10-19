@@ -1,7 +1,14 @@
 ---
 id: "a3f7c821-4b2e-5d19-8e6f-1c9a0b3e7d52"
 name: "flow-diagnose"
-description: ">"
+description: >-
+  Diagnose and repair Flowpad itself. Use when the app is broken, misbehaving, or
+  will not start — install and runtime problems, a backend that won't come up, a
+  blank or erroring UI, failed updates, worker/agent sessions that won't launch,
+  or "something is wrong with Flowpad". Runs autonomously and headless, performs
+  the repairs that are safe on the user's machine, explains build/CI-side causes
+  it cannot fix, and always ends with a plain-language "To Summarize:" line. Use
+  it for problems with FLOWPAD; debugging the user's own code is not this skill.
 recommended_scope: "project"
 ---
 
@@ -21,6 +28,22 @@ plain-language "To Summarize:" line.
   diagnose → root cause → prove it → fix (when safe) → validate → end-to-end check → record.
 
 * Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
+
+* **This run lives INSIDE the backend you are diagnosing.** `flow stop`, `flow start`, killing the
+  server PID or anything that restarts it ends this run before it records — the person gets
+  nothing, and the diagnosis is lost. If a restart is the fix: record first (Step 7), and make the
+  restart your very last action — or tell the person to restart, and record that advice.
+
+* **A source checkout is not a broken install.** When `flow_sdk/` sits next to a `ui/` folder (a
+  developer checkout), the UI is served by a Vite dev server and the backend port serving no
+  `/assets/*.js` is expected — it is never the blank-page packaging issue. **A checkout's files
+  ARE someone's uncommitted work: never change them.** No edits, no new files, no
+  `git checkout` / `restore` / `reset` / `stash` / `clean` (they silently discard that work), no
+  builds (`build_ui.py`, `npm run build`), no `node_modules` changes. Code there that looks broken
+  is reported — what it is and where — never "restored".
+
+* **Scratch files go in a temp folder of your own** (`mktemp -d`), never in a project or the
+  repository, and you remove them before you record.
 
 * **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
   catalog (A1–G17) is an internal cheat-sheet that gives you fast, proven fixes for *some* common
@@ -43,9 +66,60 @@ plain-language "To Summarize:" line.
   looking for whether there IS an issue **and** when establishing the root cause — never conclude
   "healthy" from a live health check alone (the shell can be stuck even when the backend is up).
 
+* **"It works now, so it's fine" is NOT a diagnosis — it is the absence of one.** If the user
+  reported that something went wrong, they are telling you it went wrong *at some point*, and they
+  want to know **why**. A passing health check tells you the current state; it says nothing about
+  the state they described. Never close a run with "no issues found" / "everything looks healthy" /
+  "it seems to be working now" when a symptom was reported. That answer is worthless to the user —
+  the problem will simply come back, still unexplained.
+
+  When the app is healthy *now* but a problem was reported, your job has not shrunk, it has changed
+  shape: **go find the failure in history.** Concretely, and in this order:
+
+  1. **Place it in time.** Get the window from the user's description ("this morning", "when I
+     opened it"); if there is no stated time, use the log evidence itself — the last backend
+     restart, the newest `main_desktop` startup, the most recent error burst.
+  2. **Search that window across ALL rotated files**, not the tail of the newest one:
+     ```bash
+     grep -rn -iE 'error|traceback|exception|failed|refused|timeout' $LOGS/server/*.log | tail -50
+     grep -rn -B5 -A20 '<the error string>' $LOGS/server/*.log
+     grep -rn -E '2026-09-09 1[4-6]:' $LOGS/server/*.log     # a specific hour window
+     ```
+     Files run to hundreds of MB — `grep` them, never `cat` them.
+  3. **Correlate the trees at the same timestamps.** A restart in `$LOGS/monitor/`, a
+     `Backend failed to start within timeout` in `$DESKTOP`, and a traceback in `$LOGS/server/`
+     within the same minute are one event, and the shape of that event IS the root cause.
+  4. **Report the root cause of the past failure** — with the log line and its timestamp — plus
+     whether it self-recovered and whether it will recur. "Recovered on its own" is a legitimate
+     finding; "I didn't look" is not.
+
+  Only if you have genuinely searched the history and found nothing may you say so — and then say
+  exactly that: which windows and which files you searched, and that the evidence is not there.
+  That is an honest negative result. A silent "looks fine to me" is not.
+
+* **Run Python as `"$FLOWPAD_PYTHON"` — always, and nothing else.** That variable is set for you
+  in every worker environment and names the one interpreter that can `import flow_sdk`. Do **not**
+  use `uv run`: it ignores PATH and resolves an environment by walking up from the working
+  directory, which is a user workspace with no Flowpad in it, so the import fails. Do **not** use
+  `python3` or bare `python`: a Windows venv ships `python.exe` and no `python3.exe`, and the name
+  can resolve to an unrelated interpreter that happens to sit earlier on PATH. **If any command
+  fails to import `flow_sdk`, you used the wrong interpreter — re-run the exact same command with
+  `"$FLOWPAD_PYTHON"` rather than hunting for another one, writing your own script, or improvising
+  the output it would have produced.**
+
 * Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
 
 ## Instructions
+
+### Step 0 — Start from the sweep you were handed
+
+`flow diagnose` runs the **diagnose spec** first (the project's own
+`agentic-assets/diagnose/*`, else the shipped `flowpad` one — fixed checks, no LLM) and puts its
+`DiagnosisSpec` JSON in your prompt: its `findings` (catalog ids such as `A2`, `C6`), the machine
+(`environment`) and anything that went wrong while it ran (`errors`). Treat those checks as done —
+do not repeat them; confirm, explain and repair from there, and record (Step 7) what you concluded.
+A `status` of `partial` means the sweep itself failed or timed out: then run the checks below
+yourself.
 
 ### Step 1 — Detect platform, read optional error text
 
@@ -66,11 +140,26 @@ literals). Backend port: read it from the instance's `server.json`, falling back
 `$LOCAL_SERVER_PORT`, then the packaged-desktop default `9007`:
 
 ```bash
-PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p))['port'] if p.exists() else os.environ.get('LOCAL_SERVER_PORT','9007'))")
+PORT=$("$FLOWPAD_PYTHON" -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p))['port'] if p.exists() else os.environ.get('LOCAL_SERVER_PORT','9007'))")
 ```
 
 Frontend dev-server port: `${VITE_PORT:-4097}`. Use `$PORT` / `$VITE_PORT` in every URL and port
 check below. (The packaged desktop app uses `9007` and serves the UI on that same port.)
+
+**Resolve the log directory the same way — never hardcode `dev` / `prod`.** Backend logs are
+per-instance, and there are usually more than two (every `instance_ctl.sh launch <name>` mints its
+own). Resolve once and use `$LOGS` everywhere below:
+
+```bash
+INST="${FLOW_INSTANCE:-prod}"          # unset → prod
+LOGS=~/.flow/instances/$INST/logs      # backend: $LOGS/server/, $LOGS/monitor/
+DESKTOP=~/.flow/logs/main_desktop      # Electron shell — global, NOT per-instance
+ls ~/.flow/instances                   # the real list on this machine
+```
+
+The global `~/.flow/logs/server/` and `~/.flow/logs/monitor/` are **dead directories** — empty
+since the backend moved to per-instance logging. Reading them yields nothing and will make you
+conclude "no evidence" while hundreds of MB sit in `$LOGS/`. See the `flowpad_logs` skill.
 
 ### Step 2 — Full diagnostic sweep (no error text given)
 
@@ -100,10 +189,15 @@ Consult the **`flowpad_logs`** skill for the full, authoritative list of log loc
 **all** of them — backend instance logs, the Electron desktop logs, and the hub. At minimum:
 
 ```bash
-# macOS/Linux — repeat for server, monitor, main_desktop
-LOGDIR=~/.flow/logs/server
-tail -20 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
+# macOS/Linux — $LOGS and $DESKTOP resolved in Step 1
+for p in "$LOGS/server" "$LOGS/monitor" "$DESKTOP"; do
+  echo "== $p =="; tail -20 "$(ls -t $p/*.log 2>/dev/null | head -1)"
+done
 ```
+
+If any of those prints nothing, say so explicitly and find out why (wrong instance? never
+started?) — an empty directory is NOT the same as a clean log, and treating it as one is how a
+broken app gets reported as healthy.
 
 Look for: `record_error`, `integrity_check`, `EADDRINUSE`, `electron-updater`, `x64` on arm64.
 
@@ -143,9 +237,8 @@ a "Startup Error" even though the backend is healthy *now*. Read the newest `mai
 reason about the shell↔backend timeline:
 
 ```bash
-# macOS/Linux — newest main_desktop log, last ~40 lines
-LOGDIR=~/.flow/logs/main_desktop
-tail -40 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
+# macOS/Linux — newest main_desktop log, last ~40 lines ($DESKTOP from Step 1)
+tail -40 "$(ls -t $DESKTOP/*.log 2>/dev/null | head -1)"
 # Windows (PowerShell)
 Get-Content (Get-ChildItem $HOME\.flow\logs\main_desktop\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
 ```
@@ -233,6 +326,17 @@ the output — never jump straight from symptom to guess:
    run the commands — don't just recommend them. If the fix is the user's to make (re-install,
    re-sign, cloud/account actions) or is risky/destructive, do NOT attempt it — describe exactly
    what the user should do (Step 5).
+   **A supporter's request run only diagnoses** (its prompt says so, and the file-editing tools are
+   off): skip this sub-step entirely — no repair of any kind — describe the fix instead and record
+   `--status needs_action`.
+   **What you may change is Flowpad's own runtime state only** — the instance's `server.lock` /
+   `server.pid` / `server.json`, its processes and ports, its install. **Never delete, rewrite or
+   "correct" a config or data file** (`config.json`, `preferences.json`, the database) **or any file
+   outside that state** — the user's files, a project's files, a file a supporter's step or skill
+   names: report what is wrong with it and what should change (Step 5). A file a step or skill says
+   not to change is never changed, whatever you find. And a log line is evidence that an error
+   happened then, not that a file is broken now: before calling a file the cause, show the CURRENT
+   file and code reproduce the error (e.g. the key really is read and really is missing).
 4. **Validate.** Re-run the exact check that exposed the problem and show it now passes (e.g.
    `curl -fsS …/health/status` → `{"data":true}`, the port is free, the stale file is gone).
 
@@ -271,7 +375,7 @@ kill -0 "$PID" 2>/dev/null && echo "alive" || echo "dead"
 
 If dead → delete `~/.flow/instances/prod/server.lock` and `server.pid`. Tell user to relaunch.
 
-b) DB integrity: look for `record_error` or `integrity_check` in `~/.flow/logs/server/` newest file.
+b) DB integrity: look for `record_error` or `integrity_check` in `$LOGS/server/` newest file.
 If corruption found → backend auto-recovers from `~/.flow/instances/prod/backups/` on next launch.
 List backups: `ls -t ~/.flow/instances/prod/backups/`. Tell user to relaunch.
 
@@ -422,7 +526,7 @@ and report what you found.
 
 1. **Gather evidence** broadly — fit the investigation to the actual symptom, don't stop at a
    generic sweep. Start with: `curl -fsS http://localhost:$PORT/health/status`; the newest files
-   under `~/.flow/logs/{server,monitor,main_desktop}`; instance state in `~/.flow/instances/<name>/`
+   under `$LOGS/{server,monitor}` and `$DESKTOP` (Step 1); instance state in `~/.flow/instances/$INST/`
    (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space. Then go where the symptom
    points — if the user describes unexpected data, wrong UI state, a feature misbehaving, etc., probe
    that directly (query the DB, inspect the relevant entities/records, reproduce the behavior) rather
@@ -431,7 +535,8 @@ and report what you found.
    acting.
 3. **Attempt only a conservative, reversible repair** — never destructive (no DB deletes, no
    `xattr` on unrelated apps, no disabling Gatekeeper/SmartScreen system-wide). If unsure, do
-   nothing and advise the user.
+   nothing and advise the user. "Unsure" limits what you may **repair** — it never licenses
+   skipping the **diagnosis**: still report the root cause and the evidence for it.
 4. Record it with **`--status unrecognized`** in Step 7 (an internal field so the team sees it's a
    not-yet-catalogued case) — but keep that label out of your user-facing prose; the report just
    states the root cause, fix, and validation like any other.
@@ -446,7 +551,7 @@ After repairing, prove the **app actually works end-to-end** — not just that o
 this headlessly and autonomously (no questions):
 
 1. **Ensure the backend is up.** If your fix was meant to unblock startup, start it now
-   (`flow start`, or `uv run -m flow_sdk.server.run` in the background) and wait for
+   (`flow start`, or `"$FLOWPAD_PYTHON" -m flow_sdk.server.run` in the background) and wait for
    `curl -fsS http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
    Step 1).
 2. **Drive the UI with Playwright (headless, Chromium).** Use the copy already in `ui/`
@@ -474,12 +579,17 @@ Always use this structure:
 ```
 == Flowpad Diagnostic Report ==
 Platform: <macOS / Windows / Linux>
+Instance: <$INST>  (logs: <$LOGS>)
 Date:     <timestamp>
 
-[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL>
+Reported symptom: <what the user described, and the time window you searched for it>
+                  <omit this line ONLY when no symptom was reported (bare sweep)>
+
+[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL | SELF-RECOVERED>
   Root cause: <the underlying cause, not the symptom>
-  Proof:      <evidence this is the cause (command output / log line / repro)>
+  Proof:      <evidence this is the cause — quote the log line WITH its timestamp and file>
   Action:     <what you did (if fixed), or exactly what the user must do>
+  Recurrence: <will it happen again? what triggers it?>
   Validation: <the check you re-ran + its result>
 
 [OK] <check name> — no issues
@@ -488,6 +598,11 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
+
+**A report that answers a reported symptom with only `[OK]` lines is a failed run.** If the app is
+healthy now, the `[FOUND]` block still has to explain what happened earlier — status
+`SELF-RECOVERED` — or state explicitly which log windows and files you searched and came up empty.
+Never let "healthy now" stand in for the root cause of what the user reported.
 
 ### Step 7 — Record the result (ALWAYS runs — even when everything is healthy)
 
@@ -517,7 +632,7 @@ is handled by the `flow diagnose` runner afterwards, not by you. The runner also
 diagnosis to this process for you — do **not** attempt the cross-link yourself.)
 
 ```bash
-uv run python "<this skill dir>/report.py" \
+"$FLOWPAD_PYTHON" "<this skill dir>/report.py" \
   --title "<short diagnosis title>" \
   --symptoms "<what was observed>" \
   --rca "<root cause, or 'none — healthy' if no issue>" \
@@ -531,6 +646,46 @@ uv run python "<this skill dir>/report.py" \
 `<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
 Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
 `diagnosis_id` (and the support `conversation_id` / `flow_message_id` when an issue was found).
+
+**Running Step 7 in PowerShell? `--details` needs a here-string AND escaped quotes — both, or it
+silently loses the report.** The Step 6 block is multi-line and full of raw JSON
+(`{"status":"SUCCESS","data":true}`). Windows PowerShell 5.1 does not escape embedded `"` when it
+hands an argument to a native executable, so it splits that one string into several arguments and
+strips the quotes on the way. The reporter then dies with:
+
+```
+report.py: error: unrecognized arguments: is up and running,data:true}
+```
+
+Two separate fixes are needed, and neither works alone:
+
+1. Build the block with a **single-quoted here-string** (`@'` … `'@`) so it stays one literal and `$`
+   / backticks inside it are not expanded. The closing `'@` must be at column 0 — indenting it is a
+   parse error.
+2. Escape the quotes **at the call site** with `-replace '"', '\"'`. This is the load-bearing half:
+   with it the reporter receives one argument with the quotes intact; without it, five arguments with
+   the quotes gone.
+
+```powershell
+$details = @'
+== Flowpad Diagnostic Report ==
+[OK] Backend health - {"status":"SUCCESS","message":"Flowpad is up and running","data":true}
+[OK] Disk space     - 776 GB free
+'@
+
+& "$env:FLOWPAD_PYTHON" "<this skill dir>/report.py" `
+  --title "Full diagnostic sweep - all systems healthy" `
+  --status ok `
+  --platform "Windows" `
+  --details ($details -replace '"', '\"')
+```
+
+(PowerShell spellings to note: `$env:FLOWPAD_PYTHON` for the interpreter, `` ` `` for line
+continuation, `&` to invoke a path.)
+
+**Simpler option: run Step 7 in bash**, using the block above this one. Bash passes the quoted
+string through unchanged, so none of this applies — if you have a choice of shell for this step,
+take bash.
 
 Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
 this step errors; the console report from Step 6 still stands.

@@ -1,15 +1,26 @@
-import { Project, User, Visitor, Workspace } from '../entities';
-import { TypeInfo } from '../FlowSync/schema';
-import { ComputeNode } from '../entities/compute_node';
-import { AgentHook } from '../entities/agent-hook';
-import { WebDomain } from '../entities/web-domain';
-import { CapabilitiesSummary } from '../capabilities/CapabilityManager';
+// The bootstrap payload is wire JSON — its callers hydrate it (`new Project(...)`
+// in main.ts). So it names the wire SHAPES, not the entity classes: a class lives
+// above this layer and cannot be loaded from it (see entities/*-types.ts).
+import { IProject } from '../entities/project-types';
+import { JSONSchemaProperty, TypeInfo } from '../FlowSync/schema';
+import { IUser } from '../entities/user-types';
+import { IVisitor } from '../entities/visitor-types';
+import { IWorkspace } from '../entities/workspace-types';
+import { IWebDomain } from '../entities/web-domain-types';
+import { IAgentHook } from '../entities/agent-hook-types';
+import { ComputeProviderType, IComputeNode } from '../entities/compute-node/compute-node-types';
+import { CapabilitiesSummary } from '../capabilities/summary';
+import { RuntimeInfo } from '../utils/runtime';
 
 /**
  * Environment information returned in bootstrap
  */
 export interface EnvInfo {
-  /** Current environment name (e.g., "desktop", "local", "development", "production") */
+  /**
+   * Legacy: a hardcoded `"desktop"` literal on every flow_sdk backend, so it is
+   * `"desktop"` inside a cloud sandbox too. It means "a flow_sdk server
+   * answered", nothing more. Read `BootstrapInfo.runtime.kind` instead.
+   */
   env_name: string;
   /** FLOWPAD_CLOUD_API_URL if set */
   cloud_api_url?: string;
@@ -42,6 +53,8 @@ export interface AppPaths {
   logs: string;
   /** Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json") */
   preferences: string;
+  /** Default parent of a NEW workspace's folder ("Users/alice/Flowpad" for prod). Absent on an older backend. */
+  workspaces_home?: string;
 }
 
 /**
@@ -49,13 +62,15 @@ export interface AppPaths {
  */
 export interface LmInfo {
   /** Available LLM providers (Anthropic, OpenAI, etc.) */
-  llm_providers: string[];
+  llm_providers?: string[];
   /** Installed agent applications (Claude Code, Cursor, etc.) */
-  installed_agents: string[];
+  installed_agents?: string[];
   /** Whether cloud login is available (valid cloud token exists) */
-  cloud_login_available: boolean;
+  cloud_login_available?: boolean;
   /** Cloud (FLOWPAD_HUB_URL) base URL — shown in login button tooltip */
   cloud_url?: string | null;
+  /** Hub browser application origin; unlike cloud_url this has no /api/v1 suffix. */
+  cloud_app_url?: string | null;
   /** Application paths - all absolute, ready to use */
   paths?: AppPaths;
   /** @deprecated Use paths.home instead - Filesystem root (/ on Unix, C:\ on Windows) */
@@ -71,19 +86,6 @@ export interface ScanInfo {
   last_indexed_at: string | null;
   never_indexed: boolean;
   stale: boolean;
-}
-
-export interface HarnessBootstrapItem {
-  kind: string;
-  name: string;
-  installed: boolean;
-  homepage_url?: string | null;
-  is_default: boolean;
-}
-
-export interface HarnessBootstrapState {
-  show_harness_select: boolean;
-  harnesses: HarnessBootstrapItem[];
 }
 
 /**
@@ -103,30 +105,54 @@ export interface BootstrapNotice {
 }
 
 export interface BootstrapInfo {
+  /** Optional discovery is served by a detached GET graph/info request. */
+  info_available?: boolean;
   // Complete type registry: TypeInfo (icon/browseable_by/creatable/fields) +
   // nested JSON schema, one entry per registered type. Loaded into the
   // frontend SchemaRegistry (dataManager.typeInfos) at startup.
   types?: TypeInfo[];
-  user?: User;
-  domain?: WebDomain;
-  visitor?: Visitor;
-  default_project?: Project;
-  default_workspace?: Workspace;
-  default_compute_node?: ComputeNode;
+  /** Compatibility payload emitted by older Hub backends before TypeInfo. */
+  schemas?: JSONSchemaProperty[];
+  user?: IUser;
+  domain?: IWebDomain;
+  visitor?: IVisitor;
+  default_project?: IProject;
+  /** Every workspace on this instance (desk only) — what loaders read before the
+   *  workspace list is fetched. Absent on an older backend. */
+  workspaces?: IWorkspace[];
+  default_workspace?: IWorkspace;
+  default_compute_node?: IComputeNode;
+  /**
+   * The provider a hub mints new compute nodes on, from its own
+   * `FLOWPAD_DEFAULT_COMPUTE_PROVIDER`.
+   *
+   * HUB-ONLY: the OSS backend does not emit it, so it is absent whenever the
+   * SPA is served by a local/desktop backend rather than the hub. Consumers
+   * must carry their own fallback and validate it — the hub's default is
+   * `local_machine`, which can host compute nodes but never a sandbox.
+   */
+  default_compute_provider?: ComputeProviderType;
   /** True iff the backend has E2B configured and the @sandbox compute node is available. */
   sandbox_available?: boolean;
   /** Raw ComputeNode payload for the @sandbox node (E2B-backed). Hydrate via dataContext.sandboxComputeNode. */
-  sandbox_compute_node?: ComputeNode;
-  /** True iff at least one docker worker is currently connected. */
-  docker_available?: boolean;
-  /** Raw ComputeNode payloads for each live @docker-<name> node. Hydrate via dataContext.dockerComputeNodes. */
-  docker_compute_nodes?: ComputeNode[];
+  sandbox_compute_node?: IComputeNode;
+  /** Hub only: whether the hub can provision cloud desktops (e2b workspaces).
+   *  False when the hub has no e2b API key; "New Desktop" is disabled on it. */
+  /** Whether this hub can provision cloud sandboxes (needs an e2b key).
+   *  Renamed from `desktops_enabled` with NO alias — hub and app ship together.
+   *  Absent means an older hub, which is treated as enabled by the caller. */
+  sandboxes_enabled?: boolean;
   env?: EnvInfo;
+  /**
+   * What this app is running as — the single signal every surface reads.
+   * Resolved server-side per request (it depends on the `electron` flag this
+   * client sent), so it is not part of the backend's cached bootstrap payload.
+   */
+  runtime?: RuntimeInfo;
   desktop_info?: LmInfo;
-  harness_state?: HarnessBootstrapState;
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
   capabilities_summary?: CapabilitiesSummary;
-  sniffer_hook?: AgentHook;
+  sniffer_hook?: IAgentHook;
   /** Harness settings file actually carries sniffer hooks — true even when
    *  another instance on this machine installed them (no local entity). */
   sniffer_installed?: boolean;
@@ -135,6 +161,11 @@ export interface BootstrapInfo {
   /** Locales the app ships translations for (backend is the source of truth).
    *  The UI derives its picker from this — it does not hardcode a list. */
   supported_locales?: SupportedLocale[];
+  /** Languages the OS user reads or types on the backend's machine — display
+   *  languages AND keyboard layouts (flow_sdk/i18n/os_languages.py), as BCP-47
+   *  tags. Unioned with `navigator.languages`; the footer's quick language
+   *  switch shows only when that union shares 2+ with `supported_locales`. */
+  user_languages?: string[];
   /** Target languages for *document* translation (backend is the source of
    *  truth: flow_sdk/i18n/translation_targets.py). DISTINCT from
    *  `supported_locales` (the UI-catalog set) — this is the broad set the
@@ -146,8 +177,28 @@ export interface BootstrapInfo {
    *  `"desk"`; a hub backend reports its own set. Navigation to a page not in
    *  this list redirects to the first supported page's home. Absent ⇒ desk-only. */
   supported_pages?: string[];
+  /** Data-privacy mode this instance is in, from the backend's
+   *  `instance_settings/privacy_mode.py`. Seeds `privacyManager`; live changes
+   *  arrive afterwards on `privacy_mode_msg`. */
+  privacy_mode?: 'local' | 'connected';
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
+}
+
+/** Optional runtime discovery; absent/null fields remain unknown. */
+export interface DeferredInfo {
+  desktop_info?: {
+    llm_providers?: string[] | null;
+    installed_agents?: string[] | null;
+    cloud_login_available?: boolean | null;
+  } | null;
+  scan_info?: ScanInfo | null;
+  capabilities_summary?: CapabilitiesSummary | null;
+  sandbox_available?: boolean | null;
+  sandbox_compute_node?: IComputeNode | null;
+  sniffer_hook?: IAgentHook | null;
+  sniffer_installed?: boolean | null;
+  notice?: BootstrapNotice | null;
 }
 
 /** A document-translation target language. Mirrors the backend descriptor in

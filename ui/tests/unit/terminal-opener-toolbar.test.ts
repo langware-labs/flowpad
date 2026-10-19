@@ -5,6 +5,8 @@ import { instancePreferences, PrefKey } from '@sdk';
 import { getInlineOpeners } from '@src/components/terminal/openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor, OpenerId } from '@src/components/terminal/openers/tab_opener_types';
 import { usePinnedOpeners } from '@src/components/terminal/openers/usePinnedOpeners';
+import { rememberLaunch } from '@src/components/terminal/openers/last-launch';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { resetOpenerPrefs } from '../utils/opener-prefs';
 
 // usePinnedOpeners persists through the registry-driven preference store
@@ -51,13 +53,13 @@ describe('terminal opener toolbar memory slot', () => {
     const { result } = renderHook(() => usePinnedOpeners());
 
     act(() => {
-      result.current.rememberOpened('claude');
+      rememberLaunch('claude', null);
     });
     expect(result.current.lastOpened).toBe('claude');
     expect(result.current.pinned).toEqual([]);
 
     act(() => {
-      result.current.rememberOpened('terminal');
+      rememberLaunch('terminal', null);
     });
     expect(result.current.lastOpened).toBe('terminal');
     expect(result.current.pinned).toEqual([]);
@@ -73,5 +75,34 @@ describe('terminal opener toolbar memory slot', () => {
 
     expect(result.current.pinned).toEqual(['codex']);
     expect(result.current.lastOpened).toBe('codex');
+  });
+
+  // The quick-launch slot is "another like the last one": it reproduces the
+  // SHAPE of the last launch, not only its vendor.
+  it('remembers the shape of the last launch next to its opener', () => {
+    rememberLaunch('claude', ViewMode.Vibe);
+    const { result } = renderHook(() => usePinnedOpeners());
+    expect(result.current.lastOpened).toBe('claude');
+    expect(result.current.lastMode).toBe(ViewMode.Vibe);
+
+    act(() => {
+      rememberLaunch('vibe', ViewMode.Vibe);
+    });
+    expect(result.current.lastOpened).toBe('vibe');
+
+    act(() => {
+      rememberLaunch('codex', ViewMode.Advanced);
+    });
+    expect(result.current.lastOpened).toBe('codex');
+    expect(result.current.lastMode).toBe(ViewMode.Advanced);
+    expect(instancePreferences.get(PrefKey.LAST_OPENER_MODE)).toBe('advanced');
+  });
+
+  it('a launch with no shape clears the remembered one', () => {
+    rememberLaunch('claude', ViewMode.Vibe);
+    rememberLaunch('terminal', null);
+    const { result } = renderHook(() => usePinnedOpeners());
+    expect(result.current.lastOpened).toBe('terminal');
+    expect(result.current.lastMode).toBeNull();
   });
 });

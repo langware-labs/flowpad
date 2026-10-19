@@ -3,8 +3,7 @@ import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
-import { TypeId } from '../models/TypeId';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 import { normalizeEmail } from '../utils/utils';
 import type { ConversationParticipant } from './conversation';
@@ -13,14 +12,16 @@ import { createAndSendConversation } from './conversation-send';
 export enum TaskKind {
   STANDARD = 'standard',
   GROUP = 'group',
+  /** Raised from the Vibe workspace's "Ask for help" button — the tasks that button lists. */
+  VIBE = 'vibe',
 }
 
 export interface TaskAssignOptions {
   /** Rides the invitation email, and the notification message when sent. */
   message?: string;
-  /** Session transcript to send with the notification: the file plus the
-   *  session it came from, so the chip and the bytes can't drift apart. */
-  transcript?: { files: File[]; sessionId?: string };
+  /** Session transcript to send with the notification: the file plus its
+   *  TypeId, so the chip and the bytes can't drift apart. */
+  transcript?: { files: File[]; ref?: string };
   /** Skip the notification conversation. The assignment itself still lands —
    *  the task and its invitation email do not depend on it. Default: send. */
   notify?: boolean;
@@ -29,8 +30,6 @@ export interface TaskAssignOptions {
 }
 
 export interface TaskAssignResult {
-  /** Serialized typeid of the assignee's member task; null when self-assigned. */
-  childTypeid: string | null;
   /** Notification conversation id; null when not sent. */
   conversationId: string | null;
   /** True when the assignee is the caller — a local stamp, nothing delivered. */
@@ -43,7 +42,8 @@ export interface ITask extends IEntity {
   asset_ref?: string;
   description?: string;
   status?: string;
-  /** TaskKind: 'group' = overview task owning one member task per group member. */
+  /** TaskKind: 'group' = overview task owning one member task per group member;
+   *  'vibe' = raised from the Vibe workspace's "Ask for help" button. */
   kind?: string;
   /** Contacts-group name a group task was assigned to — shown as "Owner: <group_name>". */
   group_name?: string | null;
@@ -88,7 +88,7 @@ export interface ITask extends IEntity {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -100,7 +100,25 @@ export interface ITask extends IEntity {
   task_type_label?: string | null;
   team_space_id?: string | null;
   worker_session_id?: string | null;
+  // A delegated task (the task ledger): who asked, who does it, what came of it, where it lives.
+  creator?: string | null;
+  owner?: string | null;
+  origin_conversation?: string | null;
+  origin_message?: string | null;
+  origin_session?: string | null;
+  budget_usd?: number | null;
+  budget_turns?: number | null;
+  cost_usd?: number | null;
+  result?: string | null;
+  /** `repo` — a folder asset in the project (git); `instance` — this machine only, until kept. */
+  placement?: string | null;
 }
+
+// `implements ITask` only checks the class; it contributes no members, so every
+// field declared solely on ITask read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Task extends EntityMerge<ITask> {}
 
 @registerEntity
 export class Task extends APIEntity<Task> implements ITask {
@@ -145,7 +163,7 @@ export class Task extends APIEntity<Task> implements ITask {
   process_id?: string | null;
   project_name?: string | null;
   project_root?: string | null;
-  git_origin?: GitOrigin | null;
+  origin?: GitOrigin | null;
   recipient_email?: string | null;
   result_uname?: string | null;
   sender_email?: string | null;
@@ -157,6 +175,18 @@ export class Task extends APIEntity<Task> implements ITask {
   task_type_label?: string | null;
   team_space_id?: string | null;
   worker_session_id?: string | null;
+  // A delegated task (the task ledger): who asked, who does it, what came of it, where it lives.
+  creator?: string | null;
+  owner?: string | null;
+  origin_conversation?: string | null;
+  origin_message?: string | null;
+  origin_session?: string | null;
+  budget_usd?: number | null;
+  budget_turns?: number | null;
+  cost_usd?: number | null;
+  result?: string | null;
+  /** `repo` — a folder asset in the project (git); `instance` — this machine only, until kept. */
+  placement?: string | null;
 
   static type: string = 'task';
 
@@ -203,7 +233,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.process_id = entity.process_id;
     this.project_name = entity.project_name;
     this.project_root = entity.project_root;
-    this.git_origin = entity.git_origin;
+    this.origin = entity.origin;
     this.recipient_email = entity.recipient_email;
     this.result_uname = entity.result_uname;
     this.sender_email = entity.sender_email;
@@ -215,20 +245,27 @@ export class Task extends APIEntity<Task> implements ITask {
     this.task_type_label = entity.task_type_label;
     this.team_space_id = entity.team_space_id;
     this.worker_session_id = entity.worker_session_id;
+    this.creator = entity.creator;
+    this.owner = entity.owner;
+    this.origin_conversation = entity.origin_conversation;
+    this.origin_message = entity.origin_message;
+    this.origin_session = entity.origin_session;
+    this.budget_usd = entity.budget_usd;
+    this.budget_turns = entity.budget_turns;
+    this.cost_usd = entity.cost_usd;
+    this.result = entity.result;
+    this.placement = entity.placement;
   }
 
   /** Default open target: the generic task asset editor (URL-first). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? super.editorDockPointer;
+    return this.assetEditorPointer() ?? super.editorDockPointer;
   }
 
-  override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('task') ?? this.dockPointer;
-  }
 
   /** FrontMatterFsRef for task.md (frontmatter fields + description body). */
   get doc(): FrontMatterFsRef | null {
@@ -255,11 +292,13 @@ export class Task extends APIEntity<Task> implements ITask {
   // now" — reintroduce in Python's ``get_implicit_private_context_entities``
   // override on Task if there's a confirmed UX need.
 
-  // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description
   get descriptionPlainText(): string {
     if (!this.description || this.description === '') {
       return '';
     }
+    // A plain or markdown body (task.md, "Task it", the help dialog) IS the text; only the legacy
+    // Lexical JSON needs unwrapping — parsing every body logged an error per plain one.
+    if (!this.description.trimStart().startsWith('{')) return this.description;
     try {
       const root = JSON.parse(this.description).root;
       const lines: string[] = (root.children || []).map((paragraph: any) =>
@@ -272,40 +311,27 @@ export class Task extends APIEntity<Task> implements ITask {
     }
   }
 
+  /** The description is stored as written — plain or markdown, the task.md body. Reading still
+   *  unwraps a legacy Lexical JSON body; writing never produces one. */
   set descriptionPlainText(text: string) {
-    this.description = text
-      ? JSON.stringify({
-          root: {
-            children: [
-              {
-                children: [
-                  {
-                    text,
-                    type: 'text',
-                    version: 1,
-                  },
-                ],
-                type: 'paragraph',
-                version: 1,
-              },
-            ],
-            type: 'root',
-            version: 1,
-          },
-        })
-      : '';
+    this.description = text;
   }
 
   /**
    * Give this task to someone — the whole assignment in one call.
    *
-   * The backend `assign-task` action creates the assignee's member task on the
-   * hub (so their status changes sync back) and sends the invitation carrying
-   * `message`; for a teammate who already shares a container the hub grants the
-   * roles at once, so the task simply appears on their machine. Then, unless
-   * `notify: false`, a notification conversation goes out carrying the member
-   * task + parent chips and any `files` (pass `transcriptSessionId` to include
-   * the session transcript chip).
+   * Assignment is a SHARE: the backend `assign-task` action puts THIS task on the
+   * hub and grants the assignee `editor` on it, so it simply appears on their
+   * machine (the hub grants an internal invite's roles at invite time — no accept
+   * step). There is no second "member task": that shape belongs to the
+   * contacts-group fan-out, where every member needs their own status. Their
+   * status changes reflect back automatically, scoped to the fields an assignee
+   * owns (`TypeInfo.assignee_owned_fields`), so they can move the work along
+   * without rewriting the ask.
+   *
+   * Then, unless `notify: false`, a notification conversation goes out carrying
+   * the task chip and any `files` (pass `transcript` to include the session), and
+   * the task keeps it as `origin_conversation` — the conversation it lives in.
    *
    * `person` may be a bare email or a picker participant (member / contact /
    * free-form email). Assigning to yourself only stamps `assignee` locally.
@@ -325,20 +351,18 @@ export class Task extends APIEntity<Task> implements ITask {
       ...(participant.name ? { name: participant.name } : {}),
       ...(opts.message?.trim() ? { message: opts.message.trim() } : {}),
     };
-    const { child: childTypeid, self } = await dataManager.callAction<
+    const { self } = await dataManager.callAction<
       Record<string, unknown>,
-      { child: string | null; self: boolean; created: boolean; assignee: string }
+      { self: boolean; assignee: string }
     >(info);
 
     this.assignee = email;
-    if (self || opts.notify === false) return { childTypeid, conversationId: null, self };
+    if (self || opts.notify === false) return { conversationId: null, self };
 
-    // The recipient's OWN member task is the featured chip; the parent overview
-    // rides as its own chip (it carries the body and attachments).
+    // One ask, one task chip (plus the transcript when the caller attached one).
     const chips = [
-      childTypeid,
       this.typeId.toString(),
-      opts.transcript?.sessionId && `claude_session-${opts.transcript.sessionId}`,
+      opts.transcript?.ref,
     ].filter(Boolean) as string[];
     const sent = await createAndSendConversation(
       {
@@ -354,19 +378,104 @@ export class Task extends APIEntity<Task> implements ITask {
       },
       opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
     );
-    return { childTypeid, conversationId: sent.conversation_id, self };
+    // The task lives in that conversation from now on: whoever opens the task (the Vibe
+    // "Ask for help" button, a board row) opens the conversation it was asked in. A local action,
+    // not a save: the task is on the hub now, and a field save round-trips through it, dropping
+    // what the hub does not model — this link is this machine's own (a PRIVATE field).
+    if (sent.conversation_id) {
+      const link = new ActionInfo('link-conversation', Task.type, this.id, 'POST');
+      link.bodyParameters = { conversation_id: sent.conversation_id };
+      await dataManager.callAction(link);
+      this.origin_conversation = sent.conversation_id;
+    }
+    return { conversationId: sent.conversation_id, self };
+  }
+
+  /**
+   * "Task it": the task a conversation message asks for — the one-click follow-up on a message,
+   * received or sent. Assigned to `me`; the message text is the description, its first line the
+   * title. `origin_conversation` / `origin_message` point back at the message (PRIVATE local ids —
+   * a new task is not on the hub yet, so a plain save keeps them), which is how the bubble finds it.
+   */
+  static async fromMessage(
+    message: TaskableMessage,
+    opts: { me?: string | null; project?: { typeId?: import('../models/TypeId').TypeId } | null } = {},
+  ): Promise<Task> {
+    const text = (message.text ?? '').trim();
+    const base = taskTitleFromText(text) || (message.sender_name ? `Message from ${message.sender_name}` : 'Message');
+    const scope = opts.project?.typeId ? [opts.project.typeId] : [];
+    return Task.createWithFreeTitle(
+      {
+        title: base,
+        description: text || undefined,
+        assignee: opts.me || undefined,
+        reporter: opts.me || undefined,
+        sender_name: message.sender_name ?? null,
+        origin_conversation: message.conversation_id ?? null,
+        origin_message: message.id ?? null,
+      },
+      scope,
+    );
+  }
+
+  /**
+   * Create a task under `fields.title`, or the next free one ("… (2)") when that name is taken.
+   * A task is a folder named by its title, unique in its scope, so a title the caller derived
+   * (a message's first line, a help request typed again) can collide with one already there.
+   */
+  static async createWithFreeTitle(
+    fields: ConstructorParameters<typeof Task>[0] & { title: string },
+    scope: import('../models/TypeId').TypeId[] = [],
+  ): Promise<Task> {
+    for (let n = 1; ; n++) {
+      const task = new Task({ ...fields, title: n === 1 ? fields.title : `${fields.title} (${n})` });
+      try {
+        return await task.save(scope);
+      } catch (err) {
+        if (n >= TASK_TITLE_TRIES || !isNameTaken(err)) throw err;
+      }
+    }
   }
 
   /**
    * Create a task with the given title. The `project` argument is accepted for
-   * API parity with other createInProject statics (tasks aren't file-backed per project today).
+   * Create a file-backed task in the selected scope and optional exact destination.
    */
   static async createInProject(
-    _project: unknown,
+    project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
-    _folderVfsPath?: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Task> {
     const task = new Task({ title: name.trim() });
-    return task.save();
+    return task.save(project?.typeId ? [project.typeId] : [], destination);
   }
+}
+
+/** What "Task it" reads off a conversation message — a FlowMessage, or the one a send just made. */
+export type TaskableMessage = {
+  id?: string | null;
+  text?: string | null;
+  conversation_id?: string | null;
+  sender_name?: string | null;
+};
+
+/** How many numbered titles "Task it" tries before giving up on a name. */
+const TASK_TITLE_TRIES = 20;
+
+/** The create was refused because a task with that name already exists in the scope (409). */
+function isNameTaken(err: unknown): boolean {
+  const response = (err as { response?: { status?: number } } | null)?.response;
+  return response?.status === 409;
+}
+
+/** The longest title "Task it" derives from a message. */
+const TASK_TITLE_MAX = 80;
+
+/** A task title from a message: its first non-empty line, cut at a word to {@link TASK_TITLE_MAX}. */
+export function taskTitleFromText(text: string): string {
+  const line = (text.split('\n').find((l) => l.trim()) ?? '').trim().replace(/\s+/g, ' ');
+  if (line.length <= TASK_TITLE_MAX) return line;
+  const cut = line.slice(0, TASK_TITLE_MAX - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > TASK_TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }

@@ -1,7 +1,9 @@
+import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
 import {
   AgentHook,
   dataContext,
   type FlowData,
+  FlowDataSource,
   type HooksSnifferStatus,
   PrefKey,
   snifferManager,
@@ -31,6 +33,17 @@ export type SnifferEvent = {
   session_id?: string;
   hook_data?: Record<string, any>;
   raw_line: string;
+  /** Always `Sniffer`. `EventTooltipContent` and `getTranscriptLensPointer` gate
+   *  their sniffer-only rows on it, so an event without it renders as neither
+   *  a sniffer event nor a history one. */
+  source: FlowDataSource;
+  /** The PARSED payload `raw_line` is the stringification of. The tooltip's JSON
+   *  block and its Copy button read `raw`, not `raw_line`. */
+  raw?: Record<string, any>;
+  /** The FlowData attributes the backend stamped (`hook-entry-id`,
+   *  `hook-file-path`, …) — see `hook_to_flowdata.py`. The tooltip's Entry and
+   *  Source rows read them from here. */
+  attributes?: Record<string, string>;
   layer: EventLayer;
   summary?: string;
   source_event_id?: string;
@@ -86,6 +99,7 @@ function extractSessionId(item: FlowData): string | null {
 }
 
 export function useHooksSniffer() {
+  useRuntimeInfo();
   const [hookId, setHookId] = useState<string | null>(() => dataContext.snifferHook?.entity.id ?? null);
   const [isToggling, setIsToggling] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -94,8 +108,15 @@ export function useHooksSniffer() {
   const globalIndexOffsetRef = useRef(0);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
-  const { projects } = useProjectList();
-  const { computeNode, snifferEnabled, isBootstrapping } = useContext();
+  const { computeNode, snifferEnabled, snifferReady, isBootstrapping } = useContext();
+  // Project discovery scans provider history and can be expensive on a large
+  // machine. The global SnifferProvider is mounted on every page, but project
+  // mapping is only needed once a live event actually carries a cwd.
+  // Memoized: `extractOsPath` parses each event's JSON, and a buffer that never
+  // carries a cwd never short-circuits — that is a full re-parse per render.
+  const hasOsPath = useMemo(() => flowData.some((item) => extractOsPath(item) !== null), [flowData]);
+  const needsProjectMapping = snifferEnabled && hasOsPath;
+  const { projects } = useProjectList({ enabled: needsProjectMapping });
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };
 
@@ -116,15 +137,16 @@ export function useHooksSniffer() {
   // backend (bootstrap auto-enables on desktop init).
   const reconciledRef = useRef(false);
   useEffect(() => {
-    if (isBootstrapping || reconciledRef.current) return;
+    if (isBootstrapping || !snifferReady || reconciledRef.current) return;
     reconciledRef.current = true;
     const desired = loadSnifferPreference();
     if (desired === null || desired === snifferEnabled) return;
     setIsToggling(true);
     void (desired ? snifferManager.enable() : snifferManager.disable())
       .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))
+      .catch((error) => console.warn('[sniffer] Preference reconciliation failed', error))
       .finally(() => setIsToggling(false));
-  }, [isBootstrapping, snifferEnabled]);
+  }, [isBootstrapping, snifferEnabled, snifferReady]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {
@@ -288,6 +310,9 @@ export function useHooksSniffer() {
             event_data: rsPayload?.data?.event_data,
           },
           raw_line: typeof raw === 'string' ? raw : JSON.stringify(raw, null, 2),
+          source: FlowDataSource.Sniffer,
+          raw: rsPayload ?? undefined,
+          attributes: item?.attributes,
           layer: 'debug',
           warning: item?.warning || attrs?.warning || undefined,
           error: item?.error_text || attrs?.error || undefined,
@@ -333,6 +358,9 @@ export function useHooksSniffer() {
               entry_type: payload.entry.type,
             },
             raw_line: rawJson,
+            source: FlowDataSource.Sniffer,
+            raw: payload,
+            attributes: item?.attributes,
             layer: 'debug',
             transcriptDockPointer: transcriptEntryPointer,
             triggerLogDockPointer: null,
@@ -396,6 +424,9 @@ export function useHooksSniffer() {
         session_id: hookDataRaw.session_id || payload.event?.context?.session_id || '',
         hook_data: hookData,
         raw_line: rawJson,
+        source: FlowDataSource.Sniffer,
+        raw: payload,
+        attributes: item?.attributes,
         layer: 'debug',
         skill_usage_count: hookData.skill_usage_count ?? undefined,
         warning: itemWarning,

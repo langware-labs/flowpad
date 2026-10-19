@@ -263,8 +263,13 @@ export class PtySyncSession {
   // ── Resize ────────────────────────────────────────────────────────────
 
   /**
-   * Rebuild VT with new dimensions and replay all chunks.
+   * Rebuild VT with new dimensions and replay the shell's chunk window.
    * Called from ResizeObserver handler.
+   *
+   * The window is not the whole session (PtyConnection drops the oldest chunks past a bound,
+   * and the recorded history xterm shows on attach never passes through here), so the replay
+   * starts on row 0 while xterm's cursor sits below everything it holds. The model is padded
+   * so its cursor lands on xterm's: rows older than the window read as "no timestamp".
    */
   rebuild(chunks: OutputChunk[]): void {
     if (!this._adapter) return;
@@ -282,6 +287,9 @@ export class PtySyncSession {
     for (const chunk of chunks) {
       newVt.processChunk(chunk);
     }
+
+    const { baseY, cursorY } = this._adapter.getScrollState();
+    newVt.padTop(baseY + cursorY - (newVt.getCursorRow() - newVt.getTotalScrolledOff()));
 
     this._adapter.setEvictionOffset(newVt.getTotalScrolledOff());
     this._vt = newVt;

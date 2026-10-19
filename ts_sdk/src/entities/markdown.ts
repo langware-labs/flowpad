@@ -1,5 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import type { FSRefJson } from '../fs/FSRef';
 
@@ -33,8 +33,14 @@ export interface IMarkdown extends IEntity {
   project_id?: string;
 }
 
+// `implements IMarkdown` only checks the class; it contributes no members, so every
+// field declared solely on IMarkdown read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Markdown extends EntityMerge<IMarkdown> {}
+
 /**
- * Markdown (Docs) entity — wiki/markdown files under `.claude/docs/*.md`.
+ * Markdown (Docs) entity — wiki/markdown files under `docs/*.md` (AssetClass.DOCS).
  *
  * Creation goes through ``new Markdown().save(scope)`` only. The backend
  * Entity.save() resolves scope from request_context, calls
@@ -79,21 +85,22 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
    * base `APIEntity.dockPointer` (HOME) would send the doc to the home view.
    */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('markdown') ?? super.dockPointer;
+    return this.assetEditorPointer() ?? this.defaultDockPointer;
   }
 
   /**
    * Create a markdown doc scoped to the given project. Mirrors
-   * ``Skill.createInProject`` / ``Agent.createInProject`` — the file is
+   * ``Skill.createInProject`` / ``SubAgent.createInProject`` — the file is
    * written by the backend's ``MarkdownRecord.upsert_main_ref`` inside
    * ``Entity.save()``, so the resulting entity is in the cache immediately.
    */
   static async createInProject(
     project: { typeId?: import('../models/TypeId').TypeId } | null,
     name: string,
+    destination?: import('../fs/FSRef').FSRefJson,
   ): Promise<Markdown> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const md = new Markdown({ name: name.trim() });
-    return md.save(scopeIds);
+    return md.save(scopeIds, destination);
   }
 }

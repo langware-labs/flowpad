@@ -1,12 +1,18 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export interface IOrganization extends IEntity {
   name?: string;
   account?: string;
   domain?: string;
-  icon?: string;
+  icon?: string | null;
 }
+
+// `implements IOrganization` only checks the class; it contributes no members, so every
+// field declared solely on IOrganization read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Organization extends EntityMerge<IOrganization> {}
 
 @registerEntity
 export class Organization extends APIEntity<Organization> implements IOrganization {
@@ -14,7 +20,6 @@ export class Organization extends APIEntity<Organization> implements IOrganizati
   name?: string;
   account?: string;
   domain?: string;
-  icon?: string;
 
   constructor(entity: Partial<IOrganization> = {}) {
     super(entity);

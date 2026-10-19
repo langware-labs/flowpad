@@ -3,7 +3,7 @@
 Contract under test:
 
   * ``Folder.mint_for_path`` is idempotent: same directory (any spelling) →
-    same v5 entity; different directory → different entity.
+    same entity; different directory → different entity.
   * Saving a Folder writes NOTHING into the referenced directory (no
     ``default_body_fn``, ``owns_main_ref=False``) and never sets ``asset_ref``
     (generic purge paths rmtree asset_ref targets — a Folder must never point
@@ -14,9 +14,9 @@ Contract under test:
 import pytest
 
 from flow_sdk.builtin.folder import Folder
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.builtin.local_origin import LocalOrigin
-from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
@@ -42,7 +42,7 @@ async def test_mint_for_path_idempotent(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_non_repo_dir_is_local_origin_with_stable_id(tmp_path):
+async def test_non_repo_dir_is_local_origin_with_natural_key(tmp_path):
     d = tmp_path / "plain"
     d.mkdir()
     folder = await Folder.mint_for_path(str(d))
@@ -51,16 +51,14 @@ async def test_non_repo_dir_is_local_origin_with_stable_id(tmp_path):
     assert folder.origin is not None
     assert folder.origin.kind == "local"
     assert folder.origin.base == canonical
-    # ZERO-MIGRATION GUARD: a local folder's id is byte-identical to the legacy
-    # path-derived id, so existing folders + links never re-key.
+    # The legacy lookup handle stays byte-identical; new rows store it as origin_id.
     assert Folder.id_for_origin(LocalOrigin(base=canonical)) == Folder.id_for_path(canonical)
-    assert folder.id == Folder.id_for_path(canonical)
+    assert folder.origin_id == LocalOrigin(base=canonical).key()
 
 
 @pytest.mark.asyncio
-async def test_git_backed_folder_id_is_origin_key(tmp_path, monkeypatch):
-    """A dir inside a git repo → transportable GitOrigin; the Folder id is
-    origin.key() (same on every machine → shared refs resolve), stable across mints."""
+async def test_git_backed_folder_reuses_origin_key(tmp_path, monkeypatch):
+    """A directory's transportable origin is the lookup key across mints."""
     git_origin = GitOrigin(provider="github", owner="Acme", name="Repo",
                            branch="main", rel_path="pkg/tools")
 
@@ -76,7 +74,7 @@ async def test_git_backed_folder_id_is_origin_key(tmp_path, monkeypatch):
     d.mkdir(parents=True)
     a = await Folder.mint_for_path(str(d))
     assert a.origin is not None and a.origin.kind == "git"
-    assert a.id == git_origin.key()
+    assert a.origin_id == git_origin.key()
     b = await Folder.mint_for_path(str(d))
     assert b.id == a.id  # stable across mints
 
@@ -138,7 +136,7 @@ def test_hub_body_never_leaks_local_path(tmp_path):
     )
     git_body = git._hub_body()
     assert "path" not in git_body
-    assert git_body["origin"]["kind"] == "git"
+    assert "origin" not in git_body and git_body["git_origin"]["kind"] == "git"   # the hub-wire name
     assert "/Users/alice" not in str(git_body)
 
 
@@ -161,3 +159,26 @@ async def test_resolve_location_missing_target_does_not_save_path(tmp_path, monk
     assert "not found" in resp.data["message"]
     reloaded = await Folder.get_by_id(folder.id)
     assert reloaded.path in (None, "")
+
+
+@pytest.mark.asyncio
+async def test_hub_repo_folder_reuses_natural_key_with_uuid_identity():
+    from uuid import UUID
+    from flow_sdk.api.api_types.identifier import mint_uuid
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+
+    origin = HubRepoOrigin(repo=f"git_repo-{mint_uuid()}", rel_path=".")
+    first = await Folder.mint_for_origin(origin)
+    again = await Folder.mint_for_origin(origin.model_copy(update={"head_commit": "new-head"}))
+    assert UUID(first.id).version == 4
+    assert again.id == first.id
+    assert first.origin_id == origin.key()
+
+
+@pytest.mark.asyncio
+async def test_mint_for_origin_preserves_legacy_folder_id(tmp_path):
+    origin = LocalOrigin(base=str(tmp_path / "legacy"))
+    legacy = Folder(id=origin.key(), origin=origin, name="legacy")
+    await legacy.save()
+    found = await Folder.mint_for_origin(origin)
+    assert found.id == legacy.id

@@ -112,6 +112,7 @@ RENDEZVOUS_FILES=(
   /tmp/flowpad_rename_http_done.txt
   /tmp/flowpad_rename_http_confirmed.txt
   /tmp/flowpad_rename_ws_done.txt
+  /tmp/flowpad_rename_bob_done.txt
 )
 cleanup_rendezvous() { rm -f "${RENDEZVOUS_FILES[@]}"; }
 trap cleanup_rendezvous EXIT
@@ -119,6 +120,11 @@ cleanup_rendezvous
 
 run_pair() { # <alice-file> <bob-file>
   local alice="$1" bob="$2" arc brc
+  # Every pair owns a fresh rendezvous namespace. Matrix and rename share the
+  # conversation-id file, so clearing only once for the full runner lets the
+  # pre-warmed rename receiver consume matrix's completed conversation before
+  # rename Alice publishes her new id.
+  cleanup_rendezvous
   echo "[paired] running $alice <-> $bob"
   (
     cd ui

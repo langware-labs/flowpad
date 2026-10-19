@@ -12,10 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
+import flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker as sw
+from flow_sdk import toplog
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
     CANCEL_GRACE_SECONDS,
     ClaudeCLIStreamWorker,
@@ -140,8 +144,11 @@ async def test_full_turn_yields_correct_flowdata_sequence(tmp_path: Path, monkey
     assert types.index(FlowElementType.RESULT) < types.index(FlowElementType.END)
 
 
-def test_terminal_chat_and_result_wait_for_subprocess_settlement_boundary():
-    """Claude stdout assistant precedes its JSONL append; EOF is durable."""
+def test_terminal_chat_and_result_release_at_the_turns_result():
+    """Claude stdout assistant precedes its JSONL append, so the answer is held —
+    but only until ``result``, which Claude prints after the row lands. Holding
+    to process exit would strand it for as long as the turn's background work
+    runs, since the CLI stays alive for that and then answers again."""
     gate = _TranscriptDurabilityGate()
     terminal_frames = convert_event(ASSISTANT_TEXT)
 
@@ -151,10 +158,30 @@ def test_terminal_chat_and_result_wait_for_subprocess_settlement_boundary():
     assert gate.feed({"type": "rate_limit_event"}, rate_limit) == []
 
     result_frames = convert_event(RESULT_SUCCESS)
-    assert gate.feed(RESULT_SUCCESS, result_frames) == []
-    drained = gate.drain()
-    assert drained == terminal_frames + rate_limit + result_frames
+    released = gate.feed(RESULT_SUCCESS, result_frames)
+    assert released == terminal_frames + rate_limit + result_frames
     assert gate.drain() == []
+
+
+def test_a_second_turns_answer_streams_after_the_first_ones_result():
+    """Background work the agent launched keeps ``claude -p`` alive past the
+    turn; when it ends the CLI reports the outcome in another turn. That report
+    is the whole point of backgrounding, so it must reach the chat as its own
+    answer — not be swallowed into the first turn's batch."""
+    gate = _TranscriptDurabilityGate()
+
+    first = convert_event(ASSISTANT_TEXT)
+    gate.feed(ASSISTANT_TEXT, first)
+    first_result = convert_event(RESULT_SUCCESS)
+    assert gate.feed(RESULT_SUCCESS, first_result) == first + first_result
+
+    notification = convert_event({"type": "system", "subtype": "task_notification", "task_id": "b1"})
+    assert gate.feed({"type": "system", "subtype": "task_notification"}, notification) == notification
+
+    second = convert_event(ASSISTANT_TEXT)
+    assert gate.feed(ASSISTANT_TEXT, second) == []  # held as its own turn's candidate
+    second_result = convert_event(RESULT_SUCCESS)
+    assert gate.feed(RESULT_SUCCESS, second_result) == second + second_result
 
 
 def test_non_end_turn_terminal_reason_waits_for_settlement_boundary():
@@ -178,7 +205,10 @@ def test_per_block_narration_released_on_continuation():
     }
     tool_use_only = {
         "type": "assistant",
-        "message": {"content": [{"type": "tool_use", "id": "toolu_9", "name": "Bash", "input": {}}], "stop_reason": None},
+        "message": {
+            "content": [{"type": "tool_use", "id": "toolu_9", "name": "Bash", "input": {}}],
+            "stop_reason": None,
+        },
     }
     narration_frames = convert_event(narration_event)
     tool_frames = convert_event(tool_use_only)
@@ -192,8 +222,8 @@ def test_per_block_narration_released_on_continuation():
     assert gate.feed(USER_TOOL_RESULT, tool_result_frames) == tool_result_frames
     final_frames = convert_event(ASSISTANT_TEXT)
     assert gate.feed(ASSISTANT_TEXT, final_frames) == []  # real final answer held
-    assert gate.feed(RESULT_SUCCESS, result_frames) == []  # result locks the hold
-    assert gate.drain() == final_frames + result_frames
+    assert gate.feed(RESULT_SUCCESS, result_frames) == final_frames + result_frames  # released at result
+    assert gate.drain() == []
 
 
 def test_tool_use_narration_stays_live_and_in_event_order():
@@ -216,15 +246,14 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
     dict is reused for conversion, session-id capture, and the durability gate.
 
     Invariant: the number of in-process ``json.loads`` calls during the turn
-    equals the number of ``_stream_event`` calls (one parse per line). Any
+    equals the number of ``stream_event`` calls (one parse per line). Any
     second parse of a line (the old ``convert_line`` + ``_extract_session_id``
     re-parses) would push ``json.loads`` above the per-line count.
     """
-    import flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker as sw
 
     counts = {"loads": 0, "stream_event": 0}
     real_loads = json.loads
-    real_stream_event = sw._stream_event
+    real_stream_event = sw.stream_event
 
     def counting_loads(*args, **kwargs):
         counts["loads"] += 1
@@ -235,13 +264,15 @@ async def test_each_stream_line_parsed_once(tmp_path: Path, monkeypatch: pytest.
         return real_stream_event(decoded)
 
     monkeypatch.setattr(json, "loads", counting_loads)
-    monkeypatch.setattr(sw, "_stream_event", counting_stream_event)
+    monkeypatch.setattr(sw, "stream_event", counting_stream_event)
 
     worker = ClaudeCLIStreamWorker()
     patch_build_spawn(
         monkeypatch,
         ClaudeCLIStreamWorker,
-        fake_stream_argv([INIT_EVENT, ASSISTANT_TOOL_USE, USER_TOOL_RESULT, ASSISTANT_TEXT, RESULT_SUCCESS], delay_ms=5),
+        fake_stream_argv(
+            [INIT_EVENT, ASSISTANT_TOOL_USE, USER_TOOL_RESULT, ASSISTANT_TEXT, RESULT_SUCCESS], delay_ms=5
+        ),
     )
     ctx = AgenticContext(workdir=str(tmp_path))
 
@@ -260,7 +291,7 @@ async def test_malformed_lines_still_yield_todays_fallback(tmp_path: Path, monke
     stop valid events around them from converting normally."""
     lines = [
         "this is not json at all",  # non-JSON → []
-        json.dumps([1, 2, 3]),      # valid JSON, not a dict → []
+        json.dumps([1, 2, 3]),  # valid JSON, not a dict → []
         json.dumps(INIT_EVENT),
         json.dumps(ASSISTANT_TEXT),
         json.dumps(RESULT_SUCCESS),
@@ -276,7 +307,7 @@ async def test_malformed_lines_still_yield_todays_fallback(tmp_path: Path, monke
     types = [fd.attributes["element-type"] for fd in out]
     # Valid events around the garbage still convert.
     assert FlowElementType.STATUS in types  # init
-    assert FlowElementType.CHAT in types    # assistant answer
+    assert FlowElementType.CHAT in types  # assistant answer
     assert FlowElementType.RESULT in types
     assert out[-1].attributes["element-type"] == FlowElementType.END
     # The garbage produced no parse-error/unknown frames — it's silently dropped.
@@ -398,7 +429,9 @@ async def test_close_session_graceful_interrupt(tmp_path: Path, monkeypatch: pyt
     script = tmp_path / "fake_claude_graceful.py"
     script.write_text(GRACEFUL_FAKE_CLI, encoding="utf-8")
     worker = ClaudeCLIStreamWorker()
-    user_msg = json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}) + "\n"
+    user_msg = (
+        json.dumps({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "hi"}]}}) + "\n"
+    )
     patch_build_spawn(monkeypatch, ClaudeCLIStreamWorker, ["python3", str(script)], stdin=user_msg)
     ctx = AgenticContext(workdir=str(tmp_path))
 
@@ -463,6 +496,13 @@ async def test_no_claude_binary_yields_error_flowdata_then_raises(tmp_path: Path
     # frame for the chat stream, then WorkerSpawnError for the turn runner's
     # FAILED + start_failure latch.
     clear_harness_capability(monkeypatch, "claude")
+    # `no_worker_message` answers two different questions: "claude is missing"
+    # vs "nothing is installed at all". Which one it picks depends on whether
+    # ANY vendor resolves — so without pinning that, this assertion passed on a
+    # dev machine (codex/copilot on PATH) and failed on CI (bare image), which
+    # is exactly how it broke. Seed one other vendor to make the branch the
+    # test is asserting the one that actually runs, on any host.
+    seed_harness_capability(monkeypatch, "codex", make_fake_cli_bin(tmp_path, "codex")[0])
     ctx = AgenticContext(workdir=str(tmp_path))
 
     out = []
@@ -488,7 +528,7 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
         env_vars={"PATH": f"{tmp_path / 'venv-bin'}{os.pathsep}{stripped}"},
     )
 
-    argv, env, stdin_payload = ClaudeCLIStreamWorker()._build_spawn("hi", ctx)
+    argv, env, stdin_payload = ClaudeCLIStreamWorker()._build_spawn(ctx, "hi")
 
     assert argv[0] == str(claude)
     assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
@@ -496,6 +536,59 @@ def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkey
     # the graceful-interrupt channel) — never as an argv positional.
     assert "--input-format" in argv and "stream-json" in argv
     assert "--" not in argv
-    payload = json.loads(stdin_payload)
+    # stdin now carries TWO lines: a ``set_max_thinking_tokens`` control
+    # request (opts into summarized thinking — FLOWPAD-2098) ahead of the
+    # user message it used to be alone.
+    lines = stdin_payload.splitlines()
+    assert len(lines) == 2
+    control = json.loads(lines[0])
+    assert control["type"] == "control_request"
+    assert control["request"]["subtype"] == "set_max_thinking_tokens"
+    assert control["request"]["thinking_display"] == "summarized"
+    payload = json.loads(lines[1])
     assert payload["type"] == "user"
     assert payload["message"]["content"][0]["text"] == "hi"
+
+
+# ── debug-file granularity switch ────────────────────────────────────────────
+
+
+def _debug_names(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, count: int) -> list[str]:
+    """``count`` consecutive ``_turn_debug_file`` names for one session id."""
+    settings = MagicMock()
+    settings.logs_dir = tmp_path / "logs"
+    monkeypatch.setattr(sw, "get_instance_settings", lambda: settings)
+    return [Path(sw._turn_debug_file("sess-1")).name for _ in range(count)]
+
+
+def test_debug_file_is_per_turn_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Default (tag off): the name is stamped per turn, so the recovery turn
+    ~30s after a failure can't clobber the failure's evidence."""
+    monkeypatch.setattr(toplog, "_enabled", True, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", set(), raising=False)
+
+    (name,) = _debug_names(tmp_path, monkeypatch, 1)
+
+    assert re.fullmatch(r"sess-1-\d{8}T\d{9}\.txt", name), name
+
+
+def test_session_debug_log_tag_collapses_a_session_onto_one_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Tag on: back to one file per session, the shape the CLI itself uses."""
+    monkeypatch.setattr(toplog, "_enabled", True, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", {sw.SESSION_DEBUG_LOG_TAG}, raising=False)
+
+    first, second = _debug_names(tmp_path, monkeypatch, 2)
+
+    assert first == second == "sess-1.txt"
+
+
+def test_master_switch_off_means_per_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The tag reads through ``toplog.is_on``, so a disabled master switch
+    yields the per-turn default regardless of the filter."""
+    monkeypatch.setattr(toplog, "_enabled", False, raising=False)
+    monkeypatch.setattr(toplog, "_active_tags", {sw.SESSION_DEBUG_LOG_TAG}, raising=False)
+
+    (name,) = _debug_names(tmp_path, monkeypatch, 1)
+
+    assert name != "sess-1.txt"
+    assert re.fullmatch(r"sess-1-\d{8}T\d{9}\.txt", name), name

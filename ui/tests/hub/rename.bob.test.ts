@@ -14,12 +14,10 @@
  *       hub read and no re-fetch: hub fan-out → bob's bridge → save(notify) →
  *       local data_op → SDK cache. This is the true end-to-end chain
  *       (alice → alice local server → hub → bob local server → bob client).
- *       It FAILS today: the hub fans membership + flow_message events to
- *       participants but NOT generic conversation field updates, so the rename
- *       never becomes a data_op_msg on bob's bridge. The assertion is kept (not
- *       skipped) precisely so the gap is visible and flips to green the day the
- *       hub fans conversation updates. Mirrors how matrix.bob receives alice's
- *       *messages* over the same path (which the hub does fan).
+ *       The hub routes the update by auto-watch (every live connection whose
+ *       user holds a ROLE path to the conversation), so bob's approved role +
+ *       live hub bridge is the barrier before alice renames. Mirrors how
+ *       matrix.bob receives alice's *messages* over the same path.
  *
  * Run:
  *   FLOW_INSTANCE=$SHARE_INST_2 BOB_EMAIL=<bob>@local.test BOB_PW=<pw> \
@@ -28,22 +26,30 @@
 import { promises as fsp } from 'node:fs';
 
 import { config, dataContext } from '@sdk';
-import { Conversation, acceptInvitation, fetchConversations } from '@sdk/entities/conversation';
-import { Invitation } from '@sdk/entities/invitation';
+import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { hubConversationTitle, hubConversationWatchers, hubLogin } from './_hub';
-import { pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous, waitMarker } from './_matrix';
+import { hubApprovedMembership, hubConversationTitle, hubLogin } from './_hub';
+import {
+  pollUntil,
+  probeHub,
+  probeLocalBackendLoggedIn,
+  readRendezvous,
+  syncAssignedConversation,
+  waitMarker,
+} from './_matrix';
 
 const JOINED = '/tmp/flowpad_rename_joined.txt';
 const HTTP_DONE = '/tmp/flowpad_rename_http_done.txt';
 const HTTP_CONFIRMED = '/tmp/flowpad_rename_http_confirmed.txt';
 const WS_DONE = '/tmp/flowpad_rename_ws_done.txt';
+const BOB_DONE = '/tmp/flowpad_rename_bob_done.txt';
 
 let skipReason: string | null = null;
 let bobEmail: string | null = null;
 let bobToken: string | null = null;
+let bobUserId: string | null = null;
 
 beforeAll(async () => {
   const hub = await probeHub();
@@ -68,7 +74,10 @@ beforeAll(async () => {
   if (backend.email !== bobEmail) {
     throw new Error(`bob backend identity '${backend.email}' does not match BOB_EMAIL '${bobEmail}'`);
   }
-  bobToken = (await hubLogin(bobEmail, bPass)).token;
+  const bobAuth = await hubLogin(bobEmail, bPass);
+  bobToken = bobAuth.token;
+  bobUserId = bobAuth.user?.id ?? null;
+  if (!bobUserId) throw new Error('hub login returned no user id for bob');
   console.log(`[rename.bob] ready: backend=${bobEmail}`);
 });
 
@@ -79,66 +88,52 @@ beforeEach(async (context: any) => {
   await apiTestSetup(signupInfo, context.task.name);
 });
 
-async function findPendingInvitation(convId: string): Promise<Invitation | null> {
-  await fetchConversations();
-  const all = await Invitation.query<Invitation>({ query: {} }, true);
-  const exact = all.find((inv) => !inv.accepted && (inv.target_url_path || '').includes(convId));
-  if (exact) return exact;
-  const mine = all
-    .filter((inv) => !inv.accepted && inv.recipient_email === bobEmail)
-    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
-  return mine[0] ?? null;
-}
-
 describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)', () => {
-  it('confirms both of alice\'s renames (HTTP, then WS) on the hub', async () => {
+  it("confirms both of alice's renames (HTTP, then WS) on the hub", async () => {
     const convId = await readRendezvous(25_000);
     const httpName = `http-${convId.slice(0, 8)}`;
     const wsName = `ws-${convId.slice(0, 8)}`;
     console.log(`[rename.bob] conv id: ${convId.slice(0, 8)}`);
 
-    const invitation = await pollUntil(
-      () => findPendingInvitation(convId),
-      25_000,
-      'pending invitation for conv',
-    );
-    const accepted = await acceptInvitation({ invitation_id: invitation.id! });
-    expect(accepted.invitation_id).toBe(invitation.id);
-    console.log('[rename.bob] invitation accepted + joined');
+    await syncAssignedConversation(config.SERVER_URL, convId);
+    console.log('[rename.bob] assigned conversation synchronized');
 
     // Materialize locally, then tap bob's LOCAL conversation entity for live
     // updates pushed over his own UI WS. ``watch()`` registers the backend-side
     // watch so the local data_op routes to this connection; ``subscribe()``
     // records each pushed entity version. A cross-user rename only lands here if
     // the hub fans the field update to bob and his bridge materializes it.
-    const conv = await pollUntil(
-      () => Conversation.getById<Conversation>(convId),
-      10_000,
-      'conversation materialized',
-    );
+    const conv = await pollUntil(() => Conversation.getById<Conversation>(convId), 10_000, 'conversation materialized');
     const offWatch = await conv.watch();
     let observedTitle: string | null = null;
     const offSub = conv.subscribe((u) => {
-      if (u) observedTitle = (u as Conversation).title ?? observedTitle;
+      if (u) observedTitle = u.title ?? observedTitle;
     });
 
     // Put the conversation in bob's browser context as the active entity — the
     // exact call the real app makes on conversation open (load-conversation.ts).
-    // The SDK's (now self-contained) context reporter mirrors it to bob's
-    // backend, where BrowserContextWatch registers a HUB watch for this remote
-    // conversation so the hub will fan alice's update back to bob. Barrier on
-    // the hub's watcher list so the watch is live BEFORE we signal JOINED (i.e.
-    // before alice renames) — closes the register-vs-rename race.
+    // The SDK's context reporter mirrors it to bob's backend (BrowserContextWatch).
     await dataContext.setActiveEntityTypeId(conv.typeId);
+
+    // Barrier: the hub will route alice's update to bob BEFORE we signal JOINED
+    // (i.e. before alice renames) — closes the route-vs-rename race. The hub's
+    // default routing is auto-watch: a data op fans out to every live connection
+    // whose user holds a ROLE path to the target, and the explicit ``watch``
+    // action (ConnectedThrough) is a no-op whose GET always answers ``[]``. So
+    // the routing precondition is (1) bob holds an approved role on the
+    // conversation on the hub, and (2) bob's backend hub bridge is connected.
     await pollUntil(
       async () => {
-        const w = await hubConversationWatchers(bobToken!, convId);
-        return (w?.length ?? 0) > 0;
+        const member = await hubApprovedMembership(bobToken!, convId, bobUserId!);
+        if (!member) return null;
+        const r = await fetch(`${config.SERVER_URL}/cloud/status`);
+        const body = (await r.json().catch(() => null)) as { data?: { connection?: { status?: string } } } | null;
+        return body?.data?.connection?.status === 'connected' ? member : null;
       },
       15_000,
-      'bob backend registered a hub watch (ConnectedThrough) on the conversation',
+      'hub routes conversation ops to bob (approved role + live hub bridge)',
     );
-    console.log('[rename.bob] hub watch registered via browser context');
+    console.log('[rename.bob] hub routes conversation ops to bob (auto-watch role path)');
 
     await fsp.writeFile(JOINED, convId, 'utf-8');
 
@@ -186,6 +181,8 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     } finally {
       offSub();
       await offWatch().catch(() => {});
+      // Release alice: her test end deletes the conversation on the hub.
+      await fsp.writeFile(BOB_DONE, convId, 'utf-8');
     }
     expect(receivedOverWs).toBe(wsName);
     console.log(`[rename.bob] received alice's rename over local WS → ${receivedOverWs}`);

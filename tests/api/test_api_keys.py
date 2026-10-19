@@ -8,11 +8,10 @@ Original: old_flowpad_repo/flowpad/flowpad/hub/tests/api/test_api_keys.py
 Classification: ADAPT (cloud auth tests skipped, CRUD tests adapted)
 """
 
-import json
 
 import pytest
 
-from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
+from flow_sdk.responses.response import ApiResponseStatus
 
 
 @pytest.mark.asyncio
@@ -42,14 +41,15 @@ async def test_create_api_key(bootstrapped_client, user):
 
     data = res["data"]
     # Full key returned at creation
-    assert "key" in data, "Full API key not returned in response"
-    full_key = data["key"]
+    assert "api_key" in data, "Full API key not returned in response"
+    full_key = data["api_key"]
     assert full_key.startswith("fp_live_"), f"API key has invalid format: {full_key}"
     assert len(full_key) == 32, f"API key has invalid length: {len(full_key)} (expected 32)"
 
     # Metadata
     assert data["name"] == "Test API Key"
-    assert data["bind_typeid"] == str(user.typeid)
+    assert data["target_typeid"] == str(user.typeid)
+    assert data["visible_value"] == f"****{full_key[-4:]}"
 
 
 @pytest.mark.asyncio
@@ -87,7 +87,10 @@ async def test_list_api_keys(bootstrapped_client, user):
         assert "id" in key, "id should be present"
         assert "name" in key, "name should be present"
         assert "is_active" in key, "is_active should be present"
-        assert "bind_typeid" in key, "bind_typeid should be present"
+        assert "target_typeid" in key, "target_typeid should be present"
+        assert key["target_typeid"] == str(user.typeid)
+        assert key["visible_value"] == "****"
+        assert "api_key" not in key, "Full API key must only be returned at creation"
 
 
 @pytest.mark.asyncio
@@ -109,11 +112,9 @@ async def test_deactivate_api_key(bootstrapped_client, user):
     assert create_response.status_code == 200
     key_id = create_response.json()["data"]["id"]
 
-    # Deactivate the key - use request() since delete() doesn't support content/json
-    delete_response = await client.request(
-        "DELETE",
-        f"/api/v1/graph/user/{user.id}/api-keys",
-        json={"id": key_id},
+    # The shared hub/desktop contract addresses active keys by name.
+    delete_response = await client.delete(
+        f"/api/v1/graph/user/{user.id}/api-keys/Deactivate%20Test%20Key",
     )
     assert delete_response.status_code == 200, f"Failed to deactivate API key: {delete_response.text}"
 
@@ -123,9 +124,9 @@ async def test_deactivate_api_key(bootstrapped_client, user):
 
 
 @pytest.mark.asyncio
-async def test_create_api_key_requires_bind_typeid(bootstrapped_client, user):
+async def test_create_api_key_derives_target_from_request_path(bootstrapped_client, user):
     """
-    Test: Creating an API key without bind_typeid fails.
+    The bound principal comes from the URL, matching the hub contract.
     """
     client = bootstrapped_client
 
@@ -134,14 +135,7 @@ async def test_create_api_key_requires_bind_typeid(bootstrapped_client, user):
         json={"name": "Missing bind_typeid"},
     )
 
-    # The action may return 500 (unhandled error) or 200 with FAIL status
-    # depending on how the graph handler wraps the error
-    if response.status_code == 200:
-        res = response.json()
-        assert res["status"] == "FAIL"
-        assert "bind_typeid" in res["message"].lower()
-    else:
-        # Error is caught by the CatchAllExceptionMiddleware and returned as 500
-        assert response.status_code == 500
-        res = response.json()
-        assert "bind_typeid" in res.get("message", "").lower() or "bind_typeid" in str(res).lower()
+    assert response.status_code == 200
+    res = response.json()
+    assert res["status"] == ApiResponseStatus.SUCCESS.value
+    assert res["data"]["target_typeid"] == str(user.typeid)

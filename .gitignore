@@ -13,7 +13,14 @@ ui/.swc/
 /*.png
 /page-*.png
 /.playwright-mcp/
+/.claude/transcripts/
+/header.json
 old_flowpad_repo/
+
+# GraphWorkflowManager run journals — execution output that today lands next to
+# the AUTHORED flow/journey folder (see
+# flow_sdk/graph_workflow_manager/journal.py). Never source; never committed.
+flow_sdk/system_projects/**/runs/
 
 .idea
 # Ignore all .env files
@@ -62,6 +69,8 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
+# the launcher's application manifest IS source (asInvoker; see flow_sdk/rust/resources)
+!flow_sdk/rust/resources/flowpad-install.manifest
 *.spec
 !pyinstaller/minihub.spec
 
@@ -164,6 +173,9 @@ venv.bak/
 
 # Vite intermediate files
 *.mjs
+!flow_sdk/testing/*.mjs
+# ...but a shipped skill's own scripts are source (real-browser/scripts/browser.mjs)
+!flow_sdk/system_projects/**/.claude/skills/*/scripts/*.mjs
 
 # Spyder project settings
 .spyderproject
@@ -205,6 +217,8 @@ dist/
 dist-*/
 build/
 minihub/static/
+# ts_sdk library bundle, built by build_ui.py into flow_sdk/server/static/sdk/
+ui/sdk-dist/
 
 # Pre-bundled/generated assets (syntax highlighters, language definitions, etc.)
 **/public/assets/
@@ -307,7 +321,8 @@ flow_sdk/server/static/
 .claude/scheduled_tasks.lock
 
 # internal artifacts — never track
-.flow/skills/agentic-qa/debug_log.md
+# the QA logbook lives in the private langware-os repo (docs/flowpad/agentic-qa); never commit it here
+.flow/skills/agentic-qa/
 /private/
 
 # agent-trace skill scratch (skeletons, annotations, payloads — regenerable)
@@ -322,3 +337,24 @@ SOC2/
 /feedback.md
 /prompts/
 flow_sdk/system_projects/**/.claude/journeys/*/runs/
+
+# received Claude Code transcripts installed into this checkout as a project
+# (claude_session assets land in <project>/agentic-assets/claude_session/) — not repo content
+/agentic-assets/claude_session/
+
+# Icon-gallery example: vite's dep cache and build output (see examples/icon-gallery/README.md)
+examples/icon-gallery/.vite/
+examples/icon-gallery/dist/
+artifacts/
+
+# The architecture deck lives here locally; it is not part of the code.
+agentic-assets/deck/flowpad-architecture/
+.flow/dataset-rows.lock
+
+# Never commit credentials or local agent settings (FLOWPAD-2264)
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+secrets.json
+.claude/settings.local.json

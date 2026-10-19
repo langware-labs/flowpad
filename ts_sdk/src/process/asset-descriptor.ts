@@ -9,18 +9,17 @@
  */
 export type AssetSource =
   | 'embedded'        // materialized via embedded_asset_refs
-  | 'inline'          // cli_config.agents_json / embedded_agent_ids — no file
+  | 'inline'          // cli_config.agents_json / embedded_subagent_ids — no file
   | 'project_dir'     // under project.fs_storage_mount_path
   | 'user_dir'        // under user_home
   | 'workdir'         // process workdir if distinct from project/user
   | 'additional_dir'  // additional_dirs entries (excl. auto-appended assets dir)
-  | 'context_dir'     // project.include_dirs (context folders)
+  | 'context_dir'     // project.include_dirs (resolved dependencies)
   | 'system'          // bundled flowpad_assistant assets
   | 'external';       // not attributable to any of this process's source dirs
 
 export type AssetUsageKind =
-  | 'embedded_asset'
-  | 'inline_persona'
+  | 'skill_invoked'
   | 'transcript_file_read';
 
 export interface AssetUsage {
@@ -33,7 +32,9 @@ export interface AssetUsage {
 }
 
 export interface AssetDescriptor {
-  /** Serialized TypeId, e.g. "skill-<uuid>" or "agent-<uuid>". */
+  /** Backend staging policy for this exact occurrence. */
+  attachable?: boolean;
+  /** Serialized TypeId, e.g. "skill-<uuid>" or "subagent-<uuid>". */
   typeid: string;
   source: AssetSource;
   /** Canonical POSIX path; null for INLINE. */
@@ -44,8 +45,42 @@ export interface AssetDescriptor {
    *  process-local (embedded/inline/workdir) assets. Lets scope-aware UIs
    *  filter by specific project ids without re-fetching. */
   project_id?: string | null;
+  /** Whether the backing entity has a cloud counterpart. Omitted by older servers. */
+  remote?: boolean;
+  /** Display name, sent ONLY for an on-disk asset that has no entity row yet.
+   *  Every other row resolves its label from the entity cache by typeid; a
+   *  not-yet-indexed one has nothing to resolve, so the backend carries the
+   *  name it read off the file. Null/absent for cache-resolvable rows. */
+  name?: string | null;
+  /** Native invocation name, including any plugin namespace. */
+  invocation_name?: string | null;
   /** Lightweight usage evidence owned by the backend. */
   usage?: AssetUsage[];
+  attached?: boolean;
+  available?: boolean;
+  present?: boolean;
+}
+
+export interface ProcessAssetUsage {
+  asset: { path: string; typeid: string; project_id?: string | null } | null;
+  reference: string;
+  resolution: 'resolved' | 'missing' | 'ambiguous' | 'unbound' | 'identity_changed';
+  evidence: AssetUsage[];
+}
+
+export interface AssetScanIssue { path: string; message: string; type_name?: string | null }
+export interface AssetScanResult {
+  assets: AssetDescriptor[];
+  scan_issues?: AssetScanIssue[];
+  truncated?: boolean;
+}
+
+/** Worker verification status and its resolved configuration. */
+export interface ProcessAssetInventory extends AssetScanResult {
+  used_assets?: ProcessAssetUsage[];
+  unresolved_usage?: ProcessAssetUsage[];
+  assistant_enabled?: boolean;
+  availability_error?: string;
 }
 
 /**
@@ -59,7 +94,7 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   user_dir: 'user',
   workdir: 'workdir',
   additional_dir: 'additional',
-  context_dir: 'context folder',
+  context_dir: 'dependency',
   system: 'system',
   external: 'external',
 };

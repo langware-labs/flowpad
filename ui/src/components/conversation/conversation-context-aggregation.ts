@@ -17,18 +17,9 @@
  *     own context".
  */
 
-import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
-import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
-
-const TRANSCRIPT_FILENAME = 'conversation.jsonl';
-
-/** Detect the `conversation.jsonl` file attachment — surfaced as its own row
- *  in Shared Context rather than as a generic file. */
-export function isTranscriptAttachment(a: Attachment): boolean {
-  if (a.attachment_type !== AttachmentType.FILE) return false;
-  const d = attachmentDataString(a);
-  return !!d && d.endsWith(TRANSCRIPT_FILENAME);
-}
+import { AgenticProcess, Conversation, FlowMessage, PROCESS_CALL_TYPE, RETURNED_VALUE_TYPE, Task, TypeId } from '@sdk';
+import { AttachmentType, attachmentDataString, isAttachmentMissing, type Attachment } from '@sdk/entities/flow-message';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Row shapes
@@ -54,21 +45,13 @@ export interface SharedEntityAgg extends OriginSet {
    *  get the "Download <type>" affordance; cross-links / conversation-level
    *  shares keep their resolve-or-open behavior. */
   downloadable?: boolean;
-  /** Mirrors the origin message's backend-derived `body_downloaded`: true once
-   *  the bundle was pulled and this entity is materialized locally. Shared with
-   *  the transcript bubble so both surfaces flip together. Always true for
-   *  non-downloadable entries (nothing to pull). */
+  /** At least one origin bundle was downloaded. Availability is separate. */
   downloaded?: boolean;
+  /** Downloaded, but absent from every downloaded origin's available assets. */
+  missing?: boolean;
   /** The earliest message that contributed this entity as an attachment — the
    *  one whose `downloadAttachments()` the panel triggers. */
   downloadOriginMessageId?: string;
-}
-
-export interface TranscriptEntry extends OriginSet {
-  /** The FlowMessage whose attachment this is — used to build the download
-   *  URL and view affordances on the row. */
-  messageId: string;
-  attachment: Attachment;
 }
 
 /** A file attached to a message (either as a regular FILE or as a prompt-slot
@@ -172,7 +155,7 @@ export function buildSharedEntities(
     t: TypeId | null,
     originMessageId: string | null,
     sourceWithSidecar: { getContextEntryData?: (t: TypeId) => Record<string, unknown> | undefined } | null,
-    fromAttachment?: { downloaded: boolean },
+    fromAttachment?: { downloaded: boolean; missing: boolean },
   ) => {
     if (!t) return;
     const key = t.toString();
@@ -189,9 +172,10 @@ export function buildSharedEntities(
       entry.originMessageIds.push(originMessageId);
     }
     if (fromAttachment) {
-      // Materialized once at least one contributing message's bundle is pulled.
-      // First attachment contribution replaces the default `true`; later ones OR in.
-      entry.downloaded = entry.downloadable ? entry.downloaded || fromAttachment.downloaded : fromAttachment.downloaded;
+      const wasDownloaded = !!entry.downloadable && !!entry.downloaded;
+      const available = (wasDownloaded && !entry.missing) || (fromAttachment.downloaded && !fromAttachment.missing);
+      entry.downloaded = wasDownloaded || fromAttachment.downloaded;
+      entry.missing = entry.downloaded && !available;
       entry.downloadable = true;
       if (!entry.downloadOriginMessageId && originMessageId) {
         entry.downloadOriginMessageId = originMessageId;
@@ -211,7 +195,15 @@ export function buildSharedEntities(
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
-        pushTypeId(new TypeId(a.data), fm.id, fm, { downloaded: fm.body_downloaded ?? false });
+        const attached = new TypeId(attachmentDataString(a));
+        // A reply marker has no entity behind it on this side — never a shared-context row.
+        if (attached.type === REPLY_MARKER_TYPE) continue;
+        // Nor is a prompt call or its answer: the value rides the header, never a row.
+        if (attached.type === PROCESS_CALL_TYPE || attached.type === RETURNED_VALUE_TYPE) continue;
+        pushTypeId(attached, fm.id, fm, {
+          downloaded: fm.body_downloaded ?? false,
+          missing: isAttachmentMissing(fm, a),
+        });
       } catch {
         /* malformed — skip */
       }
@@ -228,34 +220,21 @@ export function buildSharedEntities(
   return Array.from(byKey.values());
 }
 
-/** Surface every `conversation.jsonl` transcript attachment in the thread as
- *  its own row. Each entry's `originMessageIds` is just the message it lives
- *  on — transcripts don't dedupe across messages. */
-export function buildTranscriptEntries(orderedMessages: FlowMessage[]): TranscriptEntry[] {
-  const out: TranscriptEntry[] = [];
-  for (const fm of orderedMessages) {
-    if (!fm.id) continue;
-    for (const a of fm.attachment ?? []) {
-      if (isTranscriptAttachment(a)) {
-        out.push({ messageId: fm.id, attachment: a, originMessageIds: [fm.id] });
-      }
-    }
-  }
-  return out;
-}
-
 /** File attachments (regular + prompt-slot files) across the thread, one row
  *  per attachment. Inline-text PROMPT attachments are skipped — those are
- *  rendered by the attachment-actions row's PromptAttachmentPreview, not as context rows.
- *  Transcript files are excluded (they're surfaced by `buildTranscriptEntries`
- *  separately). */
+ *  rendered by the attachment-actions row's PromptAttachmentPreview, not as
+ *  context rows.
+ *
+ *  No transcript exclusion: a shared session is an entity attachment now, so it
+ *  is aggregated as a shared ENTITY (its own chip) and never reaches this
+ *  file lane. It used to arrive as a raw FILE named `conversation.jsonl` and
+ *  needed its own row type to keep it out of the file list. */
 export function buildAttachmentEntries(orderedMessages: FlowMessage[]): AttachmentEntry[] {
   const out: AttachmentEntry[] = [];
   for (const fm of orderedMessages) {
     if (!fm.id) continue;
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type === AttachmentType.FILE) {
-        if (isTranscriptAttachment(a)) continue;
         out.push({ messageId: fm.id, attachment: a, kind: 'file', originMessageIds: [fm.id] });
       } else if (a.attachment_type === AttachmentType.PROMPT && attachmentDataString(a).startsWith('prompt/')) {
         out.push({ messageId: fm.id, attachment: a, kind: 'prompt-file', originMessageIds: [fm.id] });

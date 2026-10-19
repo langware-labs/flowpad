@@ -12,12 +12,12 @@ import path from 'node:path';
 import { parse } from 'dotenv';
 
 const workingDirectory = process.cwd();
-const REPO_ROOT = existsSync(path.resolve(workingDirectory, 'ui/package.json'))
+export const REPO_ROOT = existsSync(path.resolve(workingDirectory, 'ui/package.json'))
   ? workingDirectory
   : path.resolve(workingDirectory, '..');
 const FILE_ENV_BY_MODE = new Map<string, Record<string, string>>();
 
-function configuredFileEnv(): Record<string, string> {
+export function configuredFileEnv(): Record<string, string> {
   const mode = process.env.FLOW_INSTANCE || 'development';
   const cached = FILE_ENV_BY_MODE.get(mode);
   if (cached) return cached;
@@ -57,4 +57,26 @@ export function apiBase(): string {
 /** Node-side APIRequestContext bound to the right backend (see apiOrigin). */
 export function apiContext(): Promise<APIRequestContext> {
   return pwRequest.newContext({ baseURL: apiOrigin() });
+}
+
+/**
+ * Wait until the compute node's single-flight scan/index activity is idle
+ * (`activity-status` serves data: null). Creating an asset kicks an auto-index,
+ * and a second index/scan POST while it runs is refused with 409 — wait on the
+ * node's own signal instead of racing it. `budgetMs <= 0` means "no deadline of
+ * its own": the caller's test timeout stays the bound.
+ */
+export async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000): Promise<boolean> {
+  const deadline = budgetMs > 0 ? Date.now() + budgetMs : Infinity;
+  while (Date.now() < deadline) {
+    const res = await request
+      .get(`${apiOrigin()}/api/v1/graph/compute_node/@local/fs-records/activity-status`)
+      .catch(() => null);
+    if (res && res.ok()) {
+      const body = (await res.json().catch(() => ({}))) as { data?: unknown };
+      if (body?.data == null) return true;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return false;
 }

@@ -25,8 +25,8 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     id: ID.project,
     type: Project.type,
     created_by: ID.user,
-    name: 'langware-os',
-    fs_storage_mount_path: '/Users/shlom/Flowpad workspace/langware-os',
+    name: 'handbook',
+    fs_storage_mount_path: '/Users/alice/Flowpad workspace/handbook',
     ...overrides,
   });
 }

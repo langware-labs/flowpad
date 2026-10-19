@@ -10,13 +10,14 @@ import asyncio
 import logging
 import os
 import re
-import shlex
-import subprocess
 from datetime import datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Mapping
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
+
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -37,6 +38,132 @@ class _CamelModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
+def _parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
+    """``git --numstat`` lines → ``{path: (insertions, deletions)}``.
+
+    A binary file's counts are ``-``; they stay ``None`` rather than becoming 0,
+    so "no lines" and "lines don't apply" never collapse into the same number.
+    """
+    result: dict[str, tuple[int | None, int | None]] = {}
+    for line in output.splitlines():
+        cols = line.split("\t", 2)
+        if len(cols) == 3:
+            try:
+                ins: int | None = int(cols[0]) if cols[0] != "-" else None
+                dels: int | None = int(cols[1]) if cols[1] != "-" else None
+                result[cols[2]] = (ins, dels)
+            except ValueError:
+                pass
+    return result
+
+
+# A status read is ONE shell script on a POSIX node, and these lines are how its
+# answer is told apart: ``@@flowpad-git:<name>@@`` opens a section, and
+# ``@@flowpad-git:<name>=<value>@@`` states a fact (a command's exit status) and
+# closes the one before it. No porcelain v1 entry, numstat row or remote URL can
+# start with ``@@``, so the marker needs no per-call nonce. Text before the first
+# marker is the unnamed section — the porcelain status itself.
+_SECTION_OPEN, _SECTION_CLOSE = "@@flowpad-git:", "@@"
+
+# status + remote + "does origin carry this branch" in one invocation. ``|| exit``
+# keeps "not a git repository" the script's own exit status, exactly as the bare
+# command's was.
+_STATUS_SCRIPT = """\
+git status --porcelain=v1 --branch --untracked-files=all || exit $?
+printf '\\n@@flowpad-git:remote@@\\n'
+git ls-remote --get-url
+printf '\\n@@flowpad-git:remote-rc=%s@@\\n' "$?"
+b=$(git symbolic-ref -q --short HEAD) && git show-ref --verify --quiet "refs/remotes/origin/$b"
+printf '\\n@@flowpad-git:origin-branch-rc=%s@@\\n' "$?"
+"""
+
+# The tracked half of the line counts, appended to the status script: is there a
+# HEAD, and the diff against it through the repository's REAL index. Nothing here
+# names a throwaway index — that script runs only when there is something untracked.
+_TRACKED_COUNTS_SCRIPT = """\
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+printf '\\n@@flowpad-git:numstat@@\\n'
+git diff --numstat HEAD
+printf '\\n@@flowpad-git:numstat-rc=%s@@\\n' "$?"
+else
+printf '\\n@@flowpad-git:unborn=1@@\\n'
+fi
+"""
+
+# Untracked files, counted through a throwaway index that is removed on the way
+# out whatever happened. ``{token}`` keeps two concurrent polls off each other's files.
+_UNTRACKED_COUNTS_SCRIPT = """\
+d=$(git rev-parse --absolute-git-dir) && [ -n "$d" ] || exit 0
+i="${{d%/}}/flowpad-status-{token}.index"
+p="${{d%/}}/flowpad-status-{token}.paths"
+trap 'rm -f "$i" "$p"' EXIT
+git ls-files --others --exclude-standard -z >"$p" || exit 0
+[ -s "$p" ] || exit 0
+GIT_INDEX_FILE="$i" GIT_LITERAL_PATHSPECS=1 git add -N --pathspec-from-file="$p" --pathspec-file-nul
+GIT_INDEX_FILE="$i" GIT_LITERAL_PATHSPECS=1 git diff --numstat
+"""
+
+# A repo with no commits: the whole worktree through a throwaway index.
+_UNBORN_COUNTS_SCRIPT = """\
+d=$(git rev-parse --absolute-git-dir) && [ -n "$d" ] || exit 0
+i="${{d%/}}/flowpad-status-index-{token}"
+trap 'rm -f "$i"' EXIT
+GIT_INDEX_FILE="$i" git add -A -N
+GIT_INDEX_FILE="$i" git diff --numstat
+"""
+
+
+def _split_sections(output: str) -> tuple[dict[str, str], dict[str, str]]:
+    """A status script's stdout → ``({section: text}, {fact: value})``.
+
+    Output carrying no marker at all is one unnamed section: the porcelain
+    status alone, with nothing known about the remote.
+    """
+    sections: dict[str, list[str]] = {"": []}
+    facts: dict[str, str] = {}
+    current: list[str] | None = sections[""]
+    for line in output.split("\n"):
+        if line.startswith(_SECTION_OPEN) and line.endswith(_SECTION_CLOSE):
+            name = line[len(_SECTION_OPEN) : -len(_SECTION_CLOSE)]
+            if "=" in name:
+                key, _, value = name.partition("=")
+                facts[key] = value
+                current = None
+            else:
+                current = sections.setdefault(name, [])
+        elif current is not None:
+            current.append(line)
+    return {name: "\n".join(lines) for name, lines in sections.items()}, facts
+
+
+# What git operation a conflicted working tree is stopped in. ``None`` with
+# conflicted paths means no operation is open — re-applying a pull's autostash
+# conflicted, and git kept the stash.
+ConflictOperation = Literal["rebase", "merge"]
+
+
+class GitConflict(_CamelModel):
+    """A working tree left mid-conflict — THE one answer to "is this repo stuck?".
+
+    Read by ``push``/``pull`` (refuse to start over an open one) and
+    ``get_status`` (so the UI can offer Resolve after the toast is gone).
+    """
+
+    paths: list[str] = []
+    operation: ConflictOperation | None = None
+
+    @property
+    def open(self) -> bool:
+        return bool(self.paths) or self.operation is not None
+
+    def describe(self) -> str:
+        return _listed(self.paths)
+
+
+# Porcelain v1 XY pairs that mean "unmerged" (git-status(1), "Short Format").
+_UNMERGED_XY = frozenset({"DD", "AU", "UD", "UA", "DU", "AA", "UU"})
+
+
 class GitStatusFile(_CamelModel):
     status: str
     path: str
@@ -50,9 +177,19 @@ class GitStatusFile(_CamelModel):
 class GitStatus(_CamelModel):
     error: str | None = None
     branch: str | None = None
+    # Configured tracking branch; absence does not mean the branch was never pushed.
+    upstream: str | None = None
+    # Same-name origin branch known locally, available to adopt without pushing.
+    upstream_candidate: str | None = None
     ahead: int = 0
     behind: int = 0
     files: list[GitStatusFile] = []
+    # Set while the tree is stuck mid-conflict; the UI offers Resolve off it.
+    conflict: GitConflict | None = None
+    # Fetch URL of the branch's remote (origin when there is no upstream), as
+    # configured, and its https browser form when the host is recognisable.
+    remote_url: str | None = None
+    remote_web_url: str | None = None
 
 
 class GitCurrentBranchData(_CamelModel):
@@ -104,6 +241,12 @@ class GitUnpushedFiles(_CamelModel):
     files: list[str] = []
 
 
+class GitUnpushedCommits(_CamelModel):
+    # Commits ahead of @{u}, newest first — the list behind the panel's ↑N
+    # badge (empty when no upstream).
+    commits: list[GitRevision] = []
+
+
 class GitRestoreResult(_CamelModel):
     ok: bool
     message: str
@@ -124,11 +267,42 @@ PushKind = Literal[
 
 class GitPushResult(_CamelModel):
     ok: bool
-    conflict: bool
-    nothing: bool
     kind: PushKind
     branch: str | None
     message: str
+    # Set only when ``kind == "conflict"``: the paths git left unmerged.
+    conflicted: list[str] = []
+    # A commit was made by this push (False: nothing new to commit).
+    committed: bool = False
+    # HEAD after the commit, when one was made.
+    sha: str | None = None
+    # Something worth telling the caller that did not fail the push.
+    warning: str | None = None
+
+
+# Typed pull outcome — mirrored by ``PullKind`` in ts_sdk git-workdir.ts.
+PullKind = Literal[
+    "pulled",
+    "nothing",
+    "conflict",
+    "permission",
+    "no_remote",
+    "network",
+    "no_repo",
+    "generic",
+]
+
+
+class GitPullResult(_CamelModel):
+    ok: bool
+    kind: PullKind
+    branch: str | None
+    message: str
+    # Set only when ``kind == "conflict"``: the paths git left unmerged.
+    conflicted: list[str] = []
+    # The locally refreshed project, for the caller's once-only auto-launch check.
+    project_id: str | None = None
+    refresh_error: str | None = None
 
 
 # Config a fresh Flowpad repo gets at init time. Single source shared by
@@ -160,6 +334,8 @@ __pycache__/
 .venv/
 venv/
 .env
+.env.local
+.env.*.local
 
 # Node
 node_modules/
@@ -198,47 +374,208 @@ class GitRepo:
         provider = getattr(compute_node, "compute_provider", None)
         self._windows_shell = getattr(provider, "path_sep", os.sep) == "\\"
 
+    @classmethod
+    async def local(cls, work_dir: str) -> "GitRepo":
+        """A ``GitRepo`` for a folder on THIS machine — the one way server code
+        that holds a path, not a compute node, reaches push/pull and their
+        conflict handling."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+        return cls(str(work_dir), await ComputeNode.get_local())
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _quote(self, arg: str) -> str:
-        """Quote one argument for the compute node's shell.
+    @property
+    def _folder(self):
+        """This working directory as a :class:`GitFolder` over the compute node.
 
-        cmd.exe has no single-quote semantics — POSIX quoting reaches git as
-        literal quote characters and splits paths on spaces — so Windows nodes
-        get MSVCRT-style double quoting instead.
+        Built per call: it holds no state beyond the path and the executor, and
+        the node's provider (hence its shell) can change between calls.
         """
-        if self._windows_shell:
-            return subprocess.list2cmdline([arg])
-        return shlex.quote(arg)
+        from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor  # noqa: PLC0415
+        from flow_sdk.utils.git_folder import GitFolder  # noqa: PLC0415
 
-    async def _run_git_io(self, *args: str) -> tuple[str, str, int]:
-        """Run a git sub-command inside self.work_dir via the compute node.
+        # Constructed directly rather than via ``get_command_executor()`` so this
+        # also works with any object exposing ``run_command`` — GitRepo is handed
+        # test doubles, not always a full ComputeNode.
+        return GitFolder(self.work_dir, executor=ComputeNodeCommandExecutor(self._compute_node))
 
-        Every argument is quoted here for the node's shell — call sites pass
-        raw values (paths, branch names, commit messages), never pre-quoted.
+    async def _git(self, *args: str, env: Mapping[str, str] | None = None) -> CliResult:
+        """Run a git sub-command in ``self.work_dir`` and answer with what it did.
 
-        Returns (stdout_stripped, stderr_stripped, returncode). Git writes most
-        progress/error text (push rejections, rebase failures) to stderr, so the
-        push flow needs it for user-facing messages. Conflict *detection* still
-        keys off stdout-based ``git ls-files --unmerged`` so it stays reliable
-        regardless of where git happened to write.
+        Quoting, the shell dialect and env belong to
+        ``ComputeNodeCommandExecutor`` — call sites pass raw values. The answer
+        is kept whole to the call site: ``ok`` is the verdict, ``stderr`` is
+        where git writes progress and errors (push rejections, rebase failures),
+        ``stdout`` is unstripped. Conflict *detection* still keys off
+        ``git ls-files --unmerged`` on stdout, so it holds wherever git wrote.
+
+        Never raises: a failed git call is an expected outcome here, and a
+        provider that could not run it answers the same way — not ``ok``, with
+        the reason in ``stderr``.
         """
         try:
-            cmd = await self._compute_node.run_command(
-                " ".join(["git", "-C", self._quote(self.work_dir), *(self._quote(a) for a in args)]),
-                background=False,
-            )
-            return (cmd.all_stdout or "").rstrip("\n"), (cmd.all_stderr or "").rstrip("\n"), cmd.exit_code or 0
-        except Exception:
-            logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
-            return "", "", 1
+            folder = self._folder
+            if args and args[0] in {"fetch", "pull", "push"}:
+                from flow_sdk.utils.hub_git_auth import hub_git_environment  # noqa: PLC0415
 
-    async def _run_git(self, *args: str) -> tuple[str, int]:
-        """``_run_git_io`` without stderr — (stdout_stripped, returncode)."""
-        stdout, _, rc = await self._run_git_io(*args)
-        return stdout, rc
+                env = await hub_git_environment(folder, env)
+            return await folder.git(*args, env=env)
+        except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
+            logger.debug("git command failed: git %s", " ".join(args), exc_info=True)
+            return CliResult.of_process("git " + " ".join(args), None, "", f"{type(exc).__name__}: {exc}")
+
+    async def _git_script(self, script: str) -> CliResult:
+        """Run a POSIX ``sh`` script of git commands in ``self.work_dir`` — ONE
+        invocation on the node, where the same commands sent one by one cost a
+        round trip each (and the Git panel asks every few seconds).
+
+        Same contract as ``_git``: never raises, same env as every git call
+        (no prompt, ``LC_ALL=C``), and the same refusal on a Mac whose
+        ``/usr/bin/git`` is Apple's installer stub — the executor makes that
+        check for a ``git`` argv, and this one is ``sh``. POSIX nodes only: a
+        Windows node's shell is cmd.exe, and callers keep the per-command path there.
+        """
+        from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+        from flow_sdk.utils.git_usable import EXIT_NOT_FOUND, NOT_USABLE_MESSAGE, git_usable  # noqa: PLC0415
+
+        on_this_machine = getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE
+        if on_this_machine and not git_usable():
+            return CliResult.of_process("git", EXIT_NOT_FOUND, "", NOT_USABLE_MESSAGE)
+        _, env = self._folder._auth(False)  # the env every git call carries
+        try:
+            return await self._folder.executor.run(["sh", "-c", script], cwd=self.work_dir, env=env)
+        except Exception as exc:  # noqa: BLE001 — a provider failure is an answer here
+            logger.debug("git script failed in %s", self.work_dir, exc_info=True)
+            return CliResult.of_process("git", None, "", f"{type(exc).__name__}: {exc}")
+
+    async def _status_reads(
+        self, line_counts: bool
+    ) -> tuple[str, str, dict[str, tuple[int | None, int | None]], bool | None] | None:
+        """``(porcelain v1 status, remote URL or "", line counts, origin has this
+        branch)``; None when not a repo. The last is None when it was not read.
+
+        One invocation on a POSIX node — status, the remote and the tracked line
+        counts — plus one more only when there is something untracked to count
+        (or no commit yet).
+        """
+        if self._windows_shell:
+            status = await self._git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
+            if not status.ok:
+                return None
+            counts = await self._line_counts() if line_counts else {}
+            # ``ls-remote --get-url`` resolves the upstream's remote, else origin,
+            # through insteadOf rewrites — and never touches the network.
+            remote = await self._git("ls-remote", "--get-url")
+            return status.stdout, (remote.stdout.strip() if remote.ok else ""), counts, None
+
+        reply = await self._git_script(_STATUS_SCRIPT + (_TRACKED_COUNTS_SCRIPT if line_counts else "") + "exit 0\n")
+        if not reply.ok:
+            return None
+        sections, facts = _split_sections(reply.stdout)
+        status_out = sections[""]
+        remote_url = sections.get("remote", "").strip() if facts.get("remote-rc") == "0" else ""
+        counts: dict[str, tuple[int | None, int | None]] = {}
+        if line_counts:
+            if "unborn" in facts:
+                counts = await self._unborn_line_counts()
+            else:
+                if facts.get("numstat-rc") == "0":
+                    counts = _parse_numstat(sections.get("numstat", ""))
+                # Counts are looked up per status entry, so with no ``??`` entry
+                # there is no untracked count anyone would read.
+                if any(line.startswith("??") for line in status_out.splitlines()):
+                    counts.update(await self._untracked_line_counts())
+        return status_out, remote_url, counts, facts.get("origin-branch-rc") == "0"
+
+    async def _script_numstat(self, script: str) -> dict[str, tuple[int | None, int | None]]:
+        """Run one of the counts scripts (fresh scratch token) and parse its numstat."""
+        counted = await self._git_script(script.format(token=uuid4().hex))
+        return _parse_numstat(counted.stdout) if counted.ok else {}
+
+    async def _line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """Per-path ``(insertions, deletions)`` for the whole worktree against HEAD —
+        the per-command path a Windows node takes (a POSIX node reads them inside
+        ``_status_reads``' one script).
+
+        Two halves, so the cost tracks the CHANGE, not the size of the repo:
+
+        * Tracked paths diff against HEAD through the repository's real index,
+          read-only — its stat cache lets git skip every unchanged file.
+        * Untracked files are counted too, which a plain ``git diff --numstat``
+          cannot do — and they are usually the bulk of a change, so leaving
+          them out makes an "added lines" total read near zero for a branch of
+          new files. A THROWAWAY index holding only them, marked intent-to-add,
+          makes each one an addition of its own lines. ``-N`` records no blob,
+          so nothing lands in the object store.
+
+        The throwaway index is never seeded from HEAD: an index built by
+        ``read-tree`` carries no stat data, so diffing through it re-hashes
+        every tracked file — seconds per call on a large repo, and the Git
+        panel asks every few seconds.
+        """
+        if not (await self._git("rev-parse", "--verify", "-q", "HEAD")).ok:
+            return await self._unborn_line_counts()
+        tracked = await self._git("diff", "--numstat", "HEAD")
+        counts = _parse_numstat(tracked.stdout) if tracked.ok else {}
+        counts.update(await self._untracked_line_counts())
+        return counts
+
+    async def _untracked_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """``(insertions, 0)`` per untracked, non-ignored file."""
+        if not self._windows_shell:
+            return await self._script_numstat(_UNTRACKED_COUNTS_SCRIPT)
+        listed = await self._git("ls-files", "--others", "--exclude-standard", "-z")
+        if not listed.ok or not listed.stdout.strip("\0"):
+            return {}
+        found = await self._git("rev-parse", "--absolute-git-dir")
+        git_dir = found.stdout.strip()
+        if not found.ok or not git_dir:
+            return {}
+        scratch = f"{git_dir.rstrip('/')}/flowpad-status-{uuid4().hex}"
+        index_path, pathspec_path = f"{scratch}.index", f"{scratch}.paths"
+        # The paths travel in a file, not on the command line: a worktree of new
+        # files would overrun cmd.exe's 8191-char limit. Literal, so a file named
+        # ``*.md`` names itself and not every markdown file.
+        env = {"GIT_INDEX_FILE": index_path, "GIT_LITERAL_PATHSPECS": "1"}
+        try:
+            await self._folder.executor.write_bytes(pathspec_path, listed.stdout.encode())
+            await self._git("add", "-N", f"--pathspec-from-file={pathspec_path}", "--pathspec-file-nul", env=env)
+            counted = await self._git("diff", "--numstat", env=env)
+            return _parse_numstat(counted.stdout) if counted.ok else {}
+        finally:
+            for path in (index_path, pathspec_path):
+                try:
+                    await self._folder.executor.remove(path)
+                except Exception:
+                    logger.debug("could not remove temporary git file %s", path, exc_info=True)
+
+    async def _unborn_line_counts(self) -> dict[str, tuple[int | None, int | None]]:
+        """A repo with no commits: every path, staged or not, is an addition.
+
+        Counted through a throwaway index of the whole worktree — there is no
+        HEAD to diff tracked paths against, and nothing yet committed to cost
+        a re-hash of.
+        """
+        if not self._windows_shell:
+            return await self._script_numstat(_UNBORN_COUNTS_SCRIPT)
+        found = await self._git("rev-parse", "--absolute-git-dir")
+        git_dir = found.stdout.strip()
+        if not found.ok or not git_dir:
+            return {}
+        index_path = f"{git_dir.rstrip('/')}/flowpad-status-index-{uuid4().hex}"
+        env = {"GIT_INDEX_FILE": index_path}
+        try:
+            await self._git("add", "-A", "-N", env=env)
+            counted = await self._git("diff", "--numstat", env=env)
+            return _parse_numstat(counted.stdout) if counted.ok else {}
+        finally:
+            try:
+                await self._folder.executor.remove(index_path)
+            except Exception:
+                logger.debug("could not remove temporary git index %s", index_path, exc_info=True)
 
     # ------------------------------------------------------------------
     # Public API
@@ -246,8 +583,7 @@ class GitRepo:
 
     async def is_init(self) -> bool:
         """Return True if work_dir is inside a git repository."""
-        _, rc = await self._run_git("rev-parse", "--is-inside-work-tree")
-        return rc == 0
+        return (await self._git("rev-parse", "--is-inside-work-tree")).ok
 
     async def is_linked_worktree(self) -> bool:
         """Return True if work_dir is a linked worktree (not the main one).
@@ -255,15 +591,12 @@ class GitRepo:
         Runs ``git rev-parse --git-dir`` and checks whether the output
         contains ``.git/worktrees/``.
         """
-        git_dir, rc = await self._run_git("rev-parse", "--git-dir")
-        if rc != 0:
-            return False
-        return ".git/worktrees/" in git_dir
+        git_dir = await self._git("rev-parse", "--git-dir")
+        return git_dir.ok and ".git/worktrees/" in git_dir.stdout
 
     async def has_commit(self) -> bool:
         """Return True if the repo has at least one commit (HEAD exists)."""
-        _, rc = await self._run_git("rev-parse", "HEAD")
-        return rc == 0
+        return (await self._git("rev-parse", "HEAD")).ok
 
     async def init(self) -> GitRestoreResult:
         """Initialize a git repository in work_dir (idempotent).
@@ -274,14 +607,35 @@ class GitRepo:
         control path) — the repo is usable either way.
         """
         if await self.is_init():
+            await self.ensure_gitignore()
             return GitRestoreResult(ok=True, message="Already a git repository")
-        _, err, rc = await self._run_git_io("init", "--initial-branch=main")
-        if rc != 0:
-            return GitRestoreResult(ok=False, message=(err or "git init failed").strip())
+        made = await self._git("init", "--initial-branch=main")
+        if not made.ok:
+            return GitRestoreResult(ok=False, message=made.stderr.strip() or "git init failed")
         for key, value in GIT_INIT_CONFIG:
-            await self._run_git("config", key, value)
+            await self._git("config", key, value)
         await self._seed_gitignore()
+        await self.ensure_gitignore()
         return GitRestoreResult(ok=True, message="Initialized git repository")
+
+    async def ensure_gitignore(self) -> None:
+        """Keep local credentials out of commits; verify with Git, preserving user rules."""
+        tracked = await self._git("ls-files", "--", ".env.local")
+        if not tracked.ok:
+            raise RuntimeError("Could not validate .env.local tracking")
+        if tracked.stdout.strip():
+            raise RuntimeError(".env.local is already tracked; remove it from the Git index first")
+        ignored = await self._git("check-ignore", "-q", "--", ".env.local")
+        if ignored.ok:
+            return
+        if ignored.returncode != 1:
+            raise RuntimeError("Could not validate .env.local ignore rules")
+        path = os.path.join(self.work_dir, ".gitignore")
+        existing = (await self._compute_node.read_files(path))[path] if await self._compute_node.exists(path) else ""
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        await self._compute_node.write_files(path, f"{existing}{separator}.env.local\n")
+        if not (await self._git("check-ignore", "-q", "--", ".env.local")).ok:
+            raise RuntimeError(".env.local is not excluded by Git after updating .gitignore")
 
     async def _seed_gitignore(self) -> None:
         """Write DEFAULT_GITIGNORE at the repo root, but only if absent.
@@ -300,25 +654,25 @@ class GitRepo:
 
     async def get_branch(self) -> str | None:
         """Return the current branch name, or None if detached / not a repo."""
-        branch, rc = await self._run_git("branch", "--show-current")
-        if rc != 0:
-            return None
-        return branch.strip() or None
+        branch = await self._git("branch", "--show-current")
+        return (branch.stdout.strip() or None) if branch.ok else None
 
     @staticmethod
-    def _parse_branch_header(line: str) -> tuple[str | None, int, int]:
-        """Parse a porcelain v1 ``## `` branch header into (branch, ahead, behind).
+    def _parse_branch_header(line: str) -> tuple[str | None, str | None, int, int]:
+        """Parse a porcelain v1 ``## `` branch header into (branch, upstream, ahead, behind).
 
         Examples::
 
-            ## main                              → ("main", 0, 0)
-            ## main...origin/main                → ("main", 0, 0)
-            ## main...origin/main [ahead 1, behind 2] → ("main", 1, 2)
-            ## HEAD (no branch)                  → (None, 0, 0)   # detached
-            ## No commits yet on main            → ("main", 0, 0) # empty repo
+            ## main                              → ("main", None, 0, 0)
+            ## main...origin/main                → ("main", "origin/main", 0, 0)
+            ## main...origin/main [ahead 1, behind 2] → ("main", "origin/main", 1, 2)
+            ## main...origin/main [gone]         → ("main", None, 0, 0)  # remote branch deleted
+            ## HEAD (no branch)                  → (None, None, 0, 0)    # detached
+            ## No commits yet on main            → ("main", None, 0, 0)  # empty repo
         """
         body = line[3:].strip()
         ahead = behind = 0
+        gone = False
         m = re.search(r"\[([^\]]*)\]\s*$", body)
         if m:
             for part in m.group(1).split(","):
@@ -327,73 +681,95 @@ class GitRepo:
                     ahead = int(part[len("ahead ") :] or 0)
                 elif part.startswith("behind "):
                     behind = int(part[len("behind ") :] or 0)
+                elif part == "gone":
+                    gone = True
             body = body[: m.start()].strip()
-        if body.startswith("No commits yet on "):
-            return (body[len("No commits yet on ") :].strip() or None, ahead, behind)
         if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
-            return (None, ahead, behind)
-        return (body.split("...", 1)[0].strip() or None, ahead, behind)
+            return (None, None, ahead, behind)
+        if body.startswith("No commits yet on "):
+            body = body[len("No commits yet on ") :].strip()
+        branch, _, upstream = body.partition("...")
+        if gone:
+            upstream = ""
+        return (branch.strip() or None, upstream.strip() or None, ahead, behind)
 
-    async def get_status(self) -> GitStatus:
-        """Return a rich git-status object.
+    @staticmethod
+    def _remote_web_url(remote_url: str) -> str | None:
+        """Browser URL for a git remote, or None when it isn't a web host.
+
+        Examples::
+
+            git@github.com:org/repo.git          → https://github.com/org/repo
+            ssh://git@host:22/org/repo.git       → https://host/org/repo
+            https://user@host/org/repo.git       → https://host/org/repo
+            /local/path/repo.git                 → None
+        """
+        url = remote_url.strip()
+        m = re.match(r"^(?:[\w.-]+@)?([\w.-]+):(?!//)(.+)$", url)
+        if m and len(m.group(1)) > 1:  # a one-letter "host" is a Windows drive
+            host, path = m.group(1), m.group(2)
+        else:
+            m = re.match(r"^(?:https?|ssh|git)://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", url)
+            if not m:
+                return None
+            host, path = m.group(1), m.group(2)
+        path = path.strip("/")
+        if path.endswith(".git"):
+            path = path[: -len(".git")]
+        return f"https://{host}/{path}" if path else None
+
+    async def get_status(self, *, line_counts: bool = False, revision: str | None = None) -> GitStatus:
+        """Return working-tree status, or the files changed by an immutable commit.
+
+        ``line_counts`` fills each file's ``insertions``/``deletions``. It is
+        opt-in because it costs a diff against HEAD, and a second invocation when
+        there are untracked files to count (see ``_status_reads``), and only the
+        Git panel shows the counts — the footer pill and other status readers
+        need just the file list.
 
         Schema::
 
             GitStatus(
                 error    = str | None,
                 branch   = str | None,
+                upstream = str | None,
                 ahead    = int,
                 behind   = int,
                 files    = [GitStatusFile(status, path, insertions, deletions), ...],
             )
         """
-        # One combined call replaces is_init + get_branch + ahead/behind +
-        # file-list (4 git spawns → 1). ``--branch`` prepends a
+        if revision is not None:
+            return await self._get_commit_status(revision, line_counts=line_counts)
+
+        # ``status_out`` opens with ``--branch``'s
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
-        # remaining lines are the same porcelain v1 file entries parsed below.
-        # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
-        status_out, status_rc = await self._run_git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
-        if status_rc != 0:
+        # remaining lines are porcelain v1 file entries parsed below.
+        # ``numstat`` is one count per path, staged and unstaged and untracked
+        # together, so a file's ``+/-`` is its whole change against HEAD.
+        reads = await self._status_reads(line_counts)
+        if reads is None:
             return GitStatus(error="not a git repository")
+        status_out, remote_text, numstat, origin_has_branch = reads
 
-        branch, ahead, behind = None, 0, 0
-
-        # Numstat for insertion/deletion counts
-        def parse_numstat(output: str) -> dict[str, tuple[int | None, int | None]]:
-            result: dict[str, tuple[int | None, int | None]] = {}
-            for line in output.splitlines():
-                cols = line.split("\t", 2)
-                if len(cols) == 3:
-                    try:
-                        ins: int | None = int(cols[0]) if cols[0] != "-" else None
-                        dels: int | None = int(cols[1]) if cols[1] != "-" else None
-                        result[cols[2]] = (ins, dels)
-                    except ValueError:
-                        pass
-            return result
-
-        # Independent reads — run concurrently rather than back-to-back.
-        (numstat_unstaged_out, _), (numstat_staged_out, _) = await asyncio.gather(
-            self._run_git("diff", "--numstat"),
-            self._run_git("diff", "--numstat", "--staged"),
-        )
-        numstat_unstaged = parse_numstat(numstat_unstaged_out)
-        numstat_staged = parse_numstat(numstat_staged_out)
+        branch, upstream, ahead, behind = None, None, 0, 0
 
         # File list comes from the same ``status_out`` above. ``--untracked-files=all``
         # lists each untracked file individually instead of collapsing a wholly-
         # untracked directory into a single ``dir/`` entry — otherwise a new file
         # like ``marketing/workflows/.../workflow.md`` is hidden behind ``marketing/``.
         files: list[GitStatusFile] = []
+        unmerged: list[str] = []
         for line in status_out.splitlines():
             if line.startswith("## "):
-                branch, ahead, behind = self._parse_branch_header(line)
+                branch, upstream, ahead, behind = self._parse_branch_header(line)
                 continue
             if len(line) < 4:
                 continue
             x = line[0]  # staged status char
             y = line[1]  # unstaged status char
             path_part = line[3:]
+            if line[:2] in _UNMERGED_XY:
+                unmerged.append(path_part)
 
             # Handle renames: "old -> new"
             display_path = path_part
@@ -406,16 +782,13 @@ class GitRepo:
             # Staged takes priority over unstaged
             if x not in (" ", "?"):
                 status = x
-                ins, dels = numstat_staged.get(lookup_path, (None, None))
             elif y not in (" ", "?"):
                 status = y
-                ins, dels = numstat_unstaged.get(lookup_path, (None, None))
             elif x == "?" and y == "?":
                 status = "?"
-                ins, dels = None, None
             else:
                 status = (x if x != " " else y) or "?"
-                ins, dels = None, None
+            ins, dels = numstat.get(lookup_path, (None, None))
 
             files.append(
                 GitStatusFile(
@@ -427,26 +800,109 @@ class GitRepo:
                 )
             )
 
+        remote_url = remote_text or None
+        if remote_url:
+            # Credentials embedded in an https remote never leave the node.
+            remote_url = re.sub(r"^(https?://)[^@/]+@", r"\1", remote_url)
+
+        # The porcelain already listed the unmerged paths; the operation probe
+        # costs spawns, so it runs only on a hint: an unmerged entry, or a
+        # detached HEAD — where a stopped rebase sits even after its conflicts
+        # were marked resolved.
+        operation = await self._open_operation() if unmerged or branch is None else None
+        conflict = GitConflict(paths=unmerged, operation=operation) if unmerged or operation else None
+
+        candidate = None
+        if branch and not upstream and remote_url:
+            if origin_has_branch is None:
+                candidate = await self._upstream_candidate(branch)
+            elif origin_has_branch:
+                candidate = f"origin/{branch}"
         return GitStatus(
             error=None,
             branch=branch,
+            upstream=upstream,
             ahead=ahead,
             behind=behind,
             files=files,
+            conflict=conflict,
+            remote_url=remote_url,
+            remote_web_url=self._remote_web_url(remote_url) if remote_url else None,
+            upstream_candidate=candidate,
         )
 
-    async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
-        """Return the unified diff for a single file in the working tree.
+    async def _commit_show_args(self, revision: str) -> tuple[str, ...]:
+        """One immutable commit, compared with its first parent (empty tree for roots)."""
+        if not re.fullmatch(r"[0-9a-fA-F]{7,64}", revision):
+            raise ValueError("Expected a commit hash")
+        resolved = await self._git("rev-parse", "--verify", f"{revision}^{{commit}}")
+        if not resolved.ok:
+            raise ValueError(resolved.stderr.strip() or "Could not read commit")
+        return (
+            "show", "--format=", "--root", "--diff-merges=first-parent",
+            "--no-ext-diff", "--no-textconv", "--relative", "-M", resolved.stdout.strip(),
+        )
+
+    async def _get_commit_status(self, revision: str, *, line_counts: bool) -> GitStatus:
+        args = await self._commit_show_args(revision)
+        probes = [self._git(*args, "--name-status", "-z", "--")]
+        if line_counts:
+            probes.append(self._git(*args, "--numstat", "-z", "--"))
+        names, *statistics = await asyncio.gather(*probes)
+        if not names.ok:
+            raise ValueError(names.stderr.strip() or "Could not read commit")
+        counts = {}
+        if line_counts:
+            stats = statistics[0]
+            if not stats.ok:
+                raise ValueError(stats.stderr.strip() or "Could not read commit statistics")
+            entries = iter(stats.stdout.split("\0"))
+            for entry in entries:
+                if not entry:
+                    continue
+                added, removed, path = entry.split("\t", 2)
+                if not path:  # -z renames carry old and new paths as separate fields.
+                    next(entries)
+                    path = next(entries)
+                counts[path] = (
+                    int(added) if added != "-" else None,
+                    int(removed) if removed != "-" else None,
+                )
+        files = []
+        entries = iter(names.stdout.split("\0"))
+        for status in entries:
+            if not status:
+                continue
+            path = next(entries)
+            display_path = path
+            if status[0] in ("R", "C"):
+                new_path = next(entries)
+                display_path = f"{path} → {new_path}"
+                path = new_path
+            added, removed = counts.get(path, (None, None))
+            files.append(GitStatusFile(
+                status=status[0], path=display_path, insertions=added, deletions=removed,
+            ))
+        return GitStatus(files=files)
+
+    async def get_file_diff(self, file_path: str, status: str, *, revision: str | None = None) -> GitFileDiff:
+        """Return a file diff in the working tree, or in a commit against its first parent.
 
         For untracked files (status '?') uses --no-index to show the full
         file as an addition.  For all other statuses, diffs HEAD against
         the working tree (covers both staged and unstaged changes).
         """
-        if status == "?":
-            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", file_path)
+        if revision is not None:
+            paths = file_path.split(" → ", 1) if status == "R" else [file_path]
+            args = await self._commit_show_args(revision)
+            diff = await self._git(*args, "--", *paths)
+            if not diff.ok:
+                raise ValueError(diff.stderr.strip() or "Could not read commit diff")
+        elif status == "?":
+            diff = await self._git("diff", "--no-index", "/dev/null", file_path)
         else:
-            diff, _ = await self._run_git("diff", "HEAD", "--", file_path)
-        return GitFileDiff(diff=diff)
+            diff = await self._git("diff", "HEAD", "--", file_path)
+        return GitFileDiff(diff=diff.stdout.rstrip("\n"))
 
     async def get_working_file(self, file_path: str) -> GitFileContent:
         """Full file content from the working tree, relative to ``work_dir``."""
@@ -478,7 +934,7 @@ class GitRepo:
         tracking) only works for a single file, so it is dropped for folder scope.
         """
         try:
-            from flow_sdk.actions.fs.asset_scope import is_folder_asset_dir
+            from flow_sdk.assets.scope import is_folder_asset_dir
 
             if is_folder_asset_dir(self.work_dir):
                 return ".", False
@@ -497,10 +953,8 @@ class GitRepo:
 
     async def _workdir_prefix(self) -> str:
         """Repo-root-relative prefix for ``work_dir`` with a trailing slash."""
-        prefix, rc = await self._run_git("rev-parse", "--show-prefix")
-        if rc != 0:
-            return ""
-        return prefix.strip().replace("\\", "/")
+        prefix = await self._git("rev-parse", "--show-prefix")
+        return prefix.stdout.strip().replace("\\", "/") if prefix.ok else ""
 
     @staticmethod
     def _strip_prefix(path: str, prefix: str) -> str | None:
@@ -550,7 +1004,7 @@ class GitRepo:
             files = [f for f in files if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")]
 
         if await self.has_commit():
-            diff, _ = await self._run_git("diff", "HEAD", "--", pathspec)
+            diff = (await self._git("diff", "HEAD", "--", pathspec)).stdout.rstrip("\n")
         else:
             diff = ""
 
@@ -561,7 +1015,7 @@ class GitRepo:
             if f.status != "?":
                 continue
             rel = self._status_lookup_path(f.path)
-            d, _ = await self._run_git("diff", "--no-index", "/dev/null", rel)
+            d = (await self._git("diff", "--no-index", "/dev/null", rel)).stdout.rstrip("\n")
             if d:
                 additions.append(d)
         if additions:
@@ -580,9 +1034,8 @@ class GitRepo:
         pathspec, follow = self._scope_pathspec(file_path)
         fmt = "--format=%H%x1f%an%x1f%aI%x1f%s"
         log_args = ["log", *(["--follow"] if follow else []), fmt, "--", pathspec]
-        out, _ = await self._run_git(*log_args)
         revisions: list[GitRevision] = []
-        for line in out.splitlines():
+        for line in (await self._git(*log_args)).stdout.splitlines():
             if not line.strip():
                 continue
             parts = line.split("\x1f")
@@ -603,10 +1056,10 @@ class GitRepo:
         # there's no upstream — treat that (and any parse miss) as 0, so no extra
         # `rev-parse @{u}` probe is needed.
         unpushed = 0
-        cnt_out, cnt_rc = await self._run_git("rev-list", "--count", "@{u}..HEAD", "--", pathspec)
-        if cnt_rc == 0:
+        counted = await self._git("rev-list", "--count", "@{u}..HEAD", "--", pathspec)
+        if counted.ok:
             try:
-                unpushed = int(cnt_out.strip() or "0")
+                unpushed = int(counted.stdout.strip() or "0")
             except ValueError:
                 unpushed = 0
         return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
@@ -618,18 +1071,37 @@ class GitRepo:
         HEAD — treat that as "nothing unpushed" rather than an error, matching
         the tolerant `rev-list @{u}..HEAD` probe in `get_file_revisions`.
         """
-        out, rc = await self._run_git("diff", "--name-only", "@{u}..HEAD")
-        if rc != 0:
+        names = await self._git("diff", "--name-only", "@{u}..HEAD")
+        if not names.ok:
             return GitUnpushedFiles(files=[])
-        return GitUnpushedFiles(files=[line.strip() for line in out.splitlines() if line.strip()])
+        return GitUnpushedFiles(files=[line.strip() for line in names.stdout.splitlines() if line.strip()])
+
+    async def get_unpushed_commits(self) -> GitUnpushedCommits:
+        """Commits ahead of the upstream, newest first — the same range the
+        status header's ``ahead`` count measures, so the list and the badge agree.
+
+        No upstream (``@{u}`` unresolvable) is "nothing unpushed", like
+        ``get_unpushed_files``.
+        """
+        logged = await self._git("log", "--format=%H%x1f%an%x1f%aI%x1f%s", "@{u}..HEAD")
+        if not logged.ok:
+            return GitUnpushedCommits(commits=[])
+        commits: list[GitRevision] = []
+        for line in logged.stdout.splitlines():
+            parts = line.split("\x1f")
+            if len(parts) < 4:
+                continue
+            hash_, author, date, message = parts[0], parts[1], parts[2], parts[3]
+            commits.append(GitRevision(hash=hash_, message=message, date=date, author=author))
+        return GitUnpushedCommits(commits=commits)
 
     async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
         """Unified diff of an asset between a past revision and the working tree —
         a single file, or the whole folder for a folder-backed asset (skill), so
         internal-file changes are shown."""
         pathspec, _ = self._scope_pathspec(file_path)
-        diff, _ = await self._run_git("diff", commit_hash, "HEAD", "--", pathspec)
-        return GitFileDiff(diff=diff)
+        diff = await self._git("diff", commit_hash, "HEAD", "--", pathspec)
+        return GitFileDiff(diff=diff.stdout.rstrip("\n"))
 
     async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
         """Full file content at a revision (``git show <hash>:./<file>``).
@@ -646,8 +1118,8 @@ class GitRepo:
         shows it as all-new — acceptable; rename-aware history is out of scope).
         """
         rel = file_path[2:] if file_path.startswith("./") else file_path
-        content, _ = await self._run_git("show", f"{commit_hash}:./{rel}")
-        return GitFileContent(content=content)
+        shown = await self._git("show", f"{commit_hash}:./{rel}")
+        return GitFileContent(content=shown.stdout.rstrip("\n"))
 
     async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
         """Check out an asset at a past revision (working-tree mutation).
@@ -658,9 +1130,9 @@ class GitRepo:
         content change, so the next save re-versions it as a fresh revision.
         """
         pathspec, _ = self._scope_pathspec(file_path)
-        _, err, rc = await self._run_git_io("checkout", commit_hash, "--", pathspec)
-        if rc != 0:
-            return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
+        restored = await self._git("checkout", commit_hash, "--", pathspec)
+        if not restored.ok:
+            return GitRestoreResult(ok=False, message=restored.stderr.strip() or "Restore failed")
         return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
 
     # ------------------------------------------------------------------
@@ -682,56 +1154,82 @@ class GitRepo:
         linger as a separate deletion until the next refresh.
         """
         if status == "?":
-            _, err, rc = await self._run_git_io("clean", "-f", "--", file_path)
+            done = await self._git("clean", "-f", "--", file_path)
             verb = "Deleted"
         else:
-            _, err, rc = await self._run_git_io("restore", "--staged", "--worktree", "--", file_path)
+            done = await self._git("restore", "--staged", "--worktree", "--", file_path)
             verb = "Discarded changes to"
-        if rc != 0:
-            return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
+        if not done.ok:
+            return GitRestoreResult(ok=False, message=done.stderr.strip() or "Discard failed")
         return GitRestoreResult(ok=True, message=f"{verb} {file_path}")
 
     async def stage_file(self, file_path: str) -> GitRestoreResult:
         """Stage just this file (``git add -- <file>``)."""
-        _, err, rc = await self._run_git_io("add", "--", file_path)
-        if rc != 0:
-            return GitRestoreResult(ok=False, message=(err or "Stage failed").strip())
+        staged = await self._git("add", "--", file_path)
+        if not staged.ok:
+            return GitRestoreResult(ok=False, message=staged.stderr.strip() or "Stage failed")
         return GitRestoreResult(ok=True, message=f"Staged {file_path}")
 
     async def unstage_file(self, file_path: str) -> GitRestoreResult:
         """Unstage just this file (``git restore --staged -- <file>``)."""
-        _, err, rc = await self._run_git_io("restore", "--staged", "--", file_path)
-        if rc != 0:
-            return GitRestoreResult(ok=False, message=(err or "Unstage failed").strip())
+        unstaged = await self._git("restore", "--staged", "--", file_path)
+        if not unstaged.ok:
+            return GitRestoreResult(ok=False, message=unstaged.stderr.strip() or "Unstage failed")
         return GitRestoreResult(ok=True, message=f"Unstaged {file_path}")
 
     # ------------------------------------------------------------------
-    # Greedy "non-tech" push: stage-all → commit → pull --rebase → push
+    # Conflicts: ONE detector for every sync this repo does (push, pull, share,
+    # task receive, dependency refresh). A sync that conflicts leaves the tree
+    # as git left it — never auto-aborted — for the resolve agent to finish.
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _summarize_unmerged(ls_files_unmerged: str) -> str:
+    def _unmerged_paths(ls_files_unmerged: str) -> list[str]:
         """Distinct conflicted paths from ``git ls-files --unmerged`` output.
 
         Each line looks like ``<mode> <sha> <stage>\\t<path>``; collapse the
-        stage entries (1/2/3) down to the unique paths (order-preserving) for a
-        plain summary.
+        stage entries (1/2/3) down to the unique paths, order-preserving.
         """
         paths = {
             line.split("\t", 1)[1].strip(): None
             for line in ls_files_unmerged.splitlines()
             if "\t" in line and line.split("\t", 1)[1].strip()
         }
-        return ", ".join(paths)
+        return list(paths)
 
-    # Failure classes a publish can land in. `conflict` keeps its dedicated flag
-    # for the existing Resolve-agent path; the rest let the UI give state-specific,
-    # plain-language guidance instead of one generic "Push failed".
+    async def _unmerged(self) -> list[str]:
+        """The paths git left unmerged — all a step that just ran needs to ask."""
+        listed = await self._git("ls-files", "--unmerged")
+        return self._unmerged_paths(listed.stdout) if listed.ok else []
+
+    async def _open_operation(self) -> ConflictOperation | None:
+        """The rebase or merge this tree is stopped in, if any.
+
+        Asks for the rebase's own ``onto`` file (git resolves a ref name against
+        the git dir first), never ``REBASE_HEAD``: that ref outlives a finished
+        rebase, and would read a clean tree as stuck forever.
+        """
+        probes = (("rebase-merge/onto", "rebase"), ("rebase-apply/onto", "rebase"), ("MERGE_HEAD", "merge"))
+        found = await asyncio.gather(*(self._git("rev-parse", "-q", "--verify", ref) for ref, _ in probes))
+        return next((op for (_, op), hit in zip(probes, found) if hit.ok), None)
+
+    async def _conflict_state(self) -> GitConflict:
+        """Is this tree stuck mid-conflict? Unmerged paths, and the open operation.
+
+        A rebase whose conflicts were all marked resolved but never continued
+        has no unmerged paths and is still stuck — hence the operation probe.
+        """
+        paths, operation = await asyncio.gather(self._unmerged(), self._open_operation())
+        return GitConflict(paths=paths, operation=operation)
+
+    # Failure classes a sync can land in. ``conflict`` is NOT one of them: only
+    # ``_conflict_state`` says conflict — a rejected push with nothing unmerged
+    # is a remote that moved again, which a retry fixes, not the resolver.
     @staticmethod
-    def _classify_push_error(stderr: str) -> PushKind:
-        """Map raw git/transport stderr to a publish failure kind.
+    def _classify_sync_error(stderr: str) -> PushKind:
+        """Map raw git/transport stderr to a sync failure kind.
 
-        One of: ``permission | no_remote | network | conflict | generic``.
+        One of: ``permission | no_remote | network | generic``.
         """
         s = (stderr or "").lower()
         if any(
@@ -772,120 +1270,256 @@ class GitRepo:
             )
         ):
             return "network"
-        if any(k in s for k in ("non-fast-forward", "rejected", "fetch first", "behind", "unmerged")):
-            return "conflict"
         return "generic"
 
+    async def _sync_failure(self, failed: CliResult, fallback: str) -> tuple[PushKind, str, list[str]]:
+        """``(kind, message, conflicted)`` for a failed rebase/push/pull step."""
+        paths = await self._unmerged()
+        if paths:
+            return "conflict", f"Merge conflict while syncing with the remote. Conflicted: {_listed(paths)}", paths
+        said = _said(failed)
+        return self._classify_sync_error(said), said or fallback, []
+
+    async def _autostash_clash(self, theirs: str) -> tuple[str, list[str]] | None:
+        """``(message, paths)`` when re-applying an autostash conflicted —
+        which git reports with exit 0, so only the unmerged paths tell."""
+        paths = await self._unmerged()
+        if not paths:
+            return None
+        return f"Your unsaved edits conflict with {theirs}. Conflicted: {_listed(paths)}", paths
+
     @staticmethod
-    def _push_result(
-        branch: str | None,
-        message: str,
-        *,
-        ok: bool = False,
-        conflict: bool = False,
-        nothing: bool = False,
-        kind: PushKind | None = None,
-    ) -> GitPushResult:
-        """Build the ``GitPushResult`` the publish UI consumes.
+    def _still_open(stuck: GitConflict) -> str:
+        return f"An earlier sync is still waiting to be merged. Conflicted: {stuck.describe()}"
 
-        ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
-        no_remote|network|no_repo|generic``). When omitted it's derived from the
-        flags so existing call sites stay correct; the back-compat
-        ``ok/conflict/nothing`` flags are kept for the footer button.
+    async def _present_paths(self, paths: list[str]) -> tuple[list[str], list[str]]:
+        """Split ``paths`` into those git can stage and those that are not there.
+
+        Asked of git, not the filesystem, so it holds on any compute node: a
+        path is present when git lists it (or something under it) as tracked or
+        untracked — a tracked file deleted from disk still is, so its deletion
+        can be committed.
         """
-        if kind is None:
-            if nothing:
-                kind = "nothing"
-            elif conflict:
-                kind = "conflict"
-            elif ok:
-                kind = "pushed"
-            else:
-                kind = "generic"
-        return GitPushResult(ok=ok, conflict=conflict, nothing=nothing, kind=kind, branch=branch, message=message)
+        listed = await self._git("ls-files", "--cached", "--others", "--exclude-standard", "--", *paths)
+        known = [ln for ln in listed.stdout.splitlines() if ln.strip()] if listed.ok else []
+        present, missing = [], []
+        for path in paths:
+            prefix = path.rstrip("/") + "/"
+            (present if any(f == path or f.startswith(prefix) for f in known) else missing).append(path)
+        return present, missing
 
-    async def push(self) -> GitPushResult:
-        """Stage everything, auto-commit, sync with remote, and push.
+    # ------------------------------------------------------------------
+    # Greedy "non-tech" push: stage → commit → pull --rebase → push
+    # ------------------------------------------------------------------
 
-        Returns a ``GitPushResult`` (serialized camelCase for the footer button):
-        ``{ ok, conflict, nothing, kind, branch, message }``.
+    async def push(self, paths: list[str] | None = None, message: str | None = None) -> GitPushResult:
+        """Stage, commit, sync with the remote, and push.
 
-        ``conflict=True`` means a rebase conflict is in progress (left in place
-        so the resolve agent can finish it) — never auto-aborted here.
+        ``paths=None`` stages everything — the footer's one-click Publish.
+        ``paths`` stages and commits ONLY those paths, so a caller publishing a
+        couple of known files out of a tree it does not own never sweeps in
+        someone else's dirty or staged work.
+
+        A conflict (``kind="conflict"``) is left in place for the resolve agent,
+        and a tree already stuck in one is refused before anything is staged —
+        staging over conflict markers would commit them.
         """
         if not await self.is_init():
-            return self._push_result(None, "Not a git repository", kind="no_repo")
-
-        # 1. Stage everything.
-        await self._run_git("add", "-A")
-
-        # 2. Anything staged? `--quiet` exits 1 when there are staged diffs.
-        _, _, staged_rc = await self._run_git_io("diff", "--cached", "--quiet")
-        has_staged = staged_rc != 0
-
+            return GitPushResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
         branch = await self.get_branch() or "HEAD"
+        warning: str | None = None
+        committed, sha = False, None
+
+        def result(kind: PushKind, msg: str, conflicted: list[str] | None = None) -> GitPushResult:
+            return GitPushResult(
+                ok=kind in ("pushed", "nothing"),
+                kind=kind,
+                branch=branch,
+                message=msg,
+                conflicted=conflicted or [],
+                committed=committed,
+                sha=sha,
+                warning=warning,
+            )
+
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return result("conflict", self._still_open(stuck), stuck.paths)
+
+        # 1. Stage — everything, or exactly the given paths.
+        pathspec: list[str] = []
+        if paths is None:
+            await self._git("add", "-A")
+        else:
+            present, missing = await self._present_paths(paths)
+            if not present:
+                return result("generic", f"none of the given paths exist in {self.work_dir}: {paths}")
+            if missing:
+                warning = f"not found, so not committed: {', '.join(missing)}"
+            pathspec = ["--", *present]
+            await self._git("add", *pathspec)
+
+        # 2. Anything staged — of OURS? `--quiet` exits 1 when there are staged diffs.
+        has_staged = not (await self._git("diff", "--cached", "--quiet", *pathspec)).ok
 
         # Upstream presence + how far ahead we already are.
-        _, up_rc = await self._run_git("rev-parse", "--abbrev-ref", "@{u}")
-        has_upstream = up_rc == 0
+        has_upstream = (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok
         ahead = 0
         if has_upstream:
-            ahead_out, ahead_rc = await self._run_git("rev-list", "--count", "@{u}..HEAD")
-            if ahead_rc == 0:
+            counted = await self._git("rev-list", "--count", "@{u}..HEAD")
+            if counted.ok:
                 try:
-                    ahead = int(ahead_out.strip() or "0")
+                    ahead = int(counted.stdout.strip() or "0")
                 except ValueError:
                     ahead = 0
 
-        # 3. Nothing to do: no staged changes and nothing un-pushed.
-        if not has_staged and has_upstream and ahead == 0:
-            return self._push_result(branch, "Nothing to push", ok=True, nothing=True)
+        # 3. Nothing to do: no staged changes and nothing un-pushed. A scoped
+        #    push with nothing of its own to commit stops here too — it must not
+        #    publish commits it did not make.
+        if not has_staged and (paths is not None or (has_upstream and ahead == 0)):
+            return result("nothing", "Nothing to push")
 
-        # 4. Auto-commit staged changes with a friendly, non-technical message.
+        # 4. Commit, with the caller's message or a friendly, non-technical one.
         if has_staged:
-            names_out, _ = await self._run_git("diff", "--cached", "--name-only")
-            n = len([ln for ln in names_out.splitlines() if ln.strip()])
-            stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-            msg = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
-            c_out, c_err, c_rc = await self._run_git_io("commit", "-m", msg)
-            if c_rc != 0:
-                return self._push_result(branch, (c_err or c_out or "Commit failed").strip())
+            if message is None:
+                names = (await self._git("diff", "--cached", "--name-only", *pathspec)).stdout
+                n = len([ln for ln in names.splitlines() if ln.strip()])
+                stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+                message = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
+            made = await self._git("commit", "-m", message, *pathspec)
+            if not made.ok:
+                return result("generic", _said(made) or "Commit failed")
+            committed = True
+            sha = (await self._git("rev-parse", "HEAD")).stdout.strip() or None
 
-        # 5. Sync with remote first (rebase) so the push is fast-forward.
+        # 5–6. Sync with the remote, then push.
+        return result(*await self._sync_and_push(branch, has_upstream, scoped=paths is not None))
+
+    async def push_commits(self) -> GitPushResult:
+        """Push the commits already made — stage and commit NOTHING.
+
+        The share's "push" fix: the shared asset is committed but not on the
+        remote, and the rest of the tree may hold the person's unrelated work,
+        which must not be swept in. Same sync + push as :meth:`push`.
+        """
+        if not await self.is_init():
+            return GitPushResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
+        branch = await self.get_branch() or "HEAD"
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitPushResult(ok=False, kind="conflict", branch=branch, message=self._still_open(stuck),
+                                 conflicted=stuck.paths)
+        has_upstream = (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok
+        kind, msg, conflicted = await self._sync_and_push(branch, has_upstream, scoped=True)
+        sha = (await self._git("rev-parse", "HEAD")).stdout.strip() or None
+        return GitPushResult(ok=kind in ("pushed", "nothing"), kind=kind, branch=branch, message=msg,
+                             conflicted=conflicted, sha=sha)
+
+    async def _sync_and_push(self, branch: str, has_upstream: bool, *, scoped: bool) -> tuple[PushKind, str, list[str]]:
+        """Rebase onto the remote (so the push fast-forwards), then push —
+        never forced. ``scoped``: the rest of the tree may be dirty, so the
+        autostash may have something to put back."""
+        # --autostash: a scoped push leaves the rest of the tree dirty.
         if has_upstream:
-            p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", branch)
-            if p_rc != 0:
-                combined = p_err or p_out or ""
-                if "couldn't find remote ref" not in combined:
-                    unmerged, _ = await self._run_git("ls-files", "--unmerged")
-                    if unmerged.strip():
-                        files = self._summarize_unmerged(unmerged)
-                        return self._push_result(
-                            branch,
-                            f"Merge conflict while syncing with the remote. Conflicted: {files or 'see git status'}",
-                            conflict=True,
-                        )
-                    return self._push_result(
-                        branch,
-                        combined.strip() or "Could not sync with the remote",
-                        kind=self._classify_push_error(combined),
-                    )
+            pulled = await self._git("pull", "--rebase", "--autostash", "origin", branch)
+            if not pulled.ok and "couldn't find remote ref" not in _said(pulled):
+                return await self._sync_failure(pulled, "Could not sync with the remote")
+            # Only a scoped push leaves anything for the autostash to put back.
+            clash = await self._autostash_clash("the remote's changes") if scoped else None
+            if clash:
+                return ("conflict", *clash)
 
-        # 6. Push (set upstream when the branch is new on the remote).
+        # Push (set upstream when the branch is new on the remote).
         push_args = ["push", "origin", branch] if has_upstream else ["push", "-u", "origin", branch]
-        ps_out, ps_err, ps_rc = await self._run_git_io(*push_args)
-        if ps_rc != 0:
-            combined = (ps_err or ps_out or "").strip()
-            unmerged, _ = await self._run_git("ls-files", "--unmerged")
-            kind = "conflict" if unmerged.strip() else self._classify_push_error(combined)
-            return self._push_result(
-                branch,
-                combined or "Push failed",
-                conflict=(kind == "conflict"),
-                kind=kind,
-            )
+        pushed = await self._git(*push_args)
+        if not pushed.ok:
+            return await self._sync_failure(pushed, "Push failed")
+        return ("pushed", "Pushed", [])
 
-        return self._push_result(branch, "Pushed", ok=True)
+    # ------------------------------------------------------------------
+    # Remote side: fetch (refresh `behind`) and pull
+    # ------------------------------------------------------------------
+
+    async def _upstream_candidate(self, branch: str) -> str | None:
+        candidate = f"origin/{branch}"
+        exists = await self._git("show-ref", "--verify", "--quiet", f"refs/remotes/{candidate}")
+        return candidate if exists.ok else None
+
+    async def set_upstream(self, branch: str) -> GitStatus:
+        """Adopt the known origin branch, never publish or alter commits."""
+        current = await self.get_branch()
+        if not branch or current != branch:
+            return GitStatus(error="The current branch changed. Refresh and try again.")
+        if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            return await self.get_status()
+        candidate = await self._upstream_candidate(branch)
+        if not candidate:
+            return GitStatus(error="No matching origin branch is known. Fetch and try again.")
+        result = await self._git("branch", f"--set-upstream-to={candidate}", "--", branch)
+        if not result.ok:
+            return GitStatus(error=result.stderr or "Could not set upstream")
+        return await self.get_status()
+
+    async def fetch(self) -> GitStatus:
+        """Fetch the upstream's remote, then answer with the status.
+
+        ``get_status`` never touches the network, so its ``behind`` is only as
+        fresh as the last fetch. This is the one call that refreshes it. A
+        failed fetch returns the local status with ``error`` set, so stale
+        tracking refs cannot masquerade as a successful refresh.
+        """
+        if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            fetched = await self._git("fetch", "--quiet")
+            if not fetched.ok:
+                status = await self.get_status()
+                status.error = "Could not fetch remote updates"
+                return status
+        return await self.get_status()
+
+    async def pull(self, branch: str | None = None) -> GitPullResult:
+        """Bring the upstream's commits in: ``pull --rebase --autostash``.
+
+        Uncommitted work is stashed around the rebase and put back, so a pull
+        never asks the user to commit first. A conflict is left in place for
+        the resolve agent, exactly as ``push`` leaves one.
+
+        ``branch`` names the branch the caller expects to be on; a tree checked
+        out on another one is refused rather than merged into the wrong branch.
+        """
+        if not await self.is_init():
+            return GitPullResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
+        current = await self.get_branch()
+        if branch and current != branch:
+            return GitPullResult(
+                ok=False,
+                kind="generic",
+                branch=current,
+                message=f"This folder is on {current or 'a detached HEAD'}, not {branch}. Switch to {branch} first.",
+            )
+        stuck = await self._conflict_state()
+        if stuck.open:
+            return GitPullResult(
+                ok=False, kind="conflict", branch=current, message=self._still_open(stuck), conflicted=stuck.paths
+            )
+        if not (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            return GitPullResult(
+                ok=False, kind="no_remote", branch=current, message="No upstream is configured for this branch"
+            )
+        before = (await self._git("rev-parse", "HEAD")).stdout.strip()
+        pulled = await self._git("pull", "--rebase", "--autostash")
+        if not pulled.ok:
+            kind, msg, conflicted = await self._sync_failure(pulled, "Pull failed")
+            return GitPullResult(ok=False, kind=kind, branch=current, message=msg, conflicted=conflicted)
+        # Re-applying the autostash can conflict, and git still exits 0 — the
+        # pull "worked" but the user's own edits are now conflicted.
+        clash = await self._autostash_clash("the pulled changes")
+        if clash:
+            msg, conflicted = clash
+            return GitPullResult(ok=False, kind="conflict", branch=current, message=msg, conflicted=conflicted)
+        after = (await self._git("rev-parse", "HEAD")).stdout.strip()
+        if before == after:
+            return GitPullResult(ok=True, kind="nothing", branch=current, message="Already up to date")
+        return GitPullResult(ok=True, kind="pulled", branch=current, message="Pulled")
 
     # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
@@ -895,15 +1529,18 @@ class GitRepo:
         """Route a git-ops sub-path to the appropriate git operation.
 
         Sub-paths:
-            status              → get_status()           → GitStatus (camelCase)
+            status              → get_status()           → GitStatus (camelCase; ?lineCounts=true adds +/-)
             unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
+            unpushed-commits    → get_unpushed_commits() → {commits} (ahead of @{u}, newest first)
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
             is-init             → is_init()              → {isInit}
             is-linked-worktree  → is_linked_worktree()   → {isLinkedWorktree}
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
-            push  (POST)        → push()                 → GitPushResult {ok, conflict, nothing, kind, branch, message}
+            push  (POST)        → push()                 → GitPushResult {ok, nothing, kind, branch, message, conflicted}
+            fetch (POST)        → fetch()                → GitStatus with a fresh ``behind``
+            pull  (POST)        → pull()                 → GitPullResult {ok, kind, branch, message, conflicted}
             init  (POST)        → init()                 → {ok, message}  (idempotent)
             discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
@@ -913,18 +1550,51 @@ class GitRepo:
 
         params = query_params or {}
 
+        if sub == "set-upstream":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/set-upstream requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.set_upstream(params.get("branch", ""))).model_dump(by_alias=True))
         if sub == "push":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.push()).model_dump(by_alias=True))
+        if sub == "fetch":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/fetch requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.fetch()).model_dump(by_alias=True))
+        if sub == "pull":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/pull requires POST", status_code=405)
+            result = await self.pull()
+            if result.ok and result.kind == "pulled":
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
+
+                if getattr(self._compute_node, "node_provider_type", None) == ComputeProviderType.LOCAL_MACHINE:
+                    project = await Project.find_by_cwd(self.work_dir)
+                    if project is not None:
+                        try:
+                            await project.refresh_pulled_assets()
+                            result.project_id = str(project.id)
+                        except Exception as exc:  # noqa: BLE001 — Git succeeded; report the refresh separately
+                            logger.warning("project refresh after pull failed: %s", exc, exc_info=True)
+                            result.refresh_error = str(exc)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "init":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
-            return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+            line_counts = params.get("lineCounts") in (True, "1", "true")
+            try:
+                result = await self.get_status(line_counts=line_counts, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
+        if sub == "unpushed-commits":
+            return ApiSuccessResponse(data=(await self.get_unpushed_commits()).model_dump(by_alias=True))
         if sub == "branch":
             return ApiSuccessResponse(
                 data=GitCurrentBranchData(branch=await self.get_branch()).model_dump(by_alias=True)
@@ -946,7 +1616,11 @@ class GitRepo:
             status = params.get("status", "M")
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
-            return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+            try:
+                result = await self.get_file_diff(file_path, status, revision=params.get("revision"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=400)
+            return ApiSuccessResponse(data=result.model_dump(by_alias=True))
         if sub == "asset-diff":
             file_path = params.get("file", "")
             if not file_path:
@@ -1000,3 +1674,13 @@ class GitRepo:
                 return ApiFailResponse(message="Missing required parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await post_file_ops[sub](file_path)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
+
+
+def _listed(paths: list[str]) -> str:
+    return ", ".join(paths) or "see git status"
+
+
+def _said(result: CliResult) -> str:
+    """What a failed git call said: stderr, else stdout (``commit`` reports
+    "nothing to commit" there), stripped."""
+    return (result.stderr.strip() or result.stdout.strip())

@@ -1,21 +1,36 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
+import { resetComposerDrafts, writeDraft } from '@src/components/entity-execution-panel/composer-drafts';
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import type { AgenticProcess } from '@sdk';
 import { useEffect } from 'react';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
+
+// The annotator popup stands in as "the user kept the image unchanged".
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: vi.fn((files: File[]) => Promise.resolve({ files, caption: '' })),
+}));
 
 function Harness({
   running = false,
   onStop,
   onSend = () => {},
   seed = [] as string[],
+  allowAttachments = false,
+  saveDraft,
+  draftScope,
+  onPasteImages,
 }: {
   running?: boolean;
   onStop?: () => void;
-  onSend?: (t: string) => void;
+  onSend?: (t: string, files?: File[]) => void;
   seed?: string[];
+  allowAttachments?: boolean;
+  saveDraft?: boolean;
+  draftScope?: string;
+  onPasteImages?: (files: File[], options?: { initialCaption?: string }) => Promise<string[]>;
 }) {
   const history = useInputHistory();
   useEffect(() => {
@@ -23,11 +38,20 @@ function Harness({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <CompactExecutionInput onSend={onSend} running={running} onStop={onStop} history={history} />
+    <CompactExecutionInput
+      onSend={onSend}
+      running={running}
+      onStop={onStop}
+      history={history}
+      allowAttachments={allowAttachments}
+      saveDraft={saveDraft}
+      draftScope={draftScope}
+      onPasteImages={onPasteImages}
+    />
   );
 }
 
-const input = () => screen.getByTestId('entity-execution-input') as HTMLTextAreaElement;
+const input = () => screen.getByTestId('entity-execution-input');
 
 describe('CompactExecutionInput', () => {
   afterEach(cleanup);
@@ -93,10 +117,53 @@ describe('CompactExecutionInput', () => {
     render(<Harness running onStop={() => {}} onSend={onSend} />);
     fireEvent.change(input(), { target: { value: 'queued prompt' } });
     fireEvent.keyDown(input(), { key: 'Enter' });
-    expect(onSend).toHaveBeenCalledWith('queued prompt');
+    expect(onSend).toHaveBeenCalledWith('queued prompt', []);
     // Both affordances visible mid-turn: Send (enqueue) came back for the
     // non-empty draft, and Stop is present.
     expect(screen.getByTestId('entity-execution-stop')).toBeTruthy();
+  });
+});
+
+describe('CompactExecutionInput attachments', () => {
+  afterEach(cleanup);
+
+  const pickFile = (name = 'notes.txt') => {
+    const file = new File(['hello'], name, { type: 'text/plain' });
+    fireEvent.change(screen.getByTestId('entity-execution-attach-input'), { target: { files: [file] } });
+    return file;
+  };
+
+  it('the "+" picker is absent by default and present when opted in', () => {
+    const { rerender } = render(<Harness />);
+    expect(screen.queryByTestId('entity-execution-attach')).toBeNull();
+    rerender(<Harness allowAttachments />);
+    expect(screen.getByTestId('entity-execution-attach')).toBeTruthy();
+  });
+
+  it('picked files render as removable chips', () => {
+    render(<Harness allowAttachments />);
+    pickFile();
+    expect(screen.getByText('notes.txt')).toBeTruthy();
+    fireEvent.click(screen.getByText('notes.txt').closest('li')!.querySelector('button')!);
+    expect(screen.queryByText('notes.txt')).toBeNull();
+  });
+
+  it('send hands the files to onSend and clears the chips; files-only send works', () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    const file = pickFile();
+    // No text typed — the Send button is enabled by the pending file alone.
+    fireEvent.mouseDown(screen.getByTestId('entity-execution-send'));
+    expect(onSend).toHaveBeenCalledWith('', [file]);
+    expect(screen.queryByText('notes.txt')).toBeNull();
+  });
+
+  it('text-only send passes an empty files list', () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    fireEvent.change(input(), { target: { value: 'hi' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledWith('hi', []);
   });
 });
 
@@ -116,7 +183,215 @@ describe('QueueChip', () => {
     const { rerender } = render(<QueueChip process={proc([])} />);
     expect(screen.queryByTestId('entity-execution-queue-chip')).toBeNull();
 
-    rerender(<QueueChip process={proc([{ id: '1', prompt: 'a' }, { id: '2', prompt: 'b' }, { id: '3', prompt: 'c' }])} />);
+    rerender(
+      <QueueChip
+        process={proc([
+          { id: '1', prompt: 'a' },
+          { id: '2', prompt: 'b' },
+          { id: '3', prompt: 'c' },
+        ])}
+      />,
+    );
     expect(screen.getByTestId('entity-execution-queue-count').textContent).toBe('3');
+  });
+});
+
+// FLOWPAD-2035: navigating away unmounts the composer, so an unsent prompt has
+// to outlive the mount — and a reload, which runs no unmount cleanup at all.
+// sessionStorage: per tab, survives F5, gone when the window closes.
+describe('CompactExecutionInput drafts', () => {
+  beforeEach(resetComposerDrafts);
+  afterEach(() => {
+    cleanup();
+    resetComposerDrafts();
+  });
+
+  it('the draft is stored as it is typed, so a reload finds it', () => {
+    // A reload never unmounts, so a draft only saved on the way out would be
+    // gone. Assert it is already in storage while the composer is still up.
+    render(<Harness draftScope="chat-a" />);
+    fireEvent.change(input(), { target: { value: 'typed, not sent' } });
+    expect(sessionStorage.getItem('flowpad.composer.draft.chat-a')).toBe('typed, not sent');
+  });
+
+  it('an unsent draft survives unmount and comes back on remount', () => {
+    const first = render(<Harness draftScope="chat-a" />);
+    fireEvent.change(input(), { target: { value: 'half a thought' } });
+    first.unmount();
+
+    render(<Harness draftScope="chat-a" />);
+    expect(input().value).toBe('half a thought');
+  });
+
+  it('a draft never surfaces in another conversation', () => {
+    const first = render(<Harness draftScope="chat-a" />);
+    fireEvent.change(input(), { target: { value: 'deploy to prod' } });
+    first.unmount();
+
+    render(<Harness draftScope="chat-b" />);
+    expect(input().value).toBe('');
+  });
+
+  it('sending clears the draft, so returning finds an empty composer', () => {
+    const onSend = vi.fn();
+    const first = render(<Harness draftScope="chat-a" onSend={onSend} />);
+    fireEvent.change(input(), { target: { value: 'sent prompt' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledWith('sent prompt', []);
+    first.unmount();
+
+    render(<Harness draftScope="chat-a" />);
+    expect(input().value).toBe('');
+  });
+
+  it('re-pointing a mounted composer swaps drafts both ways', () => {
+    const { rerender } = render(<Harness draftScope="chat-a" />);
+    fireEvent.change(input(), { target: { value: 'for A' } });
+
+    rerender(<Harness draftScope="chat-b" />);
+    expect(input().value).toBe('');
+    fireEvent.change(input(), { target: { value: 'for B' } });
+
+    rerender(<Harness draftScope="chat-a" />);
+    expect(input().value).toBe('for A');
+    rerender(<Harness draftScope="chat-b" />);
+    expect(input().value).toBe('for B');
+  });
+
+  it('saveDraft={false} opts out', () => {
+    const first = render(<Harness draftScope="chat-a" saveDraft={false} />);
+    fireEvent.change(input(), { target: { value: 'not kept' } });
+    first.unmount();
+
+    render(<Harness draftScope="chat-a" saveDraft={false} />);
+    expect(input().value).toBe('');
+  });
+
+  it('without a scope nothing is stored, so composers cannot share one draft', () => {
+    const first = render(<Harness />);
+    fireEvent.change(input(), { target: { value: 'scopeless' } });
+    first.unmount();
+
+    render(<Harness />);
+    expect(input().value).toBe('');
+  });
+});
+
+// Vibe renders EntityExecutionPanel, Standard renders ChatComposerBar, and the
+// dock URL binds both to the SAME AgenticProcess. Scoping on that process id is
+// what carries a half-typed prompt across a view-mode switch.
+describe('CompactExecutionInput drafts across view modes', () => {
+  beforeEach(resetComposerDrafts);
+  afterEach(() => {
+    cleanup();
+    resetComposerDrafts();
+  });
+
+  it('the same process id shares one draft between two composers', () => {
+    // Vibe's panel.
+    const vibe = render(<Harness draftScope="proc-1" />);
+    fireEvent.change(input(), { target: { value: 'started in vibe' } });
+    vibe.unmount();
+
+    // Standard's composer bar — a different component, same process.
+    render(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('started in vibe');
+  });
+
+  it('text typed before the process resolves is carried over, not wiped', () => {
+    // The panel looks its process up asynchronously, so the composer mounts
+    // with no scope at all. Typing into that window must survive the moment
+    // the id lands, or a fast typist loses the first thing they wrote.
+    const { rerender } = render(<Harness />);
+    fireEvent.change(input(), { target: { value: 'typed before the id landed' } });
+
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('typed before the id landed');
+    expect(sessionStorage.getItem('flowpad.composer.draft.proc-1')).toBe('typed before the id landed');
+  });
+
+  it('resolving into a process that already has a draft adopts it when empty', () => {
+    writeDraft('proc-1', 'left here earlier');
+    const { rerender } = render(<Harness />);
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('left here earlier');
+  });
+
+  it('a real switch between processes still adopts, never carries over', () => {
+    // The guard is `undefined ->` specifically, so this must NOT behave like
+    // the carry-over above: proc-1's text must not follow into proc-2.
+    const { rerender } = render(<Harness draftScope="proc-1" />);
+    fireEvent.change(input(), { target: { value: 'meant for proc-1' } });
+
+    rerender(<Harness draftScope="proc-2" />);
+    expect(input().value).toBe('');
+    expect(sessionStorage.getItem('flowpad.composer.draft.proc-2')).toBeNull();
+
+    rerender(<Harness draftScope="proc-1" />);
+    expect(input().value).toBe('meant for proc-1');
+  });
+});
+
+describe('CompactExecutionInput image paste with no owner hook', () => {
+  afterEach(cleanup);
+
+  const pasteImage = (text = '') => {
+    const png = new File(['png'], 'image.png', { type: 'image/png' });
+    fireEvent.paste(input(), {
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }],
+        files: [],
+        getData: (type: string) => (type === 'text/plain' ? text : ''),
+      },
+    });
+  };
+
+  it("the annotator's caption lands in the message, on a line after what was typed", async () => {
+    vi.mocked(annotateImageFiles).mockImplementationOnce((files) =>
+      Promise.resolve({ files, caption: 'the button is cut off' }),
+    );
+    render(<Harness allowAttachments />);
+    fireEvent.change(input(), { target: { value: 'look:' } });
+    pasteImage();
+    await screen.findByText(/^screenshot-.*\.png$/);
+    expect((input() as HTMLTextAreaElement).value).toBe('look:\nthe button is cut off');
+  });
+
+  it('text pasted alongside the image prefills the caption', () => {
+    render(<Harness allowAttachments />);
+    pasteImage('from the clipboard');
+    expect(vi.mocked(annotateImageFiles)).toHaveBeenLastCalledWith(expect.any(Array), {
+      initialCaption: 'from the clipboard',
+    });
+  });
+
+  it('an annotated pasted image becomes a chip that rides the next send', async () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    pasteImage();
+    const chip = await screen.findByText(/^screenshot-.*\.png$/);
+    expect(chip).toBeTruthy();
+    fireEvent.change(input(), { target: { value: 'what is this?' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [text, files] = onSend.mock.calls[0];
+    expect(text).toBe('what is this?');
+    expect(files.map((f: File) => f.type)).toEqual(['image/png']);
+  });
+
+  it('an owner hook gets the clipboard text as the initial caption and its lines are spliced in', async () => {
+    const onPasteImages = vi.fn(() => Promise.resolve(['File a.png is available here: /in/a.png', 'my caption']));
+    render(<Harness onPasteImages={onPasteImages} />);
+    pasteImage('from the clipboard');
+    expect(onPasteImages).toHaveBeenCalledWith(expect.any(Array), { initialCaption: 'from the clipboard' });
+    await waitFor(() =>
+      expect((input() as HTMLTextAreaElement).value).toBe('File a.png is available here: /in/a.png\nmy caption'),
+    );
+  });
+
+  it('without attachments an image paste is left to the browser', () => {
+    render(<Harness />);
+    pasteImage();
+    expect(screen.queryByText(/^screenshot-/)).toBeNull();
   });
 });

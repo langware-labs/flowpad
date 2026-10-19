@@ -11,17 +11,28 @@ Resolution policy (the ``flow navigate file`` behaviour):
   * path   → the indexed asset's entity when one owns it via ``asset_ref``
              (stable editor view), else a raw vfs pointer — this is what makes
              "agent writes hello.md, then shows it" work without indexing;
-  * port   → a webapp preview.
+  * artifact_id → an app, with its live runtime derived from its endpoints;
+  * a ``service_endpoint`` / ``micro_app`` typeid → an app, shown through the
+             endpoint that serves it (a dev server on a port is registered as
+             an endpoint by the caller first — ``register_dev_endpoint``);
+  * dock   → a SCREEN, addressed as ``<viewType>[/<pointer>][?<opts>]`` — the
+             one address form that reaches a view with no entity behind it
+             (Automations, Preferences, Assets, …). Validated against the
+             ``flow_sdk.core.dock_address`` table, which is pinned to the
+             frontend's own vocabulary by a contract fixture.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.type_id import TypeId
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class DisplayTargetKind(StrEnum):
@@ -29,11 +40,14 @@ class DisplayTargetKind(StrEnum):
 
     ENTITY = "entity"
     VFS = "vfs"
-    WEBAPP = "webapp"
+    APP = "app"
+    SHELL = "shell"
+    DOCK = "dock"
+    URL = "url"
 
 
 class InvalidDisplayTarget(ValueError):
-    """The address itself is malformed (bad typeid / port / nothing given)."""
+    """The address itself is malformed (bad typeid / nothing given)."""
 
 
 class DisplayTargetNotFound(LookupError):
@@ -43,15 +57,34 @@ class DisplayTargetNotFound(LookupError):
 async def resolve_display_target(
     typeid: str | None = None,
     path: str | None = None,
-    port: object = None,
+    artifact_id: str | None = None,
+    dock: str | None = None,
+    discover: bool = False,
+    *,
+    link: str | None = None,
+    source: Entity | None = None,
 ) -> dict:
     """Resolve one display address to its payload dict.
 
-    Exactly one of ``typeid`` / ``path`` / ``port`` should be given (checked in
-    that priority order). Returns ``{"kind": DisplayTargetKind, ...}``; raises
-    ``InvalidDisplayTarget`` / ``DisplayTargetNotFound`` for the caller to map
-    onto its own response shape (HTTP error body, exit code, ...).
+    Exactly one of ``typeid`` / ``path`` / ``artifact_id`` / ``dock``
+    should be given (checked in that priority order). Returns ``{"kind":
+    DisplayTargetKind, ...}``; raises ``InvalidDisplayTarget`` /
+    ``DisplayTargetNotFound`` for the caller to map onto its own response shape
+    (HTTP error body, exit code, ...).
+
+    Resolution is READ-ONLY by default. ``discover=True`` additionally recovers
+    a not-yet-indexed file by parsing it and ``sync_to_db``-ing the result — a
+    mini index. That is right for a display verb ("show me the file I just
+    wrote") and wrong for a query ("what is this file's URL"), so the mutation
+    is opt-in and visible at the call site rather than inherited by omission.
+    Without it, an unindexed path answers VFS and the caller can say
+    "index it first".
     """
+    if link is not None:
+        from flow_sdk.core.display_link import resolve_display_link
+
+        return await resolve_display_link(link, source=source, discover=discover)
+
     if typeid:
         try:
             tid = TypeId(typeid)
@@ -63,6 +96,24 @@ async def resolve_display_target(
             entity = None  # unknown type collapses to "not found"
         if entity is None:
             raise DisplayTargetNotFound(f"Entity not found: {typeid}")
+        if entity.get_type() == "shell":
+            # A terminal is not an editable document: it is HOSTED as a tab, so
+            # the FE routes this kind to a shell-dock navigation rather than to
+            # an editor. Without its own kind it would arrive as a generic
+            # entity target, and `editorForType('shell')` is undefined — the
+            # display would silently fall back to the empty preview.
+            return shell_target(entity)
+        if entity.get_type() == "micro_app":
+            # An app is not an editable document either: it is RUN. Routed to the
+            # app dock so `flow show typeid micro_app-<id>` and a click on the
+            # asset land in the same place — the running app, not a manifest view.
+            return await _asset_app_payload(entity)
+        if entity.get_type() == "service_endpoint":
+            return endpoint_target(entity)
+        if entity.get_type() == "project":
+            # A project has no document editor: it opens on its own page, the
+            # one its "Open project home" button and its tab land on.
+            return await dock_target(f"project/{entity.id}")
         return _entity_payload(entity)
 
     if path:
@@ -71,166 +122,132 @@ async def resolve_display_target(
             entity = await Entity.get_by_asset_ref(lookup)
             if entity is not None and getattr(entity, "id", None):
                 return {**_entity_payload(entity), "path": resolved}
-        rec_type, rec_path = _typed_asset_shape(resolved)
-        if rec_type:
-            # Fresh asset (created seconds ago, not yet indexed): recover it
-            # with the targeted single-file discovery — no tree walks — so the
-            # bespoke editor renders instead of a raw file view.
-            from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
 
-            rec = await discover_record_by_path(rec_type, rec_path)
+        if discover and _SR.type_for(resolved, placed_only=True):
+            # Fresh asset (created seconds ago, not yet indexed): resolve and
+            # index just this one so the bespoke editor renders instead of a
+            # raw file view. Only for a path whose NAME or declared MOUNT says
+            # what it is — a scratch ``.md`` in a working directory is a file
+            # the walk would never index, and showing it must not mint a row.
+            from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+            try:
+                rec = await index_one(await resolve_asset(resolved, write=True))
+            except NotAnAsset:
+                rec = None
             if rec is not None and getattr(rec, "id", None):
-                return {
-                    "kind": DisplayTargetKind.ENTITY,
-                    "typeid": f"{rec_type}-{rec.id}",
-                    "type": rec_type,
-                    "id": str(rec.id),
-                    "name": getattr(rec, "name", None) or getattr(rec, "title", None) or None,
-                    "path": resolved,
-                }
+                name = getattr(rec, "name", None) or getattr(rec, "title", None) or None
+                return {**entity_target(str(rec.type), str(rec.id), name=name), "path": resolved}
         return {"kind": DisplayTargetKind.VFS, "path": resolved}
 
-    if port is not None:
-        try:
-            return {"kind": DisplayTargetKind.WEBAPP, "port": int(port)}  # type: ignore[arg-type]
-        except (TypeError, ValueError) as e:
-            raise InvalidDisplayTarget(f"Invalid port: {port!r}") from e
+    if artifact_id:
+        return await _app_payload(str(artifact_id))
 
-    raise InvalidDisplayTarget("Must include one of: typeid, path, port")
+    if dock:
+        return await dock_target(dock)
+
+    raise InvalidDisplayTarget("Must include one of: typeid, path, artifact_id, dock")
 
 
-def _folder_main_files() -> dict[str, str]:
-    """Main-file name → record type, for folder-layout types.
+def endpoint_target(endpoint, *, name: str | None = None) -> dict:
+    """An APP payload for what serves it — the one address a display loads.
 
-    Derived from the type registry (``TypeInfo.main_layout == "folder"`` +
-    ``main_file``, e.g. skill→SKILL.md, whiteboard→WHITE_BOARD.md) so a new
-    folder-asset type resolves here without touching the display layer.
-    Recomputed per call — 75-type walk is trivial and stays correct across
-    late registrations.
+    *endpoint* is a ``webapp_placement.Placed`` (an app's route on its placement's audience proxy:
+    the address is the proxy AND the ``route``) or a ``ServiceEndpoint`` of its own. ``runtime``
+    says how: ``dev`` is a server on a port (loaded at its own origin, ``direct-url``), ``served``
+    is a folder we serve (``service``).
     """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    payload = {
+        "kind": DisplayTargetKind.APP,
+        "typeid": f"service_endpoint-{endpoint.id}",
+        "endpoint_id": endpoint.id,
+        "name": name or endpoint.name,
+        "runtime": "dev" if endpoint.backend.type == "proxy" else "served",
+    }
+    mount = getattr(endpoint, "mount", None)
+    if mount is not None:
+        payload["route"] = mount
+    return payload
 
-    out: dict[str, str] = {}
-    for type_name in SchemaRegistry.get_all_types():
-        ti = SchemaRegistry.get(type_name)
-        main_file = getattr(ti, "main_file", None)
-        if getattr(ti, "main_layout", None) == "folder" and main_file:
-            out[main_file] = type_name
-    return out
 
+async def _app_payload(artifact_id: str) -> dict:
+    """Resolve an app by its Artifact — the source plane — plus what serves it.
 
-def _claude_subdir_file_types() -> dict[str, str]:
-    """``.claude/<subdir>`` → record type, for file-layout types (e.g. agent).
-
-    Constrained to ``.claude/``-rooted subdirs on purpose: broader
-    ``main_subdir`` values (``docs`` etc.) are not unambiguous type claims.
+    An app is reachable two ways: a dev server on a port (a ``proxy`` route)
+    or its built output served by us (a ``static`` route). Both, either, or
+    neither may exist at any moment, and which one is live changes without the
+    app changing. So the address is the artifact id, and the route shown is
+    *derived* here — the dev server when there is one — rather than baked into
+    the pin: that is what stops a stale port from becoming the identity of an app.
     """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.webapp_placement import artifact_routes  # noqa: PLC0415
 
-    out: dict[str, str] = {}
-    for type_name in SchemaRegistry.get_all_types():
-        ti = SchemaRegistry.get(type_name)
-        subdir = getattr(ti, "main_subdir", None) or ""
-        if getattr(ti, "main_layout", None) != "folder" and subdir.startswith(".claude/"):
-            out[subdir] = type_name
-    return out
+    if not is_valid_entity_id(artifact_id):
+        raise InvalidDisplayTarget(f"Invalid artifact_id: {artifact_id!r}")
+
+    artifact, endpoints = await asyncio.gather(Artifact.get_by_id(artifact_id), artifact_routes(artifact_id))
+    if artifact is None:
+        raise DisplayTargetNotFound(f"Artifact not found: {artifact_id}")
+
+    # This machine's rows only: a cloud placement of the same app is not served here.
+    local = [endpoint for endpoint in endpoints if not endpoint.remote]
+    shown = next((e for e in local if e.backend.type == "proxy"), None) or next(
+        (e for e in local if e.backend.type == "static"), None
+    )
+    payload: dict = {"kind": DisplayTargetKind.APP, "runtime": "unbuilt"}
+    if shown is not None:
+        payload = endpoint_target(shown)
+    return {
+        **payload,
+        "artifact_id": artifact_id,
+        "typeid": f"{Artifact.get_type()}-{artifact_id}",
+        "name": artifact.name,
+    }
+
+
+async def _asset_app_payload(micro_app) -> dict:
+    """An app addressed by its DEFINITION — a webapp asset on disk.
+
+    Shown through the ``static`` route indexing gave it; one that is missing
+    (an asset indexed before its project existed) is placed now. The frontend
+    reads the ``typeid`` as the address, which is also what gives the app a
+    breadcrumb — its row has a parent, an endpoint names a placement. Showing
+    is LOADING: ``load_run`` is the run bringing the app up, or None.
+    """
+    from flow_sdk.builtin.webapp_placement import show_webapp_locally  # noqa: PLC0415
+
+    endpoint, lifecycle = await show_webapp_locally(micro_app)
+    name = micro_app.title or micro_app.name
+    payload = endpoint_target(endpoint, name=name) if endpoint is not None else {"kind": DisplayTargetKind.APP}
+    return {
+        **payload,
+        "typeid": str(micro_app.typeid),
+        "micro_app_id": micro_app.id,
+        "name": name,
+        "runtime": "served" if endpoint is not None else "unbuilt",
+        "load_run": lifecycle.run,
+        "lifecycle": lifecycle.model_dump(mode="json"),
+    }
 
 
 def _asset_lookup_paths(resolved: str) -> list[str]:
     """Paths to try against ``asset_ref``, in order.
 
     Folder-asset awareness: a folder-layout entity's ``asset_ref`` is its
-    FOLDER, so showing the main file (``SKILL.md`` / ``WHITE_BOARD.md`` / …)
-    must also try the parent directory.
+    FOLDER, so showing the main file (``SKILL.md`` / ``CHART.md`` / …)
+    must also try the parent directory. The registry says which names are a
+    folder type's main document (``SchemaRegistry.main_file_owners``).
     """
     from pathlib import Path  # noqa: PLC0415
 
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
     p = Path(resolved)
-    if p.name in _folder_main_files():
+    if SchemaRegistry.main_file_owners(p):
         return [resolved, str(p.parent)]
     return [resolved]
-
-
-def _typed_asset_shape(resolved: str) -> tuple[str | None, str]:
-    """Infer (record_type, discovery_path) from a path's shape, or (None, path).
-
-    Only shapes the type registry declares unambiguously are inferred — these
-    drive the targeted fresh-asset discovery above: a folder type's main file
-    (or a dir containing one), ``.md`` files under a ``.claude/<subdir>`` a
-    file type claims (e.g. ``.claude/agents``), and markdown docs under a docs
-    root. Generic project-root markdown remains a raw VFS file until indexed.
-    """
-    from pathlib import Path  # noqa: PLC0415
-
-    p = Path(resolved)
-    folder_mains = _folder_main_files()
-    if p.name in folder_mains:
-        return folder_mains[p.name], str(p.parent)
-    if p.is_dir():
-        for main_file, type_name in folder_mains.items():
-            if (p / main_file).exists():
-                return type_name, resolved
-    if p.suffix == ".md":
-        parent = str(p.parent).replace("\\", "/")
-        for subdir, type_name in _claude_subdir_file_types().items():
-            if parent.endswith("/" + subdir):
-                return type_name, resolved
-        if _is_docs_markdown_path(p):
-            if p.name == "index.md" and _has_markdown_index_frontmatter(p):
-                return "markdown_index", resolved
-            return "markdown", resolved
-    return None, resolved
-
-
-def _is_docs_markdown_path(path: "Path") -> bool:
-    """True when an explicit ``.md`` path belongs to a docs root."""
-    if path.suffix.lower() != ".md":
-        return False
-    try:
-        resolved = path.resolve()
-    except OSError:
-        resolved = path.absolute()
-
-    # Fast path for the common agent-created project docs layout:
-    # <project>/docs/foo.md or <project>/.claude/docs/foo.md.
-    if "docs" in resolved.parts:
-        return True
-
-    # Keep parity with the markdown indexer's configured search roots.
-    try:
-        from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs  # noqa: PLC0415
-
-        for root in doc_search_dirs():
-            try:
-                resolved.relative_to(root)
-            except ValueError:
-                continue
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def _has_markdown_index_frontmatter(path: "Path") -> bool:
-    """Detect generated ``index.md`` files without parsing arbitrary markdown."""
-    try:
-        text = path.read_text(encoding="utf-8", errors="ignore")[:4096]
-    except OSError:
-        return False
-    if not text.startswith("---"):
-        return False
-    end = text.find("\n---", 3)
-    if end < 0:
-        return False
-    frontmatter = text[3:end]
-    for raw in frontmatter.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or ":" not in line:
-            continue
-        key, value = line.split(":", 1)
-        if key.strip() == "type":
-            return value.strip().strip("\"'") == "markdown_index"
-    return False
 
 
 def entity_target(type_name: str, entity_id: str, *, name: str | None = None) -> dict:
@@ -238,7 +255,7 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
 
     The single builder of the entity-target shape; ``_entity_payload`` is the
     entity-in-hand convenience over it. ``name`` rides along so downstream
-    consumers (e.g. auto-bookmark titles) get a human label without a re-fetch."""
+    consumers (e.g. the display stack) get a human label without a re-fetch."""
     return {
         "kind": DisplayTargetKind.ENTITY,
         "typeid": f"{type_name}-{entity_id}",
@@ -248,9 +265,236 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
     }
 
 
+async def dock_target(address: str) -> dict:
+    """A DOCK DisplayTarget payload from a ``<viewType>[/<pointer>][?<opts>]``
+    address — the screen form.
+
+    This is the only target kind that can name a view with no entity behind it,
+    which is what lets an agent open Automations or Preferences at all. Validation is
+    entirely ``dock_address``'s table (pinned to the frontend by
+    ``tests/fixtures/dock_address_contract.json``), so the rules cannot drift
+    from what the UI will actually accept:
+
+    * unknown view, or a historic view that is not a new destination (the
+      folded-away ``skills`` / ``session`` / ``atlas``) → ``InvalidDisplayTarget``.
+      Those still DECODE — history is forever — but direct navigation rejects them;
+    * a directly-addressable RETIRED view forwards first (``environment`` →
+      ``credentials/environment``) rather than erroring;
+    * a required pointer that is missing → ``InvalidDisplayTarget``;
+    * a view asked for on a page whose renderer has no case for it (``organization``
+      on ``desk``) → ``InvalidDisplayTarget`` naming the address that works. Without
+      it the address parses, the call succeeds, and the content panel falls through
+      to the Home landing — a wrong screen reported as a success;
+    * a pointer shaped like a TypeId is looked up, so ``conversation/<bogus>``
+      fails here instead of opening a dock that renders a load error. A
+      grammar-only view (``automations``) never touches the DB.
+
+    The address is carried as the FRONTEND's own field names (``view_type`` /
+    ``pointer`` / ``options`` / ``page``) so the client builds its DockPointer
+    without re-parsing. Per the module's standing rule the payload carries the
+    ADDRESS, never a baked URL.
+    """
+    from flow_sdk.core import dock_address as da  # noqa: PLC0415
+
+    raw = (address or "").strip()
+    if not raw:
+        raise InvalidDisplayTarget("Empty dock address")
+
+    # Accept a full path too, so a pasted URL works as well as a bare address.
+    parsed = da.parse_dock_url(raw if raw.startswith("/") else f"/dock/{raw.lstrip('/')}")
+    if parsed is None:
+        # Name the actual problem — an agent reads this string and retries on it.
+        head = raw.lstrip("/").split("?", 1)[0].split("/", 1)[0]
+        if da.parse_view_type(head) is None:
+            # Name candidates, not just the catalogue. An agent that guessed a
+            # screen name once will guess again from the same word unless the
+            # error hands it a real address to retry on.
+            hint = ", ".join(f"{view.value} ({da.VIEW_META[view].label})" for view in da.suggest_views(head))
+            raise InvalidDisplayTarget(
+                f"Unknown view '{head}'. Did you mean: {hint}?"
+                if hint
+                else f"Unknown view '{head}'. Run `flow schema views` for the list."
+            )
+        raise InvalidDisplayTarget(f"Not a dock address: {address!r}")
+
+    retired = da.RETIRED_DOCK_VIEWS.get(parsed.view_type)
+    if retired is not None and not retired.accepts_direct_address:
+        raise InvalidDisplayTarget(f"View '{parsed.view_type.value}' is not addressable (it decodes for history only)")
+    view, pointer = da.normalize_retired(parsed.view_type, parsed.pointer)
+    meta = da.VIEW_META[view]
+    if not meta.addressable:
+        raise InvalidDisplayTarget(f"View '{view.value}' is not addressable (it decodes for history only)")
+    if meta.pointer is da.PointerRequirement.REQUIRED and not pointer:
+        raise InvalidDisplayTarget(f"View '{view.value}' requires a pointer")
+    if meta.pointer_shape and pointer and not re.fullmatch(meta.pointer_shape, pointer):
+        raise InvalidDisplayTarget(
+            f"View '{view.value}' is addressed as '{view.value}/{meta.pointer_form}'"
+            + (" — to show the agent itself, run `flow show entity agent-<id>`" if view is da.ViewType.AGENT else "")
+        )
+    # A hub-only view asked for on the desk page is the same failure this module's
+    # vocabulary exists to prevent: the address parses, the request succeeds, and the
+    # content panel falls through to the Home landing because only `renderHubBody`
+    # has a case for it. Say which address actually opens it.
+    if parsed.page.value not in meta.pages:
+        fix = da.dock_address(view, da.PageId(meta.pages[0]))
+        raise InvalidDisplayTarget(
+            f"View '{view.value}' does not render on page '{parsed.page.value}'. Address it as '{fix}'."
+        )
+
+    await _assert_pointer_entity_exists(view, pointer)
+
+    # Empty optionals are OMITTED, not sent as null: persistence drops null
+    # values from ``context_data``, so a payload carrying them would not survive
+    # the round trip byte-for-byte and `last_shown` would differ from the
+    # response the caller just got. Fewer keys, same information.
+    payload: dict = {
+        "kind": DisplayTargetKind.DOCK,
+        "view_type": view.value,
+        "page": parsed.page.value,
+    }
+    if pointer:
+        payload["pointer"] = pointer
+    if parsed.options:
+        payload["options"] = dict(parsed.options)
+    return payload
+
+
+async def _assert_pointer_entity_exists(view, pointer: str | None) -> None:
+    """Raise ``DisplayTargetNotFound`` when an entity-backed pointer names nothing.
+
+    Only the FIRST pointer segment is considered, and only in the two shapes
+    that actually carry an entity:
+
+    * a BARE id on a view whose name IS an entity type — ``conversation/<id>``,
+      ``spec/<id>``, ``plan/<id>``. This is the common case, and note the type
+      comes from the VIEW, not from the pointer;
+    * an explicit ``<type>-<id>`` TypeId — ``agentic_process-<id>``.
+
+    Every other pointer shape is grammar the view owns (``list/skill``,
+    ``graph/eng.db``, ``editor/markdown/typeid/...``, a file path) and is left
+    alone rather than guessed at. Guessing wrong would turn a working address
+    into a spurious 404, which is worse than letting the view render its own
+    not-found state.
+    """
+    if not pointer:
+        return
+    head = pointer.split("/", 1)[0]
+    if not head:
+        return
+
+    tid = None
+    if is_valid_entity_id(head):
+        # Bare id: the VIEW names the type, when it names one at all.
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        try:
+            EntityType(view.value)
+        except ValueError:
+            return  # a bare id on a non-entity view — not ours to resolve
+        tid = TypeId(f"{view.value}-{head}")
+    else:
+        try:
+            candidate = TypeId(head)
+        except (ValueError, IndexError):
+            return
+        if candidate.id and is_valid_entity_id(candidate.id):
+            tid = candidate
+    if tid is None:
+        return
+
+    try:
+        entity = await Entity.get_by_typeid(tid)
+    except ValueError:
+        entity = None  # unknown type collapses to "not found", as elsewhere here
+    if entity is None:
+        raise DisplayTargetNotFound(f"Entity not found: {tid}")
+
+
+def shell_target(shell: Entity) -> dict:
+    """A SHELL DisplayTarget payload — an address for a live terminal.
+
+    Unlike every other kind this is not something the display *renders*: the FE
+    opens the shell's dock, which a mounted vibe workspace adopts as a child tab
+    (see ``isAdoptableChildDock``). One hosting mechanism, shared with the
+    terminal a guided journey opens. ``workdir`` rides along so a caller can
+    label the terminal without re-fetching it."""
+    return {
+        "kind": DisplayTargetKind.SHELL,
+        "typeid": f"shell-{shell.id}",
+        "type": "shell",
+        "id": str(shell.id),
+        "name": getattr(shell, "name", None) or None,
+        "workdir": getattr(shell, "workdir", None) or None,
+    }
+
+
 def _entity_payload(entity: Entity) -> dict:
     return entity_target(
         entity.get_type(),
         entity.id,
         name=getattr(entity, "name", None) or getattr(entity, "title", None) or None,
     )
+
+
+def dock_url(target: dict, *, port: int, host: str = "localhost") -> str | None:
+    """The absolute asset-editor deep link for a resolved display target.
+
+    The one Python owner of the URL grammar
+    ``/dock/assets/editor/<editor>/typeid/<type>-<id>``, whose other owner is
+    ``assetEditorPointer`` in ts_sdk/src/APIEntity.ts (the two editor maps are
+    pinned by tests/fixtures/asset_editor_contract.json).
+
+    ``None`` — not an exception — for every address this grammar does not
+    cover: an entity whose type has no asset editor, and the SHELL / APP /
+    VFS kinds, which have their own pointer forms owned elsewhere.
+    Inventing a segment for those would put a second, wrong owner of each
+    grammar on the backend.
+
+    ``port`` is a parameter rather than read from instance settings so this
+    stays a pure function — and so its caller is forced to decide *which* port,
+    which matters: the UI is served by Vite on a different port than the API in
+    every dev instance.
+    """
+    from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+    if target.get("kind") != DisplayTargetKind.ENTITY:
+        return None
+    typeid = target.get("typeid")
+    editor = editor_for_type(str(target.get("type") or ""))
+    if not typeid or editor is None:
+        return None
+    return f"http://{host}:{port}/dock/assets/editor/{editor.value}/typeid/{typeid}"
+
+
+def hub_asset_url(target: dict, *, hub_origin: str, project_id: str) -> str | None:
+    """The HUB's project-rebased asset-editor URL for a resolved display target.
+
+    ``<hub_origin>/dock/hub/project/<project_id>/editor/<editor>/typeid/<type>-<id>``
+
+    Its other owner is ``hubProjectAssetDock`` in ui/src/lib/hub-page-url.ts
+    (``rebaseAssetsOntoProject ∘ forAssetEditorByTypeId ∘ withPage(HUB)``); the
+    two are pinned by the ``hub_url_cases`` rows in
+    tests/fixtures/asset_editor_contract.json.
+
+    **The project rebase is mandatory, not cosmetic.** A bare
+    ``/dock/assets/editor/...`` on a hub-only server is redirected to
+    ``/dock/hub/home`` (ui/src/navigation/supported-pages.ts), because the hub
+    does not serve the ``desk`` page — so the un-rebased form silently lands the
+    reviewer on a home screen instead of the document.
+
+    ``None`` for the same reasons as :func:`dock_url`, plus a missing origin or
+    project id. Callers must treat that as "there is no reviewer link", never
+    as a URL to guess at.
+    """
+    from flow_sdk.core.asset_editor import editor_for_type  # noqa: PLC0415
+
+    if not hub_origin or not project_id:
+        return None
+    if target.get("kind") != DisplayTargetKind.ENTITY:
+        return None
+    typeid = target.get("typeid")
+    editor = editor_for_type(str(target.get("type") or ""))
+    if not typeid or editor is None:
+        return None
+    origin = hub_origin.rstrip("/")
+    return f"{origin}/dock/hub/project/{project_id}/editor/{editor.value}/typeid/{typeid}"

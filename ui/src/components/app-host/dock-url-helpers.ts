@@ -24,6 +24,22 @@ export function isInternalDockUrl(url: string): boolean {
 }
 
 /** Convert a /dock/... URL into a DockPointer the host can navigate to. */
+/**
+ * A guest page asked the host to open a link: internal `/dock/` URLs flow
+ * through navigation, anything else opens a new tab. Shared by every guest host
+ * (MCP apps via `onOpenLink`, asset editor apps via `postMessage`).
+ */
+export function openGuestLink(url: string, navigation: { openDock: (pointer: DockPointer) => void }): void {
+  if (isInternalDockUrl(url)) {
+    const pointer = parseDockUrlToPointer(url);
+    if (pointer) {
+      navigation.openDock(pointer);
+      return;
+    }
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 export function parseDockUrlToPointer(url: string): DockPointer | null {
   let parsedUrl: URL;
   try {

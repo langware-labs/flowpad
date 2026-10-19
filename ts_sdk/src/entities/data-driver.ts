@@ -1,0 +1,230 @@
+/**
+ * DataDriver — the AUTHORED half of a data source
+ * (flow_sdk/builtin/data_driver_spec.py).
+ *
+ * `DataSource` is a configured instance: credentials, schedule, health,
+ * cursors. This is what a source *is* — a folder asset carrying the manifest.
+ * The split is the same one `GraphWorkflow` / `GraphWorkflowRun` already makes.
+ *
+ * It is why the create form no longer hardcodes a catalog: `config`
+ * comes from the backend, so a new source lights the form up without a
+ * frontend release.
+ */
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { IEntity, EntityMerge } from '../IEntity';
+
+/**
+ * What a config field renders as. Mirrors `FieldType` in
+ * `flow_sdk/builtin/data_driver_spec.py`, which validates it at parse time — so a typo
+ * is a manifest load error there and a compile error at the three comparison
+ * sites here, instead of silently rendering a text input.
+ */
+export enum FieldType {
+  TEXT = 'text',
+  LINES = 'lines',
+  CSV = 'csv',
+  NUMBER = 'number',
+  PATH = 'path',
+}
+
+/** One field of the create form, as the manifest declares it. */
+/**
+ * How the form draws one config field — widget, words, placement. The field's RULES (required,
+ * pattern, default) are the driver's typed `Config`, delivered as `DataDriver.config_schema`;
+ * `fieldRules` in the source form reads them. Mirrors `FieldHints`.
+ */
+export interface SpecConfigField {
+  type?: FieldType;
+  label?: string;
+  hint?: string;
+  placeholder?: string;
+  advanced?: boolean;
+  /** Marks the field naming the remote account. Descriptive only. */
+  account_key?: boolean;
+  /**
+   * The provider can enumerate this field's legal values — GCS buckets, Drive shared
+   * drives, Slack channels — so the form offers a picker instead of asking for an id
+   * nobody can produce from memory. `type` still decides the shape: `text` picks one,
+   * `lines` picks many. Mirrors `FieldHints.choices`.
+   */
+  choices?: boolean;
+}
+
+/** The JSON Schema of a driver's `Config` — the parts the form reads. */
+export interface ConfigSchemaProperty {
+  pattern?: string;
+  default?: unknown;
+  items?: ConfigSchemaProperty;
+  anyOf?: ConfigSchemaProperty[];
+}
+export interface ConfigSchema {
+  properties?: Record<string, ConfigSchemaProperty>;
+  required?: string[];
+}
+
+/** What a driver's items ARE — the base its source class extends (files, records, messages). */
+export type DataSourceFamily = 'object' | 'record' | 'message';
+
+/** One declared setup stage: its id, what the UI calls it, and the wizard that completes it. */
+export interface SetupStage {
+  stage: string;
+  label?: string;
+  wizard: string;
+}
+
+/** A declared stage as it stands for ONE source — read off its wizard's run for that source. */
+export interface SetupStageState {
+  stage: string;
+  label: string;
+  wizard: string;
+  /** `done` · `pending` · `locked` (an earlier stage is not done). */
+  state: 'done' | 'pending' | 'locked';
+  /** The last run's sentence, when there was one. */
+  detail: string;
+}
+
+/** What one way of connecting looks like right now (a group member's card): `Source.profile()`. */
+export interface DriverProfile {
+  name?: string;
+  description?: string;
+  avatar?: string | null;
+  number?: string;
+  available?: boolean;
+  detail?: string;
+}
+
+export interface IDataDriver extends IEntity {
+  /** The definition's folder on this machine. */
+  asset_ref?: string;
+  title?: string;
+  description?: string;
+  icon_name?: string;
+  /** Per-CHANNEL glyphs for a multi-channel transport (agent: gmail→Mail, slack→Slack). */
+  channel_icon_names?: Record<string, string>;
+  setup_wiki?: string;
+  /** The wizards a source of this driver is set up with, in order (test, then production…). */
+  setup_wizards?: SetupStage[];
+  /** One choice to a person, several ways to it ("WhatsApp"): one tile per group, a card per member. */
+  group?: string;
+  group_order?: number;
+  /** The group tile's own glyph — the choice's, not a member's (first declared, in group order). */
+  group_icon_name?: string;
+  /** The name a new source starts with ("Flow WhatsApp agent"); blank → the title. */
+  default_name?: string;
+  /** The record kind a source row carries (`datasource.api.slack`). */
+  kind?: string;
+  /** Always `source`: the folder's own `source.py`. */
+  runtime?: string;
+  /** `object` (files, reflected to disk), `record` (SourceItem rows) or `message` (records threaded into
+   *  the stream inbox). Absent for a driver the backend has not loaded. */
+  family?: DataSourceFamily;
+  /** A message source that answers on its channel: it sends and replies. */
+  sends?: boolean;
+  /** Why the folder's source did not load, or empty. */
+  load_error?: string;
+  /** What a person calls the sign-in it reads through (`GitHub`), or empty when it needs none. */
+  sign_in_title?: string;
+  reflect?: string[];
+  /** The form's fields, under the manifest's own key: how each is drawn. */
+  config?: Record<string, SpecConfigField>;
+  /** The rules for those fields: the JSON Schema of the driver's `Config` (backend-validated). */
+  config_schema?: ConfigSchema;
+  auth?: Record<string, unknown> | null;
+  requires?: Record<string, string>;
+  manifest_schema?: number;
+  /** Offered in the add-source picker; an unlisted provider still loads and polls. */
+  listed?: boolean;
+  /** Drawn by default on a stream inbox's channel line until its owner connects one. */
+  featured?: boolean;
+  /** The cloud creates the account for the owning agent — no form to fill. */
+  provisioned?: boolean;
+  /**
+   * How a person starts a call on a source of this driver: `webrtc` (this browser's mic and
+   * speakers), `clip` (a recorded sound file), `dial` (a number the agent calls). Empty: no calls.
+   * Mirrors `DataDriverSpec.calls`; the UI offers the matching control from this alone.
+   */
+  calls?: CallStart | '';
+}
+
+/** The ways a call starts on a source that takes calls (`DataDriverSpec.calls`). */
+export type CallStart = 'webrtc' | 'clip' | 'dial';
+
+// `implements IDataDriver` only checks the class; it contributes no members, so every
+// field declared solely on IDataDriver read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface DataDriver extends EntityMerge<IDataDriver> {}
+
+@registerEntity
+export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
+  static type: string = 'data_driver';
+
+  title: string = '';
+  description: string = '';
+  /**
+   * A lucide glyph for THIS source in the provider picker.
+   *
+   * Deliberately not `icon`: `APIEntity.icon` is a getter with no setter that
+   * returns the TYPE's registry glyph — the one every spec shares. A row
+   * carrying an `icon` key is assigned onto the instance during hydration and
+   * throws there, inside the query, which empties the result instead of
+   * raising. That blanked the entire provider list once already. `Group.icon`
+   * shows the other way out (override with an accessor pair); a per-source
+   * glyph does not need that name at all.
+   */
+  icon_name: string = '';
+  channel_icon_names: Record<string, string> = {};
+  setup_wiki: string = '';
+  setup_wizards: SetupStage[] = [];
+  group: string = '';
+  group_order: number = 0;
+  group_icon_name: string = '';
+  default_name: string = '';
+  kind: string = '';
+  runtime: string = 'source';
+  load_error: string = '';
+  sign_in_title: string = '';
+  reflect: string[] = [];
+  config: Record<string, SpecConfigField> = {};
+  auth: Record<string, unknown> | null = null;
+  requires: Record<string, string> = {};
+  manifest_schema: number = 1;
+  listed: boolean = true;
+  featured: boolean = false;
+  provisioned: boolean = false;
+  calls: CallStart | '' = '';
+
+  /**
+   * Re-apply the payload after construction.
+   *
+   * `ts_sdk` compiles with `useDefineForClassFields: false`, so every field
+   * initializer above is emitted as an assignment AFTER `super(json)` — which
+   * means the base constructor's `deepAssign` lands first and each default
+   * then overwrites it. A row fetched by a LIST query (`castAndDeepAssign`'s
+   * cache-miss branch is the only `new` path) therefore arrives with `title`
+   * empty and `config` `{}`; entities normally recover because a later
+   * by-id fetch or `data_op` deep-assigns onto the cached instance, but the Add
+   * dialog reads the specs immediately and rendered bare provider names with no
+   * fields at all.
+   *
+   * `Team`, `Group` and `Prompt` carry hand-written constructors for the same
+   * reason — this is the fourth, and copies do not scale: they protect only the
+   * classes that remembered. The real home for the fix is
+   * `FlowSync/store.ts::castAndDeepAssign`, whose cache-HIT branch already does
+   * the careful thing (onEntityUpdate, the `state` guard, the
+   * `asset_occurrences` array-replace, `_rehydrateContextEntities`) while its
+   * cache-MISS branch is a bare `new entityConstructor(source)` that gets none
+   * of it. Fixing it there must land alone: `deepAssign` merges arrays by index
+   * (the reason the `asset_occurrences` special case exists), so it is safe over
+   * an empty default and would UNION for any class with a non-empty one.
+   */
+  constructor(json: IDataDriver | undefined = undefined) {
+    super(json as never);
+    if (json) dataManager.deepAssign(this, json);
+  }
+
+  /** This way of connecting as a card, right now (a group's setup phase). `{}` when the driver has none. */
+  async profile(): Promise<DriverProfile> {
+    return this.get('profile');
+  }
+}

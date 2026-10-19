@@ -1,5 +1,5 @@
 /**
- * Behavioural lock for the project-menu chip (ProjectsCounterChip): it shows one
+ * Behavioural lock for the project-menu chip (the nav bar's RuntimeChip): it shows one
  * row per project that owns an open tab, across ALL tab kinds.
  *
  * Two regressions this guards:
@@ -24,7 +24,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTabProjectBuckets } from '@src/tabs/useTabs';
+import { useTabProjectBuckets } from '@src/tabs/use-tab-manager';
 
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -50,7 +50,7 @@ function tabRow(id: string, targetType: string, targetId: string, projectId: str
   };
 }
 
-describe('ProjectsCounterChip buckets — one chip per project across all projects', () => {
+describe('project chip buckets — one row per project across all projects', () => {
   let queryClient: QueryClient;
 
   beforeEach(async () => {

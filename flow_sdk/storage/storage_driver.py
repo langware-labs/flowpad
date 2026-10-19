@@ -1,18 +1,17 @@
 import logging
 from abc import ABC, abstractmethod
-from contextlib import asynccontextmanager
 from functools import wraps
 from io import BytesIO
-from typing import Any, AsyncIterator, BinaryIO, List
+from typing import Any, AsyncIterator, List
 
 from flow_sdk.api.fs.fs_api import VFSPath
-from flow_sdk.api.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId
 
-# FSItem import is optional - it may not be defined yet in models
+# FSEntry import is optional - it may not be defined yet in models
 try:
-    from flow_sdk.models import FSItem
+    from flow_sdk.models import FSEntry
 except ImportError:
-    FSItem = None  # Will be used for type hints only
+    FSEntry = None  # Will be used for type hints only
 
 logger = logging.getLogger(__name__)
 
@@ -50,29 +49,6 @@ class AuthenticationError(StorageError):
     pass
 
 
-class StreamUploader:
-    def __init__(self, io_stream: BinaryIO) -> None:
-        self.fs_item: FSItem | None = None
-        self.io_stream: BinaryIO = io_stream
-        self.chunk_size = 1024 * 1024  # 1MB
-        self.file_size = io_stream.seek(0, 2)  # Get file size
-        io_stream.seek(0)  # Reset file pointer
-        self.uploaded_size = 0
-
-    @property
-    def progress(self) -> int:
-        return int(self.uploaded_size / self.file_size) * 100
-
-    @abstractmethod
-    @asynccontextmanager
-    async def create_resumable_upload_session(self):
-        yield
-
-    @abstractmethod
-    async def upload_next_chunk(self) -> int | None:
-        pass
-
-
 class StorageDriver(ABC):
     def __init__(self, mount_path: str) -> None:
         self.mount_path = mount_path
@@ -102,14 +78,22 @@ class StorageDriver(ABC):
     def get_storage_path(self, vfs_path: str) -> str:
         # logger.debug(f"get_storage_path vfs_path: {vfs_path}")
         resource_full_vfs_path = vfs_path.strip("/")
-        # Add mount subfolder if it exists
-        if self.driver_mount_subfolder:
-            # logger.debug(f"get_storage_path driver subfolder: {self.driver_mount_subfolder}")
-            storage_app_vfs_root = self.driver_mount_subfolder.strip("/")
-            resource_full_vfs_path = "/".join([storage_app_vfs_root, resource_full_vfs_path])
         resource_full_storage_path = self.app2storage_path_format(resource_full_vfs_path).strip(self.storage_path_sep)
+        # Mount subfolders are already storage-relative, so add them only after
+        # converting the application VFS locator.
+        if self.driver_mount_subfolder:
+            storage_subfolder = self.driver_mount_subfolder.replace("/", self.storage_path_sep).strip(
+                self.storage_path_sep
+            )
+            resource_full_storage_path = self.storage_path_sep.join(
+                part for part in (storage_subfolder, resource_full_storage_path) if part
+            )
         # Add mount storage path if it exists
-        if self.mount_path and resource_full_storage_path and not resource_full_storage_path.startswith(self.mount_path):
+        if (
+            self.mount_path
+            and resource_full_storage_path
+            and not resource_full_storage_path.startswith(self.mount_path)
+        ):
             resource_storage_path = self.mount_path.rstrip(self.storage_path_sep)
             resource_full_storage_path = self.storage_path_sep.join([resource_storage_path, resource_full_storage_path])
 
@@ -152,19 +136,6 @@ class StorageDriver(ABC):
         pass
 
     @abstractmethod
-    async def stream_upload(self, upload_stream: BinaryIO, vfs_path: str = "/") -> StreamUploader:
-        """Upload a file to the storage device.
-
-        Args:
-            upload_stream: the file stream.
-            vfs_path: Destination path on the storage device.
-
-        Raises:
-            StorageError: If the upload fails.
-        """
-        pass
-
-    @abstractmethod
     async def upload(self, local_file_or_io: str | BytesIO, vfs_path: str = "/") -> None:
         """Upload a file to the storage device.
 
@@ -193,12 +164,6 @@ class StorageDriver(ABC):
             StorageError: If the download fails.
         """
         pass
-
-    @abstractmethod
-    async def stream_zip(self, vfs_path: str) -> AsyncIterator[bytes]:
-        """Asynchronously stream a zip file from the storage device."""
-        logger.warning("non implemented stream_zip used")
-        yield b""  # Dummy implementation
 
     @abstractmethod
     async def upload_zip(self, zip_file: BytesIO, vfs_path: str) -> None:
@@ -234,7 +199,7 @@ class StorageDriver(ABC):
         return decoded
 
     @abstractmethod
-    async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
+    async def list_dir(self, vfs_path: str | None = None) -> List[FSEntry]:
         """List the contents of a directory on the storage device.
 
         Args:

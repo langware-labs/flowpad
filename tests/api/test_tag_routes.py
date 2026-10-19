@@ -40,7 +40,7 @@ async def test_tag_generic_crud_roundtrip(client):
 
 
 async def test_tag_reserved_root_rejected_via_api(client):
-    resp = await client.post("/api/v1/graph/tag", json={"name": "flow.hacked"})
+    resp = await client.post("/api/v1/graph/tag", json={"name": "graph_workflow.hacked"})
     assert 400 <= resp.status_code < 500, resp.text
 
     resp = await client.post("/api/v1/graph/tag", json={"name": "not a tag!"})
@@ -51,7 +51,7 @@ async def test_tag_system_flag_is_not_client_assertable(client):
     # `system` is server-derived (EntityField, not an API field): the create
     # sanitizer drops it, so it cannot defeat the reserved-root gate...
     resp = await client.post(
-        "/api/v1/graph/tag", json={"name": "flow.spoofed", "system": True})
+        "/api/v1/graph/tag", json={"name": "graph_workflow.spoofed", "system": True})
     assert 400 <= resp.status_code < 500, resp.text
 
     # ...and on a permitted name it silently lands as a plain user tag.

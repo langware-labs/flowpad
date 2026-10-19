@@ -1,0 +1,388 @@
+"""Hand one wizard step to an agent, and wait for it.
+
+This is the four-line core of ``run_capability_install_process``
+(``flow_sdk/core/capabilities/registry.py:663``) with one deliberate change:
+the process is **awaited**, not monitored.
+
+That function returns the moment the worker starts and lets a background
+monitor settle the verdict, because a browser needs the process id while the
+run is still live. A wizard step has no such caller — the next step's
+precondition depends on this one having finished — so the runner blocks here.
+
+``run_capability_install_process`` is deliberately NOT reused: it is welded to
+``CapabilitySpec``, mutates a ``Capability`` row's ``last_setup``/``state``, and
+schedules a fire-and-forget re-discovery. A wizard step wants none of that.
+
+Nothing here raises. A machine with no harness capability resolved is the
+NORMAL state of the bare box a wizard exists to fix, so "no harness" has to be
+a legible failed step, not a traceback that takes the whole run with it.
+
+It answers with a ``PromptResult``: ``text`` is what the agent said, and
+``executor`` names the process whenever one exists — even on failure — so a
+caller can link to it, or prompt that same process again.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from pathlib import Path
+from typing import Any, Callable, Optional
+
+from pydantic import Field
+
+from flow_sdk.core.compute.llm_source import settle_llm_source
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+from flow_sdk.schema.data_spec.spec import DataSpec
+
+logger = logging.getLogger(__name__)
+
+#: What a step that needed an agent says when no LLM source could fund one (the ladder words its own report on it).
+NO_USABLE_LLM_SOURCE = "has no usable LLM source"
+
+
+class ProcessProgress(DataSpec):
+    """One tick of a step's agent, in the wizard's vocabulary.
+
+    Its own type rather than a raw ``WorkerStatus`` so the runner stays free of
+    process imports — the property that keeps its tests in milliseconds.
+    """
+
+    text: str
+    counters: dict = Field(default_factory=dict)
+    blocked: bool = False
+    #: The agent process doing it (``agentic_process-<id>``), so a caller can link to it.
+    executor: str = ""
+
+
+#: Worker states collapse to a handful of words on purpose. A row that flickers
+#: between "thinking" and "using tool" and "working" is noisier than one that
+#: says "working", and the fine-grained labels already exist in the frontend
+#: where there is a real process entity to render them from.
+_VERB_BY_STATE = {
+    "blocked": "waiting for you",
+    "failed": "finishing",
+    "completed": "finishing",
+    "cancelled": "finishing",
+}
+
+
+def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
+    """What to say about the agent right now. Never raises, never mints."""
+    text, counters, blocked = "working", {}, False
+    try:
+        from flow_sdk.activity.progress_monitor import monitor  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.activity_bridge import (  # noqa: PLC0415
+            PROCESS_ACTIVITY_PATH,
+            _state_for,
+            subject_for,
+        )
+
+        state = _state_for(worker_status)
+        blocked = getattr(state, "value", str(state)) == "blocked"
+        text = _VERB_BY_STATE.get(getattr(state, "value", str(state)), "working")
+        # `node`, not `get`: a READ must not mint. Minting here would fabricate
+        # a phantom row on the footer chip for a process that has not reported.
+        node = monitor.node(PROCESS_ACTIVITY_PATH, subject_entity=subject_for(process_id))
+        if node is not None:
+            if getattr(node, "current_item", None):
+                text = f"{text} · {node.current_item}"
+            # pydantic copies it on construction; copying here too was twice.
+            counters = getattr(node, "counters", {}) or {}
+    except Exception:  # noqa: BLE001 — a status line is never worth a failure
+        logger.debug("could not read agent status for %s", process_id, exc_info=True)
+    return ProcessProgress(text=text, counters=counters, blocked=blocked)
+
+
+async def _unfunded(worker_type: Any) -> Optional[str]:
+    """Why NOTHING can fund this agent, or ``None`` when something can.
+
+    The same question, from the same resolver, that refuses an agent launch at the API edge
+    (`createProcess`): ``chosen`` is the source a spawn in this scope would get, so this cannot
+    refuse an agent that would have run. Local reads only. It answers about LLM SOURCES and nothing
+    else — a harness that is missing or a model that is overloaded is not this, and must not send
+    anyone to the chooser.
+    """
+    # The driver the spawn will ACTUALLY run — not merely the harness name resolved above. They can
+    # differ (a test swaps in a mock driver), and the spawn asks the driver about its own source
+    # (`process.driver.name`). Read through the module, at call time, so a swapped `get_driver` counts.
+    from flow_sdk.builtin.agentic_process import agentic_process  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+        check_unchecked_login,
+        llm_picker_view,
+    )
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+    resolved = str(getattr(worker_type, "value", worker_type))
+    name = str(getattr(agentic_process.get_driver(resolved), "name", "") or resolved)
+    # A worker with no API-auth spec draws on no LLM source at all (a mock or bootstrap worker), and
+    # the spawn skips the source check for it (`resolve_worker_api_auth`). Refusing it here would
+    # stop an agent that runs fine — and send the person to a chooser for nothing.
+    if driver_api_auth_spec(name) is None:
+        return None
+    # A launch is an action: an installed harness nobody has probed is asked now, rather than
+    # refused for a login that may well work (funding never presumes one does).
+    await check_unchecked_login(name)
+    funding = await llm_picker_view(name, LLMScope(project_id=""))
+    if funding.chosen is not None:
+        return None
+    return funding.blocked or "no source is configured"
+
+
+def _transcript_signature(process: Any) -> Any:
+    """A value that changes whenever the agent's transcript can have changed, or ``None`` when it has
+    none yet. Never raises: a sign of life is never worth a failure."""
+    try:
+        from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature  # noqa: PLC0415
+
+        path = transcript_path(process)
+        return transcript_change_signature(path) if path is not None else None
+    except Exception:  # noqa: BLE001
+        logger.debug("could not read the transcript signature for %s", getattr(process, "id", "?"), exc_info=True)
+        return None
+
+
+#: What the row says while the agent's own command is doing work — a download, an unpack, an
+#: installer — rather than the agent itself thinking.
+RUNNING_A_COMMAND = "running a command"
+
+
+def _command_activity(process_id: str) -> Any:
+    """The CPU and I/O used so far by the commands the agent is running, or ``None`` when none is.
+
+    One long command — a 30 MB download and unpack — leaves the agent's state, item, counters and
+    transcript all unchanged for minutes, so the row read "may be stuck" while the command was busy
+    the whole time (seen on the clean-Windows VM: 2 minutes, then "Goal achieved"). The agent's
+    CHILD processes are those commands; their CPU time and bytes moved grow while they work.
+
+    Only the children, never the agent process itself: a harness idling on a hung model call has
+    timers that tick, and must still read as quiet. A command sitting idle (waiting on a permission
+    prompt nobody sees) is quiet too, which is the right thing for the row to say.
+    Never raises: a sign of life is never worth a failure.
+    """
+    try:
+        import psutil  # noqa: PLC0415
+
+        from flow_sdk.builtin.agentic_process.agentic_process import prompt_worker_pid  # noqa: PLC0415
+
+        pid = prompt_worker_pid(process_id)
+        if pid is None:
+            return None
+        children = psutil.Process(pid).children(recursive=True)
+        if not children:
+            return None
+        cpu, moved = 0.0, 0
+        for child in children:
+            try:
+                times = child.cpu_times()
+                cpu += times.user + times.system
+            except psutil.Error:
+                continue
+            try:  # absent on macOS; CPU alone still answers there
+                io = child.io_counters()
+                moved += io.read_bytes + io.write_bytes
+            except (psutil.Error, AttributeError):
+                pass
+        return (len(children), round(cpu, 1), moved)
+    except Exception:  # noqa: BLE001
+        logger.debug("could not read command activity for %s", process_id, exc_info=True)
+        return None
+
+
+async def launch_step_process(
+    *,
+    agent: str,
+    prompt: str,
+    name: str,
+    workdir: Path,
+    context_data: Optional[dict] = None,
+    target_typeid_str: str = "",
+    timeout_seconds: float = 1800.0,
+    on_status: Optional[Callable[[ProcessProgress], None]] = None,
+    executor: Optional[str] = None,
+    #: A ``DataSpec`` value mounted as the process's input folder (``prepare_io``), the way
+    #: ``Agent.launch(input=…)`` does. ``None`` is workdir mode.
+    input: Any = None,  # noqa: A002 — the launch verb's own word
+    #: Context chips stamped on the process (``<type>-<uuid>`` strings).
+    shared_context_entities: Optional[list[str]] = None,
+    #: Keep the prompt on the process row (``context_data.wizard_step_prompt``). Off for a prompt
+    #: someone SENT (a message's process call): it is theirs, and the row is indexed and kept.
+    remember_prompt: bool = True,
+) -> PromptResult:
+    """Spawn a headless agent process for one step and wait for it to settle.
+
+    With ``executor`` — an earlier answer's ``agentic_process-<id>`` — prompt
+    THAT process instead: a further turn in the same session. Nothing is
+    spawned, so the agent, name and context of the first turn stand.
+
+    ``on_status`` is called with a `ProcessProgress` as the agent works, so the
+    step's row says what is happening rather than sitting still for the whole
+    timeout. It rides `wait()`'s existing 2s poll — no new budget.
+    """
+    if executor:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
+        if not TypeId.is_typeid(executor) or TypeId(executor).type != EntityType.AGENTIC_PROCESS.value:
+            return PromptResult.not_yet(f"{executor!r} is not an agent process — it cannot take a turn.", ran=False)
+        process = await AgenticProcess.get_by_typeid(executor)
+        if process is None:
+            return PromptResult.not_yet(f"The agent process {executor} no longer exists.", ran=False)
+        return await _finish(process, await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status))
+
+    from flow_sdk.builtin.agent_registry import get_agent_local_deployment  # noqa: PLC0415
+    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
+
+    try:
+        # The bare box a wizard is meant to fix often has no harness yet: the selected harness
+        # when it is installed, else the bootstrap worker that needs none.
+        worker_type = await resolve_builtin_worker_type()
+    except Exception as exc:  # noqa: BLE001
+        return PromptResult.not_yet(f"No coding-agent harness is available to run this: {exc}", ran=False)
+
+    try:
+        deployment = await get_agent_local_deployment(agent)
+    except LookupError as exc:
+        return PromptResult.not_yet(str(exc), ran=False)
+
+    # No LLM source able to fund this agent: put the chooser in front of the person (only when
+    # someone is watching) and, once they pick one, go on to launch — the same attempt, made again
+    # with a source. Skipped, or nobody there: the step fails, and says why, as it always did.
+    refusal = await _unfunded(worker_type)
+    if refusal is not None:
+        if on_status is not None:
+            on_status(ProcessProgress(text="waiting for you to choose an LLM source", blocked=True))
+        settled = await settle_llm_source(only_if_watched=True)
+        refusal = await _unfunded(worker_type) if settled.ok else refusal
+        if refusal is not None:
+            return PromptResult.not_yet(
+                f"{getattr(worker_type, 'value', worker_type)} {NO_USABLE_LLM_SOURCE}: {refusal}", ran=False
+            )
+
+    # The agent's declared ``output``: the run hands back a value of it, the way ``Agent.launch`` does.
+    output_shape = getattr(await deployment.agent(), "output", None)
+    try:
+        process = await deployment.create_process(
+            prompt,
+            worker_type=worker_type,
+            name=name,
+            workdir=str(workdir),
+            context_data={
+                **(context_data or {}),
+                **({"wizard_step_prompt": prompt} if remember_prompt else {}),
+                **({OUTPUT_SHAPE_KEY: output_shape} if output_shape is not None else {}),
+            },
+            target_typeid_str=target_typeid_str,
+        )
+        from flow_sdk.builtin.agentic_process.process_io import declared_output_spec, prepare_io  # noqa: PLC0415
+
+        prepare_io(process, input=input, output_spec=declared_output_spec(output_shape))
+        if shared_context_entities:
+            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+            process.add_shared_context_entities([TypeId(entry) for entry in shared_context_entities])
+        await process.save(notify=True)
+    except Exception as exc:  # noqa: BLE001
+        return PromptResult.not_yet(f"Could not start the agent: {exc}", ran=False)
+
+    if on_status is not None:
+        # Immediately: the row should move when the process exists, not two
+        # seconds later when the first poll lands.
+        on_status(ProcessProgress(text="starting the agent", executor=str(process.typeid)))
+    return await _finish(process, await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status))
+
+
+#: The agent's declared ``output`` shape, kept on the process so a further turn reads its value back too.
+OUTPUT_SHAPE_KEY = "output_shape"
+
+
+async def _finish(process: Any, answer: PromptResult) -> PromptResult:
+    """In declared-output mode (the shape the launch kept on the process), the value the agent left in its
+    output folder (``finish_io``); else the answer. Every turn of the session reads it the same way."""
+    from flow_sdk.builtin.agentic_process.process_io import declared_output_spec, finish_io  # noqa: PLC0415
+
+    return await finish_io(process, answer, declared_output_spec((process.context_data or {}).get(OUTPUT_SHAPE_KEY)))
+
+
+async def _prompt_and_wait(
+    process: Any,
+    prompt: str,
+    *,
+    timeout_seconds: float,
+    on_status: Optional[Callable[[ProcessProgress], None]],
+) -> PromptResult:
+    """One turn: prompt, then wait for the process to settle."""
+    process_id = str(process.id)
+    executor = str(process.typeid)
+    started = time.monotonic()
+    try:
+        taken = await process.send_turn(prompt)
+    except Exception as exc:  # noqa: BLE001
+        return PromptResult.not_yet(f"The agent could not take the prompt: {exc}", ran=False, executor=executor)
+    if not taken.ok:
+        return taken
+
+    # `wait` polls every 2s and reports each time, so passing that straight on would stamp the row
+    # "alive" on every poll whether or not the agent did anything. Only a CHANGE is a sign of life:
+    # what the agent reports (its state, what it is on, its token and tool counters), or its
+    # transcript file growing — the agent's own record of everything it does, which moves when it
+    # makes a tool call or gets a result even while its counters sit still — or the command it is
+    # running doing work (`_command_activity`), which moves while one long command runs.
+    last_seen: list[str] = []
+
+    def observe(worker_status: Any) -> None:
+        progress = _progress_for(process_id, worker_status)
+        activity = _command_activity(process_id)
+        if activity is not None:
+            progress = progress.model_copy(update={"text": f"{progress.text} · {RUNNING_A_COMMAND}"})
+        seen = repr(
+            (
+                progress.text,
+                sorted(progress.counters.items(), key=repr),
+                str(getattr(worker_status, "value", worker_status)),
+                _transcript_signature(process),
+                activity,
+            )
+        )
+        if last_seen and last_seen[0] == seen:
+            return
+        last_seen[:] = [seen]
+        on_status(progress)
+
+    try:
+        await process.wait(timeout=timeout_seconds, on_status=observe if on_status is not None else None)
+    except TimeoutError:
+        return PromptResult.not_yet(
+            f"The agent did not finish within {timeout_seconds:.0f}s.",
+            timed_out=True,
+            executor=executor,
+            duration_s=time.monotonic() - started,
+        )
+    except asyncio.CancelledError:
+        # A cancelled caller must not leave the agent working — `run_shell` kills
+        # its process group on cancel for the same reason. Shielded, so the close
+        # itself is not cut short by the cancellation it is answering.
+        try:
+            await asyncio.shield(process.close())
+        except Exception:  # noqa: BLE001 — being cancelled already decided the outcome
+            logger.warning("could not close agent %s after its step was cancelled", executor, exc_info=True)
+        raise
+    except Exception as exc:  # noqa: BLE001
+        return PromptResult.not_yet(
+            f"The agent run failed: {exc}",
+            executor=executor,
+            duration_s=time.monotonic() - started,
+        )
+
+    # HOW the agent stopped, read the one way AgenticProcess.run reads it: an
+    # error or an interrupt is NOT_YET, whatever it wrote on the way down. (It
+    # was always `satisfied` here, so an agent op with no completion check — a
+    # continuation, say — reported a crashed agent as done.) Even a clean stop is
+    # NOT proof the work landed; that is what the completion check is for.
+    from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
+
+    return _build_run_result(process).model_copy(update={"duration_s": time.monotonic() - started})

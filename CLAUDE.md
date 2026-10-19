@@ -1,8 +1,9 @@
 ---
 id: 91856acd-d005-470d-b3c8-0e762229408a
+version: 2
 ---
-
 # Claude Guidelines for flow-cli
+
 
 ## Quick Start
 
@@ -48,7 +49,30 @@ npm run dev
 
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
-> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is served by the sibling checkout** **`../test_flowpad/FlowPad/`** **(run via** **`flowpad/run.py`, ships** **`flowpad/hub/routers/auth.py`** **with** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+> **Hub at** **`$FLOWPAD_HUB_URL`** **(default** **`localhost:8093`) is a separate service — run it from your hub checkout (it serves** **`/api/v1/login`) — NOT the minimal** **`flow-hub/`** **stub in this tree. Don't** **`pkill`/install into the wrong one.**
+
+### Validating the HUB UI (non-negotiable)
+
+**"Open the hub UI" means a frontend configured against the HUB server — never the local backend.** The hub page rendered against `localhost:$LOCAL_SERVER_PORT` is a *different runtime*: the local server declares `supported_pages: ["desk","hub"]`, so `isHubOnly()` is false, the full desktop API is present, and the type registry is populated. Every hub-only behavior — the API subset, `isHubOnly()` gates, missing `types` — is invisible there. Validating a hub change against the local backend proves nothing about the hub.
+
+Use the hub-mode env. It **cannot** be checked in — `.gitignore` ignores both `.*.local` and `*.env*`, so no committed copy or `.example` is possible — write it once per checkout:
+
+```bash
+cat > .env.hubtest.local <<'EOF'
+FLOW_INSTANCE=hubtest
+LOCAL_SERVER_PORT=8093
+VITE_API_URL=http://localhost:8093
+VITE_PORT=4098
+VITE_FORCE_HUB=true
+FLOWPAD_HUB_URL=http://localhost:8093
+FLOWPAD_SKIP_DOTENV=true
+EOF
+cd ui && npx vite --mode hubtest      # → :4098, API http://localhost:8093
+```
+
+Open `http://localhost:4098/dock/hub/home`. Confirm the wiring before trusting a screenshot: in the page, `window.__API_URL__` must be the hub, and `GET /api/v1/graph/bootstrap` must return `supported_pages: ["hub"]`. If it returns `["desk","hub"]` you are on the local server and looking at the wrong runtime.
+
+The hub's bootstrap now ships `types` alongside `schemas`, so the frontend SchemaRegistry IS populated there and `iconForType()` resolves per-type icons. (It did not until the hub started publishing `types`; a stale note here used to say otherwise.)
 
 ### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
 
@@ -118,6 +142,8 @@ That means, on every click handler that changes "what is shown":
 
 If you find yourself writing `dataContext.set*(...)` immediately before `navigation.openDock(...)` in a click path, stop. That is the broken pattern. Delete the writes and make the active-key derivation URL-first.
 
+The full algorithm — seven steps, six invariants (one entry, one redirect decided before any write, no runtime work in loaders, a warm visit asks the backend for nothing, one layout rule, a runtime lives as long as its tab) and the test enforcing each — is **[`docs/navigation/dock-loading.md`](docs/navigation/dock-loading.md)**. A new view type needs a row in `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts`; the coverage guard fails without one.
+
 ## Test timeouts (non-negotiable)
 
 **NEVER raise a test timeout to make a test pass. EVER. No exceptions without explicit user approval, every time.**
@@ -128,18 +154,61 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 **This is not limited to tests, and "it's not technically a test timeout" is not an out.** The rule is about the INTENT: never raise — or newly add — ANY wait/timeout/retry/backoff/poll budget anywhere (test OR production/runtime code) in order to make an error, flake, hang, or contention symptom go away. This explicitly includes, without limitation: SQLite/DB `busy_timeout`, SQLAlchemy/driver `connect_args={"timeout": …}` or `pool_timeout`, HTTP/client `timeout=…`, `asyncio.wait_for(…)`, lock-acquire timeouts, retry counts / `max_attempts`, `sleep`/backoff durations, and debounce/throttle intervals. A symptom like `database is locked`, a 5xx, a race, or "it's slow" means there is real contention or a real slow/stalling path — **fix that root cause** (remove the contention, isolate the writer, make the call fast, fix the stall). Widening a wait to ride past the symptom is the same banned move as bumping a test timeout. If you think a longer wait is genuinely the correct fix (not a mask), STOP and get explicit user approval first, every time — do not decide unilaterally on "spirit."
 
+## The `long` tier — 1s is the unit ceiling
+
+**A unit test that takes more than 1 second is not a unit test.** The fast tier exists to answer "did I break something" in a couple of minutes; a handful of wall-clock-bound tests otherwise dominate it (before this rule, 55 of 6764 tests held half the runtime).
+
+Two forms, one tier:
+
+* **A whole file that is wall-clock-bound lives in** **`tests/long_tests/`.** That is the default when every test in the module is slow.
+
+* **A single slow test that shares fixtures with fast siblings gets** **`@pytest.mark.long`** and stays where it is. Splitting one test out of a module just to fork its fixtures buys nothing.
+
+The two forms are selected differently, and `-m long` does NOT find the files — the directory is their only signal:
+
+```bash
+pytest tests/unit                 # fast tier only (long-marked tests deselected)
+pytest tests/unit --long          # fast tier + its marked outliers
+pytest tests/unit -m long         # ONLY the marked outliers, not tests/long_tests/
+pytest tests/long_tests           # the slow FILES (no marker involved)
+```
+
+Marked tests are **deselected**, not skipped — a skip still reports as a test and buries the fast tier's signal. The deselection is repo-wide and applies to the DEFAULT run only: **CI and** **`scripts/deploy_to_github.sh`** **both pass** **`--long`**, so the marker never takes a test out of the gate, only out of the inner loop. If you mark a test, you have changed how long CI takes, not what CI covers — anything that genuinely should not run in CI belongs in the excluded-tier list in `.github/workflows/test.yml`.
+
+Annotate the marker with the measured cost — `@pytest.mark.long  # 6.01s` — so the next reader can tell a test that legitimately does 6s of work from one that is quietly waiting.
+
+**The marker classifies; it does not excuse.** It is not a licence to raise a timeout, and it is not where a test goes to hide a slow production path. Before marking, ask why the test is slow: if the answer is "it waits for a fixed budget" or "it spawns a real PTY", classify it. If the answer is "the code under test stalls", that is a bug — fix it. A `RUN_SCRIPT` timeout test sat at 10.2s because the handler killed only the script and not its process group, so a 1s timeout bounded nothing; the fix took it to 0.31s and it never needed the marker.
+
+## Verification rigs are discarded by default
+
+A **rig** — a harness built to prove one change (an A/B screenshot comparison, a
+seeded-instance runner, a one-off scenario suite, a repro script) — **does not get
+committed**. Build it in the session scratchpad, or untracked in the worktree, use
+it, and report what it proved; keep the evidence (reports, screenshots) outside the
+repo. Only the change and its durable tests (unit / matrix / the browser tiers that
+already exist) land on the branch.
+
+Commit a rig only when the user explicitly asks to keep it. If a rig turns out to be
+generally useful, say so and ask — don't decide by committing it.
+
+**Why:** a rig is sized to one change and rots the moment the code moves (the
+host-tabs A/B rig was 1,454 lines against ~157 lines of product code).
+
 ## Entity id policy (non-negotiable)
 
-**An entity id is always a UUID v4 (random) or v5 (deterministic). Never any other version.** v4 = no stable key (random); v5 = derived from a stable key (a file path or a natural key, via `uuid5`). Nothing else is a valid entity id.
+**UUID v4 is the entity id. The one exception is a READ-ONLY asset, whose id may be v5 derived from its file path.** An id is a name, not a fact about the thing — it does not encode which account a source serves or which record a row mirrors. Anything that needs *that* is a **lookup on the natural key**, not id arithmetic.
 
-* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py` (re-exported from `flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id`, or `TypeInfo.mint_id`, which themselves use it).
+Why the exception and nothing else: a read-only asset has no row of its own to look up — the file IS the record, so its id has to fall out of the path or a rescan would mint a new entity for the same file. Everything else has a row, and a row can be queried.
 
-* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.extract_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the entity-side gate. New id-adopting paths must use one of those seams.
+**Never invent a new deterministic id.** If you catch yourself writing `uuid5(...)` to make a re-run "converge on the same row", stop: query for the row instead. `SourceItem.find_existing` (`flow_sdk/builtin/source_item.py`) and `DataSource.find_for_account` are the shape — the lookup gives the same idempotency, works on rows minted before the key existed, and does not silently break when a key component changes.
 
-* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** (v4/v5 only) — use it wherever an id is born or adopted.
+* **Mint through one place.** Construct ids only via `mint_uuid(key=None, *, namespace=...)` in `flow_sdk/api/api_types/identifier.py`: `uuid5(namespace, key)` when a stable key is given, else `uuid4`. Don't hand-roll `uuid.uuid4()` / `uuid5(...)` at call sites — route through the minter (or `Entity.allocate_id` for a row-only entity, or `TypeInfo.mint_entity_id` for a filesystem asset — both use it). New code passes no key.
+
+* **Validate on adopt.** Any id taken from outside the minter — a markdown/asset **frontmatter** **`id:`**, a slug, a client-supplied id — must pass `is_valid_entity_id` (UUID v4/v5) before it's adopted. If it doesn't (e.g. a hand-authored v7), **ignore it and derive a stable v5 instead** — never let a foreign id become an entity id. `TypeInfo.mint_entity_id` is the filesystem adoption gate around the pure per-type carrier readers; `Entity.allocate_id` enforces the row-only entity-side gate. New id-adopting paths must use one of those seams.
+
+* **Two predicates, don't confuse them.** `is_valid_uuid` / `UUID_PATTERN` are deliberately **version-agnostic** (URL/VFS path matchers and `@local` parsing depend on that) — do NOT tighten them. `is_valid_entity_id` is the **mint/adopt policy gate** — use it wherever an id is born or adopted. It keeps accepting **v4 and v5**: read-only assets are v5 by design, and so are rows minted before this rule. Tightening it to v4-only would orphan both.
 
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
-
 
 ## Backend URLs in the frontend (non-negotiable)
 
@@ -153,3 +222,72 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
+
+## Data shapes — every schema is a `DataSpec` subclass, every value its instance (non-negotiable)
+
+Three words, never mixed up (`docs/glossary.md`):
+
+* **kind** — a NAME, a dot-path tag (`navigator.decision`, `ingest.source_item`): what a schema is registered and looked up by.
+* **schema** — the DEFINITION registered under a kind: a `DataSpec` subclass in Python, or a `agentic-assets/data_schema/<kind>/` folder (`data_schema.json` + `description.md`) that compiles into one. Same registry, same viewers either way.
+* **value** — an INSTANCE of a schema: the object in memory, or its JSON / folder on disk.
+
+Say "the `diagnosis` schema" and "a diagnosis value" — never "a DataSpec" on its own.
+
+**A shape that travels — a launch payload, an ingestion envelope, a file header, an agent's** **`input`/`output`** **— is a value of a** **`DataSpec`** **schema (`flow_sdk/schema/data_spec/spec.py`). Never a bare** **`BaseModel`, a dataclass, a** **`TypedDict`, or a hand-rolled dict.** One type system, not two: validation, JSON Schema and error reporting are Pydantic's own, and the schema is nameable in the same tag ontology as everything else.
+
+Three tiers, one base:
+
+* **plain** **`DataSpec`** — a value that travels between tiers (`SourceItemSpec`, `FileRef`, `FolderSpec`). The base is already `frozen=True` and `extra="forbid"`; a value is a value.
+
+* **`AssetDocumentSpec(DataSpec)`** — the schema IS an asset's document (`AgentSpec` → `agent.json`, `DataSourceSpec`, `ComputeOpSpec`, `DataSchemaDocSpec`), and the class IS the field list: what it declares is what is read and written. **`extra="ignore"`** here, not forbid — a hand-edited file with a stray key still loads.
+
+* **`FrontMatter(AssetDocumentSpec)`** / **`SectionedHeader`** — the schema is a markdown file's header (`SubAgentSpec`) or a sectioned JSON report (`AgentTraceSpec`, `UsageReportSpec`). Also `extra="ignore"`.
+
+* **`extra="forbid"`** **on a plain** **`DataSpec`** **is the point.** A caller who misspells a key gets an error, not a row with an empty field. So a constructor that reads a FOREIGN dict (a vendor config entry, a provider payload) must **project field by field — never** **`**body`**. That makes the hop deliberately lossy: a vendor key we don't model is dropped, and that is the contract, not a bug.
+
+* **Register a** **`spec_kind`** **when the schema should be nameable** (`"ingest.source_item"`, `"folder"`) — its kind, resolved through the ONE `SchemaRegistry`. Reserved primitives are `string` / `int` / `float` / `bool` / `binary`; anything else is a registered kind or anonymous.
+
+* **Registration is import-time, and forgetting it fails SILENTLY.** `__pydantic_init_subclass__` only fires once the module is imported; an unreachable kind resolves to `Any` — *"legal, opaque, never minted"* — so you get an untyped field and no error anywhere. Make it reachable from `register_builtin_kinds()` (`data_spec/_kinds.py`), the way `dataset_spec` is.
+
+* **The authoring form** (how a schema is written as data — `data_schema.json`, an agent's `input`/`output`) is `"string"`, `{field: shape}`, `[shape]`, plus `?shape` (optional), `enum:a|b` (closed set) and `{"*": shape}` (map). Those extras are INPUT only: `to_authoring_form` renders a hand-written class back without them, and a `dict[...]` field renders ONLY on a class carrying a `spec_kind` (it short-circuits to the kind). `FolderSpec.files` is the precedent; the same field on an unregistered class raises `no authoring form for ...`.
+
+## Data sources are self-contained assets (non-negotiable)
+
+**A data driver is an asset, and EVERYTHING one driver needs lives in its asset folder** — `agentic-assets/data_driver/<name>/`: `data_driver.json` (the `DataDriverSpec`), `source.py` (the one `flow_sdk.sources.Source` subclass, with the source's own `query()` and classmethods for send addressing, cache roots, webhooks, permalinks), any helper modules it splits into (`transport.py`, a mapper), its `tests/`, its editor webapp and its `README.md`. The manifest `name` is the folder name and the registry key. Shipped and authored sources are the same kind of thing and load through the same loader.
+
+* **A configured data source is its own asset** — `agentic-assets/data_source/<name>/data_source.json` (the `DataSourceSpec`: `data_driver_name`, `data_driver_config`, owner, cadence — never a secret). The standard for every asset: the `XSpec` schema is the file, the FSRecord holds internal metadata, the `X(Entity)` row is the index to query. `DataDriver` (`flow_sdk/builtin/data_driver.py`) is the row AND the loaded driver: `await DataDriver.get(name)`, then `driver.create_config(**fields)` (the typed, validated `Config`) and `driver.create_source(config, name=...)` build a `DataSource` in memory, and `save()` writes it.
+
+* **Outside an asset folder only GENERIC machinery may exist** — the contract (`flow_sdk/sources/`: values, protocols, errors, base classes, conformance kit, test doubles), the loader/registry, the sync engine, reflection, projection, generic routes and generic UI. **No provider name used as a key, no provider module import, no provider-specific branch or table** anywhere in `flow_sdk/`, `ts_sdk/src`, `ui/src`. If machinery needs a fact about a source, the source declares it (a manifest field or a classmethod) and the machinery asks.
+
+* **Asset code may import the public SDK** (`flow_sdk.sources`, `flow_sdk.connections`, `token_for`, the hub client, `instance_settings`). It never imports another asset.
+
+* **Exceptions need the user's explicit approval, every time.** An approved exception is recorded with its date and reason in `EXCEPTIONS` in `tests/unit/test_data_sources_are_self_contained.py` — that test is the gate, and it fails on any trace not listed. Don't add an entry yourself; ask.
+
+## FlowCall — recognize the call-and-result contract
+
+**FlowCall** names Flowpad's mechanism for invoking work, receiving a structured
+outcome and value, and composing results. `ReturnedValue` is its answer contract;
+`ComputeOp`, `Wizard`, and `ProcessCall` are participating parts, not synonyms.
+For questions about FlowCall, ReturnedValue, or how work calls return and compose
+values, start with [the FlowCall contract](docs/snippets/call-returns.md) and
+`flow_sdk/schema/data_spec/returned_value_spec.py`. Follow the actual symbols
+before investigating `ActionInfo` or `ApiResponse` transport plumbing.
+Keep the architectural name distinct from existing code identifiers.
+
+A **FlowCall block** is an existing `ComputeOp` with declared `input` and `output` shapes. Python blocks use `compute_op.json` plus `call.py:call` and return `ReturnedValue`; other variants keep their existing entry points. Lists are whole values by default; per-item calls are explicit. Chain validated values through Wizard-backed composition. Required output needs `exit_code == OK` and value presence: a skip, admission, or ambiguous legacy null is not completed data. Read [the contract](docs/snippets/call-returns.md) before adding a local loader or result protocol.
+
+Durable work uses `ComputeOp.start` and `get_call` with exact block/call IDs.
+Admission has no completed output; interrupted work is not replayed automatically.
+Check installed capabilities before migrating callers, and use `CallContext.attach_executor`
+to record a child executor rather than searching by process name or start time.
+
+## Naming — check the glossary before inventing a noun
+
+**[`docs/glossary.md`](docs/glossary.md)** **is the cross-walk between our vocabulary, Claude Code's, and OpenClaw's.** Read it before naming a new entity, and keep two rules:
+
+* **Say whether it mirrors a provider or is ours.** `DynamicWorkflow`/`WorkflowRun` mirror Claude Code's Workflow tool; `GraphWorkflow`/`GraphWorkflowRun` are ours. A provider mirror follows the provider's format and lives under its dot-dir; a native asset is `AssetClass.REPO` under `agentic-assets/<family>/`.
+
+* **Don't reuse an already-taken word.** `Flow` means a chat message (`FlowMessage`) and a bus envelope (`FlowEvent`); `Graph` means the entity graph, `GRAPH_CONTEXT`, and `graph-view`; `Workflow` means the two Claude Code mirrors. That's why ours is the compound `GraphWorkflow` — bare `Graph*` and bare `Workflow*` are both ambiguous.
+
+* **`Agent`** **is reserved; the** **`.claude/agents/*.md`** **prompt asset is** **`SubAgent`** (type value `subagent`) — Claude Code's own word for it. The bare noun is held for the hub-level launchable principal. Note the deliberate split: the **entity** is `subagent`, the **directory and family** stay `agents` because Claude Code owns that path, and `AGENTS_SPEC_FIELDS` mirrors its `--agents` JSON verbatim. Also don't confuse the graph **node kind** `node_type: "agent"` (a spawned worker station, which *references* a SubAgent) with the entity type.
+

@@ -1,21 +1,12 @@
-"""Smoke test for migration_2026_05_consolidate_context_entities.
+"""Historical raw-dict planner tests for the context-entities migration.
 
-Superseded: the unified ``context_entities`` field has been split into
-``shared_context_entities`` / ``private_context_entities_``. The migration
-that this test exercises remains on disk for historical reference but is
-no longer wired into the current data model. The test is skipped at module
-load to keep the suite green without deleting the migration code.
+These helpers describe the former unified ``context_entities`` field.
+The tests cover their dictionary transformations without running the migration
+CLI or database path; they do not establish compatibility with the current
+``shared_context_entities`` / ``private_context_entities_`` schema.
 """
 
-import pytest
-
-pytest.skip(
-    "Superseded by the context_entities split — see "
-    "plan add-context-entity-typeid-kind-remove-melodic-meadow.md",
-    allow_module_level=True,
-)
-
-from flow_sdk.migrations.migration_2026_05_consolidate_context_entities import (  # noqa: E402
+from flow_sdk.migrations.migration_2026_05_consolidate_context_entities import (
     _planned_changes_for_conversation,
     _planned_changes_for_flow_message,
     _planned_changes_for_room,

@@ -8,14 +8,19 @@ location, history loading, and the prompt-composition compatibility hook.
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 import re
+import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.frontmatter_check import WRITE_TOOLS as FRONTMATTER_WRITE_TOOLS
+from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
 )
@@ -24,41 +29,170 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    AgentOptions,
     DeviceLoginSpec,
+    ProcessHookRuntime,
+    ProcessMcpRuntime,
     WorkerAuthResult,
-    WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
-    latch_spawn_failure,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_mcp_config_json,
+)
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    build_canonical_hook_data,
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import PROCESS_EVENTS, settings_file_scopes
+from flow_sdk.builtin.hooks.types import (
+    AgentHookResponse,
+    BlockResponse,
+    ContextResponse,
+    HookCapabilities,
+    HookCapability,
+    HookOutcome,
+    HookScope,
+    PermissionResponse,
+)
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
+from flow_sdk.flowpad_types.vendors import vendor_for
+from flow_sdk.instance_settings.runtime import get_assigned_compute_node
+from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import USER_INPUT_TOOLS, WorkerStatus, _tail_status
+
+VENDOR = vendor_for("claude")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 logger = logging.getLogger(__name__)
 
+#: ``claude -p`` ends background tasks (a Monitor, a background shell) this many ms after the
+#: answer; ``0`` waits for them. Must ride the turn's own env: the inherited ``CLAUDE_CODE_*``
+#: variables are stripped from the spawn env (``claude_env.without_inherited_claude_session``).
+BACKGROUND_WAIT_ENV = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+
+_PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/claude/flowpad-process-hooks")
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "transcript_path",
+    "source",
+    "reason",
+)
 # Module-level cache of in-flight workers (looked up for cancel-prompt).
 # Shared with the codex driver via ``AgenticProcess._PROMPT_WORKERS`` —
 # the entity owns the dict, drivers just register/deregister.
 
 
+#: Events whose handler STDOUT Claude reads back. ``SessionEnd`` is absent —
+#: Claude defines no output shape for it (see ``hook_events.py``), so a decision
+#: there would be silently discarded, which is worse than refusing it.
+_RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SESSION_START})
+
+#: Claude is the only harness with both halves: a settings file it discovers at
+#: three scopes, and a plugin directory we hand over at launch.
+#: Claude's process hooks also carry ``PreToolUse``, projected ONLY for the tools
+#: that block on the user (``USER_INPUT_TOOLS``): Claude may hold such a call out
+#: of its transcript until it is answered, so the hook is how Flowpad learns a
+#: question is waiting (``AgenticProcess.on_hook``).
+_PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE}
+_PRE_TOOL_USE_MATCHER = "|".join(sorted(USER_INPUT_TOOLS))
+
+#: Hooks added to every process-hook plugin, beside its configured events. Local
+#: commands — no backend round trip. The frontmatter check hands a YAML error
+#: in a skill/agent/command header the agent just wrote back to the model.
+_BUILTIN_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
+    (
+        HookEventType.POST_TOOL_USE,
+        {
+            "matcher": "|".join(FRONTMATTER_WRITE_TOOLS),
+            "hooks": [
+                {
+                    "args": ["-m", "flow_sdk.assets.frontmatter_check"],
+                    "command": sys.executable,
+                    "type": "command",
+                }
+            ],
+        },
+    ),
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    **settings_file_scopes(),
+    HookScope.PROCESS: HookCapability(events=_PROCESS_EVENTS, response_events=_RESPONSE_EVENTS),
+}
+
+#: How much of the transcript's tail to read for the model: its last assistant entry is near the end,
+#: and a long session's whole file is not worth reading after every turn.
+_MODEL_TAIL_BYTES = 256 * 1024
+
+
+async def _fill_resolved_model_slug(process: "AgenticProcess", transcript: Path | None) -> None:
+    """``process.resolved_model_slug`` from Claude's own transcript, when nothing else named it.
+
+    An API-key or endpoint run is stamped before spawn (``build_worker_env``); a DEVICE login
+    (Claude's own subscription) never is, because Flowpad does not pick the model — Claude does.
+    The transcript's last assistant entry names the model that actually answered. Only an EMPTY
+    slug is filled: a pre-spawn stamp is the endpoint's own slug, which the transcript's bare model
+    name must not overwrite. ``<synthetic>`` entries are Claude's placeholders, not a model.
+    """
+    if process.resolved_model_slug or transcript is None:
+        return
+    try:
+        with transcript.open("rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - _MODEL_TAIL_BYTES))
+            lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        model = (entry.get("message") or {}).get("model") if entry.get("type") == "assistant" else None
+        if model and model != "<synthetic>":
+            process.resolved_model_slug = str(model)
+            try:
+                await process.save()
+            except Exception:
+                logger.exception("ClaudeDriver: failed to record resolved_model_slug for %s", process.id)
+            return
+
+
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
-    name = "claude"
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions)
+
+    name = VENDOR.key
+    supports_process_hooks = True
+    process_hooks_use_assets = True
     preassign_interactive_session_id = True
+    #: The worker can run a subagent itself (``--agents`` → Claude's Agent tool). A vendor without
+    #: it gets its embedded agents as prompt text; a Chief of Staff on it delegates through tasks.
+    spawns_subagents = True
     pty_submits_on_paste = True
     # Real Claude Code PTY captures expose two grounded blank-composer frames:
     # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
@@ -66,18 +200,26 @@ class ClaudeDriver:
     # the composer rule (2.1.220+). The welcome banner and echoed user prompts
     # match neither form, so they cannot release typed delivery prematurely.
     # Accept either the regular or non-breaking space Claude paints after the
-    # prompt glyph.
-    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|─{3,})')
+    # prompt glyph. The rule sits on the NEXT row: 2.1.220 moves there with a
+    # cursor-down (stripped to nothing), 2.1.280's full resume repaint with a
+    # real ``\r\r\n`` — so one line break may separate the two.
+    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|\n?─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
-    def cli_options(self, process: "AgenticProcess") -> ClaudeCliOptions:
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:  # noqa: ARG004
+        """Claude records a ``turn_duration`` system row after its
+        assistant/stop hooks — that row IS the end of the PTY turn."""
+        return getattr(entry, "subtype", "") == "turn_duration"
+
+    def cli_options(self, process: "AgenticProcess") -> ClaudeAgentOptions:
         """Build a Claude CLI command for ``process``.
 
         Injects ``--add-dir`` for the Flowpad Assistant project (so SDK-shipped
         skills / agents are discoverable) plus any ``additional_dirs``;
-        registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
+        registers embedded sub-agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
 
         The Flowpad Assistant mount is gated by ``process.assistant_enabled`` —
@@ -86,7 +228,7 @@ class ClaudeDriver:
         ``process.enable_assistant()``) to override per process; ``None`` keeps
         the global default.
         """
-        cmd = ClaudeCliOptions.from_json(process.cli_config)
+        cmd = ClaudeAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         if cmd.session_id and self.transcript_path(process) is not None:
@@ -98,14 +240,162 @@ class ClaudeDriver:
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
+        # Pin the host terminal's palette. Claude paints in truecolor (Flowpad
+        # sets COLORTERM=truecolor), so none of its foregrounds are ANSI-indexed
+        # and swapping xterm's 16-slot theme host-side recolors nothing — the RGB
+        # values come from Claude's own theme setting, read once at launch. Left
+        # unset, a worker in a light terminal inherits the user's global (usually
+        # dark) theme and paints #999999/#b1b9f9 on white. ``--settings`` is a
+        # per-process layer, so this never touches ~/.claude/settings.json.
+        # How a theme reaches a given CLI is that vendor's business: Claude has a
+        # first-class ``theme`` setting; codex/copilot/opencode are unaddressed.
+        if process.terminal_theme:
+            cmd.settings_json = {**(cmd.settings_json or {}), "theme": process.terminal_theme}
         return cmd
 
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
+
+    def process_hook_snapshot(self, events: Sequence[HookEventType]) -> dict[str, Any]:
+        return build_process_hook_snapshot(events, provider=self.name, supported=_PROCESS_EVENTS)
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
+    def prepare_process_hooks(
+        self,
+        assets: AssetDir,
+        process_id: str,
+        events: Sequence[HookEventType],
+    ) -> ProcessHookRuntime:
+        normalized = normalize_process_hook_events(events, provider=self.name, supported=_PROCESS_EVENTS)
+        if not normalized:
+            assets.remove(_PROCESS_HOOK_PLUGIN)
+            return ProcessHookRuntime()
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+
+        command, prefix_args = get_installed_flow_invocation()
+
+        def _handler(event: HookEventType) -> dict[str, Any]:
+            """One handler per event.
+
+            ``--wait-for-response`` is added ONLY for events whose stdout Claude
+            reads. It makes the CLI block on a backend round trip, so paying it
+            for a fire-and-forget event would be pure latency on every hook.
+            """
+            args = [*prefix_args, "hooks", "report", "--process-id", process_id]
+            if event in _RESPONSE_EVENTS:
+                args.append("--wait-for-response")
+            return {"args": args, "command": command, "type": "command"}
+
+        hooks = {
+            "description": "Flowpad process-scoped hooks",
+            "hooks": {
+                event.value: [
+                    {"matcher": _PRE_TOOL_USE_MATCHER, "hooks": [_handler(event)]}
+                    if event is HookEventType.PRE_TOOL_USE
+                    else {"hooks": [_handler(event)]}
+                ]
+                for event in normalized
+            },
+        }
+        for event, entry in _BUILTIN_HOOKS:
+            hooks["hooks"].setdefault(event.value, []).append(entry)
+        manifest = {
+            "author": {"name": "Flowpad"},
+            "description": "Flowpad process-scoped hooks",
+            "name": "flowpad-process-hooks",
+            "version": "1.0.0",
+        }
+
+        assets.remove(_PROCESS_HOOK_PLUGIN)
+        plugin = assets.subdir(_PROCESS_HOOK_PLUGIN)
+        plugin.load_asset(
+            ".claude-plugin/plugin.json",
+            content=json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        )
+        plugin.load_asset(
+            "hooks/hooks.json",
+            content=json.dumps(hooks, indent=2, sort_keys=True) + "\n",
+        )
+        return ProcessHookRuntime(plugin_dirs=(str(plugin.os_path),))
+
+    # ── Per-process MCP ──────────────────────────────────────────────────
+    supports_process_mcp = True
+
+    def prepare_process_mcp(self, specs: "Sequence[McpSpec]") -> ProcessMcpRuntime:
+        """``--mcp-config <json>`` + ``--strict-mcp-config``.
+
+        ``--mcp-config`` accepts a JSON string as well as a file path, so this
+        writes nothing to disk. ``strict`` is on whenever the process has an
+        attached set: without it the worker gets this set PLUS everything in
+        ``~/.claude.json``, and "which MCP servers does this process have"
+        stops having an answer.
+        """
+        if not specs:
+            return ProcessMcpRuntime()
+        return ProcessMcpRuntime(mcp_config_json=to_mcp_config_json(specs))
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> AgentHookData:
+        return build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
+
+    def render_hook_response(
+        self,
+        event: HookEventType,
+        response: "AgentHookResponse",
+    ) -> HookOutcome:
+        """Render a typed answer into Claude's hook-output JSON.
+
+        Shapes come from Claude's documented hook outputs: ``hookSpecificOutput``
+        carries per-event fields, while ``decision``/``reason`` sit at the top
+        level. See ``setup_cmd/claude_code_setup/hook_events.py`` for the models.
+
+        Always exit 0. Claude reads a decision straight out of stdout JSON, so
+        the exit-2 blocking channel buys nothing here — and a stray non-zero
+        would block the turn.
+        """
+        if event not in _RESPONSE_EVENTS:
+            raise NotImplementedError(
+                f"claude reads no hook output for {event.value} — a decision there would be discarded"
+            )
+
+        if isinstance(response, ContextResponse):
+            if response.block:
+                return HookOutcome(stdout={"decision": "block", "reason": response.reason})
+            if not response.additional_context:
+                return HookOutcome()
+            return HookOutcome(
+                stdout={
+                    "hookSpecificOutput": {
+                        "hookEventName": event.value,
+                        "additionalContext": response.additional_context,
+                    }
+                }
+            )
+        if isinstance(response, BlockResponse):
+            if not response.block:
+                return HookOutcome()
+            return HookOutcome(stdout={"decision": "block", "reason": response.reason})
+        if isinstance(response, PermissionResponse):
+            return HookOutcome(
+                stdout={
+                    "hookSpecificOutput": {
+                        "hookEventName": event.value,
+                        "permissionDecision": str(response.behavior),
+                        "permissionDecisionReason": response.reason,
+                    }
+                }
+            )
+        raise NotImplementedError(f"unrenderable hook response: {type(response).__name__}")
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
@@ -129,7 +419,7 @@ class ClaudeDriver:
             await process.get_project()
         except Exception:
             logger.debug("ClaudeDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
         if not process.workdir:
             return ApiFailResponse(message="claude print prompt: workdir is not set")
 
@@ -166,7 +456,18 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        await apply_worker_secret_env(env_vars, process)
+        if getattr(process, "deployment_id", None) or get_assigned_compute_node() is not None:
+            # A deployment's agent, and any chat on a hub sandbox, works unattended: it hands a
+            # long job to a background subagent or Monitor and ends its turn. ``-p`` kills
+            # background tasks 10 minutes after the answer, so the job died mid-run (a QA cycle on
+            # a hub box, 2026-10-15). These turns wait for them instead (the keep-alive counts the
+            # wait); a process that set its own ceiling keeps it. A desktop chat keeps the default.
+            env_vars.setdefault(BACKGROUND_WAIT_ENV, "0")
+        try:
+            await apply_worker_secret_env(env_vars, process)
+            setup_error = None
+        except WorkerSpawnError as e:
+            setup_error = e  # fails inside the turn: FAILED + start_failure, not a raise from here
 
         context = AgenticContext(
             workdir=process.workdir,
@@ -178,8 +479,12 @@ class ClaudeDriver:
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
             add_dirs=process.resolved_add_dirs,
-            **process._instruction_context_kwargs(instruction_assets),
+            **process._process_asset_context_kwargs(process_assets),
         )
+
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
+
+        await api_auth.stamp_api_model(context, process)
 
         # Lifecycle: flip to RUNNING before launching the worker.
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
@@ -198,82 +503,45 @@ class ClaudeDriver:
                 )
 
         worker = ClaudeCLIStreamWorker()
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            register_prompt_worker,
-            unregister_prompt_worker,
-        )
+        composed = self.compose_prompt(instruction, process.get_agents_json())
 
-        register_prompt_worker(process.id, worker)
-        # Setup between registration and task scheduling can raise (compose_prompt
-        # / get_agents_json / make_turn_session_adopter). The caller's admission
-        # ``finally`` can no longer clean the slot — register_prompt_worker popped
-        # the admission and moved ownership to ``_PROMPT_WORKERS``. Until _run_turn
-        # is scheduled (and its own ``finally`` owns unregister), THIS frame owns
-        # the worker slot: a raise here would otherwise leak it → prompt_worker_active
-        # pinned True forever (permanent 409 + busy). Hand ownership off on success.
-        try:
-            composed = self.compose_prompt(instruction, process.get_agents_json())
-            process_ref = process
-            process_id = process.id
+        async def _strip_materialised_fork() -> None:
+            """Drop ``fork_session_id`` once the fork's JSONL exists on disk.
 
-            # Multi-turn correctness: see AgenticProcess._discover_status_from_transcript.
-            # Flip the projection to RUNNING for the duration of this turn and
-            # broadcast it now so the closing notify_updated (which carries the
-            # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
-            object.__setattr__(process_ref, "_turn_in_flight", True)
-            try:
-                await process_ref.notify_updated()
-            except Exception:
-                logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
-
-            # Session adoption (and its restart-snapshot bookkeeping) is owned by
-            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-            # only the turn-initial report (spurious-rotation guard).
-            adopt_session = process_ref.make_turn_session_adopter("ClaudeDriver.headless_prompt")
-
-            async def _run_turn() -> None:
+            Subsequent launches then plain ``--resume`` the new session instead
+            of re-forking from the parent, which errors with "Session ID is
+            already in use" against the now-existing new session. Guarded by
+            transcript existence so an early-failed fork keeps the parent
+            reference for retry.
+            """
+            if self.transcript_path(process) is None:
+                return
+            cli_cfg_next = dict(process.cli_config or {})
+            if cli_cfg_next.pop("fork_session_id", None) is not None:
+                process.cli_config = cli_cfg_next
                 try:
-                    async for fd in worker.execute(prompt=composed, context=context):
-                        await adopt_session(worker.get_session_id())
-                        try:
-                            await process_ref.emit_flow_data(fd.model_dump())
-                        except Exception:
-                            logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
-                except WorkerSpawnError as e:
-                    # No subprocess ever started — end the process FAILED with the
-                    # start_failure latch (the ERROR frame was already emitted).
-                    await latch_spawn_failure(process_ref, e)
+                    await process.save()
                 except Exception:
-                    logger.exception("ClaudeDriver.headless_prompt: worker error")
-                finally:
-                    unregister_prompt_worker(process_id, worker)
-                    # If the fork materialised on disk (the new session's JSONL
-                    # was written), drop ``fork_session_id`` from cli_config so
-                    # subsequent launches plain ``--resume`` the new session
-                    # instead of trying to re-fork from the parent — which
-                    # errors with "Session ID is already in use" against the
-                    # now-existing new session. Guarded by transcript existence
-                    # so an early-failed fork keeps the parent reference for
-                    # retry.
-                    if self.transcript_path(process_ref) is not None:
-                        cli_cfg_next = dict(process_ref.cli_config or {})
-                        if cli_cfg_next.pop("fork_session_id", None) is not None:
-                            process_ref.cli_config = cli_cfg_next
-                            try:
-                                await process_ref.save()
-                            except Exception:
-                                logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
-                    # Terminal status broadcast + completion-driven queue advance
-                    # (see AgenticProcess.end_headless_turn).
-                    await process_ref.end_headless_turn("ClaudeDriver.headless_prompt")
+                    logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
 
-            asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
-        except BaseException:
-            # _run_turn never took ownership of the slot — release it here so the
-            # next turn is not permanently rejected with a 409.
-            unregister_prompt_worker(process.id, worker)
-            raise
-        return ApiSuccessResponse(data={"status": "started", "worker": self.name})
+        async def _after_turn() -> None:
+            await _strip_materialised_fork()
+            await _fill_resolved_model_slug(process, self.transcript_path(process))
+
+        # The three non-default arguments are claude's documented divergences;
+        # each is explained once, on run_headless_turn's own docstring.
+        return await run_headless_turn(
+            self,
+            process,
+            worker,
+            prompt=composed,
+            context=context,
+            logger=logger,
+            save_running_status=False,
+            emit_failure_level=logging.ERROR,
+            on_turn_finally=_after_turn,
+            setup_error=setup_error,
+        )
 
     def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:
         return ClaudeCLIStreamWorker()
@@ -309,6 +577,17 @@ class ClaudeDriver:
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Claude's split default config/keychain layout is handled by apply_worker_env."""
+        return {}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import ClaudeNamingAdapter
+
+        return ClaudeNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
@@ -330,6 +609,45 @@ class ClaudeDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    def transcript_is_final(self, process: "AgenticProcess", path: Path) -> bool:
+        """``<session_id>.jsonl`` is the session's only record; a live turn only appends to it."""
+        return bool(process.session_id) and path.name == f"{process.session_id}.jsonl"
+
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.asset_inventory import available_assets
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.claude_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.claude_home / "agents", recursive=True),
+        ]
+        for directory in project_ancestors(process.workdir):
+            roots.extend(
+                [
+                    AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".claude/skills", recursive=True),
+                    AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".claude/agents", recursive=True),
+                ]
+            )
+        # --add-dir discovers skills, but does not register custom subagents.
+        roots.extend(
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".claude/skills", recursive=True)
+            for directory in process.resolved_add_dirs
+        )
+        return roots
+
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+        from flow_sdk.assets.process_projection import link_mounted_skills
+
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".claude/skills")
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
         """Claude discovers skills from ``.claude/skills`` under the mounted
@@ -355,6 +673,12 @@ class ClaudeDriver:
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
         if not process.session_id:
             return []
+        # A fork has no JSONL of its own until its first turn materialises it
+        # (claude copies the parent's history in then). Until that happens, the
+        # parent's transcript IS the fork's history — show it right away.
+        fork_source = (process.cli_config or {}).get("fork_session_id")
+        if fork_source and self.transcript_path(process) is None:
+            return _claude_load_session_history(fork_source)
         return _claude_load_session_history(process.session_id)
 
     # ── Prompt composition ───────────────────────────────────────────────────
@@ -378,3 +702,7 @@ class ClaudeDriver:
         if not claude_projects.is_dir():
             return set()
         return {d.name for d in claude_projects.iterdir() if d.is_dir() and "flow-records-agentic" in d.name}
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = ClaudeDriver

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-db29ea2c-c8aa-53ca-afbd-2721465a5366",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "primitives",
+  "folder_name": "primitives",
+  "inputs_hash": "55a147cd9bf659e9d4447b9735c1f8c8b1c22516d488f8e0aed1c2dfbadc3625",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The small identifier and reference types everything else is built from: FSRef, the path-only declarative file reference, and TypeId, the type-plus-id format entities are addressed by.",
+  "files": [
+    {
+      "name": "fs-ref.md",
+      "rel_path": "fs-ref.md",
+      "title": "FSRef Rules",
+      "summary": "FSRef doctrine: path-only declarative refs, VFSPath translation, computeNode.fsAction dispatch, JSON serialization, and the record-refs endpoint.",
+      "content_hash": "b84791dacb8917e52c8f56e06449c4e861582df3c808dd291069c9a549ae39c0",
+      "size_bytes": 6033
+    },
+    {
+      "name": "typeid.md",
+      "rel_path": "typeid.md",
+      "title": "TypeId Specification",
+      "summary": "TypeId specification: the {type}-{id} format with its first-dash split, UUID, @uname, namespace-key and property-id forms, parsing rules and type registries.",
+      "content_hash": "59d1876bb7fcc8da7ac9c4a890e3ff01b85cc3649c60e47b5733ac49447fde50",
+      "size_bytes": 15778
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T17:55:38.057586+00:00",
+  "latest_process_ref": ""
+}

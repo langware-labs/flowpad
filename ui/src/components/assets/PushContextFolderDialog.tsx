@@ -6,6 +6,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useConversationsForContacts } from '@src/hooks/use-conversations-for-contacts';
 import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
+import { notifyGitOutcome } from '@src/lib/git-outcome';
 import { notify } from '@src/notifications';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -23,7 +24,7 @@ const NEW_CONVERSATION = '__new__';
 /** Same selectable-row styling as ShareToConversationDialog. */
 const rowClasses = (isSelected: boolean, dashed = false) =>
   cn(
-    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
+    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-start text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
     dashed && 'border-dashed',
     isSelected ? 'border-primary bg-primary/10 ring-1 ring-primary/40' : 'border-input bg-background hover:bg-muted/50',
   );
@@ -31,14 +32,16 @@ const rowClasses = (isSelected: boolean, dashed = false) =>
 interface PushContextFolderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Basename of the git context folder (for titles/labels). */
+  /** Basename of the git dependency folder (for titles/labels). */
   folderName: string;
+  /** The dependency folder's repo workdir — where a conflict's resolver runs. */
+  workdir: string;
   /** Current branch, shown in the header line. */
   branch?: string | null;
   /** Scoped project id — anchors the recent-conversation search and new
    *  project-local conversations. */
   projectId?: string | null;
-  /** The context folder's Folder entity typeid — attached to the message as
+  /** The dependency folder's Folder entity typeid — attached to the message as
    *  the git-link chip (recipients click it to pull a local copy). */
   folderTypeId?: string | null;
   /** The actual git push (from useGitFolderStatus). */
@@ -47,7 +50,7 @@ interface PushContextFolderDialogProps {
 }
 
 /**
- * PushContextFolderDialog — the Push flow for a git context folder. Always
+ * PushContextFolderDialog — the Push flow for a git dependency folder. Always
  * pushes; optionally notifies. The user writes a message and picks recipients
  * (a contacts group expands to its members in one click), then chooses the
  * target conversation — an existing one with those recipients or a new one
@@ -59,6 +62,7 @@ export function PushContextFolderDialog({
   open,
   onOpenChange,
   folderName,
+  workdir,
   branch,
   projectId,
   folderTypeId,
@@ -112,12 +116,14 @@ export function PushContextFolderDialog({
     const result = await push();
     if (!result) return;
     if (!result.ok) {
-      setLocalError(result.message);
-      notify.error({ title: t`Push failed`, message: result.message });
+      // The same toast — and on a conflict the same Resolve — as every other push.
+      notifyGitOutcome('push', result, workdir);
+      if (result.kind === 'conflict') onOpenChange(false);
+      else setLocalError(result.message);
       return;
     }
     if (!notifying) {
-      notify.success({ title: result.nothing ? t`Nothing to push` : t`Pushed to remote` });
+      notify.success({ title: result.kind === 'nothing' ? t`Nothing to push` : t`Pushed to remote` });
       onOpenChange(false);
       return;
     }
@@ -126,13 +132,13 @@ export function PushContextFolderDialog({
         ? {
             kind: 'new',
             params: {
-              project_id: isRemote ? null : effectiveProjectId,
+              project_id: effectiveProjectId || null,
               participants,
               title,
             },
           }
         : { kind: 'existing', conversationId: selected };
-    // The git-link chip: the context folder's Folder entity rides as a
+    // The git-link chip: the dependency folder's Folder entity rides as a
     // TYPE_ID attachment in git transfer mode — metadata + origin only, zero
     // repo bytes. Recipients click it to set up their own local copy.
     const chipRefs = folderTypeId ? [folderTypeId] : undefined;
@@ -144,7 +150,7 @@ export function PushContextFolderDialog({
     });
     if (!convId) return; // sendError renders inline; keep the dialog open.
     notify.success({
-      title: result.nothing ? t`Nothing new to push — message sent` : t`Pushed and message sent`,
+      title: result.kind === 'nothing' ? t`Nothing new to push — message sent` : t`Pushed and message sent`,
     });
     onOpenChange(false);
   };

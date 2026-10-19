@@ -15,6 +15,7 @@ mocked-provider tier as ``test_pty_api.py``. No real OS PTY is spawned:
 
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -86,6 +87,32 @@ def eviction_registry(monkeypatch):
         yield SimpleNamespace(evicted=evicted)
     finally:
         pty_registry.states = original_states
+
+
+# ---------------------------------------------------------------------------
+# input — the per-keystroke hot path
+# ---------------------------------------------------------------------------
+
+async def test_input_is_not_logged_at_info_and_never_logs_data(caplog):
+    """Every keystroke and mouse report is an ``input`` op: logging it at INFO
+    flooded the server log (4 lines per input) with what the user typed."""
+    sentinel = "SENTINEL-typed-secret-4b1d"
+    provider = MagicMock()
+    pty = MagicMock()
+    pty.write = AsyncMock()
+    provider.get_pty_session = MagicMock(return_value=pty)
+    node = _Node(provider)
+    info = _request_info()
+    info.sub_path = "input"
+    info.get_post_data = AsyncMock(return_value={"shell_id": "shell-1", "data": sentinel})
+
+    with caplog.at_level(logging.DEBUG), _patch_request_info(info):
+        result = await node._pty_terminal_command()
+
+    assert result.status == "SUCCESS"
+    pty.write.assert_awaited_once_with(sentinel.encode())
+    assert not [r for r in caplog.records if "[PTY]" in r.getMessage() and r.levelno >= logging.INFO]
+    assert not [r for r in caplog.records if sentinel in r.getMessage()]
 
 
 # ---------------------------------------------------------------------------
@@ -256,3 +283,32 @@ async def test_pty_cap_no_eviction_below_cap(eviction_registry):
     with pytest.raises(_StopBeforeSpawn):
         await node.start_machine_pty_session(shell_id="shell-new", connection_id="conn-1")
     assert eviction_registry.evicted == []
+
+
+# ``resize`` with ``repaint`` — a view whose xterm drew output at another size asks for a redraw
+# even at an unchanged size (a same-size resize changes no winsize → no SIGWINCH → no redraw).
+
+def _resize_node(cols: int, rows: int):
+    from flow_sdk.compute.providers.desktop.local_pty_session import LocalPtySession
+
+    provider = MagicMock()
+    provider.resize_pty = AsyncMock()
+    state = PtyState(pty_key=("cn-1", "pn-1", "shell-1"), cols=cols, rows=rows)
+    mgr = MagicMock()
+    mgr.states = {state.pty_key: state}
+    provider.get_pty_session = MagicMock(return_value=LocalPtySession("cn-1", "pn-1", "shell-1", provider, mgr))
+    return _Node(provider), provider
+
+
+async def test_resize_to_the_same_size_does_nothing_without_repaint():
+    node, provider = _resize_node(122, 40)
+    result = await node._resize_pty({"shell_id": "shell-1", "cols": 122, "rows": 40})
+    assert result.status == "SUCCESS"
+    provider.resize_pty.assert_not_awaited()
+
+
+async def test_resize_with_repaint_jiggles_at_the_same_size():
+    node, provider = _resize_node(122, 40)
+    result = await node._resize_pty({"shell_id": "shell-1", "cols": 122, "rows": 40, "repaint": True})
+    assert result.status == "SUCCESS"
+    assert provider.resize_pty.await_args_list == [(("pn-1", "shell-1", 122, 39),), (("pn-1", "shell-1", 122, 40),)]

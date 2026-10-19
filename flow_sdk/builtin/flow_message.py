@@ -2,21 +2,54 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Optional
+
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+    model_validator,
+)
+
+from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.core import Entity
+from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure
+from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
+from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.sources.values.items import MessageMarkSpec, UserProfile
+from flow_sdk.tags.envelope import parse_target
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 ProgressCallback = Callable[[int, int], Awaitable[None]]
 
-from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
-
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.core import Entity
-from flow_sdk.fs_store.type_id import TypeId
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 
 logger = logging.getLogger(__name__)
+
+#: True only inside ``releasing_prompt`` — the one writer allowed to clear a
+#: consumed ``prompt_auto_handled`` (see ``FlowMessage.preserved_fields_on_save``).
+_RELEASING_PROMPT: ContextVar[bool] = ContextVar("flow_message_releasing_prompt", default=False)
+
+
+@contextmanager
+def releasing_prompt():
+    """Scope a save that hands a consumed prompt back to the session queue."""
+    token = _RELEASING_PROMPT.set(True)
+    try:
+        yield
+    finally:
+        _RELEASING_PROMPT.reset(token)
 
 
 class AttachmentType(str, Enum):
@@ -32,12 +65,17 @@ class BodyStatus(str, Enum):
     NA        — no body needed (text-only, or inline-only attachments).
     UPLOADING — sender is staging the body; receivers must wait.
     READY     — body is available at fs/download/<BODY_FILENAME>.
+    FAILED    — an upload attempt failed; the sender's outbox retries it. Receivers
+                wait exactly as for UPLOADING (the hub has stamped it since its own
+                upload errors; a client without it could not even parse such a row).
 
-    Transitions enforced hub-side: NA is terminal; UPLOADING → READY only.
+    NA is terminal; UPLOADING / FAILED → READY.
     """
+
     NA = "na"
     UPLOADING = "uploading"
     READY = "ready"
+    FAILED = "failed"
 
 
 class FlowMessageKind(str, Enum):
@@ -58,6 +96,7 @@ class FlowMessageKind(str, Enum):
                  re-derive it from the attachment marker via
                  ``derive_session_fields``.
     """
+
     USER = "user"
     INVITATION = "invitation"
     SESSION_EVENT = "session_event"
@@ -89,6 +128,7 @@ class DeliveryStatus(str, Enum):
     The hub never stores PENDING_SEND / CREATED — those are purely client-local
     pre-accept states.
     """
+
     PENDING_SEND = "pending_send"
     CREATED = "created"
     SENT = "sent"
@@ -133,7 +173,7 @@ BODY_FILENAME = "body.flowmsg"
 
 # Coalesce concurrent ``upload_body`` calls for the same FM id. Two callers can
 # race the body upload for one FM — the auto background upload
-# (``_finalize_message_dispatch`` → ``asyncio.create_task(_upload_body_and_finalize)``)
+# (``Conversation.deliver`` → ``_upload_body_and_finalize``, from a send or the outbox)
 # and an explicit ``upload_body`` action — and the hub's ``fs/upload`` is not
 # concurrency-safe for one VFSPath: two concurrent sessions to the same object
 # path clobber each other and the blob is lost (receiver download 404 → 500).
@@ -161,9 +201,7 @@ PROMPT_FILE_VFS_PREFIX = "prompt/"
 # File extensions the UI renders inline as an image (mirrors the frontend's
 # ``isImagePath``). Backend paths that decide "is this attachment a picture?"
 # share this one set so both sides agree on what shows as an image.
-IMAGE_FILE_EXTENSIONS = frozenset(
-    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico"}
-)
+IMAGE_FILE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico"})
 
 
 def is_image_filename(name: str) -> bool:
@@ -172,16 +210,29 @@ def is_image_filename(name: str) -> bool:
 
     return Path(name).suffix.lower() in IMAGE_FILE_EXTENSIONS
 
+
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
 # standard local record folder (which is what ``_type_id_attachment_present``
-# probes) — either conversation plumbing (conversation/flow_message/task, the
-# UI's STRUCTURAL_ATTACHMENT_TYPES), or an indexer-owned type whose bundle
-# unpack creates only an entity ROW, never a records folder (claude_session —
-# the transcript content rides as a FILE attachment). They must NOT gate the
-# message-level ``body_downloaded`` signal, or a message carrying one would be
-# stuck behind the Download button forever.
+# probes) — conversation plumbing (conversation/flow_message/task, the UI's
+# STRUCTURAL_ATTACHMENT_TYPES) and the live-session carrier. They must NOT gate
+# the message-level ``body_downloaded`` signal, or a message carrying one would
+# be stuck behind the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "claude_session", "remote_worker_session"}
+    # A project never rides the bundle: it is delivered by a membership grant
+    # and cloned from its Git origin. Treating it as materializable pinned
+    # every project share at body_downloaded=false with a permanent
+    # ``body_missing_attachments: [project-<id>]``.
+    #
+    # A ``prompt_completion`` is the same kind of thing: a typed reply marker
+    # whose full text rides in the attachment's header ``prompt_preview``. The
+    # entity itself stays on the host (it declares no ``main_subdir``, so the
+    # packer never ships it), and the receiver never gets a row or folder for it.
+    # Probing for one reported EVERY reply as missing, forever.
+    #
+    # ``process_call`` / ``returned_value`` are a call on a message and its answer
+    # (``process_call_spec``): the value IS the header ``prompt_preview``, never a row.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion",
+     "process_call", "returned_value"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -189,13 +240,88 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
 # STUB (e.g. a spec row minted from a body-less hub reflect ahead of its
 # bundle). Such a stub must NOT count as "downloaded" — otherwise the bundle
 # carrying the real body is never (re-)pulled and the entity renders blank.
-_BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan"})
+#
+# The worker-session types belong here, not in the non-materializing set above:
+# a session IS its transcript file. Listing them as non-materializing made a
+# message report ``body_downloaded=true`` with no transcript on disk at all,
+# which both hid the Download affordance and told the catch-up loop there was
+# nothing left to pull.
+_BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan", "claude_session", "codex_session", "copilot_session"})
 
 # Marker key inside a ``remote_worker_session-<id>`` attachment's
 # ``prompt_preview`` (a hub-known field, so it survives the hub's
 # unknown-field drop): ``{"live_session_event": "approved"}`` flags the
 # message as a lifecycle system line (kind=SESSION_EVENT).
 LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
+# Marker key on the carrier of the prompt that OPENS a session:
+# ``{"session_start": {"reply_policy": "auto"}}`` — the guest's proposed
+# session settings (``SessionStartSettings``), adopted fill-only by the host.
+SESSION_START_MARKER_KEY = "session_start"
+
+
+def carried_value(attachments, kind: str) -> "tuple[str, dict] | None":
+    """``(id, JSON object)`` from the first ``<kind>-<id>`` TYPE_ID attachment, if any —
+    a VALUE riding the header's ``prompt_preview`` (a hub-known field), not an entity.
+    THE parser of such carriers (the session marker, a process call, its answer).
+    ``attachments`` may be ``Attachment`` models or the raw dicts a hub payload carries;
+    a carrier whose preview is missing or not a JSON object reads as none."""
+    import json as _json  # noqa: PLC0415
+
+    def _get(a, key):
+        return a.get(key) if isinstance(a, dict) else getattr(a, key, None)
+
+    prefix = f"{kind}-"
+    for a in attachments or []:
+        if _get(a, "attachment_type") != AttachmentType.TYPE_ID:
+            continue
+        data = str(_get(a, "data") or "")
+        if not data.startswith(prefix):
+            continue
+        try:
+            value = _json.loads(_get(a, "prompt_preview") or "")
+        except (ValueError, TypeError):
+            return None
+        return (data[len(prefix):], value) if isinstance(value, dict) else None
+    return None
+
+
+def carrier_marker(attachments) -> "dict | None":
+    """The JSON object in the session carrier's ``prompt_preview``, if any."""
+    found = carried_value(attachments, "remote_worker_session")
+    return found[1] if found else None
+
+
+def _carrier_marker(fm: "FlowMessage") -> "dict | None":
+    """``carrier_marker`` over a message's attachments."""
+    return carrier_marker(fm.attachment)
+
+
+# Marker key carrying the session's wire snapshot on ANY session message's
+# carrier: ``{"snapshot": {...SNAPSHOT_FIELDS}}`` — the hub-optional FAST
+# path. The body bundle still carries the same snapshot durably; the header
+# copy lets a receiver flip state on fan-out, seconds before the bundle lands.
+SESSION_SNAPSHOT_MARKER_KEY = "snapshot"
+
+
+def session_snapshot_from_header(fm: "FlowMessage") -> "dict | None":
+    """The session snapshot riding the carrier's ``prompt_preview``, if any."""
+    marker = _carrier_marker(fm)
+    snap = (marker or {}).get(SESSION_SNAPSHOT_MARKER_KEY)
+    return snap if isinstance(snap, dict) and snap.get("id") else None
+
+
+def session_start_settings(fm: "FlowMessage"):
+    """``SessionStartSettings`` from the starting prompt's carrier, else None."""
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
+
+    marker = _carrier_marker(fm)
+    raw = (marker or {}).get(SESSION_START_MARKER_KEY)
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return SessionStartSettings(**{k: v for k, v in raw.items() if k in SessionStartSettings.model_fields})
+    except Exception:  # noqa: BLE001 — a malformed proposal is no proposal
+        return None
 
 
 def derive_session_fields(fm: "FlowMessage") -> None:
@@ -211,8 +337,6 @@ def derive_session_fields(fm: "FlowMessage") -> None:
     from ``materialize_flow_message`` so every arrival path (hub WS, bundle
     unpack, catch-up sync) is covered.
     """
-    import json as _json  # noqa: PLC0415
-
     session_prefix = "remote_worker_session-"
     for a in fm.attachment or []:
         if a.attachment_type != AttachmentType.TYPE_ID:
@@ -221,60 +345,79 @@ def derive_session_fields(fm: "FlowMessage") -> None:
         if not data.startswith(session_prefix):
             continue
         if not fm.remote_worker_session_id:
-            fm.remote_worker_session_id = data[len(session_prefix):] or None
-        if fm.kind == FlowMessageKind.USER and a.prompt_preview:
-            try:
-                marker = _json.loads(a.prompt_preview)
-            except (ValueError, TypeError):
-                marker = None
-            if isinstance(marker, dict) and marker.get(LIVE_SESSION_EVENT_MARKER_KEY):
-                fm.kind = FlowMessageKind.SESSION_EVENT
+            fm.remote_worker_session_id = data[len(session_prefix) :] or None
+        if fm.kind == FlowMessageKind.USER and (_carrier_marker(fm) or {}).get(LIVE_SESSION_EVENT_MARKER_KEY):
+            fm.kind = FlowMessageKind.SESSION_EVENT
         break
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     """Sync disk probe: is the entity referenced by a TYPE_ID attachment
-    locally present — either STAGED under the owning message's unpacked/ dir,
-    or materialized as a record folder (pre-staging installs / DB-record types)?
+    locally present? See ``_type_id_attachment_path`` for where it looks.
+    References that never materialize (and unparseable ones) count as present."""
+    etype, eid = parse_target(data)
+    if not etype or not eid or etype in _NON_MATERIALIZING_TYPE_IDS:
+        return True
+    return _type_id_attachment_path(fm_id, data) is not None
 
-    The staged check comes first: since reception stages file-backed assets
-    instead of materializing them, a staged entry counts as "downloaded" (the
-    catch-up loop must NOT re-pull the bundle forever waiting for a record
-    folder that install — a user choice — may never create). The record-folder
-    check is kept as an OR so pre-staging messages whose assets were already
-    materialized into a project still count without a data migration.
+
+def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
+    """Where the entity a TYPE_ID attachment references lives on this machine:
+    its record folder, or its entry STAGED under the owning message's
+    unpacked/ dir — else None.
+
+    Staged entries count: since reception stages file-backed assets instead of
+    materializing them, a staged entry is "downloaded" (the catch-up loop must
+    NOT re-pull the bundle forever waiting for a record folder that install — a
+    user choice — may never create). The record folder still counts so
+    pre-staging messages whose assets were already materialized into a project
+    resolve without a data migration.
 
     Body-bearing types (spec/markdown/plan) additionally require their
     ``asset_ref`` source file to exist on the record-folder path — a
     metadata-only stub does not count, so a body-less spec re-pulls its bundle
     instead of being stranded blank."""
-    if "-" not in data:
-        return True
-    etype, eid = data.split("-", 1)
-    if etype in _NON_MATERIALIZING_TYPE_IDS:
-        return True
+    etype, eid = parse_target(data)
+    if not etype or not eid:
+        return None
     try:
         # Record-folder (installed / pre-staging) check FIRST: for an installed
         # asset it short-circuits without paying the staged-dir stat — this
         # runs per TYPE_ID attachment on every serialize (hot path).
         from flow_sdk.fs_store.record_paths import record_stem, shadow_dir_for
-        meta = shadow_dir_for(etype, eid) / "metadata.json"
+
+        folder = shadow_dir_for(etype, eid)
+        meta = folder / "metadata.json"
         if meta.exists():
-            if etype not in _BODY_BEARING_TYPE_IDS:
-                return True
             import json  # noqa: PLC0415
-            # A metadata-only stub has no resolvable asset_ref → fall through
-            # to the staged check (a staged body still counts as downloaded).
-            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
-            if asset_ref and Path(asset_ref).exists():
-                return True
+
+            record = json.loads(meta.read_text(encoding="utf-8")) or {}
+            # A row that is itself a RECEIVED git share pins someone's earlier
+            # version: it is not this message's — only this message's own staged
+            # pointer counts below (so a re-share is fetched and offers its version).
+            origin = record.get("origin")
+            if not (isinstance(origin, dict) and origin.get("head_commit")):
+                if etype not in _BODY_BEARING_TYPE_IDS:
+                    return folder
+                # A metadata-only stub has no resolvable asset_ref → fall through
+                # to the staged check (a staged body still counts as downloaded).
+                asset_ref = record.get("asset_ref")
+                if asset_ref and Path(asset_ref).exists():
+                    return folder
         if fm_id:
-            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
-            if staged_entry_dir(fm_id, record_stem(etype, eid)).exists():
-                return True
-        return False
+            from flow_sdk.fs_store.operations.flow_message import staged_entry_dir, staged_git_entry_dir
+
+            staged = staged_entry_dir(fm_id, record_stem(etype, eid))
+            if staged.exists():
+                return staged
+            # A git share stages its pointer (metadata only); the bytes come by
+            # git at install, so the pointer IS the downloaded attachment.
+            pointer = staged_git_entry_dir(fm_id, record_stem(etype, eid))
+            if (pointer / "metadata.json").exists():
+                return pointer
+        return None
     except Exception:
-        return False
+        return None
 
 
 class Attachment(BaseModel):
@@ -290,76 +433,211 @@ class Attachment(BaseModel):
     only — never stored in DB). For FILE attachments it holds the absolute filesystem
     path resolved via the entity's embedded storage.
 
-    proposer_id / approved_by apply to prompt attachments (legacy PROMPT and
-    prompt-entity TYPE_ID alike) — proposer_id is the user who suggested the
-    prompt; approved_by is set when the other party approves it.
-
     prompt_preview applies to prompt-entity TYPE_ID attachments: an inline
     copy of the prompt text that rides the message header so receivers can
-    preview (and execute) the prompt BEFORE pulling the body bundle — the
-    same no-download property legacy inline PROMPT attachments had.
+    preview the prompt BEFORE pulling the body bundle. On a
+    ``remote_worker_session-<id>`` carrier it holds the session marker JSON
+    instead (``session_start`` / ``live_session_event``).
 
-    HUB SCHEMA MIRROR: ``proposer_id`` / ``approved_by`` / ``prompt_preview``
-    must also exist on the hub's Attachment model
-    (FlowPad: ``flowpad/hub/core/network/flow_message.py``) — the hub
-    validates attachments through its own pydantic model and silently DROPS
-    unknown fields on the round-trip, which strips the receiver's preview.
+    HUB SCHEMA MIRROR: ``prompt_preview`` must also exist on the hub's
+    Attachment model (FlowPad: ``flowpad/hub/core/network/flow_message.py``) —
+    the hub validates attachments through its own pydantic model and silently
+    DROPS unknown fields on the round-trip. The hub still mirrors the retired
+    ``proposer_id`` / ``approved_by``; they arrive as nulls and are ignored.
+    Consent is a property of the session, never stamped per attachment.
     """
+
     attachment_type: AttachmentType
     data: str
     local_path: Optional[str] = None
-    proposer_id: Optional[str] = None
-    approved_by: Optional[str] = None
     prompt_preview: Optional[str] = None
 
 
+class MessageEnvelope(DataSpec):
+    """A cached message's header, as the projection read it from the item's payload."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    subject: Optional[str] = None
+    sender: Optional[UserProfile] = None
+    recipients: tuple[UserProfile, ...] = ()
+    sent_at: Optional[AwareDatetime] = None
+
+
 class FlowMessage(Entity):
-    # Beyond the base local flags, a FlowMessage owns its body/download and
-    # read state locally. A hub metadata refresh must not reset these:
-    #   * body_status  — download/delivery lifecycle on THIS machine; reset
-    #     would re-trigger an already-completed body download.
-    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
-    #   * received_at  — when THIS device received it.
-    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
-    #   * prompt_auto_handled — the receiver's "I already auto-ran this prompt"
-    #     marker. A LOCAL decision the hub never learns of, so it must survive
-    #     every hub refresh; it's the auto-run idempotency guard (a re-delivered
-    #     op finds it True and skips) and is sync-proof, unlike the attachment's
-    #     ``approved_by`` which a refresh can revert.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
-        "body_status", "is_read", "is_archived", "received_at", "is_draft",
-        "prompt_auto_handled",
-    })
-    # Fields ignored when deciding real-change-vs-touch in ``is_stale``: the
-    # local-only state plus the clocks themselves.
-    _STALE_IGNORE_FIELDS: ClassVar[frozenset[str]] = LOCAL_ONLY_FIELDS | frozenset({
-        "updated_date", "updated_by",
-    })
+    # A FlowMessage owns its body/download and read state locally — see the
+    # ``Sharing.HUB_WRITE`` declarations on those fields below (`body_status`,
+    # `is_read`, `is_archived`, `received_at`, `is_draft`, `prompt_auto_handled`):
+    # they travel outward, but a hub metadata refresh must never reset them.
+    # This used to be a ``LOCAL_ONLY_FIELDS`` union of the base set, which a
+    # subclass could silently drop by forgetting to union.
 
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
     attachment: list[Attachment] = APIField(default_factory=list)
+    # The wire form of the author — what travels to the hub and in bundles. Read `sender`.
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
+    # Who wrote this message, typed (`MessageSender`: a user, an Agent, or someone on a
+    # channel) — the field every reader tests, instead of parsing `sender_id`. PRIVATE:
+    # a hub-native author is always a user, and an Agent or channel author is a fact
+    # only this machine's projection knows, which a hub refresh must never reset.
+    sender: Optional[MessageSender] = APIField(None, sharing=Sharing.PRIVATE)
     receiver_address: Optional[str] = APIField(None)
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
-    conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
+    conversation_id: Optional[str] = APIField(
+        None, description="ID of the parent Conversation, or None for legacy messages"
+    )
     # Forward provenance. Set only on a forwarded clone (see clone_for_forward):
     # the id of the source FlowMessage and its original sender. Metadata-only —
     # rides the bundle (model_dump) and the hub header (mirrored on the hub
     # schema; the hub drops unknown fields, so keep the two models in sync).
-    cloned_from_id: Optional[str] = APIField(None, description="Id of the source FlowMessage this one was forwarded from")
+    cloned_from_id: Optional[str] = APIField(
+        None, description="Id of the source FlowMessage this one was forwarded from"
+    )
     cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
     # Live-session grouping key. Stamped at send time by the guest (who mints
-    # the session id) and on PromptResult replies by the host. The hub drops
+    # the session id) and on PromptCompletion replies by the host. The hub drops
     # unknown header fields until its schema mirrors this one, so the
     # ``remote_worker_session-<id>`` TYPE_ID attachment is the authoritative
     # wire carrier — ``derive_session_fields`` refills this on receive.
-    remote_worker_session_id: Optional[str] = APIField(None, description="Live session this message belongs to (grouping key)")
-    is_read: bool = APIField(default=False)
-    is_archived: bool = APIField(default=False)
+    remote_worker_session_id: Optional[str] = APIField(
+        None, description="Live session this message belongs to (grouping key)"
+    )
+    # ── cloud provenance ───────────────────────────────────────────────────
+    # Where the real record lives when this message is a CACHE of one (a Gmail
+    # message, a Slack post). None means the message is ours — which is exactly
+    # the rule the UI needs: no origin, no channel badge, no "open in origin".
+    # HUB_WRITE: the projection writes it and a peer renders from it, but a
+    # hub payload never carries it — letting its absence blank it would strip
+    # a projected message of its channel the moment the mirror refreshes the
+    # row (the help desk's rows are written by both).
+    origin: Optional[CloudOrigin] = APIField(
+        None,
+        sharing=Sharing.HUB_WRITE,
+        description="The cloud record this message caches; None = Flowpad-native",
+    )
+    # SHARED above, PRIVATE here, deliberately. `origin` is transportable — the
+    # receiver renders the badge and the "Open in ..." link from it. These two are
+    # row ids in OUR database; shipping them let a receiver dereference ids that
+    # cannot resolve, which `outbound` then reported as a deleted record rather
+    # than a foreign one.
+    origin_local: Optional[CloudOriginLocal] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="Local row pointers behind `origin`; never leaves this machine",
+    )
+    # The queryable twin of ``origin_local.source_item_id``. ``origin_local``
+    # is a nested JSON value the SQLite driver cannot index or IN-query, so the
+    # projection, the purge cascade and read-time hydration all key on this
+    # top-level copy instead. Set only on reference rows (messages projected
+    # from an ingested SourceItem); None = Flowpad-native. PRIVATE for the same
+    # reason as ``origin_local``: it is a row id in OUR database.
+    source_item_id: Optional[str] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="SourceItem this row references; None = Flowpad-native",
+    )
+
+    # The header the cached record arrived with — who, to whom, about what, when.
+    # Written only by the stream inbox projection, from the item's payload, so a viewer
+    # renders it and derives nothing. PRIVATE like ``sent_at``: re-derived here,
+    # and a hub refresh must never blank it.
+    envelope: Optional[MessageEnvelope] = APIField(
+        None,
+        sharing=Sharing.PRIVATE,
+        description="Sender, recipients, subject and event time of the cached record",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_sender(cls, data):
+        """``sender`` from ``sender_id`` wherever this machine did not type it.
+
+        A row with no ``sender`` — written before the field, received from the hub, or built
+        by any writer that only knows the wire id — takes the sender that id names. A USER
+        sender follows its wire id (a send flushed after login is re-stamped with the cloud
+        id). An AGENT or EXTERNAL sender was typed by the projection and stands: the hub's
+        copy of an agent's reply carries the authenticated person's id, and taking it would
+        turn the agent back into that person.
+        """
+        if not isinstance(data, dict) or "sender_id" not in data:
+            return data
+        current = data.get("sender")
+        if isinstance(current, dict):
+            current = MessageSender.model_validate(current)
+        if current is not None and current.kind is not SenderKind.USER:
+            return data
+        wire = MessageSender.from_wire(data.get("sender_id"))
+        if current is None or (wire is not None and wire.kind is SenderKind.USER):
+            data = {**data, "sender": wire}
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_origin_ids(cls, data):
+        """Rows written before the split carry the row ids INSIDE ``origin``.
+
+        ``CloudOrigin`` no longer declares them, so without this they are dropped
+        on parse and the message can never be replied to again — and unlike a
+        re-poll, which repairs any message still inside the provider's window,
+        nothing repairs one that has fallen out of it. The values are still in
+        the stored dict; this just moves them to the field that now owns them.
+
+        Same shape as ``DataSource._adopt_legacy_enabled``: read-side only, no
+        migration pass, and a no-op once the row is next saved.
+        """
+        if not isinstance(data, dict) or data.get("origin_local"):
+            return data
+        origin = data.get("origin")
+        if not isinstance(origin, dict):
+            return data
+        ds_id, item_id = origin.get("data_source_id"), origin.get("source_item_id")
+        if not (ds_id or item_id):
+            return data
+        data = dict(data)
+        data["origin_local"] = {
+            "data_source_id": ds_id or "",
+            "source_item_id": item_id or "",
+        }
+        return data
+
+    # The MessageThread this belongs to. None = ungrouped, which is how every
+    # existing message renders — flat, exactly as before.
+    # Both HUB_WRITE for the same reason as `origin`: the projection owns them.
+    thread_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="MessageThread id; None = flat (no thread grouping)"
+    )
+    # The FlowMessage this replies to — the quote. On a channel the projection
+    # links it from the provider's in-reply-to; on Flowpad's own chat the sender
+    # sets it, and since native message ids are the hub's, it means the same
+    # message on every member's machine. Provenance for quoting only — a channel
+    # thread is decided by the provider's thread id (see MessageThread).
+    reply_to_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="Id of the message this one replies to (the quote)"
+    )
+    # Flowpad's own chat: the message whose thread this one is in — the wire
+    # fact a native thread travels as. Each member's machine resolves it to its
+    # own MessageThread row (``stream_inbox.native_threads``) and stamps
+    # ``thread_id``; a channel message never sets it (its thread comes from the
+    # provider). Fixed at creation, like ``reply_to_id``: HUB_WRITE, because a
+    # new row takes the hub payload whole and nothing may rewrite it later.
+    thread_root_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="Native thread root message id; None = not in a native thread"
+    )
+
+    # Who reacted with what, on a channel message — projected from ``SourceItem.reactions``
+    # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
+    # never blanks it, and never sent where the hub would drop it.
+    reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    # What the channel message did (approved, merged) — projected from ``MessageData.mark``. PRIVATE
+    # like ``envelope``: re-derived here, so a hub refresh never blanks it.
+    mark: Optional[MessageMarkSpec] = APIField(None, sharing=Sharing.PRIVATE)
+
+    is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Receipt state — mirrors the hub-side schema. Monotonic:
     # created → sent → delivered → received.
     #   created  — local only; the hub has NOT accepted it (no add_message ACK).
@@ -370,11 +648,19 @@ class FlowMessage(Entity):
     # guarded so a lower-ranked status can never downgrade a higher one.
     delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
-    received_at: Optional[datetime] = APIField(default=None)
+    received_at: Optional[datetime] = APIField(default=None, sharing=Sharing.HUB_WRITE)
+    #: EVENT time — when the human sent this, on its original channel. Stamped
+    #: (and convergently re-stamped) ONLY by the stream inbox projection, from
+    #: ``SourceItem.occurred_at``; every other lane leaves it None and falls
+    #: through ``event_time`` to the clocks it already trusts. PRIVATE like
+    #: ``source_item_id``: hub sync's LWW refresh rebuilds the row from the
+    #: hub's schema, which does not carry this field — a SHARED classification
+    #: would blank it on every pass (the ``parent_type_id`` trap below).
+    sent_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
-    is_draft: bool = APIField(default=False)
+    is_draft: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     # Discriminator for special message kinds. "user" is a normal message
     # (the default for everything the user or hub produces). "invitation"
     # marks a local-only placeholder FlowMessage that represents a pending
@@ -387,38 +673,74 @@ class FlowMessage(Entity):
     # stamped at hub-side add_message time when the incoming FM's attachments
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
-    body_status: BodyStatus = APIField(default=BodyStatus.NA)
-    # Local-only: set once the receiver has auto-run this message's prompt (see
-    # process_inbound_message). Sync-proof idempotency guard.
-    prompt_auto_handled: bool = APIField(default=False)
-    _api_visible: ClassVar[bool] = True
+    body_status: BodyStatus = APIField(default=BodyStatus.NA, sharing=Sharing.HUB_WRITE)
+    # Local-only: set once the host has CONSUMED this message as a session
+    # turn — see ``process_inbound_prompt``.
+    # Set before the run so a re-delivered op can't double-run; survives every
+    # hub refresh. A parked prompt (session PENDING) stays False until approve
+    # re-drives it.
+    prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+    # The outbox. ``outbound`` marks a message THIS machine wrote to send — set once, where it is
+    # composed, never by a hub refresh — so "what do I still owe the hub" never depends on
+    # ``sender_id`` (empty while signed out) or on who the hub says created it. While the hub
+    # has not taken it, ``delivery_failure`` says why; it is cleared the moment it lands.
+    # Both PRIVATE: facts about this machine's sending, meaningless anywhere else.
+    outbound: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    delivery_failure: Optional[HubFailure] = APIField(default=None, sharing=Sharing.PRIVATE)
+
+    @property
+    def owes_delivery(self) -> bool:
+        """Whether this is a message I sent that the hub does not fully have yet.
+
+        THE outbox predicate: the header not accepted (below SENT), or accepted with a body
+        still owed. ``pending_send`` rows count however they were written — the logged-out
+        composer has always meant "send this later".
+        """
+        # ``kind`` is a bare str once validated (use_enum_values), the enum only as an untouched default.
+        if self.is_draft or getattr(self.kind, "value", self.kind) == FlowMessageKind.INVITATION.value:
+            return False
+        if not (self.outbound or self.delivery_status == DeliveryStatus.PENDING_SEND.value):
+            return False
+        if delivery_rank(self.delivery_status) < delivery_rank(DeliveryStatus.SENT):
+            return True
+        return self.body_status in (BodyStatus.UPLOADING, BodyStatus.FAILED)
+
+    async def mark_sent(self) -> None:
+        """The hub took the header: SENT, remote, and no failure left to show."""
+        if delivery_advances(self.delivery_status, DeliveryStatus.SENT):
+            self.delivery_status = DeliveryStatus.SENT.value
+        self.remote = True
+        self.delivery_failure = None
+        await self.save()
+
+    async def record_delivery_failure(self, failure: HubFailure) -> None:
+        """Why the hub does not have it yet — kept until it lands, broadcast to the sender's UI."""
+        self.delivery_failure = failure
+        await self.save()
 
     @classmethod
-    def merge_hub_payload(cls, local: "Entity", hub_payload: dict[str, Any]) -> dict[str, Any]:
-        """Preserve the receiver's local prompt-approval across a hub refresh.
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        """A consumed prompt stays consumed through every stale whole-row save.
 
-        ``attachment[].approved_by`` is set locally when the receiver approves /
-        auto-runs a PROMPT — the hub never learns of it (the sender's copy stays
-        ``None``), so a plain hub→local refresh would revert it and the prompt
-        would re-run on every sync. We can't mark it ``LOCAL_ONLY`` (it's nested
-        in ``attachment``), so re-apply each locally-approved attachment's
-        ``approved_by`` onto the matching incoming attachment (keyed by ``data``)
-        when the hub copy hasn't got one.
+        Message writes are whole-row upserts, and several writers hold a copy read
+        before the host consumed the prompt — the conversation catch-up's LWW
+        refresh (``_process_single_hub_message``: ``get_one`` … hub download …
+        ``merge_hub_payload`` … ``save``) is the one caught in the act. Whichever
+        saved last wrote ``False`` back over the consume, the session drain
+        re-selected the prompt, and the guest got the same turn answered twice.
+
+        Read under the writer transaction (``_preserve_managed_data_fields``), so
+        no consume can land between the check and the write. Only
+        ``release_prompt`` — crash recovery handing a dead turn back — may clear
+        it, and it says so through ``releasing_prompt``.
         """
-        merged = super().merge_hub_payload(local, hub_payload)
-        local_approved = {
-            a.data: a.approved_by
-            for a in (getattr(local, "attachment", None) or [])
-            if getattr(a, "data", None) and getattr(a, "approved_by", None)
-        }
-        atts = merged.get("attachment")
-        if local_approved and isinstance(atts, list):
-            for att in atts:
-                if isinstance(att, dict):
-                    data = att.get("data")
-                    if data in local_approved and not att.get("approved_by"):
-                        att["approved_by"] = local_approved[data]
-        return merged
+        if current_data.get("prompt_auto_handled") and not _RELEASING_PROMPT.get():
+            return ("prompt_auto_handled",)
+        return ()
+
+    #: The body held across a reference row's write — see ``save``.
+    _hydrated_text: Optional[str] = None
+    _api_visible: ClassVar[bool] = True
 
     @classmethod
     def is_stale(cls, local, hub_payload):  # type: ignore[override]
@@ -428,7 +750,7 @@ class FlowMessage(Entity):
         newer hub clock as a real change. But the hub re-stamps a message's
         ``updated_date`` on bare touches too — re-materializing / re-downloading
         the body, re-emitting an otherwise-unchanged row — which would drag the
-        local message clock (and, via projection, the conversation's inbox
+        local message clock (and, via projection, the conversation's stream inbox
         recency) forward for no real change. So when the base says "newer",
         confirm an actual content/state delta before adopting: serialize the
         local row and the merged candidate, ignoring ``updated_date`` and the
@@ -446,73 +768,84 @@ class FlowMessage(Entity):
         except Exception:  # noqa: BLE001
             return True  # can't prove it's a touch → fail safe to "stale"
         ctx = {"skip_api_serializer": True}
-        before = local.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
-        after = candidate.model_dump(mode="json", exclude=cls._STALE_IGNORE_FIELDS, context=ctx)
+        # Ignore the fields the hub may not dictate, plus the clocks themselves
+        # (a touch is not a change). Derived, so a new HUB_WRITE/PRIVATE field is
+        # covered without editing a second list.
+        stale_ignore = cls.fields_not_accepted_from_hub() | {"updated_date", "updated_by"}
+        before = local.model_dump(mode="json", exclude=stale_ignore, context=ctx)
+        after = candidate.model_dump(mode="json", exclude=stale_ignore, context=ctx)
         return before != after
 
     @model_serializer(mode="wrap")
-    def _serialize_with_local_paths(
-        self, handler: SerializerFunctionWrapHandler, info: Any
-    ) -> dict[str, Any]:
+    def _serialize_with_local_paths(self, handler: SerializerFunctionWrapHandler, info: Any) -> dict[str, Any]:
         data = handler(self)
         # Skip local_path resolution when serializing for DB storage
         if info.context and info.context.get("skip_api_serializer"):
             return data
-        if data.get("attachment") and self.id:
-            from flow_sdk.storage import get_entity_embedded_storage
-            typeid = TypeId(type="flow_message", id=self.id)
-            storage = get_entity_embedded_storage(typeid)
-            for att in data["attachment"]:
-                vfs_subpath: Optional[str] = None
-                if att.get("attachment_type") == AttachmentType.FILE.value:
-                    vfs_subpath = att.get("data", "")
-                elif att.get("attachment_type") == AttachmentType.PROMPT.value:
-                    raw = att.get("data", "")
-                    if raw and raw.startswith(PROMPT_FILE_VFS_PREFIX):
-                        vfs_subpath = raw
-                if not vfs_subpath:
-                    continue
-                # Expose ``local_path`` only when the bytes are actually on
-                # local disk. The UI reads a non-null local_path as "the file
-                # is downloaded": a receiver sees null until it pulls the body
-                # bundle; the sender sees it set the moment the file is staged.
-                resolved = storage.get_storage_path(vfs_subpath)
-                att["local_path"] = resolved if resolved and Path(resolved).exists() else None
-        # Message-level download signal (transient, API-only — computed after
-        # the per-file local_path resolution above so it can read it). True once
-        # the body bundle has been pulled + unpacked locally: every renderable
-        # body attachment is on disk (files have a resolved local_path, entity
-        # assets have a materialized record folder). The UI switches the whole
-        # message between a single Download button and rendered chips off this
-        # one flag, so the transcript and the context panel share state.
-        data["body_downloaded"] = self._compute_body_downloaded(data.get("attachment") or [])
-        # Unpack signal (transient, API-only): the bundle's extracted tree
-        # persists under the message's staging dir. Distinct from
-        # ``body_downloaded`` (which also covers pre-staging record folders):
-        # this one specifically says "staged content exists for review".
-        # Gated on has_body() — this serializer runs for EVERY message dump
-        # (conversation lists, WS fanout), so bodyless messages must not pay a
-        # disk stat.
-        data["body_unpacked"] = self.has_body() and self.is_body_unpacked()
+        data.update(self._body_download_state(data.get("attachment") or []))
         return data
 
-    def _compute_body_downloaded(self, atts: list[dict[str, Any]]) -> bool:
-        if not self.has_body():
-            return False
+    def _body_download_state(self, atts: list[dict[str, Any]]) -> dict[str, Any]:
+        """One local availability probe for API serialization and catch-up.
+
+        An unpacked bundle is downloaded even when its sender omitted assets.
+        Report those separately so callers do not keep fetching the same ZIP.
+        Files expose local_path only when their bytes actually exist.
+        """
+        has_body = self.has_body()
+        unpacked = has_body and self.is_body_unpacked()
+        missing: list[dict[str, str]] = []
+        storage = None
         for att in atts:
             atype = att.get("attachment_type")
-            if atype == AttachmentType.FILE.value:
-                if not att.get("local_path"):
-                    return False
-            elif atype == AttachmentType.PROMPT.value:
-                if (att.get("data") or "").startswith(PROMPT_FILE_VFS_PREFIX) and not att.get(
-                    "local_path"
-                ):
-                    return False
-            elif atype == AttachmentType.TYPE_ID.value:
-                if not _type_id_attachment_present(self.id, att.get("data") or ""):
-                    return False
-        return True
+            raw = att.get("data") or ""
+            if atype == AttachmentType.TYPE_ID.value:
+                present = _type_id_attachment_present(self.id, raw)
+            elif atype == AttachmentType.FILE.value or (
+                atype == AttachmentType.PROMPT.value and raw.startswith(PROMPT_FILE_VFS_PREFIX)
+            ):
+                if storage is None:
+                    from flow_sdk.storage import get_entity_embedded_storage
+
+                    storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+                resolved = storage.get_storage_path(raw) if raw else None
+                att["local_path"] = resolved if resolved and Path(resolved).is_file() else None
+                present = bool(att["local_path"])
+            else:
+                continue
+            if not present:
+                ref = {"attachment_type": atype, "data": raw}
+                if ref not in missing:
+                    missing.append(ref)
+        if has_body and not self.has_downloadable_body():
+            # Body-free received references: nothing to pull, so nothing is
+            # pending (no Download affordance) and nothing is a missing asset.
+            return {"body_downloaded": True, "body_unpacked": False, "body_missing_attachments": []}
+        return {
+            "body_downloaded": has_body and (unpacked or not missing),
+            "body_unpacked": unpacked,
+            "body_missing_attachments": missing,
+        }
+
+    def _local_body_state(self) -> dict[str, Any]:
+        """The serializer's own body probe, off throwaway attachment copies.
+
+        Copies because ``_body_download_state`` stamps ``local_path`` onto the
+        dicts it walks — that belongs to serialization, not to a predicate.
+        """
+        return self._body_download_state([att.model_dump() for att in self.attachment or []])
+
+    def is_body_complete(self) -> bool:
+        """True when the bundle is unpacked AND every attachment it carries is
+        locally present — i.e. re-pulling the same bundle cannot add anything.
+
+        STRICTER than ``is_body_downloaded``, deliberately: that one reports an
+        unpacked bundle as downloaded even when the sender shipped it short, so
+        gating a re-pull on it would strand a genuinely incomplete message. Use
+        this one to decide "is another pull pointless", and that one to decide
+        "does the user still owe a click".
+        """
+        return self.is_body_unpacked() and not self._local_body_state()["body_missing_attachments"]
 
     def is_body_unpacked(self) -> bool:
         """True when the bundle's extracted tree persists under this message's
@@ -520,6 +853,7 @@ class FlowMessage(Entity):
         if not self.id:
             return False
         from flow_sdk.fs_store.operations.flow_message import is_unpacked
+
         return is_unpacked(self.id)
 
     async def _purge_local_data(self) -> None:
@@ -528,6 +862,7 @@ class FlowMessage(Entity):
         so every deletion path inherits it instead of remembering to call the
         purge. Installed copies are the user's assets and are NOT touched."""
         from flow_sdk.fs_store.operations.flow_message import purge_flow_message_local_data
+
         try:
             await purge_flow_message_local_data(self.id)
         except Exception:  # noqa: BLE001 — cleanup must never block deletion
@@ -542,47 +877,26 @@ class FlowMessage(Entity):
         await self._purge_local_data()
 
     def is_body_downloaded(self) -> bool:
-        """Disk-probe twin of the serializer's ``body_downloaded`` flag for
-        backend callers that need the signal without paying for a full
-        ``model_dump`` — e.g. the per-message catch-up loop deciding whether
-        to (re-)pull the body bundle. Same semantics as
-        ``_compute_body_downloaded`` (keep the two in sync): True once every
-        body attachment is materialized locally."""
-        if not self.has_body():
-            return False
-        storage = None
-        for att in self.attachment or []:
-            t = att.attachment_type
-            if t == AttachmentType.TYPE_ID:
-                if not _type_id_attachment_present(self.id, att.data or ""):
-                    return False
-                continue
-            vfs_subpath: Optional[str] = None
-            if t == AttachmentType.FILE:
-                vfs_subpath = att.data or ""
-            elif t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
-                vfs_subpath = att.data
-            if not vfs_subpath:
-                continue
-            if storage is None:
-                from flow_sdk.storage import get_entity_embedded_storage
-                storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
-            resolved = storage.get_storage_path(vfs_subpath)
-            if not (resolved and Path(resolved).exists()):
-                return False
-        return True
+        """Same download state as the API, without serializing the full entity."""
+        return self._local_body_state()["body_downloaded"]
 
     async def to_file(
-        self, dest_dir: Path | None = None, *, transfer_mode: str = "copy", create_bookmark: bool = False,
+        self,
+        dest_dir: Path | None = None,
+        *,
+        transfer_mode: str = "copy",
+        create_bookmark: bool = False,
     ) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
         from flow_sdk.builtin.flow_message_bundle import pack_bundle
+
         return await pack_bundle(self, dest_dir, transfer_mode=transfer_mode, create_bookmark=create_bookmark)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
         """Unpack .flowmsg, materialize entities, append pointer to conversation."""
         from flow_sdk.builtin.flow_message_bundle import unpack_bundle
+
         return await unpack_bundle(zip_path, local_user_id, overwrite=overwrite)
 
     # -------- Header / Body interface (principle #6) -------- #
@@ -605,6 +919,55 @@ class FlowMessage(Entity):
                 return True
         return False
 
+    def has_downloadable_body(self) -> bool:
+        """Receive-side: is there a body bundle to pull for this message?
+
+        ``has_body()`` answers for the SENDER (fresh local messages start at
+        ``na`` and senders call it to decide whether to upload), so it stays
+        attachment-only. On a received (``remote``) message, ``na`` reliably
+        means body-free: the hub stamps ``uploading`` whenever a client-sent
+        message needs a body, while a message it stores directly (a helpdesk
+        ticket's opening message, whose ``type_id`` session reference has no
+        bundle) stays at ``na``. Such a message has no download affordance and
+        is never pulled by catch-up."""
+        if not self.has_body():
+            return False
+        return not (self.remote and self.body_status == BodyStatus.NA)
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> "OpenLinkSpec":
+        """A message's link: pull it (bundle, conversation) and land in its conversation."""
+        from flow_sdk.app.actions.flow_message_action import open_flow_message_params  # noqa: PLC0415
+
+        return await open_flow_message_params(entity_id, someone_typeid)
+
+    @property
+    def occurred_at(self) -> Optional[datetime]:
+        """WHEN THIS MESSAGE ENTERED THE CONVERSATION — its position in the
+        feed and the time on its bubble. Read this for anything about WHERE a
+        message sits in the timeline, never ``event_time``.
+
+        ``sent_at`` pins a channel-projected message (a Slack/email backfill)
+        to when the human actually sent it; otherwise ``created_date`` is the
+        birth time, hub-stamped for a received message and compose time for
+        one of ours. ``updated_date`` is deliberately excluded: it is a
+        PROCESSING clock, and a message's place is fixed when it is sent.
+        ``project_pointers_to_entity`` documents the two-clock split and the
+        incident that forced it."""
+        return self.sent_at or self.created_date
+
+    @property
+    def event_time(self) -> Optional[datetime]:
+        """WHEN THIS MESSAGE LAST CHANGED — the conversation's recency clock,
+        i.e. the stream inbox's "Xm ago". Read this for anything about ACTIVITY;
+        for a message's place in the feed read ``occurred_at`` instead.
+
+        Here ``updated_date`` is correct and load-bearing: a genuine edit is
+        new activity and must float the conversation. It is kept honest at the
+        other end by ``FlowMessage.is_stale``, which refuses to advance the
+        local clock for a bare touch."""
+        return self.sent_at or self.updated_date or self.created_date
+
     def attachments(self) -> list[Attachment]:
         """Return the underlying attachment list (not a copy).
 
@@ -624,14 +987,79 @@ class FlowMessage(Entity):
         text = " ".join((self.text or "").split())
         preview = text if len(text) <= 80 else text[:77] + "..."
         sender = self.sender_name or self.sender_id or "unknown"
-        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
-        n = sum(
-            1
-            for a in (self.attachment or [])
-            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
-        )
+        n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
+
+    def _user_attachments(self) -> list[Attachment]:
+        """The message's attachments minus the two structural self-pointers
+        every message carries (``conversation-<id>`` / ``flow_message-<id>``)."""
+        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
+        return [
+            a
+            for a in (self.attachment or [])
+            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
+        ]
+
+    def read_entry(self, self_ids: "frozenset[str] | set[str]" = frozenset(), *, list_body: bool = False) -> dict[str, Any]:
+        """The unabridged read of this message — what ``flow conversation show``
+        and ``flow conversation message`` print. Full text, who sent it relative
+        to the reader (``you`` when ``sender_id`` is one of ``self_ids``, see
+        ``User.self_ids``), and per attachment where its bytes are on THIS
+        machine, or that they are not (a body not pulled yet is reported, never
+        guessed at). ``list_body`` adds a shallow listing of the unpacked
+        bundle. Pure local reads, no hub calls."""
+        from flow_sdk.fs_store.operations.flow_message import staged_attachments_dir, unpacked_dir  # noqa: PLC0415
+
+        atts = [a.model_dump(mode="json") for a in self._user_attachments()]
+        # No attachments of its own → nothing to probe on disk.
+        state = (
+            self._body_download_state(atts)  # stamps local_path on FILE entries
+            if atts
+            else {"body_downloaded": True, "body_unpacked": False, "body_missing_attachments": []}
+        )
+        missing = {(m["attachment_type"], m["data"]) for m in state["body_missing_attachments"]}
+        out_atts: list[dict[str, Any]] = []
+        for a in atts:
+            atype = a["attachment_type"]
+            entry = {"type": atype, "data": a.get("data") or ""}
+            if a.get("prompt_preview"):
+                entry["prompt_preview"] = a["prompt_preview"]
+            path = a.get("local_path")
+            if atype == AttachmentType.TYPE_ID.value:
+                found = _type_id_attachment_path(self.id, entry["data"])
+                path = str(found) if found else None
+            if path:
+                entry["local_path"] = path
+            entry["available"] = (atype, entry["data"]) not in missing
+            out_atts.append(entry)
+        unpacked = unpacked_dir(self.id) if state["body_unpacked"] else None
+        ts = self.sent_at or self.created_date
+        out = {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "ts": ts.isoformat() if ts else None,
+            "sender": self.sender_name or self.sender_id or "unknown",
+            "from": "you" if self.sender_id and self.sender_id in self_ids else "them",
+            "delivery_status": self.delivery_status,
+            "is_read": self.is_read,
+            "reply_to_id": self.reply_to_id,
+            "thread_id": self.thread_id,
+            "text": self.text or "",
+            "attachments": out_atts,
+            "body_downloaded": state["body_downloaded"],
+            "unpacked_dir": str(unpacked) if unpacked else None,
+        }
+        if list_body and unpacked:
+            # Two shallow listings, not a walk: the bundle's top level and one
+            # line per attachment entry — the paths a reader opens next.
+            staged = staged_attachments_dir(self.id)
+            entries = [p for p in unpacked.iterdir() if p != staged]
+            entries += list(staged.iterdir()) if staged.is_dir() else []
+            out["unpacked_files"] = sorted(
+                str(p.relative_to(unpacked)) + ("/" if p.is_dir() else "") for p in entries
+            )[:200]
+        return out
 
     def clone_for_forward(
         self,
@@ -661,20 +1089,20 @@ class FlowMessage(Entity):
             for att in (self.attachment or [])
             if not (att.attachment_type == AttachmentType.TYPE_ID and att.data in drop)
         ]
-        carried_ctx = [
-            str(c) for c in (self.shared_context_entities or []) if str(c) not in drop
-        ]
-        clone = FlowMessage.model_validate({
-            "text": self.text,
-            "instruction": self.instruction,
-            "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
-            "attachment": [],
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-            "conversation_id": conversation_id,
-            "cloned_from_id": self.id,
-            "cloned_from_sender_id": self.sender_id,
-        })
+        carried_ctx = [str(c) for c in (self.shared_context_entities or []) if str(c) not in drop]
+        clone = FlowMessage.model_validate(
+            {
+                "text": self.text,
+                "instruction": self.instruction,
+                "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
+                "attachment": [],
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "conversation_id": conversation_id,
+                "cloned_from_id": self.id,
+                "cloned_from_sender_id": self.sender_id,
+            }
+        )
         clone.id = FlowMessage.allocate_id(clone.model_dump())
         clone.attachment = [
             Attachment(
@@ -690,7 +1118,10 @@ class FlowMessage(Entity):
         return clone
 
     async def upload_body(
-        self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
+        self,
+        *,
+        on_progress: Optional[ProgressCallback] = None,
+        transfer_mode: str = "copy",
         create_bookmark: bool = False,
     ) -> "FlowMessage":
         """Pack the body, upload it to the hub, and stamp body_status=READY.
@@ -737,7 +1168,9 @@ class FlowMessage(Entity):
             # (and becomes the owner) or our task (and awaits it).
             task = _upload_body_inflight[self.id] = asyncio.ensure_future(
                 self._upload_body_once(
-                    on_progress=on_progress, transfer_mode=transfer_mode, create_bookmark=create_bookmark,
+                    on_progress=on_progress,
+                    transfer_mode=transfer_mode,
+                    create_bookmark=create_bookmark,
                 )
             )
             try:
@@ -755,7 +1188,10 @@ class FlowMessage(Entity):
         return self
 
     async def _upload_body_once(
-        self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
+        self,
+        *,
+        on_progress: Optional[ProgressCallback] = None,
+        transfer_mode: str = "copy",
         create_bookmark: bool = False,
     ) -> None:
         """The single real body upload — pack the bundle, POST it to the hub's
@@ -795,6 +1231,94 @@ class FlowMessage(Entity):
             action="set_body_status",
         )
 
+    async def save(self, owner=None, notify: bool = True):
+        """A reference row never PERSISTS a body — but keeps holding one.
+
+        ``text`` on a row carrying ``source_item_id`` is hydrated at read time
+        from the SourceItem it references. Any consumer that loads a hydrated
+        row and saves it back — an ``is_read`` toggle, an archive — would
+        otherwise persist the hydrated body and quietly resurrect the copy
+        model this field exists to end. Blanking here, at the one write
+        chokepoint, is what makes hydration safe everywhere else.
+
+        Blank-around, not blank-forever: the in-memory instance gets its text
+        back the moment the write is done — ``_after_persist``, the base save's
+        seam between persisting and announcing. That ORDER is the point: a
+        socket frame is serialized as it is emitted, so a save that announced
+        while the field was blank shipped the stored shape to every open
+        viewer, and an open ticket lost its lines until a reload re-hydrated
+        them. A caller that goes on to render or emit the row (materialize's
+        live CREATE, a child-edge announce) holds the read shape too.
+        """
+        if not self.source_item_id:
+            return await super().save(owner, notify=notify)
+        self._hydrated_text = self.text
+        self.text = ""
+        try:
+            return await super().save(owner, notify=notify)
+        finally:
+            # Belt: the base returns early — without persisting, so without
+            # reaching the seam — when the row is not dirty.
+            self._after_persist()
+
+    def _after_persist(self) -> None:
+        held, self._hydrated_text = self._hydrated_text, None
+        if held is not None:
+            self.text = held
+
+    # ── read-time hydration — the other half of the reference model ────────
+    #
+    # `body_status` already made this entity one whose body may live elsewhere
+    # (the hub bundle). A reference row is the third residence: its `text`
+    # lives on the SourceItem, joined in batch at read time. Rows with no
+    # `source_item_id` (hub-native) pass through untouched.
+
+    @classmethod
+    async def _hydrate(cls, rows) -> None:
+        """Stitch each reference row's body from its SourceItem, one IN query.
+
+        A dangling reference (item purged, or a row that arrived via share and
+        points at a foreign database) hydrates to nothing — the row renders
+        with an empty body rather than a stale copy, which is the honest
+        answer.
+        """
+        wanted = sorted({str(fm.source_item_id) for fm in rows if getattr(fm, "source_item_id", None)})
+        if not wanted:
+            return
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        items = await SourceItem.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", wanted])))
+        by_id = {str(i.id): i for i in items}
+        for fm in rows:
+            item = by_id.get(str(fm.source_item_id or ""))
+            if item is not None:
+                fm.text = item.body or item.name or ""
+
+    @classmethod
+    async def get_all(cls, entities_filter=None, source_entity=None, *, hydrate: bool = True):
+        """Every list read hydrates (``Entity.get_one`` funnels through here).
+
+        ``hydrate=False`` is for hot paths that read only membership/state —
+        the unread recompute loads EVERY message and never looks at ``text``;
+        joining a whole mailbox of items under the projection lock would put
+        the join on every mutation's critical path.
+        """
+        rows = await super().get_all(entities_filter=entities_filter, source_entity=source_entity)
+        if hydrate and rows:
+            await cls._hydrate(rows)
+        return rows
+
+    @classmethod
+    async def get_by_id(cls, eid: str):
+        """The single-entity path does NOT go through ``get_all`` — the request
+        middleware preloads the auth target via ``get_by_typeid`` → here — so
+        it hydrates on its own or the message-preview pane reads blank."""
+        row = await super().get_by_id(eid)
+        if row is not None and getattr(row, "source_item_id", None):
+            await cls._hydrate([row])
+        return row
+
     async def download_body(
         self,
         *,
@@ -807,7 +1331,7 @@ class FlowMessage(Entity):
         must wait for the hub to fan out the body_status UPDATE first.
         Reuses the standard unpack_bundle path so all attachment kinds
         (FILE, PROMPT-file, TYPE_ID, file-backed records) restore identically
-        to the receive-on-inbox flow. File-backed assets land in the message's
+        to the receive-into-stream-inbox flow. File-backed assets land in the message's
         STAGING area (record-data dir) as MessageAttachment rows — installing
         into a project or the user scope is a separate, explicit action, so no
         project mapping is required to download.
@@ -821,20 +1345,25 @@ class FlowMessage(Entity):
         land; receives (bytes_done, bytes_total). Drives the receiver's bar.
         """
         if self.body_status != BodyStatus.READY:
-            raise BodyNotReadyError(
-                f"download_body refused: body_status={self.body_status} (must be READY)"
-            )
+            raise BodyNotReadyError(f"download_body refused: body_status={self.body_status} (must be READY)")
         if not self.id:
             raise ValueError("download_body requires self.id")
 
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
+
         filename = self.attachment_filename or BODY_FILENAME
         # This is the explicit download path: a real collision propagates
         # (FlowMessageExistsError) for the caller to handle, rather than being
         # logged-and-dropped like the implicit sync callers.
         ok = await _download_and_unpack_bundle(
-            self.id, filename, body_status=self.body_status,
-            overwrite=overwrite, raise_on_conflict=True,
+            self.id,
+            filename,
+            # User-initiated download — no hub list payload here; the row already
+            # exists locally and its clocks are not rewritten by this path.
+            hub_updated=None,
+            body_status=self.body_status,
+            overwrite=overwrite,
+            raise_on_conflict=True,
             on_progress=on_progress,
         )
         if not ok:

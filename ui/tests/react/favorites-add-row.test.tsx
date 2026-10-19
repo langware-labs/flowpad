@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-librar
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
+import { tabManager } from '@sdk';
 
 const ACTIVE = 'c82a1115-2f20-52e0-aa2a-4658898b5873';
 
@@ -10,7 +11,12 @@ const h = vi.hoisted(() => ({
   addFavorite: vi.fn(() => Promise.resolve({})),
   activeEntity: null as { displayName: string } | null,
   activeEntityTypeId: null as { type: string; id: string } | null,
-  currentDock: null as { tabHash: string | null; toJSON: () => string | null } | null,
+  currentDock: null as {
+    tabHash: string | null;
+    favoriteKey: string | null;
+    isRoot: boolean;
+    toFavoriteJSON: () => string | null;
+  } | null,
   allTabs: [] as { getKey: () => string; name: string }[],
   onPick: null as ((d: unknown) => void) | null,
 }));
@@ -24,10 +30,9 @@ vi.mock('@src/hooks/useContext', () => ({
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useCurrentDock: () => h.currentDock,
 }));
-vi.mock('@src/tabs/all-tabs-store', () => ({ getAllTabsSnapshot: () => h.allTabs }));
 // Capture the picker's onPick; render its trigger so we can find the row.
-vi.mock('@src/components/asset-manager/AssetPickerPopover', () => ({
-  AssetPickerPopover: (p: { onPick: (d: unknown) => void }) => {
+vi.mock('@src/components/asset-manager/AssetManagerPopover', () => ({
+  AssetManagerPopover: (p: { onPick: (d: unknown) => void }) => {
     h.onPick = p.onPick;
     return null;
   },
@@ -37,7 +42,7 @@ vi.mock('@src/components/asset-manager/asset-row-helpers', () => ({
     const dash = typeid.indexOf('-');
     return { type: typeid.slice(0, dash), id: typeid.slice(dash + 1) };
   },
-  displayLabelForTypeid: (typeid: string) => `label:${typeid}`,
+  displayLabelForDescriptor: (d: { typeid: string }) => `label:${d.typeid}`,
 }));
 
 const { FavoritesAddRow } = await import('@src/components/favorites/FavoritesAddRow');
@@ -52,6 +57,7 @@ afterEach(() => {
   h.activeEntityTypeId = null;
   h.currentDock = null;
   h.allTabs = [];
+  tabManager.adoptGlobal([]);
 });
 
 describe('FavoritesAddRow — build into the level it sits under', () => {
@@ -93,17 +99,20 @@ describe('FavoritesAddRow — build into the level it sits under', () => {
 
     fireEvent.click(screen.getByLabelText(/what's open/i));
 
-    expect(h.addFavorite).toHaveBeenCalledWith(
-      { entityType: 'markdown', entityId: ACTIVE, title: 'Welcome' },
-      '',
-    );
+    expect(h.addFavorite).toHaveBeenCalledWith({ entityType: 'markdown', entityId: ACTIVE, title: 'Welcome' }, '');
   });
 
   it('bookmarks the current DOCK when no entity is open (any view)', () => {
     h.activeEntity = null;
     h.activeEntityTypeId = null;
-    h.currentDock = { tabHash: 'web_app|4098', toJSON: () => '{"viewType":"web_app","pointer":"4098"}' };
+    h.currentDock = {
+      tabHash: 'web_app|4098',
+      favoriteKey: 'web_app|4098',
+      isRoot: false,
+      toFavoriteJSON: () => '{"viewType":"web_app","pointer":"4098"}',
+    };
     h.allTabs = [{ getKey: () => 'web_app|4098', name: 'localhost:4098' }];
+    tabManager.adoptGlobal(h.allTabs as never);
     render(<FavoritesAddRow parentId="folder-9" />);
 
     fireEvent.click(screen.getByLabelText(/what's open/i));

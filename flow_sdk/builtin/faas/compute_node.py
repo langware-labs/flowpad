@@ -9,34 +9,44 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, overload
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, overload
 
 from fastapi import BackgroundTasks
-from pydantic import Field
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.api.messages import ResponseMessage
-from flow_sdk.api.type_id import TypeId
+from pydantic import field_validator
+
+if TYPE_CHECKING:
+    # Runtime imports of Project stay function-local (circular import); this is
+    # only so the "Project" annotations below resolve for linters/type checkers.
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.schema.data_spec.health_spec import NodeHealth
+
+from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
+from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
+from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
+from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
+from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
+from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
+from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
 from flow_sdk.compute.providers import ComputeProvider, get_compute_provider
 from flow_sdk.compute.providers.compute_provider import ListDirItem
 from flow_sdk.config import ComputeProviderType, StorageProvider, get_os_root_path
 from flow_sdk.config import ComputeProviderType as ComputeProviderEnum
 from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
-from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
-from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
+from flow_sdk.flowpad_types.machine_status import (
+    MACHINE_STATUS_SCRIPT,
+    MachineStatus,
+    NetworkConnection,
+    ProcessInfo,
+    python_command,
+)
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-
-from flow_sdk.builtin.faas.desktop_actions import DesktopActionsMixin
-from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
-from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
-from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
-from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
-from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
@@ -53,6 +63,28 @@ _LOCAL_UNAME = "local"
 TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
+def _refresh_tree(staging: str, target: str) -> str:
+    """Lay a delivered tree over an existing project folder; the commit it lands on, or "".
+
+    With git on both sides the folder MOVES to the delivered commit (``fetch`` +
+    ``reset --hard``): files deleted upstream go, and files this node wrote that
+    git does not track stay. ``--update-shallow`` because the hub's clone may be
+    shallow. Without git, the delivered files are copied over the folder.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    def git(cwd: str, *args: str) -> str:
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    if os.path.isdir(os.path.join(staging, ".git")) and os.path.isdir(os.path.join(target, ".git")):
+        git(target, "fetch", "--quiet", "--update-shallow", staging, "HEAD")
+        git(target, "reset", "--hard", "--quiet", "FETCH_HEAD")
+        return git(target, "rev-parse", "HEAD")
+    shutil.copytree(staging, target, dirs_exist_ok=True)
+    return git(target, "rev-parse", "HEAD") if os.path.isdir(os.path.join(target, ".git")) else ""
+
+
 def build_dir_zip(local_path: str) -> BytesIO:
     """Zip a local directory tree in memory, entries relative to its root.
 
@@ -66,16 +98,41 @@ def build_dir_zip(local_path: str) -> BytesIO:
     if not root.is_dir():
         raise ValueError(f"copy_folder: not a directory: {local_path}")
 
+    from flow_sdk.utils.git_ignore import ignored_under, is_under  # noqa: PLC0415
+
+    # What git excludes never leaves for another machine through here: nobody chose those files.
+    ignored = ignored_under(root)
     buf = BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for p in sorted(root.rglob("*"), key=str):
-            if p.is_file() and not p.is_symlink():
+            if p.is_file() and not p.is_symlink() and not is_under(p, ignored):
                 zf.write(p, p.relative_to(root).as_posix())
     buf.seek(0)
     return buf
 
 
-class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
+def _dependencies_report(states: object) -> dict:
+    """What the clone's ``flow.json`` declared and whether it landed: ``ok`` when every
+    required dependency is ready, ``failed`` otherwise (or the failure marker), ``none``
+    when nothing is declared."""
+    if isinstance(states, dict):  # the failure marker built above
+        return states
+    rows = [s.model_dump(mode="json") for s in (states or [])]
+    if not rows:
+        return {"status": "none", "dependencies": []}
+    missing = [r for r in rows if r["required"] and r["state"] != "ready"]
+    return {"status": "failed" if missing else "ok", "dependencies": rows}
+
+
+class ComputeNode(
+    PtyActionsMixin,
+    FsRecordsActionsMixin,
+    OpsActionsMixin,
+    ScanActionsMixin,
+    AnalyticsActionsMixin,
+    DesktopActionsMixin,
+    Entity,
+):
     _api_visible = True
     type: str = APIField(default=BuiltinEntityType.COMPUTE_NODE.value)
     name: str = APIField(default="")
@@ -87,30 +144,77 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     template_version: str | None = APIField(default=None)
     # Track active PTY sessions for WebSocket notifications
     active_pty_sessions: list[str] = APIField(default_factory=list)
+
+    @field_validator("node_provider_type", mode="before")
+    @classmethod
+    def _tolerate_unknown_provider(cls, value: Any) -> Any:
+        """A provider this build no longer knows (e.g. the removed desktop ``docker``)
+        hydrates as ``None`` instead of failing every ``ComputeNode`` query. Using
+        such a node still raises a clear error in ``compute_provider``."""
+        if isinstance(value, str) and value not in {p.value for p in ComputeProviderType}:
+            logging.warning("compute node: unknown provider %r on hydration; treating as unset", value)
+            return None
+        return value
+
+    # Which of a project's declared secrets this node may see, per project.
+    #
+    # Value-free by construction — the token IS the env var name and the project
+    # is the namespace, so this can travel with a shared node without carrying
+    # anything secret. Which is the point: secrets are ON the node, so whoever
+    # gets the node gets them, with no extra consent step; resolution still
+    # happens on the receiver's machine from their own store.
+    #
+    # A project key that is ABSENT means "all of that project's secrets" — so
+    # nothing changes for anyone who never opens the attach UI. An explicit
+    # empty list means none.
+    attached_secrets: dict[str, list[str]] = APIField(default_factory=dict)
     # Override Entity's fs_storage fields with compute node defaults
-    fs_storage_provider: StorageProvider | None = Field(default=StorageProvider.SANDBOX)
-    fs_storage_mount_path: str | None = APIField(default=None)
+    fs_storage_provider: StorageProvider | None = EntityField(default=StorageProvider.SANDBOX, sharing=Sharing.PRIVATE)
+    fs_storage_mount_path: str | None = APIField(default=None, sharing=Sharing.PRIVATE)
     home_dir: str | None = APIField(default=None)
 
     def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        """Register a new in-process activity, raising RuntimeError if one is already running."""
+        """Claim the single-flight slot for ``job_name``, or raise if it is held.
+
+        The slot IS an ``Activity`` at ``(subject_entity=typeid, path=job_name)`` — one activity per
+        address is the same statement this registry used to make, so the single-flight
+        decision lives in one place instead of two that can disagree. ``_COMPUTE_ACTIVITIES``
+        survives only as the carrier for the legacy ``IndexProgressTable`` payload while
+        producers are migrated; it is not consulted about whether the slot is free.
+        """
+        from flow_sdk.activity import Activity  # noqa: PLC0415
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
-        key = f"{self.typeid}:{job_name}"
-        existing = _COMPUTE_ACTIVITIES.get(key)
-        if existing is not None and not existing.is_timed_out and not existing.is_complete:
-            raise RuntimeError(f"Job '{job_name}' already running")
+        claimed = Activity.try_claim(job_name, subject_entity=str(self.typeid), timeout_seconds=timeout_seconds)
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
             timeout_seconds=timeout_seconds,
+            activity=claimed,
         )
-        _COMPUTE_ACTIVITIES[key] = activity
+        _COMPUTE_ACTIVITIES[f"{self.typeid}:{job_name}"] = activity
         return activity
 
     def _complete_activity(self, job_name: str) -> None:
-        """Remove a completed activity from the registry."""
-        _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
+        """Release the slot and wake its waiters."""
+        activity = _COMPUTE_ACTIVITIES.pop(f"{self.typeid}:{job_name}", None)
+        if activity is not None and activity.activity is not None:
+            # Ending the activity is what frees the address and wakes its waiters; the
+            # carrier has no release of its own to set.
+            if not activity.activity.is_terminal:
+                activity.activity.done()
+
+    def _running_activity(self, job_name: str):
+        """The activity holding ``job_name``, or None when the slot is free.
+
+        Freeness is the claim's answer, not this map's, so a caller that waits and a caller
+        that claims cannot disagree about whether the slot is taken.
+        """
+        from flow_sdk.activity import monitor  # noqa: PLC0415
+
+        if monitor.holder(job_name, subject_entity=str(self.typeid)) is None:
+            return None
+        return _COMPUTE_ACTIVITIES.get(f"{self.typeid}:{job_name}")
 
     def model_post_init(self, __context: Any) -> None:
         super().model_post_init(__context)
@@ -164,7 +268,8 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
                     if rows:
                         logging.warning(
                             "[compute-node] %d @local rows found; using first %s",
-                            len(rows), rows[0].id,
+                            len(rows),
+                            rows[0].id,
                         )
                         return rows[0]
                 except Exception as list_exc:  # noqa: BLE001
@@ -249,9 +354,7 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         except Exception as save_error:  # noqa: BLE001
             # Concurrent creator minted the same deterministic id — adopt it.
             if "already exist" in str(save_error).lower():
-                existing = await cls.get_by_id(local_id) or await cls.get_by_prop(
-                    "uname", _LOCAL_UNAME, "compute_node"
-                )
+                existing = await cls.get_by_id(local_id) or await cls.get_by_prop("uname", _LOCAL_UNAME, "compute_node")
                 if existing:
                     logging.info("[compute-node] @local create raced; adopting %s", existing.id)
                     return existing
@@ -280,11 +383,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         self.template_version = self.compute_provider.get_template_version()
         if run_startup:
             await self.startup(self.node_config)
-            # Setup LM proxy access with machine-restricted API key
-            try:
-                await self.setup_lm_proxy_access()
-            except Exception as e:
-                logging.debug(f"LM proxy access setup skipped (local mode): {e}")
         return provider_node_id
 
     @property
@@ -322,6 +420,18 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         return await self.compute_provider.run_command(
             self.verified_node_provider_id, command, session_id, background, env
         )
+
+    def get_command_executor(self):
+        """This node as a :class:`CommandExecutor` — argv in, exit codes and IO out.
+
+        **The only way to obtain an executor.** Nothing else constructs one, so
+        "where does this command run" is always answerable from the call site
+        rather than defaulting silently to the server's own disk. Built fresh per
+        call; it holds no state beyond this node.
+        """
+        from flow_sdk.builtin.faas.command_executor import ComputeNodeCommandExecutor  # noqa: PLC0415
+
+        return ComputeNodeCommandExecutor(self)
 
     async def shutdown(self):
         return await self.compute_provider.shutdown(self.verified_node_provider_id)
@@ -430,7 +540,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
             The value if found, None otherwise
         """
         import os
-        import platform
 
         from flow_sdk.config import PLATFORM_WINDOWS
 
@@ -493,7 +602,7 @@ try:
                 if len(pieces) >= 4:
                     parts.append(pieces[3]); break
     elif system == "Windows":
-        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode().splitlines()[1].strip())
+        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], stderr=subprocess.DEVNULL).decode().splitlines()[1].strip())
 except Exception:
     pass
 print(hashlib.sha256("|".join(parts).encode()).hexdigest())
@@ -520,7 +629,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         Returns:
             MachineStatus object with provider status, processes, network, and resource info.
         """
-        import json
 
         # Get provider status with 10s timeout to detect unrecoverable nodes quickly
         try:
@@ -574,10 +682,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             await self.write_files(script_path, MACHINE_STATUS_SCRIPT)
 
             # Run the script
-            cmd = await self.run_command(
-                f"python3 {script_path}",
-                background=False,
-            )
+            os_type = machine_status.node_info.os_type if machine_status.node_info else ""
+            cmd = await self.run_command(python_command(script_path, os_type), background=False)
 
             # Wait for command completion
             await cmd.wait(timeout=3.0)
@@ -607,66 +713,206 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         return machine_status
 
-    async def setup_lm_proxy_access(self) -> str:
-        """Setup LM proxy access for this compute node.
-
-        This method:
-        1. Gets the unique machine ID from the compute node
-        2. Creates an API key restricted to that machine ID
-        3. Stores the API key on the node as FLOWPAD_LM_PROXY_KEY environment variable
-
-        Returns:
-            The created API key (for logging/debugging purposes only)
-        """
-        from flow_sdk.builtin.api_key import ApiKey, generate_api_key
-
-        # Get the machine ID from the compute node
-        machine_id = await self.get_machine_id()
-        logging.info(f"ComputeNode {self.id}: Machine ID obtained: {machine_id[:16]}...")
-
-        # Generate API key
-        full_key, prefix = generate_api_key("live")
-        key_hash = ApiKey.hash_key(full_key)
-
-        # Create ApiKey entity targeting this compute node
-        api_key = ApiKey(
-            name=f"lm_proxy_key_{self.id}",
-            api_key_hash=key_hash,
-            bind_typeid=str(self.typeid),
-            is_active=True,
-        )
-        api_key.add_machine_id(machine_id)
-        await api_key.save()
-
-        # Store the API key on the compute node machine
-        await self.set_env("FLOWPAD_LM_PROXY_KEY", full_key)
-        # Also store the machine ID so the node can send it with requests
-        await self.set_env("FLOWPAD_MACHINE_ID", machine_id)
-        # Store the backend URL for API access (use service_external_host to support ngrok/localhost scenarios)
-        backend_url = self.current_config.service_urls_config.service_external_host
-        await self.set_env("FLOWPAD_BACKEND_URL", backend_url)
-
-        # TODO this is temporarily disabled
-        # lm_proxy_path = urls_service.api.build_entity_path(self.typeid, None, "lm-proxy")
-        # full_lm_proxy_url = f"{backend_url}{lm_proxy_path}"
-        # await self.compute_provider.configure_lm_proxy_env(
-        #     self.verified_node_provider_id, full_key, backend_url, full_lm_proxy_url, machine_id
-        # )
-
-        logging.info(f"ComputeNode {self.id}: LM proxy access configured with key {prefix}...")
-        return full_key
-
     async def send(self, msg_str: str) -> None:
         return await self.compute_provider.send(self.verified_node_provider_id, msg_str)
 
-
     # -- PTY actions (implementations in PtyActionsMixin) -----------------------
 
+    # ── Attached project secrets ──────────────────────────────────────────
+
+    def attached_env_vars(self, project_id: str, declared: list[str] | None = None) -> list[str] | None:
+        """Env vars this node may see for ``project_id``.
+
+        ``None`` means "no restriction recorded" — every declared secret. That
+        is the back-compat shape: a node that predates attachment, or one nobody
+        has curated, behaves exactly as before.
+        """
+        key = str(project_id or "")
+        if not key or key not in (self.attached_secrets or {}):
+            return None
+        attached = self.attached_secrets[key]
+        if declared is None:
+            return list(attached)
+        return [name for name in attached if name in declared]
+
+    def effective_attached(self, project_id: str, declared: list[str]) -> list[str]:
+        """The env vars this node may see, with "absent means all" already
+        collapsed.
+
+        The back-compat rule is the security-relevant one, so it is decoded HERE
+        and nowhere else — re-deriving `declared if attached is None else attached`
+        per call site is how one branch ends up letting a node see more (or less)
+        than the others.
+        """
+        attached = self.attached_env_vars(project_id, declared)
+        return list(declared) if attached is None else attached
+
+    async def _set_attached(self, project_id: str, names: list[str]) -> None:
+        current = dict(self.attached_secrets or {})
+        current[str(project_id)] = sorted(set(names))
+        self.attached_secrets = current
+        await self.update()
+
+    async def _project_env_vars(self, project_id: str) -> list[str]:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        try:
+            project = await Project.get_by_id(str(project_id))
+        except Exception:  # noqa: BLE001
+            # A key left behind by a deleted project (or a malformed one) is
+            # inert, not fatal — the node simply has nothing to attach for it.
+            return []
+        if project is None:
+            return []
+        from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+
+        return sorted(await declared_vars(project))
+
+    async def _recurate(self, project_id: str, env_var: str, *, add: bool) -> "ApiResponse":
+        """Attach or detach one secret. Both verbs are the same operation over a
+        different final list, so they share the whole body."""
+        project_id, env_var = str(project_id or "").strip(), str(env_var or "").strip()
+        if not project_id or not env_var:
+            return ApiFailResponse(message="project_id and env_var are required")
+        declared = await self._project_env_vars(project_id)
+        if add and env_var not in declared:
+            return ApiFailResponse(message=f"{env_var} is not declared on this project")
+
+        # First curation of a project turns the implicit "all" into an explicit
+        # list, so attaching one secret does not silently detach the rest.
+        base = self.effective_attached(project_id, declared)
+        await self._set_attached(project_id, [*base, env_var] if add else [n for n in base if n != env_var])
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
+
+    # ── health ────────────────────────────────────────────────────────────
+
+    async def deployments_here(self) -> list:
+        """Every deployment placed on this machine."""
+        from flow_sdk.builtin.deployment import NODE_PROVIDERS, Deployment  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # A placement is on a node only if its provider is node-backed; the node itself is derived.
+        node_backed = QueryFilter(
+            match=ExpressionNode(op=QueryOp.IN, operands=["target.provider", sorted(NODE_PROVIDERS)])
+        )
+        return [d for d in await Deployment.get_all(node_backed) if d.compute_node_id == self.id]
+
+    async def service_endpoints(self) -> list:
+        """Every service this machine answers on: the endpoints of every deployment placed on it."""
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+        endpoints = []
+        for deployment in await self.deployments_here():
+            endpoints.extend(e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote)
+        return endpoints
+
+    async def health_check(self) -> "NodeHealth":
+        """Check every service on this machine, together. Each endpoint records its own change.
+
+        A service a running deployment DECLARES (``Deployment.exposes``) but no endpoint serves is in the
+        report too, as failing — "it should be running" is the declaration's promise. An agent placement
+        that is not serving (paused, or only a place processes are spawned through) promises nothing.
+        """
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.health_spec import EndpointHealth, NodeHealth  # noqa: PLC0415
+
+        endpoints, missing = [], []
+        for deployment in await self.deployments_here():
+            rows = [e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote]
+            endpoints.extend(rows)
+            if deployment.places_agent and not deployment.serving:
+                continue
+            served = {e.name for e in rows}
+            missing.extend(
+                EndpointHealth(
+                    endpoint_id="", name=d.name, state="failing", detail=f"declared by {deployment.name}, not served"
+                )
+                for d in deployment.exposes
+                if d.name not in served
+            )
+        results = await asyncio.gather(*(e.health_check() for e in endpoints))
+        return NodeHealth(node_id=self.id, endpoints=[*results, *missing])
+
+    @action.get(action_name="health")
+    async def health_action(self) -> "ApiResponse":
+        """``GET compute_node/<id>/health`` — every service on this machine, checked now (a ``NodeHealth``).
+
+        The hub's control plane reads a box's report through this, over the box's loopback.
+        """
+        return ApiSuccessResponse(data=(await self.health_check()).model_dump(mode="json"))
+
+    @action.post(action_name="keep-alive")
+    async def keep_alive_action(self) -> "ApiResponse":
+        """The UI reporting that a person just acted in it.
+
+        Only records the moment; the keep-alive loop (``flow_sdk/compute/keep_alive.py``)
+        decides whether to tell the hub this machine is in use.
+        """
+        from flow_sdk.compute.keep_alive import note_user_activity
+
+        note_user_activity()
+        return ApiSuccessResponse()
+
+    @action.post(action_name="remove-tools")
+    async def remove_tools_action(self) -> "ApiResponse":
+        """DEBUG ONLY — the Settings › Setup dev Reset: uninstall the `llm-setup` wizard's tools
+        from this machine, then re-check the wizard. See ``bootstrap.remove_debug_tools``."""
+        from flow_sdk.server.routes.bootstrap import remove_debug_tools  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await remove_debug_tools())
+
+    @action.post(action_name="attach-secret")
+    async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
+        """Let this node see one of a project's declared secrets."""
+        return await self._recurate(project_id, env_var, add=True)
+
+    @action.post(action_name="detach-secret")
+    async def detach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":
+        return await self._recurate(project_id, env_var, add=False)
+
+    @action.post(action_name="attach-all-secrets")
+    async def attach_all_secrets(self, project_id: str = "") -> "ApiResponse":
+        """Attach everything the project declares RIGHT NOW.
+
+        A snapshot, not a standing '*': a sentinel would silently widen what a
+        shared node exposes every time someone declares a new secret, without
+        anyone re-confirming.
+        """
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        declared = await self._project_env_vars(project_id)
+        await self._set_attached(project_id, declared)
+        return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
+
+    @action.post(action_name="list-attached-secrets")
+    async def list_attached_secrets(self, project_id: str = "") -> "ApiResponse":
+        """Every declared secret for the project, flagged attached or not."""
+        project_id = str(project_id or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        declared = await self._project_env_vars(project_id)
+        attached = self.attached_env_vars(project_id, declared)
+        allowed = set(self.effective_attached(project_id, declared))
+        return ApiSuccessResponse(
+            data={
+                "project_id": project_id,
+                # True when nothing has been curated yet — the UI shows every row
+                # checked rather than pretending someone chose them.
+                "all_attached": attached is None,
+                "secrets": [{"env_var": name, "attached": name in allowed} for name in declared],
+            }
+        )
+
     @action.post("terminal-command")
-    async def terminal_command(self): return await self._pty_terminal_command()
+    async def terminal_command(self):
+        return await self._pty_terminal_command()
 
     @action.get(action_name="list-shells")
-    async def _list_shells(self): return await self._pty_list_shells()
+    async def _list_shells(self):
+        return await self._pty_list_shells()
 
     @action.get(action_name="terminals")
     async def _terminals(self) -> ApiResponse:
@@ -675,13 +921,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         ``terminals/list``/``close`` shim was deleted at the Tab cutover; the
         strip lists from the ``Tab`` entity and closes via ``tabs/close``."""
         request_info = get_current_request_info()
-        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path.startswith("get_by_worker_id/"):
-            worker_id = sub_path[len("get_by_worker_id/"):]
+        raw_sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        # Case-fold the ROUTE prefix only — never the id that follows it.
+        # Lowercasing the whole sub-path mangled every case-sensitive session id:
+        # opencode's are mixed-case (``ses_ff0351c3fffeknxcJAjTQi4uMp``), so the
+        # resolver was handed an id the store had never seen and always 404'd.
+        prefix = "get_by_worker_id/"
+        if raw_sub_path.lower().startswith(prefix):
+            worker_id = raw_sub_path[len(prefix) :]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
-        return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
+        return ApiFailResponse(message=f"unknown terminals sub-path: {raw_sub_path!r}", status_code=400)
 
     @action.post(action_name="tabs")
     async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
@@ -737,8 +988,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.shell import Shell as ShellEntity
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.shell import Shell as ShellEntity
 
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
@@ -776,6 +1027,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 # now (synchronously) or the chip lingers if the background
                 # teardown is slow or fails.
                 from flow_sdk.builtin.tab import hide_tabs_for_target
+
                 await hide_tabs_for_target("agentic_process", entity_id)
                 if shell_id:
                     await self._mark_shell_closing(shell_id)
@@ -791,11 +1043,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             accepted.append(canonical)
             background_tasks.add_task(self._close_shell_terminal_background, entity_id)
 
-        return ApiSuccessResponse(data={
-            "accepted": accepted,
-            "missing": missing,
-            "invalid": invalid,
-        })
+        return ApiSuccessResponse(
+            data={
+                "accepted": accepted,
+                "missing": missing,
+                "invalid": invalid,
+            }
+        )
 
     async def _close_agentic_terminal_background(self, process_id: str) -> None:
         try:
@@ -834,9 +1088,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         Body: ``{ "dangling_id": "<uuid>" }``
         """
-        from flow_sdk.builtin.shell import Shell as ShellEntity
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.project import Project
+        from flow_sdk.builtin.shell import Shell as ShellEntity
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -846,10 +1100,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         existing = await Project.get_by_id(dangling_id)
         if existing is not None:
-            return ApiSuccessResponse(data={
-                "project": existing.model_dump(mode="json"),
-                "rebound": 0,
-            })
+            return ApiSuccessResponse(
+                data={
+                    "project": existing.model_dump(mode="json"),
+                    "rebound": 0,
+                }
+            )
 
         all_shells, all_processes = await asyncio.gather(
             ShellEntity.get_all(),
@@ -895,10 +1151,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
             rebound = len(dep_shells) + len(dep_procs)
 
-        return ApiSuccessResponse(data={
-            "project": recovered.model_dump(mode="json"),
-            "rebound": rebound,
-        })
+        return ApiSuccessResponse(
+            data={
+                "project": recovered.model_dump(mode="json"),
+                "rebound": rebound,
+            }
+        )
 
     @action.post(action_name="create-project-from-git")
     async def _create_project_from_git(self) -> ApiResponse:
@@ -909,18 +1167,19 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
               "target_name": "<optional override>" }
 
         Collision policy: if the derived (or supplied) folder name already
-        exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
+        exists under the agent workspace root, refuse and return the next-free
         suggestion in ``data.suggested_name``. The caller re-submits with
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.builtin.git_origin import GitOrigin
-        from flow_sdk.builtin.project import Project
-        from flow_sdk.config import AGENT_MOUNT_FOLDER
-        from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin
+        from flow_sdk.utils.git import derive_repo_leaf_from_url
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
         raw_origin = (body or {}).get("git_origin")
         target_name = (body or {}).get("target_name")
         try:
@@ -935,6 +1194,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # confusing error, and rejecting it here keeps the failure mode clean.
         if branch is not None:
             import re as _re
+
             _GIT_REF_RE = _re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
             if not isinstance(branch, str) or not _GIT_REF_RE.match(branch) or ".." in branch or "@{" in branch:
                 return ApiFailResponse(
@@ -949,94 +1209,556 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 status_code=400,
             )
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
-        if os.path.exists(target_dir):
-            # If caller explicitly chose this name, refuse — they need to pick
-            # another; offer the next-free `<leaf>-N` so the dialog can suggest it.
+        target_dir = os.path.join(workspace_root, leaf)
+        suggested = self._next_free_leaf(leaf, base=workspace_root)
+        if suggested != leaf:
+            # The caller chose this name and it is taken — refuse; offer the
+            # next-free `<leaf>-N` so the dialog can suggest it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
-                data={"suggested_name": self._next_free_leaf(leaf), "attempted_name": leaf},
+                data={"suggested_name": suggested, "attempted_name": leaf},
                 status_code=409,
             )
 
         # Same credential path `/api/v1/git/remote-access` probes with (see
-        # git_remote_access) — no token → anonymous clone, as before.
-        token, _ = await _get_github_token_for_current_user()
-        ok, msg = await git_clone(clone_url, target_dir, branch=branch, token=token)
-        if not ok:
-            return ApiFailResponse(message=msg, status_code=400)
+        # git_remote_access) — no token → anonymous clone. The absent
+        # ``target_dir`` is the driver's clone target.
+        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+
+        token = await _get_github_token_for_current_user()
+        try:
+            await get_origin_driver(git_origin.kind).materialize(
+                git_origin, preferred_root=Path(target_dir), token=token
+            )
+        except RuntimeError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
 
         project = await self._materialize_project(target_dir)
-        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+
+        # Converge what the repo DECLARES, not just what it contains: its
+        # ``flow.json`` dependencies (a help desk, a skills repo its agents rely on).
+        # AFTER the one-shot scan below, deliberately: ``_index_additional_dir``
+        # re-saves this Project, and resolving first had that save clobber the
+        # links resolving had just written.
+        declared: object = None
+        # The sanctioned one-shot scan, not a banned auto-walk: the user asked
+        # for this clone, and it has to be searchable when they land in it.
+        await _index_additional_dir(target_dir)
+
+        try:
+            declared = await project.resolve_dependencies()
+        except Exception as exc:  # noqa: BLE001 -- a declaration must not fail the open
+            # Best-effort is about the DECLARATION — third-party content that may name
+            # an unreachable repo. It is not licence to hide a failure of ours: the
+            # caller is told, and resolving is idempotent, so a re-open fixes it.
+            logging.error("create-project-from-git: resolving dependencies FAILED: %s", exc, exc_info=True)
+            declared = {"status": "failed", "error": str(exc)}
+
+        return ApiSuccessResponse(
+            data={
+                "project": project.model_dump(mode="json"),
+                # What flow.json asked for and whether it landed. Silence here is
+                # what let a half-built project look finished.
+                "dependencies": _dependencies_report(declared),
+            }
+        )
 
     @staticmethod
-    def _next_free_leaf(leaf: str) -> str:
-        """``leaf``, or the next free ``leaf-N``, under AGENT_MOUNT_FOLDER.
+    def _next_free_leaf(leaf: str, base: str | None = None) -> str:
+        """``leaf``, or the next ``leaf-N`` nothing has claimed at all, under
+        the workspace root ``base`` (the default one when None) — ``fresh_clone_slot``
+        without the empty-dir reuse. All three callers want a path that does not
+        exist: a 409 suggestion, a delivered tree moved into place, and the
+        name-availability probe."""
+        from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot  # noqa: PLC0415
 
-        Single owner of the workspace placement/collision policy shared by
-        create-project-from-git (which reports it as a 409 suggestion) and
-        materialize-project (which just takes the free name).
-        """
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
-        if not os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, leaf)):
-            return leaf
-        n = 2
-        while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
-            n += 1
-        return f"{leaf}-{n}"
+        return fresh_clone_slot(leaf, reuse_empty=False, base=Path(base) if base else None).name
 
     @staticmethod
-    async def _materialize_project(target_dir: str) -> "Project":
-        """Turn an already-populated directory into a desktop Project.
+    def _workspace_base(body: dict | None) -> tuple[str, "ApiFailResponse | None"]:
+        """The root a placement action puts its project under: the workspace the
+        body names (``workspace``: its id), else the default root — what every
+        caller got before workspaces existed. A named workspace that is not on this
+        node is refused rather than silently placed in the default one."""
+        from flow_sdk.config import workspace_root_for_id  # noqa: PLC0415
+
+        workspace_id = str((body or {}).get("workspace") or "").strip() or None
+        root = workspace_root_for_id(workspace_id)
+        if root is None:
+            return "", ApiFailResponse(message=f"workspace {workspace_id} is not on this node", status_code=404)
+        return str(root), None
+
+    @staticmethod
+    async def _materialize_project(target_dir: str, project_id: str | None = None) -> "Project":
+        """Turn an already-populated directory into a desktop Project: mint it
+        and wire it to the desktop.
 
         Independent of HOW ``target_dir`` got its files (git clone here, or a
-        hub-side clone → copy_folder transfer for the setup-git flow): mint the
-        Project, wire it to the desktop, and run one explicit index scan so the
-        tree is fully searchable the moment the caller lands in it (save() only
-        stamps an empty index sentinel). User-initiated → the sanctioned
-        one-shot index, not a banned auto-walk (same call add_context_dir makes).
+        hub-side clone → copy_folder transfer). Indexing is deliberately NOT
+        part of it — it is its own step, so a caller driving the box can show a
+        slow scan rather than have it hide inside "materializing", and nothing
+        walks the tree twice.
+
+        ``project_id`` adopts an id minted elsewhere — the hub mints the Project
+        that names the engagement and this box materializes it, so one identity
+        spans both sides (and every sandbox the same project is opened in).
+        Callers pass an id only through ``_adopted_project_id``, which enforces
+        the v4/v5 entity-id policy; a raw id is never adopted here.
         """
-        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-        project = Project(name=target_dir)
-        await project.save()
+        # `find_by_cwd or save-new` — the documented upsert for a Project, whose
+        # natural key is the canonical mount path ("dedup is the job of
+        # find_by_cwd (a lookup), NOT of a path-derived id", see Project).
+        #
+        # Minting unconditionally here produced TWO rows for one folder on every
+        # git clone (reproduced 2/2, two different public repos): two v4 rows,
+        # same mount path, ~40-120ms apart. The later won the UI and the earlier
+        # was left an orphan, so someone opening a shared repo saw the project
+        # twice in their switcher. Which writer got there first was NOT pinned
+        # down — no frontend clone path posts a Project before calling this — so
+        # this is deliberately a dedup, not a fix to a named racer: the lookup
+        # is correct whoever wrote first, and is what this call site should have
+        # been doing regardless.
+        #
+        # An ADOPTED id is the one case that must not reuse a stray: the hub
+        # minted that identity and it has to span both sides, so a local row at
+        # the same path under a different id is not the project being handed
+        # over. Reuse only when the ids agree.
+        existing = await Project.find_by_cwd(target_dir)
+        if existing is not None and (not project_id or str(existing.id) == str(project_id)):
+            project = existing
+        else:
+            # Splatted rather than `id=project_id`: the model rejects an explicit
+            # None, and "no id" has to mean "mint one".
+            project = Project(name=target_dir, **({"id": project_id} if project_id else {}))
+            await project.save()
         await project.setup_for_desktop()
-        await _index_additional_dir(target_dir)
+        if project_id:
+            await ComputeNode._adopt_hub_project_fields(project)
         return project
+
+    @staticmethod
+    async def _adopt_hub_project_fields(project: "Project") -> None:
+        """Bring the SHARED project's own state onto this box.
+
+        Minting above gives the row an identity and a folder — and nothing else.
+        Everything the author set (the language it is worked in, its helpdesk
+        config, its context folders) lives on the HUB row under the SAME id; the
+        same-id invariant is what makes this a lookup rather than a guess.
+        Without it the box opens a project that matches only in name — a Hebrew
+        project hands its recipient an English app.
+
+        The adopt itself is NOT reimplemented here: ``materialize_remote_
+        membership_entity`` is the one seam that already mirrors a hub
+        membership container locally (idempotent upsert, hub ``created_by`` and
+        dates preserved through ``remote_reflection`` rather than stamped with
+        the local sync user, plus context-folder
+        materialization). This is the same adopt the invitation-accept path
+        performs — a sandbox handover is the same event reached a different way,
+        so it must not grow a second, subtly different copy. Which fields cross
+        is that seam's ``_MIRRORED_FIELDS`` allow-list, deliberately explicit.
+
+        Best-effort — a box with no cloud login, or an id that was never
+        published, keeps the freshly minted row rather than failing a launch the
+        user has already paid for.
+        """
+        try:
+            from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+            creds = load_credentials()
+            if not creds or not creds.api_key:
+                return
+            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                hub_project = await client.get(f"/graph/project/{project.id}")
+            if not isinstance(hub_project, dict) or not hub_project.get("id"):
+                return
+            await materialize_remote_membership_entity(Project, hub_project)
+        except Exception as err:  # noqa: BLE001
+            logging.warning("[sandbox] could not adopt hub fields for project %s: %s", project.id, err)
+
+    @staticmethod
+    def _adopted_project_id(raw: object) -> str | None:
+        """The entity-id adoption gate for an id arriving from off-box.
+
+        Returns the id when it conforms (UUID v4/v5), ``None`` when absent.
+        Raises for anything else rather than silently minting a fresh one: the
+        hub asked for THIS id, and a project that comes back under a different
+        one would set the default to something the hub cannot address.
+        """
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
+        if raw in (None, ""):
+            return None
+        candidate = str(raw)
+        if not is_valid_entity_id(candidate):
+            raise ValueError(f"project_id must be a UUID v4 or v5 entity id: {candidate}")
+        return candidate
+
+    @staticmethod
+    def _staging_error(staging_path: str) -> ApiFailResponse | None:
+        """Why a delivered tree cannot be used, or None: it must be an existing directory on this node."""
+        if staging_path and os.path.isdir(staging_path):
+            return None
+        return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
+
+    async def _place_project(self, leaf: str, raw_project_id: object, deliver, body: dict | None = None) -> ApiResponse:
+        """Put a project at a free slot under ``agent_workspace_root()`` and mint it.
+
+        Everything the ways of getting a project onto this box agree on: where it
+        lands, that a name clash auto-suffixes rather than fails (the caller has
+        already paid for a sandbox), the v4/v5 adoption gate for an id minted
+        off-box, and the ``{project, path}`` answer. ``deliver`` is the only
+        difference between them — move a staged tree in, or create the directory.
+
+        ``path`` rides in the response because the caller's next step is usually
+        to attach this checkout to another project as a context folder, and only
+        this side knows where it landed. ``body.workspace`` picks the workspace root.
+        """
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
+
+        try:
+            project_id = self._adopted_project_id(raw_project_id)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+
+        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf, base=workspace_root))
+        deliver(target_dir)
+        project = await self._materialize_project(target_dir, project_id)
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
 
     @action.post(action_name="materialize-project")
     async def _materialize_project_action(self) -> ApiResponse:
         """Materialize a Project from a directory delivered into this node (e.g.
         by the hub's setup-git via ``copy_folder`` into a staging path).
 
-        Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>" }``.
-        Moves the staged tree under ``AGENT_MOUNT_FOLDER/<leaf>``, then mints +
-        indexes the Project. Keeps ``AGENT_MOUNT_FOLDER`` placement on the box
+        Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>",
+        "project_id": "<optional uuid v4/v5>" }``. Moves the staged tree under
+        ``agent_workspace_root()/<leaf>`` and mints the Project — indexing is the
+        caller's own step. Keeps ``agent_workspace_root()`` placement on the box
         side so the hub never needs the box's home path. A name clash
         auto-suffixes (``<leaf>-N``) rather than 409-ing: the launch path has
         already committed to a desktop, so failing it over a folder name would
         strand the user.
+
+        ``path`` rides in the response next to the project because the caller's
+        next step is usually to attach this checkout to another project as a
+        context folder, and only this side knows where it landed.
         """
         import shutil  # noqa: PLC0415
 
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-
         request_info = get_current_request_info()
-        body = await request_info.get_post_data() if request_info else {}
-        staging_path = (body or {}).get("staging_path")
-        if not staging_path or not os.path.isdir(staging_path):
-            return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
-        leaf = (str((body or {}).get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        staging_path = str(body.get("staging_path") or "")
+        if error := self._staging_error(staging_path):
+            return error
+        leaf = (str(body.get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
         if not leaf:
             return ApiFailResponse(message="could not derive a project name", status_code=400)
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
-        os.makedirs(AGENT_MOUNT_FOLDER, exist_ok=True)
-        shutil.move(staging_path, target_dir)
-        project = await self._materialize_project(target_dir)
-        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+        def deliver(target_dir: str) -> None:
+            os.makedirs(os.path.dirname(target_dir), exist_ok=True)
+            shutil.move(staging_path, target_dir)
+
+        return await self._place_project(leaf, body.get("project_id"), deliver, body)
+
+    @action.post(action_name="refresh-project")
+    async def _refresh_project_action(self) -> ApiResponse:
+        """Bring a project already on this node to a newly delivered tree, IN PLACE.
+
+        Body: ``{ "staging_path": "<abs dir>", "project_id": "<uuid v4/v5>" }`` →
+        ``{ project, path, head_commit }``.
+
+        The update half of ``materialize-project``: the same delivery (the hub
+        clones, ``copy_folder`` stages the tree here), but the tree lands in the
+        project's EXISTING folder, so its id, path, index and every agent placed
+        from it stay what they were. Materializing again would park a second copy
+        at a suffixed folder. Indexing stays the caller's own step.
+
+        Only a project under a workspace root (``all_workspace_roots()``) can be
+        refreshed — the folders this node materialized — so a caller cannot aim the
+        overwrite anywhere else.
+        """
+        import asyncio  # noqa: PLC0415
+        import shutil  # noqa: PLC0415
+        import subprocess  # noqa: PLC0415
+
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.config import all_workspace_roots  # noqa: PLC0415
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        staging_path = str(body.get("staging_path") or "")
+        if error := self._staging_error(staging_path):
+            return error
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if not project_id:
+            return ApiFailResponse(message="project_id is required", status_code=400)
+        project = await Project.get_by_id(project_id)
+        path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
+        if not path or not os.path.isdir(path):
+            return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
+        real = canonical_posix_path(path)
+        if not any(is_path_under(real, canonical_posix_path(root)) for root in all_workspace_roots()):
+            return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
+
+        try:
+            head_commit = await asyncio.to_thread(_refresh_tree, staging_path, path)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            detail = getattr(exc, "stderr", "") or str(exc)
+            return ApiFailResponse(message=f"could not refresh the project: {str(detail)[:300]}", status_code=500)
+        finally:
+            shutil.rmtree(staging_path, ignore_errors=True)
+        return ApiSuccessResponse(
+            data={"project": project.model_dump(mode="json"), "path": path, "head_commit": head_commit}
+        )
+
+    @action.post(action_name="init-empty-project")
+    async def _init_empty_project_action(self) -> ApiResponse:
+        """Mount a project on this node that has no repository behind it.
+
+        Body: ``{ "name": "<leaf>", "project_id": "<optional uuid v4/v5>" }`` →
+        ``{ project, path }`` — the same shape ``materialize-project`` answers
+        with, so a caller sequences the two identically.
+
+        The sibling of materialize for a project that was never cloned from
+        anywhere: same placement, same adoption gate, same minting; it creates
+        the directory instead of moving a delivered tree, and runs no index —
+        there is nothing in it yet to find.
+
+        The identity is what makes this more than ``mkdir``. A project's id is
+        resolved from the record whose canonical cwd matches the path (see
+        ``project_type_info``: ``derived_identity(existing_project_record_id)``),
+        so minting the row against this directory is what makes a later scan of
+        it resolve to THIS project rather than mint a second one.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        leaf = str(body.get("name") or "").strip()
+        if not leaf:
+            return ApiFailResponse(message="name is required", status_code=400)
+
+        # `_next_free_leaf` already proved the path is free, so this only has to
+        # create it (parents included).
+        return await self._place_project(
+            leaf, body.get("project_id"), lambda target_dir: os.makedirs(target_dir), body
+        )
+
+    @action.post(action_name="validate-project-name")
+    async def _validate_project_name_action(self) -> ApiResponse:
+        """Is this project name free on this node, and if not, what is?
+
+        Body: ``{ "name": "<leaf>" }`` → ``{ available, suggested }``.
+
+        Pure question, no side effects: a provisioning caller asks BEFORE it
+        clones so the user can pick another name while it is still cheap, rather
+        than discovering the clash after a repo has already been copied in.
+        ``suggested`` is the same ``<leaf>-N`` the materialize path would take.
+        """
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        name = str(body.get("name") or "").strip()
+        if not name:
+            return ApiFailResponse(message="name is required", status_code=400)
+
+        workspace_root, error = self._workspace_base(body)
+        if error:
+            return error
+        suggested = self._next_free_leaf(name, base=workspace_root)
+        return ApiSuccessResponse(data={"available": suggested == name, "suggested": suggested})
+
+    @action.post(action_name="set-default-project")
+    async def _set_default_project_action(self) -> ApiResponse:
+        """Name the project this box should OPEN on, for the next bootstrap only.
+
+        Body: ``{ "project_id": "<uuid v4/v5>" }``.
+
+        The provisioning side (today: the hub, after cloning a repo in) is the
+        only one that knows which of several projects the user actually asked
+        for. It is an opening instruction, not a stored preference: bootstrap
+        hands it out once and forgets it, so a later refresh cannot re-assert it
+        over whatever the user has since selected.
+
+        Called AGAIN, by the hub, whenever it hands the box to someone it has not
+        sent there yet — a shared sandbox's second reader is invisible from here
+        (one gate secret, every visitor). See ``flow_sdk/server/state.py`` and
+        ``ComputeNode._rearm_opening_project_for`` on the hub.
+        """
+        from flow_sdk.server.state import set_pending_default_project  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        try:
+            project_id = self._adopted_project_id(body.get("project_id"))
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        if not project_id:
+            return ApiFailResponse(message="project_id is required", status_code=400)
+
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        # Refuse an id this box doesn't have: bootstrap would silently drop it,
+        # and the caller would believe the sandbox was going to open there.
+        project = await Project.get_by_id(project_id)
+        if project is None:
+            return ApiFailResponse(message=f"No project {project_id} on this node", status_code=404)
+
+        set_pending_default_project(project_id)
+        logging.info(f"[provisioning] next bootstrap will open project {project_id}")
+        return ApiSuccessResponse(data={"project_id": project_id})
+
+    @action.all(action_name="decision", methods=["get", "post"])
+    async def _decision_action(self) -> ApiResponse:
+        """``GET decision/endpoints`` lists the hub decision APIs this user may call; ``POST
+        decision`` takes one decision (``{spec, endpoint?}``) and answers a ``DecisionResult``.
+
+        The desk's only way in, for the reason ``llm-endpoint/test`` is: the box holds no
+        ``api_endpoint`` rows and the browser holds no hub key. A failure is a 4xx/5xx whose
+        ``data.reason`` is the closed ``DecisionError.reason`` -- the caller branches on it and falls
+        back, so a missing decision API is never an error the UI has to explain."""
+        from flow_sdk.decision import DecisionError, decide, decision_endpoints  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        if method == "GET":
+            offers = await decision_endpoints()
+            return ApiSuccessResponse(data=[o.model_dump(mode="json") for o in offers])
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        try:
+            result = await decide(body.get("spec") or {}, endpoint=body.get("endpoint") or None)
+        except DecisionError as exc:
+            # Never 401 or 502: the desk's client alerts on a 401 and silently retries a 502
+            # (it reads one as a sandbox waking up), and a decision must fail fast and quietly.
+            status = {"invalid_spec": 400, "no_endpoint": 404, "rate_limited": 429, "auth": 403}.get(exc.reason, 503)
+            return ApiFailResponse(message=exc.message, status_code=status, data={"reason": exc.reason})
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @action.all(action_name="navigation-decision", methods=["post"])
+    async def _navigation_decision_action(self) -> ApiResponse:
+        """``POST {utterance, here?}`` -> ``navigation.outcome``: a dock to navigate, OR a prompt
+        for the assistant -- the shipped ``smart-navigator`` FlowCall block (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
+        tab that asked is (``get_request_connection_info``) -- its own ``browser_context`` -- so the
+        UI sends only what was typed.
+        Never fails: anything missing or unsure is the prompt, and with no decision API on the
+        hub that is every answer. With SmartNavigationLog on, the decision is appended to the
+        SmartNavigationLog dataset AFTER this answers -- by the block (``flow_sdk.core.navigation_log``)."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.core.navigation import here_from, kind  # noqa: PLC0415
+        from flow_sdk.core.navigation_decision import call as call_navigator  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_request_connection_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        here = body.get("here")
+        try:
+            kind("navigation.here").model_validate(here)
+        except ValidationError:
+            here = None  # absent, or not a navigation.here: the tab is read instead
+        if here is None:
+            info = get_request_connection_info()
+            here = (await here_from(info.browser_context if info else {}, navigator=True)).model_dump(
+                mode="json", exclude_none=True
+            )
+        utterance = str(body.get("utterance") or "")
+        request = {"utterance": utterance, "here": here}
+        answer = await call_navigator(request)  # logs the decision itself
+        if answer.exit_code != ExitCode.OK or not answer.has_value:
+            # The block always answers a value; anything else is a broken install -- still the prompt.
+            logging.warning("smart-navigator answered nothing usable: %s", answer.detail)
+            return ApiSuccessResponse(data={"decision": {"route": "agentic"}, "candidates": [], "prompt": utterance})
+        return ApiSuccessResponse(data=answer.value.model_dump(mode="json", exclude_none=True))
+
+    @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
+    async def _llm_endpoint_action(self) -> ApiResponse:
+        """GET status / POST bind / DELETE unbind of the hub ``LLMEndpoint`` this box's
+        harnesses route through -- see ``cli_drivers/hub_endpoint_binding`` for the
+        payload and status shapes. The hub calls this right after a verified login."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+            HubEndpointBindError,
+            bind_hub_llm_endpoint,
+            chain_hub_llm_endpoint,
+            check_llm_source,
+            hub_llm_endpoint_status,
+            llm_binding,
+            select_llm_source,
+            skip_llm_setup,
+            test_hub_llm_endpoint,
+            unbind_hub_llm_endpoint,
+        )
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        try:
+            if method == "GET":
+                sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+                # ``chain/<id>`` is a READ of the hub's resolved chain -- which hops a call
+                # travels and whose key it ends up spending. A GET because it is a report,
+                # unlike ``test``, which spends money.
+                if sub_path.startswith("chain/"):
+                    return ApiSuccessResponse(data=await chain_hub_llm_endpoint(sub_path[len("chain/") :]))
+                # The active project, when the caller has one. It is what makes ``resolved``
+                # the verdict a spawn IN THAT PROJECT gets rather than the box-wide guess --
+                # a project may pin an endpoint, and without this the picker could not see it.
+                # Optional by design: the server has no notion of "the selected project", which
+                # lives in the client (same reasoning as ``connections_action``).
+                project_id = str((request_info.get_param("project_id") if request_info else "") or "")
+                return ApiSuccessResponse(data=await hub_llm_endpoint_status(project_id))
+            if method == "POST":
+                body = (await request_info.get_post_data() if request_info else {}) or {}
+                # ``select`` is the USER picking a source; the bare POST is the HUB binding this
+                # box and 409s without a hub key. Keeping them apart is what lets someone choose
+                # their own OpenRouter key on a box that has never talked to a hub.
+                sub_path = (request_info.sub_path or "").strip("/")
+                if sub_path == "select":
+                    return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``skip`` is the chooser's "not now": it releases a `flow llm set auto` that is
+                # waiting for a choice the person has declined to make.
+                if sub_path == "skip":
+                    return ApiSuccessResponse(data=await skip_llm_setup())
+                # ``test`` is a pass-through to the hub's own verdict. It lives here for the
+                # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
+                # desktop screen has no other way to reach that action.
+                if sub_path == "test":
+                    return ApiSuccessResponse(data=await test_hub_llm_endpoint(body))
+                # ``binding`` materializes ONE source for a terminal. A POST, like ``test``,
+                # because it is the one route here that hands back a CREDENTIAL -- for a stored
+                # key that is a secret out of the sod the caller does not otherwise hold, and a
+                # secret does not belong on a cacheable GET. Body forwarded whole, like its
+                # siblings, so the payload whitelist lives in one place.
+                if sub_path == "binding":
+                    return ApiSuccessResponse(data=await llm_binding(body))
+                # ``test-source`` is the PER-ROW check: the same verdict shape, but dispatched
+                # on the source kind, so a device login and a stored key are each asked the
+                # question that can actually fail for them. ``test`` above stays the hub-only
+                # pass-through it has always been.
+                if sub_path == "test-source":
+                    return ApiSuccessResponse(data=await check_llm_source(body))
+                if sub_path:
+                    # An unknown sub-action is a mistake, not a bind. Falling through used to
+                    # turn any misspelled or newer-client POST into "the hub is binding this
+                    # box", which fails with a message about the WRONG operation -- observed as
+                    # a new client's POST .../binding answering "invoke_path must be a
+                    # hub-relative path" against an older server.
+                    return ApiFailResponse(message=f"Unknown llm-endpoint action {sub_path!r}", status_code=404)
+                return ApiSuccessResponse(data=await bind_hub_llm_endpoint(body))
+            if method == "DELETE":
+                return ApiSuccessResponse(data=await unbind_hub_llm_endpoint())
+            return ApiFailResponse(message=f"Method {method} not supported", status_code=405)
+        except HubEndpointBindError as exc:
+            return ApiFailResponse(message=str(exc), status_code=exc.status_code)
 
     @action.post(action_name="find-local-repo")
     async def _find_local_repo(self) -> ApiResponse:
@@ -1047,8 +1769,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         the task-scoped ``find-project`` endpoint — lets the receiver of a shared
         repo attach to a clone they already have instead of re-cloning it.
         """
-        from flow_sdk.builtin.git_origin import GitOrigin
-        from flow_sdk.utils.git import find_local_repo_for_url
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -1056,91 +1777,184 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             git_origin = GitOrigin.model_validate((body or {}).get("git_origin"))
         except Exception:
             return ApiFailResponse(message="git_origin is required", status_code=400)
-        local_path = find_local_repo_for_url(git_origin.clone_url())
-        return ApiSuccessResponse(data={"found": bool(local_path), "local_path": local_path})
+        local = git_origin.local_checkout()
+        return ApiSuccessResponse(data={"found": local is not None, "local_path": str(local) if local else None})
 
     @action.get(action_name="session-transcript")
-    async def _session_transcript(self): return await self._pty_session_transcript()
+    async def _session_transcript(self):
+        return await self._pty_session_transcript()
 
     @action.get(action_name="session-transcript-raw")
-    async def _session_transcript_raw(self): return await self._pty_session_transcript_raw()
+    async def _session_transcript_raw(self):
+        return await self._pty_session_transcript_raw()
 
     @action.get(action_name="discovery")
-    async def _discovery_action(self): return await self._pty_discovery_action()
+    async def _discovery_action(self):
+        return await self._pty_discovery_action()
 
     @action.post(action_name="reset-pty")
-    async def reset_pty(self): return await self._pty_reset_pty()
+    async def reset_pty(self):
+        return await self._pty_reset_pty()
 
     @action.post(action_name="update-shell")
-    async def _update_shell(self): return await self._pty_update_shell()
+    async def _update_shell(self):
+        return await self._pty_update_shell()
 
     @action.post("ops")
-    async def ops(self): return await self._ops_dispatch()
+    async def ops(self):
+        return await self._ops_dispatch()
 
     # -- ops actions -------------------------------------------------------------
 
-    @action.all(action_name="get-host")
-    def get_host_action(self, port: int, redirect: bool = True): return self._desktop_get_host(port, redirect)
+    @action.get(action_name="connections")
+    async def connections_action(self, project_id: str = "", include_unconnected: bool = False) -> "ApiResponse":
+        """Every connection this box has, in one read.
+
+        Consolidated HERE rather than in the browser, which used to fetch four
+        separate shapes and decide for itself what "connected" meant — two
+        surfaces then disagreed about the same key, twice.
+
+        ``project_id`` is optional and the answer is honestly smaller without it:
+        API-key credentials are identified by ``(project_id, env_var)`` and the
+        server has no notion of "the selected project", which lives in the
+        client. See ``core/connections/status.py`` for what each kind costs.
+
+        A pure read. ``status/refresh`` is the verb that asks the vendor
+        CLIs; keeping it out of here is what stops a GET from spawning
+        subprocesses on the path ``require()`` resolves through.
+
+        ``include_unconnected`` also lists every OAuth provider not yet connected
+        (``connected=False``) — the SDK's ``get_connections()``; the screen and the
+        CLI leave it off.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.core.connections.status import list_connections  # noqa: PLC0415
+
+        project = await Project.get_by_id(project_id) if project_id else None
+        rows = await list_connections(project=project, include_unconnected=include_unconnected)
+        return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
+
+    @action.all(action_name="status", methods=["get", "post"])
+    async def status_action(self) -> "ApiResponse":
+        """The status record: harnesses (installed, login, account), stored keys, hub login.
+
+        GET is a pure read of the stores that own each fact -- no probe, no network.
+        POST ``status/refresh`` (optional body ``{"kinds": [...]}``) is the one verb that
+        re-discovers CLIs and re-probes their logins; it returns the refreshed record.
+        """
+        from flow_sdk.core.status import build_status, refresh_status  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        if method == "POST":
+            if sub_path != "refresh":
+                return ApiFailResponse(message=f"unknown status verb {sub_path!r}; POST status/refresh")
+            body = await request_info.get_post_data() or {}
+            kinds = body.get("kinds") if isinstance(body, dict) else None
+            await refresh_status(list(kinds) if kinds else None)
+        status = await build_status()
+        return ApiSuccessResponse(data=status.model_dump(mode="json"))
 
     @action.all(action_name="get-machine-status")
-    async def get_machine_status_action(self): return await self._desktop_get_machine_status()
+    async def get_machine_status_action(self):
+        return await self._desktop_get_machine_status()
 
     @action.all(action_name="get-system-profile")
-    async def get_system_profile_action(self): return await self._desktop_get_system_profile()
+    async def get_system_profile_action(self):
+        return await self._desktop_get_system_profile()
 
     @action.post(action_name="open-external")
-    async def open_external_action(self): return await self._desktop_open_external()
+    async def open_external_action(self):
+        return await self._desktop_open_external()
 
     @action.post(action_name="open-terminal")
-    async def open_terminal_action(self): return await self._desktop_open_terminal()
+    async def open_terminal_action(self):
+        return await self._desktop_open_terminal()
+
+    @action.post(action_name="worker-launch-commands")
+    async def worker_launch_commands_action(self):
+        return await self._desktop_worker_launch_commands()
 
     @action.post(action_name="pick-folder")
-    async def pick_folder_action(self): return await self._desktop_pick_folder()
+    async def pick_folder_action(self):
+        return await self._desktop_pick_folder()
 
     @action.all(action_name="get-json-file")
-    async def get_json_file_action(self): return await self._desktop_get_json_file()
+    async def get_json_file_action(self):
+        return await self._desktop_get_json_file()
 
     @action.post(action_name="save-json-file")
-    async def save_json_file_action(self): return await self._desktop_save_json_file()
+    async def save_json_file_action(self):
+        return await self._desktop_save_json_file()
 
     @action.post(action_name="generate-amd-plan")
-    async def generate_amd_plan_action(self): return await self._desktop_generate_amd_plan()
+    async def generate_amd_plan_action(self):
+        return await self._desktop_generate_amd_plan()
 
     @action.all(action_name="scan-resources")
-    async def scan_resources_action(self): return await self._scan_resources()
+    async def scan_resources_action(self):
+        return await self._scan_resources()
 
     @action.all(action_name="get-resource-summary")
-    async def get_resource_summary_action(self): return await self._scan_get_resource_summary()
+    async def get_resource_summary_action(self):
+        return await self._scan_get_resource_summary()
 
     @action.all(action_name="scan-item")
-    async def scan_item_action(self): return await self._scan_item()
+    async def scan_item_action(self):
+        return await self._scan_item()
 
     @action.all(action_name="get-cost-overview")
-    async def get_cost_overview_action(self): return await self._analytics_cost_overview()
+    async def get_cost_overview_action(self):
+        return await self._analytics_cost_overview()
 
     @action.all(action_name="get-claude-context")
-    async def get_claude_context_action(self): return await self._analytics_claude_context()
+    async def get_claude_context_action(self):
+        return await self._analytics_claude_context()
 
     @action.all(action_name="clear-skill-usage")
-    async def clear_skill_usage_action(self): return await self._scan_clear_skill_usage()
+    async def clear_skill_usage_action(self):
+        return await self._scan_clear_skill_usage()
 
     @action.all(action_name="clear-cli-log")
-    async def clear_cli_log_action(self): return await self._scan_clear_cli_log()
+    async def clear_cli_log_action(self):
+        return await self._scan_clear_cli_log()
 
     @action.all(action_name="list-projects")
-    async def list_projects_action(self): return await self._scan_list_projects()
+    async def list_projects_action(self):
+        return await self._scan_list_projects()
+
+    @action.all(action_name="project-cleanup-report")
+    async def project_cleanup_report_action(self):
+        return await self._scan_project_cleanup_report()
+
+    @action.all(action_name="project-git-detail")
+    async def project_git_detail_action(self):
+        return await self._scan_project_git_detail()
+
+    @action.post(action_name="project-remove-from-harness")
+    async def project_remove_from_harness_action(self):
+        return await self._scan_project_cleanup_apply(permanent=False)
+
+    @action.post(action_name="project-delete-permanently")
+    async def project_delete_permanently_action(self):
+        return await self._scan_project_cleanup_apply(permanent=True)
 
     @action.all(action_name="scan-project")
-    async def scan_project_action(self): return await self._scan_project()
+    async def scan_project_action(self):
+        return await self._scan_project()
 
     @action.post(action_name="createProcess")
-    async def create_process_action(self): return await self._scan_create_process()
+    async def create_process_action(self):
+        return await self._scan_create_process()
 
     @action.post(action_name="upsertSessionProcess")
-    async def upsert_session_process(self): return await self._scan_upsert_session_process()
+    async def upsert_session_process(self):
+        return await self._scan_upsert_session_process()
 
     @action.get(action_name="findSession")
-    async def find_session(self): return await self._scan_find_session()
+    async def find_session(self):
+        return await self._scan_find_session()
 
     @action.post(action_name="os-status-batch")
     async def _os_status_batch(self) -> ApiResponse:
@@ -1210,7 +2024,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
-    async def fs_records_action(self): return await self._fs_records_action()
+    async def fs_records_action(self):
+        return await self._fs_records_action()
 
     @action.get(action_name="asset-usage")
     async def asset_usage_action(self) -> ApiResponse:
@@ -1294,8 +2109,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="fix-all-cloud-errors")
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agent_registry import get_agent_local_deployment
         from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
@@ -1304,6 +2118,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not fingerprints:
             return ApiFailResponse(message="fingerprints is required")
 
+        # Loop-invariant: resolving the agent costs a lookup and a deployment
+        # upsert, so it happens once rather than once per fingerprint.
+        deployment = await get_agent_local_deployment("cloud-error-fixer")
         spawned = []
         for fp in fingerprints:
             rec = get_by_fingerprint(fp)
@@ -1313,21 +2130,25 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 spawned.append({"fingerprint": fp, "status": "skipped"})
                 continue
             try:
-                cmd = ClaudeCliOptions(permission_mode="bypassPermissions")
                 rec_label = (getattr(rec, "name", None) or "").strip()
-                agentic_process = AgenticProcess(
-                    cli_config=cmd.to_json(),
+                # Identity from the named `cloud-error-fixer` Agent; the run
+                # itself still goes through .open(), which is what attaches the
+                # Shell the caller reports back as shell_id.
+                agentic_process = await deployment.create_process(
+                    fix_instruction,
                     name=f"Fix: {rec_label}" if rec_label else "Cloud fix",
                 )
                 await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
-                result = await agentic_process.open(instruction=fix_instruction)  # type: ignore[assignment]
+                await agentic_process.open(instruction=fix_instruction)
                 shell_id = agentic_process.shell_id or ""
-                spawned.append({
-                    "fingerprint": fp,
-                    "status": "spawned",
-                    "shell_id": shell_id,
-                    "worker_session_id": agentic_process.worker_session_id or "",
-                })
+                spawned.append(
+                    {
+                        "fingerprint": fp,
+                        "status": "spawned",
+                        "shell_id": shell_id,
+                        "worker_session_id": agentic_process.worker_session_id or "",
+                    }
+                )
             except Exception as e:
                 spawned.append({"fingerprint": fp, "status": "error", "message": str(e)})
 
@@ -1355,9 +2176,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # present the limit is applied per-project, so a scoped client sees that
         # project's sessions instead of whatever survived a global top-N cut.
         project_ids_raw = request_info.get_param("project_ids") if request_info else None
-        project_ids = (
-            {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
-        )
+        project_ids = {p for p in project_ids_raw.split(",") if p.strip()} if project_ids_raw else None
         entries = await get_worker_history(limit, project_ids)
         return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
@@ -1379,6 +2198,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         Routing (via sub_path):
             POST /git-ops/push          body { workdir } → commit-all + pull --rebase + push
+            POST /git-ops/fetch         body { workdir } → git fetch, then status (fresh ``behind``)
+            POST /git-ops/pull          body { workdir } → pull --rebase --autostash
             POST /git-ops/init          body { workdir } → git init + Flowpad config (idempotent)
             POST /git-ops/restore-file  { workdir, file, hash } → checkout file at revision
             POST /git-ops/discard-file  { workdir, file, status } → undo a file's pending change
@@ -1408,13 +2229,21 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         workdir = params.get("workdir")
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
-        real_method = (request_info.request.method if request_info and request_info.request else method)
+        real_method = request_info.request.method if request_info and request_info.request else method
         query_params = {k: v for k, v in params.items() if k != "workdir"}
         from flow_sdk.builtin.faas.git_repo import GitRepo
+
         return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method=real_method)
 
     @asynccontextmanager
     async def ready_session(self):
+        """Bring the node up. Deliberately does NO secret work in any branch.
+
+        Loading is bound to Project.initialize, not to a state transition.
+        Resolving again on resume would be exactly the re-resolution "trust what
+        is there" rules out — and there is nothing on the node to refresh
+        anyway, since values are only ever a per-command prefix.
+        """
         current_status = await self.get_node_status()
         if current_status == ExecutionEnvironmentStatus.READY:
             await self.startup()

@@ -9,6 +9,10 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
+# These pin the process-level and persona layers' text exactly; the shipped COMMON /
+# COMMON_UI layers have their own coverage in tests/unit/system_prompt_matrix.
+pytestmark = pytest.mark.usefixtures("no_shipped_layers")
+
 
 @pytest.fixture()
 def records_root(tmp_path):
@@ -45,22 +49,15 @@ async def test_embedded_assets_default_none_then_materialized(records_root, tmp_
     assert process.embedded_assets is not None
     assert process.embedded_assets.os_path == process._record_dir() / "execution" / "assets"
     assert assets.assets_dir == process.embedded_assets.os_path
-    assert str(assets.assets_dir) in process.additional_dirs
+    assert str(assets.assets_dir) not in process.additional_dirs
+    assert str(assets.assets_dir) in process.resolved_add_dirs
 
     claude_md = assets.assets_dir / "CLAUDE.md"
     agents_md = assets.assets_dir / "AGENTS.md"
-    dot_agents = assets.assets_dir / ".agents"
-    copilot_md = assets.assets_dir / ".github" / "instructions" / "flowpad.instructions.md"
-
-    for path in (claude_md, agents_md, dot_agents, copilot_md):
-        assert path.exists(), path
-
     assert claude_md.read_text(encoding="utf-8") == prompt + "\n"
     assert agents_md.read_text(encoding="utf-8") == prompt + "\n"
-    assert dot_agents.read_text(encoding="utf-8") == prompt + "\n"
-    copilot_text = copilot_md.read_text(encoding="utf-8")
-    assert 'applyTo: "**"' in copilot_text
-    assert prompt in copilot_text
+    assert not (assets.assets_dir / ".agents").exists()
+    assert not (assets.assets_dir / ".github").exists()
 
     kwargs = process._instruction_context_kwargs(assets)
     assert kwargs == {
@@ -73,6 +70,7 @@ async def test_embedded_assets_default_none_then_materialized(records_root, tmp_
 
 @pytest.mark.asyncio
 async def test_no_system_instructions_leaves_assets_uncreated(records_root, tmp_path):
+    """Nothing to say (no layer has text) and nothing embedded: the process stays write-free."""
     process = _process(WorkerType.CODEX, tmp_path)
 
     assets = await process.prepare_system_instruction_assets()
@@ -83,13 +81,29 @@ async def test_no_system_instructions_leaves_assets_uncreated(records_root, tmp_
 
 
 @pytest.mark.asyncio
+async def test_the_common_layer_alone_mounts_and_projects(records_root, tmp_path, monkeypatch):
+    """With a shipped COMMON layer a bare process has something to say — it gets its mount."""
+    from flow_sdk.builtin.agentic_process import system_prompt
+
+    shipped = tmp_path / "shipped"
+    shipped.mkdir()
+    (shipped / "common.md").write_text("Shared rule.\n", encoding="utf-8")
+    monkeypatch.setattr(system_prompt, "SHIPPED_INSTRUCTIONS_DIR", shipped)
+    process = _process(WorkerType.CODEX, tmp_path)
+
+    assets = await process.prepare_system_instruction_assets()
+
+    assert assets.layers == ["common"]
+    assert assets.instructions == "Shared rule."
+    assert (assets.assets_dir / "AGENTS.md").read_text(encoding="utf-8") == "Shared rule.\n"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "worker_type",
     [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
 )
-async def test_system_instruction_assets_applied_to_worker_options(
-    records_root, tmp_path, worker_type
-):
+async def test_system_instruction_assets_applied_to_worker_options(records_root, tmp_path, worker_type):
     prompt = "Your name is TEST_AGENT and the time is 2026-07-04T12:34:56Z."
     process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
 
@@ -100,7 +114,6 @@ async def test_system_instruction_assets_applied_to_worker_options(
     process._apply_system_instruction_assets(cmd, assets)
 
     assert str(assets.assets_dir) in getattr(cmd, "add_dirs", [])
-    assert cmd.system_prompt_append is None
     assert cmd.system_prompt_file == str(assets.claude_file)
 
     if worker_type is WorkerType.CODEX:
@@ -111,39 +124,34 @@ async def test_system_instruction_assets_applied_to_worker_options(
 
 
 @pytest.mark.asyncio
-async def test_load_embedded_agent_materializes_into_instruction_assets(
-    records_root, tmp_path, monkeypatch
-):
+async def test_load_embedded_subagent_materializes_into_instruction_assets(records_root, tmp_path, monkeypatch):
     async def _save_noop(self):
         return self
 
     monkeypatch.setattr(AgenticProcess, "save", _save_noop)
     agent_md = tmp_path / "persona-probe.md"
     agent_md.write_text(
-        "---\n"
-        "name: persona-probe\n"
-        "description: Test persona probe\n"
-        "---\n\n"
-        "Always answer as PERSONA_PROBE.\n",
+        "---\nname: persona-probe\ndescription: Test persona probe\n---\n\nAlways answer as PERSONA_PROBE.\n",
         encoding="utf-8",
     )
     process = _process(WorkerType.CLAUDE_CODE, tmp_path)
 
-    result = await process.load_embedded_agent_action(str(agent_md))
+    result = await process.load_embedded_subagent_action(str(agent_md), set_ap_persona=True)
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
     assert result.data["name"] == "persona-probe"
-    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
-    from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
-    from flow_sdk.fs_store.record_types import RecordType
-    expected_ref = f"agent-{agent_peek_entity_id(FSRef(agent_md, record_type=RecordType.AGENT))}"
-    assert result.data["ref"] == expected_ref
+    # Identity is persisted as the sub-agent's ENTITY ref, not a legacy name entry.
+    from flow_sdk.assets.asset import Asset
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    expected_ref = result.data["ref"]
+    assert is_valid_entity_id(expected_ref.removeprefix("subagent-"))
     assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
-    assert not process.embedded_agent_ids
+    assert "id:" not in agent_md.read_text()  # importing never stamps the source document
+    assert not process.embedded_subagent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
+    assert str(Asset.from_path(materialized).typeid) == expected_ref
     assert "Always answer as PERSONA_PROBE." in materialized.read_text(encoding="utf-8")
 
     assets = await process.prepare_system_instruction_assets()
@@ -151,6 +159,173 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'persona-probe' agent" in claude_text
     assert "Always answer as PERSONA_PROBE." in claude_text
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? the persona is DECLARED via set_ap_persona,
+#       never inferred from how many agents are embedded - read this tag's rules before
+#       touching _render_agents_instruction_block or process_persona_path
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_declared_persona_survives_a_second_embedded_agent(records_root, tmp_path, monkeypatch):
+    """Vibe mode embeds the `vibe` persona AND every kind==vibe layer on top of
+    it. The persona directive must survive that second embed: it used to be
+    emitted only when EXACTLY ONE agent was embedded, so the second one dropped
+    the identity and the session fell back to the harness ("I am Claude Code").
+    The persona is declared via set_ap_persona, so the layer never claims it."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    persona_md = tmp_path / "vibe-probe.md"
+    persona_md.write_text(
+        "---\nname: vibe-probe\ndescription: The base persona\n---\n\n"
+        "Always run flow show after every deliverable.\n",
+        encoding="utf-8",
+    )
+    layer_md = tmp_path / "layer-probe.md"
+    layer_md.write_text(
+        "---\nname: layer-probe\ndescription: A layered specialist\n---\n\n"
+        "Connect a data source and show a sample.\n",
+        encoding="utf-8",
+    )
+
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+
+    # Embed order is the real one: the persona first, then the layer on top.
+    assert (await process.load_embedded_subagent_action(str(persona_md), set_ap_persona=True)).status == "SUCCESS"
+    assert (await process.load_embedded_subagent_action(str(layer_md))).status == "SUCCESS"
+    assert process.process_persona_path == ".claude/agents/vibe-probe.md"
+
+    assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+
+    # The persona keeps the identity ...
+    assert "# You are the 'vibe-probe' agent" in claude_text
+    assert "Always run flow show after every deliverable." in claude_text
+    # ... the second agent rides underneath and never claims it ...
+    assert "# You are the 'layer-probe' agent" not in claude_text
+    assert "# Sub-agents available to you" in claude_text
+    assert "Connect a data source and show a sample." in claude_text
+    # ... and the flat co-equal catalogue (which had no persona at all) is gone.
+    assert "# Embedded agent specs" not in claude_text
+    assert claude_text.index("# You are the 'vibe-probe' agent") < claude_text.index("# Sub-agents available to you")
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? an UNDECLARED agent must never
+#       inherit the 'you are this agent' directive - a failed persona embed loses the
+#       identity, it does not hand it to whoever is there. Read this tag's rules.
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_no_declared_persona_renders_a_flat_catalogue(records_root, tmp_path, monkeypatch):
+    """A process with no declared persona (a terminal process is the normal
+    case) must NOT have one inferred for it: no agent may claim the identity."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    agent_md = tmp_path / "solo-probe.md"
+    agent_md.write_text(
+        "---\nname: solo-probe\ndescription: A plain sub-agent\n---\n\nDo the thing.\n",
+        encoding="utf-8",
+    )
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+    assert (await process.load_embedded_subagent_action(str(agent_md))).status == "SUCCESS"
+    assert process.process_persona_path is None
+
+    assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+    assert "# You are the 'solo-probe' agent" not in claude_text
+    assert "# Embedded agent specs" in claude_text
+    assert "Do the thing." in claude_text
+
+
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.declared_persona.rules: FAILING? a persona that is DECLARED but not
+#       embedded must lose the identity, not hand it to whoever is there - and it must SAY
+#       so. Read this tag's rules before touching _render_agents_instruction_block.
+# flowpad:endcapsule tag
+@pytest.mark.asyncio
+async def test_declared_persona_that_is_not_embedded_loses_the_identity(
+    records_root, tmp_path, monkeypatch, caplog
+):
+    """The divergence branch — declared, but the materialized file is gone or no
+    longer parses. This is the one that silently costs a live session its
+    identity, and the pre-fix code handled it by handing the directive to
+    whichever agent happened to be there (`len == 1`): the exact shape of the
+    reported bug, where `data-integrations` answered as the persona because
+    `vibe.md` had failed to embed. It must render the FLAT catalogue instead,
+    and log which persona went missing — a session that loses its identity with
+    no trace anywhere is what made this expensive to diagnose."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+
+    layer_md = tmp_path / "layer-probe.md"
+    layer_md.write_text(
+        "---\nname: layer-probe\ndescription: A layered specialist\n---\n\nConnect a data source.\n",
+        encoding="utf-8",
+    )
+    process = AgenticProcess(
+        id=str(uuid.uuid4()),
+        worker_type=WorkerType.CLAUDE_CODE,
+        workdir=str(tmp_path / "workdir"),
+        load_flowpad_assistant=False,
+        pty_mode=False,
+    )
+    assert (await process.load_embedded_subagent_action(str(layer_md))).status == "SUCCESS"
+
+    # The persona the frontend declared, whose own embed failed: nothing wrote
+    # `.claude/agents/vibe-probe.md`, so it is not among the embedded agents.
+    process.process_persona_path = ".claude/agents/vibe-probe.md"
+
+    with caplog.at_level("WARNING", logger="flow_sdk.builtin.agentic_process.agentic_process"):
+        assets = await process.prepare_system_instruction_assets()
+    assert assets is not None
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+
+    # The missing persona does NOT get a directive it cannot back ...
+    assert "# You are the 'vibe-probe' agent" not in claude_text
+    # ... and, the actual bug, neither does the agent that IS there.
+    assert "# You are the 'layer-probe' agent" not in claude_text
+    assert "# Sub-agents available to you" not in claude_text
+    assert "# Embedded agent specs" in claude_text
+    assert "Connect a data source." in claude_text
+
+    # And it is not silent: the log names the persona that went missing.
+    warning = "\n".join(r.getMessage() for r in caplog.records if r.levelname == "WARNING")
+    assert "vibe-probe" in warning
+    assert "layer-probe" in warning
 
 
 @pytest.mark.asyncio
@@ -184,9 +359,9 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
             **extra,
         )
 
-    # Instance A: the request that handled load-embedded-agent (UI embed call).
+    # Instance A: the request that handled load-embedded-subagent (UI embed call).
     proc_a = make_process()
-    result = await proc_a.load_embedded_agent_action(str(agent_md))
+    result = await proc_a.load_embedded_subagent_action(str(agent_md), set_ap_persona=True)
     assert result.status == "SUCCESS"
 
     # Instance B: the fresh instance the prompt/launch request operates on,
@@ -195,6 +370,7 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     proc_b = make_process(
         embedded_asset_refs=[str(r) for r in proc_a.embedded_asset_refs],
         additional_dirs=list(proc_a.additional_dirs or []),
+        process_persona_path=proc_a.process_persona_path,
     )
     assert proc_b.embedded_assets is None
 
@@ -204,3 +380,72 @@ async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, mo
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'vibe-probe' agent" in claude_text
     assert "Always run flow show after every deliverable." in claude_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "worker_type",
+    [WorkerType.CLAUDE_CODE, WorkerType.CODEX, WorkerType.COPILOT],
+)
+async def test_pty_seam_carries_the_project_language_as_a_layer(records_root, tmp_path, monkeypatch, worker_type):
+    """The project locale is the ``LANGUAGE`` layer of the one system prompt, so a PTY
+    launch carries it exactly as a headless turn does — through the same file/flag as
+    every other layer, never a vendor side channel (Claude ``--settings``)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import cli_worker_base_driver
+
+    async def _hebrew(_process):
+        return "Hebrew"
+
+    monkeypatch.setattr(cli_worker_base_driver, "resolve_worker_language", _hebrew)
+    prompt = "Your name is TEST_AGENT."
+    process = _process(worker_type, tmp_path, context_data={"instructions": prompt})
+    assets = await process.prepare_system_instruction_assets()
+
+    cmd = process.driver.cli_options(process)
+    process._apply_system_instruction_assets(cmd, assets)
+
+    assert assets.layers == ["instructions", "language"]
+    assert assets.instructions.startswith(prompt)
+    assert "# Language\nAlways respond in Hebrew." in assets.instructions
+    assert getattr(cmd, "settings_json", None) is None
+    if worker_type is WorkerType.CLAUDE_CODE:
+        argv, _env, _stdin = cmd.to_spawn(instruction="hi")
+        assert "--settings" not in argv
+    if worker_type is WorkerType.CODEX:
+        assert cmd.developer_instructions == assets.instructions
+
+@pytest.mark.parametrize(
+    ("worker_type", "discovery_file"),
+    [(WorkerType.CLAUDE_CODE, "CLAUDE.md"), (WorkerType.CODEX, "AGENTS.md"),
+     (WorkerType.OPENCODE, "AGENTS.md"),
+     (WorkerType.COPILOT, ".github/instructions/flowpad.instructions.md")],
+)
+def test_driver_projects_its_instruction_files(tmp_path, worker_type, discovery_file):
+    from flow_sdk.assets.directory import AssetDir
+
+    process = _process(worker_type, tmp_path)
+    prompt_file = process.driver.prepare_instruction_assets(AssetDir(tmp_path), "Follow the task")
+    assert prompt_file.read_text() == "Follow the task\n"
+    assert "Follow the task" in (tmp_path / discovery_file).read_text()
+    assert not (tmp_path / ".agents").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name, auto_open, expected", [
+    ("vibe", ["flow show file /p/a.html"], True),
+    ("standard", ["flow show file /p/a.html"], False),
+    ("vibe", None, False),
+])
+async def test_auto_open_block_reaches_vibe_sessions_only(records_root, tmp_path, monkeypatch, name, auto_open, expected):
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+    persona = tmp_path / f"{name}.md"
+    persona.write_text(f"---\nname: {name}\ndescription: {name}\n---\n\nBe {name}.\n", encoding="utf-8")
+    process = _process(WorkerType.CLAUDE_CODE, tmp_path, context_data={"auto_open": auto_open} if auto_open else {})
+    await process.load_embedded_subagent_action(str(persona), set_ap_persona=True)
+
+    text = (await process.prepare_system_instruction_assets()).claude_file.read_text(encoding="utf-8")
+
+    assert ("# Opened for you at session start" in text) is expected

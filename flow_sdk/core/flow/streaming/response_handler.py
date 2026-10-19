@@ -171,7 +171,10 @@ class StreamingResponseHandler(CallbackHandler):
         self._done = False
         self._queues: list[asyncio.Queue[QueueChunk | None]] = []  # Multi-consumer queues using QueueChunk
 
-        self._history: str = ""
+        # Parts, not one string: `self._history += x` copies the whole history on
+        # every chunk (an attribute cannot be extended in place), which made a
+        # long turn quadratic on the event loop. Joined once, where it is read.
+        self._history_parts: list[str] = []
         self._ux_queue = asyncio.Queue[QueueChunk | None]()  # UX message queue
         self._current_status: str | None = "Thinking..."
         self._current_focus: str = "chat"
@@ -488,7 +491,8 @@ class StreamingResponseHandler(CallbackHandler):
             xml_to_add = await self._convert_flow_data_to_xml(data)
 
             # Update history
-            self._history += xml_to_add
+            if xml_to_add:
+                self._history_parts.append(xml_to_add)
 
             # Create chunk for distribution
             chunk = QueueChunk(data=xml_to_add) if xml_to_add else None
@@ -504,7 +508,7 @@ class StreamingResponseHandler(CallbackHandler):
     async def __aiter__(self) -> AsyncGenerator[str | Exception, None]:
         # Capture history and done state while holding lock, but don't yield inside lock
         async with self._lock:
-            history = self._history if self._history else None
+            history = self.get_history() or None
             done = self._done
             # Create a new queue for this iterator only if not done
             if not done:
@@ -539,7 +543,16 @@ class StreamingResponseHandler(CallbackHandler):
         return chunk
 
     def get_history(self) -> str:
-        return self._history
+        """Everything broadcast so far, as one string.
+
+        Collapses the parts in place so a second reader does not join again.
+        No await inside, so it is safe under ``self._lock`` (``__aiter__``) and
+        outside it alike.
+        """
+        parts = self._history_parts
+        if len(parts) > 1:
+            parts[:] = ["".join(parts)]
+        return parts[0] if parts else ""
 
 
 class IteratorCallbackHandler(CallbackHandler):

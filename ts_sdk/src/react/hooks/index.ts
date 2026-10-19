@@ -11,11 +11,16 @@ export * from './useConnectionStatus';
 export * from './useContext';
 export * from './useCapability';
 export * from './useEntityEnv';
+export * from './useEntityEnvMutations';
 export * from './useFS';
+export * from './useFileWatch';
 export * from './useFSStore';
 export * from './useGlobalEvnets';
 export * from './useOAuthConnection';
+export * from './useOAuthFlowComplete';
 export * from './useProject';
+export * from './use-cleanup-summary';
+export * from './use-project-readiness';
 export * from './useWarnings';
 
 // Entity hooks
@@ -24,3 +29,7 @@ export * from './entity-hooks';
 // Flow hooks
 export { useDataStreamText } from './useDataStreamText';
 export { useEntityData, type UseEntityDataResult } from './useEntityData';
+export * from './useIconPacks';
+
+export * from './useLazyAsset';
+export * from './useRuntimeInfo';

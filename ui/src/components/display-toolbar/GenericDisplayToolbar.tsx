@@ -7,8 +7,8 @@ import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from './capture-region';
 
 interface GenericDisplayToolbarProps {
-  /** Resolved BROWSER-external URL for the displayed item (a running webapp's
-   *  get-host URL). Renders the "Open externally" action → new browser tab. */
+  /** Resolved BROWSER-external URL for the displayed item (a web page's own
+   *  address). Renders the "Open externally" action → new browser tab. */
   externalUrl?: string;
   /** In-app promotion for the displayed ENTITY: open it as a Flowpad tab
    *  (dock navigation in THIS browser tab). Renders the "Open in tab" action —

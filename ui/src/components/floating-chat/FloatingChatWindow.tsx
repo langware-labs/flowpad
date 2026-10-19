@@ -1,14 +1,16 @@
 import { Button } from '@src/components/ui/button';
-import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
-import { ProcessKind } from '@sdk';
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { topmost } from '@src/lib/topmost';
-import { useFloatingChat } from './FloatingChatContext';
-import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
+import { GENIE_DURATION_MS, GENIE_EASING, GENIE_SMALL_OPACITY, genieTransform } from '@src/lib/minimize-to-element';
+import { useFloatingChat, type TriggerRect } from './floating-chat-context';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
+import type { DockPointer } from '@src/navigation/DockPointer';
+import { AssistantChat, loadPtyChatExperiment } from './AssistantChat';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Bounds {
@@ -25,9 +27,18 @@ const MIN_H = 420;
 const DEFAULT_W = 860;
 const DEFAULT_H = 660;
 const MARGIN = 16;
-const ANIM_MS = 240;
 
 type Phase = 'closed' | 'opening' | 'open' | 'closing';
+
+/** The assistant button the chat minimizes into: the first one actually laid out. */
+function assistantButtonRect(): TriggerRect | null {
+  if (typeof document === 'undefined') return null;
+  for (const el of document.querySelectorAll<HTMLElement>('[data-minimize-anchor="assistant-button"]')) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return { x: r.left, y: r.top, width: r.width, height: r.height };
+  }
+  return null;
+}
 
 function loadBounds(): Bounds | null {
   try {
@@ -75,41 +86,48 @@ function clampToViewport(b: Bounds): Bounds {
  *
  * Open/close is animated: on open, the window scales up from the trigger
  * button's on-screen rect into its centered position; on close, it scales
- * back into the button. The transform-origin / starting transform are derived
- * from the `triggerRect` captured at click time.
+ * into the assistant button, however it was opened. The entrance transform is
+ * derived from the `triggerRect` captured at click time; the exit one from the
+ * assistant button's rect read at close time.
  */
-// EXPERIMENT: PTY-transcript chat transport. Set
-// `localStorage.setItem('flowpad.experiment.ptyChat', '1')` (and reload) to
-// drive the assistant through a PTY worker whose FlowData is derived by
-// polling the session transcript, with the stream closing on inactivity.
-const PTY_CHAT_EXPERIMENT_KEY = 'flowpad.experiment.ptyChat';
-
-function loadPtyChatExperiment(): boolean {
-  try {
-    return localStorage.getItem(PTY_CHAT_EXPERIMENT_KEY) === '1';
-  } catch {
-    return false;
-  }
+export function FloatingChatWindow() {
+  const { currentDock } = useDockNavigation();
+  // The popped-out assistant IS the chat in its window; it never floats a second one.
+  if (currentDock?.viewType === ViewType.ASSISTANT) return null;
+  return <FloatingChatWindowInner />;
 }
 
-export function FloatingChatWindow() {
+function FloatingChatWindowInner() {
   const { t } = useLingui();
-  const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
-  const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
+  const { open, closeChat, triggerRect, restoredFromStorage, pendingAsk, consumeAsk, popOut, publishDock } =
+    useFloatingChat();
+  const { currentDock, windowMode } = useDockNavigation();
   const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
+  // The page whose chat is showing — a popout opens on that same chat.
+  const boundUrlRef = useRef<string | null>(null);
+  const onBoundChange = useCallback((dock: DockPointer | null) => {
+    boundUrlRef.current = dock?.viewType ? dock.toUrl() : null;
+  }, []);
 
-  const [bounds, setBounds] = useState<Bounds>(() =>
-    clampToViewport(loadBounds() ?? defaultBounds()),
-  );
+  // A popped-out assistant follows the main window: report where we are. Other
+  // `win/` windows are not "where the user is".
+  // A URL naming no view (a deleted one, from an old link) parses to a pointer with no
+  // view type, and toUrl() throws on it — during render, which took the whole app down
+  // to the error page on /dock/execute-flow. Such a page reports as home.
+  const dockUrl = currentDock?.viewType ? currentDock.toUrl() : '/';
+  useEffect(() => {
+    if (!windowMode) publishDock(dockUrl);
+  }, [dockUrl, windowMode, publishDock]);
+
+  const [bounds, setBounds] = useState<Bounds>(() => clampToViewport(loadBounds() ?? defaultBounds()));
 
   // Animation phase. Mount lifecycle is gated on `phase !== 'closed'` so the
   // node stays in the DOM while the close transition runs.
   // If `open` was restored from localStorage (the user reloaded with the chat
   // open), start in the resting `open` phase and skip the entrance animation
   // — there's no triggerRect to animate from after a refresh.
-  const [phase, setPhase] = useState<Phase>(() =>
-    restoredFromStorage && open ? 'open' : 'closed',
-  );
+  const [phase, setPhase] = useState<Phase>(() => (restoredFromStorage && open ? 'open' : 'closed'));
+  const [exitRect, setExitRect] = useState<TriggerRect | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -126,6 +144,10 @@ export function FloatingChatWindow() {
       return () => cancelAnimationFrame(id);
     }
     // Close: only run the closing transition if we were actually mounted.
+    // Wherever the chat came from (the address bar's ask, a page's request
+    // line), it minimizes into the assistant button — the one click that
+    // brings it back — read where that button is NOW, not at open time.
+    setExitRect(assistantButtonRect());
     setPhase((prev) => (prev === 'closed' ? 'closed' : 'closing'));
   }, [open]);
 
@@ -168,9 +190,7 @@ export function FloatingChatWindow() {
   const onHeaderPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragStateRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
-    setBounds((prev) =>
-      clampToViewport({ ...prev, x: e.clientX - drag.offX, y: e.clientY - drag.offY }),
-    );
+    setBounds((prev) => clampToViewport({ ...prev, x: e.clientX - drag.offX, y: e.clientY - drag.offY }));
   }, []);
 
   const onHeaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -220,20 +240,16 @@ export function FloatingChatWindow() {
   // Compute the entrance/exit transform that starts at the trigger button's
   // rect and ends at identity (the centered window position).
   const isAtRest = phase === 'open';
-  const buttonRect = triggerRect;
-  let startTransform = 'scale(0.1)';
-  if (buttonRect) {
-    const buttonCx = buttonRect.x + buttonRect.width / 2;
-    const buttonCy = buttonRect.y + buttonRect.height / 2;
-    const winCx = bounds.x + bounds.width / 2;
-    const winCy = bounds.y + bounds.height / 2;
-    const dx = buttonCx - winCx;
-    const dy = buttonCy - winCy;
-    const sx = buttonRect.width / Math.max(1, bounds.width);
-    const sy = buttonRect.height / Math.max(1, bounds.height);
-    const s = Math.max(0.05, Math.min(sx, sy));
-    startTransform = `translate(${dx}px, ${dy}px) scale(${s})`;
-  }
+  const buttonRect = phase === 'closing' ? (exitRect ?? triggerRect) : triggerRect;
+  // Maximize-from: the window grows out of the button the way a minimize
+  // flies into it — the same flight, timing and small-end opacity, played
+  // backwards. Without a rect (opened from code) it grows from its own center.
+  const startTransform = buttonRect
+    ? genieTransform(
+        { left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height },
+        { left: buttonRect.x, top: buttonRect.y, width: buttonRect.width, height: buttonRect.height },
+      )
+    : 'scale(0.1)';
 
   return createPortal(
     <div
@@ -258,8 +274,8 @@ export function FloatingChatWindow() {
         resize: isAtRest ? 'both' : 'none',
         transformOrigin: 'center center',
         transform: isAtRest ? 'translate(0, 0) scale(1)' : startTransform,
-        opacity: isAtRest ? 1 : 0,
-        transition: `transform ${ANIM_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${ANIM_MS}ms ease`,
+        opacity: isAtRest ? 1 : GENIE_SMALL_OPACITY,
+        transition: `transform ${GENIE_DURATION_MS}ms ${GENIE_EASING}, opacity ${GENIE_DURATION_MS}ms ${GENIE_EASING}`,
         willChange: 'transform, opacity',
         // Keep the node mounted across close/open so the inner panel's session
         // state survives. `display: none` removes it from the layout cleanly
@@ -276,22 +292,33 @@ export function FloatingChatWindow() {
         onPointerCancel={onHeaderPointerUp}
         data-testid="floating-chat-drag-handle"
       >
-        <img
-          src={logoSrc}
-          alt=""
-          className="h-5 w-5 flex-shrink-0 object-contain"
-        />
+        <img src={logoSrc} alt="" className="h-5 w-5 flex-shrink-0 object-contain" />
         <span className="flex-1 truncate text-xs font-medium">
           <Trans>Flowpad Assistant</Trans>
           {ptyExperiment && (
             <span
-              className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+              className="ms-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
               data-testid="floating-chat-pty-experiment-badge"
             >
               <Trans>pty experiment</Trans>
             </span>
           )}
         </span>
+        {/* The floating window covers the page; this is the way out to a window of
+            its own beside Flowpad — so it is a labelled button, not a glyph. */}
+        <Button
+          type="button"
+          variant="default"
+          size="sm"
+          className="h-7 gap-1.5 px-2.5 text-xs font-medium"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => popOut(boundUrlRef.current)}
+          title={t`Open the assistant in its own window, beside Flowpad`}
+          data-testid="floating-chat-popout"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+          <Trans>Open in new window</Trans>
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -306,33 +333,13 @@ export function FloatingChatWindow() {
         </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {target ? (
-          <EntityExecutionPanel
-            target={target}
-            processType={ProcessKind.Chat}
-            className="h-full"
-            emptyStateText={t`Ask the Flowpad Assistant anything.`}
-            newSessionLabel={t`New chat`}
-            historyLabel={t`Chat history`}
-            pastSessionsLabel={t`Past chats`}
-            noPastSessionsLabel={t`No past chats`}
-            placeholder={t`What can flowpad do for you ?`}
-            dense
-            // Pin newly-spawned chat processes to the Flowpad Assistant
-            // project so the asset manager and workdir are sourced from
-            // the assistant — not whatever project the user happens to
-            // have active in the dock (e.g. flowpad-oss).
-            defaultProjectId={flowpadAssistantProject?.id ?? null}
-            defaultWorkdir={flowpadAssistantProject?.fs_storage_mount_path ?? null}
-            transport={ptyExperiment ? 'pty-poll' : 'print'}
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {isLoading ? <Trans>Loading Flowpad Assistant…</Trans> : <Trans>Flowpad Assistant project not available.</Trans>}
-          </div>
-        )}
-      </div>
+      <AssistantChat
+        followedDock={currentDock}
+        visible={!isClosed && open}
+        pendingAsk={pendingAsk}
+        onAskConsumed={consumeAsk}
+        onBoundChange={onBoundChange}
+      />
     </div>,
     document.body,
   );

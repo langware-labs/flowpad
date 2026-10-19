@@ -1,12 +1,5 @@
 import { Box, ExternalLink, FolderOpen, FolderTree, User, type LucideIcon } from 'lucide-react';
-import {
-  assetSourceLabel,
-  dataManager,
-  isReadOnlySource,
-  TypeId,
-  type AssetDescriptor,
-  type AssetSource,
-} from '@sdk';
+import { assetSourceLabel, dataManager, isReadOnlySource, TypeId, type AssetDescriptor, type AssetSource } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { cn } from '@src/lib/utils';
@@ -56,7 +49,7 @@ const READONLY_REASON: Record<AssetScopeKind, string | null> = {
   project:
     'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
   context:
-    'Lives in one of the project’s context folders — edits propagate everywhere that folder is referenced. Attach to get a private editable copy.',
+    'Lives in one of the project’s dependencies — edits propagate everywhere that dependency is used. Attach to get a private editable copy.',
   folder:
     'Lives outside the project — edits propagate everywhere this path is referenced. Attach to get a private editable copy.',
   system: 'Ships with Flowpad — a new version replaces it on upgrade. Attach to get a private editable copy.',
@@ -68,8 +61,8 @@ const KIND_BY_SOURCE: Record<AssetSource, AssetScopeKind> = {
   inline: 'agent',
   user_dir: 'user',
   project_dir: 'project',
-  // A context folder is its own scope, not just another directory — it's the one
-  // the project deliberately pulled in, so it gets the context-folder glyph the
+  // A dependency is its own scope, not just another directory — it's the one
+  // the project deliberately pulled in, so it gets the dependency glyph the
   // rest of the app uses rather than a generic folder.
   context_dir: 'context',
   additional_dir: 'folder',
@@ -96,22 +89,20 @@ export function assetScope(descriptor: AssetDescriptor): AssetScope {
   const fallback = assetSourceLabel(descriptor.source);
 
   const label =
-    kind === 'agent' ? 'this agent'
-    : kind === 'project' ? projectLabel(descriptor) ?? dir ?? fallback
-    : kind === 'context' || kind === 'folder' ? dir ?? fallback
-    : fallback;
+    kind === 'agent'
+      ? 'this agent'
+      : kind === 'project'
+        ? (projectLabel(descriptor) ?? dir ?? fallback)
+        : kind === 'context' || kind === 'folder'
+          ? (dir ?? fallback)
+          : fallback;
 
   const reason = isReadOnlySource(descriptor.source) ? READONLY_REASON[kind] : null;
   return {
     kind,
     label,
     revealPath: descriptor.posix_path ?? null,
-    tooltip: scopeTooltip(
-      label,
-      descriptor.source_dir,
-      descriptor.posix_path ?? '(no file — inline persona)',
-      reason,
-    ),
+    tooltip: scopeTooltip(label, descriptor.source_dir, descriptor.posix_path ?? '(no file — inline persona)', reason),
   };
 }
 
@@ -137,14 +128,7 @@ function scopeTooltip(
   posixPath: string | null | undefined,
   reason: string | null,
 ): string {
-  return [
-    label,
-    sourceDir ? `from: ${sourceDir}` : null,
-    posixPath ?? null,
-    reason,
-  ]
-    .filter(Boolean)
-    .join('\n');
+  return [label, sourceDir ? `from: ${sourceDir}` : null, posixPath ?? null, reason].filter(Boolean).join('\n');
 }
 
 const LUCIDE_BY_KIND: Record<Exclude<AssetScopeKind, 'project' | 'system'>, LucideIcon> = {
@@ -172,31 +156,28 @@ function ScopeGlyph({ scope }: { scope: AssetScope }) {
  */
 export function AssetScopeChip({ scope, testidSuffix }: { scope: AssetScope; testidSuffix: string }) {
   const revealPath = scope.revealPath;
-  // One element, two grid cells: `display:contents` lets the glyph and the name
-  // sit in the row's own tracks while staying a single chip, so the reveal
-  // behaviour is written once instead of once per cell.
   const Cell = revealPath ? 'button' : 'span';
+  // One real cell carrying the one title, so hovering the glyph shows it too —
+  // which matters in the dense row layout, where the name is hidden
+  // (`.asset-scope-label`, see styles/index.css).
   return (
     <Cell
-      {...(revealPath ?
-        {
-          type: 'button' as const,
-          onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
-          title: `${scope.tooltip}\n\nClick to reveal in the file browser`,
-        }
-      : { title: scope.tooltip })}
-      className="contents"
+      {...(revealPath && {
+        type: 'button' as const,
+        onClick: () => void openExternalFromComputeNode('@local', revealPath, { select: true }),
+        'aria-label': scope.label,
+      })}
+      title={revealPath ? `${scope.tooltip}\n\nClick to reveal in the file browser` : scope.tooltip}
+      className={cn(
+        'flex min-w-0 items-center gap-2 rounded text-muted-foreground',
+        revealPath && 'hover:bg-muted hover:text-foreground',
+      )}
       data-testid={`asset-manager-scope-${testidSuffix}`}
     >
-      <span className={cn('flex items-center justify-center rounded', revealPath && 'hover:bg-muted')}>
+      <span className="flex w-5 flex-shrink-0 justify-center">
         <ScopeGlyph scope={scope} />
       </span>
-      <span
-        className={cn(
-          'min-w-0 truncate rounded text-left text-[10px] uppercase tracking-wider text-muted-foreground',
-          revealPath && 'hover:bg-muted hover:text-foreground',
-        )}
-      >
+      <span className="asset-scope-label min-w-0 truncate text-start text-[10px] uppercase tracking-wider">
         {scope.label}
       </span>
     </Cell>

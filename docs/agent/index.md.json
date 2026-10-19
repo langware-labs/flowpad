@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "agent",
+  "folder_name": "agent",
+  "inputs_hash": "90cc507a9cd10900845495e75df34aa84462873c127302b738f4386520801b57",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The agent layer: AgenticProcess state and interfaces, including FlowCall answers; system-prompt composition; and Chief of Staff delegation through the task ledger.",
+  "files": [
+    {
+      "name": "agentic_process_statuses.md",
+      "rel_path": "agentic_process_statuses.md",
+      "title": "AgenticProcess statuses — the canonical model",
+      "summary": "Canonical AgenticProcess status axes, readiness, worker lifecycle, busy state, and frontend parity; distinguishes persisted intent, observed runtime, and operation outcomes.",
+      "content_hash": "cbe00270ece389867a8349a5208cdeb2773a19cd76682a7cda9d814be84ef817",
+      "size_bytes": 11891
+    },
+    {
+      "name": "chief-of-staff.md",
+      "rel_path": "chief-of-staff.md",
+      "title": "Chief of Staff — an agent that delegates through a task ledger",
+      "summary": "Chief of Staff agents answer fast and delegate longer work to SubAgent staff through the task ledger; per-turn answer/subagent/task choice and harness rendering.",
+      "content_hash": "485846141354baedcb37b4e43c91310a4494fe9edc0e8bdfc2680a9cde21ece5",
+      "size_bytes": 4961
+    },
+    {
+      "name": "interface.md",
+      "rel_path": "interface.md",
+      "title": "AgenticProcess interface — rendered demo",
+      "summary": "Rendered interface tour covering the AgenticProcess Python entity, caller API, backend actions, and TypeScript SDK through executable interface cards.",
+      "content_hash": "f25999d95bc231d25fb3466361775e62aaff070952386e9fae7b2661a86316c4",
+      "size_bytes": 29091
+    },
+    {
+      "name": "system-prompt-layers.md",
+      "rel_path": "system-prompt-layers.md",
+      "title": "System-prompt layers",
+      "summary": "System-prompt layers for a worker: the single composer, the nine LayerKey layers in order with scope, the app launch_surface stamp, and each vendor's delivery channel.",
+      "content_hash": "3ffdf82badc0dcf7e953ddb344a09499b0aff01b4488617f187f536738b29e11",
+      "size_bytes": 4145
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T08:55:59.530008+00:00",
+  "latest_process_ref": ""
+}

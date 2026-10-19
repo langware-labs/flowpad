@@ -5,7 +5,7 @@
 frontend's ``graphFromPayload`` renders directly. Query params pass through to
 the builder as strings; each builder documents and parses its own.
 
-The route names no projection: ``flow_sdk/subgraph/builtins.py`` owns that
+The route names no projection: ``flow_sdk/subgraph/__init__.py`` owns that
 list, so adding one never edits this file.
 
 Layer 1 (the Sigma engine) and the existing worldview/dep_graph routes are

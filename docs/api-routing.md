@@ -55,9 +55,9 @@ When no explicit action appears in the URL, the HTTP method determines the actio
 
 | URL (after `/api/v1/graph`) | Scope | Target | Resource Type | Action | Sub-path |
 |------------------------------|-------|--------|---------------|--------|----------|
-| `/agent` | — | — | `agent` | `read` (implicit GET) | — |
+| `/subagent` | — | — | `subagent` | `read` (implicit GET) | — |
 | `/agent/@local` | — | `agent/@local` | — | `read` (implicit GET) | — |
-| `/workspace/@local/agent` | — | `workspace/@local` | `agent` | `read` (implicit GET) | — |
+| `/workspace/@local/subagent` | — | `workspace/@local` | `subagent` | `read` (implicit GET) | — |
 | `/agent/@local/fs/browse/Users/alice` | — | `agent/@local` | — | `fs` | `browse/Users/alice` |
 | `/compute_node/@local/terminal-command` | — | `compute_node/@local` | — | `terminal-command` | — |
 | `/workspace/@local/agent/@local/control` | `workspace/@local` | `agent/@local` | — | `control` | — |
@@ -235,7 +235,7 @@ See [VFS Specification](./vfs.md) for path format details.
 
 | Sub-action | Method | Description |
 |------------|--------|-------------|
-| `browse` | GET | List directory → `FSItem[]` |
+| `browse` | GET | List directory → `FSEntry[]` |
 | `download` | GET | Stream file content |
 | `download_zip` | GET | Download directory as ZIP |
 | `upload` | POST | Upload files (multipart) |
@@ -286,7 +286,6 @@ Entity-specific actions on `ComputeNode` (`flow_sdk/builtin/faas/compute_node.py
 |--------|--------|-------------|
 | `terminal-command` | POST | Execute terminal command |
 | `ops` | POST | Filesystem operations |
-| `get-host` | ALL | Get host info |
 | `get-machine-status` | ALL | Get machine status |
 
 ## Dedicated Routes (Non-Graph)
@@ -297,7 +296,6 @@ These routes bypass the graph/action system entirely. They are registered as Fas
 |------------|--------|---------------|
 | `server/routes/auth.py` | `/api/auth` | OAuth flows, login, logout |
 | `server/routes/hooks.py` | `/api/hooks` | Hook management |
-| `server/routes/chat.py` | `/api/chat` | Claude CLI sessions |
 | `server/routes/directory.py` | `/api/directory` | Working directory management |
 | `server/routes/detection.py` | — | Claude Code detection |
 | `server/routes/testing.py` | — | `/ping`, `/prompt` (test/debug) |
@@ -384,9 +382,9 @@ actionInfo.bodyParameters = { command: 'pause' };
 await dataManager.callAction(actionInfo);
 
 // Label actions — use subpath
-const actionInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
-actionInfo.subpath = 'my-label';               // → /label/my-label
-await dataManager.callAction(actionInfo);
+const labelInfo = new ActionInfo('label', this.typeId.type, this.typeId.id, 'POST');
+labelInfo.subpath = 'my-label';                // → /label/my-label
+await dataManager.callAction(labelInfo);
 ```
 
 ### React Hooks
@@ -411,12 +409,12 @@ What `ApiUrl.toString()` produces:
 
 | Operation | ActionInfo setup | Generated URL |
 |-----------|-----------------|---------------|
-| List agents | `name='read', resourceType='agent'` | `/graph/agent` |
-| Get agent | `name='read', resourceType='agent', resourceId='@local'` | `/graph/agent/@local` |
+| List subagents | `name='read', resourceType='subagent'` | `/graph/subagent` |
+| Get subagent | `name='read', resourceType='subagent', resourceId='@local'` | `/graph/subagent/@local` |
 | Create task under workspace | `name='create', resourceType='task', scope=[ws.typeId]` | `/graph/workspace/@local/task` |
 | Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/alice'` | `/graph/compute_node/@local/fs/browse/Users/alice` |
 | Terminal command | `name='terminal-command', target=cn.typeId, method='POST'` | `/graph/compute_node/@local/terminal-command` |
-| Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/agent/@local/label/my-tag` |
+| Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/subagent/@local/label/my-tag` |
 
 ## Implementations
 

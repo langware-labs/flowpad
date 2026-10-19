@@ -1,17 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { describe, it, expect, vi } from 'vitest';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { userScope, projectScope } from '@src/lib/scope-filter';
 
 describe('ScopeFilterBar', () => {
   it('renders three scope buttons', () => {
-    render(
-      <ScopeFilterBar
-        scope={userScope()}
-        currentProjectId={null}
-        onScopeChange={() => {}}
-      />,
-    );
+    render(<ScopeFilterBar scope={userScope()} currentProjectId={null} onScopeChange={() => {}} />, {
+      wrapper: MemoryRouter,
+    });
     expect(screen.getByText('All')).toBeDefined();
     expect(screen.getByText('User')).toBeDefined();
     expect(screen.getByText('Project')).toBeDefined();
@@ -19,13 +16,9 @@ describe('ScopeFilterBar', () => {
 
   it('calls onScopeChange when a button is clicked', () => {
     const onScopeChange = vi.fn();
-    render(
-      <ScopeFilterBar
-        scope={projectScope('project-1')}
-        currentProjectId={null}
-        onScopeChange={onScopeChange}
-      />,
-    );
+    render(<ScopeFilterBar scope={projectScope('project-1')} currentProjectId={null} onScopeChange={onScopeChange} />, {
+      wrapper: MemoryRouter,
+    });
     fireEvent.click(screen.getByText('User'));
     // "User" = user-assets-only scope ({mode:'user'}).
     expect(onScopeChange).toHaveBeenCalledWith(userScope());
@@ -34,13 +27,9 @@ describe('ScopeFilterBar', () => {
   it('defaults the project scope to the current project', () => {
     const onScopeChange = vi.fn();
 
-    render(
-      <ScopeFilterBar
-        scope={userScope()}
-        currentProjectId="project-1"
-        onScopeChange={onScopeChange}
-      />,
-    );
+    render(<ScopeFilterBar scope={userScope()} currentProjectId="project-1" onScopeChange={onScopeChange} />, {
+      wrapper: MemoryRouter,
+    });
 
     const projectButton = screen.getByText('Project').closest('button');
     expect(projectButton?.disabled).toBe(false);

@@ -21,7 +21,7 @@ const h = vi.hoisted(() => ({
 vi.mock('@src/components/wizard/start-wizard-process', () => ({ startWizardProcess: h.startWizardProcess }));
 vi.mock('@src/components/wizard/wizard-modal', () => ({ attachWizardModal: h.attachWizardModal }));
 vi.mock('@src/notifications', () => ({ notify: { success: h.notifySuccess, error: h.notifyError } }));
-vi.mock('@src/hooks/use-agentic-process-stream', () => ({ useAgenticProcessStream: () => [] }));
+vi.mock('@src/hooks/use-agentic-process-stream', () => ({ useAgenticProcessStream: () => [], useProcessToolCount: () => 0 }));
 vi.mock('@sdk', async (importActual) => {
   const actual = await importActual<Record<string, unknown>>();
   return { ...actual, launchWizard: h.launchWizard, awaitWizardResult: h.awaitWizardResult };

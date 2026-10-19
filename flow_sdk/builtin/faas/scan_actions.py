@@ -1,48 +1,66 @@
 """ScanActionsMixin — resource scanning & agentic process actions for ComputeNode."""
+
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+from pathlib import Path
 
+from flow_sdk import toplog
 from flow_sdk.builtin.faas import scan_indexer
+from flow_sdk.builtin.faas.project_list import (
+    invalidate_project_list_cache,
+)
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
 )
+from flow_sdk.flowpad_types.vendors import VENDOR_KEYS, vendor_for, vendor_or_none
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+def _bad_worker_type(raw: str) -> str:
+    return f"worker_type must be one of {', '.join(repr(k) for k in sorted(VENDOR_KEYS))} (got {raw!r})"
 
 
 def _resolve_session_record(session_id: str, hint: str | None = None):
     """Locate a session record on disk by id, auto-discovering worker_type.
 
-    With ``hint`` set to ``"claude"``, ``"codex"``, or ``"copilot"``, only
-    the matching backend is probed. Without a hint, Claude is tried first,
-    then Codex, then Copilot.
+    With ``hint`` set to a known vendor, ONLY that backend is probed. Without a
+    hint, Claude is tried first, then Codex, then Copilot, then OpenCode.
+
+    Each branch is an inclusion test (``hint in (None, "<vendor>")``). They used
+    to be exclusion lists naming the *other* vendors, which silently stopped
+    skipping as soon as a fourth vendor existed: ``hint="opencode"`` satisfied
+    all three of them and probed claude, codex and copilot first — defeating the
+    entire purpose of passing a hint.
 
     Returns ``(record, worker_type)`` on hit; ``(None, None)`` on miss.
     Worker_type is the canonical query/api spelling.
     """
-    if hint not in (None, "claude", "codex", "copilot"):
+    if hint is not None and hint not in VENDOR_KEYS:
         return None, None
 
-    if hint not in ("codex", "copilot"):
+    if hint in (None, "claude"):
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
         rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
-    if hint not in ("claude", "copilot"):
+    if hint in (None, "codex"):
         from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
+
         rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
 
-    if hint not in ("claude", "codex"):
+    if hint in (None, "copilot"):
         from types import SimpleNamespace
 
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
-            find_copilot_session_jsonl,
-            read_copilot_session_meta,
-        )
+        from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import find_copilot_session_jsonl
 
         path = find_copilot_session_jsonl(session_id)
         if path is not None:
@@ -54,7 +72,77 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
                 source_file=str(path),
             ), "copilot"
 
+    if hint in (None, "opencode"):
+        # OpenCode keeps sessions in SQLite, not in a per-session file, so the
+        # "record" is synthesized from the store row plus the projection the
+        # driver materialises. Probed LAST: its ids are ``ses_…``-prefixed and
+        # cannot collide with the UUID/rollout ids above, so order is only cost.
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.opencode.session_history import (
+            find_opencode_session,
+            opencode_session_cwd,
+        )
+
+        if find_opencode_session(session_id) is not None:
+            return SimpleNamespace(
+                cwd=opencode_session_cwd(session_id),
+                name=session_id,
+                jsonl_path=None,
+                source_file=None,
+            ), "opencode"
+
+    if hint in (None, "deepagents"):
+        # Deep Agents sessions are LangGraph checkpoint DBs FlowPad's own runner writes, one
+        # file per session id — a store like opencode's, so the record is synthesized the same
+        # way. A checkpoint carries no cwd; the process row that owns the session does.
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.session_history import (
+            find_deepagents_session,
+        )
+
+        if find_deepagents_session(session_id) is not None:
+            return SimpleNamespace(cwd=None, name=session_id, jsonl_path=None, source_file=None), "deepagents"
+
     return None, None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# launch pre-flight — a "needs a human" verdict is a 4xx, not a 500
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _start_failure_response(reason, worker_type: str, fallback: ApiFailResponse) -> ApiFailResponse:
+    """Classify a spawn failure that got past the pre-flight.
+
+    The pre-flight can still lose a race — a CLI deleted between the check and
+    the spawn. ``LaunchError.classify`` already recognises ``WorkerSpawnError``
+    and the "no … installation discovered" text, so a config verdict answers
+    4xx here instead of inheriting the 500 default (which ``response.py`` would
+    otherwise stamp on — the FLOWPAD-1971 symptom). Anything transient keeps the
+    caller's original response.
+    """
+    # Function-local, like every other capability/driver import in this module:
+    # a module-level import of either one is a circular import (scan_actions is
+    # reached while ComputeNode/AgenticProcess are still partially initialized).
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.agentic_process.launch_health import LaunchError, LaunchHealth
+    from flow_sdk.core.capabilities.registry import get_capability_registry
+
+    exc = reason if isinstance(reason, BaseException) else RuntimeError(str(reason))
+    verdict = LaunchError.classify(exc, worker_type)
+    if verdict.health is not LaunchHealth.CONFIG_ERROR:
+        return fallback
+    # The capability spec is the SSOT for what a harness is *called*; the worker
+    # type (``claude_code``) is an internal token and reads like one in a toast.
+    name = get_capability_registry().get(worker_capability_kind(worker_type)).spec.name
+    return ApiFailResponse(
+        message=f"{name} is not available on this machine.",
+        status_code=400,
+    )
 
 
 class ScanActionsMixin:
@@ -62,7 +150,8 @@ class ScanActionsMixin:
         """Full-coverage (user + all projects) indexer roots for resource scans."""
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
 
-        return await self._resolve_scoped_roots(await get_all_scope_filter(create_missing=False))
+        # Background resource scan — gate protected folders rather than prompting.
+        return await self._resolve_scoped_roots(await get_all_scope_filter(create_missing=False), foreground=False)
 
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
@@ -160,7 +249,7 @@ class ScanActionsMixin:
         # scan-item now only serves a flat resource-type list (e.g. skills).
         _ITEM_TO_RESOURCE = {
             "skills": "skill",
-            "agents": "agent",
+            "agents": "subagent",
             "commands": "command",
             "hooks": "hook",
             "mcpServers": "mcp_server",
@@ -173,9 +262,7 @@ class ScanActionsMixin:
 
         try:
             scoped_roots = await self._scan_scoped_roots()
-            res = await scan_indexer.scan_resources_from_indexer(
-                resource, scoped_roots, limit=0
-            )
+            res = await scan_indexer.scan_resources_from_indexer(resource, scoped_roots, limit=0)
             return ApiSuccessResponse(data=res.get("items", []))
         except Exception as e:
             logging.exception(f"scan-item failed: {e}")
@@ -210,11 +297,139 @@ class ScanActionsMixin:
             ApiResponse with projects list and total_count
         """
         try:
-            result = await _list_projects_from_indexer()
+            request_info = get_current_request_info()
+            # ``?workspace=<id>`` keeps the rows of that workspace; absent → every
+            # project, exactly the list before workspaces existed.
+            workspace = request_info.get_param("workspace") if request_info else None
+            result = await _list_projects_from_indexer(workspace=workspace or None)
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"list-projects failed: {e}")
             return ApiFailResponse(message=str(e))
+
+    # ── project cleanup ────────────────────────────────────────────────────
+    #
+    # The picker's scan counts candidates (cheap, shallow); these serve the
+    # screen that acts on them. Nothing here runs on its own: the report is
+    # read-only, and the mutations act on ids the caller named.
+
+    async def _scan_project_cleanup_report(self) -> ApiResponse:
+        """Every project with the detail the cleanup screen shows.
+
+        Reuses the project list rather than re-scanning, so the harness columns
+        agree with the picker by construction. Adds a bounded file walk and a
+        ``.git`` probe — ~0.36s over 1,250 projects.
+        """
+        from flow_sdk.fs_store.operations.project_cleanup import assess_all  # noqa: PLC0415
+
+        try:
+            listing = await _list_projects_from_indexer()
+            specs, _summary = assess_all(listing.get("projects") or [])
+            return ApiSuccessResponse(
+                data={
+                    "projects": [spec.model_dump(mode="json") for spec in specs],
+                    "total_count": len(specs),
+                }
+            )
+        except Exception as e:
+            logging.exception(f"project-cleanup-report failed: {e}")
+            return ApiFailResponse(message=str(e))
+
+    async def _scan_project_git_detail(self) -> ApiResponse:
+        """Git remote + dirty state for ONE project, resolved on row expand.
+
+        Split out of the report because each answer costs a subprocess pair;
+        resolving them for a whole listing would be a thousand process spawns
+        for information the reader looks at one line of.
+        """
+        from flow_sdk.fs_store.operations.project_cleanup import git_detail  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        cwd = request_info.get_param("cwd") if request_info else None
+        if not cwd:
+            return ApiFailResponse(message="cwd parameter is required", status_code=400)
+        try:
+            return ApiSuccessResponse(data=git_detail(cwd).model_dump(mode="json"))
+        except Exception as e:
+            logging.exception(f"project-git-detail failed: {e}")
+            return ApiFailResponse(message=str(e))
+
+    async def _scan_project_cleanup_apply(self, *, permanent: bool) -> ApiResponse:
+        """Run one cleanup action over a named set of projects.
+
+        Body: ``{"project_ids": [...]}``. Takes a list so a selection is one
+        round trip, and reports **per project** rather than one overall verdict:
+        a refused guard on one row must not read as a failure of the other
+        forty-nine, and a partial result the caller cannot see is worse than
+        either outcome.
+
+        The harness index is built ONCE for the whole call. Each harness store
+        answers "do you know this project" only by being read whole, so
+        resolving it per project made a fifty-project delete fifty full
+        rescans.
+        """
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.project_cleanup import (  # noqa: PLC0415
+            CleanupRefused,
+            HarnessIndex,
+            guard_deletable,
+            remove_from_harness,
+        )
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+        try:
+            body = await request_info.request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Body must be a JSON object", status_code=400)
+        wanted = body.get("project_ids") or []
+        if not isinstance(wanted, list) or not wanted:
+            return ApiFailResponse(message="'project_ids' must be a non-empty list", status_code=400)
+
+        index = await asyncio.to_thread(HarnessIndex.build)
+        results: list[dict] = []
+        for project_id in wanted:
+            try:
+                # The entity carries the cwd, so the mutation does not pay for
+                # the 3-5s project listing just to look one up.
+                project = await Project.get_by_id(str(project_id))
+                if project is None:
+                    results.append({"project_id": project_id, "ok": False, "error": "Unknown project"})
+                    continue
+                row = {"cwd": project.fs_storage_mount_path or "", "name": project.name}
+                if permanent:
+                    # A row with no folder is an orphan: nothing on disk to
+                    # guard, and removing the row IS the whole job.
+                    if row["cwd"]:
+                        guard_deletable(row["cwd"])
+                    # Deleting the ROW is `_delete_with_children`'s job: it also
+                    # purges child records and their bundles, and detaches the
+                    # shared @local compute node before the cascade. Re-deriving
+                    # that here is how the global compute node gets deleted.
+                    deletion = await project._delete_with_children(
+                        folder="trash", delete_chats=True, harness_index=index
+                    )
+                    outcome = deletion.get("chat_cleanup") or {"cwd": row["cwd"], "removed_paths": []}
+                    outcome["trashed"] = deletion.get("folder_mechanism") is not None
+                    outcome["mechanism"] = deletion.get("folder_mechanism")
+                    outcome["deleted_children"] = deletion.get("deleted_children", 0)
+                else:
+                    outcome = await asyncio.to_thread(remove_from_harness, row, index)
+                results.append({"project_id": project_id, "ok": True, **outcome})
+            except CleanupRefused as refused:
+                results.append({"project_id": project_id, "ok": False, "error": str(refused)})
+            except Exception as e:  # one bad row must not abort the rest
+                logging.exception(f"cleanup failed for {project_id}: {e}")
+                results.append({"project_id": project_id, "ok": False, "error": str(e)})
+
+        succeeded = sum(1 for r in results if r["ok"])
+        if succeeded:
+            # Either action changes what the picker's cached disk scan would find.
+            invalidate_project_list_cache()
+        return ApiSuccessResponse(data={"results": results, "succeeded": succeeded, "failed": len(results) - succeeded})
 
     async def _scan_project(self) -> ApiResponse:
         """Scan all resources for a specific project.
@@ -256,17 +471,18 @@ class ScanActionsMixin:
     async def _scan_create_process(self) -> ApiResponse:
         """Create a new idle AgenticProcess on this ComputeNode.
 
-        POST body: { context, result, visible } (same shape as CreateProcessRequest)
+        POST body: { context, result, visible, theme } (same shape as CreateProcessRequest)
 
         Returns:
             AgenticProcess entity data
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
-        from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeAgentOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexAgentOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotAgentOptions
         from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
+        t0 = time.monotonic()
         try:
             request_info = get_current_request_info()
             owner = request_info.someone_typeid if request_info else None
@@ -282,6 +498,13 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Palette of the terminal this worker will paint into. This action
+            # both creates the process AND spawns its PTY, so the launch happens
+            # here — the client's later ``open`` only reattaches and can no
+            # longer influence the command line.
+            terminal_theme = body.get("theme")
+            if terminal_theme not in ("light", "dark"):
+                terminal_theme = None
             # Transport intent for the new session: True → interactive PTY
             # (default), False → headless JSON-stream (no PTY/xterm). The UI passes
             # False for a Standard chat tab; omitted → True so every existing
@@ -296,10 +519,19 @@ class ScanActionsMixin:
             result_data = body.get("result")
 
             context_data = dict(context_raw)
+            # The app's launch stamp, through the one filter (only "app" survives) — COMMON_UI layer.
+            from flow_sdk.builtin.agentic_process.system_prompt import (  # noqa: PLC0415
+                LAUNCH_SURFACE_KEY,
+                launch_surface_fields,
+            )
+
+            context_data.update(launch_surface_fields(context_data.pop(LAUNCH_SURFACE_KEY, None)))
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_typeid_str = context_data.pop("target_typeid_str", None)
+            # Dock view the chat belongs to — the Flowpad Assistant keeps one chat per context.
+            context_key = context_data.pop("context_key", None)
             # Lift `process_type` out of `context_data` so it lands on the
             # top-level field declared in the AgenticProcess schema. The
             # `useProcessesForTarget` filter on the chat-panel queries
@@ -335,15 +567,128 @@ class ScanActionsMixin:
             # substituting Claude launches the wrong worker with no signal
             # (e.g. a UI that knows 'copilot' talking to a backend that
             # doesn't), which is far more confusing than a failed request.
-            worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
+            worker_type_raw = context_data.pop("worker_type", None)
+            if worker_type_raw is None:
+                from flow_sdk.core.capabilities.registry import resolve_default_worker_type
+
+                worker_type_raw = await resolve_default_worker_type()
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
-                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}")
+                # A client naming a worker this backend doesn't have is a client
+                # error; without an explicit status_code it would answer 500.
+                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}", status_code=400)
+
+            # Pre-flight the harness BEFORE anything is persisted, so a provider
+            # the machine can't run is refused with a structured 400 instead of
+            # failing deep in the spawn (which reached HTTP as a bare 500) and
+            # leaving a FAILED row behind for every attempt.
+            #
+            # ``is_installed`` rather than ``ensure_launchable``: the latter also
+            # runs the login probe, which shells out to the vendor CLI uncached,
+            # and no subprocess belongs on a per-create request path. This is a
+            # lookup in the discovery dict — the same SSOT ``worker_path_env``
+            # reads at spawn, so it can never turn away a launch that would have
+            # worked. A logged-out harness still fails at launch, where it is
+            # latched and reported as it is today.
+            #
+            # Deliberately gates headless creates too. A standard-mode session
+            # with a missing CLI used to be born fine and only break on its first
+            # prompt, where the failure rides a 200 stream and no status code can
+            # reach the user.
+            toplog.log(
+                "agentic_process.load",
+                "createProcess start worker=%s visible=%s pty_mode=%s project=%s",
+                worker_type.value,
+                visible,
+                pty_mode,
+                project_id,
+            )
+            if not await AgenticProcess.is_installed(worker_type.value):
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    worker_capability_kind,
+                )
+                from flow_sdk.core.capabilities.registry import get_capability_registry
+
+                logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} is not installed")
+                # The capability spec's name, not the internal ``claude_code``
+                # token — this string is shown to the user verbatim.
+                harness_name = get_capability_registry().get(worker_capability_kind(worker_type.value)).spec.name
+                return ApiFailResponse(
+                    message=f"{harness_name} is not installed on this machine.",
+                    status_code=400,
+                )
+
+            # And the same gate for the OTHER thing a spawn needs: something to
+            # run on. Installed is not enough — a harness with no eligible
+            # source refuses at spawn, and by then the create has already
+            # answered 200. That is the exact failure the install gate above was
+            # written for, one question over: the process was born fine and the
+            # worker died afterwards, so a vibe prompt sat there with no answer,
+            # no error and nothing to click. The person who hit it typed into a
+            # chat that never replied.
+            #
+            # `llm_picker_view` rather than `resolve_llm_endpoint`: it answers for
+            # a worker_type + scope, and there is no process here to hand the
+            # resolver. Same producer either way — `chosen` IS the resolver's
+            # answer, so this can never refuse a launch that would have worked.
+            #
+            # Local reads only (capability row, stored keys, the memoized
+            # endpoint listing) — no subprocess, which is the bar the install
+            # gate set for this request path.
+            #
+            # The scope is the one KNOWABLE here, and it is not quite the spawn's.
+            # Rung 1 (``AgenticProcess.llm_endpoint_typeid``) cannot exist yet —
+            # ``set_llm_endpoint`` acts on a process that already exists — so
+            # nothing is lost there. The one real gap is a process created with
+            # no ``project_id`` whose ancestor pins an endpoint: the spawn walks
+            # to it, this cannot, and a pin can ADD a candidate (``_apply_constraint``
+            # stubs a named hub endpoint the inventory has not heard of). Such a
+            # create would be refused here and would have spawned. Every caller
+            # that has a project passes it, so this is narrow — but it is a real
+            # false refusal, not a theoretical one, and belongs written down.
+            from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+                check_unchecked_login,
+                llm_picker_view,
+            )
+            from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+            # Creating a process is an action: probe a never-checked login now instead of
+            # refusing it -- funding never presumes a login works.
+            await check_unchecked_login(worker_type.value)
+            funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
+            toplog.log(
+                "agentic_process.load",
+                "createProcess preflight done (is_installed + llm_picker_view) ms=%.0f",
+                (time.monotonic() - t0) * 1000,
+            )
+            if funding.chosen is None:
+                logging.info(f"ComputeNode {self.id} createProcess refused: {worker_type.value} has no LLM source")
+                # The SAME opening sentence ``LLMSourceError`` uses, then the
+                # resolver's own top-ranked refusal.
+                #
+                # Both halves are load-bearing. The reason is what a person can
+                # act on and is the sentence the LLM Sources screen shows, so
+                # the two cannot disagree about why a box is stuck. The opening
+                # is what the FRONTEND reads: `isUnfundedHarness` matches "no
+                # usable LLM source" to route this failure to the sources page
+                # rather than the install screen, and it is the only signal it
+                # gets — the envelope carries no error code. Returning the bare
+                # reason made this gate unrecognisable to the routing it exists
+                # to feed, and a launch refused for funding landed the user on
+                # Capabilities, which can only offer to install a harness they
+                # already have.
+                reason = funding.blocked or "no source is configured"
+                return ApiFailResponse(
+                    message=f"{worker_type.value} has no usable LLM source: {reason}",
+                    status_code=400,
+                )
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
             agents_json = context_data.pop("agents_json", None)
+            env_vars_raw = context_data.pop("env_vars", None)
+            env_vars = dict(env_vars_raw) if isinstance(env_vars_raw, dict) else {}
             output_format = context_data.pop("output_format", None)
             # A ``stream-json`` process is headless by contract (print-mode, no
             # PTY — see ts_sdk agentic-context.ts). ``pty_mode`` defaults True
@@ -356,9 +701,10 @@ class ScanActionsMixin:
             if output_format == "stream-json":
                 pty_mode = False
             if worker_type == WorkerType.CODEX:
-                cli_opts = CodexCliOptions(
+                cli_opts = CodexAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
+                    env_vars=env_vars,
                 )
                 # Codex reads agent specs at runtime from the process entity
                 # (``CodexDriver.cli_options`` mirrors them onto ``skill_names``),
@@ -369,19 +715,21 @@ class ScanActionsMixin:
                 context_data.pop("debug", None)
                 context_data.pop("worktree", None)
             elif worker_type == WorkerType.COPILOT:
-                cli_opts = CopilotCliOptions(
+                cli_opts = CopilotAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
                     effort=context_data.pop("effort", None),
+                    env_vars=env_vars,
                 )
                 context_data.pop("chrome", None)
                 context_data.pop("debug", None)
                 context_data.pop("worktree", None)
             else:
-                cli_opts = ClaudeCliOptions(
+                cli_opts = ClaudeAgentOptions(
                     model=model,
                     permission_mode=permission_mode,
                     agents_json=agents_json,
+                    env_vars=env_vars,
                     output_format=output_format,
                     chrome=bool(context_data.pop("chrome", False)),
                     debug=bool(context_data.pop("debug", True)),
@@ -428,6 +776,12 @@ class ScanActionsMixin:
                 except Exception:
                     pass
 
+            toplog.log(
+                "agentic_process.load",
+                "createProcess project resolved project=%s ms=%.0f",
+                project_id,
+                (time.monotonic() - t0) * 1000,
+            )
             process = AgenticProcess(
                 worker_type=worker_type.value,
                 instruction_content="",
@@ -439,16 +793,18 @@ class ScanActionsMixin:
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
                 target_typeid_str=target_typeid_str or None,
+                context_key=context_key or None,
                 process_type=process_type,
                 load_flowpad_assistant=load_flowpad_assistant,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
+            process.enable_pending_question_hook()
             # Stamp provenance links before save so they ride the same write.
             # Invalid / unparseable typeids are skipped — a bad provenance hint
             # must never block a launch.
             if shared_context_entities_raw:
-                from flow_sdk.api.api_types.type_id import TypeId as _TypeId
+                from flow_sdk.fs_store.type_id import TypeId as _TypeId
 
                 tids = []
                 for raw in shared_context_entities_raw:
@@ -459,6 +815,12 @@ class ScanActionsMixin:
                 if tids:
                     process.add_shared_context_entities(*tids)
             await process.save(owner)
+            toplog.log(
+                "agentic_process.load",
+                "createProcess row saved process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
+            )
 
             # ANALYSIS kind: the new process is a child of the entity it
             # analyzes (target_typeid_str) and each joins the other's private
@@ -501,6 +863,12 @@ class ScanActionsMixin:
                     logging.debug("ProcessResult entity not available, skipping result creation")
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
+            toplog.log(
+                "agentic_process.load",
+                "createProcess ready to start process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
+            )
 
             # Seed the launch prompt onto the queue BEFORE any auto-start. Use
             # the PromptQueue directly (not the enqueue *action*) so we don't
@@ -524,17 +892,21 @@ class ScanActionsMixin:
             # next ``/prompt`` to land on a stale session and emit nothing.
             if visible:
                 try:
-                    start_resp = await process.start_pty(visible=visible)
+                    start_resp = await process.start_pty(visible=visible, terminal_theme=terminal_theme)
                 except Exception as start_err:
-                    logging.exception(
-                        f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
-                    )
-                    return ApiFailResponse(
-                        message=f"Process {process.id} created but failed to start: {start_err}"
+                    logging.exception(f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}")
+                    return _start_failure_response(
+                        start_err,
+                        worker_type.value,
+                        ApiFailResponse(message=f"Process {process.id} created but failed to start: {start_err}"),
                     )
 
                 if isinstance(start_resp, ApiFailResponse):
-                    return start_resp
+                    # ``_perform_open`` returns its failure with no status_code
+                    # (⇒ 500). Classify the latched reason so a harness that
+                    # vanished between the pre-flight and the spawn still reads
+                    # as a client error the UI can act on.
+                    return _start_failure_response(start_resp.message or "", worker_type.value, start_resp)
             elif launch_prompt and str(launch_prompt).strip():
                 # Headless launch (visible=False) with a seeded first prompt: PTY
                 # drains the queue head via ``start_pty`` above, but headless has no
@@ -543,17 +915,24 @@ class ScanActionsMixin:
                 # blocks on the turn; it also logs any drain-task exception.
                 process._schedule_queue_drain("enqueue")
 
-            return ApiSuccessResponse(
-                data={
-                    "id": process.id,
-                    "type": process.type,
-                    "shell_id": process.shell_id,
-                    "pty_pid": getattr(process, "pty_pid", None),
-                }
+            toplog.log(
+                "agentic_process.load",
+                "createProcess done process=%s ms=%.0f",
+                process.id,
+                (time.monotonic() - t0) * 1000,
             )
+            data = process.model_dump(mode="json")
+            # ``pty_pid`` is not an AgenticProcess field, but the legacy
+            # identity-only response exposed it. Keep the key additively while
+            # returning the full authoritative entity projection.
+            data.setdefault("pty_pid", getattr(process, "pty_pid", None))
+            return ApiSuccessResponse(data=data)
 
         except Exception as e:
             logging.exception(f"ComputeNode {self.id} createProcess error: {e}")
+            toplog.log(
+                "agentic_process.load", "createProcess failed ms=%.0f error=%s", (time.monotonic() - t0) * 1000, e
+            )
             return ApiFailResponse(message=str(e))
 
     async def _scan_upsert_session_process(self) -> ApiResponse:
@@ -567,7 +946,8 @@ class ScanActionsMixin:
             sessionId:  str           — session/thread ID
             workdir:    str | None    — working directory
             projectId:  str | None    — project ID for context
-            workerType: str | None    — "claude" (default) or "codex"
+            workerType: str | None    — a vendor key (``VENDOR_KEYS``); default "claude"
+            theme:      str | None    — "light" | "dark", palette to pin on the spawn
 
         Returns: ApiSuccessResponse with the full AgenticProcess entity dict.
         """
@@ -583,11 +963,14 @@ class ScanActionsMixin:
         if not session_id:
             return ApiFailResponse(message="sessionId is required")
 
+        theme = body.get("theme")
         return await self._upsert_session_process_impl(
             session_id=session_id,
             workdir=body.get("workdir"),
             project_id=body.get("projectId"),
             worker_type_raw=(body.get("workerType") or "claude").lower(),
+            terminal_theme=theme if theme in ("light", "dark") else None,
+            launch_surface=body.get("launch_surface"),
         )
 
     async def _upsert_session_process_impl(
@@ -598,6 +981,8 @@ class ScanActionsMixin:
         worker_type_raw: str,
         *,
         session_rec=None,
+        terminal_theme: str | None = None,
+        launch_surface: str | None = None,
     ) -> ApiResponse:
         """Find or create an AgenticProcess for ``session_id``.
 
@@ -611,41 +996,32 @@ class ScanActionsMixin:
         sub-path that already located it) to skip a redundant disk scan.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.agentic_process.naming.state import SessionNameState
         from flow_sdk.flowpad_types.enums import WorkerType
 
         request_info = get_current_request_info()
 
         try:
-            is_codex = worker_type_raw in ("codex",)
-            is_copilot = worker_type_raw in ("copilot",)
-            cli_factory_key = "copilot" if is_copilot else ("codex" if is_codex else "claude")
-            wt_enum = (
-                WorkerType.COPILOT
-                if is_copilot
-                else (WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE)
-            )
+            # Any spelling ``VENDORS`` knows; an unlisted vendor is claude, the
+            # documented default (a ternary chain here once made "unknown" and
+            # "claude" the same branch and mis-attributed opencode sessions).
+            vendor = vendor_or_none(worker_type_raw) or vendor_for("claude")
+            cli_factory_key, wt_enum = vendor.key, WorkerType(vendor.worker_type)
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
             # derived from it so worktrees / nested checkouts don't collapse into
             # the active dock project.
-            session_name: str | None = None
             try:
                 from flow_sdk.builtin.project import Project
 
                 if session_rec is None:
-                    session_rec, _ = _resolve_session_record(
-                        session_id,
-                        hint="copilot" if is_copilot else ("codex" if is_codex else "claude"),
-                    )
+                    session_rec, _ = _resolve_session_record(session_id, hint=cli_factory_key)
 
                 if session_rec:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
-                    rec_name = getattr(session_rec, "name", None) or ""
-                    if rec_name and rec_name != session_id:
-                        session_name = rec_name
 
                 if workdir:
                     project = await Project.recover_by_path(workdir)
@@ -682,12 +1058,10 @@ class ScanActionsMixin:
                     context_data["workdir"] = workdir
                 if project_bound and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                if session_name and not process.name:
-                    process.name = session_name
-                    changed = True
                 if changed:
                     process.context_data = context_data
                     await process.save()
+                await process.reconcile_name()
                 # Only propagate to the linked Shell for fields that actually
                 # moved on the process — otherwise the Shell would silently
                 # drift away from a frozen process binding.
@@ -716,14 +1090,12 @@ class ScanActionsMixin:
                 start_data = None
                 if not process.shell_id or not process.visible:
                     try:
-                        start_resp = await process.start_pty(visible=True)
+                        start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
                     except Exception as start_err:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
                         )
-                        return ApiFailResponse(
-                            message=f"Process {process.id} found but failed to start: {start_err}"
-                        )
+                        return ApiFailResponse(message=f"Process {process.id} found but failed to start: {start_err}")
                     if isinstance(start_resp, ApiFailResponse):
                         return start_resp
                     start_data = getattr(start_resp, "data", None)
@@ -785,7 +1157,9 @@ class ScanActionsMixin:
                     )
                 )
 
-            context_data = {"workdir": workdir}
+            from flow_sdk.builtin.agentic_process.system_prompt import launch_surface_fields  # noqa: PLC0415
+
+            context_data = {"workdir": workdir, **launch_surface_fields(launch_surface)}
             if project_id:
                 context_data["project_id"] = project_id
 
@@ -797,9 +1171,10 @@ class ScanActionsMixin:
                 project_id=project_id or None,
                 workdir=workdir or None,
                 visible=True,
-                **({"name": session_name} if session_name else {}),
+                naming_state=SessionNameState(),
             )
             await process.save(owner=owner)
+            await process.reconcile_name()
 
             logging.info(
                 f"ComputeNode {self.id} upserted AgenticProcess {process.id} for "
@@ -813,11 +1188,15 @@ class ScanActionsMixin:
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     factory as _cli_factory,
                 )
+
                 _cmd = _cli_factory(process.cli_config, worker_type=cli_factory_key)
                 _cmd.resume = True
-                # Codex/Copilot resume need the id passed as the cli session_id
-                # (Claude already reads it from process.session_id at args-build time).
-                if is_codex or is_copilot:
+                # Every vendor but claude needs the id passed as the cli
+                # session_id for resume (claude reads it off process.session_id
+                # at args-build time). Keyed on "not claude" rather than an
+                # enumeration, so a new vendor resumes correctly by default
+                # instead of silently losing its --session flag.
+                if cli_factory_key != "claude":
                     _cmd.session_id = session_id
                 process.cli_config = _cmd.to_json()
                 # workdir is guaranteed by the create-time guard above — no
@@ -830,14 +1209,12 @@ class ScanActionsMixin:
             # AgenticProcess has no shell_id, is filtered out of the visible
             # tab strip, and the route loader silently snaps to a fallback.
             try:
-                start_resp = await process.start_pty(visible=True)
+                start_resp = await process.start_pty(visible=True, terminal_theme=terminal_theme)
             except Exception as start_err:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
                 )
-                return ApiFailResponse(
-                    message=f"Process {process.id} created but failed to start: {start_err}"
-                )
+                return ApiFailResponse(message=f"Process {process.id} created but failed to start: {start_err}")
 
             if isinstance(start_resp, ApiFailResponse):
                 return start_resp
@@ -871,16 +1248,13 @@ class ScanActionsMixin:
         """
         request_info = get_current_request_info()
         hint_raw = (
-            request_info.get_param("worker_type")
-            or request_info.get_param("workerType")
-            or ""
-        ) if request_info else ""
+            (request_info.get_param("worker_type") or request_info.get_param("workerType") or "")
+            if request_info
+            else ""
+        )
         hint = hint_raw.lower() or None
-        if hint and hint not in ("claude", "codex", "copilot"):
-            return ApiFailResponse(
-                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {hint_raw!r})",
-                status_code=400,
-            )
+        if hint and hint not in VENDOR_KEYS:
+            return ApiFailResponse(message=_bad_worker_type(hint_raw), status_code=400)
 
         session_rec, worker_type = _resolve_session_record(worker_id, hint=hint)
         if session_rec is None:
@@ -897,17 +1271,29 @@ class ScanActionsMixin:
             if existing:
                 return ApiSuccessResponse(data=existing.model_dump())
 
-            return ApiFailResponse(
-                message=f"Session {worker_id} not found in Claude, Codex, or Copilot history",
-                status_code=404,
-            )
+            # A miss is a valid ANSWER, not an error: "no session carries this id".
+            # `AgenticProcess.getByWorkerId` already maps this to `null` and its
+            # callers (status indicators, shell/worker deep-link recovery) treat
+            # `null` as "nothing to resume". Answering 404 made the browser log
+            # `Failed to load resource: 404` before any client code ran, so the
+            # miss could never be handled quietly — the same reason the caller
+            # had to grow a `wf_`-prefix short-circuit to dodge "a guaranteed
+            # 404". 4xx is reserved for a request that is actually malformed.
+            return ApiSuccessResponse(data=None)
 
+        # Palette of the terminal this session is being adopted into. A query
+        # hint here, not a body field: this is the GET the frontend actually
+        # uses (``AgenticProcess.getByWorkerId``), and the impl below SPAWNS a
+        # visible PTY — so this is a real terminal launch, not a headless one.
+        theme_hint = (request_info.get_param("theme") if request_info else None) or None
         return await self._upsert_session_process_impl(
             session_id=worker_id,
             workdir=None,
             project_id=None,
             worker_type_raw=worker_type,
+            terminal_theme=theme_hint if theme_hint in ("light", "dark") else None,
             session_rec=session_rec,
+            launch_surface=request_info.get_param("launch_surface") if request_info else None,
         )
 
     async def _scan_find_session(self) -> ApiResponse:
@@ -935,17 +1321,10 @@ class ScanActionsMixin:
         if not session_id:
             return ApiFailResponse(message="session_id is required", status_code=400)
 
-        worker_hint_raw = (
-            request_info.get_param("worker_type")
-            or request_info.get_param("workerType")
-            or ""
-        )
+        worker_hint_raw = request_info.get_param("worker_type") or request_info.get_param("workerType") or ""
         worker_hint = worker_hint_raw.lower() or None
-        if worker_hint and worker_hint not in ("claude", "codex", "copilot"):
-            return ApiFailResponse(
-                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {worker_hint_raw!r})",
-                status_code=400,
-            )
+        if worker_hint and worker_hint not in VENDOR_KEYS:
+            return ApiFailResponse(message=_bad_worker_type(worker_hint_raw), status_code=400)
 
         try:
             rec, worker_type = _resolve_session_record(session_id, hint=worker_hint)
@@ -956,14 +1335,14 @@ class ScanActionsMixin:
                 )
 
             cwd = getattr(rec, "cwd", None) or None
-            rec_name = getattr(rec, "name", None) or None
-            session_name = (
-                rec_name if rec_name and rec_name != session_id else None
-            )
-            transcript_path = (
-                getattr(rec, "jsonl_path", None)
-                or getattr(rec, "source_file", None)
-                or None
+            transcript_path = getattr(rec, "jsonl_path", None) or getattr(rec, "source_file", None) or None
+            from flow_sdk.builtin.worker_history import get_worker_session_name
+
+            session_name = await get_worker_session_name(
+                worker_type,
+                session_id,
+                jsonl_path=Path(transcript_path) if transcript_path else None,
+                prompt_fallback=True,
             )
 
             project_id: str | None = None

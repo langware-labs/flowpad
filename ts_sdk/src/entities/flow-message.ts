@@ -1,6 +1,9 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { ICloudOrigin, ICloudOriginLocal } from '../models/CloudOrigin';
+import { IMessageEnvelope } from '../models/MessageEnvelope';
+import { IMessageSender } from '../models/MessageSender';
 import { Callable } from '../types';
 import { ConnectionManager, DataOp } from '../websocket';
 
@@ -22,11 +25,13 @@ export enum AttachmentType {
  *  - NA        : no body needed (text-only, or inline-only attachments).
  *  - UPLOADING : sender is staging the body; receivers must wait.
  *  - READY     : body is available at fs/download/<BODY_FILENAME>.
- *  Transitions are hub-enforced: NA is terminal; UPLOADING → READY only. */
+ *  - FAILED    : an upload attempt failed; the sender's outbox retries it (receivers wait).
+ *  NA is terminal; UPLOADING / FAILED → READY. */
 export enum BodyStatus {
   NA = 'na',
   UPLOADING = 'uploading',
   READY = 'ready',
+  FAILED = 'failed',
 }
 
 /** Discriminator for special FlowMessage kinds. Mirrors
@@ -85,30 +90,66 @@ export function attachmentDataString(a: Pick<Attachment, 'data'>): string {
   return '';
 }
 
+/** `{id, value}` from the first `<kind>-<id>` TYPE_ID attachment — a JSON object riding its
+ *  `prompt_preview` (a value, not an entity), the mirror of `carried_value` in `flow_message.py`.
+ *  A carrier whose preview is missing or not a JSON object reads as none. */
+export function carriedValue<T extends object>(
+  attachments: readonly Attachment[] | null | undefined,
+  kind: string,
+): { id: string; value: T } | null {
+  const prefix = `${kind}-`;
+  for (const a of attachments ?? []) {
+    if (a?.attachment_type !== AttachmentType.TYPE_ID) continue;
+    const data = attachmentDataString(a);
+    if (!data.startsWith(prefix)) continue;
+    try {
+      const value: unknown = JSON.parse(a.prompt_preview ?? '');
+      return value && typeof value === 'object' ? { id: data.slice(prefix.length), value: value as T } : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export interface Attachment {
   attachment_type: AttachmentType;
   /** TypeId string ("type-id"), relative file path, repo path, URL, or — for PROMPT — inline text or "prompt/<filename>" VFS subpath. */
   data: string;
   /** Absolute filesystem path — populated server-side for FILE / PROMPT-file attachments, null for others. */
   local_path?: string | null;
-  /** Prompt attachments (legacy PROMPT or prompt-entity TYPE_ID): the user who suggested the prompt. */
-  proposer_id?: string | null;
-  /** Prompt attachments: set when the other party approves. */
-  approved_by?: string | null;
   /** Prompt-entity TYPE_ID attachments: inline copy of the prompt text so receivers
-   *  can preview/execute before the body bundle is downloaded. NOTE: this field (and
-   *  proposer_id/approved_by) must also exist on the HUB's Attachment model — the hub
-   *  silently drops unknown fields on the round-trip. */
+   *  can preview before the body bundle is downloaded. On a session carrier it holds
+   *  the session marker JSON instead. NOTE: this field must also exist on the HUB's
+   *  Attachment model — the hub silently drops unknown fields on the round-trip.
+   *  Consent is a property of the session, never stamped per attachment. */
   prompt_preview?: string | null;
+}
+
+export type AttachmentReference = Pick<Attachment, 'attachment_type' | 'data'>;
+
+/** Read the backend's missing-asset result; pending downloads are not warnings. */
+export function isAttachmentMissing(
+  fm: Pick<IFlowMessage, 'body_downloaded' | 'body_missing_attachments'>,
+  attachment: AttachmentReference,
+): boolean {
+  const data = attachmentDataString(attachment);
+  return (
+    !!fm.body_downloaded &&
+    (fm.body_missing_attachments ?? []).some(
+      (missing) => missing.attachment_type === attachment.attachment_type && attachmentDataString(missing) === data,
+    )
+  );
 }
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
  *  created → sent → delivered → received.
+ *  - pending_send: composed while signed out; held locally until a login sends it (🕐 Pending)
  *  - created:   local only, hub has not accepted it (🕐 Pending)
  *  - sent:      accepted/stored on the hub (✓)
  *  - delivered: recipient's client pulled it (✓✓)
  *  - received:  recipient read it (✓✓ blue) */
-export type DeliveryStatus = 'created' | 'sent' | 'delivered' | 'received';
+export type DeliveryStatus = 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:
@@ -130,6 +171,8 @@ export interface IFlowMessage extends IEntity {
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  /** The typed author, local only — read it through `senderOf`, which covers hub rows. */
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
@@ -145,6 +188,11 @@ export interface IFlowMessage extends IEntity {
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  /** EVENT time — when the human sent this on its original channel. Written
+   *  only by the backend stream inbox projection (from SourceItem.occurred_at);
+   *  None for authored and hub-synced messages, whose event time is their
+   *  own created/updated clock. Read through `eventTime`, never directly. */
+  sent_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
@@ -155,23 +203,26 @@ export interface IFlowMessage extends IEntity {
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
   kind?: FlowMessageKind;
+  /** This machine wrote it to send (the outbox's "mine"). Local only. */
+  outbound?: boolean;
+  /** Why the hub does not have it yet — set on a failed attempt, cleared when it lands. Local only. */
+  delivery_failure?: import('./help-request').HubFailure | null;
   /** Body-bundle lifecycle on the hub. Defaults to NA when the message has
    *  no body. Stamped UPLOADING at hub add_message time when the incoming
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
   /** Live-session grouping key. Stamped at send time by the guest (who mints
-   *  the session id) and on PromptResult replies by the host; receivers
+   *  the session id) and on PromptCompletion replies by the host; receivers
    *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
    *  when the hub stripped the header field. */
   remote_worker_session_id?: string | null;
-  /** Transient, server-derived (API responses only — never stored). True once
-   *  this message has a body AND that body has been pulled + unpacked locally,
-   *  i.e. every renderable body attachment is on disk (files materialized,
-   *  TYPE_ID entity assets have a local record). The UI switches the whole
-   *  message between a single Download button and rendered chips off this one
-   *  flag, so the transcript and the context panel share download state. */
+  /** Transient, server-derived. True when the bundle is unpacked, or all its
+   *  assets are already local. A downloaded bundle can have missing assets. */
   body_downloaded?: boolean;
+  /** Transient, server-derived references whose bytes are unavailable locally.
+   *  With body_downloaded=true these are missing assets, not pending downloads. */
+  body_missing_attachments?: AttachmentReference[];
   /** Transient, server-derived. True when the bundle's extracted tree persists
    *  under the message's staging dir — staged attachments are reviewable (and
    *  MessageAttachment rows exist) even though nothing is installed/indexed. */
@@ -181,7 +232,54 @@ export interface IFlowMessage extends IEntity {
   cloned_from_id?: string | null;
   /** Original sender of the source message (for the "forwarded" chip). */
   cloned_from_sender_id?: string | null;
+  /** Where the real record lives when this message CACHES a cloud one (a Gmail
+   *  message, a Slack post). Null/absent means the message is ours — which is
+   *  exactly the badge rule: no origin, no channel mark. */
+  origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
+  /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
+   *  (every message that predates threading). */
+  thread_id?: string | null;
+  /** Id of the message this replies to — the quote. On Flowpad's own chat it is the hub id, so it
+   *  names the same message on every member's machine. */
+  reply_to_id?: string | null;
+  /** Flowpad's own chat: the message whose thread this one is in (the native thread's wire fact;
+   *  the backend resolves it to `thread_id`). Null on channel messages. */
+  thread_root_id?: string | null;
+  /** Set on a REFERENCE row: the SourceItem whose body this message renders.
+   *  The stored row's `text` is always empty; reads arrive hydrated. */
+  source_item_id?: string | null;
+  /** Who reacted with what on a channel message — projection-owned. */
+  reactions?: IMessageReaction[];
+  /** What the channel message did (approved, merged) — projection-owned; null when it only says something. */
+  mark?: IMessageMark | null;
 }
+
+/** What a channel message did, drawn as a chip before its text — mirrors `MessageMarkSpec`
+ *  (flow_sdk/sources/values/items.py). `key` is what an action's `done_mark` matches. */
+export interface IMessageMark {
+  key: string;
+  label: string;
+  tone?: 'positive' | 'negative' | 'neutral';
+}
+
+/** One person's emoji on a channel message — mirrors `MessageReaction`
+ *  (flow_sdk/schema/data_spec/message_reaction_spec.py). `ours` marks the ones this machine put there. */
+export interface IMessageReaction {
+  emoji: string;
+  by: string;
+  by_name?: string | null;
+  ours?: boolean;
+  at?: string | null;
+}
+
+// `implements IFlowMessage` only checks the class; it contributes no members, so every
+// field declared solely on IFlowMessage read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface FlowMessage extends EntityMerge<IFlowMessage> {}
 
 @registerEntity
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
@@ -190,6 +288,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
+  sender?: IMessageSender | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   attachment_filename?: string | null;
@@ -199,14 +298,28 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
+  sent_at?: string | null;
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
+  outbound?: boolean;
+  delivery_failure?: import('./help-request').HubFailure | null;
   body_downloaded?: boolean;
+  body_missing_attachments?: AttachmentReference[];
   body_unpacked?: boolean;
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
   remote_worker_session_id?: string | null;
+  origin?: ICloudOrigin | null;
+  origin_local?: ICloudOriginLocal | null;
+  /** Sender, recipients, subject and event time of the cached record; projection-owned. */
+  envelope?: IMessageEnvelope | null;
+  thread_id?: string | null;
+  reply_to_id?: string | null;
+  thread_root_id?: string | null;
+  source_item_id?: string | null;
+  reactions?: IMessageReaction[];
+  mark?: IMessageMark | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -216,6 +329,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.attachment = entity.attachment;
     this.sender_id = entity.sender_id;
     this.sender_name = entity.sender_name;
+    this.sender = entity.sender ?? null;
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
     this.attachment_filename = entity.attachment_filename;
@@ -225,14 +339,41 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivery_status = entity.delivery_status ?? 'created';
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
+    this.sent_at = entity.sent_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
+    this.outbound = entity.outbound ?? false;
+    this.delivery_failure = entity.delivery_failure ?? null;
     this.body_downloaded = entity.body_downloaded ?? false;
+    this.body_missing_attachments = entity.body_missing_attachments ?? [];
     this.body_unpacked = entity.body_unpacked ?? false;
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
     this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
+    this.origin = entity.origin ?? null;
+    this.origin_local = entity.origin_local ?? null;
+    this.envelope = entity.envelope ?? null;
+    this.thread_id = entity.thread_id ?? null;
+    this.reply_to_id = entity.reply_to_id ?? null;
+    this.thread_root_id = entity.thread_root_id ?? null;
+    this.source_item_id = entity.source_item_id ?? null;
+    this.reactions = entity.reactions ?? [];
+    this.mark = entity.mark ?? null;
+  }
+
+  /**
+   * Put our `emoji` on this channel message (or, with `remove`, take it back — all of ours when
+   * `emoji` is empty). Answers the message's reactions after. A channel that cannot show the emoji
+   * refuses; the error says which.
+   */
+  async react(emoji: string, remove = false): Promise<IMessageReaction[]> {
+    if (!this.id) throw new Error('react requires this.id');
+    const action = new ActionInfo('react', FlowMessage.type, this.id, 'POST');
+    action.bodyParameters = { emoji, remove };
+    const data = await dataManager.callAction<unknown, { reactions?: IMessageReaction[] }>(action);
+    this.reactions = data?.reactions ?? [];
+    return this.reactions;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -252,11 +393,32 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  folder) is erased. POSTs /api/v1/graph/flow_message/<id>/remove-message. */
   async remove(): Promise<void> {
     if (!this.id) throw new Error('remove requires this.id');
-    const action = new ActionInfo('remove-message', FlowMessage.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('remove-message');
   }
 
   // -------- Header / Body interface (principle #6) -------- //
+
+  /** WHEN THIS MESSAGE ENTERED THE CONVERSATION — mirrors
+   *  FlowMessage.occurred_at on the backend. Its position in the feed and the
+   *  time on its bubble. Deliberately excludes `updated_date`: a message's
+   *  place is fixed when it is sent, and a delivery receipt (which bumps the
+   *  hub's `updated_date` and syncs back under LWW) must not slide it past
+   *  replies already written. Render THIS, never created_date/updated_date. */
+  get occurredAt(): string | null {
+    const pick = this.sent_at ?? this.created_date ?? null;
+    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
+    return pick instanceof Date ? pick.toISOString() : pick;
+  }
+
+  /** WHEN THIS MESSAGE LAST CHANGED — mirrors FlowMessage.event_time on the
+   *  backend: the recency/activity clock behind the stream inbox's "Xm ago". Includes
+   *  `updated_date` because a genuine edit IS new activity. For a message's
+   *  place in the feed read `occurredAt` instead. */
+  get eventTime(): string | null {
+    const pick = this.sent_at ?? this.updated_date ?? this.created_date ?? null;
+    // Base-entity clocks are string|Date on the wire type; normalize to ISO.
+    return pick instanceof Date ? pick.toISOString() : pick;
+  }
 
   /** True iff at least one attachment requires a packed body bundle.
    *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
@@ -281,9 +443,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
    *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
   async uploadBody(_opts: { onProgress?: (pct: number) => void; transferMode?: 'copy' | 'git' } = {}): Promise<this> {
     if (!this.id) throw new Error('uploadBody requires this.id');
-    const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
-    action.bodyParameters = { transfer_mode: _opts.transferMode ?? 'copy' };
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('upload_body', { transfer_mode: _opts.transferMode ?? 'copy' });
     this.body_status = BodyStatus.READY;
     this.attachment_filename = BODY_FILENAME;
     return this;
@@ -292,9 +452,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Download + unpack this message's body via the local backend.
    *  Throws BodyNotReadyError when body_status != READY.
    *  POSTs /api/v1/graph/flow_message/<id>/download_body. */
-  async downloadBody(
-    _opts: { onProgress?: (pct: number) => void; overwrite?: boolean } = {},
-  ): Promise<this> {
+  async downloadBody(_opts: { onProgress?: (pct: number) => void; overwrite?: boolean } = {}): Promise<this> {
     if (this.body_status !== BodyStatus.READY) {
       throw new BodyNotReadyError(this.body_status);
     }
@@ -404,11 +562,21 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   }
 }
 
+export interface UploadedAttachment {
+  /** The MessageAttachment row staged for review. */
+  id: string;
+  asset_type: string;
+  asset_id: string;
+  name: string | null;
+}
+
 export interface UploadFlowMessageResult {
   message_id: string;
   task_id: string | null;
   conversation_id: string | null;
   was_new_task: boolean;
+  /** What the file staged — reviewable and installable before anything goes live. */
+  attachments: UploadedAttachment[];
 }
 
 export interface UploadConflict {
@@ -430,43 +598,49 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-export interface CreateTaskBundleParams {
-  spec_title: string;
-  spec_content?: string;
-  task_title?: string;
-  message?: string | null;
-  team_space_id?: string | null;
+export interface ExportFlowMessageParams {
+  /** The message the recipient reads. */
+  text: string;
+  /** TypeIds of every entity the file carries (`skill-<uuid>`, …). */
+  asset_references: string[];
+  /** Pack files git excludes too — set only after the sender saw them (`checkShareAttachments`). */
+  include_gitignored?: boolean;
 }
 
-export interface CreateTaskBundleResult {
-  flow_message_id: string;
-  task_id: string;
-  conversation_id: string;
-  spec_id: string;
+/** Pack entities into one `.flowmsg` with no conversation — an offline package
+ *  handed to someone as a file. Returns the zip bytes. */
+export async function exportFlowMessage(params: ExportFlowMessageParams): Promise<Blob> {
+  const action = new ActionInfo('flow-message-export', null, null, 'POST', true, false, null, 'blob');
+  action.bodyParameters = { ...params };
+  return (await dataManager.callAction<ExportFlowMessageParams, Blob>(action))!;
 }
 
-export async function createTaskBundle(params: CreateTaskBundleParams): Promise<CreateTaskBundleResult> {
-  const action = new ActionInfo('flow-message-create', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
-  return res!;
+export interface InstallAttachmentsResult {
+  installed: string[];
+  skipped: string[];
+  failed: string[];
+  /** Why each failed row failed, keyed by MessageAttachment id. */
+  errors: Record<string, string>;
+}
+
+/** Install every attachment of one message into a project — the review
+ *  dialog's "Install all" for a message that has no conversation. */
+export async function installMessageAttachments(
+  flowMessageId: string,
+  projectId: string,
+): Promise<InstallAttachmentsResult> {
+  const action = new ActionInfo('install-attachments', FlowMessage.type, flowMessageId, 'POST');
+  action.bodyParameters = { project_id: projectId };
+  return (await dataManager.callAction<{ project_id: string }, InstallAttachmentsResult>(action))!;
 }
 
 /** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */
 export function localFlowMessageBundleUrl(flowMessageId: string): string {
-  return new ActionInfo(
-    'create-and-download-local-flowmsg',
-    FlowMessage.type,
-    flowMessageId,
-    'GET',
-  ).fullActionUrl;
+  return new ActionInfo('create-and-download-local-flowmsg', FlowMessage.type, flowMessageId, 'GET').fullActionUrl;
 }
 
 /** URL for streaming one file from a FlowMessage's embedded VFS storage. */
-export function flowMessageAttachmentDownloadUrl(
-  flowMessageId: string,
-  vfsPath: string,
-): string {
+export function flowMessageAttachmentDownloadUrl(flowMessageId: string, vfsPath: string): string {
   const action = new ActionInfo('fs', FlowMessage.type, flowMessageId, 'GET');
   action.subpath = `download/${vfsPath}`;
   return action.fullActionUrl;
@@ -491,10 +665,7 @@ export interface ForwardMessageResult {
  * same pipeline as a fresh send — hub header + body upload included.
  * POSTs /api/v1/graph/flow_message/<id>/forward.
  */
-export async function forwardMessage(
-  flowMessageId: string,
-  conversationId: string,
-): Promise<ForwardMessageResult> {
+export async function forwardMessage(flowMessageId: string, conversationId: string): Promise<ForwardMessageResult> {
   const action = new ActionInfo('forward', FlowMessage.type, flowMessageId, 'POST');
   action.bodyParameters = { conversation_id: conversationId };
   const res = await dataManager.callAction<{ conversation_id: string }, ForwardMessageResult>(action);

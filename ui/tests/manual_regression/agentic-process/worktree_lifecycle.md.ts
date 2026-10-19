@@ -2,13 +2,13 @@
  * Worktree lifecycle — OpenInWorktree gating + spawn; CommitMerge presence.
  * Source: worktree_lifecycle.md
  *
- * OpenInWorktreeButton (aria-label="Open in Worktree") is enabled only when the
+ * "Open in Worktree" (session actions menu, session-action-worktree) is enabled only when the
  * process workdir is a git repo with ≥1 commit (computeNode.git(workdir).hasCommit()).
  * Clicking it spawns a worktree sibling (AgenticProcess.spawn({worktree:true})),
  * whose Info "Worktree" row reads "enabled" and Command contains --worktree, and
- * which renders the CommitMergeButton (gated on cliOptions.worktree).
+ * which offers "Commit & Merge" in the session actions menu (gated on cliOptions.worktree).
  *
- * The default project workdir is /Users/shlom/Flowpad workspace/my_first_project.
+ * The default project workdir is /Users/alice/Flowpad workspace/my_first_project.
  * A new_terminal shell adopts that workdir (the loader ignores any ?cwd= param),
  * so to exercise both the enabled and disabled gates we control that dir's git
  * state in the test fixture and restore it afterwards (it is otherwise empty).
@@ -20,9 +20,24 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover } from './_ap_helpers';
+import { apiContext } from '../_shared/api';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, sessionPopover, sessionAction, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
-const PROJECT_DIR = '/Users/shlom/Flowpad workspace/my_first_project';
+// The instance's OWN project folder, asked of the backend — a named instance's
+// workspace is `~/Flowpad workspaces/<name>/`, so a hardcoded prod path both
+// misses the folder the shell opens in and writes into prod's workspace.
+let PROJECT_DIR = '';
+async function resolveProjectDir(): Promise<string> {
+  const api = await apiContext();
+  const rows = ((await (await api.get('/api/v1/graph/project')).json()).data ?? []) as { id: string; name: string }[];
+  const id = rows.find((r) => r.name === 'my_first_project')?.id;
+  const dir = id
+    ? ((await (await api.get(`/api/v1/graph/project/${id}`)).json()).data?.fs_storage_mount_path as string | undefined)
+    : undefined;
+  await api.dispose();
+  if (!dir) throw new Error("could not resolve this instance's my_first_project folder");
+  return dir;
+}
 
 function gitInitWithCommit(dir: string) {
   execSync('git init -q && git -c user.email=qa@local -c user.name=qa commit -q --allow-empty -m init', { cwd: dir });
@@ -34,13 +49,20 @@ function cleanGit(dir: string) {
   if (existsSync(`${dir}/.git`)) rmSync(`${dir}/.git`, { recursive: true, force: true });
 }
 
-const worktreeBtn = (page: import('@playwright/test').Page) =>
-  activePanel(page).locator('button[aria-label="Open in Worktree"]');
+// "Open in Worktree" / "Commit & Merge" are items of the session actions menu.
+// The repo check runs once the menu is open, so the item is read with it open.
+const worktreeItem = (page: import('@playwright/test').Page) => sessionAction(page, 'session-action-worktree');
+const commitMergeItem = (page: import('@playwright/test').Page) => sessionAction(page, 'session-action-commit-merge');
 
 test.describe('worktree lifecycle', () => {
-  test.afterEach(() => { cleanGit(PROJECT_DIR); });
+  test.beforeAll(async () => { PROJECT_DIR = await resolveProjectDir(); });
+  test.afterEach(() => { if (PROJECT_DIR) cleanGit(PROJECT_DIR); });
 
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
+    // --worktree is claude-only (getWorkerCliCapabilities reports worktree:false
+    // for codex/copilot/opencode), so the Open-in-Worktree affordance correctly
+    // does not render on those arms.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --worktree flag`);
     test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
@@ -52,10 +74,10 @@ test.describe('worktree lifecycle', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     // Parent (non-worktree): OpenInWorktree enabled, no CommitMerge button.
-    await expect(worktreeBtn(page)).toBeEnabled({ timeout: 15_000 });
-    expect(await activePanel(page).locator('button[aria-label="Commit & Merge"]').count()).toBe(0);
+    await expect(await worktreeItem(page)).not.toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
+    expect(await (await commitMergeItem(page)).count()).toBe(0);
 
-    await worktreeBtn(page).click();
+    await (await worktreeItem(page)).click();
 
     // New worktree process: the URL was already agentic_process-<pid>, so wait
     // for the id to *change* (a sibling spawned), not just match the pattern.
@@ -68,7 +90,7 @@ test.describe('worktree lifecycle', () => {
     await waitForRunningSession(page, apiBase(), wtPid);
 
     // Info popover: Worktree row "enabled" + Command contains --worktree.
-    await activePanel(page).locator('button[aria-label$="session info"]').click();
+    await (await sessionAction(page, 'session-action-info')).click();
     const pop = sessionPopover(page);
     await expect(pop).toBeVisible({ timeout: 10_000 });
     const worktreeRow = pop.getByText(/^Worktree$/).locator('xpath=..');
@@ -79,8 +101,8 @@ test.describe('worktree lifecycle', () => {
     await expect(cmdRow).toContainText('--worktree');
     await page.keyboard.press('Escape');
 
-    // CommitMergeButton IS rendered inside the worktree tab.
-    await expect(activePanel(page).locator('button[aria-label="Commit & Merge"]')).toBeVisible({ timeout: 10_000 });
+    // Commit & Merge IS offered inside the worktree tab.
+    await expect(await commitMergeItem(page)).toBeVisible({ timeout: 10_000 });
   });
 
   test('test 2: OpenInWorktree disabled when the workdir has no commits', async ({ page }) => {
@@ -94,9 +116,9 @@ test.describe('worktree lifecycle', () => {
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
 
-    // hasCommit() is false → button disabled.
-    await expect(worktreeBtn(page)).toBeDisabled({ timeout: 15_000 });
-    await worktreeBtn(page).hover({ force: true });
-    await expect(page.getByText('Requires a git repository with at least one commit')).toBeVisible({ timeout: 5_000 });
+    // hasCommit() is false → item disabled, with the reason printed on it.
+    const item = await worktreeItem(page);
+    await expect(item).toHaveAttribute('data-disabled', /.*/, { timeout: 15_000 });
+    await expect(item.getByText('Requires a git repository with at least one commit')).toBeVisible({ timeout: 5_000 });
   });
 });

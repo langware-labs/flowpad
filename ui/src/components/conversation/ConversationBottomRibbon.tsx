@@ -1,9 +1,11 @@
 import { History, Layers, type LucideIcon } from 'lucide-react';
+import { Task } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 
-export type ConversationSideTab = 'runs' | 'context';
+export type ConversationSideTab = 'runs' | 'context' | 'tasks';
 
 interface RibbonTab {
   id: ConversationSideTab;
@@ -21,6 +23,8 @@ interface ConversationBottomRibbonProps {
   /** Hide the Runs button entirely (e.g. hub-direct conversations with no task). */
   showRuns?: boolean;
   runsBadge?: number;
+  /** Open tasks of the conversation — the Tasks button's badge. */
+  tasksBadge?: number;
 }
 
 export function ConversationBottomRibbon({
@@ -28,16 +32,20 @@ export function ConversationBottomRibbon({
   onToggleSideTab,
   showRuns = true,
   runsBadge,
+  tasksBadge,
 }: ConversationBottomRibbonProps) {
-  // Order matches the drawer's tab strip: Context on the left, Runs on the right.
-  const tabs: RibbonTab[] = [{ id: 'context', icon: Layers, description: 'Context' }];
+  // Order matches the drawer's tab strip: Context, Tasks, then Runs.
+  const tabs: RibbonTab[] = [
+    { id: 'context', icon: Layers, description: 'Context' },
+    { id: 'tasks', icon: iconForType(Task.type), description: 'Tasks', badge: tasksBadge },
+  ];
   if (showRuns) {
     tabs.push({ id: 'runs', icon: History, description: 'Runs', badge: runsBadge });
   }
 
   return (
     <div className="flex items-center border-t bg-muted/30 px-2 py-1">
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ms-auto flex items-center gap-1">
         <TooltipProvider delayDuration={400}>
           {tabs.map((tab) => {
             const Icon = tab.icon;

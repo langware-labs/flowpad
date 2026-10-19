@@ -28,7 +28,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_for_input,
     is_ready_from_busy,
 )
-from flow_sdk.builtin.worker_status import (
+from flow_sdk.transcript_analyzer.worker_status import (
     _IGNORED_TYPES,
     _RUNNING_STATUSES,
     _TAIL_BYTES,
@@ -62,7 +62,7 @@ def test_terminal_set_matches_spec(status_fixture):
 def test_error_set_matches_spec(status_fixture):
     """Python ``_ERROR_STATUSES`` must equal the shared fixture literal
     (``worker_execution_error``), kept in parity with the TS ``ERROR_WORKER_STATUSES``."""
-    from flow_sdk.builtin.worker_status import _ERROR_STATUSES
+    from flow_sdk.transcript_analyzer.worker_status import _ERROR_STATUSES
 
     expected = {WorkerStatus(v) for v in status_fixture["worker_execution_error"]}
     assert _ERROR_STATUSES == expected
@@ -117,7 +117,7 @@ def test_process_startable_set_matches_spec(status_fixture):
 
 
 def test_classify_execution_mode_truth_table():
-    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+    from flow_sdk.transcript_analyzer.worker_status import ExecutionMode, classify_execution_mode
 
     # Not live → None.
     for s in ("new", "stopping", "stopped", "failed"):
@@ -145,7 +145,7 @@ def test_classify_execution_mode_hidden_live_pty_is_interactive():
     """A hidden live PTY (visible=False but pty_mode=True) is a PTY worker →
     INTERACTIVE, NOT the headless BACKGROUND bucket. Pins the transport-keyed
     contract that the old ``visible``-keyed classifier got wrong."""
-    from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
+    from flow_sdk.transcript_analyzer.worker_status import ExecutionMode, classify_execution_mode
 
     assert classify_execution_mode(status="running", worker_status=None, pty_mode=True) == ExecutionMode.INTERACTIVE
     # And a dead-PID hidden PTY still surfaces as Error (rule 2 keys on pty_mode).
@@ -242,6 +242,101 @@ def test_tail_status_end_turn_is_complete(tmp_path: Path):
         [
             {"type": "user", "message": {"role": "user"}},
             {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def _task_notification(status: str, summary: str) -> dict:
+    text = (
+        "<task-notification>\n<task-id>b1</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n"
+        f"<output-file>/tmp/b1.output</output-file>\n<status>{status}</status>\n"
+        f"<summary>{summary}</summary>\n</task-notification>"
+    )
+    return {"type": "user", "message": {"role": "user", "content": text}}
+
+
+def _answered_turn() -> list[dict]:
+    return [
+        {"type": "user", "message": {"role": "user", "content": "start it"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ]
+
+
+def test_tail_status_a_stop_report_is_not_a_prompt_the_agent_owes_an_answer(tmp_path: Path):
+    """A session resumed in the terminal finds work its previous process left and the CLI writes a ``stopped``
+    row. The agent answers nothing and the terminal sits idle at its prompt — the tail must not read that
+    row as an unanswered request (it ended in ``api_timeout``: busy for good, no switch back to chat)."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            _task_notification("stopped", "Background shell command didn't finish before the previous session ended"),
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_a_killed_report_is_not_a_prompt_either(tmp_path: Path):
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [*_answered_turn(), _task_notification("killed", 'Background command "x" was stopped')])
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
+def test_tail_status_a_finished_task_still_wakes_the_agent(tmp_path: Path):
+    """``completed`` is the report the agent DOES answer: until it does, a turn is owed and the tail is working."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f, [*_answered_turn(), _task_notification("completed", 'Background command "x" completed (exit code 0)')]
+    )
+    os.utime(f, None)
+    assert _tail_status(f) != WorkerStatus.COMPLETE
+
+
+def test_tail_status_an_agent_that_answers_a_stop_report_is_read_from_its_own_rows(tmp_path: Path):
+    """When the agent DOES respond to the report, its rows come after it and decide the status."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            *_answered_turn(),
+            _task_notification("stopped", "Background shell command didn't finish before the previous session ended"),
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": None,
+                    "content": [{"type": "thinking", "thinking": "hm"}],
+                },
+            },
+        ],
+    )
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.THINKING
+
+
+def test_tail_status_post_turn_system_lines_do_not_hide_end_turn(tmp_path: Path):
+    """Claude 2.1.x closes an interactive turn with ``stop_hook_summary`` +
+    ``turn_duration`` and writes ``last-prompt`` only at exit. The end_turn before
+    them (here pushed beyond the 4 KB first window by a large reply) is the turn's
+    end: a finished PTY turn used to read UNKNOWN until the session closed."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "go"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": "x" * 8000}],
+                },
+            },
+            {"type": "system", "subtype": "stop_hook_summary", "content": "y" * 3000},
+            {"type": "system", "subtype": "turn_duration", "durationMs": 2100},
+            {"type": "cost-state"},
         ],
     )
     assert _tail_status(f) == WorkerStatus.COMPLETE
@@ -814,6 +909,18 @@ def test_ignored_types_match_meta_types():
                 {"type": "agent-name", "name": "some-agent"},
             ],
         ),
+        # `atis-latch` is written LAST after every turn by current Claude Code,
+        # so before it was classified the whole of a live turn read UNKNOWN —
+        # the mid-turn status the cancel/busy path gates on never appeared.
+        (
+            "tool_use",
+            WorkerStatus.TOOL_RUNNING,
+            [
+                {"type": "last-prompt", "lastPrompt": "do the thing"},
+                {"type": "ai-title", "aiTitle": "some title"},
+                {"type": "atis-latch", "atis": "", "sessionId": "abc"},
+            ],
+        ),
     ],
 )
 def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):
@@ -1072,9 +1179,10 @@ async def test_is_turn_busy_held_prompt_lock():
     native-xterm turn (which holds no _turn_in_flight flag)."""
     from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
+    from flow_sdk.stream_inbox._locks import keyed_loop_lock
 
     proc = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE)
-    async with ap_mod._PROMPT_LOCKS[proc.id]:
+    async with keyed_loop_lock(ap_mod._PROMPT_LOCKS, proc.id):
         assert is_turn_busy(proc, WorkerStatus.COMPLETE) is True
     # Released → back to ready.
     assert is_turn_busy(proc, WorkerStatus.COMPLETE) is False

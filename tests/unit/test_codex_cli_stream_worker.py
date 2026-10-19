@@ -118,6 +118,10 @@ def test_build_spawn_missing_binary_raises_typed_error(tmp_path: Path, monkeypat
 
 def test_build_spawn_no_capability_raises_typed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     clear_harness_capability(monkeypatch, "codex")
+    # Pin another vendor as installed: `no_worker_message` falls back to a
+    # generic "nothing is installed" when NO vendor resolves, so on a bare CI
+    # image this asserted the wrong branch. See the twin in the claude worker test.
+    seed_harness_capability(monkeypatch, "claude", make_fake_cli_bin(tmp_path, "claude")[0])
 
     with pytest.raises(WorkerSpawnError, match=r"no harness\.codex\.cli installation discovered"):
         CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
@@ -205,9 +209,7 @@ async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch:
 
 
 @pytest.mark.asyncio
-async def test_single_jsonl_event_larger_than_asyncio_default_limit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
+async def test_single_jsonl_event_larger_than_asyncio_default_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     oversized_started = {**THREAD_STARTED, "payload": "x" * (96 * 1024)}
     assert len(json.dumps(oversized_started).encode("utf-8")) > 64 * 1024
 
@@ -304,7 +306,7 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         def get_agents_json(self) -> None:
             return None
 
-        def _instruction_context_kwargs(self, _assets) -> dict:
+        def _process_asset_context_kwargs(self, _assets) -> dict:
             return {}
 
         def make_turn_session_adopter(self, _log_prefix: str):
@@ -319,8 +321,8 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         async def get_project(self) -> None:
             return None
 
-        async def prepare_system_instruction_assets(self) -> list:
-            return []
+        async def prepare_process_assets(self) -> object:
+            return object()
 
         async def save(self) -> None:
             pass
@@ -343,9 +345,11 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
     task = next(t for t in asyncio.all_tasks() if t.get_name() == f"codex-{proc.id[:8]}")
     await task
 
+    # With no codex there is nothing to fund the turn either, and that check runs first: the
+    # LLM-source refusal is the honest earliest cause, latched the same way a spawn failure is.
     assert proc.status == ProcessStatus.FAILED.value
-    assert proc.start_failure is not None and "not found on worker PATH" in proc.start_failure
-    assert any("not found on worker PATH" in str(fd.get("flow_value", "")) for fd in proc.emitted)
+    assert proc.start_failure is not None and "codex is not installed" in proc.start_failure
+    assert any("codex is not installed" in str(fd.get("flow_value", "")) for fd in proc.emitted)
 
 
 @pytest.mark.asyncio
@@ -383,6 +387,25 @@ async def test_cancel_reports_abort_not_exit_error(tmp_path: Path, monkeypatch: 
     assert "turn_aborted" in subtypes
     assert "exit-error" not in subtypes
     assert any(fd.attributes.get("turn-terminated") == "true" for fd in out)
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_lands_before_the_spawn_still_stops_the_turn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Stop is pressed while the CLI is still being spawned: there is no process to signal yet, and the
+    turn must not run on as if nobody asked."""
+    worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
+    out: list = []
+
+    async def _run():
+        async for fd in worker.execute(prompt="hi", context=AgenticContext(workdir=str(tmp_path))):
+            out.append(fd)
+
+    task = asyncio.create_task(_run())
+    await worker.close_session()
+    await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
+
+    assert "turn_aborted" in [fd.attributes.get("subtype") for fd in out]
 
 
 @pytest.mark.asyncio

@@ -4,15 +4,17 @@
  *
  * `pty_mode` is the *transport* axis (PTY worker vs headless one-subprocess-per-turn
  * JSON stream). The route loader attaches a PTY only when `pty_mode !== false`, so a
- * headless spawn that forgot to stamp `pty_mode=false` would leave the default
- * (`true`) on disk and the loader would wrongly PTY-attach a headless session.
+ * create response that omitted `pty_mode=false` would hydrate the legacy default
+ * (`true`) and the next save would wrongly persist a PTY transport.
  *
- * Real entity + real backend (apiTestSetup). A headless spawn WITHOUT an
- * instruction only creates + watches the entity (no worker launch), so this stays
- * fast and driver-free — we assert the persisted transport intent, not a live turn.
+ * Real entity + real backend (apiTestSetup). A headless spawn without a
+ * `workerOptions.instruction` only creates + watches the entity (no worker launch),
+ * so this stays fast and driver-free — we assert the persisted transport intent,
+ * not a live turn.
  *
- * Fails pre-fix: the create payload omitted `pty_mode`, so the reloaded row read
- * back the field default (`true`).
+ * Fails pre-fix: the backend saved `pty_mode=false` but returned an identity-only
+ * response; SDK hydration defaulted the omitted field to `true`, and spawn's save
+ * could overwrite the durable row.
  */
 import { AgenticProcess } from '@sdk';
 import { describe, expect, it } from 'vitest';

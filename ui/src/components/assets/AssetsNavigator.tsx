@@ -28,6 +28,7 @@ export function AssetsNavigator() {
     roots: m.roots,
     isLoading: m.menuLoading,
     activePointer: m.treeActivePointer,
+    activeResourcePointer: m.treeActiveResourcePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
     bulkActions: m.bulkActions,
@@ -47,7 +48,14 @@ export function AssetsNavigator() {
         />
       ),
     },
-    wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>{tree}</AssetTypeCountsContext.Provider>,
+    wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>
+      {m.menuError && <div role="alert">
+        <button type="button" onClick={m.reloadMenu} className="p-2 text-xs text-destructive">
+          {t`Assets unavailable. Retry`}
+        </button>
+      </div>}
+      {tree}
+    </AssetTypeCountsContext.Provider>,
   };
 
   return (
@@ -71,7 +79,7 @@ export function AssetsNavigator() {
         confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
       />
-      {m.contextFolderDialogs}
+      {m.dependencyDialogs}
     </>
   );
 }

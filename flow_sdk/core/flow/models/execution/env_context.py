@@ -5,9 +5,10 @@ from pydantic import SecretStr
 from flow_sdk import service_log
 from flow_sdk.builtin.user import User
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_env.env_table import merge_env_tables
 from flow_sdk.core.entity.entity_env.env_types import EnvStatusEnum, EnvVar, EnvVarType
+from flow_sdk.core.entity.entity_env.env_utils import mask_confidential_value
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_entity_credentials, get_user_credentials
 
 
@@ -97,7 +98,7 @@ async def get_env_vars_context(user: User, project: Entity) -> list[FlowEnv]:
                         )
                         value = await get_user_credentials(user, token_name, None)
                         if value:
-                            service_log.info(f"#### Found {var_type_str} {token_name} (prefix: {value[:20]}...) ####")
+                            service_log.info(f"#### Found {var_type_str} {token_name} ({mask_confidential_value(value)}) ####")
                             flow_env = FlowEnv.from_env_var(user_env_var, value)
                             env_vars.append(flow_env)
                             service_log.info(f"#### Added {var_type_str} {user_env_var.name} to env_vars ####")
@@ -110,3 +111,21 @@ async def get_env_vars_context(user: User, project: Entity) -> list[FlowEnv]:
                         logging.exception(f"Error getting {var_type_str} {token_name} from user")
 
     return env_vars
+
+
+async def resolve_node_secret_env(project) -> list[FlowEnv]:
+    """The project's ATTACHED credentials, as FlowEnv for a compute node.
+
+    The node-side half of the same resolution the worker path uses — one
+    resolver, two transports (see ``credential_resolver``). Values ride the
+    per-command prefix and are never written to the node's filesystem; ``set_env``
+    stays reserved for the FLOWPAD_* proxy config.
+    """
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
+
+    if project is None:
+        return []
+    return [
+        FlowEnv.model_construct(name=name, var_type=EnvVarType.API_KEY, value=value)
+        for name, value in (await resolve_attached_secrets(project)).items()
+    ]

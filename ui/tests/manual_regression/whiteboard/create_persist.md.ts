@@ -5,18 +5,32 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
+// Every board a test creates lands in the user-scope family on disk; afterEach
+// removes it whether the test passed or not, so a red run leaves nothing behind.
+const created: Array<{ id: string; assetRef: string }> = [];
+
 async function createWhiteboard(request: APIRequestContext, name: string) {
   const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
   expect(res.status()).toBe(200);
   const body = await res.json();
-  return { id: body.data.id as string, assetRef: body.data.asset_ref as string };
+  const board = { id: body.data.id as string, assetRef: body.data.asset_ref as string };
+  created.push(board);
+  return board;
+}
+
+const UUID_V4_V5 = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/** The `id:` in WHITE_BOARD.md's frontmatter — the whiteboard's identity carrier. */
+function frontmatterId(md: string): string | null {
+  const fm = md.match(/^---\n([\s\S]*?)\n---/);
+  return fm?.[1].match(/^id:\s*['"]?([^'"\s]+)/m)?.[1] ?? null;
 }
 
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
   // Wait for the excalidraw dev hooks to populate.
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -26,25 +40,25 @@ async function openEditor(page: Page, id: string) {
 // updateScene serializes a stale/empty scene).
 async function injectAndSave(page: Page, skeleton: unknown[]) {
   // The editor can remount between openEditor() and here (a data-load re-render),
-  // which clears window.__whiteboardApi. Re-wait for the live hook right before
+  // which clears window.__chartApi. Re-wait for the live hook right before
   // using it — a concrete-signal wait, not a fixed delay.
   await page.waitForFunction(
-    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+    () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
     null,
     { timeout: 15_000 },
   );
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     const els = lib.convertToExcalidrawElements(skel);
     api.updateScene({ elements: els });
   }, skeleton);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     const scene = api.getSceneElements();
-    (window as any).__whiteboardOnChange(scene, api.getAppState(), api.getFiles());
+    (window as any).__chartOnChange(scene, api.getAppState(), api.getFiles());
   });
 }
 
@@ -55,9 +69,22 @@ const TWO_BOXES_ARROW = [
 ];
 
 test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
+  test.afterEach(async ({ request }) => {
+    for (const { id, assetRef } of created.splice(0)) {
+      await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+      fs.rmSync(assetRef, { recursive: true, force: true });
+    }
+  });
+
   test('C1: create opens the whiteboard editor', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     // Whiteboards are created via the API/editor route (the asset-browser tree
     // renders a curated root set — agent/skill/markdown/spec — and does not offer
     // a whiteboard quick-create toolbar entry). Create then open the editor.
@@ -67,9 +94,15 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(page.url()).toContain('/dock/assets/editor/whiteboard/');
   });
 
-  test('C2–C3: files on disk + capsule id present (after first save)', async ({ page, request }) => {
+  test('C2–C3: files on disk + frontmatter id present (after first save)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c2-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     // Folder materializes lazily on first save — trigger one. The save writes
@@ -84,40 +117,36 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(fs.existsSync(`${assetRef}/WHITE_BOARD.md`), 'WHITE_BOARD.md exists after save').toBe(true);
     expect(fs.existsSync(`${assetRef}/board.json`), 'board.json exists after save').toBe(true);
 
-    // C3a: right after save, autosave has only spliced the mermaid block — the
-    // id is NOT written into the markdown frontmatter. Since the named-asset-
-    // capsule refactor (4f94fb92 / b4295a7a), a whiteboard's identity lives in
-    // the folder capsule `.flow/capsules/identity.json`, not in WHITE_BOARD.md.
-    // The mermaid markers must already be present, though.
-    const mdPreIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
-    expect(mdPreIndex).toContain('<!-- BEGIN whiteboard:auto -->');
-    expect(mdPreIndex).toContain('<!-- END whiteboard:auto -->');
-
-    // C3b: the identity capsule holds a valid UUID id (minted at create, so it
-    // is present before any index pass). Run an index pass and confirm it
-    // preserves both the capsule id and the auto-managed mermaid block.
-    const capsulePath = `${assetRef}/.flow/capsules/identity.json`;
-    expect(fs.existsSync(capsulePath), 'identity capsule exists').toBe(true);
-    const idxRes = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
-    expect(idxRes.status()).toBe(200);
-    await page.waitForTimeout(1_000);
-    const capsule = JSON.parse(fs.readFileSync(capsulePath, 'utf8'));
-    // Capsule id (a valid v4/v5 UUID — version digit is 4 or 5).
-    expect(String(capsule.data?.id)).toMatch(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[45][0-9a-fA-F]{3}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
-    // The capsule id matches the entity id assigned at create.
-    expect(String(capsule.data?.id)).toBe(id);
-    // BEGIN/END mermaid markers survive the index pass; still no frontmatter id.
+    // C3: the whiteboard's identity carrier is WHITE_BOARD.md's frontmatter
+    // (TypeInfo `identity_carrier=frontmatter_identity()`; the folder-capsule and
+    // folder-name id forms were retired in 835d68760). The id is minted at create,
+    // so it is already there right after the first save, next to the mermaid block
+    // the autosave splices in.
     const md = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
     expect(md).toContain('<!-- BEGIN whiteboard:auto -->');
     expect(md).toContain('<!-- END whiteboard:auto -->');
+    const savedId = frontmatterId(md);
+    expect(savedId ?? '', 'frontmatter id is a valid v4/v5 UUID').toMatch(UUID_V4_V5);
+    expect(savedId, 'frontmatter id is the entity id assigned at create').toBe(id);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
+    // An index pass keeps the same id and the mermaid markers.
+    const idx = await request.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`);
+    expect(idx.status()).toBe(200);
+    const mdAfterIndex = fs.readFileSync(`${assetRef}/WHITE_BOARD.md`, 'utf8');
+    expect(frontmatterId(mdAfterIndex), 'index pass keeps the frontmatter id').toBe(id);
+    expect(mdAfterIndex).toContain('<!-- BEGIN whiteboard:auto -->');
+    expect(mdAfterIndex).toContain('<!-- END whiteboard:auto -->');
   });
 
   test('C4: draw + autosave writes board.json (>=2 elements) + thumbnail', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c4-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
@@ -150,13 +179,17 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     expect(fs.existsSync(thumb), 'thumbnail.svg exists').toBe(true);
     expect(thumbSize, 'thumbnail.svg size > 200 bytes').toBeGreaterThan(200);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
   });
 
   test('C5: reload preserves content', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `c5-board-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
@@ -173,13 +206,11 @@ test.describe('Whiteboard — Create + Persist (C1–C5)', () => {
     await openEditor(page, id);
     await page.waitForTimeout(2_000);
 
-    const sceneLen = await page.evaluate(() => (window as any).__whiteboardApi.getSceneElements().length);
+    const sceneLen = await page.evaluate(() => (window as any).__chartApi.getSceneElements().length);
     expect(sceneLen, 'scene elements preserved after reload').toBeGreaterThanOrEqual(2);
 
     // No React error boundary (the appState.collaborators Map regression surfaces here).
     expect(await page.getByRole('heading', { name: /^Error$/ }).count()).toBe(0);
 
-    fs.rmSync(assetRef, { recursive: true, force: true });
-    await request.delete(`${API}/api/v1/graph/whiteboard/${id}`).catch(() => {});
   });
 });

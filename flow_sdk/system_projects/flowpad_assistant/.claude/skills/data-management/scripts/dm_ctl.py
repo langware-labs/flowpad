@@ -1,0 +1,481 @@
+#!/usr/bin/env python3
+"""Data-management mechanics: probe projects, kinds, values and dataset rows. One JSON object per call.
+
+Run it with the worker's own interpreter -- ``"$FLOWPAD_PYTHON" <skill>/scripts/dm_ctl.py <verb> ...``
+-- never a bare ``python3``, which may not have ``flow_sdk``. Every call goes to THIS instance's
+backend (``FLOW_INSTANCE`` is pinned for the worker) through the gate-safe transport of the
+``flow`` CLI (``local_get``/``local_post``); a bare ``curl`` gets the cookie gate's 403.
+
+Output: ``{"ok": true, ...}`` or ``{"ok": false, "error_code", "error", ...}`` with exit 1.
+
+Verbs
+  probe-new                          a throwaway project in $TMPDIR with its own namespace
+  probe-copy ROOT SRC [SRC ...]      copy schema / dataset folders into a probe, re-namespaced
+  probe-drop PROJECT_ID              delete the probe: its rows, its kinds' rows, its folder
+  kind KIND                          a registered kind's fields (``flow schema info`` takes entity types)
+  check KIND VALUE                   would VALUE fit KIND? SHAPE only -- --project ID adds its links and rules
+                                     (an unknown kind is an error, never "fits")
+  ref REF --project ID               the row a reference (<kind>.id.<uuid>) names: its dataset, key and value
+  ds-find KIND                       the datasets whose rows are KIND (--project ID: a bare kind, e.g. crm.lead, works)
+  ds-rows DATASET                    every row with its key -- or SOME: --match JSON (an expression, or {path: value}),
+                                     --q WORDS (the row's text holds them all), --order JSON, --limit N, --offset N;
+                                     `total` counts the matches. A path follows links (input.persona.icp);
+                                     --expand PATH[,PATH] brings the linked rows back beside (`linked`)
+  ds-count DATASET                   how many rows match (--match / --q), per --group-by PATH[,PATH] -- a path or a date
+                                     bucket (week:input.day, month:…, quarter:…; --week-start sunday) -- with
+                                     --metrics JSON ({"people": "distinct:input.email"}: distinct | min | max | sum)
+  ds-used-by DATASET [KEY ...]       who links to each row (every row when no key): [] = nothing links to it
+  ds-row DATASET KEY                 one row, by key or id
+  ds-append DATASET ROWS             rows in (each may carry a "key"); one bad row writes nothing
+  ds-put DATASET KEY ROW             create or replace the row KEY
+  ds-put-many DATASET ROWS           create or replace several rows ([{key, input, ...}]) in ONE step, or none
+                                     (--expected JSON: {key: version})
+  ds-sync DATASET ROWS               make the dataset hold exactly ROWS: created / updated / unchanged / deleted
+                                     (--no-prune: remove nothing; --match JSON: prune only the rows it selects)
+  ds-mirror DATASET SOURCE_ID MAP    make the dataset the typed mirror of a data source's items; MAP is
+                                     {"key": "<path in the item>", "input": {"<field>": "<path>"}} (--by, --no-prune, --match)
+  ds-delete DATASET KEY [KEY ...]    remove rows -- several go in ONE step, or none (--expected VERSION, one key:
+                                     refuse a row changed since)
+  ds-store-ids DATASET               store each row's id where it only has the legacy derived one
+  ds-rename DATASET KEY NEW_KEY      move a row to a new key (its id stays; --expected VERSION)
+  ds-check DATASET ROW               would ROW fit? writes nothing
+  ds-validate DATASET                every row checked against the dataset's shape
+
+--by OWNER on a write (ds-append / ds-put / ds-put-many / ds-sync) or ds-check says which outside system you
+write as: only it sets the fields a schema marks ``owned_by`` it.
+
+DATASET is a dataset id, name, title, or its folder path. VALUE / ROWS / ROW are JSON, or ``-`` for stdin.
+"""
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import sys
+import tempfile
+import uuid
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote
+
+PROBE_PREFIX = "dm-probe-"
+#: A namespaced kind (``--acme--.crm.lead``) starts with ``--``; argparse would read it as an option.
+NS_KIND = re.compile(r"^--[A-Za-z0-9_]+--\.")
+_SHIELD = "\x00"
+SCHEMA_DOC, DATASET_DOC = "data_schema.json", "dataset.json"
+
+
+# ── transport ────────────────────────────────────────────────────────────────
+
+@lru_cache(maxsize=1)
+def _base() -> str:
+    from flow_sdk.cli.commands._common import discover_port  # noqa: PLC0415
+
+    return f"http://127.0.0.1:{discover_port()}/api/v1"
+
+
+class ApiError(RuntimeError):
+    def __init__(self, status: int, message: str, data: Any = None):
+        super().__init__(f"HTTP {status}: {message}")
+        self.status, self.data = status, data
+
+
+def _call(method: str, path: str, body: Any = None) -> Any:
+    """The envelope's ``data`` -- or ``ApiError`` carrying the server's message and its ``data``
+    (a 400's validation ``errors``), so the caller sees WHY, not just that it failed."""
+    from flow_sdk.cli.commands._common import bad_response_message, local_request  # noqa: PLC0415
+
+    resp = local_request(method, f"{_base()}{path}", json=body if method != "GET" else None, timeout=60)
+    try:
+        envelope = resp.json() or {}
+    except ValueError:
+        raise RuntimeError(bad_response_message(resp)) from None
+    if resp.status_code >= 400 or str(envelope.get("status")).lower() == "fail":
+        raise ApiError(resp.status_code, envelope.get("message") or resp.reason, envelope.get("data"))
+    return envelope.get("data")
+
+
+def _json(raw: str) -> Any:
+    return json.loads(sys.stdin.read() if raw == "-" else raw)
+
+
+# ── probes ───────────────────────────────────────────────────────────────────
+
+def cmd_probe_new(args) -> dict:
+    """A project at ``$TMPDIR/dm-probe-<id>/`` whose kinds live in their own namespace
+    ``dmprobe<id>``, so nothing it registers can collide with a real project's kinds."""
+    tag = uuid.uuid4().hex[:8]
+    root = Path(tempfile.gettempdir()).resolve() / f"{PROBE_PREFIX}{tag}"
+    ns = f"dmprobe{tag}"
+    for family in ("data_schema", "dataset", "project_manifest"):
+        (root / "agentic-assets" / family).mkdir(parents=True, exist_ok=True)
+    (root / "agentic-assets/project_manifest/project_manifest.json").write_text(
+        json.dumps({"schema": 1, "requires": {}, "ns": ns, "entries": []}, indent=2) + "\n")
+    project = _call("POST", "/graph/project", {"type": "project", "name": root.name, "fs_storage_mount_path": str(root)})
+    return {"project_id": project["id"], "root": str(root), "ns": ns,
+            "schemas": str(root / "agentic-assets/data_schema"), "datasets": str(root / "agentic-assets/dataset")}
+
+
+def _probe_ns(root: Path) -> str:
+    manifest = root / "agentic-assets/project_manifest/project_manifest.json"
+    if not root.name.startswith(PROBE_PREFIX) or not manifest.is_file():
+        raise ValueError(f"{root} is not a probe (make one with probe-new)")
+    return json.loads(manifest.read_text())["ns"]
+
+
+#: Any ``--<ns>--.`` prefix: a project's namespace (kinds Flowpad ships carry none).
+NS_PREFIX = re.compile(r"--([A-Za-z0-9_]+)--\.")
+PROBE_MANIFEST = "agentic-assets/project_manifest/project_manifest.json"
+
+
+def _front_id(md: Path) -> str:
+    """The ``id`` in a markdown file's front matter (``description.md``), or ""."""
+    from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
+
+    header = _extract_frontmatter(md.read_text())
+    return str((_yaml_load(header) or {}).get("id") or "") if header else ""
+
+
+def _asset_ids(tree: Path) -> dict[str, str]:
+    """``{entity id: file}`` for every asset document under ``tree`` that carries one."""
+    out = {}
+    for name in (SCHEMA_DOC, DATASET_DOC):
+        for doc in tree.rglob(name):
+            try:
+                data = json.loads(doc.read_text())
+            except ValueError:
+                continue
+            if isinstance(data, dict) and data.get("id"):
+                out[str(data["id"])] = str(doc)
+    out.update({_front_id(md): str(md) for md in tree.rglob("description.md") if _front_id(md)})
+    return out
+
+
+def _remember_foreign(root: Path, ids: set[str]) -> None:
+    """Keep the ids probe-copy dropped (the REAL assets') in the probe's manifest: probe-drop refuses
+    a probe where one of them is back."""
+    manifest = root / PROBE_MANIFEST
+    data = json.loads(manifest.read_text())
+    data["foreign_ids"] = sorted(set(data.get("foreign_ids") or []) | ids)
+    manifest.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def cmd_probe_copy(args) -> dict:
+    """Copy schema folders (holding ``data_schema.json``) and dataset folders (holding
+    ``dataset.json``) into the probe as NEW assets of the probe:
+
+    * every entity id is dropped (``"id"`` in the asset documents, ``id:`` in a ``description.md``
+      front matter) -- applying the probe mints its own, so it can never take over the real
+      project's index rows (and ``probe-drop`` can never delete them). Row ids in
+      ``rows/*/row.json`` stay: links between the copied rows name them;
+    * every project namespace becomes the probe's: each ``"ns"`` and each ``--<ns>--.`` prefix in the
+      copied JSON, whichever call copied the folder that declared it -- a kind not copied then
+      fails loudly in the probe instead of resolving to the real project's.
+
+    What the probe proves is the SAME files, not a hand-made look-alike."""
+    root = Path(args.root).resolve()
+    ns = _probe_ns(root)
+    copied, old = [], set()
+    for src in map(lambda s: Path(s).expanduser().resolve(), args.src):
+        if (src / SCHEMA_DOC).is_file():
+            family = "data_schema"
+        elif (src / DATASET_DOC).is_file():
+            family = "dataset"
+        else:
+            raise ValueError(f"{src} holds neither {SCHEMA_DOC} nor {DATASET_DOC}")
+        dest = root / "agentic-assets" / family / src.name
+        if dest.exists():
+            shutil.rmtree(dest)
+        ignore = shutil.ignore_patterns(".flow", *(["rows"] if args.no_rows and family == "dataset" else []))
+        shutil.copytree(src, dest, ignore=ignore)
+        copied.append(str(dest))
+    rewritten, foreign = 0, set()
+    for dest in map(Path, copied):
+        for doc in dest.rglob("*.json"):
+            text = original = doc.read_text()
+            old |= {name for name in NS_PREFIX.findall(text) if name != ns}
+            text = NS_PREFIX.sub(f"--{ns}--.", text)
+            if doc.name in (SCHEMA_DOC, DATASET_DOC):
+                data = json.loads(text)
+                if isinstance(data, dict):
+                    if doc.name == SCHEMA_DOC and data.get("ns"):
+                        old.add(data["ns"])
+                        data["ns"] = ns
+                    if data.get("id") is not None:
+                        foreign.add(str(data.pop("id")))
+                    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+            if text != original:
+                doc.write_text(text)
+                rewritten += 1
+        for md in dest.rglob("description.md"):
+            front_id = _front_id(md)
+            if front_id:
+                from flow_sdk.assets.frontmatter import merge_frontmatter  # noqa: PLC0415
+
+                foreign.add(front_id)
+                md.write_text(merge_frontmatter(md.read_text(), {}, drop_keys=("id",)))
+    _remember_foreign(root, foreign)
+    return {"root": str(root), "ns": ns, "copied": copied, "renamed_namespaces": sorted(old - {ns}),
+            "files_rewritten": rewritten, "ids_dropped": len(foreign)}
+
+
+def cmd_probe_drop(args) -> dict:
+    """Delete the probe project with everything under it, then PROVE it is gone: the row answers
+    404 and the folder no longer exists. Refuses anything that is not a probe."""
+    project = _call("GET", f"/graph/project/{args.project_id}")
+    mount = Path((project or {}).get("fs_storage_mount_path") or "")
+    if not mount.name.startswith(PROBE_PREFIX):
+        raise ValueError(f"project {args.project_id} ({mount}) is not a probe -- refusing to delete it")
+    # A probe asset carrying the id of the asset it was copied from (put back by hand): applying it
+    # re-pointed the REAL asset's index row at the probe, and deleting the probe would delete that row.
+    # Refuse; the fix is to re-apply / re-index the real folder, then drop the id here. (The ids the
+    # probe's own apply minted are its own: fine to delete.)
+    try:
+        foreign = set(json.loads((mount / PROBE_MANIFEST).read_text()).get("foreign_ids") or [])
+    except (OSError, ValueError):
+        foreign = set()
+    stolen = [path for eid, path in _asset_ids(mount).items() if eid in foreign]
+    if stolen:
+        raise ValueError(f"probe assets carry entity ids that may be a real project's: {stolen} -- re-apply the "
+                         "real folders (flow schema apply / flow record index), remove the ids here, then drop")
+    result = _call("POST", f"/graph/project/{args.project_id}/delete-with-children", {"delete_chats": True}) or {}
+    try:
+        _call("GET", f"/graph/project/{args.project_id}")
+        row_gone = False
+    except ApiError as exc:
+        row_gone = exc.status == 404
+    if mount.exists():
+        shutil.rmtree(mount, ignore_errors=True)
+    # Nothing indexed from the probe may outlive it. The project sweep misses a row now and then (seen
+    # once, after a backend restart mid-probe): delete any row still pointing into the probe folder,
+    # and say so -- `swept` is never empty silently.
+    swept = []
+    for family in ("dataset", "data_schema"):
+        for row in _call("GET", f"/graph/{family}") or []:
+            if str(row.get("asset_ref") or "").startswith(str(mount)):
+                _call("DELETE", f"/graph/{family}/{row['id']}")
+                swept.append(f"{family}:{row['id']}")
+    return {"project_id": args.project_id, "deleted_children": result.get("deleted_children"),
+            "row_gone": row_gone, "folder_gone": not mount.exists(), "rows_swept_after": swept}
+
+
+# ── kinds and values ─────────────────────────────────────────────────────────
+
+def cmd_kind(args) -> dict:
+    return {"form": _call("GET", f"/kinds/{quote(args.kind, safe='')}")}
+
+
+def cmd_check(args) -> dict:
+    query = f"?project={quote(args.project, safe='')}" if args.project else ""
+    return _call("POST", f"/kinds/{quote(args.kind, safe='')}/check{query}", {"value": _json(args.value)})
+
+
+def cmd_ref(args) -> dict:
+    return _call("GET", f"/refs/{quote(args.ref, safe='')}?project={quote(args.project, safe='')}")
+
+
+# ── datasets ─────────────────────────────────────────────────────────────────
+
+def _datasets() -> list[dict]:
+    return list(_call("GET", "/graph/dataset") or [])
+
+
+def _dataset(ref: str) -> dict:
+    """By id, folder path, or an unambiguous name/title. Ambiguity is an error, never a guess."""
+    rows = _datasets()
+    path = Path(ref).expanduser()
+    if path.is_dir():
+        hits = [r for r in rows if r.get("asset_ref") and Path(r["asset_ref"]).resolve() == path.resolve()]
+        if not hits:
+            raise LookupError(f"no indexed dataset at {path} -- run: flow record index \"{path}\" --types dataset")
+        return hits[0]
+    hits = [r for r in rows if r.get("id") == ref] or [r for r in rows if ref in (r.get("name"), r.get("title"))]
+    if not hits:
+        raise LookupError(f"no dataset matches {ref!r}")
+    if len(hits) > 1:
+        raise LookupError(f"{ref!r} matches {len(hits)} datasets: " + ", ".join(f"{r.get('asset_ref')} ({r['id']})" for r in hits))
+    return hits[0]
+
+
+def _ds(args, action: str, method: str = "POST", body: Any = None) -> Any:
+    return _call(method, f"/graph/dataset/{_dataset(args.dataset)['id']}/{action}", body)
+
+
+def cmd_ds_find(args) -> dict:
+    query = f"?project={quote(args.project, safe='')}" if args.project else ""
+    return {"kind": args.kind, **(_call("GET", f"/kinds/{quote(args.kind, safe='')}/datasets{query}") or {})}
+
+
+def _row_filter(args) -> dict:
+    """The ``filter`` the read actions take, from ``--match`` / ``--order`` / ``--limit`` / ``--offset`` / ``--expand``."""
+    asked = {"match": _json(args.match) if getattr(args, "match", "") else None,
+             "order_by": _json(args.order) if getattr(args, "order", "") else None,
+             "limit": getattr(args, "limit", None), "offset": getattr(args, "offset", None),
+             "expand": [p.strip() for p in args.expand.split(",") if p.strip()] if getattr(args, "expand", "") else None}
+    return {name: value for name, value in asked.items() if value is not None}
+
+
+def _query(params: dict) -> str:
+    """Parameters as a query string -- each a JSON document unless it is already text."""
+    parts = [f"{name}={quote(value if isinstance(value, str) else json.dumps(value), safe='')}"
+             for name, value in params.items() if value not in (None, "", {})]
+    return "?" + "&".join(parts) if parts else ""
+
+
+def cmd_ds_rows(args) -> dict:
+    """The rows that fit (each with ``key``, ``id``, ``ref``, ``version``) -- every one, or those the
+    filter and ``--q`` select -- and the ``problems``. ``count`` is how many came back, ``total`` how
+    many matched; ``linked`` holds the rows ``--expand`` asked for."""
+    got = _ds(args, "rows" + _query({"filter": _row_filter(args), "q": args.q}), "GET") or {}
+    rows = got.get("rows") or []
+    out = {"count": len(rows), "total": got.get("total", len(rows)), "rows": rows, "problems": got.get("problems") or []}
+    return {**out, "linked": got["linked"]} if "linked" in got else out
+
+
+def cmd_ds_count(args) -> dict:
+    asked = _row_filter(args)
+    order = asked.pop("order_by", None)     # for a count, the order is of the GROUPS: beside the filter
+    return _ds(args, "count" + _query({"filter": asked, "q": args.q, "group_by": args.group_by,
+                                         "metrics": _json(args.metrics) if args.metrics else None, "order_by": order,
+                                         "week_start": args.week_start}), "GET") or {}
+
+
+def cmd_ds_used_by(args) -> dict:
+    """Who links to each row (every row, or the keys named): ``[]`` for a row nothing links to."""
+    return _ds(args, "used-by" + _query({"keys": ",".join(args.key)}), "GET") or {}
+
+
+def _by(args, body: dict) -> dict:
+    """``body`` plus who the write is for (``--by crm``: the owner of the schema's ``owned_by`` fields)."""
+    return {**body, "by": args.by} if getattr(args, "by", "") else body
+
+
+def cmd_ds_put_many(args) -> dict:
+    body = {"rows": _json(args.rows)}
+    return _ds(args, "put-rows", body=_by(args, {**body, "expected": _json(args.expected)} if args.expected else body))
+
+
+def cmd_ds_sync(args) -> dict:
+    body: dict = {"rows": _json(args.rows), "prune": not args.no_prune}
+    return _ds(args, "sync-rows", body=_by(args, {**body, "match": _json(args.match)} if args.match else body))
+
+
+def cmd_ds_row(args) -> dict:
+    return {"row": _ds(args, f"row/{quote(args.key, safe='')}", "GET")}
+
+
+def cmd_ds_append(args) -> dict:
+    rows = _json(args.rows)
+    return _ds(args, "append", body=_by(args, {"rows": rows if isinstance(rows, list) else [rows]}))
+
+
+def cmd_ds_put(args) -> dict:
+    body = {"key": args.key, "row": _json(args.row)}
+    return _ds(args, "put-row", body=_by(args, {**body, "expected": args.expected} if args.expected else body))
+
+
+def cmd_ds_mirror(args) -> dict:
+    """Make the dataset the typed mirror of a data source's items (``map``: how an item becomes a row)."""
+    body: dict = {"source_id": args.source_id, "map": _json(args.map), "prune": not args.no_prune}
+    return _ds(args, "mirror", body=_by(args, {**body, "match": _json(args.match)} if args.match else body))
+
+
+def cmd_ds_delete(args) -> dict:
+    if len(args.key) > 1:   # several rows: one step, all or none
+        if args.expected:
+            raise ValueError("--expected takes one key; delete several rows without it")
+        return _ds(args, "delete-rows", body={"keys": args.key})
+    body = {"key": args.key[0]}
+    return _ds(args, "delete-row", body={**body, "expected": args.expected} if args.expected else body)
+
+
+def cmd_ds_store_ids(args) -> dict:
+    return _ds(args, "store-ids", body={})
+
+
+def cmd_ds_rename(args) -> dict:
+    body = {"key": args.key, "new_key": args.new_key}
+    return _ds(args, "rename-row", body={**body, "expected": args.expected} if args.expected else body)
+
+
+def cmd_ds_check(args) -> dict:
+    return _ds(args, "check-row", body=_by(args, {"row": _json(args.row)}))
+
+
+def cmd_ds_validate(args) -> dict:
+    return _ds(args, "validate", body={})
+
+
+# ── entry ────────────────────────────────────────────────────────────────────
+
+_DS = ("dataset", {"help": "dataset id, name, title or folder path"})
+_BY = ("--by", {"default": "", "help": "the outside system you write as (\"crm\"): the owner of the schema's owned_by fields"})
+_Q = ("--q", {"default": "", "help": "keep the rows whose text holds every word of this"})
+_ORDER = ("--order", {"default": "", "help": 'JSON: {"<path>": "asc"|"desc"}, or a list of them (ds-count: by a group_by entry, count or a metric)'})
+_MATCH = ("--match", {"default": "", "help": 'JSON: {"op": "$GE", "operands": ["input.day", "2026-09-01"]} or {"<path>": value}'})
+VERBS: dict[str, tuple] = {
+    "probe-new": (cmd_probe_new, []),
+    "probe-copy": (cmd_probe_copy, [("root", {}), ("src", {"nargs": "+"}),
+                                    ("--no-rows", {"action": "store_true", "help": "leave dataset rows behind"})]),
+    "probe-drop": (cmd_probe_drop, [("project_id", {})]),
+    "kind": (cmd_kind, [("kind", {})]),
+    "check": (cmd_check, [("kind", {}), ("value", {}),
+                          ("--project", {"default": "", "help": "also its links and rules, among this project's rows"})]),
+    "ref": (cmd_ref, [("ref", {}), ("--project", {"required": True, "help": "the project whose rows to look in"})]),
+    "ds-find": (cmd_ds_find, [("kind", {}), ("--project", {"default": "", "help": "only this project's (and a bare kind resolves in it)"})]),
+    "ds-rows": (cmd_ds_rows, [_DS, _MATCH, _Q, _ORDER,
+                              ("--limit", {"type": int, "default": None}), ("--offset", {"type": int, "default": None}),
+                              ("--expand", {"default": "", "help": "link paths whose rows come back beside, comma-separated (input.persona)"})]),
+    "ds-count": (cmd_ds_count, [_DS, _MATCH, _Q, _ORDER,
+                                ("--group-by", {"default": "", "help": "paths or date buckets, comma-separated (week:input.day,input.stage)"}),
+                                ("--metrics", {"default": "", "help": 'JSON: {"people": "distinct:input.email", "first": "min:input.day"}'}),
+                                ("--week-start", {"default": "", "choices": ["", "monday", "sunday"], "help": "the day a week bucket begins (monday)"})]),
+    "ds-used-by": (cmd_ds_used_by, [_DS, ("key", {"nargs": "*", "help": "row keys (every row when none)"})]),
+    "ds-put-many": (cmd_ds_put_many, [_DS, ("rows", {}), ("--expected", {"default": "", "help": "JSON: {key: the version you read}"}), _BY]),
+    "ds-sync": (cmd_ds_sync, [_DS, ("rows", {}), _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
+    "ds-mirror": (cmd_ds_mirror, [_DS, ("source_id", {"help": "the data source whose items become rows"}),
+                                  ("map", {"help": 'JSON: {"key": "<path>", "input": {"<field>": "<path>"}}'}),
+                                  _MATCH, ("--no-prune", {"action": "store_true", "help": "remove nothing"}), _BY]),
+    "ds-row": (cmd_ds_row, [_DS, ("key", {})]),
+    "ds-append": (cmd_ds_append, [_DS, ("rows", {}), _BY]),
+    "ds-put": (cmd_ds_put, [_DS, ("key", {}), ("row", {}),
+                            ("--expected", {"default": "", "help": "the version you read; a newer row refuses"}), _BY]),
+    "ds-delete": (cmd_ds_delete, [_DS, ("key", {"nargs": "+"}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-store-ids": (cmd_ds_store_ids, [_DS]),
+    "ds-rename": (cmd_ds_rename, [_DS, ("key", {}), ("new_key", {}),
+                                  ("--expected", {"default": "", "help": "the version you read; a newer row refuses"})]),
+    "ds-check": (cmd_ds_check, [_DS, ("row", {}), _BY]),
+    "ds-validate": (cmd_ds_validate, [_DS]),
+}
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse  # noqa: PLC0415
+
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    subs = parser.add_subparsers(dest="verb", required=True)
+    for name, (_fn, params) in VERBS.items():
+        sub = subs.add_parser(name)
+        for flag, kwargs in params:
+            sub.add_argument(flag, **kwargs)
+    raw = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args([_SHIELD + a if NS_KIND.match(a) else a for a in raw])
+    for name, value in vars(args).items():
+        if isinstance(value, str) and value.startswith(_SHIELD):
+            setattr(args, name, value[len(_SHIELD):])
+    try:
+        payload = VERBS[args.verb][0](args)
+    except ApiError as exc:
+        print(json.dumps({"ok": False, "error_code": "API_ERROR", "error": str(exc), "data": exc.data}, default=str))  # noqa: T201
+        return 1
+    except Exception as exc:  # noqa: BLE001 -- the contract is one JSON object, always
+        print(json.dumps({"ok": False, "error_code": type(exc).__name__, "error": str(exc)}))  # noqa: T201
+        return 1
+    print(json.dumps({"ok": True, **(payload or {})}, default=str))  # noqa: T201 -- the contract IS stdout
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

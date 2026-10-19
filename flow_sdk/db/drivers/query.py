@@ -1,12 +1,13 @@
 import json
 import logging
 import traceback
+from datetime import datetime
 from enum import Enum
-from flow_sdk._compat import StrEnum
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums import ExpansionType
 
 
@@ -32,7 +33,9 @@ class ExpressionNode(BaseModel):
     # IS_NULL/IS_NOT_NULL are unary: canonical wire shape ``operands=[field]``
     # (a trailing JSON null does not survive axios GET param serialization).
     # ``None`` stays admitted so the legacy ``[field, None]`` form still parses.
-    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, List, None]] = []
+    # ``datetime`` is admitted for COLUMN comparisons (``created_date``): the SQLite DateTime
+    # type binds only a datetime, so an ISO string would be rejected at execution.
+    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, datetime, List, None]] = []
     op: Optional[QueryOp] = QueryOp.EQ
 
     def __init__(self, **data):
@@ -47,6 +50,8 @@ class ExpressionNode(BaseModel):
 
 
 OrderType = Dict[str, Literal["asc", "desc"]]
+#: The keys of a filter beside `match` (`QueryFilter.parse`).
+_FILTER_WORDS = frozenset({"limit", "offset", "order_by", "expand"})
 
 
 class QueryFilter(BaseModel):
@@ -147,7 +152,9 @@ class QueryFilter(BaseModel):
             else:
                 data = filter_json
 
-            if "match" not in data:
+            # A map without `match` is the match itself (`{"status": "open"}`) -- unless every key is a
+            # filter word: `{"limit": 3}` is a page of three, never "the rows whose limit is 3".
+            if "match" not in data and not (data and set(data) <= _FILTER_WORDS):
                 data = {"match": data}
             e = QueryFilter(**data)
             if entity_type:

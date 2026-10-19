@@ -1,15 +1,14 @@
 /**
- * ClaudeCliOptions — builds Claude Code CLI shell command strings.
+ * ClaudeAgentOptions — builds Claude Code CLI shell command strings.
  *
  * Mirrors Python flow_sdk/builtin/cli_workers/claude_cli.py exactly.
  * All fields map 1-to-1 to CLI flags. Snake_case field names match
  * the serialized cli_config dict from the backend.
  */
 
-import { WorkerCliOptions, shellQuote } from './base'
-import { CLAUDE_MODEL_TIERS, resolveModelTier } from './model-tiers'
+import { WorkerCliOptions } from './base'
 
-export interface ClaudeCliOptionsOptions {
+export interface ClaudeAgentOptionsOptions {
   session_id?: string | null
   resume?: boolean
   fork_session_id?: string | null
@@ -29,7 +28,7 @@ export interface ClaudeCliOptionsOptions {
   verbose?: boolean
 }
 
-export class ClaudeCliOptions extends WorkerCliOptions {
+export class ClaudeAgentOptions extends WorkerCliOptions {
   session_id?: string | null
   resume: boolean
   fork_session_id?: string | null
@@ -44,7 +43,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
   output_format?: string | null
   verbose: boolean
 
-  constructor(opts: ClaudeCliOptionsOptions = {}) {
+  constructor(opts: ClaudeAgentOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
     this.resume = opts.resume ?? false
@@ -66,41 +65,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     }
   }
 
-  get resolvedModel(): string | undefined {
-    return resolveModelTier(CLAUDE_MODEL_TIERS, this.model)
-  }
 
-  protected _buildWorkerArgs(): string[] {
-    const args: string[] = ['claude']
-
-    if (this.permission_mode === 'bypassPermissions') {
-      args.push('--dangerously-skip-permissions')
-    }
-    if (this.chrome) args.push('--chrome')
-    if (this.debug) args.push('--debug')
-    if (this.worktree) args.push('--worktree')
-    if (this.verbose) args.push('--verbose')
-    if (this.output_format) args.push(`--output-format ${shellQuote(this.output_format)}`)
-
-    if (this.resume && this.session_id) {
-      args.push(`--resume ${shellQuote(this.session_id)}`)
-      if (this.fork_session_id) {
-        args.push('--fork-session')
-        args.push(`--session-id ${shellQuote(this.fork_session_id)}`)
-      }
-    } else if (this.session_id) {
-      args.push(`--session-id ${shellQuote(this.session_id)}`)
-    }
-
-    if (this.resolvedModel) args.push(`--model ${shellQuote(this.resolvedModel)}`)
-    if (this.agents_json) args.push(`--agents ${shellQuote(JSON.stringify(this.agents_json))}`)
-    for (const d of this.addDirs) {
-      args.push(`--add-dir ${shellQuote(d)}`)
-    }
-    if (this.print_mode) args.push('-p')
-
-    return args
-  }
 
   toJson(): Record<string, any> {
     return {
@@ -122,8 +87,8 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     }
   }
 
-  static fromJson(data: Record<string, any>): ClaudeCliOptions {
-    return new ClaudeCliOptions({
+  static fromJson(data: Record<string, any>): ClaudeAgentOptions {
+    return new ClaudeAgentOptions({
       session_id: data['session_id'] ?? undefined,
       resume: Boolean(data['resume'] ?? false),
       fork_session_id: data['fork_session_id'] ?? undefined,

@@ -9,7 +9,7 @@
  *   - copy-mode webapp-artifact carrier (folder bytes ride in the bundle),
  *   - install → `_finalize_install` → `Entity.setup_on_receive` returning a
  *     DisplayTarget pointing at a spawned agentic_process,
- *   - the Vibe webapp preview (WebappViewer → get-host) rendering the served app.
+ *   - the Vibe app display (by the app's ServiceEndpoint) rendering the served app.
  *
  * Requires a local hub and launched dev instances (WITH frontends):
  *   scripts/instance_ctl.sh launch dev-1 && scripts/instance_ctl.sh launch dev-2
@@ -25,11 +25,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { HUB_URL, getAliceCreds, hubAvailable, hubLogin } from './_hub';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { HUB_URL, getAliceCreds, hubAvailable, hubJson, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as INST_1,
@@ -41,10 +40,9 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  acceptInvitationInUI,
   launchBrowser,
+  openAssignedConversationInUI,
   openInstancePage,
-  realConsoleErrors,
   resetConsoleErrors,
   type InstancePage,
 } from './_browser';
@@ -56,7 +54,12 @@ let alice: ResolvedInstance;
 let bob: ResolvedInstance;
 const tempRoots: string[] = [];
 const createdProjects: Array<{ apiUrl: string; id: string }> = [];
+const createdConversations: Array<{ apiUrl: string; id: string }> = [];
+const createdArtifacts: Array<{ apiUrl: string; id: string }> = [];
+const createdProcesses: Array<{ apiUrl: string; id: string }> = [];
+const createdAttachments: Array<{ apiUrl: string; id: string }> = [];
 const startedPids: number[] = [];
+const runArtifactNames: string[] = [];
 
 function pythonBin(): string {
   const venvPython = path.join(WORKTREE_ROOT, '.venv', 'bin', 'python');
@@ -73,8 +76,10 @@ function api(apiUrl: string, method: string, p: string, body?: unknown) {
 const post = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'POST', p, body);
 const put = (apiUrl: string, p: string, body?: unknown) => api(apiUrl, 'PUT', p, body);
 
-async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any | null> {
-  const r = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${id}`).then((x) => x.json()).catch(() => null);
+async function backendGet(inst: ResolvedInstance, type: string, id: string): Promise<any> {
+  const r = await fetch(`${inst.apiUrl}/api/v1/graph/${type}/${id}`)
+    .then((x) => x.json())
+    .catch(() => null);
   return r?.status === 'SUCCESS' ? r.data : null;
 }
 
@@ -94,38 +99,32 @@ function makeStaticFixture() {
   return { root, appDir, token };
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
-  const creds = await getAliceCreds();
-  if (!creds || creds.email !== alice.email) throw new Error(`missing canonical hub credentials for ${alice.name}`);
-  const login = await hubLogin(creds.email, creds.password);
+async function downloadHubBundle(fmId: string, zipPath: string, token: string): Promise<void> {
   const r = await fetch(`${HUB_URL}/api/v1/graph/flow_message/${fmId}/fs/download/${BODY_FILENAME}`, {
-    headers: { Authorization: `Bearer ${login.token}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (!r.ok) throw new Error(`hub body download failed (${r.status}): ${await r.text()}`);
   writeFileSync(zipPath, Buffer.from(await r.arrayBuffer()));
 }
 
+/** Wait for the hub's own readiness signal — body_status READY, which the sender
+ *  stamps (`set_body_status`) only after its `fs/upload` POST has returned — and
+ *  only then download. A 200 from `fs/download` is NOT that signal: the hub's local
+ *  storage driver opens the final path with "wb" before writing, so a GET during
+ *  the upload answers 200 with a 0-byte (or partial) file. */
 async function waitForHubBundle(fmId: string, zipPath: string): Promise<void> {
-  await pollUntil(async () => {
-    try {
-      await downloadHubBundle(fmId, zipPath);
-      return true;
-    } catch {
-      return null;
-    }
-  }, 30_000, 'hub body bundle upload');
+  const creds = await getAliceCreds();
+  if (!creds || creds.email !== alice.email) throw new Error(`missing canonical hub credentials for ${alice.name}`);
+  const { token } = await hubLogin(creds.email, creds.password);
+  await pollUntil(
+    async () => {
+      const fm = await hubJson(token, `/graph/flow_message/${fmId}`).catch(() => null);
+      return fm?.body_status === 'ready' ? true : null;
+    },
+    30_000,
+    'hub body_status READY',
+  );
+  await downloadHubBundle(fmId, zipPath, token);
 }
 
 function bundleNames(zipPath: string): string[] {
@@ -138,16 +137,26 @@ function bundleNames(zipPath: string): string[] {
 }
 
 async function findReadyMessage(convId: string): Promise<string> {
-  const fm = await pollUntil(async () => {
-    await bob.sdk.fetchConversations();
-    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
-    for (const p of (c?.conversationMessageIds ?? []) as any[]) {
-      if (p.type !== 'flow_message') continue;
-      const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
-      if (full && full.body_status === 'ready') return full;
-    }
-    return null;
-  }, 20_000, 'shared spora message READY');
+  // The assigned UI conversation already identifies one conversation. Pull only that
+  // conversation's messages; a global fetchConversations() leaves a long-lived
+  // staff account reconciling historical bundles after this test has moved on.
+  const sync = await post(bob.apiUrl, '/graph/conversation-message-sync', {
+    conversation_id: convId,
+  });
+  expect(sync.status, JSON.stringify(sync.body)).toBeLessThan(400);
+  const fm = await pollUntil(
+    async () => {
+      const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+      for (const p of (c?.conversationMessageIds ?? []) as any[]) {
+        if (p.type !== 'flow_message') continue;
+        const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
+        if (full && String(full.body_status) === 'ready') return full;
+      }
+      return null;
+    },
+    20_000,
+    'shared spora message READY',
+  );
   return fm.id;
 }
 
@@ -162,13 +171,21 @@ async function createBobProject(): Promise<{ id: string; dir: string }> {
 }
 
 async function stagedAttachmentId(fmId: string, artifactId: string): Promise<string> {
-  const staged = await pollUntil(async () => {
-    const rows = (await bob.sdk.MessageAttachment.query(
-      new bob.sdk.QueryRequest({ type: 'message_attachment', query: { flow_message_id: fmId }, name: 'staged (test)' }),
-      true,
-    ).catch(() => [])) as any[];
-    return rows.find((r) => r.asset_id === artifactId) ?? null;
-  }, 10_000, 'staged spora artifact MessageAttachment');
+  const staged = await pollUntil(
+    async () => {
+      const rows = (await bob.sdk.MessageAttachment.query(
+        new bob.sdk.QueryRequest({
+          type: 'message_attachment',
+          query: { flow_message_id: fmId },
+          name: 'staged (test)',
+        }),
+        true,
+      ).catch(() => [])) as any[];
+      return rows.find((r) => r.asset_id === artifactId) ?? null;
+    },
+    10_000,
+    'staged spora artifact MessageAttachment',
+  );
   return staged.id as string;
 }
 
@@ -202,9 +219,71 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-afterAll(() => {
-  for (const pid of startedPids) { try { process.kill(pid); } catch { /* gone */ } }
-  for (const root of tempRoots) { try { rmSync(root, { recursive: true, force: true }); } catch { /* gone */ } }
+afterAll(async () => {
+  for (const pid of startedPids) {
+    try {
+      process.kill(pid);
+    } catch {
+      /* gone */
+    }
+  }
+  for (const createdProcess of createdProcesses) {
+    await post(createdProcess.apiUrl, `/graph/agentic_process/${createdProcess.id}/close`, {}).catch(() => undefined);
+    await fetch(`${createdProcess.apiUrl}/api/v1/graph/agentic_process/${createdProcess.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const attachment of createdAttachments) {
+    await fetch(`${attachment.apiUrl}/api/v1/graph/message_attachment/${attachment.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const conversation of createdConversations) {
+    await fetch(`${conversation.apiUrl}/api/v1/graph/conversation/${conversation.id}`, {
+      method: 'DELETE',
+    }).catch(() => undefined);
+  }
+  for (const artifact of createdArtifacts) {
+    const purged = await fetch(
+      `${artifact.apiUrl}/api/v1/graph/compute_node/@local/fs-records/artifact/${artifact.id}`,
+      { method: 'DELETE' },
+    ).catch(() => null);
+    if (!purged?.ok) {
+      await fetch(`${artifact.apiUrl}/api/v1/graph/artifact/${artifact.id}`, {
+        method: 'DELETE',
+      }).catch(() => undefined);
+    }
+  }
+  for (const project of createdProjects) {
+    await fetch(`${project.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => undefined);
+  }
+  // The seeded artifact-setup worker may run `flow app open` on its own (it served
+  // the staged copy under bob's records_data in practice). That detached server is
+  // not in startedPids and outlives the process close, so every run would strand a
+  // server in the 8000-8099 band. Stop any process whose cwd carries this run's
+  // unique artifact folder name — nothing else can be serving it.
+  try {
+    let pid = 0;
+    for (const line of execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf-8' }).split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1));
+      else if (line.startsWith('n') && runArtifactNames.some((n) => line.includes(n)) && pid !== process.pid) {
+        try {
+          process.kill(pid);
+        } catch {
+          /* gone */
+        }
+      }
+    }
+  } catch {
+    /* lsof unavailable */
+  }
+  for (const root of tempRoots) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* gone */
+    }
+  }
 });
 
 describe('spora copy-share → Vibe setup', () => {
@@ -212,7 +291,7 @@ describe('spora copy-share → Vibe setup', () => {
     const fixture = makeStaticFixture();
     const artifactId = randomUUID();
     const artifactName = `spora-sim-${artifactId.slice(0, 8)}`;
-    const appPort = await freePort();
+    runArtifactNames.push(artifactName);
 
     // Copy-mode WEBAPP artifact — a real folder, NO git_origin.
     const created = await post(alice.apiUrl, '/graph/artifact', {
@@ -226,9 +305,11 @@ describe('spora copy-share → Vibe setup', () => {
       },
     });
     expect(created.status, JSON.stringify(created.body)).toBeLessThan(400);
+    createdArtifacts.push({ apiUrl: alice.apiUrl, id: artifactId });
 
     const conv = new alice.sdk.Conversation({ title: `e2etest-spora-${Date.now()}` });
     await conv.save();
+    createdConversations.push({ apiUrl: alice.apiUrl, id: conv.id });
     await conv.share([bob.email]);
     expect(conv.remote).toBe(true);
 
@@ -254,8 +335,9 @@ describe('spora copy-share → Vibe setup', () => {
       browser = await launchBrowser();
       bobPage = await openInstancePage(browser, INST_2);
 
-      await acceptInvitationInUI(bobPage, conv.id!);
-      const bobFmId = await findReadyMessage(conv.id!);
+      await openAssignedConversationInUI(bobPage, conv.id);
+      createdConversations.push({ apiUrl: bob.apiUrl, id: conv.id });
+      const bobFmId = await findReadyMessage(conv.id);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
 
@@ -265,6 +347,7 @@ describe('spora copy-share → Vibe setup', () => {
       expect(mapped.status, JSON.stringify(mapped.body)).toBeLessThan(400);
 
       const maId = await stagedAttachmentId(bobFmId, artifactId);
+      createdAttachments.push({ apiUrl: bob.apiUrl, id: maId });
       const install = await post(bob.apiUrl, `/graph/message_attachment/${maId}/install`, {
         scope: 'project',
         project_id: project.id,
@@ -274,6 +357,7 @@ describe('spora copy-share → Vibe setup', () => {
       // Install materialized the artifact row with a receiver-local origin
       // pointing at the copied served folder.
       const row = await pollUntil(() => backendGet(bob, 'artifact', artifactId), 10_000, 'spora artifact materialized');
+      createdArtifacts.push({ apiUrl: bob.apiUrl, id: artifactId });
       expect(row.origin?.kind).toBe('local');
       const served = path.join(String(row.origin.base), String(row.origin.rel_path));
       expect(served).toContain(path.join(project.dir, 'webapps'));
@@ -282,17 +366,36 @@ describe('spora copy-share → Vibe setup', () => {
       const show = install.body?.data?.show;
       expect(show?.type, JSON.stringify(install.body?.data)).toBe('agentic_process');
       const vibeProcId = show.id as string;
+      createdProcesses.push({ apiUrl: bob.apiUrl, id: vibeProcId });
       const proc = await pollUntil(() => backendGet(bob, 'agentic_process', vibeProcId), 10_000, 'vibe setup process');
       expect(proc.context_data?.launched_from).toBe('artifact_setup');
       expect(proc.context_data?.source_artifact_id).toBe(artifactId);
 
       // Serve + show the app on the setup process (deterministic stand-in for the
       // seeded artifact-setup agent run), then assert it renders in the Vibe pane.
-      const appOpen = JSON.parse(await flowCliAsync(
-        bob,
-        ['app', 'open', artifactName, '--root', served, '--process', `agentic_process-${vibeProcId}`, '--port', String(appPort), '--timeout', '25'],
-        served,
-      ));
+      const appOpen = JSON.parse(
+        await flowCliAsync(
+          bob,
+          [
+            'app',
+            'open',
+            artifactName,
+            '--root',
+            served,
+            '--process',
+            `agentic_process-${vibeProcId}`,
+            // No `--port`: `flow app open` picks a port from its own static band
+            // (8000-8099) and binds it in the same call. A port chosen here would be
+            // an OS-ephemeral one probed on 127.0.0.1 only, then held unbound for the
+            // whole share/install leg — any IPv6-wildcard socket on it (or a later
+            // binder) makes the dual-stack `http.server` die with EADDRINUSE and the
+            // call fail as APP_START_TIMEOUT.
+            '--timeout',
+            '25',
+          ],
+          served,
+        ),
+      );
       expect(appOpen.ok, JSON.stringify(appOpen)).toBe(true);
       if (typeof appOpen.pid === 'number') startedPids.push(appOpen.pid);
 
@@ -301,13 +404,27 @@ describe('spora copy-share → Vibe setup', () => {
         waitUntil: 'domcontentloaded',
       });
 
-      const frame = bobPage.page.locator('iframe[data-testid="vibe-webapp-frame"]').first();
+      // `flow app open` persists a first-class `kind: "app"` display target
+      // (artifact + runtime identity), so Vibe renders the app branch. The
+      // `vibe-webapp-frame` selector belongs only to the legacy port-only
+      // `flow show webapp` target.
+      const frame = bobPage.page.locator('iframe[data-testid="vibe-app-frame"]').first();
       await frame.waitFor({ state: 'attached', timeout: 30_000 });
-      await expect.poll(async () => {
-        const handle = await frame.elementHandle();
-        const content = await handle?.contentFrame();
-        return (await content?.locator('body').innerText({ timeout: 2_000 }).catch(() => '')) ?? '';
-      }, { timeout: 30_000 }).toContain(fixture.token);
+      await expect
+        .poll(
+          async () => {
+            const handle = await frame.elementHandle();
+            const content = await handle?.contentFrame();
+            return (
+              (await content
+                ?.locator('body')
+                .innerText({ timeout: 2_000 })
+                .catch(() => '')) ?? ''
+            );
+          },
+          { timeout: 30_000 },
+        )
+        .toContain(fixture.token);
     } finally {
       await browser?.close();
     }

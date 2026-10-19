@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { AgenticProcess } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
@@ -6,20 +7,6 @@ import { notify } from '@src/notifications';
 import type { SpotlightRow } from './types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-export function timeAgo(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  const seconds = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export function historyDisplayName(e: WorkerHistoryEntry): string {
   const name = (e.name ?? '').trim();
@@ -93,8 +80,8 @@ async function resolveProcessAndOpenTerminal(
   if (!process) {
     if (!hasFallback) {
       notify.error({
-        title: 'Session not found',
-        message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`,
+        title: t`Session not found`,
+        message: t`Session ${workerId} is not in Claude, Codex, or Copilot history.`,
       });
     }
     return false;
@@ -133,15 +120,24 @@ export function searchResultToTerminalRow(r: SearchResult): SpotlightRow {
 }
 
 export function workerHistoryToRow(e: WorkerHistoryEntry): SpotlightRow {
-  const recordType =
-    e.worker_type === 'codex' ? 'codex_session' : e.worker_type === 'copilot' ? 'copilot_session' : 'claude_session';
+  // Only these three have a session entity type. opencode deliberately has
+  // none, so it gets the generic recordType and its glyph comes from
+  // `vendorWorkerType` — NOT a fall-through to claude_session, which is what
+  // made OpenCode results render as Claude.
+  const SESSION_TYPE: Record<string, string> = {
+    claude: 'claude_session',
+    claude_code: 'claude_session',
+    codex: 'codex_session',
+    copilot: 'copilot_session',
+  };
+  const recordType = SESSION_TYPE[e.worker_type] ?? 'agentic_process';
   return {
     key: `${e.worker_type}:${e.worker_id}`,
     recordType,
+    vendorWorkerType: e.worker_type,
     title: historyDisplayName(e),
     subtitle: e.project_name ?? '',
     timestamp: e.last_active_time ?? null,
-    onActivate: (navigation) =>
-      resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
+    onActivate: (navigation) => resolveProcessAndOpenTerminal(navigation, e.worker_id, e.agentic_process_id),
   };
 }

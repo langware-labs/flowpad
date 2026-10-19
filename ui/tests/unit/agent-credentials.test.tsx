@@ -1,0 +1,150 @@
+/**
+ * The agent's credentials, in its resources menu and nested in its editor: what its runs resolve —
+ * the project's first, then the user's — read from the same status the Connections screen reads.
+ * A row only navigates (URL-first); the nested page shows scope, store, state and each variable,
+ * never a value.
+ */
+import '@testing-library/jest-dom/vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { CredentialStatusRow, CredentialsStatus } from '@sdk';
+
+const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
+const creds = vi.hoisted(() => ({ status: null as unknown as CredentialsStatus, refresh: vi.fn(), remove: vi.fn() }));
+const { AGENT_URL } = vi.hoisted(() => ({ AGENT_URL: '/dock/assets/editor/agent/typeid/agent-33333333-3333-4333-8333-333333333333' }));
+vi.mock('@src/navigation/useDockNavigation', async () => {
+  const { DockPointer } = await import('@src/navigation/DockPointer');
+  const currentDock = DockPointer.fromUrl(AGENT_URL);
+  return { useDockNavigation: () => ({ navigation: nav, currentDock }) };
+});
+vi.mock('@src/components/credentials/use-credentials', () => ({
+  useCredentials: () => ({ status: creds.status, templates: [], ready: true, refresh: creds.refresh }),
+}));
+vi.mock('@src/components/credentials/CredentialDialog', () => ({
+  CredentialDialog: ({ draft }: { draft: { mode: string } }) => <div data-testid="credential-dialog" data-mode={draft.mode} />,
+}));
+vi.mock('@src/components/connections-manager/add-connection-dialog', () => ({ AddConnectionDialog: () => null }));
+vi.mock('@sdk', async (orig) => {
+  const actual = await orig<typeof import('@sdk')>();
+  return { ...actual, credentialsService: { remove: creds.remove }, dataContext: { project: { typeId: { id: 'p1' } } } };
+});
+
+import { AgentCredentialsSection } from '@src/components/agent-resources/AgentCredentialsSection';
+import { CredentialView } from '@src/components/credentials-view/CredentialView';
+
+function row(extra: Partial<CredentialStatusRow>): CredentialStatusRow {
+  return {
+    typeid: 'credential-1', name: 'openai', title: 'OpenAI', description: '', icon_name: '', help_url: '', setup_wiki: '',
+    setup: 'Create a key at platform.openai.com', scope: 'user', project_id: null, environment: 'development',
+    value_store: 'env', default_value_store: 'env', environments: {}, lm_provider: '', state: 'connected',
+    vars: [{ env_var: 'OPENAI_API_KEY', label: 'API key', hint: '', placeholder: '', pattern: '', help_url: '', secret: true, required: 'MUST', present: true, found_in: 'env', warning: null, shadowed_by: null }],
+    ...extra,
+  } as CredentialStatusRow;
+}
+
+function status(credentials: CredentialStatusRow[]): CredentialsStatus {
+  return { project_id: 'p1', environment: 'development', environments: ['development'], vault_enabled: false, credentials, files: [] } as CredentialsStatus;
+}
+
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+  nav.openDock.mockReset();
+  creds.remove.mockReset();
+});
+
+describe('agent credentials', () => {
+  it("lists the project's first, then the user's, each saying its scope and state", () => {
+    creds.status = status([
+      row({}),
+      row({ typeid: 'credential-2', name: 'stripe', title: 'Stripe', scope: 'project', project_id: 'p1', state: 'missing',
+        vars: [{ ...row({}).vars[0], env_var: 'STRIPE_KEY', present: false, warning: 'missing' }] }),
+    ]);
+    render(<AgentCredentialsSection />);
+    fireEvent.click(screen.getByTestId('navigator-section-credentials'));
+    const rows = screen.getAllByTestId(/^agent-resource-credential-/);
+    expect(rows.map((r) => r.getAttribute('data-testid'))).toEqual(['agent-resource-credential-project-stripe', 'agent-resource-credential-user-openai']);
+    expect(rows[0]).toHaveTextContent('project · 1 missing');
+    expect(rows[1]).toHaveTextContent('user · set');
+  });
+
+  it('a row opens the credential nested in the agent — it only navigates', () => {
+    creds.status = status([row({})]);
+    render(<AgentCredentialsSection />);
+    fireEvent.click(screen.getByTestId('navigator-section-credentials'));
+    fireEvent.click(screen.getByTestId('agent-resource-credential-user-openai'));
+    expect(nav.openDock).toHaveBeenCalledTimes(1);
+    expect(nav.openDock.mock.calls[0][0].child).toEqual({ section: 'credential', typeId: 'credential-1' });
+    expect(creds.remove).not.toHaveBeenCalled();
+  });
+
+  it('the nested page shows scope, where values live and each variable — set or missing', () => {
+    creds.status = status([
+      row({ scope: 'project', value_store: 'vault', state: 'partial', vars: [
+        row({}).vars[0],
+        { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: 'OPTIONAL' },
+      ] }),
+    ]);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.getByTestId('credential-child-scope')).toHaveTextContent('project');
+    expect(screen.getByTestId('credential-child-store')).toHaveTextContent('the vault');
+    expect(screen.getByTestId('credential-var-OPENAI_API_KEY')).toHaveTextContent('set');
+    expect(screen.getByTestId('credential-var-OPENAI_ORG')).toHaveTextContent('optional · not set');
+    expect(screen.getByText('Create a key at platform.openai.com')).toBeInTheDocument();
+  });
+
+  it('an either-or group with nothing set counts as one thing missing, and each member warns', () => {
+    const v = row({}).vars[0];
+    creds.status = status([
+      row({ state: 'missing', vars: [
+        { ...v, env_var: 'KEY_FILE', required: 'ONE_OF', kind: 'file', present: false },
+        { ...v, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', present: false, found_in: null, login: 'gcloud auth application-default login' },
+      ] }),
+    ]);
+    render(<AgentCredentialsSection />);
+    fireEvent.click(screen.getByTestId('navigator-section-credentials'));
+    expect(screen.getByTestId('agent-resource-credential-user-openai')).toHaveTextContent('user · 1 missing');
+
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.getByTestId('credential-var-state-KEY_FILE')).toHaveTextContent('one of · not set');
+    expect(screen.getByTestId('credential-var-state-GCLOUD_ADC')).toHaveTextContent('one of · not signed in');
+    expect(screen.getByTestId('credential-var-alert-KEY_FILE')).toBeInTheDocument();
+    expect(screen.getByTestId('credential-var-alert-GCLOUD_ADC')).toBeInTheDocument();
+    expect(screen.getByTestId('credential-var-required-KEY_FILE')).toHaveAttribute('title', 'One of these is enough');
+  });
+
+  it('once one member is in, the other is not a warning; a cli variable shows its sign-in command', () => {
+    const v = row({}).vars[0];
+    creds.status = status([
+      row({ vars: [
+        { ...v, env_var: 'KEY_FILE', required: 'ONE_OF', kind: 'file', present: false },
+        { ...v, env_var: 'GCLOUD_ADC', required: 'ONE_OF', kind: 'cli', store: 'cli', present: true, found_in: null, login: 'gcloud auth application-default login' },
+      ] }),
+    ]);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.queryByTestId('credential-var-alert-KEY_FILE')).toBeNull();
+    expect(screen.getByTestId('credential-var-state-KEY_FILE')).toHaveTextContent('one of · not set');
+    expect(screen.getByTestId('credential-var-state-GCLOUD_ADC')).toHaveTextContent('one of · signed in');
+    expect(screen.getByTestId('credential-var-login-GCLOUD_ADC')).toHaveTextContent('gcloud auth application-default login');
+  });
+
+  it('Set values opens the one credential form with a values draft', async () => {
+    creds.status = status([row({})]);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    await act(async () => fireEvent.click(screen.getByTestId('credential-child-set-values')));
+    expect(screen.getByTestId('credential-dialog')).toHaveAttribute('data-mode', 'values');
+  });
+
+  it('a user credential the project overrides says so', () => {
+    creds.status = status([row({ vars: [{ ...row({}).vars[0], shadowed_by: 'credential-9' }] })]);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
+    expect(screen.getByTestId('credential-child-state')).toHaveTextContent("overridden by the project's");
+    expect(screen.getByTestId('credential-child-shadowed')).toBeInTheDocument();
+  });
+
+  it('a credential gone from the status says so', () => {
+    creds.status = status([]);
+    render(<CredentialView typeid="credential-404" onGone={() => undefined} />);
+    expect(screen.getByTestId('credential-child-missing')).toBeInTheDocument();
+  });
+});

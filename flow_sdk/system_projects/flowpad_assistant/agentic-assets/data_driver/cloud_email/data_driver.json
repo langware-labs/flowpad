@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "cloud_email",
+  "title": "Agent Email",
+  "icon_name": "Mail",
+  "description": "An email address Flowpad creates for this agent. Nothing to paste.",
+  "kind": "datasource.cloud.email",
+  "provisioned": true,
+  "config": {
+    "address": {
+      "type": "text",
+      "advanced": true,
+      "label": "Address",
+      "account_key": true
+    }
+  }
+}

@@ -13,7 +13,8 @@
 #   4. Creates a git tag
 #   5. Pushes to GitHub
 #   6. Builds and publishes to PyPI (unless --no-pypi)
-#   7. Validates the installed version
+#   7. Validates the installed version — pip3 install, then the desktop app's
+#      own clean-room `uv tool install … --python <pin>` (validate_uv_tool_install.sh)
 #
 # Usage: ./scripts/deploy_to_github.sh [--skip-tests] [--no-pypi] [--skip-flow-rs-sign]
 #                                      [--minor | --major | --version X.Y.Z]
@@ -31,6 +32,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$PROJECT_DIR"
 
 VERSION_FILE="flow_sdk/_version.py"
+MIGRATIONS_DIR="flow_sdk/system_projects/flowpad_assistant/migrations"
 
 # Colors for output
 RED='\033[0;31m'
@@ -133,6 +135,63 @@ update_version_file() {
     echo "__version__ = \"${new_version}\"" > "$VERSION_FILE"
 }
 
+# Rotate the migration recipe slot. Args: <version being released>
+#
+# `run_if_needed` resolves a recipe under the RUNNING version's own directory,
+# so a migration is only ever reached by installs of the version it ships in.
+# That makes the directory named after the NEXT version the only reachable
+# place to write one — and a release consumes it. Two things must happen here,
+# in the bump's own commit, or the guard in
+# tests/unit/test_migration_recipes_ship_with_their_version.py goes red on
+# every branch cut afterwards:
+#
+#   * The slot being released is DELETED if it is still empty. An empty slot
+#     that ships is worse than no slot: `_recipe_versions()` lists directories,
+#     so a directory carrying no recipe reads as one its own wheel never
+#     carried — i.e. stranded. A slot that DID get a migration written into it
+#     is kept; it shipped, and it runs.
+#   * The next slot is opened, so the next migration has somewhere to live.
+rotate_migration_slot() {
+    local released="$1"
+    local released_dir="${MIGRATIONS_DIR}/${released}"
+
+    if [[ -d "$released_dir" ]] \
+       && [[ ! -f "${released_dir}/scripts/migrate.py" ]] \
+       && [[ ! -f "${released_dir}/skill/SKILL.md" ]]; then
+        echo -e "${YELLOW}Retiring empty migration slot ${released} (nothing was written into it)${NC}"
+        rm -rf "$released_dir"
+    fi
+
+    local next
+    next="$(bump_version "$released" patch)" || return 1
+    local next_dir="${MIGRATIONS_DIR}/${next}"
+    if [[ -d "$next_dir" ]]; then
+        return 0
+    fi
+
+    echo -e "${YELLOW}Opening migration slot ${next}${NC}"
+    mkdir -p "$next_dir"
+    cat > "${next_dir}/README.md" <<EOF
+# ${next} — the open slot
+
+This directory is the next UNRELEASED recipe version: the only place a new
+migration can be added and still be reached. It is created by the release
+script when ${released} is cut; do not hand-author it.
+
+\`run_if_needed\` resolves a recipe under the RUNNING version's own directory,
+so a recipe committed after its version was built is never found by any install
+— that version is gone, and every later release looks under its own directory.
+A migration written here ships in the ${next} wheel and runs on upgrade to it.
+
+Add one as \`scripts/migrate.py\` with a \`run()\` entry point, or as
+\`skill/SKILL.md\` for an agent-driven recipe. Until then \`_resolve_recipe\`
+returns None for this version — "nothing to do" — which is correct.
+
+If this slot is still empty when ${next} is released, the release script
+deletes it rather than shipping a directory with no recipe in it.
+EOF
+}
+
 echo -e "${GREEN}=== Flowpad Deployment ===${NC}"
 echo ""
 
@@ -186,7 +245,8 @@ if [[ "$SKIP_TESTS" == false ]]; then
     # would test tee's exit, which is always 0).
     TEST_LOG="${TMPDIR:-/tmp}/deploy-tests-$(date +%Y%m%d-%H%M%S).log"
     echo -e "${YELLOW}Running tests... (live log: tail -f ${TEST_LOG})${NC}"
-    PYTHONUNBUFFERED=1 python3 -m pytest tests/ -v --tb=short --durations=20 2>&1 | tee "$TEST_LOG"
+    # --long: never ship on a run that silently skipped the slow tests.
+    PYTHONUNBUFFERED=1 python3 -m pytest tests/ flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -v --tb=short --durations=20 --long 2>&1 | tee "$TEST_LOG"
     if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         echo -e "${GREEN}Tests passed!${NC}"
     else
@@ -351,6 +411,10 @@ fi
 echo -e "${YELLOW}Updating version to ${NEW_VERSION}...${NC}"
 update_version_file "$NEW_VERSION"
 
+# Rotate the migration slot in the SAME commit as the bump — the release is
+# what consumes the slot, so the release is what must open the next one.
+rotate_migration_slot "$NEW_VERSION"
+
 # Stage and commit all changes
 echo -e "${YELLOW}Committing version bump...${NC}"
 git add -A
@@ -441,6 +505,21 @@ if [[ "$NO_PYPI" == false ]]; then
         echo -e "${YELLOW}Validating PyPI package...${NC}"
         pip3 install --quiet "flowpad==${NEW_VERSION}" --force-reinstall
         echo -e "${GREEN}PyPI package validated${NC}"
+
+        # Validate the install the way USERS get it: the desktop app's own
+        # `uv tool install flowpad --python <pin> --force`, in a throwaway uv
+        # home (no cache, no system Python, no existing venv). Catches what the
+        # pip3 install above cannot — a pin the package has outgrown, a source
+        # build that fails on a clean machine, a stale resolution.
+        echo ""
+        echo -e "${YELLOW}Validating clean-room uv tool install (desktop first-launch path)...${NC}"
+        if "${SCRIPT_DIR}/validate_uv_tool_install.sh" "flowpad==${NEW_VERSION}"; then
+            echo -e "${GREEN}✓ Clean-room uv tool install passed${NC}"
+        else
+            echo -e "${RED}✗ Clean-room uv tool install FAILED${NC}"
+            echo -e "${RED}A fresh user cannot install this version. Do NOT release the desktop on it.${NC}"
+            exit 1
+        fi
     fi
 else
     echo ""

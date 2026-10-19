@@ -1,41 +1,50 @@
 import { Trans, useLingui } from '@lingui/react/macro';
+import { DataSource, DiagnosisRequest, isHubOnly, Project } from '@sdk';
+import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
 import { useProject } from '@sdk/react/hooks';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
-import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import {
-  ContextFolderScopeChips,
-  useContextFolderSources,
-  type ContextFolderSource,
-} from '@src/components/assets/context-folder-sources';
+  DEPENDENCIES_WIKI,
+  DependencyKindChips,
+  useDependencySources,
+  type DependencySource,
+} from '@src/components/assets/dependency-sources';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { NewProjectDialog, NewProjectFromGitDialog, useGitCloneDialogSubmit } from '@src/components/project-selector';
+import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
-import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
-import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
+import { useAddDependency } from '@src/hooks/use-add-dependency';
+import { useAddHelpdesk } from '@src/hooks/use-add-helpdesk';
+import type { DependencyKind } from '@src/hooks/use-project-dependencies';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { KeyRound, MessageSquarePlus } from 'lucide-react';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
+import { GitBranch, Info, Loader2, MessageSquarePlus } from 'lucide-react';
 import {
   Fragment,
   forwardRef,
+  useCallback,
   useMemo,
   useState,
   type ButtonHTMLAttributes,
   type ComponentType,
   type ReactNode,
 } from 'react';
-import { WikiTip } from '@src/components/wiki-tip';
+import { WikiButton, WikiTip } from '@src/components/wiki-tip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { QuickCreateDialog } from './QuickCreateDialog';
-import { QUICK_CREATE_REGISTRY, getDescriptor } from './registry';
+import { QUICK_CREATE_REGISTRY, getDescriptor, type QuickCreateGroup } from './registry';
+import { providerMetaFor } from '@src/tabs/provider-meta';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
 
 /** Registry types deliberately absent from this launcher (still creatable from
  *  the Assets page's per-type "+"). */
-const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow']);
+const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow', 'subagent', DiagnosisRequest.type]);
 
 /** Wiki pages behind the non-registry tiles — hoisted so each title is written
  *  once (a wikiword resolves by page title at runtime, so a typo degrades into
@@ -44,25 +53,42 @@ const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow']);
 const CLAUDE_CODE_WIKI = 'Claude Code sessions';
 const CODEX_WIKI = 'Codex sessions';
 const COPILOT_WIKI = 'Copilot sessions';
-const SECRET_WIKI = 'Project secrets';
+const OPENCODE_WIKI = 'OpenCode sessions';
 const CONVERSATION_WIKI = 'Conversations';
+const PROJECT_WIKI = 'Flowpad project';
 
 /** A dense grid — a card under every tile the pointer crosses is noise. */
-const TILE_TIP_DELAY = 500;
+/** How long a tile waits before explaining itself. Exported so every surface
+ *  built from `DesktopTile` opens its tip on the same beat — two surfaces with
+ *  two delays read as one of them lagging. */
+export const TILE_TIP_DELAY = 500;
 
 /** Icon components accept a className — both lucide icons and the brand SVGs. */
 type TileIcon = ComponentType<{ className?: string }>;
 
-type DesktopTileProps = {
-  Icon: TileIcon;
+export type DesktopTileProps = {
+  /** The type/action glyph. Optional only because `iconSlot` can stand in for
+   *  it; pass exactly one. */
+  Icon?: TileIcon;
   label: string;
+  /** A ready-made face to draw INSTEAD of `Icon` — for a tile whose glyph is
+   *  bound to one entity rather than to a type (an agent's avatar). An inline
+   *  `Icon={(p) => <Avatar …/>}` adapter would have a new component identity on
+   *  every render and remount its `<img>` each time; a node does not. `loading`
+   *  still wins over both. */
+  iconSlot?: ReactNode;
   iconClassName?: string;
   disabled?: boolean;
+  /** In-flight: show a spinner instead of `Icon` and refuse clicks. Lives here
+   *  rather than in each caller so every tile spells "working" the same way. */
+  loading?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'disabled'>;
 
 /**
- * A single desktop-style icon tile — sized to match the home MiniDesktop /
- * favorites grid (square tile, icon over a single-line label).
+ * The square icon-over-label tile every "New …" affordance on project home
+ * uses — sized to match the favorites desktop grid. Exported so
+ * sibling surfaces (hub home's projects and desktops) present the same shape
+ * rather than inventing a second look for the same kind of act.
  *
  * Forwards its ref and spreads the rest of its props onto the real `<button>`
  * so it can be a Radix `asChild` trigger: `Slot` clones this element to merge
@@ -73,28 +99,38 @@ type DesktopTileProps = {
  * natively disabled button drops pointer events, which would take its WikiTip
  * with it, and an unavailable tile is exactly the one worth explaining.
  */
-const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
-  { Icon, label, iconClassName, disabled, className, onClick, ...rest },
+export const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function DesktopTile(
+  { Icon, iconSlot, label, iconClassName, disabled, loading, className, onClick, ...rest },
   ref,
 ) {
+  const inert = disabled || loading;
   return (
     <button
       ref={ref}
       type="button"
-      onClick={disabled ? undefined : onClick}
-      aria-disabled={disabled || undefined}
+      onClick={inert ? undefined : onClick}
+      aria-disabled={inert || undefined}
+      aria-busy={loading || undefined}
       aria-label={label}
       className={cn(
         'flex h-20 w-20 flex-col items-center justify-center gap-1.5 rounded-md border border-border bg-background text-muted-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        disabled
+        inert
           ? 'cursor-not-allowed opacity-50'
           : 'cursor-pointer hover:border-primary hover:bg-accent hover:text-foreground',
         className,
       )}
       {...rest}
     >
-      <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">
+      {loading ? (
+        <Loader2 className={cn('h-7 w-7 animate-spin', iconClassName)} />
+      ) : (
+        // `iconSlot` owns its own sizing — `iconClassName` is the Icon's.
+        (iconSlot ?? (Icon ? <Icon className={cn('h-7 w-7', iconClassName)} /> : null))
+      )}
+      {/* Two lines, not one truncated one: a multi-word label ("Folder on this
+          computer") is unreadable clipped, and two 10px lines still clear the
+          tile's height. */}
+      <span className="line-clamp-2 w-full text-balance break-words px-1 text-center text-[10px] font-medium leading-tight">
         {label}
       </span>
     </button>
@@ -117,7 +153,7 @@ export function TileSection({
   return (
     <section>
       <div className="mb-2 flex items-center gap-3">
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         {headerExtra}
       </div>
       <div className="flex flex-wrap gap-3">{children}</div>
@@ -128,14 +164,14 @@ export function TileSection({
 /**
  * A DesktopTile with its wiki page one hover away. Every tile on this surface
  * is tipped: the grid is often a new user's first sight of these concepts, and
- * a 10px label can't explain what a skill or a context folder is.
+ * a 10px label can't explain what a skill or a dependency is.
  */
-function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTileProps) {
+function TippedTile({ wikiword, tip, ...tile }: { wikiword: string; tip?: string } & DesktopTileProps) {
   const { t } = useLingui();
   return (
     <WikiTip
       wikiword={wikiword}
-      label={tile.label}
+      label={tip ?? tile.label}
       buttonLabel={t`What is ${tile.label}?`}
       openDelay={TILE_TIP_DELAY}
     >
@@ -155,14 +191,38 @@ function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTilePro
  * nothing. Spread `panelProps` onto the panel and render `dialogs` alongside
  * it, outside whatever the tile dismissed.
  */
-export function useQuickCreatePick() {
-  const { project } = useProject();
+export function useQuickCreatePick(explicitProject?: Project | null) {
+  const { project: activeProject } = useProject();
+  const project = explicitProject === undefined ? activeProject : explicitProject;
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [bindSecretOpen, setBindSecretOpen] = useState(false);
   const [newMessageOpen, setNewMessageOpen] = useState(false);
-  const ctxFolder = useAddContextFolder({ project });
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
+  const [newDataSourceOpen, setNewDataSourceOpen] = useState(false);
+  const ctxFolder = useAddDependency({ project });
+  const helpdesk = useAddHelpdesk({ project });
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
+
+  // Creating a project is the same flow the home surfaces run (ProjectActionsRow):
+  // resolve-or-create the folder's project, then adopt it as the current context —
+  // so the assets the user creates next land in the project they just made.
+  const { pickFolder, ensureProjectAndSetContext, computeNode } = useProjectOpener({
+    onError: (message) => notify.error({ title: message }),
+  });
+  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
+  // New projects go in the ACTIVE workspace's folder (the default root when there is one workspace).
+  const { root: defaultWorkspacePath } = useActiveWorkspace();
+  // A hub project is a pure entity with no folder behind it — the dialog drops
+  // the folder row there, exactly as ProjectActionsRow does.
+  const withFolder = !isHubOnly();
+
+  const handleCreateProject = useCallback(
+    async (name: string, parentFolder: string) => {
+      await ensureProjectAndSetContext(parentFolder ? `${normalizePath(parentFolder)}/${name}` : name);
+    },
+    [ensureProjectAndSetContext],
+  );
 
   // A conversation with anyone remote needs a cloud session, so gate before
   // opening — and reopen the dialog the user was reaching for once a forced
@@ -194,56 +254,95 @@ export function useQuickCreatePick() {
       {CustomDialog ? (
         <CustomDialog open={dialogOpen} onOpenChange={handleDialogChange} projectId={project?.id ?? null} />
       ) : (
-        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} />
+        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} project={explicitProject} />
       )}
-      <BindSecretDialog project={project ?? null} open={bindSecretOpen} onOpenChange={setBindSecretOpen} />
       {ctxFolder.dialogs}
+      {helpdesk.dialogs}
+      {newDataSourceOpen && <DataSourceDialog open onOpenChange={setNewDataSourceOpen} />}
       <NewConversationDialog open={newMessageOpen} onClose={() => setNewMessageOpen(false)} />
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        defaultParentFolder={defaultWorkspacePath}
+        withFolder={withFolder}
+        onPickFolder={withFolder ? () => pickFolder(defaultWorkspacePath || undefined) : undefined}
+        onCreate={handleCreateProject}
+      />
+      {/* Mounted only while open — keeps the repo/branch pickers out of every
+          surface that hosts these dialogs. */}
+      {newGitProjectOpen && (
+        <NewProjectFromGitDialog open onOpenChange={setNewGitProjectOpen} onCreate={handleCreateGitProject} />
+      )}
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
     </>
   );
 
   const panelProps: PanelHandlers = {
     onPick,
-    onBindSecret: () => setBindSecretOpen(true),
     onAddFolder: ctxFolder.pick,
+    onAddHelpdesk: helpdesk.open,
     onNewMessage,
+    onNewProject: () => setNewProjectOpen(true),
+    onNewProjectFromGit: () => setNewGitProjectOpen(true),
+    onNewDataSource: () => setNewDataSourceOpen(true),
   };
 
-  return { panelProps, dialogs };
+  // `openSource`: the add-a-dependency dialog on its own (the `add-dependency` UI action).
+  return { panelProps, dialogs, openSource: ctxFolder.openSource };
 }
 
 /** What the panel needs from its host — everything but the host's own dismiss
  *  and the display-only `sections` filter. */
-export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
+export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles' | 'leadingSessionTiles' | 'project' | 'chatTitle' | 'allUserTypes'> & {
+  /** Open the add-help-desk flow — no tile here; reached through the `add-help-desk` UI action. */
+  onAddHelpdesk: () => void;
+};
 
 /** The tile groups this panel can render, in order. */
-export type QuickCreateSection = 'session' | 'message' | 'asset' | 'folder';
-const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'asset', 'folder'];
+export type QuickCreateSection = 'chat' | 'build' | 'write' | 'connect' | 'project' | 'folder';
+export const ALL_SECTIONS: QuickCreateSection[] = ['chat', 'build', 'write', 'connect', 'project', 'folder'];
+
+/** Sections that point the project at something that ALREADY EXISTS rather than
+ *  creating it. The modal excludes these from creation and optionally renders
+ *  them under a separate "Add existing" heading. */
+export const ADOPTION_SECTIONS: ReadonlySet<QuickCreateSection> = new Set(['folder']);
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
   onPick: (type: string) => void;
-  /** Open the secret-binding dialog. */
-  onBindSecret: () => void;
-  /** Run a context-folder source at the given scope. */
-  onAddFolder: (source: ContextFolderSource, scope: ContextFolderScope) => void;
+  /** Run a dependency source as the given kind (required / optional). */
+  onAddFolder: (source: DependencySource, kind: DependencyKind) => void;
   /** Open the new-conversation dialog (behind the cloud-login gate). */
   onNewMessage: () => void;
+  /** Open the create-a-project dialog (name + parent folder). */
+  onNewProject: () => void;
+  /** Open the clone-a-repo-as-a-new-project dialog. */
+  onNewProjectFromGit: () => void;
+  /** Configured sources have their own form rather than a name-only asset dialog. */
+  onNewDataSource?: () => void;
+  /** Undefined follows the active project; a supplied project pins this panel. */
+  project?: Project | null;
+  chatTitle?: ReactNode;
+  /** Offer user-facing creation types across browsing modes, preserving Dev gates. */
+  allUserTypes?: boolean;
   /** Dismiss the host, if there is one to dismiss. A modal closes; a page no-ops. */
   onDone?: () => void;
   /**
-   * Which tile groups to render, in this order. Defaults to all four (the "+"
-   * modal). The tabbed ProjectHome splits: `session` renders under its own
-   * tagged wrapper, `asset` + `folder` below the mini-desktop.
+   * Which tile groups to render, in this order. Defaults to all of them (the
+   * "+" modal drops the adoption ones). The tabbed ProjectHome splits: `chat`
+   * renders under its own tagged wrapper, the asset groups + `folder` below it.
    */
   sections?: QuickCreateSection[];
+  /** Let the host adapt the group layout to its available space. */
+  className?: string;
   /**
-   * Host-supplied tiles appended to the `session` group — e.g. ProjectHome's
+   * Host-supplied tiles appended to the `chat` group's sessions — e.g. ProjectHome's
    * Terminal opener, whose creation path (and modals) live on the terminal
    * strip controller rather than in this panel.
    */
   extraSessionTiles?: SessionTileDef[];
+  /** Host session entries shown before provider launchers. */
+  leadingSessionTiles?: SessionTileDef[];
 }
 
 /** The session-tile shape hosts use for {@link QuickCreatePanelProps.extraSessionTiles}. */
@@ -269,33 +368,49 @@ export interface SessionTileDef {
  */
 export function QuickCreatePanel({
   onPick,
-  onBindSecret,
   onAddFolder,
   onNewMessage,
+  onNewProject,
+  onNewProjectFromGit,
+  onNewDataSource,
+  project: explicitProject,
+  chatTitle,
+  allUserTypes = false,
   extraSessionTiles = [],
+  leadingSessionTiles = [],
   onDone,
   sections = ALL_SECTIONS,
+  className,
 }: QuickCreatePanelProps) {
   const { t } = useLingui();
   // Only `creatable`/`type_name` are read below, both synchronous from the
   // registry — no vaults, so no `/assets/types` request per mount.
-  const { types: serverTypes } = useAssetTypes({ withVaults: false });
-  const { project: currentProject } = useProject();
+  const { types: serverTypes } = useAssetTypes({ withVaults: false, allUserTypes });
+  const { project: activeProject } = useProject();
+  const currentProject = explicitProject === undefined ? activeProject : explicitProject;
   const { navigation } = useDockNavigation();
-  const [folderScope, setFolderScope] = useState<ContextFolderScope>('private');
+  const [dependencyKind, setDependencyKind] = useState<DependencyKind>('local');
 
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
   // Not memoized: `onDone` is a fresh arrow from the modal host every render, so
   // a useCallback here could never hit, and no consumer is memo'd anyway.
-  const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot') => {
+  const handleStartSession = async (workerType: 'claude_code' | 'codex' | 'copilot' | 'opencode') => {
     onDone?.();
-    const result = await navigation.openNewClaudeProcess({ workerType });
-    if (!result) {
-      notify.error({ title: t`Failed to start session` });
-      return;
+    // openNewChat creates AND navigates (carrying the chat mode) — no second nav.
+    // The catch is load-bearing: this is invoked as `void handleStartSession(…)`,
+    // so a rejected create used to become an unhandled rejection and the user got
+    // no feedback at all in any view mode.
+    try {
+      const process = await openNewChat(navigation, {
+        workerType,
+        ...(explicitProject ? { projectId: explicitProject.id, cwd: explicitProject.fs_storage_mount_path ?? undefined } : {}),
+      });
+      if (!process) notify.error({ title: t`Failed to start session` });
+    } catch (err) {
+      console.error('[QuickCreatePanel] start session failed', err);
+      openCapabilitiesForWorker(navigation, workerType);
     }
-    await navigation.openShellProcess(result.processId);
   };
 
   // Intersection of the UI registry and the server-reported `creatable` types,
@@ -305,81 +420,86 @@ export function QuickCreatePanel({
   const assetItems = useMemo(() => {
     const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     const enforce = serverCreatable.size > 0;
-    return QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
-      .filter((d) => !enforce || serverCreatable.has(d.type))
-      .map((d) => ({ type: d.type, Icon: d.Icon as TileIcon, label: d.label, wikiword: d.wikiword }));
-  }, [serverTypes]);
+    return (
+      QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
+        .filter((d) => !enforce || serverCreatable.has(d.type))
+        // Glyph from the backend type registry — never a per-type icon chosen here.
+        // `t(d.label)` and NOT `labelForType`: this launcher creates ONE of a
+        // thing, so it needs the descriptor's singular ("Skill"), while the type
+        // registry's label is whatever that type calls a section of them
+        // ("Skills"). Same word, different number — translating the wrong one
+        // gives a "New Skills" tile.
+        .map((d) => ({
+          type: d.type,
+          group: d.group,
+          Icon: iconForType(d.type) as TileIcon,
+          label: t(d.label),
+          wikiword: d.wikiword,
+        }))
+    );
+  }, [serverTypes, t]);
 
-  const sessionTiles: Array<{
-    key: string;
-    Icon: TileIcon;
-    label: string;
-    wikiword: string;
-    iconClassName: string;
-    onClick: () => void;
-  }> = [
-    {
-      key: 'claude_code',
-      Icon: ClaudeIcon,
-      label: t`Claude Code`,
-      wikiword: CLAUDE_CODE_WIKI,
-      iconClassName: 'text-orange-500',
-      onClick: () => void handleStartSession('claude_code'),
-    },
-    {
-      key: 'codex',
-      Icon: CodexIcon,
-      label: t`Codex`,
-      wikiword: CODEX_WIKI,
-      iconClassName: 'text-emerald-500',
-      onClick: () => void handleStartSession('codex'),
-    },
-    {
-      key: 'copilot',
-      Icon: CopilotIcon,
-      label: t`Copilot`,
-      wikiword: COPILOT_WIKI,
-      iconClassName: 'text-sky-500',
-      onClick: () => void handleStartSession('copilot'),
-    },
+  const sessionTiles: SessionTileDef[] = [
+    // Glyph and colour come from `PROVIDER_META`; only the label and wiki page
+    // are this surface's own. Hardcoding the icon here is how a vendor ends up
+    // wearing Claude's mark on one screen and its own on another.
+    ...(
+      [
+        ['claude_code', t`Claude Code`, CLAUDE_CODE_WIKI],
+        ['codex', t`Codex`, CODEX_WIKI],
+        ['copilot', t`Copilot`, COPILOT_WIKI],
+        ['opencode', t`OpenCode`, OPENCODE_WIKI],
+      ] as const
+    ).map(([workerType, label, wikiword]) => {
+      const meta = providerMetaFor(workerType);
+      return {
+        key: workerType,
+        Icon: meta.Icon,
+        label,
+        wikiword,
+        iconClassName: meta.iconClassName,
+        onClick: () => void handleStartSession(workerType),
+      };
+    }),
   ];
 
-  // Folder tiles are the context-folder sources, flattened out of the "+"
-  // dialog they otherwise hide behind. Scope is read synchronously on click and
-  // passed by value, so the host still has it after this panel unmounts.
-  const folderSources = useContextFolderSources();
+  // Dependency tiles are the dependency sources, flattened out of the "+"
+  // dialog they otherwise hide behind. The kind is read synchronously on click
+  // and passed by value, so the host still has it after this panel unmounts.
+  const folderSources = useDependencySources();
 
-  // Project-attachment tiles — secret bindings live on the Project entity, not
-  // as creatable file assets, so they are hardcoded here rather than in
-  // QUICK_CREATE_REGISTRY. This is the entry point for adding them: the
-  // ProjectHome cards only render once non-empty.
-  const projectAttachmentTiles: Array<{
-    key: string;
-    Icon: TileIcon;
-    label: string;
-    wikiword: string;
-    disabled?: boolean;
-    onClick: () => void;
-  }> = [
-    {
-      key: 'secret',
-      Icon: KeyRound,
-      label: t`Secret`,
-      wikiword: SECRET_WIKI,
-      disabled: !currentProject,
-      onClick: () => {
-        onDone?.();
-        onBindSecret();
-      },
-    },
-  ];
+  // One registry group's tiles; a group the server leaves empty renders nothing.
+  const assetGroup = (group: QuickCreateGroup, title: ReactNode, extra?: ReactNode) => {
+    const items = assetItems.filter((item) => item.group === group);
+    if (items.length === 0 && !extra) return null;
+    return (
+      <TileSection title={title}>
+        {extra}
+        {items.map((item) => (
+          <TippedTile
+            key={item.type}
+            wikiword={item.wikiword}
+            Icon={item.Icon}
+            label={item.label}
+            onClick={() => {
+              onDone?.();
+              onPick(item.type);
+            }}
+          />
+        ))}
+      </TileSection>
+    );
+  };
 
   // Keyed by section so `sections` controls both membership AND order — the
   // group is looked up, not laid out, so the caller's order is what renders.
   const bySection: Record<QuickCreateSection, ReactNode> = {
-    session: (
-      <TileSection title={<Trans>New session</Trans>}>
-        {[...sessionTiles, ...extraSessionTiles].map((tile) => (
+    // Agent sessions and a message to a person, side by side: both start a
+    // conversation. The message tile is hardcoded — a conversation is neither a
+    // registry type nor server-`creatable`.
+    chat: (
+      <TileSection title={chatTitle ?? <Trans>Chat</Trans>}>
+        {[...leadingSessionTiles, ...sessionTiles, ...extraSessionTiles].map((tile) => (
           <TippedTile
             key={tile.key}
             wikiword={tile.wikiword}
@@ -390,13 +510,6 @@ export function QuickCreatePanel({
             onClick={tile.onClick}
           />
         ))}
-      </TileSection>
-    ),
-    // A conversation is a message to a person, not an agent session, and not a
-    // file asset — hence its own section and a hardcoded tile (the asset grid is
-    // registry types filtered by server `creatable`, and `conversation` is neither).
-    message: (
-      <TileSection title={<Trans>New message</Trans>}>
         <TippedTile
           wikiword={CONVERSATION_WIKI}
           Icon={MessageSquarePlus}
@@ -409,36 +522,86 @@ export function QuickCreatePanel({
         />
       </TileSection>
     ),
-    asset: (
-      <TileSection title={<Trans>New asset</Trans>}>
-        {assetItems.map((item) => (
-          <TippedTile
-            key={item.type}
-            wikiword={item.wikiword}
-            Icon={item.Icon}
-            label={item.label}
-            onClick={() => {
-              onDone?.();
-              onPick(item.type);
-            }}
-          />
-        ))}
-        {projectAttachmentTiles.map((tile) => (
-          <TippedTile
-            key={tile.key}
-            wikiword={tile.wikiword}
-            Icon={tile.Icon}
-            label={tile.label}
-            disabled={tile.disabled}
-            onClick={tile.onClick}
-          />
-        ))}
+    // A project is not a file asset (it isn't in QUICK_CREATE_REGISTRY and the
+    // server never reports it `creatable`), so it gets its own group with
+    // hardcoded tiles — the same pair the "New" dropdown offers. Before this
+    // group existed, "Create new" had no way to create a project at all.
+    project: (
+      <TileSection title={<Trans>Project</Trans>}>
+        {/* Backend type registry owns the glyph (TypeInfo.icon) — the same
+            briefcase every other surface draws for a project, never a
+            hand-picked lucide stand-in. */}
+        <TippedTile
+          wikiword={PROJECT_WIKI}
+          Icon={iconForType('project') as TileIcon}
+          label={t`Project`}
+          tip={t`A new project folder — everything you create is scoped to it`}
+          data-testid="quick-create-new-project"
+          onClick={() => {
+            onDone?.();
+            onNewProject();
+          }}
+        />
+        <TippedTile
+          wikiword={PROJECT_WIKI}
+          Icon={GitBranch}
+          label={t`From git`}
+          tip={t`Clone a git repo (or reuse a local clone) as a new project`}
+          data-testid="quick-create-new-project-from-git"
+          onClick={() => {
+            onDone?.();
+            onNewProjectFromGit();
+          }}
+        />
       </TileSection>
     ),
+    build: assetGroup('build', <Trans>Build AI</Trans>),
+    write: assetGroup('write', <Trans>Write & plan</Trans>),
+    connect: assetGroup('connect', <Trans>Connect</Trans>, onNewDataSource && !isHubOnly() ? (
+      <TippedTile
+        wikiword="Data sources"
+        Icon={iconForType(DataSource.type)}
+        label={t`Data source`}
+        data-testid="quick-create-data-source"
+        onClick={() => {
+          onDone?.();
+          onNewDataSource();
+        }}
+      />
+    ) : null),
     folder: (
       <TileSection
-        title={<Trans>New folder</Trans>}
-        headerExtra={<ContextFolderScopeChips scope={folderScope} onChange={setFolderScope} />}
+        title={
+          <span className="flex items-center gap-1">
+            {/* Sentence case, matching the sibling headings and the
+                AddDependencyDialog title — same string,
+                one catalog entry. */}
+            <Trans>Add package</Trans>
+            <Tooltip delayDuration={150}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t`What is a package?`}
+                  className="text-muted-foreground/70 transition-colors hover:text-foreground"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              {/* pointer-events-auto: portals to <body>, which the modal Dialog
+                  marks pointer-events:none (see DependencyKindChips). */}
+              <TooltipContent side="top" className="pointer-events-auto flex max-w-[280px] items-start gap-2">
+                <span className="text-xs leading-snug text-muted-foreground">
+                  <Trans>
+                    Point this project at another folder, repository or hub project it expects in its context. Required
+                    ones are fetched automatically; optional ones on demand.
+                  </Trans>
+                </span>
+                <WikiButton wikiword={DEPENDENCIES_WIKI} label={t`What is a package?`} />
+              </TooltipContent>
+            </Tooltip>
+          </span>
+        }
+        headerExtra={<DependencyKindChips kind={dependencyKind} onChange={setDependencyKind} />}
       >
         {folderSources.map((source) => (
           <TippedTile
@@ -446,11 +609,12 @@ export function QuickCreatePanel({
             wikiword={source.wikiword}
             Icon={source.Icon}
             label={source.label}
+            tip={source.tip}
             data-testid={source.testId}
             disabled={!currentProject}
             onClick={() => {
               onDone?.();
-              onAddFolder(source.key, folderScope);
+              onAddFolder(source.key, dependencyKind);
             }}
           />
         ))}
@@ -459,7 +623,7 @@ export function QuickCreatePanel({
   };
 
   return (
-    <div className="flex flex-col gap-4 pt-1" data-testid="quick-create-panel">
+    <div className={cn('flex flex-col gap-6 pt-1', className)} data-testid="quick-create-panel">
       {sections.map((s) => (
         <Fragment key={s}>{bySection[s]}</Fragment>
       ))}

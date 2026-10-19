@@ -7,14 +7,13 @@ row carries only the small summary fields the UI needs to answer "what
 happened, did it go well" instantly (verdict banner, counts, cost).
 
 ``trace`` is a create-time ferry (db-excluded): it carries the payload through
-the create POST into ``default_body_fn`` (which materializes trace.json) and is
+the create POST into the serializer (which materializes trace.json as the ``FreeSection``) and is
 never persisted or returned on GET — viewers stream the file via FSRef instead.
 """
 
-import json
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -35,11 +34,11 @@ class AgentTrace(Entity):
     issue_count: int = APIField(0)
     divergence_count: int = APIField(0)
     lane_count: int = APIField(1, description="Root lane + subagent lanes")
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     # Create-time ferry only: JSON text consumed by default_body_fn (which
     # materializes trace.json at asset_ref). Never persisted to DB/blob —
     # viewers stream the file, GETs stay summary-sized.
-    trace: Optional[str] = NoDBAPIField(default=None)
+    trace: Optional[dict] = NoDBAPIField(default=None)
 
     @classmethod
     def from_trace(cls, trace: dict, *, name: str | None = None) -> "AgentTrace":
@@ -59,5 +58,5 @@ class AgentTrace(Entity):
             issue_count=summary.get("issue_count") or 0,
             divergence_count=summary.get("divergence_count") or 0,
             lane_count=summary.get("lane_count") or 1,
-            trace=json.dumps(trace),
+            trace=trace,
         )

@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 
-import requests
+import contextlib
 from enum import Enum
-from flow_sdk.cli.cli_command import CLICommand
-from flow_sdk.cli.config_manager import get_config_value, setup_defaults
+
+import requests
+
+from flow_sdk.cli.commands._common import local_get as _local_get
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.setup_claude import setup_claude_code
+from flow_sdk.cli.config_manager import get_config_value, setup_defaults
 
 
 class AgentType(Enum):
     """Enum for supported coding agents"""
+
     CLAUDE_CODE = "claude-code"
     GITHUB_COPILOT = "github-copilot"
     CURSOR = "cursor"
@@ -22,14 +26,12 @@ AGENT_KEYWORD_MAP = {
     "claudecode": AgentType.CLAUDE_CODE,
     "claude code": AgentType.CLAUDE_CODE,
     "claude": AgentType.CLAUDE_CODE,
-
     # GitHub Copilot variations
     "github-copilot": AgentType.GITHUB_COPILOT,
     "github_copilot": AgentType.GITHUB_COPILOT,
     "githubcopilot": AgentType.GITHUB_COPILOT,
     "github copilot": AgentType.GITHUB_COPILOT,
     "copilot": AgentType.GITHUB_COPILOT,
-
     # Cursor variations
     "cursor": AgentType.CURSOR,
 }
@@ -75,20 +77,24 @@ def healthcheck_api_server():
         api_url = api_host
 
     try:
-        response = requests.get(api_url, timeout=5)
+        # ``local_get`` and not a bare ``requests.get``: ``api_url`` is usually
+        # this machine's own server, which refuses keyless callers when gated.
+        # It can also be a configured remote host, and the header is attached to
+        # loopback URLs only — so this stays correct in both cases.
+        response = _local_get(api_url, timeout=5)
         return response.status_code, response.status_code == 200
     except requests.exceptions.RequestException as e:
         print(f"Error connecting to API server: {e}")
         return None, False
 
 
-def run_setup(agent_name, cmd: CLICommand):
+def run_setup(agent_name, context):
     """
     Run the setup command for the specified coding agent.
 
     Args:
         agent_name: The name of the coding agent (e.g., 'claude-code', 'github-copilot', 'cursor')
-        cmd: CLICommand with context and command details
+        context: CLIContext for the command execution
 
     Returns:
         str: Setup instructions or result message
@@ -106,7 +112,7 @@ def run_setup(agent_name, cmd: CLICommand):
     # Call agent-specific setup based on the normalized type
     if agent_type == AgentType.CLAUDE_CODE:
         print(f"\nRecognized as: {agent_type.value}")
-        setup_claude_code(cmd)
+        setup_claude_code(context)
     elif agent_type == AgentType.GITHUB_COPILOT:
         print(f"\nRecognized as: {agent_type.value}")
         print("GitHub Copilot setup not yet implemented")
@@ -128,6 +134,17 @@ def run_setup(agent_name, cmd: CLICommand):
     else:
         print(f"⚠ API server responded with status: {status_code} (expected 200)")
 
-    print("\nSetup complete!")
+    if not success:
+        # "Setup complete!" over a server that did not answer was the one line a person
+        # believed — and nothing behind it could run a turn.
+        print("\nSetup did not complete: the Flowpad server is not answering.")
+        return result
+    # What is on this box now — installed, signed in, stored keys — straight from the status
+    # record (`flow status`), so the last thing setup prints is a fact, not a promise.
+    from flow_sdk.cli.commands import status_cmd  # noqa: PLC0415
+
+    with contextlib.suppress(Exception, SystemExit):
+        print("\n" + status_cmd._render(status_cmd._fetch(False)))
+    print("\nSetup complete. `flow llm list` shows what funds each harness.")
 
     return result

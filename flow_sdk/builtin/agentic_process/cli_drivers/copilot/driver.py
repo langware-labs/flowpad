@@ -2,33 +2,38 @@
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.types.copilot_meta import read_copilot_session_meta
+from flow_sdk.builtin.agent_hook import HookEventType
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import render_shell_command
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
-    DeviceLoginSpec,
     AgenticProcessContextKey,
+    AgentOptions,
+    DeviceLoginSpec,
+    ProcessHookRuntime,
+    ProcessMcpRuntime,
     WorkerAuthResult,
-    WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
-    latch_spawn_failure,
     restart_payload_from_cli_options,
     run_worker_auth_probe,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     copilot_session_state_root,
     copilot_transcript_path_for_process,
     find_copilot_session_jsonl,
     find_latest_copilot_session_jsonl,
-    read_copilot_session_meta,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     load_session_history as _copilot_load_session_history,
@@ -36,31 +41,89 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
     load_transcript_history as _copilot_load_transcript_history,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    user_turn_count as _user_turn_count,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
     CopilotCLIStreamWorker,
 )
-from flow_sdk.builtin.worker_status import WorkerStatus
-from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.builtin.agentic_process.cli_drivers.headless_turn import run_headless_turn
+from flow_sdk.builtin.agentic_process.cli_drivers.mcp_projection import (
+    to_mcp_config_json,
+)
+from flow_sdk.builtin.agentic_process.process_hooks import (
+    SUPPORTED_PROCESS_HOOK_EVENTS,
+    build_canonical_hook_data,
+    build_process_hook_snapshot,
+    normalize_process_hook_events,
+)
+from flow_sdk.builtin.flowpad_runner_wrapper import get_installed_flow_invocation
+from flow_sdk.builtin.hooks.capabilities import process_capability, unsupported
+from flow_sdk.builtin.hooks.types import HookCapabilities, HookScope
+from flow_sdk.core.flow.models.webhook_flow_data import AgentHookData
+from flow_sdk.flowpad_types.vendors import vendor_for
+from flow_sdk.responses.response import ApiFailResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
     TranscriptFormat,
     TranscriptSource,
 )
+from flow_sdk.transcript_analyzer.worker_status import WorkerStatus
+
+VENDOR = vendor_for("copilot")
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 logger = logging.getLogger(__name__)
 
+_PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/copilot/flowpad-process-hooks")
+_CANONICAL_FIELDS = (
+    "hook_event_name",
+    "prompt",
+    "session_id",
+    "cwd",
+    "timestamp",
+    "source",
+    "reason",
+    "initial_prompt",
+)
+# Copilot is the one vendor emitting camelCase in its non-compat payloads.
+_CAMEL_ALIASES = {"session_id": "sessionId", "initial_prompt": "initialPrompt"}
+
+
+#: Copilot hooks come only from plugins, and ``copilot plugin install`` accepts
+#: no local path — so a locally generated plugin can only be handed over per
+#: launch. There is no global scope to declare (verified on CLI 1.0.80).
+#: Verified against Copilot CLI 1.0.80: hooks come ONLY from plugins, and
+#: ``copilot plugin install`` accepts a marketplace/repo/URL but no local path —
+#: so a plugin we generate can only be handed over per launch via
+#: ``--plugin-dir``. ``~/.copilot/config.json`` holds auth/UI state and cannot
+#: carry hooks. This is a vendor limitation, not a missing writer.
+_NO_GLOBAL = (
+    "copilot loads hooks only from plugins, and plugin install accepts no local path"
+)
+
+_HOOK_CAPABILITIES: "HookCapabilities" = {
+    HookScope.USER: unsupported(_NO_GLOBAL),
+    HookScope.PROCESS: process_capability(),
+}
 
 class CopilotDriver:
     """Vendor glue for GitHub Copilot CLI."""
 
-    name = WorkerType.COPILOT.value
+    def prepare_instruction_assets(self, assets: "AssetDir", instructions: str) -> "Path | None":
+        from flow_sdk.assets.instruction_projection import project_instructions
+
+        return project_instructions(assets, instructions, discovery_file='.github/instructions/flowpad.instructions.md', frontmatter='---\napplyTo: "**"\ndescription: Flowpad process system instructions\n---\n\n')
+
+    name = VENDOR.key
+    supports_process_hooks = True
+    process_hooks_use_assets = True
     preassign_interactive_session_id = True
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
@@ -70,10 +133,23 @@ class CopilotDriver:
     # stronger readiness signal than the generic prompt glyph (the trust
     # choice list has its own glyph).
     pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
+    # A PTY launch drops the prompt (copilot reads it from stdin); prompt() types it.
+    pty_launch_drops_prompt = True
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
-    def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
-        cmd = CopilotCliOptions.from_json(process.cli_config)
+    @staticmethod
+    def is_transcript_user_turn(entry: dict) -> bool:
+        """The interactive record has no terminal marker, so ``stream_transcript``
+        ends a turn on the IDLE that follows a new one of these."""
+        return entry.get("type") == "user.message"
+
+    @staticmethod
+    def pty_turn_complete(entry: "Any", *, active_turn_id: str | None) -> bool:  # noqa: ARG004
+        """Copilot records ``assistant.turn_end`` at the close of a turn."""
+        return getattr(entry, "subtype", "") == "assistant.turn_end"
+
+    def cli_options(self, process: "AgenticProcess") -> CopilotAgentOptions:
+        cmd = CopilotAgentOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         cmd.add_dirs = process.resolved_add_dirs
@@ -91,9 +167,118 @@ class CopilotDriver:
     def restart_snapshot(
         self,
         process: "AgenticProcess",
-        options: WorkerCLIOptions,
+        options: AgentOptions,
     ) -> dict:
         return restart_payload_from_cli_options(options)
+
+    def process_hook_snapshot(self, events: Sequence["HookEventType"]) -> dict[str, Any]:
+        return build_process_hook_snapshot(events, provider=self.name)
+
+    def hook_capabilities(self) -> "HookCapabilities":
+        return dict(_HOOK_CAPABILITIES)
+
+    def prepare_process_hooks(
+        self,
+        assets: "AssetDir",
+        process_id: str,
+        events: Sequence["HookEventType"],
+    ) -> ProcessHookRuntime:
+        normalized = normalize_process_hook_events(events, provider=self.name)
+        if not is_valid_entity_id(process_id):
+            raise ValueError(f"Invalid agentic process id: {process_id!r}")
+        if not normalized:
+            assets.remove(_PROCESS_HOOK_PLUGIN)
+            return ProcessHookRuntime()
+
+        command, prefix_args = get_installed_flow_invocation()
+        flow_argv = [
+            command,
+            *prefix_args,
+            "hooks",
+            "report",
+            "--process-id",
+            process_id,
+        ]
+        handler = {
+            "type": "command",
+            "bash": render_shell_command(flow_argv, "linux"),
+            "powershell": render_shell_command(flow_argv, "win32"),
+        }
+        # Copilot accepts BOTH its own camelCase event names
+        # (``userPromptSubmitted``/``sessionStart``/``sessionEnd``) and the
+        # PascalCase VS Code-compatible aliases. We deliberately project the
+        # aliases: on config load Copilot rewrites them to its native keys and
+        # stamps ``_vsCodeCompat`` on each handler, which switches the stdin
+        # payload to the Claude-shaped one — snake_case fields carrying
+        # ``hook_event_name``. Copilot's native payload has no event field at
+        # all, so without this one shared handler command could not tell the
+        # three events apart.
+        hooks = {
+            "hooks": {event.value: [handler] for event in normalized},
+            "version": 1,
+        }
+        manifest = {
+            "author": {"name": "Flowpad"},
+            "description": "Flowpad process-scoped hooks",
+            "hooks": "hooks.json",
+            "name": "flowpad-process-hooks",
+            "version": "1.0.0",
+        }
+
+        assets.remove(_PROCESS_HOOK_PLUGIN)
+        plugin = assets.subdir(_PROCESS_HOOK_PLUGIN)
+        plugin.load_asset(
+            "plugin.json",
+            content=json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        )
+        plugin.load_asset(
+            "hooks.json",
+            content=json.dumps(hooks, indent=2, sort_keys=True) + "\n",
+        )
+        return ProcessHookRuntime(plugin_dirs=(str(plugin.os_path),))
+
+    # ── Per-process MCP ──────────────────────────────────────────────────
+    supports_process_mcp = True
+
+    def prepare_process_mcp(self, specs: "Sequence[McpSpec]") -> ProcessMcpRuntime:
+        """``--additional-mcp-config <json>`` — same body claude takes.
+
+        The flag is absent from GitHub's published docs but present in
+        ``copilot --help`` (1.0.81): *"JSON string or file path (prefix with @)
+        ... augments config from ~/.copilot/mcp-config.json for this session"*.
+        Because it AUGMENTS, there is no strict counterpart to set.
+        """
+        if not specs:
+            return ProcessMcpRuntime()
+        return ProcessMcpRuntime(mcp_config_json=to_mcp_config_json(specs))
+
+    def normalize_process_hook_data(
+        self,
+        process_id: str,
+        raw_hook_data: dict[str, Any],
+    ) -> "AgentHookData":
+        supplied_event = raw_hook_data.get("hook_event_name")
+        if supplied_event is None and "prompt" in raw_hook_data:
+            # Pre-alias projection: the native payload has no event field, and
+            # only the prompt hook was ever projected that way. Retire this
+            # branch once no worker predating process-hook schema 2 can be live
+            # (see build_process_hook_snapshot).
+            supplied_event = HookEventType.USER_PROMPT_SUBMIT.value
+        if supplied_event not in SUPPORTED_PROCESS_HOOK_EVENTS:
+            raise ValueError(f"Unsupported Copilot process hook event: {supplied_event}")
+
+        data = build_canonical_hook_data(process_id, raw_hook_data, fields=_CANONICAL_FIELDS)
+        hook_data = data.hook_data
+        hook_data["hook_event_name"] = supplied_event
+        for canonical, camel in _CAMEL_ALIASES.items():
+            if canonical not in hook_data and camel in raw_hook_data:
+                hook_data[canonical] = raw_hook_data[camel]
+        # Copilot's headless stdin transport submits by appending one ``\n``;
+        # its prompt hook echoes that terminator back in ``prompt``. The native
+        # payload stays lossless in ``raw_hook_data``.
+        if supplied_event == HookEventType.USER_PROMPT_SUBMIT.value and isinstance(hook_data.get("prompt"), str):
+            hook_data["prompt"] = hook_data["prompt"].removesuffix("\n")
+        return data
 
     async def headless_prompt(
         self,
@@ -104,7 +289,7 @@ class CopilotDriver:
             await process.get_project()
         except Exception:
             logger.debug("CopilotDriver.headless_prompt: get_project failed", exc_info=True)
-        instruction_assets = await process.prepare_system_instruction_assets()
+        process_assets = await process.prepare_process_assets()
         if not process.workdir:
             return ApiFailResponse(message="copilot prompt: workdir is not set")
 
@@ -125,7 +310,11 @@ class CopilotDriver:
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
         cli_cfg = process.cli_config or {}
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        await apply_worker_secret_env(env_vars, process)
+        try:
+            await apply_worker_secret_env(env_vars, process)
+            setup_error = None
+        except WorkerSpawnError as e:
+            setup_error = e  # fails inside the turn: FAILED + start_failure, not a raise from here
         context = AgenticContext(
             workdir=process.workdir,
             env_vars=env_vars,
@@ -135,81 +324,18 @@ class CopilotDriver:
             add_dirs=list(process.resolved_add_dirs or []),
             session_id=process.session_id if not resumable else None,
             resume_session_id=process.session_id if resumable else None,
-            **process._instruction_context_kwargs(instruction_assets),
+            **process._process_asset_context_kwargs(process_assets),
         )
+
+        from flow_sdk.builtin.agentic_process.cli_drivers import api_auth  # noqa: PLC0415
+
+        await api_auth.stamp_api_model(context, process)
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            register_prompt_worker,
-            unregister_prompt_worker,
+        return await run_headless_turn(
+            self, process, worker, prompt=full_prompt, context=context, logger=logger,
+            setup_error=setup_error,
         )
-
-        register_prompt_worker(process.id, worker)
-        # Setup between registration and task scheduling can raise. The caller's
-        # admission ``finally`` can no longer clean the slot — register_prompt_worker
-        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
-        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
-        # the worker slot: a raise here would leak it → prompt_worker_active pinned
-        # True forever (permanent 409 + busy). Hand ownership off on success.
-        try:
-            try:
-                transcript_path = worker.transcript_path
-                if transcript_path is not None and not transcript_path.exists():
-                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                    transcript_path.touch()
-            except OSError:
-                logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
-
-            from flow_sdk.builtin.process_lifecycle import ProcessStatus
-
-            if process.status != ProcessStatus.RUNNING.value:
-                process.status = ProcessStatus.RUNNING.value
-                try:
-                    await process.save()
-                except Exception:
-                    logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
-
-            process_ref = process
-            process_id = process.id
-            object.__setattr__(process_ref, "_turn_in_flight", True)
-            try:
-                await process_ref.notify_updated()
-            except Exception:
-                logger.exception("CopilotDriver.headless_prompt: start notify failed")
-
-            # Session adoption (and its restart-snapshot bookkeeping) is owned by
-            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-            # only the turn-initial report (spurious-rotation guard). Resumed
-            # sessions no-op inside adopt_worker_session when the id is unchanged.
-            adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
-
-            async def _run_turn() -> None:
-                try:
-                    async for fd in worker.execute(prompt=full_prompt, context=context):
-                        await adopt_session(worker.get_session_id())
-                        try:
-                            await process_ref.emit_flow_data(fd.model_dump())
-                        except Exception:
-                            logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-                except WorkerSpawnError as e:
-                    # No subprocess ever started — end the process FAILED with the
-                    # start_failure latch (the ERROR frame was already emitted).
-                    await latch_spawn_failure(process_ref, e)
-                except Exception:
-                    logger.exception("CopilotDriver.headless_prompt: worker error")
-                finally:
-                    unregister_prompt_worker(process_id, worker)
-                    # Terminal status broadcast + completion-driven queue advance
-                    # (see AgenticProcess.end_headless_turn).
-                    await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
-
-            asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
-        except BaseException:
-            # _run_turn never took ownership of the slot — release it here so the
-            # next turn is not permanently rejected with a 409.
-            unregister_prompt_worker(process.id, worker)
-            raise
-        return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:
         return CopilotCLIStreamWorker.for_process(process.id)
@@ -229,29 +355,106 @@ class CopilotDriver:
         accepts_code_paste=False,
     )
 
+    @property
+    def session_store_env(self) -> dict[str, str]:
+        """Keep the worker's native store aligned with backend discovery."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return {"COPILOT_HOME": str(get_instance_settings().copilot_home)}
+
+    @property
+    def naming_adapter(self):
+        from flow_sdk.builtin.agentic_process.naming.providers import CopilotNamingAdapter
+
+        return CopilotNamingAdapter()
+
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Copilot transcript for READING (history / prompts / status).
 
-        Transcript↔output alignment (mirror of codex): the session record
-        (``~/.copilot/session-state/<id>/events.jsonl``) is the canonical, complete
-        transcript — user-message entries AND assistant output. The process-local
-        file is only the tee'd stdout (assistant output, no user-message entry), so
-        ``transcript/prompts`` came back empty for headless. Prefer the session
-        record; fall back to the stdout tee only before the session id resolves.
+        Two candidate files, and which one is authoritative is not fixed:
+
+        * the session record (``~/.copilot/session-state/<id>/events.jsonl``) —
+          canonical and complete across BOTH transports, but written by the CLI
+          on its own schedule;
+        * this process's stdout tee — written by us, line by line, and proven
+          durable by :class:`TranscriptDurabilityGate` *before* the turn's
+          answer frame is ever released to a caller.
+
+        The session record lags its own stdout: on Copilot CLI 1.0.81 the
+        turn's ``assistant.message`` row reached ``events.jsonl`` ~5 s AFTER
+        the matching CHAT frame was released (1.0.78 measured 0.78 s). A caller
+        that reads ``transcript/full`` immediately after receiving the answer
+        therefore got a transcript missing the very turn it just observed —
+        deterministically, for every headless multi-turn conversation.
+
+        Note the tee is NOT "assistant output only" as an earlier revision of
+        this docstring claimed: Copilot's stdout echoes the user's own
+        ``user.message`` event, so the tee carries both halves of every
+        headless turn.
+
+        So: prefer the tee whenever it covers at least as many user turns as
+        the session record — it is then complete AND ahead. A process that ran
+        turns on the other transport (PTY writes no tee) makes the session
+        record strictly longer, and it wins, so mixed-transport history is
+        never truncated. This is a durability comparison, not a wait: no clock,
+        sleep, timeout or polling budget is involved.
         """
         session = self._session_descriptor(process)
-        if session is not None:
-            return session
-        return self._process_local_descriptor(process)
+        local = self._process_local_descriptor(process)
+        if session is None:
+            return local
+        if local is not None and _user_turn_count(local.path) >= _user_turn_count(session.path):
+            return local
+        return session
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
 
+    async def available_assets(self, process: "AgenticProcess"):
+        from flow_sdk.builtin.agentic_process.asset_availability import inventory_inputs
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.asset_inventory import available_assets
+
+        return await available_assets(inventory_inputs(process))
+
+    def asset_search_roots(self, process: "AgenticProcess"):
+        from flow_sdk.assets.asset_discovery import AssetSearchRoot, project_ancestors
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.schema.types import EntityType
+
+        settings = get_instance_settings()
+        roots = [
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.copilot_home / "skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=settings.user_home / ".agents/skills", recursive=True),
+            AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.copilot_home / "agents", recursive=True),
+        ]
+        for directory in project_ancestors(process.workdir):
+            roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / prefix / "skills", recursive=True)
+                         for prefix in (".github", ".agents", ".claude"))
+            roots.append(AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".github/agents", recursive=True))
+        for directory in process.resolved_add_dirs:
+            roots.extend([
+                AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".github/skills", recursive=True),
+                AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=Path(directory) / ".github/agents", recursive=True),
+            ])
+        return roots
+
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
-        """Copilot discovers skills from ``.claude/skills`` under the mounted
-        assets dir (passed via ``--add-dir``)."""
-        return assets_dir / ".claude" / "skills"
+        """Copilot discovers skills from ``.github/skills`` under a mounted dir.
+
+        NOT ``.claude/skills`` — that was copied from the claude driver and
+        meant every embedded skill landed somewhere copilot never looks. From
+        ``copilot --help`` (1.0.x): ``--add-dir <directory>`` "Allow file access
+        to a directory and load its **.github/skills** and .github/agents as
+        trusted configuration". The mount itself rides ``resolved_add_dirs``, so
+        this is the whole of copilot's skill channel.
+        """
+        return assets_dir / ".github" / "skills"
+
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> bool:
+        from flow_sdk.assets.process_projection import link_mounted_skills
+
+        return link_mounted_skills(assets_dir, add_dirs, native_mount=".github/skills")
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)
@@ -265,14 +468,17 @@ class CopilotDriver:
         )
 
     def _session_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
-        path: Path | None = None
         if process.session_id:
             path = find_copilot_session_jsonl(process.session_id)
-        if path is None:
-            path = find_latest_copilot_session_jsonl(
-                cwd=process.workdir,
-                started_at=self._worker_started_at(process),
-            )
+        else:
+            # BOUNDED by this worker's own launch, like opencode: a process that
+            # never launched a worker owns no session, and the newest session for
+            # its cwd may be another process's LIVE one — adopting it resumes into
+            # copilot's "Session in use" dialog and the prompt never lands.
+            started_at = self._worker_started_at(process)
+            if started_at is None:
+                return None
+            path = find_latest_copilot_session_jsonl(cwd=process.workdir, started_at=started_at)
         if path is None or not path.exists():
             return None
         meta = read_copilot_session_meta(path)
@@ -319,7 +525,8 @@ class CopilotDriver:
     def _has_session(self, process: "AgenticProcess") -> bool:
         if not process.session_id:
             return False
-        if find_copilot_session_jsonl(process.session_id):
-            return True
-        local = copilot_transcript_path_for_process(process.id)
-        return local.exists() and local.stat().st_size > 0
+        return find_copilot_session_jsonl(process.session_id) is not None
+
+
+#: The class ``get_driver`` instantiates for this vendor (looked up by ``VENDORS[...].package``).
+DRIVER = CopilotDriver

@@ -1,0 +1,7 @@
+{
+  "name": "flowpad",
+  "title": "Flowpad",
+  "description": "The generic diagnose: this machine's Flowpad backend, its lock and disk, the UI bundle, the hub and sign-in, and the errors in its recent logs. No LLM, nothing changed.",
+  "entry": "diagnose.py",
+  "timeout_s": 300
+}

@@ -2,8 +2,9 @@
 
 Chain under test, end to end:
 
-  ``add-context-dir`` (mints a Folder entity, links it into the project's
-  private context bucket) → computed ``Project.include_dirs`` →
+  ``Project.add_dependency`` (declares the folder in ``flow.json``, mints a
+  Folder entity, links it into the project's context) → computed
+  ``Project.include_dirs`` →
   ``get_project()`` stamps ``_project_context_dirs`` → ``resolved_add_dirs``
   → the driver's ``--add-dir`` mount → the live worker can actually READ a
   sentinel file planted inside the context folder (outside its workdir).
@@ -22,20 +23,22 @@ executable name and the transcript-analyzer worker key).
 """
 from __future__ import annotations
 
-import shutil
 import uuid
 
 import pytest
 
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.transcript_analyzer import EntryKind
+from flow_sdk.transcript_analyzer.worker_status import ApiErrorTimeoutError
 from tests.long_tests._transcript_helpers import (
     assert_prompt_ok,
     await_transcript,
+    fail_no_transcript,
+    fail_worker_timeout,
     safe_exit,
 )
+from tests.long_tests.conftest import worker_is_installed
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -46,13 +49,17 @@ pytestmark = [
 ]
 
 
-@pytest.fixture(scope="module")
-async def _workers_discovered():
-    """One capability-discovery sweep so drivers resolve their CLI binaries
-    (the server does this at boot; tests must trigger it explicitly)."""
-    from flow_sdk.core.capabilities.discovery import ensure_discovered
+def _worker_unavailable(tf):
+    """The PROVIDER refused the turn (quota / rate limit), or None.
 
-    await ensure_discovered()
+    Normalized by the vendor parser from the CLI's own error event — never
+    inferred from a missing answer, so a real mount or parsing regression
+    still fails red.
+    """
+    for e in tf.entries:
+        if getattr(e, "kind", None) == EntryKind.WORKER_UNAVAILABLE:
+            return e
+    return None
 
 
 def _worker_read_sentinel(tf, sentinel_path: str, token: str) -> bool:
@@ -71,11 +78,11 @@ def _worker_read_sentinel(tf, sentinel_path: str, token: str) -> bool:
 # do not increase timeout without approval
 @pytest.mark.timeout(120)
 async def test_worker_mounts_context_folder(
-    initialize_test_db, local_compute_node, _workers_discovered,
+    initialize_test_db, local_compute_node,
     tmp_path, make_process, worker_id,
 ) -> None:
-    if shutil.which(worker_id) is None:
-        pytest.skip(f"{worker_id} CLI not installed")
+    if not worker_is_installed(worker_id):
+        pytest.skip(f"{worker_id} harness not installed")
 
     # A context folder OUTSIDE the workdir, holding a sentinel the worker can
     # only reach through the injected --add-dir mount.
@@ -86,11 +93,13 @@ async def test_worker_mounts_context_folder(
     ctx_root = canonical_posix_path(tmp_path / "ctx-folder")
     sentinel_path = f"{ctx_root}/notes/sentinel.txt"
 
-    workdir = tmp_path / "wd"
+    # Project names are unique and every worker param shares the session DB: a fixed
+    # "wd" let the first param's project refuse the next one's.
+    workdir = tmp_path / f"wd-{uuid.uuid4().hex[:8]}"
     workdir.mkdir()
     project = await Project(name=str(workdir)).save()
-    resp = await project.add_context_dir(str(tmp_path / "ctx-folder"))
-    assert resp.status == "SUCCESS"
+    state = await project.add_dependency(str(tmp_path / "ctx-folder"))
+    assert state.state == "ready", state
     assert ctx_root in project.include_dirs
 
     ap = await make_process(
@@ -113,16 +122,25 @@ async def test_worker_mounts_context_folder(
         transcript = await await_transcript(
             ap,
             worker_id,
-            lambda tf: _worker_read_sentinel(tf, sentinel_path, token),
+            lambda tf: (
+                _worker_read_sentinel(tf, sentinel_path, token)
+                or _worker_unavailable(tf) is not None
+            ),
             deadline_s=90,
         )
-    except (ApiErrorTimeoutError, TimeoutError):
-        pytest.skip(f"{worker_id} API timeout — external infra issue")
+    except (ApiErrorTimeoutError, TimeoutError) as exc:
+        fail_worker_timeout(exc, worker_id)
     finally:
         await safe_exit(ap)
 
     if transcript is None:
-        pytest.skip(f"{worker_id} produced no transcript within 90s — infra/LLM latency")
+        fail_no_transcript(90, worker_id)
+    unavailable = _worker_unavailable(transcript)
+    if unavailable is not None:
+        pytest.skip(
+            f"{worker_id} CLI is provider-unavailable ({unavailable.reason}) — "
+            f"external infra, not a mount regression: {unavailable.message[:300]}"
+        )
     assert _worker_read_sentinel(transcript, sentinel_path, token), (
         f"{worker_id}: worker never read the sentinel through the context-folder mount"
     )

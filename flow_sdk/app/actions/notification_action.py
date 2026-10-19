@@ -19,7 +19,6 @@ Routes:
 
 from __future__ import annotations
 
-import asyncio
 import json as _json
 import logging
 from pathlib import Path
@@ -31,7 +30,9 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
@@ -39,15 +40,13 @@ from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.utils.git import (
-    find_project_root,
-    git_pull,
-)
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailure, HubFailureKind
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
+from flow_sdk.utils.git import find_project_root
 from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
 
-PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
 
 def _prompt_file_is_image_or_binary(filename: str, raw: bytes) -> bool:
     """True when an uploaded prompt 'file' must be kept as raw bytes rather than
@@ -60,8 +59,6 @@ def _prompt_file_is_image_or_binary(filename: str, raw: bytes) -> bool:
     if is_image_filename(filename):
         return True
     return is_binary_bytes(bytes(raw))
-
-
 
 
 def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
@@ -81,6 +78,16 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
         "sender_id": dumped.get("sender_id"),
         "sender_name": dumped.get("sender_name"),
         "attachment": dumped.get("attachment") or [],
+        # Session fields ride the response too: the client renders the sent
+        # message from THIS object, and a prompt's session card keys on them —
+        # without them the card waited for the next entity refetch.
+        "remote_worker_session_id": dumped.get("remote_worker_session_id"),
+        "kind": dumped.get("kind"),
+        # The quote + native thread ride the response too: the sender's bubble renders from it.
+        "reply_to_id": dumped.get("reply_to_id"),
+        "thread_root_id": dumped.get("thread_root_id"),
+        "thread_id": dumped.get("thread_id"),
+        "is_draft": bool(dumped.get("is_draft")),
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": fm.id,
@@ -97,6 +104,8 @@ def _build_reply_flow_message(
     shared_context_entities: Optional[list[str]] = None,
     remote_worker_session_id: Optional[str] = None,
     kind: Optional[str] = None,
+    reply_to_id: Optional[str] = None,
+    thread_root_id: Optional[str] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -123,69 +132,60 @@ def _build_reply_flow_message(
             except ValueError:
                 continue
 
-    reply_fm = FlowMessage.model_validate({
-        "text": message,
-        "shared_context_entities": [str(c) if not isinstance(c, str) else c for c in context],
-        "attachment": [],
-        "sender_id": sender_id,
-        "sender_name": sender_name,
-        "conversation_id": conv_id,
-        "is_draft": is_draft,
-        **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
-        **({"kind": kind} if kind else {}),
-        # The sender authored this message → it is read from their side. Without
-        # this the sender's own outgoing message persists is_read=False and the
-        # inbox row's unread facet (``!latestMessage.is_read``, which does NOT
-        # exclude own messages) shows the conversation as unread on send.
-        "is_read": True,
-    })
+    reply_fm = FlowMessage.model_validate(
+        {
+            "text": message,
+            "shared_context_entities": [str(c) if not isinstance(c, str) else c for c in context],
+            "attachment": [],
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "conversation_id": conv_id,
+            "is_draft": is_draft,
+            **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
+            **({"kind": kind} if kind else {}),
+            **({"reply_to_id": reply_to_id} if reply_to_id else {}),
+            **({"thread_root_id": thread_root_id} if thread_root_id else {}),
+            # The sender authored this message → it is read from their side. Without
+            # this the sender's own outgoing message persists is_read=False and the
+            # stream inbox row's unread facet (``!latestMessage.is_read``, which does NOT
+            # exclude own messages) shows the conversation as unread on send.
+            "is_read": True,
+            # Composed here to be sent from here: the outbox's "mine".
+            "outbound": True,
+        }
+    )
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
+        Attachment(
+            attachment_type=AttachmentType.TYPE_ID,
+            data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id)),
+        ),
+        Attachment(
+            attachment_type=AttachmentType.TYPE_ID,
+            data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id)),
+        ),
     ]
     return reply_fm
 
 
-async def _attach_prompt(
-    reply_fm: "FlowMessage",
-    proposer_id: Optional[str],
-    prompt_text: str,
-    prompt_files: list,
-    *,
-    project_id: Optional[str] = None,
-) -> None:
-    """Attach prompts as library ``Prompt`` entities (TYPE_ID attachments).
+async def _attach_prompt(reply_fm: "FlowMessage", prompt_text: str, prompt_files: list) -> None:
+    """Attach what a person typed (or uploaded) as a session turn's prompt.
 
-    The typed text and each uploaded *text* prompt file's content are
-    minted/reused as real Prompt entities via ``find_or_create_prompt`` (dedup by
-    normalized text within the conversation's project scope) and attached as
-    TYPE_ID entries carrying ``proposer_id`` (approval lifecycle) and
-    ``prompt_preview`` (inline text so receivers can preview/execute before
-    the body bundle downloads). Image / binary prompt files instead keep their
-    raw bytes — stored under ``prompt/<name>`` and attached as
-    ``AttachmentType.PROMPT`` files so the UI renders them inline as pictures
-    rather than decoding the bytes into a garbage prompt. Prompts thus behave
-    like every other entity attachment — they ride the body bundle
-    (the unified ``_pack_file_backed_attachment``) and land in the receiver's
-    project library. Legacy
-    ``AttachmentType.PROMPT`` messages
-    keep working read-side; new sends are entity-backed.
+    The text rides ON THE MESSAGE, as an inline ``AttachmentType.PROMPT`` — never as a library
+    ``Prompt`` entity. A typed turn is conversation content: minting an entity for it wrote every
+    sentence of a live session into the project's ``agentic-assets/prompt/`` folder, one
+    ``git add`` away from being pushed. Sharing a prompt that IS in the library is a different
+    send (a ``TYPE_ID`` attachment the caller passes), untouched by this.
+
+    A text prompt file's content rides the same way. Image / binary prompt files keep their raw
+    bytes — stored under ``prompt/<name>`` and attached as ``AttachmentType.PROMPT`` files so the
+    UI renders them inline as pictures rather than decoding the bytes into a garbage prompt.
     """
     from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, Attachment, AttachmentType
-    from flow_sdk.builtin.prompt import Prompt
-    from flow_sdk.builtin.prompt_helpers import find_or_create_prompt
     from flow_sdk.storage import get_entity_embedded_storage
 
     new_atts: list = list(reply_fm.attachment or [])
-
-    # Typed text + each *text* prompt file become library Prompt entities; image
-    # / binary files are stored as prompt-file attachments (raw bytes in the
-    # FlowMessage VFS under ``prompt/<name>``) so the UI shows them as pictures
-    # instead of decoding the bytes into a garbage "prompt".
-    texts: list[tuple[str, Optional[str]]] = []  # (text, name hint)
-    if prompt_text:
-        texts.append((prompt_text, None))
+    texts: list[str] = [prompt_text] if prompt_text else []
 
     storage = None
     for uf in prompt_files or []:
@@ -201,28 +201,19 @@ async def _attach_prompt(
             local_path = Path(storage.get_storage_path(vfs_subpath))
             local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_bytes(raw_bytes)
-            new_atts.append(Attachment(
-                attachment_type=AttachmentType.PROMPT,
-                data=vfs_subpath,
-                proposer_id=proposer_id,
-            ))
+            new_atts.append(
+                Attachment(
+                    attachment_type=AttachmentType.PROMPT,
+                    data=vfs_subpath,
+                )
+            )
             continue
         content = raw_bytes.decode("utf-8", errors="replace")
         if content.strip():
-            texts.append((content, Path(filename).stem or None))
+            texts.append(content)
 
-    seen_prompt_ids: set[str] = set()
-    for text, name_hint in texts:
-        prompt = await find_or_create_prompt(text, project_id=project_id, name=name_hint)
-        if prompt.id in seen_prompt_ids:
-            continue  # inline text and a file with identical content dedup to one
-        seen_prompt_ids.add(prompt.id)
-        new_atts.append(Attachment(
-            attachment_type=AttachmentType.TYPE_ID,
-            data=str(TypeId(type=Prompt.get_type(), id=prompt.id)),
-            proposer_id=proposer_id,
-            prompt_preview=text,
-        ))
+    # Inline text and a file with identical content are one prompt.
+    new_atts.extend(Attachment(attachment_type=AttachmentType.PROMPT, data=text) for text in dict.fromkeys(texts))
     reply_fm.attachment = new_atts
 
 
@@ -291,11 +282,7 @@ def _parse_asset_references(raw: Any) -> list:
 def _parse_share_config(body: dict) -> dict:
     """Decode the share_config carrier (JSON or multipart) into a dict. Both
     share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
-    raw = (
-        body.get("share_config")
-        or body.get("shareConfig")
-        or {}
-    )
+    raw = body.get("share_config") or body.get("shareConfig") or {}
     if isinstance(raw, (bytes, bytearray)):
         raw = raw.decode("utf-8", errors="replace")
     if isinstance(raw, str):
@@ -325,6 +312,13 @@ def _parse_share_create_bookmark(body: dict) -> bool:
     desktop" share opt-in) off the same share_config carrier."""
     config = _parse_share_config(body)
     return bool(config.get("create_bookmark") or config.get("createBookmark"))
+
+
+def _parse_share_include_gitignored(body: dict) -> bool:
+    """Read share_config.include_gitignored: the sender saw which files git excludes and chose to send
+    them anyway. Without it, a copy-mode send that would carry such files is refused once, with the list."""
+    config = _parse_share_config(body)
+    return bool(config.get("include_gitignored") or config.get("includeGitignored"))
 
 
 async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
@@ -424,39 +418,41 @@ async def _merge_shared_context_into_conversation(
             await conv.save(someone_typeid)
         await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
     except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True
-        )
+        logger.warning("[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True)
 
 
-async def _ensure_claude_session_rows(typeids: list[TypeId]) -> None:
-    """Sender-side ensure for shared ClaudeTranscript refs.
-
-    A ``claude_session`` row only exists after an indexer walk (walks are
-    explicit-click only), so the session being shared often has no row yet —
-    which would leave the chip unresolvable and the context links dangling.
-    The share IS an explicit user action on exactly this session, so locate
-    its JSONL and run the scoped single-file index. Best-effort."""
-    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session  # noqa: PLC0415
+async def _ensure_session_rows(typeids: list[TypeId]) -> None:
+    """Sender-side ensure for shared worker-session refs: a session row only exists
+    after an indexer walk, so index the shared transcript's one file. Covers refs
+    whose id is the session id (claude, copilot); the ``session-transcript``
+    action already indexed the rest. Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
-        _index_single_claude_session,
+        index_session_file,
+    )
+    from flow_sdk.transcript_analyzer.resolver import (  # noqa: PLC0415
+        SESSION_TYPE_BY_WORKER,
+        TranscriptNotFoundError,
+        resolve_session_jsonl,
     )
 
+    worker_by_session_type = {t: w for w, t in SESSION_TYPE_BY_WORKER.items()}
     for tid in typeids:
-        if tid.type != BuiltinEntityType.CLAUDE_SESSION.value:
+        worker = worker_by_session_type.get(tid.type)
+        if worker is None:
             continue
         try:
-            if await ClaudeSession.get_one({"id": tid.id}) is not None:
+            if await SchemaRegistry.get_entity_cls(tid.type).get_one({"id": tid.id}) is not None:
                 continue
-            rec = get_claude_session(tid.id)
-            if rec is None or rec.asset_ref is None:
-                continue
-            await _index_single_claude_session(Path(rec.asset_ref.path))
+            await index_session_file(tid.type, resolve_session_jsonl(worker, tid.id))
+        except (TranscriptNotFoundError, ValueError):
+            continue  # no local transcript: the packer's own check reports it
         except Exception as e:  # noqa: BLE001
             logger.warning(
-                "[append_conversation] ensure claude_session %s failed (non-fatal): %s",
-                tid, e, exc_info=True,
+                "[append_conversation] ensure session %s failed (non-fatal): %s",
+                tid,
+                e,
+                exc_info=True,
             )
 
 
@@ -477,6 +473,10 @@ async def _link_message_into_context_entities(
 
     fm_tid = TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{reply_fm.id}")
     for tid in typeids:
+        if tid.type in MEMBERSHIP_CONTAINER_TYPES:
+            # An org / team / project's shared context is hub-mirrored — what
+            # its members see — so a message it rides in is never written into it.
+            continue
         try:
             cls = SchemaRegistry.get_entity_cls(tid.type)
             if cls is None:
@@ -489,18 +489,19 @@ async def _link_message_into_context_entities(
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[append_conversation] context backlink %s ← %s failed (non-fatal): %s",
-                tid, fm_tid, e, exc_info=True,
+                tid,
+                fm_tid,
+                e,
+                exc_info=True,
             )
 
 
-async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> bool:
+async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> "HubFailure | None":
     """Create the hub-side FlowMessage header via the conversation's
     ``add_message`` action.
 
-    Returns ``True`` on confirmed hub-side creation, ``False`` if the call
-    failed (network blip, hub rejection, etc.). Callers that gate later
-    state on hub success (e.g. flipping ``fm.remote = True``) MUST check
-    the return value — a swallowed exception is no longer a silent success.
+    Returns ``None`` when the hub has it, else WHY it does not (``HubFailure``).
+    ``Conversation.deliver`` calls this and records the answer on the message.
 
     Unlike the legacy ``flow_message/send`` path, ``add_message`` runs
     ``Conversation.add_child`` on the hub, so the FlowMessage is graph-linked
@@ -512,10 +513,14 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
     """
     try:
         from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
+
         attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
         shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
-        sendable_kind = FlowMessageKind.sendable(reply_fm.kind.value) if reply_fm.kind else None
-        await conv.add_message(
+        kind_value = getattr(reply_fm.kind, "value", reply_fm.kind)
+        sendable_kind = FlowMessageKind.sendable(kind_value) if reply_fm.kind else None
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
+        stored = await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,
             sender_id=reply_fm.sender_id or None,
@@ -526,13 +531,21 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
             remote_worker_session_id=reply_fm.remote_worker_session_id or None,
             kind=sendable_kind.value if sendable_kind else None,
+            reply_to_id=reply_fm.reply_to_id or None,
+            thread_root_id=reply_fm.thread_root_id or None,
         )
-        return True
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[append_conversation] hub add_message header failed (non-fatal): %s", e, exc_info=True
-        )
-        return False
+        # The hub decides whether a body is owed. A replay answers with the row it already stored,
+        # and one first sent text-only over the socket has none: uploading one now would be refused
+        # (NA is terminal) and leave the message looking undelivered for good.
+        if isinstance(stored, dict) and stored.get("body_status") == BodyStatus.NA.value:
+            reply_fm.body_status = BodyStatus.NA
+        return None
+    except HubError as e:
+        logger.warning("[append_conversation] hub add_message header failed: %s", e)
+        return e.failure
+    except Exception as e:  # noqa: BLE001 — a local fault: shown to the person, not retried blind
+        logger.warning("[append_conversation] hub add_message header failed: %s", e, exc_info=True)
+        return HubFailure(kind=HubFailureKind.REJECTED, code="local_error", message=str(e))
 
 
 async def _upload_body_and_finalize(
@@ -541,30 +554,46 @@ async def _upload_body_and_finalize(
     *,
     transfer_mode: str = "copy",
     create_bookmark: bool = False,
-) -> None:
-    """Pack + upload the FlowMessage body bundle in a background task.
+) -> "HubFailure | None":
+    """Pack + upload the FlowMessage body bundle: ``None`` once the hub has it (READY), else why not.
 
-    ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence,
-    flipping the hub-side body_status to READY (which fans the UPDATE to
-    receivers). This mirrors READY onto the local FM and refreshes the UI so
-    the sender's attachment chips unlock. On failure the body stays UPLOADING
-    and the manual ``upload_body`` action remains available for retry.
+    ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence, flipping the hub-side
+    body_status to READY (which fans the UPDATE to receivers). On failure the local row is FAILED
+    and carries the reason; ``Conversation.deliver`` retries it on the next hub-session transition.
+    A bundle whose source no longer exists here can never be packed — that is terminal.
     """
+    from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+    from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter  # noqa: PLC0415
+
     try:
-        from flow_sdk.core.network.resource_tracker import (  # noqa: PLC0415
-            make_flow_message_progress_emitter,
-        )
         await reply_fm.upload_body(
             on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
             transfer_mode=transfer_mode,
             create_bookmark=create_bookmark,
         )
+    except HubError as e:
+        failure = e.failure
+    except (FileNotFoundError, LookupError) as e:
+        failure = HubFailure(kind=HubFailureKind.REJECTED, code="local_source_missing", message=str(e))
+    except Exception as e:  # noqa: BLE001
+        failure = HubFailure(kind=HubFailureKind.SERVER_ERROR, message=str(e))
+    else:
+        reply_fm.delivery_failure = None
         await reply_fm.save()
         _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[append_conversation] background body upload failed (non-fatal): %s", e, exc_info=True
-        )
+        return None
+    logger.warning("[append_conversation] body upload failed: %s", failure.message)
+    if failure.code == "target_not_found":
+        # The hub has no such message (its header never landed, or was lost): send it again,
+        # header first. The id is the same, so a header that did land answers as a replay.
+        from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
+
+        reply_fm.delivery_status = DeliveryStatus.CREATED.value
+        failure = failure.model_copy(update={"kind": HubFailureKind.SERVER_ERROR})
+    reply_fm.body_status = BodyStatus.FAILED
+    await reply_fm.record_delivery_failure(failure)
+    _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
+    return failure
 
 
 async def _finalize_message_dispatch(
@@ -588,19 +617,19 @@ async def _finalize_message_dispatch(
     # Append pointer + project message_ids before the hub header so the
     # conversation.jsonl is consistent when the body bundle packs.
     conv = await _append_message_to_conversation(
-        conv=conv, fm_id=fm.id, someone_typeid=someone_typeid,
+        conv=conv,
+        fm_id=fm.id,
+        someone_typeid=someone_typeid,
     )
     # Refresh the sender's UI immediately, then create the hub-side header
     # (graph-linked to the parent Conversation so delivery receipts work). The
     # body bundle uploads in a background task.
     _notify_ui_conversation_updated(conv.id, "", fm.id)
     if is_remote_send:
-        await _send_conversation_message_header(conv, fm)
-        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
-        if fm.body_status == BodyStatus.UPLOADING:
-            asyncio.create_task(_upload_body_and_finalize(
-                fm, conv.id, transfer_mode=transfer_mode, create_bookmark=create_bookmark,
-            ))
+        # The header now, in order behind anything this conversation still owes; the body after,
+        # off the request. Its state is on the row, so a task that dies is resumed, not lost.
+        await conv.deliver(bodies=False)
+        conv.kick_delivery(transfer_mode=transfer_mode, create_bookmark=create_bookmark)
     return conv
 
 
@@ -631,6 +660,7 @@ async def _hub_knows_conversation(conv_id: str) -> bool:
 async def _try_send_reply_via_hub(
     *,
     conv_id: str,
+    flow_message_id: str,
     text: str,
     sender_name: str,
     sender_id: Optional[str],
@@ -659,17 +689,24 @@ async def _try_send_reply_via_hub(
             return None
         hub_ws_bridge.remember_hub_conversation(conv_id)
 
+    # Stamped BEFORE the send so the recovery probe below can tell OUR message
+    # apart from an older identical one (the same text sent twice on purpose).
     try:
         resp = await hub_ws_bridge.add_message(
             conversation_id=conv_id,
             text=text,
+            flow_message_id=flow_message_id,
             sender_name=sender_name or None,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
+        # A failed CALL is not a failed WRITE: the hub commits before it replies, so a lost reply
+        # (a 1011 close, a dropped socket, a timeout) means "unknown". Fall through to the HTTP
+        # send of the SAME id - the hub answers a replay with the message it already stored
+        # (``test_add_message_ambiguous_send_no_duplicate``), so nothing is sent twice.
         logger.warning("[append_conversation] hub add_message failed: %s", e, exc_info=True)
         return None
-
     fm_payload = (resp or {}).get("data") or {}
+
     hub_fm_id = fm_payload.get("id")
     if not hub_fm_id:
         logger.warning("[append_conversation] hub add_message returned no id; falling through")
@@ -712,14 +749,16 @@ async def _try_send_reply_via_hub(
     # Spread the hub-confirmed FlowMessage fields into the response — see
     # _fm_response_fields for why the id must be carried (SDK mints a random
     # one otherwise).
-    return ApiSuccessResponse(data={
-        **fm_payload,
-        "id": hub_fm_id,
-        "task_id": "",
-        "conversation_id": conv_id,
-        "message_count": message_count,
-        "flow_message_id": hub_fm_id,
-    })
+    return ApiSuccessResponse(
+        data={
+            **fm_payload,
+            "id": hub_fm_id,
+            "task_id": "",
+            "conversation_id": conv_id,
+            "message_count": message_count,
+            "flow_message_id": hub_fm_id,
+        }
+    )
 
 
 def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
@@ -749,8 +788,64 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
         pass
 
 
+def _unshippable_payload(gaps) -> list[dict]:
+    """The wire shape of the refs a send would ship nothing for — shared by the send refusal and the preflight."""
+    return [{"type_id": str(tid), "reason": why} for tid, why in gaps]
+
+
+def _typeids_of(asset_references: list) -> list[TypeId]:
+    typeids: list[TypeId] = []
+    for raw in dict.fromkeys(asset_references):
+        try:
+            typeids.append(TypeId(raw))
+        except Exception:  # noqa: BLE001 — a malformed ref is the send's problem to report, not the preflight's
+            continue
+    return typeids
+
+
+async def find_unshippable_references(asset_references: list) -> list[tuple[TypeId, str]]:
+    """Which of these asset references would the packer silently ship nothing for?
+
+    Does what a send does first — a session being shared may have no index row yet, so it is
+    indexed from its transcript if one can be found — and then asks the packer's own question.
+    Writes nothing else, so a caller can ask BEFORE it creates a conversation or invites anyone.
+    """
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    typeids = _typeids_of(asset_references)
+    await _ensure_session_rows(typeids)
+    return await attachments_that_would_ship_nothing(typeids)
+
+
+@action.post(action_name="check-attachments", types=None)
+async def check_attachments() -> ApiResponse:
+    """Preflight for a share: which of ``asset_references`` would arrive empty? Read-only.
+
+    The share dialog asks this BEFORE it creates a conversation and invites the recipient — a
+    refusal after the invite would leave them holding an invitation to an empty conversation.
+    ``handle_add_message`` still refuses on its own; this is what lets the UI offer
+    "send without it" instead of failing after the fact.
+    """
+    request_info = get_current_request_info()
+    body = (await request_info.get_post_data() if request_info else None) or {}
+    refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
+    gaps = await find_unshippable_references(refs)
+    gitignored = []
+    if _parse_share_transfer_mode(body if isinstance(body, dict) else {}) == "copy":
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            attachments_holding_gitignored,
+            gitignored_payload,
+        )
+
+        gitignored = gitignored_payload(await attachments_holding_gitignored(_typeids_of(refs)))
+    return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps), "gitignored": gitignored})
+
+
 async def handle_add_message(
-    body: dict, someone_typeid: str, *, pending_send: bool = False,
+    body: dict,
+    someone_typeid: str,
+    *,
+    pending_send: bool = False,
 ) -> ApiResponse:
     """Append a message to a Conversation — the single message-send handler.
 
@@ -763,8 +858,9 @@ async def handle_add_message(
     cannot reach the cloud right now — cloud login is required but unavailable.
     Instead of refusing, persist the message locally stamped
     ``delivery_status=pending_send`` with NO hub push; it stays in the
-    conversation.jsonl outbox and is flushed by ``_deliver_pending_messages``
-    when the conversation next becomes remote (manual re-send for v1).
+    conversation.jsonl outbox until ``Conversation.deliver_pending_messages``
+    pushes it, from ``share()`` or from the hub-session transition in
+    ``flow_sdk.stream_inbox.catchup`` (see that module's docstring).
     """
     conversation_id = (body.get("conversation_id") or "").strip()
     # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;
@@ -785,11 +881,7 @@ async def handle_add_message(
     # Accept both the new ``shared_context_entities`` name and the legacy
     # ``context_entities`` body key during transition (frontend may not be
     # fully cut over yet). Treat both as wire-bound (shared).
-    shared_context_entities = (
-        body.get("shared_context_entities")
-        or body.get("context_entities")
-        or []
-    )
+    shared_context_entities = body.get("shared_context_entities") or body.get("context_entities") or []
     if isinstance(shared_context_entities, str):
         shared_context_entities = [shared_context_entities]
     elif not isinstance(shared_context_entities, list):
@@ -797,29 +889,74 @@ async def handle_add_message(
     # Live-session grouping key + the one sendable non-default kind (the enum
     # owns the whitelist, so add-message stays agnostic to which kinds exist).
     from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
+
     remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
     sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
     message_kind = sendable_kind.value if sendable_kind else None
+    # Every prompt is a session turn, and a conversation holds ONE open session.
+    # A prompt WITHOUT a session id joins the conversation's open session; only
+    # when there is none does it open a new one: the sender mints the id here
+    # (uuid4; the host validates-on-adopt) and the opening proposal (reply
+    # policy) rides the start marker on the carrier attachment. A prompt WITH a
+    # session id is a follow-up turn.
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
+
+    is_prompt_send = bool(prompt_text_preview or prompt_files_preview)
+    start_settings: Optional[SessionStartSettings] = None
+    # Refused whenever sent, even on a send that joins a session and won't use it.
+    reply_policy = _reply_policy_of(body)
+    if reply_policy is None:
+        return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+    if is_prompt_send and not remote_worker_session_id:
+        open_session = await RemoteWorkerSession.open_for_conversation(conversation_id)
+        if open_session is not None:
+            remote_worker_session_id = open_session.id
+    if is_prompt_send and not remote_worker_session_id:
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+
+        remote_worker_session_id = mint_uuid()
+        start_settings = SessionStartSettings(reply_policy=reply_policy)
+    elif remote_worker_session_id and is_prompt_send:
+        existing_session = await RemoteWorkerSession.resolve_state(remote_worker_session_id)
+        if existing_session is not None and not existing_session.is_open:
+            return ApiFailResponse(
+                message="this live session has ended — send a new prompt to start another",
+                status_code=409,
+            )
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
+    reply_to_id = (body.get("reply_to_id") or "").strip() or None
+    # Writing INTO a thread without quoting anyone (the composer of an open thread): a message of
+    # that thread — its root, normally. A reply_to_id, when given, decides the thread instead.
+    join_thread_of = (body.get("thread_root_id") or "").strip() or None
     if (
         not message
         and not prompt_text_preview
         and not prompt_files_preview
         and not uploaded_files_preview
         and not asset_references
+        # A message that is only a value — a prompt call, or its answer — is a message too.
+        and not (body.get("call_prompt") or "").strip()
+        and not body.get("attachment")
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
-    if not message:
-        # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only / files-only sends.
-        # The frontend suppresses the body when it matches this exact constant.
-        message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
+    # An attachment-only send keeps an empty text: each surface names what it carries.
 
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
+    # A reply quotes one message of THIS conversation and joins the thread rooted at it.
+    thread_root_id: Optional[str] = None
+    if reply_to_id or join_thread_of:
+        from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
+
+        anchor = reply_to_id or join_thread_of
+        thread_root_id = await thread_root_for_reply(conv.id, anchor)
+        if thread_root_id is None:
+            field = "reply_to_id" if reply_to_id else "thread_root_id"
+            return ApiFailResponse(message=f"{field} {anchor} is not a message of this conversation", status_code=400)
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -841,12 +978,77 @@ async def handle_add_message(
         ]
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
+    # Refuse BEFORE anything is written: an attachment the packer would ship nothing for
+    # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    gaps = await attachments_that_would_ship_nothing(_parse_context_typeids(conv, asset_references, []))
+    if gaps:
+        names = "; ".join(f"{tid} — {why}" for tid, why in gaps)
+        return ApiFailResponse(
+            message=(
+                f"Cannot send: {names}. The recipient would receive nothing for it "
+                "(the file may have been removed, or it was never created — a session with no "
+                "conversation yet has no transcript). Nothing was sent."
+            ),
+            status_code=400,
+            data={"unshippable": _unshippable_payload(gaps)},
+        )
+    # A copy carries the asset folder whole — files git excludes (often private) included. The sender is
+    # told which and decides: refused ONCE, before anything is written; ``include_gitignored`` sends them.
+    if transfer_mode == "copy" and not _parse_share_include_gitignored(body):
+        from flow_sdk.builtin.flow_message_bundle import refuse_gitignored  # noqa: PLC0415
+
+        if refused := await refuse_gitignored(_parse_context_typeids(conv, asset_references, [])):
+            return refused
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
     sender_id = sender_participant.get("user_id") or None
     sender_name = sender_participant.get("name") or ""
+
+    # Mint the logical message exactly once, before choosing its transport.
+    # If a WebSocket reply is lost after the hub commits, the HTTP fallback
+    # must reuse this id: the hub's unique entity id then makes both delivery
+    # attempts one write instead of two indistinguishable messages.
+    reply_fm = _build_reply_flow_message(
+        conv_id=conv.id,
+        message=message,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        is_draft=is_draft,
+        shared_context_entities=shared_context_entities,
+        remote_worker_session_id=remote_worker_session_id,
+        kind=message_kind,
+        reply_to_id=reply_to_id,
+        thread_root_id=thread_root_id,
+    )
+
+    if start_settings is not None:
+        # Guest-side row for the session this prompt opens. The host adopts the
+        # same id from the carrier; until its first snapshot lands, this row is
+        # what renders the card ("requesting" → PENDING).
+        from flow_sdk.app.actions.execute_prompt import _peer_of  # noqa: PLC0415
+        from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+
+        peer_id, peer_name, _ = _peer_of(conv, sender_id)
+        guest_session = RemoteWorkerSession(
+            id=remote_worker_session_id,
+            conversation_id=conv.id,
+            starting_message_id=reply_fm.id,
+            guest_user_id=sender_id,
+            guest_name=sender_name or None,
+            host_user_id=peer_id,
+            host_name=peer_name,
+            reply_policy=start_settings.reply_policy,
+            status=RemoteWorkerSessionStatus.DRAFT if is_draft else RemoteWorkerSessionStatus.PENDING,
+        )
+        guest_session.mark_activity()
+        await guest_session.save(someone_typeid)
 
     uploaded_files = body.get("files") or []
     if not isinstance(uploaded_files, list):
@@ -863,6 +1065,14 @@ async def handle_add_message(
     raw_attachments = body.get("attachment") or []
     if not isinstance(raw_attachments, list):
         raw_attachments = [raw_attachments]
+    # ``call_prompt``: a one-shot prompt for the receiver to approve and run (``process_call_spec``).
+    # It rides as an attachment value, never as a Prompt entity — the text is the sender's.
+    call_prompt = (body.get("call_prompt") or "").strip()
+    if call_prompt:
+        from flow_sdk.core.compute.process_call import prompt_call  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.process_call_spec import call_attachment  # noqa: PLC0415
+
+        raw_attachments = [*raw_attachments, call_attachment(prompt_call(call_prompt))]
 
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI. Skipped
@@ -878,9 +1088,12 @@ async def handle_add_message(
         # Session messages always ride the HTTP slow path: the WS bridge body
         # is text-only and would drop the session-snapshot carrier attachment.
         and not remote_worker_session_id
+        # So do replies: the WS body has no room for the quote / thread root.
+        and not thread_root_id
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
+            flow_message_id=reply_fm.id,
             text=message,
             sender_name=sender_name,
             sender_id=sender_id,
@@ -888,17 +1101,6 @@ async def handle_add_message(
         )
         if hub_response is not None:
             return hub_response
-
-    reply_fm = _build_reply_flow_message(
-        conv_id=conv.id,
-        message=message,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        is_draft=is_draft,
-        shared_context_entities=shared_context_entities,
-        remote_worker_session_id=remote_worker_session_id,
-        kind=message_kind,
-    )
 
     if raw_attachments:
         # Direct Attachment dicts ({attachment_type, data}) from the SDK —
@@ -909,14 +1111,15 @@ async def handle_add_message(
         _atts = list(reply_fm.attachment or [])
         for _a in raw_attachments:
             if isinstance(_a, dict) and _a.get("attachment_type") and _a.get("data") is not None:
-                # Preserve the preview/proposer fields so entity-backed attachments
-                # (prompt / prompt_result) stay previewable before the body downloads.
-                _atts.append(Attachment(
-                    attachment_type=_a["attachment_type"],
-                    data=_a["data"],
-                    prompt_preview=_a.get("prompt_preview"),
-                    proposer_id=_a.get("proposer_id"),
-                ))
+                # Preserve the preview so entity-backed attachments (prompt /
+                # prompt_completion) stay previewable before the body downloads.
+                _atts.append(
+                    Attachment(
+                        attachment_type=_a["attachment_type"],
+                        data=_a["data"],
+                        prompt_preview=_a.get("prompt_preview"),
+                    )
+                )
         reply_fm.attachment = _atts
 
     if uploaded_files:
@@ -926,10 +1129,7 @@ async def handle_add_message(
         await _attach_asset_references(reply_fm, asset_references)
 
     if prompt_text or prompt_files:
-        await _attach_prompt(
-            reply_fm, sender_id, prompt_text, prompt_files,
-            project_id=getattr(conv, "project_id", None) or None,
-        )
+        await _attach_prompt(reply_fm, prompt_text, prompt_files)
 
     if remote_worker_session_id:
         # Authoritative wire carrier for the live-session key (the hub drops
@@ -938,40 +1138,52 @@ async def handle_add_message(
         # serializes the session row at upload time, so every session message
         # ships a fresh snapshot. Skip when the caller already attached one.
         from flow_sdk.builtin.flow_message import Attachment, AttachmentType  # noqa: PLC0415
+
         session_att_data = f"remote_worker_session-{remote_worker_session_id}"
         if not any(
             a.attachment_type == AttachmentType.TYPE_ID and a.data == session_att_data
             for a in (reply_fm.attachment or [])
         ):
+            marker = None
+            if start_settings is not None:
+                import json as _json  # noqa: PLC0415
+
+                from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
+
+                marker = _json.dumps({SESSION_START_MARKER_KEY: start_settings.model_dump()})
             reply_fm.attachment = [
                 *(reply_fm.attachment or []),
-                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data),
+                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data, prompt_preview=marker),
             ]
+        await _stamp_session_snapshot(reply_fm, remote_worker_session_id)
 
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations
     # keep body_status=NA — the attachment is served off local VFS.
-    is_remote_send = (
-        not pending_send and is_logged_in() and bool(getattr(conv, "remote", False))
-    )
+    is_remote_send = not pending_send and is_logged_in() and bool(getattr(conv, "remote", False))
     if is_remote_send and reply_fm.has_body():
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
         reply_fm.body_status = BodyStatus.UPLOADING
 
     if pending_send:
         # Composed offline — stamp the local-only pre-accept status so the UI /
         # CLI can show it as queued. It rides the jsonl outbox for a later flush.
         from flow_sdk.builtin.flow_message import DeliveryStatus  # noqa: PLC0415
+
         reply_fm.delivery_status = DeliveryStatus.PENDING_SEND.value
 
     reply_fm = await reply_fm.save(someone_typeid)
 
+    if reply_fm.thread_root_id and not is_draft:
+        from flow_sdk.stream_inbox.native_threads import project_native_thread  # noqa: PLC0415
+
+        await project_native_thread(reply_fm)
+
     if is_draft:
         # Local-only draft: skip jsonl append and hub push.
         # The UI surfaces the draft via an entity query on (conversation_id, is_draft=true).
-        return ApiSuccessResponse(
-            data={**_fm_response_fields(reply_fm, conv), "is_draft": True}
-        )
+        return ApiSuccessResponse(data={**_fm_response_fields(reply_fm, conv), "is_draft": True})
 
     conv = await _finalize_message_dispatch(
         conv,
@@ -983,7 +1195,114 @@ async def handle_add_message(
         create_bookmark=create_bookmark,
     )
 
+    if is_prompt_send and start_settings is None and remote_worker_session_id:
+        await _run_if_hosted_here(remote_worker_session_id)
+
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
+
+
+async def _run_if_hosted_here(session_id: str) -> None:
+    """The host typed into its own live session: run the prompt here, now.
+
+    A prompt the GUEST sends reaches the host through the inbound gate; the
+    host's own send never does (it is not inbound), so without this it would
+    only travel to the guest, which cannot run it.
+    """
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.app.actions.execute_prompt import redrive_session_prompts  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        ACTIVE_STATUSES,
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+    )
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    session = await RemoteWorkerSession.resolve_state(session_id)
+    # Approved sessions only (ERROR is runnable — the last turn failed).
+    if session is None or session.status not in {*ACTIVE_STATUSES, RemoteWorkerSessionStatus.ERROR}:
+        return
+    cloud_id = (await User.current_sender_participant()).get("user_id")
+    if session.host_process_id or session.is_host(cloud_id):
+        asyncio.create_task(redrive_session_prompts(session))
+
+
+def _reply_policy_of(body: dict) -> Optional[str]:
+    """The session reply policy a send proposes (default auto); None when invalid."""
+    from flow_sdk.builtin.remote_worker_session import ReplyPolicy  # noqa: PLC0415
+
+    raw = str(body.get("reply_policy") or "").strip() or ReplyPolicy.AUTO.value
+    try:
+        return ReplyPolicy(raw).value
+    except ValueError:
+        return None
+
+
+async def handle_start_live_session(conversation_id: str, body: dict, someone_typeid: str) -> ApiResponse:
+    """Open the conversation's live session before any prompt — answer the session.
+
+    The guest clicks the live-session button and lands in the session view with
+    the cursor waiting for the first prompt, so the session has to exist first.
+    One open session per conversation: an open one is answered as-is. Otherwise
+    the guest row starts PENDING and a ``requested`` lifecycle line goes to the
+    host — it carries the ``session_start`` marker (so the host's desktop is
+    notified, as for an opening prompt) and the snapshot (so the host's mirror
+    materializes PENDING with its Approve request). The line is the session's
+    first message: where the conversation shows its one line.
+    """
+    from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import (  # noqa: PLC0415
+        RemoteWorkerSession,
+        RemoteWorkerSessionStatus,
+    )
+    from flow_sdk.schema.data_spec.session_spec import SessionStartSettings  # noqa: PLC0415
+
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message=f"Conversation not found: {conversation_id}", status_code=404)
+    open_session = await RemoteWorkerSession.open_for_conversation(conv.id)
+    if open_session is not None:
+        return ApiSuccessResponse(data=open_session.model_dump(mode="json"))
+
+    reply_policy = _reply_policy_of(body)
+    if reply_policy is None:
+        return ApiFailResponse(message="reply_policy must be 'auto' or 'review'", status_code=400)
+
+    sender = await User.current_sender_participant(None)
+    sender_id = sender.get("user_id") or None
+    sender_name = sender.get("name") or ""
+    host_id, host_name, _ = _peer_of(conv, sender_id)
+    if not host_id:
+        return ApiFailResponse(
+            message="a live session runs on the other participant's machine — this conversation has none",
+            status_code=400,
+        )
+
+    session = RemoteWorkerSession(
+        conversation_id=conv.id,
+        guest_user_id=sender_id,
+        guest_name=sender_name or None,
+        host_user_id=host_id,
+        host_name=host_name,
+        reply_policy=reply_policy,
+        status=RemoteWorkerSessionStatus.PENDING,
+    )
+    session.mark_activity()
+    await session.save(someone_typeid)
+    # No second save of this row: the host may already have approved it, and the
+    # snapshot that brought that here would be overwritten by this stale copy.
+    # The line anchors the session in the chat as its first message; the host
+    # records it as the starting message when the request lands.
+    await emit_session_event(
+        session,
+        "requested",
+        someone_typeid,
+        # Read on BOTH sides (the guest's session view shows it too): no "your".
+        text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
+        marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump()},
+    )
+    return ApiSuccessResponse(data=session.model_dump(mode="json"))
 
 
 def _copy_clone_storage(src_fm: "FlowMessage", clone_fm: "FlowMessage") -> None:
@@ -1006,9 +1325,7 @@ def _copy_clone_storage(src_fm: "FlowMessage", clone_fm: "FlowMessage") -> None:
         vfs_subpath: Optional[str] = None
         if att.attachment_type == AttachmentType.FILE:
             vfs_subpath = att.data or ""
-        elif att.attachment_type == AttachmentType.PROMPT and (att.data or "").startswith(
-            PROMPT_FILE_VFS_PREFIX
-        ):
+        elif att.attachment_type == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
             vfs_subpath = att.data
         if not vfs_subpath:
             continue
@@ -1057,17 +1374,14 @@ async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse
         sender_id=sender_id,
         sender_name=sender_name,
     )
+    clone_fm.outbound = True
     _copy_clone_storage(src_fm, clone_fm)
 
     # The forwarded content becomes shared context of the TARGET conversation,
     # same as a fresh share of those assets would.
     from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
 
-    content_refs = [
-        att.data
-        for att in (clone_fm.attachment or [])
-        if att.attachment_type == AttachmentType.TYPE_ID
-    ]
+    content_refs = [att.data for att in (clone_fm.attachment or []) if att.attachment_type == AttachmentType.TYPE_ID]
     context_typeids = _parse_context_typeids(conv, content_refs, [])
     # parent_share_on_default expansion — same rule as handle_add_message, so
     # forwarding a chip advertises its parent exactly like a fresh share.
@@ -1075,36 +1389,49 @@ async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse
     if parent_typeids:
         context_typeids = [*context_typeids, *parent_typeids]
         clone_fm.add_shared_context_entities(*parent_typeids)
-    await _ensure_claude_session_rows(context_typeids)
+    await _ensure_session_rows(context_typeids)
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     is_remote_send = is_logged_in() and bool(getattr(conv, "remote", False))
     if is_remote_send and clone_fm.has_body():
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+
         clone_fm.body_status = BodyStatus.UPLOADING
 
     clone_fm = await clone_fm.save(someone_typeid)
 
     conv = await _finalize_message_dispatch(
-        conv, clone_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
+        conv,
+        clone_fm,
+        context_typeids,
+        someone_typeid,
+        is_remote_send=is_remote_send,
     )
 
-    return ApiSuccessResponse(data={
-        "conversation_id": conv.id,
-        "message_count": conv.message_count,
-        "flow_message_id": clone_fm.id,
-        "cloned_from_id": clone_fm.cloned_from_id,
-    })
+    return ApiSuccessResponse(
+        data={
+            "conversation_id": conv.id,
+            "message_count": conv.message_count,
+            "flow_message_id": clone_fm.id,
+            "cloned_from_id": clone_fm.cloned_from_id,
+        }
+    )
 
 
 async def handle_refresh_notifications(project_path: str) -> ApiResponse:
     """Git pull the project repo and run the incoming notification scanner."""
     import asyncio as _asyncio
+
     project_root = find_project_root(project_path) if project_path else None
     if project_root:
-        await git_pull(project_root)
+        from flow_sdk.builtin.faas.git_repo import GitRepo  # noqa: PLC0415
+
+        pulled = await (await GitRepo.local(project_root)).pull()
+        if not pulled.ok:
+            logger.info("[notification_action] pull %s for %s: %s", pulled.kind, project_root, pulled.message)
     try:
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
+
         local_user = await User.get_one({"uname": "local"})
         if local_user:
             await _asyncio.ensure_future(scan_incoming_notifications(local_user.id))
@@ -1155,16 +1482,16 @@ async def update_local_user_name() -> ApiResponse:
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# Project mapping (per-machine: remote_project_id → local_project_id)
-# Stored as a JSON file under InstanceSettings.flow_home so the mapping
-# survives restarts and is independent of the User entity (which has no
-# settings field today).
+# Project mapping (per-instance: remote_project_id → local_project_id)
+# Stored as a JSON file in this instance's dir: the local project ids are this
+# instance's own, so another instance on the machine must never read them.
 # ────────────────────────────────────────────────────────────────────────────
 
 
 def _project_mapping_path() -> Path:
     from flow_sdk.instance_settings import get_instance_settings
-    return get_instance_settings().flow_home / "project_mapping.json"
+
+    return get_instance_settings().instance_dir / "project_mapping.json"
 
 
 def _load_project_mapping() -> dict:
@@ -1185,7 +1512,7 @@ def _save_project_mapping(mapping: dict) -> None:
 
 @action.get(action_name="get-project-mapping", types=None)
 async def get_project_mapping() -> ApiResponse:
-    """Return the per-machine remote→local project mapping dict."""
+    """Return this instance's remote→local project mapping dict."""
     return ApiSuccessResponse(data={"mapping": _load_project_mapping()})
 
 
@@ -1216,6 +1543,34 @@ async def set_project_mapping() -> ApiResponse:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+async def _stamp_session_snapshot(fm: "FlowMessage", session_id: str) -> None:
+    """Put the session's wire snapshot on the carrier's ``prompt_preview``
+    (a hub-known field) so the other side flips state on fan-out — seconds
+    before the body bundle, which carries the same snapshot durably. Merges
+    into whatever marker is already there (``session_start`` /
+    ``live_session_event``). No local row → nothing to stamp."""
+    import json as _json  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
+        SESSION_SNAPSHOT_MARKER_KEY,
+        AttachmentType,
+        _carrier_marker,
+    )
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+
+    rws = await RemoteWorkerSession.resolve_state(session_id)
+    if rws is None:
+        return
+    carrier_data = f"remote_worker_session-{session_id}"
+    out = []
+    for a in fm.attachment or []:
+        if a.attachment_type == AttachmentType.TYPE_ID and a.data == carrier_data:
+            marker: dict = {**(_carrier_marker(fm) or {}), SESSION_SNAPSHOT_MARKER_KEY: rws.snapshot()}
+            a = a.model_copy(update={"prompt_preview": _json.dumps(marker)})
+        out.append(a)
+    fm.attachment = out
+
+
 def _is_prompt_attachment(a: Any) -> bool:
     """True for any prompt attachment kind: legacy inline/file ``PROMPT``,
     or an entity-backed TYPE_ID entry pointing at a ``prompt`` entity.
@@ -1235,105 +1590,17 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
-async def _approve_prompt_attachments(
-    fm: "FlowMessage",
-    approver_id: Optional[str],
-    someone_typeid: str,
-    *,
-    attachment_index: Optional[int] = None,
-    approve_all: bool = True,
-) -> list[int]:
-    """Flip unapproved PROMPT attachments to ``approved_by=approver_id`` and save.
+async def open_notification_params(notification_id: str) -> "OpenLinkSpec":
+    """Deep-link resolver for a notification (``Notification.resolve_open``):
+    fetch it from the hub and return the ``action=open`` params for its task."""
+    from flow_sdk.server.routes.notify import message_deep_link_params
 
-    Returns the approved indices ([] when there was nothing to approve). Shared
-    by the ``approve-prompt`` action (FE manual path) and the backend execute
-    entrypoint (auto-run) so both stamp approval identically — and approval
-    doubles as the receive-hook's idempotency marker.
-    """
-    new_atts = list(fm.attachment or [])
-    approved: list[int] = []
-    if approve_all:
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
-                approved.append(i)
-    else:
-        target_idx: Optional[int] = None
-        if isinstance(attachment_index, int) and 0 <= attachment_index < len(new_atts):
-            if _is_prompt_attachment(new_atts[attachment_index]):
-                target_idx = attachment_index
-        if target_idx is None:
-            for i, a in enumerate(new_atts):
-                if _is_prompt_attachment(a) and not a.approved_by:
-                    target_idx = i
-                    break
-        if target_idx is not None:
-            new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
-            approved.append(target_idx)
-    if approved:
-        fm.attachment = new_atts
-        await fm.save(someone_typeid or "")
-    return approved
-
-
-@action.post(action_name="approve-prompt", types=["flow_message"])
-async def approve_prompt() -> ApiResponse:
-    """Mark prompt attachments on a FlowMessage as approved by the current user.
-
-    Covers both legacy ``AttachmentType.PROMPT`` entries and entity-backed
-    prompt TYPE_ID entries (``_is_prompt_attachment``). The frontend then runs
-    the prompt in a forked Claude session.
-    Body: { attachment_index?: number, approve_all?: bool }
-      - With approve_all=True (default for the conversation flow): every prompt
-        attachment on the message flips to approved in one shot, so the typed
-        text and any attached prompt files all execute as a single Claude turn.
-      - Without approve_all: only the targeted attachment_index (or the first
-        unapproved prompt) is approved.
-    """
-    from flow_sdk.builtin.flow_message import FlowMessage as FM
-
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        return ApiFailResponse(message="No request info found")
-    fm_id = str(request_info.target_entity_typeid.id)
-    fm = await FM.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    body = await request_info.get_post_data() or {}
-    idx = body.get("attachment_index")
-    approve_all = bool(body.get("approve_all"))
-    local_user = await User.get_one({"uname": "local"})
-    approver_id = local_user.id if local_user else None
-
-    approved = await _approve_prompt_attachments(
-        fm, approver_id, request_info.someone_typeid or "",
-        attachment_index=idx if isinstance(idx, int) else None,
-        approve_all=approve_all,
-    )
-    if not approved:
-        return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-    if approve_all:
-        return ApiSuccessResponse(data={"attachment_indices": approved, "approved_by": approver_id})
-    return ApiSuccessResponse(data={"attachment_index": approved[0], "approved_by": approver_id})
-
-
-@action.get(action_name="open", types=["notification"])
-async def open_notification() -> ApiResponse:
-    """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
-    from flow_sdk.server.routes.notify import handle_notification_deep_link
-
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        return ApiFailResponse(message="No request info found", status_code=400)
-
-    notification_id = str(request_info.target_entity_typeid.id)
     data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     # Notification.id is the same as the hub FlowMessage id (set in
     # _save_local_notification), so we use notification_id as fm_id.
-    return await handle_notification_deep_link(
+    return message_deep_link_params(
         fm_id=notification_id,
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
         git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),

@@ -17,7 +17,10 @@ export {
   useIsAdvanced,
   useIsDev,
   useIsVibe,
+  useTierMode,
   setViewMode,
   setDev,
+  getDev,
+  getTierMode,
   getViewMode,
 } from '@src/contexts/view-mode-context';

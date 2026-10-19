@@ -2,6 +2,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NAVIGATOR_REGISTRY } from './navigatorRegistry';
+import { PageId } from '@sdk';
 
 /**
  * NavigatorSlot — Zone B. Reads the active view from the URL (currentDock) and
@@ -12,6 +13,8 @@ import { NAVIGATOR_REGISTRY } from './navigatorRegistry';
 export function NavigatorSlot() {
   const { currentDock, isDockUrl } = useDockNavigation();
   const viewType = isDockUrl && currentDock?.viewType ? currentDock.viewType : ViewType.HOME;
+  // Hub Wiki assets use entity record/fs, not the Desk's local asset inventory.
+  if (currentDock?.page === PageId.HUB) return null;
   // A collaboration room owns its own left panel (Shared Sessions) — it is not
   // an asset browser, so suppress the project AssetsNavigator when a room is
   // active in the URL.

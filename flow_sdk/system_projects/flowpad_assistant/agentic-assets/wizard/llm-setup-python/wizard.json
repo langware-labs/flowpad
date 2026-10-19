@@ -1,0 +1,23 @@
+{
+  "name": "llm-setup-python",
+  "description": "Asks whether to install Python 3 when it is missing, and installs it only if the person agrees.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install Python 3?",
+      "kind": "compute",
+      "ref": "ask-install-python",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "Python 3",
+      "kind": "compute",
+      "ref": "python-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

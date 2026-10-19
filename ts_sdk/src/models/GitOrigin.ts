@@ -102,7 +102,57 @@ export function gitOriginCloneUrl(o: GitOrigin): string {
     const leaf = stripGitSuffix(o.name.trim());
     return `file://${owner}/${leaf}.git`;
   }
+  if (o.provider.includes('://')) {
+    // Self-hosted (git daemon, on-prem http with a port): the provider IS the base
+    // URL, kept as-is — mirrors flow_sdk/utils/git_identity.git_origin_clone_url.
+    return `${o.provider.replace(/\/+$/, '')}/${o.owner.replace(/^\/+|\/+$/g, '')}/${stripGitSuffix(o.name)}`;
+  }
   return `https://${providerHost(o.provider)}/${o.owner}/${stripGitSuffix(o.name)}.git`;
+}
+
+/**
+ * Per-provider path segment for browsing a ref inside a repo's web UI. Anything
+ * not listed has no known browse grammar (and ``file`` origins have no web UI at
+ * all) — the caller then has no link to offer.
+ */
+function providerBrowseSegment(provider: string, isDir: boolean): string | null {
+  switch (provider.trim().toLowerCase()) {
+    case 'github':
+      return isDir ? 'tree' : 'blob';
+    case 'gitlab':
+      return isDir ? '-/tree' : '-/blob';
+    case 'bitbucket':
+      return 'src';
+    default:
+      return null;
+  }
+}
+
+/**
+ * Browsable web URL for a GitOrigin — the page a human opens, NOT the clone URL
+ * (see {@link gitOriginCloneUrl}). Deep-links to ``rel_path`` at the origin's
+ * branch (or, on a detached head, its commit); degrades to the repo root when
+ * there is no ref or no safe path to point at.
+ *
+ * Returns null when the provider has no known web UI (e.g. a ``file`` origin) or
+ * the origin doesn't name a repo — callers should render no link at all.
+ */
+export function gitOriginWebUrl(o: GitOrigin, opts?: { isDir?: boolean }): string | null {
+  if (!o?.owner || !o?.name) return null;
+  // No known browse grammar (a ``file`` remote, a self-hosted host we can't
+  // address) ⇒ no page to send anyone to. Say so instead of guessing a URL.
+  const segment = providerBrowseSegment(o.provider, opts?.isDir === true);
+  if (!segment) return null;
+
+  const root = `https://${providerHost(o.provider)}/${encodeURIComponent(o.owner)}/${encodeURIComponent(stripGitSuffix(o.name))}`;
+  const ref = (o.branch || o.head_commit || '').trim();
+  const rel = (o.rel_path || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+  if (!ref || rel === '.' || !isSafeRelPath(rel)) return root;
+
+  // Segment-wise, never whole-string: a `feature/x` branch must keep its slash —
+  // providers do not resolve `feature%2Fx` in a tree/blob path.
+  const encodePath = (p: string) => p.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  return `${root}/${segment}/${encodePath(ref)}/${encodePath(rel)}`;
 }
 
 /**
@@ -123,7 +173,25 @@ export function isCompleteGitOrigin(o: GitOrigin | null | undefined): o is GitOr
   return !!o && !!o.owner && !!o.name && isSafeRelPath(o.rel_path);
 }
 
-/** Read a (possibly absent) git_origin off any received entity. */
-export function gitOriginOf(entity: { git_origin?: GitOrigin | null } | null | undefined): GitOrigin | null {
-  return entity?.git_origin ?? null;
+/** A GitOrigin a checkout can be made from: a repo, at its root or at a safe path
+ *  inside it. A PROJECT's origin is the repository itself, so its `rel_path` is
+ *  empty — `isCompleteGitOrigin` is the test for an ASSET inside a repo and
+ *  rejects exactly that shape. Only a path pointing outside the checkout
+ *  disqualifies here. */
+export function isInstallableOrigin(o: GitOrigin | null | undefined): o is GitOrigin {
+  return !!o && !!o.owner && !!o.name && (!o.rel_path || isSafeRelPath(o.rel_path));
+}
+
+/** The shell command that checks this origin out: `git clone [-b <branch>] <url>`. */
+export function gitCloneCommand(o: GitOrigin): string {
+  return `git clone ${o.branch ? `-b ${o.branch} ` : ''}${gitOriginCloneUrl(o)}`;
+}
+
+/** Read a (possibly absent) git-kind origin off any entity. `origin` is the
+ *  entity field; `git_origin` is the hub's wire name for the same value. */
+export function gitOriginOf(
+  entity: { origin?: GitOrigin | null; git_origin?: GitOrigin | null } | null | undefined,
+): GitOrigin | null {
+  const o = entity?.origin ?? entity?.git_origin ?? null;
+  return o && (o.kind === undefined || o.kind === 'git') ? o : null;
 }

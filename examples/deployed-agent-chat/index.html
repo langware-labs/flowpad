@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Deployed agent chat tester</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background: #0b0d12;
+        color: #eef1f7;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+      }
+      main {
+        width: min(720px, 100%);
+        border: 1px solid #292e3b;
+        border-radius: 14px;
+        background: #12151d;
+        overflow: hidden;
+      }
+      header,
+      .login,
+      form {
+        padding: 16px;
+      }
+      header {
+        border-bottom: 1px solid #292e3b;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0;
+        color: #9299aa;
+        font-size: 0.84rem;
+      }
+      #route {
+        margin-top: 7px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .login {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 8px;
+        border-bottom: 1px solid #292e3b;
+      }
+      input,
+      textarea,
+      button {
+        font: inherit;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #343a49;
+        border-radius: 8px;
+        background: #0c0f15;
+        color: #eef1f7;
+        padding: 10px 11px;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #7585ff;
+      }
+      button {
+        border: 0;
+        border-radius: 8px;
+        background: #6576ee;
+        color: white;
+        padding: 10px 16px;
+        cursor: pointer;
+      }
+      button:disabled {
+        cursor: default;
+        opacity: 0.45;
+      }
+      #status {
+        min-height: 42px;
+        padding: 12px 16px;
+        border-bottom: 1px solid #292e3b;
+        color: #9ea6b8;
+        font-size: 0.84rem;
+      }
+      #status.error {
+        color: #ff9aa8;
+      }
+      #messages {
+        height: 430px;
+        overflow-y: auto;
+        padding: 16px;
+      }
+      .empty {
+        color: #747c8f;
+        text-align: center;
+        padding-top: 160px;
+      }
+      .message {
+        max-width: 85%;
+        margin: 0 0 12px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #202532;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .message.user {
+        margin-left: auto;
+        background: #29366f;
+      }
+      form {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        border-top: 1px solid #292e3b;
+      }
+      textarea {
+        min-height: 64px;
+        resize: vertical;
+      }
+      @media (max-width: 620px) {
+        .login {
+          grid-template-columns: 1fr;
+        }
+        #messages {
+          height: 360px;
+        }
+      }
+    </style>
+    <script>
+      (function configureHubBeforeSdkLoads() {
+        var hub = new URLSearchParams(location.search).get('hub') || 'http://localhost:8093';
+        window.__FLOWPAD_API_URL__ = hub.replace(/\/+$/, '');
+      })();
+    </script>
+    <script src="../../flow_sdk/server/static/sdk/flowpad-sdk.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Deployed agent chat</h1>
+        <p>Connect, then send a message. Sending again while the agent is working queues it.</p>
+        <p id="route"></p>
+      </header>
+
+      <section class="login">
+        <input id="email" type="email" autocomplete="username" placeholder="Hub email" />
+        <input id="password" type="password" autocomplete="current-password" placeholder="Hub password" />
+        <button id="connect" type="button">Connect</button>
+      </section>
+
+      <div id="status">Not connected</div>
+      <section id="messages"><div class="empty">Connect to start chatting.</div></section>
+
+      <form id="composer">
+        <textarea id="prompt" placeholder="Message the deployed agent…" disabled></textarea>
+        <button id="send" type="submit" disabled>Send</button>
+      </form>
+    </main>
+
+    <script>
+      (function deployedAgentChatTester() {
+        'use strict';
+
+        var sdk = window.FlowpadSdk;
+        var params = new URLSearchParams(location.search);
+        var agentId = params.get('agent') || '';
+        var requestedProcessId = params.get('process') || '';
+        var state = { process: null, sending: false, observing: false, listener: null };
+        var boundItems = new WeakSet();
+        var renderQueued = false;
+
+        var email = document.getElementById('email');
+        var password = document.getElementById('password');
+        var connect = document.getElementById('connect');
+        var status = document.getElementById('status');
+        var messages = document.getElementById('messages');
+        var composer = document.getElementById('composer');
+        var prompt = document.getElementById('prompt');
+        var send = document.getElementById('send');
+        var route = document.getElementById('route');
+
+        route.textContent = agentId
+          ? 'Hub: ' + window.__FLOWPAD_API_URL__ + ' · Agent: ' + agentId
+          : 'Missing ?agent=<deployed-agent-id> in this URL';
+
+        function setStatus(text, isError) {
+          status.textContent = text;
+          status.className = isError ? 'error' : '';
+        }
+
+        function errorText(error) {
+          return (error && error.message) || String(error);
+        }
+
+        function updateControls() {
+          prompt.disabled = !state.process;
+          send.disabled = !state.process || !prompt.value.trim();
+          send.textContent = state.sending ? 'Queue' : 'Send';
+        }
+
+        function itemRole(item) {
+          var role = item && item.attributes && item.attributes.role;
+          var type = String((item && item.elementType) || '');
+          if (role === 'user' || type === 'user-message') return 'user';
+          if (role === 'assistant' || type === 'assistant-message') return 'assistant';
+          return '';
+        }
+
+        function itemText(item) {
+          var content = item && item.content;
+          if (content == null && item) content = item.rawData;
+          if (typeof content === 'string') return content;
+          if (content == null) return '';
+          try {
+            return JSON.stringify(content, null, 2);
+          } catch (_) {
+            return String(content);
+          }
+        }
+
+        function renderMessages() {
+          if (!state.process) return;
+          var items = Array.from(state.process.flowDataStream.items || []).filter(function (item) {
+            return itemRole(item) && itemText(item);
+          });
+          messages.replaceChildren();
+          if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'empty';
+            empty.textContent = 'Connected. Send a message.';
+            messages.appendChild(empty);
+            return;
+          }
+          items.forEach(function (item) {
+            var message = document.createElement('div');
+            message.className = 'message ' + itemRole(item);
+            message.textContent = itemText(item);
+            messages.appendChild(message);
+          });
+          messages.scrollTop = messages.scrollHeight;
+        }
+
+        function scheduleRender() {
+          if (renderQueued) return;
+          renderQueued = true;
+          requestAnimationFrame(function () {
+            renderQueued = false;
+            renderMessages();
+          });
+        }
+
+        function bindItem(item) {
+          if (!item || typeof item.on !== 'function' || boundItems.has(item)) return;
+          boundItems.add(item);
+          item.on('chunk', scheduleRender);
+          item.on('ready', scheduleRender);
+        }
+
+        function attachProcess(process) {
+          if (state.process && state.listener) state.process.flowDataStream.removeListener('data', state.listener);
+          state.process = process;
+          state.listener = function (items) {
+            (items || []).forEach(bindItem);
+            scheduleRender();
+          };
+          process.flowDataStream.on('data', state.listener);
+          var next = new URL(location.href);
+          next.searchParams.set('process', process.id);
+          history.replaceState(null, '', next);
+          route.textContent = 'Connected to process ' + process.id;
+          updateControls();
+        }
+
+        async function readStatus() {
+          var action = new sdk.ActionInfo('status', sdk.AgenticProcess.type, state.process.id, 'GET');
+          return sdk.dataManager.callAction(action);
+        }
+
+        async function observeCurrentTurn() {
+          if (!state.process || state.observing || state.sending) return;
+          state.observing = true;
+          setStatus('Agent is working…');
+          try {
+            await state.process.observeTurn();
+            await state.process.loadHistory({ force: true });
+            renderMessages();
+            setStatus('Connected');
+          } catch (error) {
+            setStatus('Observe failed: ' + errorText(error), true);
+          } finally {
+            state.observing = false;
+          }
+        }
+
+        async function connectChat() {
+          if (!sdk) throw new Error('FlowPad SDK did not load');
+          if (!agentId) throw new Error('Open this page with ?agent=<deployed-agent-id>');
+          if (!email.value.trim() || !password.value) throw new Error('Enter your Hub email and password');
+
+          connect.disabled = true;
+          setStatus('Connecting…');
+          try {
+            var login = await sdk.authManager.login({
+              email: email.value.trim(),
+              password: password.value,
+              remember_me: false,
+            });
+            sdk.apiClient.testUserToken = login.token;
+            await sdk.initSdk({ setupWorkspace: false });
+            password.value = '';
+
+            var process = null;
+            if (requestedProcessId) process = await sdk.AgenticProcess.getById(requestedProcessId);
+            if (!process) {
+              var agent = await sdk.Agent.getById(agentId);
+              if (!agent) throw new Error('Deployed Agent not found');
+              var receipt = await agent.use();
+              process = await sdk.AgenticProcess.getById(receipt.process_id);
+            }
+            if (!process) throw new Error('Agent process could not be loaded');
+
+            attachProcess(process);
+            await process.loadHistory({ force: true });
+            renderMessages();
+            var processStatus = await readStatus();
+            setStatus(processStatus.busy ? 'Connected · agent is working…' : 'Connected');
+            if (processStatus.busy) observeCurrentTurn();
+          } finally {
+            connect.disabled = false;
+          }
+        }
+
+        connect.addEventListener('click', function () {
+          connectChat().catch(function (error) {
+            setStatus(errorText(error), true);
+          });
+        });
+
+        prompt.addEventListener('input', updateControls);
+        prompt.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            composer.requestSubmit();
+          }
+        });
+
+        composer.addEventListener('submit', function (event) {
+          event.preventDefault();
+          var message = prompt.value.trim();
+          if (!message || !state.process) return;
+          prompt.value = '';
+
+          if (state.sending) {
+            updateControls();
+            state.process
+              .enqueue(message)
+              .then(function () {
+                setStatus('Message queued');
+              })
+              .catch(function (error) {
+                setStatus('Queue failed: ' + errorText(error), true);
+              });
+            return;
+          }
+
+          state.sending = true;
+          updateControls();
+          setStatus('Agent is working…');
+          state.process
+            .prompt(message)
+            .then(function () {
+              return state.process.loadHistory({ force: true });
+            })
+            .then(function () {
+              renderMessages();
+              setStatus('Connected');
+            })
+            .catch(function (error) {
+              setStatus('Send failed: ' + errorText(error), true);
+            })
+            .finally(function () {
+              state.sending = false;
+              updateControls();
+            });
+        });
+
+        updateControls();
+      })();
+    </script>
+  </body>
+</html>

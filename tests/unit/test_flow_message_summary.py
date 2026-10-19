@@ -76,3 +76,32 @@ def test_summary_no_suffix_when_only_structural_attachments():
         ]
     )
     assert fm.summary() == "[created] Alice: hello"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_read_entry_keeps_the_full_text_and_says_who_sent_it():
+    long = "word " * 60
+    fm = _fm(text=long, sender_id="me-1")
+    entry = fm.read_entry({"me-1", "me-cloud"})
+    assert entry["text"] == long
+    assert entry["from"] == "you"
+    assert _fm(sender_id="me-cloud").read_entry({"me-1", "me-cloud"})["from"] == "you"
+    assert _fm(sender_id="other").read_entry({"me-1"})["from"] == "them"
+    assert _fm(sender_id="me-1").read_entry()["from"] == "them"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_read_entry_lists_only_meaningful_attachments_and_flags_missing_bytes():
+    fm = _fm(
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data="conversation-conv-1"),
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data="flow_message-msg-1"),
+            Attachment(attachment_type=AttachmentType.FILE, data="data/report.md"),
+            Attachment(attachment_type=AttachmentType.URL, data="https://example.com/x"),
+        ]
+    )
+    atts = fm.read_entry()["attachments"]
+    assert [(a["type"], a["data"]) for a in atts] == [("file", "data/report.md"), ("url", "https://example.com/x")]
+    file_att, url_att = atts
+    assert file_att["available"] is False and "local_path" not in file_att
+    assert url_att["available"] is True

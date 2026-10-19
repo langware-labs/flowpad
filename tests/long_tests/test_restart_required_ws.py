@@ -179,7 +179,7 @@ def _resync_hash(tc, proc_id: str) -> None:
 GENERIC_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("workdir",                    {"workdir": "/tmp/restart_required_test"}),
     ("additional_dirs",            {"additional_dirs": ["/tmp/restart_required_extra"]}),
-    ("embedded_agent_ids",         {"embedded_agent_ids": ["legacy_persona"]}),
+    ("embedded_subagent_ids",      {"embedded_subagent_ids": ["legacy_persona"]}),
     ("shell_mode",                 {"shell_mode": True}),
     ("session_id",                 {"session_id": str(uuid.uuid4())}),
 ]
@@ -293,6 +293,7 @@ def test_restart_required_full_cycle(
 ):
     """For one isolated tracked field: flag ON → restart-equivalent → flag OFF."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -353,6 +354,7 @@ def test_restart_required_full_cycle(
 def test_negative_field_does_not_flip(worker_type: str, label: str, payload: dict[str, Any]):
     """Mutating a non-tracked field must NOT flip restart_required."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -395,6 +397,7 @@ def test_negative_field_does_not_flip(worker_type: str, label: str, payload: dic
 def test_not_running_gate_blocks_flip(worker_type: str):
     """When status != RUNNING, mutating a tracked field must NOT flip the flag."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -449,6 +452,7 @@ def test_external_set_via_api(worker_type: str):
     that an external dependency changed). The save-hook only flips ON; clearing
     is at the caller's discretion."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -500,6 +504,7 @@ def test_external_set_via_api(worker_type: str):
 def test_no_op_save_does_not_flip(worker_type: str):
     """Saving with no actual config change must not flip the flag."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
@@ -537,6 +542,7 @@ def test_no_op_save_does_not_flip(worker_type: str):
 def test_two_consecutive_mutations_stays_true(worker_type: str):
     """Two tracked mutations without a restart between: flag stays True."""
     from starlette.testclient import TestClient
+
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:

@@ -1,23 +1,23 @@
 """Desktop DB management action — thin HTTP wrappers over flow_sdk.system_tools."""
 
 import logging
-from flow_sdk._compat import StrEnum
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 from flow_sdk.system_tools import (
-    get_backup_folder,
-    get_db_folder,
-    get_db_settings,
-    get_database_paths,
-    get_database_stats,
-    get_logs_folder,
-    open_folder,
     archive,
     backup_db,
     clear_all_data,
     clear_index,
+    get_backup_folder,
+    get_database_paths,
+    get_database_stats,
+    get_db_folder,
+    get_db_settings,
+    get_logs_folder,
+    open_folder,
     restore,
     set_db_path,
 )

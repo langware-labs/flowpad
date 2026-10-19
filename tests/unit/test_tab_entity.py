@@ -20,7 +20,13 @@ import pytest
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.builtin.tab import Tab, delete_tabs_for_missing_project, ensure_tab, tab_id_for
+from flow_sdk.builtin.tab import (
+    Tab,
+    _pointer_is_adoptable_child,
+    delete_tabs_for_missing_project,
+    ensure_tab,
+    tab_id_for,
+)
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -288,6 +294,47 @@ async def test_parent_tab_id_set_on_create() -> None:
 
 
 @pytest.mark.asyncio
+async def test_workspace_host_never_reaches_the_stored_pointer() -> None:
+    """The vibe host rides in the client's URL options, never in Tab.pointer.
+
+    That is what keeps tab identity — and therefore every stored row and this
+    adoptability rule — unchanged by the hosted-display URL. A composite pointer
+    reaching the backend means the client failed to lift it, and the row would
+    silently stop being a workspace child; ``_pointer_is_adoptable_child`` logs
+    it rather than refusing in silence.
+    """
+    project_id = str(uuid.uuid4())
+    asset_id = str(uuid.uuid4())
+    tail = f"editor/markdown/typeid/markdown-{asset_id}"
+
+    # What the client actually stores for a hosted document: no host.
+    assert _pointer_is_adoptable_child(_jptr("project", f"{project_id}/{tail}"))
+    # The composite form is refused (and logged) rather than quietly adopted.
+    assert not _pointer_is_adoptable_child(
+        _jptr("project", f"{project_id}/process/agentic_process-{uuid.uuid4()}/display/{tail}")
+    )
+
+
+@pytest.mark.asyncio
+async def test_raw_editor_pointer_is_adoptable_but_empty_editor_is_not() -> None:
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+
+    raw_file = await ensure_tab(
+        _jptr("editor", "/tmp/project/main.py"),
+        parent_tab_id=parent.id,
+    )
+    assert raw_file.parent_tab_id == parent.id
+
+    import json as _j
+
+    empty_editor = await ensure_tab(
+        _j.dumps({"viewType": "editor", "pointer": ""}),
+        parent_tab_id=parent.id,
+    )
+    assert empty_editor.parent_tab_id is None
+
+
+@pytest.mark.asyncio
 async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
     # A tab already open with no parent gets adopted when reopened from inside a
     # workspace; a later reopen with no hint (None) preserves the group.
@@ -364,6 +411,73 @@ async def test_list_read_sweeps_stale_parent_off_non_adoptable_row() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plain_shell_adopts_but_process_anchor_never_does() -> None:
+    # A terminal opened INSIDE a vibe workspace is content in its display, so a
+    # plain shell dock is an adoptable child. The process's own dock shares the
+    # `shell` viewType and is told apart only by its pointer — it is the
+    # workspace ANCHOR, and adopting it nests a workspace inside itself.
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+
+    terminal = await ensure_tab(
+        _jptr("shell", f"shell-{uuid.uuid4()}"),
+        target_type="shell",
+        target_id="sh-child",
+        parent_tab_id=parent.id,
+    )
+    assert terminal.parent_tab_id == parent.id, "a plain terminal is workspace content"
+
+    anchor_ptr = _jptr("shell", f"agentic_process-{uuid.uuid4()}")
+    anchor = await ensure_tab(
+        anchor_ptr,
+        target_type="agentic_process",
+        target_id=str(uuid.uuid4()),
+        parent_tab_id=parent.id,
+    )
+    assert anchor.parent_tab_id is None, "a process anchor is never a child (create)"
+
+    # …and the hint stays dropped when the same row is reopened.
+    reopened = await ensure_tab(anchor_ptr, parent_tab_id=parent.id)
+    assert reopened.id == anchor.id
+    assert reopened.parent_tab_id is None, "a process anchor is never a child (reopen)"
+
+
+@pytest.mark.asyncio
+async def test_list_read_keeps_a_plain_shell_child_but_sweeps_a_process_child() -> None:
+    # The bulk sweep runs on EVERY list read: if it disagreed with the adopt
+    # gate, a terminal's parent edge would be written and then stripped seconds
+    # later, leaving the workspace half-working.
+    from flow_sdk.builtin.shell import Shell
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    # A REAL Shell row: a shell-targeted tab whose entity is gone is hard-deleted
+    # by the missing-target sweep, which would mask what this test asserts.
+    shell = Shell(name=f"sweep-{uuid.uuid4().hex[:8]}")
+    await shell.save()
+    terminal = await ensure_tab(
+        _jptr("shell", f"shell-{shell.id}"),
+        target_type="shell",
+        target_id=str(shell.id),
+        parent_tab_id=parent.id,
+    )
+    # A process-pointer row force-fed a parent edge must still heal.
+    anchor = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    anchor.parent_tab_id = parent.id
+    await anchor.save()
+
+    await _build_tab_list(None)
+
+    kept = await Tab.get_one({"id": terminal.id})
+    assert kept is not None and kept.parent_tab_id == parent.id, (
+        "the sweep must not strip a plain terminal's workspace edge"
+    )
+    healed = await Tab.get_one({"id": anchor.id})
+    assert healed is not None and healed.parent_tab_id is None, (
+        "the sweep must still null-heal a process anchor carrying a parent edge"
+    )
+
+
+@pytest.mark.asyncio
 async def test_parent_tab_id_never_self() -> None:
     # Guard: a tab is never made its own parent (backend defense; the client
     # registers the display tab as parent and could re-materialize the display).
@@ -375,20 +489,27 @@ async def test_parent_tab_id_never_self() -> None:
 
 
 @pytest.mark.asyncio
-async def test_parent_soft_close_leaves_children_intact() -> None:
-    # Parent close is soft and never touches children — they stay ordinary
-    # global tabs; the deterministic id regroups them when the parent reopens.
-    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+async def test_closing_a_host_closes_its_children() -> None:
+    # A workspace does not outlive its tab: closing the HOST soft-closes every
+    # nested child with it. The edge is kept, so reopening a child from inside the
+    # workspace regroups it under the same deterministic parent id.
+    parent = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
         _jptr("assets", "editor/markdown/typeid/markdown-x"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
+    )
+    other_host = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
+    stranger = await ensure_tab(
+        _jptr("assets", "editor/markdown/typeid/markdown-y"), target_type="markdown", target_id="md-other", parent_tab_id=other_host.id
     )
 
     await parent.close()
 
     reloaded = await Tab.get_one({"id": child.id})
     assert reloaded is not None
-    assert reloaded.visible is True, "child stays visible when parent soft-closes"
-    assert reloaded.parent_tab_id == parent.id, "soft-close preserves the group edge"
+    assert reloaded.visible is False, "a host's child closes with it"
+    assert reloaded.parent_tab_id == parent.id, "the group edge survives for a reopen"
+    other = await Tab.get_one({"id": stranger.id})
+    assert other is not None and other.visible is True, "another host's children are untouched"
 
 
 @pytest.mark.asyncio
@@ -616,11 +737,18 @@ async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
     # is the Global/projectless view.
     from flow_sdk.builtin.tab import _build_list, _http_list_all
 
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
     tag = uuid.uuid4()
-    pa = f"proj-a-{tag}"
-    pb = f"proj-b-{tag}"
+    # REAL Project rows. These were once bare `proj-a-<tag>` strings, which
+    # survived only on the reaper's since-removed non-UUID exemption (see
+    # test_missing_project_cleanup_reaps_non_uuid_project_id). This test is
+    # about list SCOPING, so it owns projects that actually exist.
+    pa = str(uuid.uuid4())
+    pb = str(uuid.uuid4())
+    await Project(id=pa, name=f"tab-list-a-{pa[:8]}").save()
+    await Project(id=pb, name=f"tab-list-b-{pb[:8]}").save()
     # Live Shell rows so the target reap keeps these terminal tabs (a shell tab
     # whose Shell is absent is now reaped as a dead session, same as agentic_process).
     sa = Shell(id=str(uuid.uuid4()))
@@ -733,6 +861,34 @@ async def test_rename_reflects_onto_target_generically() -> None:
     assert reloaded is not None and reloaded.name == "my pinned name"
 
 
+@pytest.mark.asyncio
+async def test_agentic_process_rename_reflects_without_tab_fs_shadow() -> None:
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.flowpad_types.enums import WorkerType
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
+
+    process = AgenticProcess(
+        name="original",
+        auto_rename=True,
+        worker_type=WorkerType.CLAUDE_CODE,
+    )
+    await process.save()
+    tab = await ensure_tab(
+        f"shell/agentic_process-{process.id}",
+        target_type=AgenticProcess.get_type(),
+        target_id=process.id,
+    )
+
+    await tab.rename("my pinned process")
+
+    reloaded_tab = await Tab.get_one({"id": tab.id})
+    reloaded_process = await AgenticProcess.get_one({"id": process.id})
+    assert reloaded_tab is not None and reloaded_tab.name == "my pinned process"
+    assert reloaded_process is not None and reloaded_process.name == "my pinned process"
+    assert reloaded_process.auto_rename is False
+    assert not shadow_dir_for(Tab.get_type(), tab.id).exists()
+
+
 # ── Scope-keyed identity (assets/explorer): tabHash drives the uuid5 ─────────
 #
 # A scope-keyed dock normalizes its sub-pointer to '' and carries its identity
@@ -757,6 +913,23 @@ def _scoped_pointer(view: str, project_id: str) -> str:
     )
 
 
+def _scoped_asset_content_pointer(project_id: str) -> str:
+    """Scope-keyed asset content keeps its identity plus the adoption bit."""
+    return _test_json.dumps(
+        {
+            "viewType": "assets",
+            "pointer": "",
+            "options": {
+                "scope-mode": "project",
+                "scope-activeProjectId": project_id,
+            },
+            "tabHash": f"assets|project:{project_id}",
+            "workspaceContent": True,
+        },
+        separators=(",", ":"),
+    )
+
+
 def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
     pa, pb = str(uuid.uuid4()), str(uuid.uuid4())
     a = tab_id_for(_scoped_pointer("explorer", pa))
@@ -768,6 +941,42 @@ def test_tab_id_prefers_tab_hash_and_stays_stable_without_it() -> None:
     # projects…) must hash byte-identically to the pre-change derivation.
     plain = _test_json.dumps({"viewType": "shell", "pointer": "agentic_process-x"})
     assert tab_id_for(plain) == tab_id_for("shell|agentic_process-x")
+
+
+@pytest.mark.asyncio
+async def test_scope_keyed_asset_content_keeps_parent_until_browser_root() -> None:
+    from flow_sdk.builtin.project import Project
+
+    project_id = str(uuid.uuid4())
+    await Project(id=project_id, name=f"tab-content-{project_id[:8]}").save()
+    parent = await ensure_tab(
+        _jptr("shell", f"shell-{uuid.uuid4()}"),
+        project_id=project_id,
+    )
+    content_pointer = _scoped_asset_content_pointer(project_id)
+    root_pointer = _scoped_pointer("assets", project_id)
+
+    child = await ensure_tab(
+        content_pointer,
+        target_type="markdown",
+        target_id=str(uuid.uuid4()),
+        project_id=project_id,
+        parent_tab_id=parent.id,
+    )
+    assert child.parent_tab_id == parent.id
+
+    # The wire list/reap pass must retain the URL-proven content edge.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    listed = await _build_tab_list(project_id)
+    listed_child = next(tab for tab in listed if tab.id == child.id)
+    assert listed_child.parent_tab_id == parent.id
+
+    # Navigating the same scope-keyed tab to its browser root keeps the uuid5
+    # identity but clears the no-longer-valid workspace edge.
+    root = await ensure_tab(root_pointer, project_id=project_id)
+    assert root.id == child.id
+    assert root.parent_tab_id is None
 
 
 @pytest.mark.asyncio
@@ -838,10 +1047,11 @@ async def test_ensure_tab_does_not_persist_synthetic_name() -> None:
     )
     assert not tab.name, "synthetic name must not be adopted as the durable label"
 
-    # A real name on the same pointer IS adopted (backfill of the null name).
+    # Loader hints are not authoritative for worker tabs, even when plausible.
+    # A missing process cannot supply a canonical title.
     again = await ensure_tab(p, target_type="agentic_process", target_id=target, name="Real title")
     assert again.id == tab.id
-    assert again.name == "Real title"
+    assert again.name is None
 
 
 # ── One-tab-per-process: parent invariant + legacy display-row reap ──────────
@@ -1084,3 +1294,167 @@ async def test_reap_cycle_emits_single_broadcast() -> None:
         assert bc.await_count == 1, (
             f"one reap cycle must coalesce to a single tabs_changed ping, got {bc.await_count}"
         )
+
+
+# ── the vibe workspace's ACTIVE DISPLAY (one replaceable row per workspace) ─────
+
+
+def _active_display_ptr(host: str, view_type: str, sub: str) -> str:
+    """The pointer the frontend stores for a workspace's active display.
+
+    Two halves that pull in opposite directions, deliberately: ``tabHash`` is the
+    HOST (constant — one row per workspace), while ``viewType``/``pointer`` are the
+    live target (they change on every ``flow show``). That is what makes the row
+    replaceable instead of one chip accumulating per show.
+    """
+    return _test_json.dumps(
+        {
+            "viewType": view_type,
+            "pointer": sub,
+            "options": {"activeDisplay": "1"},
+            "tabHash": f"workspaceActive|{host}",
+            "workspaceContent": True,
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_active_display_repoints_one_row_and_follows_its_target() -> None:
+    host = f"agentic_process-{uuid.uuid4()}"
+    project = str(uuid.uuid4())
+    first = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    second = _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+
+    a = await ensure_tab(first, name="first.md", icon_key="FileText")
+    b = await ensure_tab(second, name="second.md", icon_key="Presentation")
+
+    # ONE row: identity is the workspace, so the second show re-points the first.
+    assert a.id == b.id == tab_id_for(first) == tab_id_for(second)
+    assert b.pointer == second
+
+    # And its label FOLLOWS the target. The generic rule is backfill-only ("a null
+    # name was never a user rename"), which would freeze this chip on `first.md`
+    # forever — the one row whose target legitimately changes needs the exception.
+    assert b.name == "second.md"
+    assert b.icon_key == "Presentation"
+
+
+@pytest.mark.asyncio
+async def test_active_display_hash_is_not_mistaken_for_the_retired_display_view() -> None:
+    """The namespace must dodge the legacy-display reaper, which pre-filters on a
+    raw ``"display" in pointer`` substring before parsing. A ``workspace-display|``
+    spelling would pay that parse on every list read and sit one comparison away
+    from being hard-deleted by a sweep it has nothing to do with."""
+    from flow_sdk.builtin.tab import _LEGACY_DISPLAY_VIEW, _pointer_view_type
+
+    host = f"agentic_process-{uuid.uuid4()}"
+    ptr = _active_display_ptr(host, "project", f"{uuid.uuid4()}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    assert _pointer_view_type(ptr) != _LEGACY_DISPLAY_VIEW
+    assert "display" not in _pointer_view_type(ptr)
+
+
+@pytest.mark.asyncio
+async def test_active_display_stays_a_workspace_child() -> None:
+    """Adoption reads the RAW viewType/pointer, not the hash — so the active
+    display must still pass the allow-list, or the list-path reaper null-heals its
+    parent edge and it silently drops out of the workspace child strip."""
+    host = f"agentic_process-{uuid.uuid4()}"
+    project = str(uuid.uuid4())
+    assert _pointer_is_adoptable_child(
+        _active_display_ptr(host, "project", f"{project}/editor/markdown/typeid/markdown-{uuid.uuid4()}")
+    )
+    # A scope-keyed assets pointer rides on the `workspaceContent` bit.
+    assert _pointer_is_adoptable_child(_active_display_ptr(host, "assets", ""))
+    # An artifact-addressed app is workspace content too (addressable-screen rule).
+    assert _pointer_is_adoptable_child(_active_display_ptr(host, "app", f"artifact-{uuid.uuid4()}"))
+    # So is a web page — a terminal link opened in Vibe (frontend `isAdoptableChildDock` lists both).
+    assert _pointer_is_adoptable_child(_jptr("web-app", "url/aHR0cHMlM0ElMkYlMkZleGFtcGxlLmNvbQ"))
+
+
+@pytest.mark.asyncio
+async def test_ordinary_tab_keeps_its_user_chosen_name() -> None:
+    """The label exception is scoped to the active-display namespace: everywhere
+    else a stored name is still never clobbered on reopen."""
+    ptr = _jptr("editor", "/workspace/src/app.ts")
+    first = await ensure_tab(ptr, name="app.ts")
+    first.name = "my renamed tab"
+    await first.save()
+
+    again = await ensure_tab(ptr, name="app.ts")
+    assert again.name == "my renamed tab"
+
+
+@pytest.mark.asyncio
+async def test_missing_project_cleanup_reaps_non_uuid_project_id() -> None:
+    # RCA 2026-09-08: `_project_exists` exempted every non-UUID `project_id` as a
+    # "legacy/test identifier", so a UI fixture that reached a real backend
+    # (`project_id="proj-123"`, from share-remote-project-id.test.ts) left a Tab
+    # the reaper would never collect. The projects chip buckets tabs by the RAW
+    # `project_id` string, so that row rendered a permanent "Project unavailable
+    # (proj-123)" entry whose RECOVER could only ever 404 — recovery needs a
+    # `workdir` off a shell/agentic_process dependent, and a conversation tab has
+    # none. A non-UUID id is unresolvable by construction; it must be reaped, not
+    # exempted.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/non-uuid-project-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id="proj-123",
+    )
+
+    deleted = await delete_tabs_for_missing_project("proj-123")
+
+    assert deleted == 1
+    assert await Tab.get_one({"id": tab.id}) is None
+    # Same contract as the UUID path: row-only cleanup, target left intact.
+    reloaded_probe = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded_probe is not None and reloaded_probe.torn_down is False
+
+
+@pytest.mark.asyncio
+async def test_projectless_tab_is_never_reaped_as_missing_project() -> None:
+    # The counterpart guard: dropping the UUID shape gate must not turn a
+    # legitimately projectless (global) tab into an orphan. `project_id=None`
+    # still means "no owning project", never "owner is gone".
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/projectless-probe#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+        project_id=None,
+    )
+
+    assert await delete_tabs_for_missing_project(None) == 0
+    assert await Tab.get_one({"id": tab.id}) is not None
+
+
+@pytest.mark.asyncio
+async def test_reopen_with_no_hint_leaves_a_closed_parents_group() -> None:
+    """A link opened from a top-level tab (no parent hint) reuses the file's row.
+    If that row is still a child of a CLOSED workspace tab, the top bar hides it
+    as a child and has no parent chip to show instead — the link opens with no tab.
+    Reopening with no hint must make it top-level again."""
+    import json as _j
+
+    # The exact pointer shape of the stranded prod row (a project-scoped html editor).
+    p = _j.dumps(
+        {
+            "viewType": "project",
+            "pointer": f"{uuid.uuid4()}/editor/html/vfs/compute_node-@local/tmp/nudge_backoffice_mock.html",
+        }
+    )
+    parent = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(p, parent_tab_id=parent.id)
+    assert child.parent_tab_id == parent.id
+
+    await parent.close()  # the user closes the workspace; the child row stays
+
+    reopened = await ensure_tab(p)  # the terminal link click: no parent hint
+    assert reopened.id == child.id
+    assert reopened.visible
+    assert reopened.parent_tab_id is None, (
+        "reopened tab is still grouped under a closed parent, so no tab chip can show it"
+    )

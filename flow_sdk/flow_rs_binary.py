@@ -37,27 +37,42 @@ FLOW_RS_ACCOUNT_SUFFIX = ".flow-rs"
 # OS keychain (tests run an in-memory keyring backend — see tests/conftest.py).
 ENV_DISABLE_VENDORED_FLOW_RS = "FLOWPAD_DISABLE_VENDORED_FLOW_RS"
 
-# Maps sys.platform -> (vendored sub-dir, binary filename).
-_PLATFORM_BINARIES = {
-    "darwin": ("darwin", "flow-rs"),
-    "win32": ("win32", "flow-rs.exe"),
-}
+# sys.platform -> the vendored sub-dir under ``flow_sdk/rust/bin/``.
+_PLATFORM_DIRS = {"darwin": "darwin", "win32": "win32"}
+
+
+def vendored_binary_path(name: str) -> Path | None:
+    """Path of the vendored binary ``name`` for the current OS, or None.
+
+    Pure location lookup — no policy. None on a platform that vendors no binaries
+    (e.g. Linux) or when ``name`` is not present in the installed package (a source
+    checkout that has not run the signing step).
+    """
+    subdir = _PLATFORM_DIRS.get(sys.platform)
+    if subdir is None:
+        return None
+    filename = name + (".exe" if sys.platform == "win32" else "")
+    path = Path(str(importlib.resources.files("flow_sdk") / "rust" / "bin" / subdir / filename))
+    return path if path.is_file() else None
+
+
+def ensure_executable(path: Path) -> Path:
+    """pip may not preserve the executable bit on package-data; restore it best-effort
+    so a subprocess can run the binary. (``.exe`` needs none.)"""
+    if sys.platform != "win32":
+        try:
+            mode = path.stat().st_mode
+            if not (mode & stat.S_IXUSR):
+                path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass  # read-only install dir; exec may still succeed
+    return path
 
 
 def vendored_flow_rs_path() -> Path | None:
-    """Return the path to the vendored signed ``flow-rs`` for the current OS.
-
-    Pure location lookup — no policy. Returns ``None`` on unsupported platforms
-    (e.g. Linux — no signed binary is vendored) or when the binary is not
-    present in the installed package (e.g. a source checkout that has not run
-    the signing step yet).
-    """
-    entry = _PLATFORM_BINARIES.get(sys.platform)
-    if entry is None:
-        return None
-    subdir, filename = entry
-    path = Path(str(importlib.resources.files("flow_sdk") / "rust" / "bin" / subdir / filename))
-    return path if path.is_file() else None
+    """Return the path to the vendored signed ``flow-rs`` for the current OS, or None
+    (see :func:`vendored_binary_path`)."""
+    return vendored_binary_path("flow-rs")
 
 
 def vendored_flow_rs_enabled() -> bool:
@@ -75,16 +90,7 @@ def _resolve_or_raise() -> Path:
     path = vendored_flow_rs_path()
     if path is None:
         raise RuntimeError("no vendored flow-rs binary available for this platform")
-    # pip may not preserve the executable bit on package-data; restore it
-    # best-effort so execfile/subprocess can run the binary. (.exe needs none.)
-    if sys.platform != "win32":
-        try:
-            mode = path.stat().st_mode
-            if not (mode & stat.S_IXUSR):
-                path.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        except OSError:
-            pass  # read-only install dir; exec may still succeed
-    return path
+    return ensure_executable(path)
 
 
 def flow_rs_get_restricted(service: str, account: str) -> str | None:

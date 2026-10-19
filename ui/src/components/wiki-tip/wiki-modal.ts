@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+import { createOverlayStore } from '@src/store/create-overlay-store';
 
 /**
  * Global store backing `openWikiModal(wikiword)` — pops a wiki page in a modal
@@ -7,27 +7,22 @@ import { create } from 'zustand';
  * URL-first rule governs tab/view/asset navigation, not transient overlays.
  * See docs/wikitip.md.
  */
-interface WikiModalStore {
-  open: boolean;
+export interface WikiModalTarget {
   wikiword: string;
-  space: string;
+  /** Wiki id/@uname or the project-scoped `@local` alias. Left undefined, the
+   *  modal looks the page up in the shipped docs (the assistant project's wiki)
+   *  — which is where every page a help affordance names actually lives. */
+  space?: string;
   /** Optional heading slug to scroll to once the page renders. */
   fragment?: string;
-  show: (wikiword: string, space?: string, fragment?: string) => void;
-  setOpen: (v: boolean) => void;
 }
 
-export const useWikiModalStore = create<WikiModalStore>((set) => ({
-  open: false,
-  wikiword: '',
-  space: '@local',
-  fragment: undefined,
-  show: (wikiword, space = '@local', fragment) => set({ open: true, wikiword, space, fragment }),
-  setOpen: (v) => set({ open: v }),
-}));
+const store = createOverlayStore<WikiModalTarget>();
+export const useWikiModalStore = store.useStore;
+export const closeWikiModal = store.close;
 
-/** Pop the wiki page `wikiword` (in `space`, default @local) in a modal,
- *  optionally scrolled to a heading `fragment`. */
-export function openWikiModal(wikiword: string, space = '@local', fragment?: string): void {
-  useWikiModalStore.getState().show(wikiword, space, fragment);
+/** Pop the wiki page `wikiword` in a modal, optionally scrolled to a heading
+ *  `fragment`. Pass `space` only for a page outside the shipped docs. */
+export function openWikiModal(wikiword: string, space?: string, fragment?: string): void {
+  store.open({ wikiword, space, fragment });
 }

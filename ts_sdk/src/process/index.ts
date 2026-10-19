@@ -14,8 +14,11 @@ export {
   WorkerModelTier,
   parseUIUri,
   isProcessRunning,
+  isProcessLive,
+  isProcessFailed,
   isProcessActive,
   isProcessStartable,
+  isProcessEnded,
   isWorkerRunning,
   isWorkerTerminal,
   hasWorkerStarted,
@@ -29,21 +32,26 @@ export {
   classifyExecutionMode,
   supportedExecutionModes,
 } from './agentic-types';
-export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
-export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL } from './status-labels';
+export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess, WorkerType } from './agentic-types';
+export { processIconTag } from './agentic-types';
+export { releaseWhenWatched } from './watch-lease';
+export { WORKER_STATUS_LABEL, PROCESS_STATUS_LABEL, workerStatusText } from './status-labels';
 
 export { AgenticProcess, AgenticProcessEventName } from './agentic-process';
 export type {
   AgenticProcessReportEventResult,
+  DisplayContextState,
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
+  SessionNameState,
   SpawnResult,
 } from './agentic-process';
+export type { AgentHookData, ProcessHookCallback } from './process-hooks';
 export { ProcessCounters, parseStatusReport } from './process-status-report';
 export type { ProcessStatusReport, ProcessCountersData, FocusedAsset } from './process-status-report';
 export { ProcessKind, ProcessType } from './process-types';
-export type { AssetDescriptor, AssetSource, AssetUsage, AssetUsageKind } from './asset-descriptor';
+export type { AssetScanIssue, AssetScanResult, AssetDescriptor, AssetSource, AssetUsage, AssetUsageKind, ProcessAssetUsage, ProcessAssetInventory } from './asset-descriptor';
 export {
   ASSET_SOURCE_LABEL,
   READONLY_ASSET_SOURCES,
@@ -71,3 +79,6 @@ export type {
   WizardProcessResult,
   WizardStatus,
 } from './wizard';
+
+// Which surface launches processes from this runtime — the app sets 'app' at boot.
+export { setLaunchSurface, launchSurfaceField, type LaunchSurface } from './launch-surface';

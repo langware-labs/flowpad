@@ -14,25 +14,28 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_store.placement import (
+from flow_sdk.assets.placement import (
     LAYOUT_REGISTRY,
     WORKER_PREFIX,
     AssetClass,
     HarnessType,
     Scope,
     family_subdir,
-    resolve_destination,
-    resolve_raw_file_destination,
-    root_for_scope,
+    untyped_fallback_class,
+    untyped_rel_subdir,
 )
+from flow_sdk.builtin.asset_placement import resolve_destination, root_for_scope
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 ALL_CLASSES = list(AssetClass)
 ALL_HARNESSES = list(HarnessType)
 ALL_SCOPES = list(Scope)
 
 # The authoritative support table — the declared replacement for the old
-# ``main_subdir.startswith(".claude")`` hack. Only INTERNAL is home-blocked;
+# ``main_subdir.startswith(".claude")`` hack. INTERNAL and PROJECT are
+# home-blocked (flowpad state, and untyped bytes that belong in a project);
 # SYSTEM is never a placement input for anyone.
 EXPECTED_SUPPORT = {
     (AssetClass.INTERNAL, Scope.USER): False,
@@ -44,12 +47,15 @@ EXPECTED_SUPPORT = {
     (AssetClass.SHARED, Scope.USER): True,
     (AssetClass.SHARED, Scope.PROJECT): True,
     (AssetClass.SHARED, Scope.SYSTEM): False,
-    (AssetClass.NONE, Scope.USER): True,
-    (AssetClass.NONE, Scope.PROJECT): True,
-    (AssetClass.NONE, Scope.SYSTEM): False,
     (AssetClass.REPO, Scope.USER): True,
     (AssetClass.REPO, Scope.PROJECT): True,
     (AssetClass.REPO, Scope.SYSTEM): False,
+    (AssetClass.DOCS, Scope.USER): True,
+    (AssetClass.DOCS, Scope.PROJECT): True,
+    (AssetClass.DOCS, Scope.SYSTEM): False,
+    (AssetClass.PROJECT, Scope.USER): False,
+    (AssetClass.PROJECT, Scope.PROJECT): True,
+    (AssetClass.PROJECT, Scope.SYSTEM): False,
 }
 
 
@@ -58,10 +64,11 @@ EXPECTED_SUPPORT = {
 def test_mount_cross_product(asset_class, harness):
     layout = LAYOUT_REGISTRY[asset_class]
     got = layout.mount("skills", harness=harness)
-    if asset_class == AssetClass.INTERNAL:
-        assert got == "skills"  # INTERNAL is harness-less: bare family, no prefix
-    elif asset_class == AssetClass.REPO:
+    if asset_class == AssetClass.REPO:
         assert got == "agentic-assets/skills"  # fixed root_prefix, harness ignored
+    elif not layout.harness_scoped:
+        # INTERNAL / DOCS / PROJECT are harness-less: bare family, no prefix.
+        assert got == "skills"
     else:
         assert got == f"{WORKER_PREFIX[harness]}/skills"
 
@@ -119,53 +126,158 @@ def test_shared_asset_copies_under_the_default_worker(tmp_path, worker):
         assert not (tmp_path / prefix / "skills" / "SKILL.md").exists()
 
 
-def test_raw_file_docs_vs_blob_split(tmp_path):
-    md = resolve_raw_file_destination(
-        "notes.md", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
-    )
-    blob = resolve_raw_file_destination(
-        "photo.png", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
-    )
-    assert md == tmp_path / ".claude" / "docs"
-    assert blob == tmp_path / ".claude" / "files"
+def test_untyped_file_falls_back_to_docs_or_project_root():
+    """No origin → markdown is a document, everything else is just project bytes.
+
+    Neither destination may be a dot-dir: the retired NONE class mounted
+    ``.claude/docs`` / ``.claude/files``, which no harness has ever read.
+    """
+    assert untyped_fallback_class("notes.md") == AssetClass.DOCS
+    assert untyped_fallback_class("photo.png") == AssetClass.PROJECT
+    assert untyped_rel_subdir("notes.md") == "docs"
+    assert untyped_rel_subdir("photo.png") == ""
 
 
-def test_internal_type_is_project_only(tmp_path):
-    # INTERNAL (e.g. markdown → docs) installs to a project, never to home.
+def test_untyped_file_follows_a_safe_origin_rel_path():
+    """The origin wins over the fallback: an untyped file returns to the position
+    it held in the sender's tree, which is the whole point of mirroring git."""
+    assert untyped_rel_subdir("notes.md", origin=LocalOrigin(rel_path="docs/guides/notes.md")) == "docs/guides"
+    assert untyped_rel_subdir("photo.png", origin=LocalOrigin(rel_path="assets/img/photo.png")) == "assets/img"
+    # A repo-ROOT file yields the root itself, not the fallback.
+    assert untyped_rel_subdir("photo.png", origin=LocalOrigin(rel_path="photo.png")) == ""
+
+
+def test_unsafe_origin_rel_path_falls_back_instead_of_escaping():
+    """``rel_path`` is sender-controlled and gets joined onto a local root, so a
+    traversal attempt must fall through to the class default — never escape."""
+    for evil in ("../../etc/passwd", "/etc/passwd", "C:/Windows/system32/x.md", ""):
+        assert untyped_rel_subdir("x.md", origin=LocalOrigin(rel_path=evil)) == "docs"
+
+
+def test_docs_type_reaches_both_scopes(tmp_path):
+    # markdown is DOCS: <root>/docs at project scope AND user scope (the latter
+    # is what migrated ~/.claude/docs content needs a home for).
     assert resolve_destination(
         "markdown", Scope.PROJECT, default_worker="claude", project_mount=tmp_path
     ) == tmp_path / "docs"
-    assert resolve_destination("markdown", Scope.USER, default_worker="claude") is None
+    assert resolve_destination("markdown", Scope.USER, default_worker="claude") is not None
 
 
 # ── Golden table: the permanent byte-identical guard ─────────────────────────
 # Type → (expected project-scope subdir, expected asset_class). This is the
-# authoritative placement contract: it must hold BEFORE the literals migrate
-# (via the derive shim), AFTER they migrate (explicit fields), and AFTER
-# ``main_subdir`` is deleted. Add a row when you add a file-backed type.
+# authoritative placement contract. Add a row when you add a file-backed type.
 GOLDEN = {
+    # Dot-dir families. Every one of these is a directory the harness ITSELF
+    # reads — see HARNESS_OWNED_FAMILIES below, which is the guard that keeps
+    # this half of the table honest.
     "skill": (".claude/skills", AssetClass.SHARED),
-    "agent": (".claude/agents", AssetClass.SHARED),
+    "subagent": (".claude/agents", AssetClass.SHARED),
     "command": (".claude/commands", AssetClass.HARNESS),
     "claude_rules": (".claude/rules", AssetClass.HARNESS),
-    "plan": (".claude/plans", AssetClass.HARNESS),
     "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
-    "whiteboard": (".claude/whiteboards", AssetClass.HARNESS),
-    "agentic_flow": (".claude/agentic-flows", AssetClass.HARNESS),
-    "agent_trace": (".claude/agent_traces", AssetClass.HARNESS),
-    "usage_report": (".claude/usage_reports", AssetClass.HARNESS),
-    "asset_cleanup_report": (".claude/cleanup_reports", AssetClass.HARNESS),
-    "markdown": ("docs", AssetClass.INTERNAL),
-    "markdown_index": ("docs", AssetClass.INTERNAL),
+    # Flowpad-native assets: the recursive agentic-assets/<type> hierarchy.
+    "agent": ("agentic-assets/agent", AssetClass.REPO),
     "spec": ("agentic-assets/spec", AssetClass.REPO),
     "task": ("agentic-assets/task", AssetClass.REPO),
-    "prompt": ("prompts", AssetClass.INTERNAL),
     "dataset": ("agentic-assets/dataset", AssetClass.REPO),
     "deck": ("agentic-assets/deck", AssetClass.REPO),
     "deck_template": ("agentic-assets/deck_template", AssetClass.REPO),
-    "spreadsheet": ("assets/spreadsheets", AssetClass.INTERNAL),
-    "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
+    "chart": ("agentic-assets/chart", AssetClass.REPO),
+    "journey": ("agentic-assets/journey", AssetClass.REPO),
+    "graph_workflow": ("agentic-assets/graph_workflow", AssetClass.REPO),
+    "agent_trace": ("agentic-assets/agent_trace", AssetClass.REPO),
+    "usage_report": ("agentic-assets/usage_report", AssetClass.REPO),
+    "asset_cleanup_report": ("agentic-assets/asset_cleanup_report", AssetClass.REPO),
+    "plan": ("agentic-assets/plan", AssetClass.REPO),
+    "prompt": ("agentic-assets/prompt", AssetClass.REPO),
+    "spreadsheet": ("agentic-assets/spreadsheet", AssetClass.REPO),
+    # Installed (received) transcripts. The harness's OWN store is elsewhere
+    # (~/.claude/projects, ~/.codex/sessions, ~/.copilot/session-state) and is
+    # read by the per-worker walkers, not by placement.
+    "claude_session": ("agentic-assets/claude_session", AssetClass.REPO),
+    "codex_session": ("agentic-assets/codex_session", AssetClass.REPO),
+    "copilot_session": ("agentic-assets/copilot_session", AssetClass.REPO),
+    # Free documents at the scope root — no container, no harness prefix.
+    "markdown": ("docs", AssetClass.DOCS),
+    "markdown_index": ("docs", AssetClass.DOCS),
 }
+
+# The ONLY family names flowpad may write inside a harness dot-dir, because they
+# are the only ones the harnesses themselves read:
+#   Claude Code  — https://code.claude.com/docs/en/claude-directory
+#   Copilot      — .github/skills (also accepts .claude/skills, .agents/skills)
+#   AGENTS.md    — .agents/AGENTS.md, .agents/skills
+# Adding a row here is a claim about ANOTHER tool's namespace: check its docs
+# first. If flowpad invented the directory, the type is REPO, not HARNESS.
+HARNESS_OWNED_FAMILIES = frozenset(
+    {
+        "skills",
+        "agents",
+        "commands",
+        "rules",
+        "workflows",
+        "output-styles",
+        "themes",
+        "plugins",
+        "projects",
+        "memory",
+        "agent-memory",
+    }
+)
+
+
+def test_no_squatting_in_harness_dot_dirs():
+    """Every harness-prefixed type mounts a family its harness actually reads.
+
+    The regression this locks out: flowpad quietly minting ``.claude/<whatever>``
+    for its own artifacts (charts, journeys, transcripts, usage reports),
+    which both misrepresents the file to anyone reading the repo and collides the
+    day Claude Code claims the name.
+    """
+    from flow_sdk.assets.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+
+    offenders = {
+        name: info.family
+        for name in SchemaRegistry.get_all_types()
+        if (info := SchemaRegistry.get(name)) is not None
+        and info.asset_class
+        and info.family
+        and LAYOUT_REGISTRY[info.asset_class].harness_scoped
+        and info.family not in HARNESS_OWNED_FAMILIES
+    }
+    assert not offenders, (
+        f"these types write a harness dot-dir their harness never reads: {offenders}. "
+        "Flowpad-native assets belong in agentic-assets/<type> (AssetClass.REPO)."
+    )
+
+
+def test_only_harness_classes_mount_a_dot_dir():
+    """The CLASS-level half of the anti-squatting guard.
+
+    ``test_no_squatting_in_harness_dot_dirs`` iterates the type registry, so a
+    class with no TypeInfo is invisible to it — which is exactly how the retired
+    ``AssetClass.NONE`` got away with mounting ``.claude/docs`` and
+    ``.claude/files`` for untyped files. Assert the property on the LAYOUT table
+    itself, where a TypeInfo-less class cannot hide:
+
+      * only HARNESS and SHARED may be ``harness_scoped``;
+      * every other class's mount is free of a dot-dir segment, for every harness.
+    """
+    scoped = {c for c, layout in LAYOUT_REGISTRY.items() if layout.harness_scoped}
+    assert scoped == {AssetClass.HARNESS, AssetClass.SHARED}, (
+        f"{scoped - {AssetClass.HARNESS, AssetClass.SHARED}} mount inside a harness "
+        "dot-dir. Only assets a harness actually reads may live there."
+    )
+
+    for asset_class, layout in LAYOUT_REGISTRY.items():
+        if asset_class in scoped:
+            continue
+        for harness in ALL_HARNESSES:
+            mount = layout.mount("anything", harness=harness)
+            assert not any(seg.startswith(".") for seg in mount.split("/") if seg), (
+                f"{asset_class} mounts {mount!r} — a harness-less class must never "
+                "produce a dot-dir segment."
+            )
 
 
 @pytest.mark.parametrize("type_name,expected", list(GOLDEN.items()))
@@ -187,14 +299,14 @@ def test_golden_placement_contract(type_name, expected, tmp_path):
     if asset_class == AssetClass.INTERNAL:
         assert user_dest is None
     else:
-        assert user_dest == root_for_scope(Scope.USER) / subdir
+        assert user_dest == root_for_scope(Scope.USER, asset_class=asset_class) / subdir
 
 
 def test_only_skills_and_agents_fan_out():
     # Only skills/agents are SHARED (the families syncmd actually mirrors);
     # every other .claude family is claude-only (HARNESS), no fan-out.
     shared = {t for t, (_, ac) in GOLDEN.items() if ac == AssetClass.SHARED}
-    assert shared == {"skill", "agent"}
+    assert shared == {"skill", "subagent"}
 
 
 def test_claude_md_stays_unplaced():
@@ -221,21 +333,83 @@ def test_repo_supports_both_scopes():
     assert layout.fan_out is False
 
 
+def test_agent_main_ref_uses_backend_slug_and_bundle_layout(tmp_path):
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.fs_store.fs_record import FSRecord
+
+    ref = FSRecord(type="agent").compute_asset_ref(tmp_path, Agent(name="Q"))
+
+    assert ref is not None
+    assert ref._path == tmp_path / "agentic-assets" / "agent" / "q"
+
+
+def test_owned_create_target_rejects_a_nonempty_agent_bundle(tmp_path):
+    from flow_sdk.assets.creation import (
+        AssetPathCollisionError,
+        assert_create_target_available,
+    )
+
+    bundle = tmp_path / "agentic-assets" / "agent" / "q"
+    bundle.mkdir(parents=True)
+    (bundle / "avatar.png").write_bytes(b"approved-image")
+    info = SchemaRegistry.get("agent")
+
+    with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
+        assert_create_target_available(
+            info, bundle / info.shape.main, entity_type="agent", name="Q"
+        )
+
+
+def test_owned_create_target_adopts_a_carrier_that_is_this_entitys_own(tmp_path):
+    """An occupied carrier whose identity capsule names THIS entity is not a
+    competing bundle — re-materializing it (hub receive re-creating a row, a
+    re-scan after a local delete, two instances sharing one ``user_home``) must
+    adopt it. A DIFFERENT id in the capsule still collides."""
+    from flow_sdk.assets.creation import (
+        AssetPathCollisionError,
+        assert_create_target_available,
+    )
+    from flow_sdk.fs_store.fs_ref import FSRef
+
+    mine = "1b2d6c12-026e-456c-a9ab-ee66951758da"
+    theirs = "8a4d1e77-0000-4000-8000-0000000000ff"
+    bundle = tmp_path / "agentic-assets" / "agent" / "q"
+    bundle.mkdir(parents=True)
+    main = bundle / "agent.json"
+    main.write_text('{"type": "agent", "name": "q"}\n')
+    info = SchemaRegistry.get("agent")
+    assert info.shape.main == main.name
+    info.stamp_id(FSRef(main), mine)
+    assert resolve_id(info, FSRef(main)) == mine
+
+    # Same entity → adopted, no raise.
+    assert_create_target_available(
+        info, main, entity_type="agent", name="Q", entity_id=mine
+    )
+
+    # Another entity's carrier, and an unidentified caller, both still collide.
+    for other in (theirs, None):
+        with pytest.raises(AssetPathCollisionError, match="already exists in this scope"):
+            assert_create_target_available(
+                info, main, entity_type="agent", name="Q", entity_id=other
+            )
+
+
 @pytest.mark.parametrize("scope", [Scope.USER, Scope.PROJECT])
 def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
     # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a
     # transiently-registered fixture type so PR-1 doesn't depend on a migrated type.
+    from flow_sdk.assets.layout import Folder
     from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 
     SchemaRegistry.register(
-        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture",
-                 main_layout="folder")
+        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture", shape=Folder())
     )
     try:
         dest = resolve_destination(
             "repo_fixture", scope, default_worker="claude", project_mount=tmp_path
         )
-        expected_root = tmp_path if scope == Scope.PROJECT else root_for_scope(Scope.USER)
+        expected_root = tmp_path if scope == Scope.PROJECT else root_for_scope(Scope.USER, asset_class=AssetClass.REPO)
         assert dest == expected_root / "agentic-assets" / "repo_fixture"
     finally:
         SchemaRegistry._types.pop("repo_fixture", None)

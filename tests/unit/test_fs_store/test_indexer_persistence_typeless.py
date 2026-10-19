@@ -29,7 +29,7 @@ from sqlalchemy import text
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
+from flow_sdk.fs_store.indexer.walkers.generic import walker_for
 from flow_sdk.fs_store.record_types import RecordType
 
 
@@ -55,7 +55,7 @@ async def test_typeless_record_update_advances_updated_date(tmp_path: Path) -> N
     the stored value. Before the from_record fix this silently regressed.
     """
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     md = docs / "x.md"
     md.write_text("# initial\n", encoding="utf-8")
@@ -65,7 +65,7 @@ async def test_typeless_record_update_advances_updated_date(tmp_path: Path) -> N
 
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
 
     r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     assert r1.per_type[RecordType.MARKDOWN].indexed == 1
@@ -94,7 +94,7 @@ async def test_typeless_record_single_row_no_duplicate_on_resync(tmp_path: Path)
     stays at 1 across multiple re-indexes.
     """
     root = tmp_path / "proj"
-    docs = root / ".claude" / "docs"
+    docs = root / "docs"
     docs.mkdir(parents=True)
     (docs / "only.md").write_text("# one\n", encoding="utf-8")
 
@@ -103,7 +103,7 @@ async def test_typeless_record_single_row_no_duplicate_on_resync(tmp_path: Path)
 
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, walker_for("markdown"))
 
     for i in range(3):
         new_ts = _time.time() + (i + 1) * 2

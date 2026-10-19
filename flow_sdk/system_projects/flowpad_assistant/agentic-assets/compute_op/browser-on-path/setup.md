@@ -1,0 +1,1 @@
+Agents drive a real Chromium browser, so this holds when Google Chrome or Microsoft Edge is installed — Edge ships with Windows, so on Windows it usually holds already. Otherwise install Google Chrome from https://www.google.com/chrome/ (macOS: `brew install --cask google-chrome`; Debian/Ubuntu: the `chromium` package).

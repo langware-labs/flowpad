@@ -2,13 +2,19 @@ import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
 import { type EventLayer, type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useSnifferPipeline, parsePipelineFilters, SnifferScope, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
+import {
+  useSnifferPipeline,
+  parsePipelineFilters,
+  SnifferScope,
+  type PipelineFilters,
+} from '@src/hooks/use-sniffer-pipeline';
 import { EventOneLiner } from '@src/components/hooks/event-summaries';
 import { getEventColor, getEventIcon, navigateToTranscript } from '@src/components/hooks/event-utils';
 import { FilterMaskIndicator } from '@src/components/hooks/FilterMaskIndicator';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
+import { useCopied } from '@src/components/ui/copy-button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { usePreference } from '@src/hooks/use-preference';
@@ -162,23 +168,15 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
     return null;
   }, [displayEvents]);
 
-  const [copied, setCopied] = useState(false);
-  const [copiedPath, setCopiedPath] = useState(false);
+  const { copied, copy: copyJson } = useCopied(2000);
+  const { copied: copiedPath, copy: copyPath } = useCopied();
   const [copiedEventId, setCopiedEventId] = useState<string | null>(null);
-  const handleCopyJson = useCallback(() => {
-    void navigator.clipboard.writeText(jsonTrace).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [jsonTrace]);
+  const handleCopyJson = useCallback(() => void copyJson(jsonTrace), [copyJson, jsonTrace]);
 
   const handleCopyPath = useCallback(() => {
     if (!transcriptPath) return;
-    void navigator.clipboard.writeText(transcriptPath).then(() => {
-      setCopiedPath(true);
-      setTimeout(() => setCopiedPath(false), 1500);
-    });
-  }, [transcriptPath]);
+    void copyPath(transcriptPath);
+  }, [copyPath, transcriptPath]);
 
   const handleCopyEvent = useCallback((e: React.MouseEvent, event: SnifferEvent) => {
     e.stopPropagation();
@@ -202,7 +200,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
 
     if (!targetId && selectedTimestamp) {
       const targetMs = new Date(selectedTimestamp).getTime();
-      // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
+
       let closest: SnifferEvent | null = null;
       let closestDiff = Infinity;
       for (const e of displayEvents) {
@@ -279,14 +277,18 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
       {/* Header */}
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
         <Radio className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium"><Trans>Events</Trans></span>
+        <span className="text-sm font-medium">
+          <Trans>Events</Trans>
+        </span>
         <Badge variant="secondary" className="text-[10px]">
           {filteredEvents.length}
         </Badge>
 
         {/* Max events slider */}
         <div className="flex items-center gap-1.5">
-          <span className={FILTER_LABEL}><Trans>Limit</Trans></span>
+          <span className={FILTER_LABEL}>
+            <Trans>Limit</Trans>
+          </span>
           <input
             type="range"
             min={10}
@@ -299,14 +301,16 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
           <span className="text-[10px] tabular-nums text-muted-foreground">{maxEvents}</span>
         </div>
 
-        <div className="ml-auto flex items-center gap-3">
+        <div className="ms-auto flex items-center gap-3">
           <FilterMaskIndicator mask={mask} onRemove={removeFilter} onClearAll={clearMask} />
 
           {/* Scope filter */}
           <div className="flex items-center gap-1.5">
-            <span className={FILTER_LABEL}><Trans>Scope</Trans></span>
+            <span className={FILTER_LABEL}>
+              <Trans>Scope</Trans>
+            </span>
             <div className="flex items-center rounded-md border bg-muted/50">
-              {([SnifferScope.All, SnifferScope.Project]).map((value, i) => (
+              {[SnifferScope.All, SnifferScope.Project].map((value, i) => (
                 <button
                   key={value}
                   className={cn(
@@ -314,8 +318,8 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                     filters.scope === value
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:text-foreground',
-                    i === 0 && 'rounded-l-[5px]',
-                    i === 1 && 'rounded-r-[5px]',
+                    i === 0 && 'rounded-s-[5px]',
+                    i === 1 && 'rounded-e-[5px]',
                   )}
                   onClick={() => handleFilterChange({ scope: value })}
                 >
@@ -329,7 +333,9 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
 
           {/* Layer filter */}
           <div className="flex items-center gap-1.5">
-            <span className={FILTER_LABEL}><Trans>Layers</Trans></span>
+            <span className={FILTER_LABEL}>
+              <Trans>Layers</Trans>
+            </span>
             <div className="flex items-center gap-1">
               {ALL_LAYERS.map((layer) => {
                 const isActive = activeLayers.includes(layer);
@@ -370,7 +376,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
           <div className="flex items-center rounded-md border bg-muted/50">
             <button
               className={cn(
-                'flex items-center gap-1 rounded-l-[5px] px-2 py-0.5 text-[10px] font-medium transition-colors',
+                'flex items-center gap-1 rounded-s-[5px] px-2 py-0.5 text-[10px] font-medium transition-colors',
                 !isJsonMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
               onClick={() => navigation.openLens('heartbeat', 'events', 'live')}
@@ -380,7 +386,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
             </button>
             <button
               className={cn(
-                'flex items-center gap-1 rounded-r-[5px] px-2 py-0.5 text-[10px] font-medium transition-colors',
+                'flex items-center gap-1 rounded-e-[5px] px-2 py-0.5 text-[10px] font-medium transition-colors',
                 isJsonMode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
               onClick={() => navigation.openLens('heartbeat', 'events', 'json')}
@@ -452,7 +458,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                   >
                     {/* Main row */}
                     <div className="flex items-center gap-2 px-4 py-2">
-                      <span className="w-6 shrink-0 text-right font-mono text-[10px] text-green-700 dark:text-green-500">
+                      <span className="w-6 shrink-0 text-end font-mono text-[10px] text-green-700 dark:text-green-500">
                         {event.idx}
                       </span>
                       <button
@@ -465,7 +471,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                         {isExpanded ? (
                           <ChevronDown className="h-3.5 w-3.5" />
                         ) : (
-                          <ChevronRight className="h-3.5 w-3.5" />
+                          <ChevronRight className="h-3.5 w-3.5 rtl:-scale-x-100" />
                         )}
                       </button>
                       <Icon className={cn('h-4 w-4 shrink-0', getEventColor(event))} />
@@ -473,7 +479,7 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
                         {event.event_type}
                       </Badge>
                       <EventOneLiner event={event} className="min-w-0 flex-1 truncate text-xs text-muted-foreground" />
-                      <div className="ml-auto flex shrink-0 items-center gap-2">
+                      <div className="ms-auto flex shrink-0 items-center gap-2">
                         <button
                           className={cn(
                             'rounded p-0.5 transition-colors',

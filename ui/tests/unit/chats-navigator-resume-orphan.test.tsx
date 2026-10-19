@@ -54,8 +54,8 @@ function orphanEntry(): WorkerHistoryEntry {
     worker_type: 'claude',
     worker_id: '62ec5cf8-de6e-4786-ad0f-0e0c54f17a96',
     project_id: '72fac107-c8df-5ab0-8cd1-54edb97bbe71',
-    project_name: 'sapora-streams',
-    project_cwd: '/Users/alice/Flowpad workspace/sapora-streams',
+    project_name: 'acme-streams',
+    project_cwd: '/Users/alice/Flowpad workspace/acme-streams',
     last_active_time: '2026-06-26T20:31:52.385000Z',
     name: 'Debug missing session history',
     last_prompt: 'open the shell dock and click history',
@@ -80,7 +80,7 @@ describe('ChatsNavigator — resume orphan (no agentic_process_id) session', () 
   });
 
   it('opens via the worker-id heal instead of erroring "no resumable session"', async () => {
-    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], isLoading: false, refetch: vi.fn() });
+    mockUseWorkerHistory.mockReturnValue({ entries: [orphanEntry()], fetchedCount: 1, isLoading: false, refetch: vi.fn() });
 
     render(<ChatsNavigator />);
 

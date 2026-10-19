@@ -89,3 +89,48 @@ describe('chipStateFor — raw file rows', () => {
     expect(chipStateFor(false, fileInstalledProject, true)).toBe('installed');
   });
 });
+
+/**
+ * Project rows: a project the invite's bundle staged. Its hub-mirrored
+ * membership row resolves long before anything is cloned here, so — like a
+ * task — installed-ness comes from the MA row, never from entity resolution.
+ */
+describe('chipStateFor — project rows', () => {
+  const projectStaged = new MessageAttachment({
+    id: 'bbbbbbb1-1111-4111-8111-111111111111', asset_type: 'project', scope: null,
+  });
+  const projectInstalled = new MessageAttachment({
+    id: 'bbbbbbb2-2222-4222-8222-222222222222', asset_type: 'project', scope: 'user',
+  });
+
+  it('stays staged while the hub-mirrored row already resolves', () => {
+    expect(chipStateFor(true, projectStaged, true)).toBe('staged');
+  });
+
+  it('installed once its attachment is installed', () => {
+    expect(chipStateFor(true, projectInstalled, true)).toBe('installed');
+    expect(chipStateFor(false, projectInstalled, false)).toBe('installed');
+  });
+});
+
+/**
+ * GIT shares name one version. A row of an earlier share of the same asset
+ * resolving here must not mark a NEWER share installed — it would open the
+ * old version without a word. Installed-ness comes from this attachment.
+ */
+describe('chipStateFor — git shares', () => {
+  const gitStaged = new MessageAttachment({
+    id: 'bbbbbbb1-1111-4111-8111-111111111111', asset_type: 'markdown', transfer_mode: 'git', scope: null,
+  });
+  const gitInstalled = new MessageAttachment({
+    id: 'bbbbbbb2-2222-4222-8222-222222222222', asset_type: 'markdown', transfer_mode: 'git', scope: 'user',
+  });
+
+  it('stays staged while an older share of the same asset already resolves', () => {
+    expect(chipStateFor(true, gitStaged, true)).toBe('staged');
+  });
+
+  it('installed follows this attachment', () => {
+    expect(chipStateFor(true, gitInstalled, true)).toBe('installed');
+  });
+});

@@ -50,7 +50,7 @@ Relevant files:
 | Default terminal view | `/dock/shell`                                            | `loadShellRoute()` resolves a default terminal `Tab` with `loadNextProcess()` and redirects to a concrete shell/process pointer.                                                                                   |
 | New plain terminal    | `/dock/shell/new_terminal`                               | Creates a new `Shell`, then replaces the URL with `/dock/shell/shell-<shellId>`; this redirect-only URL is not materialized as a persistent Tab.                                                                   |
 | Plain shell tab       | `/dock/shell/shell-<shellId>` or `/dock/shell/<shellId>` | `setupTab(dock)` materializes the `Tab`, then `loadShell(shellId)` loads the Shell, resolves project/workdir, starts or reattaches the PTY, and clears process context.                                            |
-| Worker terminal tab   | `/dock/shell/agentic_process-<processId>`                | `setupTab(dock)` materializes the `Tab`, then `loadProcess(processId)` loads the process, resolves project/workdir, calls `process.start({ visible: true })`, resolves the linked Shell, and sets process context. |
+| Worker terminal tab   | `/dock/shell/agentic_process-<processId>`                | `setupTab(dock)` materializes the `Tab`, then `loadProcess(processId)` loads the process, resolves project/workdir, reuses a cached linked Shell, and sets process context; the mounted terminal view runs `process.start()`. |
 | Worker transcript     | `/dock/lens/<worker>/transcript/<sessionId>`             | Read-only transcript view. `AgenticProcess.dockPointer` defaults here once `session_id` is known; terminal-opening call sites must use `terminalDockPointer`.                                                      |
 
 `ViewType.AGENTIC_PROCESS` still exists and `ContentPanel` has a
@@ -66,15 +66,19 @@ All dock routes pass through `loadAgentApp()`. For any valid dock whose
 await setupTab(dock, { setupContent });
 ```
 
-The lifecycle wrapper first resolves/materializes the backend `Tab` row through
-`Tab.getFromDockPointer(dock)`, then runs the route-specific content setup. For
-terminal docks that setup is the existing shell/process FSM:
+On a cold landing the lifecycle wrapper first resolves/materializes the backend
+`Tab` row through `Tab.getFromDockPointer(dock)`, then runs the route-specific
+content setup. An already-open content-asset dock with the same tab identity skips
+the list/new-tab round trip, reruns only content setup, and returns no new
+`TabSetupResult.tab`; its existing backend row and lifecycle `tabId` remain
+authoritative. For terminal docks setup is the existing shell/process FSM:
 
 ```text
 loadShellRoute
-  -> loadShell or loadProcess
-  -> process.start({ visible: true }) for agentic processes
-  -> process.shell() / PTY attach
+  -> loadShell or loadProcess     # entity + project/context only; no process.start()
+  -> route commits, terminal view mounts
+  -> mounted view runs process.start({ visible: true, cols, rows, retry: true }) / PTY attach
+     (TabbedTerminal.tsx; loaders must not await PTY/WS side effects)
   -> terminal body can render
 ```
 
@@ -124,7 +128,6 @@ strip:
 
 - opener toolbar and menu items for Claude, Codex, Copilot, plain terminal,
   sandbox, docker, resume-by-id, and history
-- projects counter chip
 - history/resume/install modals
 - spawn locks and pending state
 

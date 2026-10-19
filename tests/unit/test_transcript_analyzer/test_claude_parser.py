@@ -17,6 +17,7 @@ from flow_sdk.transcript_analyzer import (
     UnknownEntry,
     UserMessageEntry,
 )
+from flow_sdk.transcript_analyzer.entries import WorkerUnavailableEntry
 from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
 
 
@@ -62,14 +63,14 @@ def test_entry_kind_breakdown(claude_jsonl):
     # cache_read + cache_write_1h) from the realistic usage block in the
     # fixture. 3 turns × 4 dims = 12 token_usage entries.
     assert counts == {
-            "meta": 5,
-            "user_message": 1,
-            "assistant_message": 1,
-            "tool_use": 1,
-            "shell_command": 1,
-            "system": 1,
-            "unknown": 1,
-            "token_usage": 12,
+        "meta": 5,
+        "user_message": 1,
+        "assistant_message": 1,
+        "tool_use": 1,
+        "shell_command": 1,
+        "system": 1,
+        "unknown": 1,
+        "token_usage": 12,
     }
 
 
@@ -168,6 +169,95 @@ def test_flowpad_embedded_agent_prompt_envelope_is_meta():
     assert entries[0].is_meta is True
 
 
+def test_a_background_task_notification_is_framework_injected_not_a_human_turn():
+    """Claude Code wakes the agent with a ``user`` row when background work ends. The user never typed it,
+    so it must read as machinery (a chip) and not as a chat turn from them."""
+    notification = (
+        "<task-notification>\n<task-id>bx0figo0o</task-id>\n<tool-use-id>toolu_01</tool-use-id>\n"
+        "<output-file>/tmp/tasks/bx0figo0o.output</output-file>\n<status>completed</status>\n"
+        '<summary>Background command "wait" completed (exit code 0)</summary>\n</task-notification>'
+    )
+
+    entries = ClaudeParser().feed(
+        {"type": "user", "uuid": "n1", "sessionId": "s", "message": {"role": "user", "content": notification}},
+        0,
+    )
+
+    assert len(entries) == 1 and isinstance(entries[0], UserMessageEntry)
+    assert entries[0].is_meta is True
+
+
+def test_a_typed_message_that_merely_mentions_a_task_notification_stays_a_human_turn():
+    entries = ClaudeParser().feed(
+        {
+            "type": "user",
+            "uuid": "u1",
+            "sessionId": "s",
+            "message": {"role": "user", "content": "why did I get a <task-notification> in the chat?"},
+        },
+        0,
+    )
+
+    assert entries[0].is_meta is False
+
+
+def test_weekly_limit_assistant_becomes_worker_unavailable():
+    entries = ClaudeParser().feed(
+        {
+            "type": "assistant",
+            "error": "rate_limit",
+            "isApiErrorMessage": True,
+            "apiErrorStatus": 429,
+            "uuid": "quota-event",
+            "sessionId": "quota-session",
+            "message": {
+                "model": "<synthetic>",
+                "stop_reason": "stop_sequence",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": ("You've hit your weekly limit · resets 3pm (Asia/Jerusalem)"),
+                    }
+                ],
+            },
+        },
+        0,
+    )
+
+    assert len(entries) == 1
+    entry = entries[0]
+    assert isinstance(entry, WorkerUnavailableEntry)
+    assert entry.reason == "quota_exhausted"
+    assert entry.worker == "claude"
+    assert entry.worker_type == "claude_code"
+    assert entry.provider_error == "rate_limit"
+    assert entry.status_code == 429
+    assert entry.recoverable_with_alternative is True
+
+
+@pytest.mark.parametrize(
+    "error_fields",
+    [
+        {"error": "rate_limit"},
+        {"isApiErrorMessage": True, "apiErrorStatus": "429"},
+    ],
+)
+def test_each_rate_limit_signal_is_sufficient(error_fields):
+    entries = ClaudeParser().feed(
+        {
+            "type": "assistant",
+            **error_fields,
+            "message": {
+                "content": [{"type": "text", "text": "Please try again later."}],
+            },
+        },
+        0,
+    )
+
+    assert isinstance(entries[0], WorkerUnavailableEntry)
+    assert entries[0].reason == "rate_limited"
+
+
 def test_meta_kind_propagation(claude_jsonl):
     t = AgentTranscriptFile("claude", claude_jsonl)
     metas = [e for e in t.entries if isinstance(e, MetaEntry)]
@@ -195,6 +285,7 @@ def test_system_entry_subtype(claude_jsonl):
 # line, all sharing the same ``message.id``. The parser owns folding
 # those back into one logical TranscriptEntry per message so the viewer
 # never has to dedup snapshots downstream.
+
 
 def test_multi_block_message_folds_to_one_assistant_entry(claude_multi_block_jsonl):
     """thinking+text+tool_use sharing a msg_id → one AssistantMessageEntry
@@ -255,6 +346,7 @@ def test_plan_mode_exit_attachment_becomes_exit_plan_mode_entry(tmp_path):
     (match_tool_name="ExitPlanMode") catches them unchanged.
     """
     import json
+
     sid = "22222222-2222-4222-8222-222222222222"
     plan_path = "/Users/sample/.claude/plans/sample.md"
     user_line = {
@@ -291,6 +383,7 @@ def test_plan_mode_exit_attachment_becomes_exit_plan_mode_entry(tmp_path):
 def test_plan_mode_attachment_without_planFilePath_is_not_promoted(tmp_path):
     """A plan_mode_exit attachment with no planFilePath stays as MetaEntry."""
     import json
+
     sid = "33333333-3333-4333-8333-333333333333"
     line = {
         "type": "attachment",
@@ -316,6 +409,4 @@ def test_multi_block_no_duplicate_entry_ids(claude_multi_block_jsonl):
     """
     t = AgentTranscriptFile("claude", claude_multi_block_jsonl)
     am_ids = [e.entry_id for e in t.entries if isinstance(e, AssistantMessageEntry)]
-    assert len(am_ids) == len(set(am_ids)), (
-        f"AssistantMessageEntry entry_ids must be unique; got {am_ids}"
-    )
+    assert len(am_ids) == len(set(am_ids)), f"AssistantMessageEntry entry_ids must be unique; got {am_ids}"

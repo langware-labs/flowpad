@@ -1,0 +1,39 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "The step id: the screen's data-step attribute and its #id deep link."
+    },
+    "app": {
+      "shape": "string",
+      "description": "The product the screen lives in (Flowpad, Google Cloud, GitHub)."
+    },
+    "title": {
+      "shape": "string",
+      "description": "What the user does on this screen, in a few words."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "The detail the reviewer should react to."
+    },
+    "branch_of": {
+      "shape": "?string",
+      "description": "The step id this one branches from (a failure, a cancel); absent on the main path."
+    },
+    "when": {
+      "shape": "?string",
+      "description": "When the branch happens, e.g. 'if denied'."
+    },
+    "next": {
+      "shape": "?string",
+      "description": "Where this screen goes on, when not the next main-path screen (a branch's Try again)."
+    },
+    "decisions": {
+      "shape": [
+        "mockify.decision"
+      ],
+      "description": "Open questions this screen asks."
+    }
+  }
+}

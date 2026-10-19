@@ -9,7 +9,7 @@ Reference for the current terminal toolbar and session controls in the frontend.
 This document describes the interactive PTY terminal UI. The same
 `AgenticProcess` entity can also run in CLI/headless mode, but headless mode
 does not render `InteractiveTerminal`, `ProcessToolbar`, xterm.js, gutters, or
-the restart overlay. See [PTY Mode vs CLI/Headless Mode](#6-pty-mode-vs-cliheadless-mode).
+the Restart button. See [PTY Mode vs CLI/Headless Mode](#6-pty-mode-vs-cliheadless-mode).
 
 ---
 
@@ -18,11 +18,11 @@ the restart overlay. See [PTY Mode vs CLI/Headless Mode](#6-pty-mode-vs-cliheadl
 1. [Component Hierarchy](#1-component-hierarchy)
 2. [ProcessToolbar](#2-processtoolbar)
 3. [Controls Reference](#3-controls-reference)
-   - [CLI Options Dropdown](#31-cli-options-dropdown)
-   - [Columns & Trace Dropdown](#32-columns--trace-dropdown)
+   - [Debug Menu — CLI Options](#31-debug-menu--cli-options)
+   - [Debug Menu — Gutters and Viewers](#32-debug-menu--gutters-and-viewers)
    - [Session Actions](#33-session-actions)
    - [API Timeout Toast](#34-api-timeout-toast)
-4. [RestartRequiredOverlay](#4-restartrequiredoverlay)
+4. [Restart Required Signal](#4-restart-required-signal)
 5. [InteractiveTerminal State](#5-interactiveterminal-state)
 6. [PTY Mode vs CLI/Headless Mode](#6-pty-mode-vs-cliheadless-mode)
 7. [Key Files Reference](#7-key-files-reference)
@@ -38,16 +38,21 @@ instead.
 ```text
 InteractiveTerminal.tsx
   |-- ProcessToolbar.tsx                 (Claude pane top bar)
-  |     |-- RestartRequiredOverlay.tsx   (pending CLI option changes)
-  |     |-- WorktreeButtons.tsx          (worktree-specific actions)
-  |     `-- PTYViewer                    (opened from Columns & Trace)
+  |     |-- InteractiveTabHeader.tsx     (the one layout: debug | title | modes | right)
+  |     |-- DebugMenu.tsx                (left, terminal surface only: CLI options, gutters, viewers)
+  |     |     `-- PTYViewer / PTYEventsViewer / CommandStatusViewer
+  |     |-- SessionSurfaceSwitch.tsx     (Terminal / Chat / Vibe)
+  |     `-- SessionActionsMenu.tsx       (the hamburger right of Fork: every other session action)
+  |           |-- SessionInfoPopover.tsx
+  |           `-- use-worktree-actions.ts (worktree-specific actions)
   |-- PaneBar.tsx                        (sidecar shell pane top bar)
   |-- ColumnHeaderBar.tsx                (trace/time/annotation column headers)
   |-- TraceGutter.tsx
   |-- TimeGutter.tsx
   |-- AnnotationGutter.tsx
-  |-- SideWindow                         (Git, Prompts, Queue, Files panels)
-  |-- SidecarShellTerminal.tsx
+  |-- side-windows/*                     (GitPanel, PromptIndexPanel, QueuePanel, AnalysisPanel,
+  |                                       SkillsAgentsPanel, InputFilesPanel, SimpleDirTree)
+  |-- ShellTerminal.tsx                 (a plain shell: sidecar, deployment console, snippet run)
   `-- TerminalBottomRibbon.tsx           (status, queue, side-tab toggles)
 ```
 
@@ -81,10 +86,11 @@ older `worker_session_id` name.
 
 **File**: `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx`
 
-`ProcessToolbar` is a compact top strip for an interactive `AgenticProcess`
-running in a PTY-backed shell. It groups CLI launch flags into one dropdown,
-groups trace/column display controls into another dropdown, and exposes session
-actions such as restart, fork, transcript, worktree, and plain-terminal launch.
+`ProcessToolbar` is the top strip of an `AgenticProcess` session, the same on
+every surface. It carries three things: a debug menu on the left (terminal
+surface only), Fork, and one session actions menu holding every other action —
+session info, transcript, assets, restart, plain-terminal launch, worktree and
+export.
 
 ### Props
 
@@ -107,23 +113,25 @@ actions such as restart, fork, transcript, worktree, and plain-terminal launch.
 const hasSession = !!process.session_id;
 const workerStatus = process.workerStatus;
 
-// Gates Restart, CLI option changes, and Apply.
-const started = process.status === ProcessStatus.RUNNING;
-
-// Gates Fork and Open Transcript.
-const hasTranscript =
-  hasSession &&
-  hasWorkerStarted(workerStatus) &&
-  workerStatus !== WorkerStatus.IDLE;
-
+// started: process is live RIGHT NOW (gates Restart, CLI flag toggles)
+const started = isProcessRunning(process.status);
+// hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
+const hasTranscript = hasSession && hasWorkerStarted(workerStatus) && workerStatus !== WorkerStatus.IDLE;
 const canFork = hasTranscript;
 const canToggle = started;
 const workdir = process.workdir ?? '';
 
-const currentChrome = process.cliOptions.chrome;
-const currentDanger = process.cliOptions.permission_mode === 'bypassPermissions';
-const currentDebug = process.cliOptions.debug;
+const cliCapabilities = getWorkerCliCapabilities(process.worker_type);
+const _cliOpts = process.cliOptions;
+const currentChrome = cliCapabilities.chrome && _cliOpts.chrome;
+const currentDanger = cliCapabilities.fullTrust && _cliOpts.permission_mode === 'bypassPermissions';
+const currentDebug = cliCapabilities.debug && _cliOpts.debug;
 ```
+
+`isProcessRunning` (`ts_sdk/src/process/agentic-types.ts`) is true for
+`STARTING`, `RUNNING`, and `STOPPING`. `getWorkerCliCapabilities`
+(`process-cli-presentation.ts`) says which flags the process's worker vendor
+supports; an unsupported flag reads as off and its checkbox is not rendered.
 
 The current source of truth for launch flags is `process.cliOptions`, backed by
 `cli_config`. The older doc model that read Chrome, permission mode, workdir, and
@@ -134,95 +142,128 @@ model from `context_data` is no longer accurate for the toolbar.
 Controls are laid out left to right:
 
 ```text
-[CLI Options] [Columns & Trace] <spacer>
-[Commit & Merge?] [Open Terminal?] [Fork?] [Open in Worktree?]
-[Restart] [Session Info?] [Open Transcript?] [Close?]
+[Debug?] <centered title> <spacer> [Terminal|Chat|Vibe?] | [Fork?] [Session actions ☰] [Close?]
 ```
 
-`Commit & Merge`, `Open Terminal`, `Fork`, and `Open in Worktree` are hidden when
-`embedded` is true. The `Close` button is shown only when `embedded` is true and
-`onClose` is provided. `Session Info` and `Open Transcript` render only after
-`process.session_id` is set.
+- **Debug** (`DebugMenu`) renders only on the terminal surface —
+  `useSessionSurface() === 'terminal'` — and in embedded
+  terminals, which are always an xterm. It never shows in Chat or Vibe.
+- The **surface switch**, the title and **Fork** are hidden when `embedded` is
+  true. The `Close` button is shown only when `embedded` is true and `onClose`
+  is provided.
+- **Session actions** (`SessionActionsMenu`) is always present. Its items, in
+  order:
 
-Session action icon buttons use a 300 ms tooltip delay. Disabled action buttons
-stay wrapped in a span so their tooltips still fire. The two dropdown trigger
-buttons use `title`, and the session info control opens a popover.
+| Section | Item | `data-testid` | Rendered when |
+|---------|------|---------------|---------------|
+| Session | Session info | `session-action-info` | `process.session_id` is set |
+| Session | Open transcript | `session-action-transcript` | `process.session_id` is set |
+| Session | Manage assets | `session-action-assets` | always |
+| Session | Restart session | `process-toolbar-restart` | always |
+| Workspace | Open terminal | `session-action-terminal` | not embedded |
+| Workspace | Open in Worktree | `session-action-worktree` | not embedded |
+| Workspace | Commit & Merge | `session-action-commit-merge` | not embedded, `process.cliOptions.worktree` |
+| Workspace | Download bundle | `entity-actions-export` | not embedded |
+
+A disabled item takes no pointer events, so a tooltip could never explain it;
+the reason is printed as the item's second line instead.
+
+Both menus are **non-modal** (`<DropdownMenu modal={false}>`): their items open
+dialogs and popovers, and a modal menu holds `pointer-events: none` on `body`
+while it is still closing — a dialog opening on top records that lock as the
+page's own and restores it on close, leaving the app unclickable.
+
+What an item opens:
+
+- **Session info** — a card hanging from the menu button (`PopoverAnchor` on the
+  trigger). It is opened from the menu's `onCloseAutoFocus`, once the menu has
+  finished closing: opened from the item's select, the card reads the menu's
+  dismissal as an interaction outside itself and closes at once.
+- **Manage assets** — `AssetManagerButton` in its `centered` form (a dialog, the
+  shape the asset board takes whenever a menu item opens it). It mounts on its
+  first open, not under every session's top bar.
+- **Download bundle** — `EntityShareDialog`.
 
 ---
 
 ## 3. Controls Reference
 
-### 3.1 CLI Options Dropdown
+### 3.1 Debug Menu — CLI Options
+
+**File**: `ui/src/components/terminal/interactive-terminal/DebugMenu.tsx`
+
+The first section of the debug menu (trigger: `Bug` icon, `aria-label="Debug"`,
+`data-testid="process-toolbar-debug"`).
 
 | Property | Value |
 |----------|-------|
-| Icon | `SlidersHorizontal` |
-| Active color | `text-amber-500 dark:text-amber-400` |
-| Active when | Any staged CLI option value is enabled: Chrome, Full Trust, or Debug |
-| Disabled items when | `process.status !== ProcessStatus.RUNNING` |
+| Trigger color | `text-amber-500 dark:text-amber-400` |
+| Active when | Any supported CLI option is enabled: Chrome, Full Trust, or Debug |
+| Section rendered when | The worker vendor supports at least one of the three flags |
+| Disabled items when | `!isProcessRunning(process.status)` |
 | Applies to | PTY mode only |
 
-The dropdown contains three `RichCheckboxItem` controls:
+The section contains up to three `RichCheckboxItem` controls, each rendered only
+when `cliCapabilities` supports it:
 
-| Label | Source | Pending state | CLI effect |
-|-------|--------|---------------|------------|
-| Chrome browser | `process.cliOptions.chrome` | `pendingChrome` | Adds `--chrome` |
-| Full Trust | `process.cliOptions.permission_mode === 'bypassPermissions'` | `pendingDanger` | Adds `--dangerously-skip-permissions` when true; stores `askUser` when false |
-| Debug logging | `process.cliOptions.debug` | `pendingDebug` | Adds `--debug` |
+| Label | Source | Shown when | CLI effect |
+|-------|--------|------------|------------|
+| Chrome browser | `process.cliOptions.chrome` | `cliCapabilities.chrome` | Adds `--chrome` |
+| Full Trust | `process.cliOptions.permission_mode === 'bypassPermissions'` | `cliCapabilities.fullTrust` | Adds `--dangerously-skip-permissions` when true; stores `askUser` when false |
+| Debug logging | `process.cliOptions.debug` | `cliCapabilities.debug` | Adds `--debug` |
 
-Changing a checkbox only stages local pending state. It does not immediately save
-or restart the process.
-
-```ts
-const hasPendingChanges =
-  pendingChrome !== currentChrome ||
-  pendingDanger !== currentDanger ||
-  pendingDebug !== currentDebug;
-```
-
-When pending values differ from the persisted `cli_config` values,
-`RestartRequiredOverlay` is rendered. Applying the overlay writes all staged CLI
-options to `process.cliOptions`, saves the process, then restarts the PTY:
+Changing a checkbox writes straight to the entity: `persistCliFlags` updates
+`process.cliOptions` and saves the process. It does not restart the PTY.
 
 ```ts
-const updatedCli = process.cliOptions;
-updatedCli.chrome = pendingChrome;
-updatedCli.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
-updatedCli.debug = pendingDebug;
-process.cliOptions = updatedCli;
-await process.save();
-await process.restart();
+const persistCliFlags = useCallback(
+  async (overrides: { chrome?: boolean; danger?: boolean; debug?: boolean }) => {
+    if (!canToggle) return;
+    const cli = process.cliOptions;
+    if (overrides.chrome !== undefined) cli.chrome = overrides.chrome;
+    if (overrides.danger !== undefined) cli.permission_mode = overrides.danger ? 'bypassPermissions' : 'askUser';
+    if (overrides.debug !== undefined) cli.debug = overrides.debug;
+    process.cliOptions = cli;
+    await process.save();
+  },
+  [process, canToggle],
+);
 ```
+
+The backend then flips `process.restart_required`, and the session actions
+button glows until the user restarts (see [Restart Required Signal](#4-restart-required-signal)).
 
 `AgenticProcess.cliOptions` is a getter/setter around `cli_config`. The getter
 also injects `session_id`, `workdir`, `CLAUDE_PROJECT_DIR`, and
 `additional_dirs`, so the toolbar should use `process.cliOptions` rather than
 reading those launch flags from `context_data`.
 
-**PTY mode**: the dropdown is available only in the interactive terminal, and
+**PTY mode**: the menu is available only on the terminal surface, and
 items are enabled only while the process lifecycle status is `RUNNING`. Changing
 these flags requires restarting the PTY so Claude Code is relaunched with the new
 CLI args.
 
-**CLI/headless mode**: this dropdown is not rendered. Headless callers set these
+**CLI/headless mode**: the debug menu is not rendered. Headless callers set these
 options when creating the process (`AgenticProcess.spawn` / `AgenticContext`) or
 by updating `cliOptions` programmatically before a future run. There is no
-toolbar overlay because there is no live xterm/Shell PTY to restart from the UI.
+Restart button because there is no live xterm/Shell PTY to restart from the UI.
 
-### 3.2 Columns & Trace Dropdown
+### 3.2 Debug Menu — Gutters and Viewers
+
+The remaining sections of the same menu: **Gutters**, the **Time Gutter Fields**
+submenu, and **Viewers**.
 
 | Property | Value |
 |----------|-------|
-| Icon | `BugPlay` |
-| Active color | `text-primary` |
+| Trigger color | `text-primary` (when no CLI option is on) |
 | Active when | Any column is hidden or any time-gutter field is enabled |
 | State owner | `InteractiveTerminal` |
 | Applies to | PTY mode only |
 
-This dropdown changes local terminal display state. It does not save the
+These sections change local terminal display state. It does not save the
 `AgenticProcess`, does not touch `cli_config`, and does not require restart.
 
-Column controls:
+Gutters:
 
 | Item | State | Behavior |
 |------|-------|----------|
@@ -231,7 +272,7 @@ Column controls:
 | Annotations | `colVis.annotations` | Shows or hides the right annotation gutter. |
 | Prompt annotations | `traceFilters.promptAnnotations` | Includes or filters prompt anchor annotations in the annotation gutter. |
 
-Time gutter field controls:
+Time Gutter Fields (submenu):
 
 | Item | State key | Meaning |
 |------|-----------|---------|
@@ -242,21 +283,31 @@ Time gutter field controls:
 | Row time range | `traceFilters.debugTime` | PTY segment duration |
 | Anchor time range | `traceFilters.refTime` | Anchor start/stop range |
 
-The dropdown also contains a `PTY Viewer` item that opens `PTYViewer` with the
-linked `shell` entity. This is meaningful only for PTY-backed sessions.
+The **Viewers** section opens `PTYViewer` and `PTYEventsViewer` with the linked
+`shell` entity, and `CommandStatusViewer` with the process. These are meaningful
+only for PTY-backed sessions.
 
-`InteractiveTerminal` persists these UI preferences to local storage keys:
+`InteractiveTerminal` persists these UI preferences through the preference
+registry (`ts_sdk/src/preferences/prefRegistry.ts`), not raw local storage:
 
 ```ts
-const LS_KEY = 'traceFilters';
-const COL_VIS_LS_KEY = 'colVisibility';
+const [traceFilters, setTraceFilters] = usePreference<TraceFilters>(PrefKey.TRACE_FILTERS);
+const [colVis, setColVis] = usePreference<ColVisibility>(PrefKey.COLUMN_VISIBILITY);
 ```
+
+The keys are `preferences.terminal.trace_filters` and
+`preferences.terminal.column_visibility`. The old `traceFilters` /
+`colVisibility` local-storage keys survive only as each entry's
+`legacyLocalStorageKey`.
 
 ### 3.3 Session Actions
 
+Fork is an icon button; everything else below is an item of the session actions
+menu (`SessionActionsMenu.tsx`).
+
 #### Commit & Merge
 
-**File**: `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx`
+**File**: `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` (`useCommitMerge`)
 
 Rendered only when all of the following are true:
 
@@ -269,7 +320,7 @@ Clicking injects a fixed commit-and-merge prompt into the live PTY via:
 shell?.sendInput(text + '\r')
 ```
 
-The button then watches `process.workerStatus`. Once the worker has been busy
+The hook then watches `process.workerStatus` (the item reads `Working…`). Once the worker has been busy
 and transitions back out of a running worker state, it calls
 `navigation.openShellView()`.
 
@@ -317,24 +368,24 @@ PTY. The toolbar then opens that process in a shell-process tab.
 
 #### Open in Worktree
 
-**File**: `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx`
+**File**: `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` (`useOpenInWorktree`)
 
 Rendered only when `embedded` is false.
 
-The button checks whether the current `workdir` is a git repository with at
-least one commit. It is disabled while that check is loading or when no commit
-exists. When clicked, it starts a new visible process in an isolated worktree:
+The hook checks whether the current `workdir` is a git repository with at
+least one commit — once the menu is opened, not for every header on screen. The
+item is disabled while that check is loading or when no commit exists. When clicked, it starts a new visible process in an isolated worktree:
 
 ```ts
 const { process: newProcess } = await AgenticProcess.spawn(
   {
     worktree: true,
     workdir,
-    permissionMode: process.cliOptions.permission_mode,
+    permissionMode: (process.cliOptions.permission_mode as 'bypassPermissions' | 'askUser') ?? 'askUser',
   },
   { visible: true },
 );
-navigation.openDock(newProcess.dockPointer);
+navigation.openDock(newProcess.terminalDockPointer);
 ```
 
 This is a PTY flow: `AgenticProcess.spawn` without `headless: true` calls
@@ -345,10 +396,11 @@ This is a PTY flow: `AgenticProcess.spawn` without `headless: true` calls
 | Property | Current behavior |
 |----------|------------------|
 | Icon | `RotateCcw` |
-| Disabled when | `process.status !== ProcessStatus.RUNNING` or `isRestarting` |
+| Disabled when | `!isProcessRunning(process.status)` or `isRestarting` |
+| Highlighted when | `process.restart_required && started` (the menu button glows too) |
 | Handler | `process.restart()` |
 
-The standalone Restart button is immediate and has no confirmation dialog.
+The Restart item is immediate and has no confirmation dialog.
 
 `AgenticProcess.restart()` stops the current shell session, starts it again, and
 emits `restarted`:
@@ -366,15 +418,18 @@ re-attaches the shell with `force: true`:
 shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true })
 ```
 
-The session history is preserved through `process.session_id`. Pending CLI
-option changes are saved only by the restart overlay's Apply action, not by the
-standalone Restart button.
+The session history is preserved through `process.session_id`. CLI option
+changes are already saved by the debug menu; Restart only relaunches
+the PTY so they take effect.
 
 #### Session Info
 
 Rendered only when `process.session_id` is set.
 
-The popover reads current values directly from the process entity and
+**File**: `ui/src/components/terminal/interactive-terminal/SessionInfoPopover.tsx`
+
+The popover has no trigger of its own: the menu item opens it and it hangs from
+the menu button. It reads current values directly from the process entity and
 `process.cliOptions`. Rows are copyable.
 
 | Label | Source |
@@ -406,14 +461,14 @@ Rendered only when `process.session_id` is set.
 |----------|------------------|
 | Icon | `ScrollText` |
 | Disabled when | `!hasTranscript` |
-| Handler | Discover `ClaudeSessionRecord`, then open the transcript lens |
+| Handler | Open the transcript lens for the process's vendor |
 
-Clicking resolves the encoded project name from
-`ClaudeSessionRecord.discover(sessionId)` when possible, falling back to
-`workdir.replace(/\//g, '-')`, then calls:
+Clicking opens the transcript lens directly. The lens category comes from the
+process (`claude`, `codex`, `copilot`, or `opencode`, derived from
+`worker_type`), never a literal, and the path is the bare session id:
 
 ```ts
-navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
+navigation.openLens(process.transcriptLensCategory, 'transcript', process.session_id!);
 ```
 
 #### Close
@@ -436,69 +491,30 @@ automatically.
 
 ---
 
-## 4. RestartRequiredOverlay
+## 4. Restart Required Signal
 
-**File**: `ui/src/components/terminal/interactive-terminal/RestartRequiredOverlay.tsx`
-
-The overlay appears when all staged CLI option values match this condition:
-
-```ts
-const hasPendingChanges =
-  pendingChrome !== currentChrome ||
-  pendingDanger !== currentDanger ||
-  pendingDebug !== currentDebug;
-
-{hasPendingChanges && canToggle && (
-  <RestartRequiredOverlay
-    onRestart={() => void handleApply()}
-    onCancel={handleCancelChanges}
-    isRestarting={isApplying}
-  />
-)}
-```
-
-`canToggle` is `process.status === ProcessStatus.RUNNING`, so the overlay is a
-PTY-session control for a currently running interactive process.
-
-### Props
-
-| Prop | Type | Description |
-|------|------|-------------|
-| `onRestart` | `() => void` | Bound to `handleApply`; saves pending `cli_config` and restarts. |
-| `onCancel` | `() => void` | Resets pending values to the persisted CLI options. |
-| `isRestarting` | `boolean` | Disables both buttons and shows a spinner while Apply is in flight. |
-
-### Visual Behavior
-
-The overlay renders as:
+There is no restart overlay and no staged (pending) CLI state. Restart awareness
+is backend-driven: any worker-relevant change (including a CLI flag saved from
+the debug menu) flips `process.restart_required`. Restart is an item of the
+session actions menu, so the signal is carried by the menu **button** in
+`SessionActionsMenu.tsx`, where it is visible with the menu closed:
 
 ```tsx
-<div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+<button
+  data-testid="process-toolbar-menu"
+  data-restart-required={restartRequired ? 'true' : 'false'}
+  aria-label={t`Session actions`}
+>
 ```
 
-Because `InteractiveTerminal` is a relative container, this blocks terminal
-interaction while pending launch-flag changes are unresolved. The centered card
-shows:
+While `process.restart_required && started`, the button pulses amber and its
+title reads `Restart required — config changed since start`; inside the menu the
+Restart item (`data-testid="process-toolbar-restart"`) is amber and prints the
+same line. The toolbar re-renders on the flag through `useSyncExternalStore`
+over `dataManager.subscribe(process.typeId, …)`.
 
-- `RotateCw` icon, spinning while applying.
-- Heading: `Restart Required`.
-- Subtext: `Flag changes require a terminal restart to take effect.`
-- `Cancel` and `Restart` buttons.
-
-### Apply vs Cancel
-
-Apply saves all three staged options (`chrome`, `permission_mode`, `debug`) to
-`process.cliOptions`, persists the process, then calls `process.restart()`.
-
-Cancel resets all three pending values:
-
-```ts
-setPendingChrome(currentChrome);
-setPendingDanger(currentDanger);
-setPendingDebug(currentDebug);
-```
-
-Cancel makes no network calls.
+Nothing blocks terminal interaction: the user keeps working and restarts when
+ready. Choosing Restart calls `process.restart()` (see [Restart](#restart)).
 
 ---
 
@@ -509,25 +525,26 @@ Cancel makes no network calls.
 ### Trace and Column State
 
 `InteractiveTerminal` owns trace and column preferences and passes them into
-`ProcessToolbar`.
+`ProcessToolbar`. Their defaults are the preference-registry entries in
+`ts_sdk/src/preferences/prefRegistry.ts` (an unset trace field reads as off):
 
 ```ts
-const DEFAULT_FILTERS: TraceFilters = {
-  events: true,
-  time: false,
-  index: false,
-  line: false,
-  absLine: false,
-  debugTime: false,
-  refTime: false,
-  promptAnnotations: false,
-};
-
-const DEFAULT_COL_VIS: ColVisibility = {
-  trace: true,
-  time: true,
-  annotations: true,
-};
+[PrefKey.TRACE_FILTERS]: {
+  key: PrefKey.TRACE_FILTERS,
+  legacyLocalStorageKey: 'traceFilters',
+  category: 'terminal',
+  label: 'Trace filters',
+  dataType: PrefDataType.JSON,
+  defaultValue: { events: true },
+},
+[PrefKey.COLUMN_VISIBILITY]: {
+  key: PrefKey.COLUMN_VISIBILITY,
+  legacyLocalStorageKey: 'colVisibility',
+  category: 'terminal',
+  label: 'Column visibility',
+  dataType: PrefDataType.JSON,
+  defaultValue: { trace: true, time: true, annotations: true },
+},
 ```
 
 Derived rendering state:
@@ -545,8 +562,11 @@ const showTimeGutter =
     traceFilters.debugTime ||
     traceFilters.refTime);
 
-const showAnnotationGutter = !!process?.session_id && colVis.annotations;
+const showAnnotationGutter = isAdvanced && !!process?.session_id && colVis.annotations;
 ```
+
+The annotation gutter is an advanced-view feature; `isAdvanced` is false in the
+standard view mode.
 
 `ColumnHeaderBar` is rendered only for the Claude pane. It provides quick hide
 and show controls for trace and annotation columns and a hide control for the
@@ -599,7 +619,7 @@ CLI/headless execution. The toolbar belongs to the PTY path only.
 | UI | `InteractiveTerminal`, xterm.js, `ProcessToolbar`, gutters, bottom ribbon | No terminal UI or toolbar |
 | Shell entity | Yes. `process.start()` opens/links a `Shell`, sets `shell_id`, `session_id`, and PTY id, then calls `Shell.attachPty(...)` | No shell is returned from the headless spawn path |
 | Input | Raw terminal input through `Shell.sendInput(...)`; toolbar can inject text into the PTY | HTTP actions such as `executeInstruction()` or `prompt()` |
-| CLI flags | Toolbar stages `process.cliOptions` changes and requires PTY restart | Set through `AgenticContext` / `cliOptions` before the headless run; no restart overlay |
+| CLI flags | Toolbar saves `process.cliOptions` changes; `restart_required` asks for a PTY restart | Set through `AgenticContext` / `cliOptions` before the headless run; no Restart button |
 | Restart | Toolbar calls `process.restart()` which stops and reopens the PTY | No restart button; callers use process APIs directly |
 | Fork | Toolbar calls `process.fork(true)` and opens the new process as a visible PTY | Programmatic callers can create/resume/fork with spawn options, but no toolbar exists |
 | Transcript | `process.session_id` identifies the Claude JSONL transcript and powers the transcript lens | Same transcript/session id model can be used without a PTY |
@@ -621,6 +641,7 @@ if (workerOptions?.headless) {
 
 await process.start({
   instruction: workerOptions?.instruction,
+  visible: workerOptions?.visible,
   ptyTimeout: workerOptions?.ptyTimeout,
 });
 return { process, shell: await process.shell(), workerSessionId: process.session_id };
@@ -642,9 +663,13 @@ execution.
 
 | File | Role |
 |------|------|
-| `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Top toolbar, grouped CLI options, trace dropdown, session actions, timeout toast, overlay mounting |
-| `ui/src/components/terminal/interactive-terminal/RestartRequiredOverlay.tsx` | Overlay UI for pending CLI option changes |
-| `ui/src/components/terminal/interactive-terminal/WorktreeButtons.tsx` | Commit-and-merge and open-in-worktree controls |
+| `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Top toolbar container: builds the debug, title, surface-switch and right slots; Fork and Close are the shared `CompactIconAction` |
+| `ui/src/components/terminal/interactive-terminal/InteractiveTabHeader.tsx` | The toolbar's one layout |
+| `ui/src/components/terminal/interactive-terminal/DebugMenu.tsx` | Debug menu: CLI options, gutters, time-gutter fields, raw-stream viewers (terminal surface only) |
+| `ui/src/components/terminal/interactive-terminal/SessionActionsMenu.tsx` | Session actions menu and the `restart_required` signal on its button |
+| `ui/src/components/terminal/interactive-terminal/SessionInfoPopover.tsx` | Session details card opened from the menu |
+| `ui/src/components/terminal/interactive-terminal/process-cli-presentation.ts` | `getWorkerCliCapabilities`: which CLI flags a worker vendor supports |
+| `ui/src/components/terminal/interactive-terminal/use-worktree-actions.ts` | Commit-and-merge and open-in-worktree actions |
 | `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx` | ProcessToolbar mounting, xterm/PTYSYNC lifecycle, gutters, sidecar shell, bottom ribbon |
 | `ui/src/components/terminal/interactive-terminal/ColumnHeaderBar.tsx` | Header controls for trace, time, and annotation columns |
 | `ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx` | Status dot, queue controls, plan button, side-tab toggles |
@@ -652,6 +677,6 @@ execution.
 | `ts_sdk/src/entities/shell.ts` | `Shell` entity and PTY lifecycle: start, attach, input, resize, reconnect, close |
 | `ts_sdk/src/process/agentic-context.ts` | Spawn/context options, including `headless` worker options and `outputFormat` |
 | `ts_sdk/src/process/agentic-types.ts` | `ProcessStatus`, `WorkerStatus`, `hasWorkerStarted`, and interactive vs CLI mode concepts |
-| `ts_sdk/src/cli_workers/claude-cli.ts` | `ClaudeCliOptions` serialization and CLI argument construction |
+| `ts_sdk/src/cli_workers/claude-cli.ts` | `ClaudeAgentOptions` serialization and CLI argument construction |
 | `ts_sdk/src/resource_management/fs_records/claude/claude-session.ts` | Transcript record discovery used by Open Transcript |
 | `ui/src/navigation/useDockNavigation.ts` | Navigation methods used by toolbar actions |

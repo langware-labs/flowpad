@@ -17,12 +17,24 @@ export type { HookEventData, UsageInfo } from '../claude_hook_events/hook-event-
  */
 export enum HookScope {
   USER = 'user', // ~/.claude/settings.json (or equivalent)
-  PROJECT = 'project', // .claude/settings.json (or equivalent)
-  LOCAL = 'local', // .claude/settings.local.json (or equivalent)
+  PROJECT = 'project', // <repo>/.claude/settings.json — committed to git
+  LOCAL = 'local', // <repo>/.claude/settings.local.json — gitignored
+  PROCESS = 'process', // per-AgenticProcess, handed over at launch
 }
 
 /**
- * Agent provider types
+ * Mirrors the Python `HookScope`. The first three are *global* — a persisted
+ * file the harness discovers on its own, so the hook fires for every run of
+ * that harness, including runs Flowpad never launched. `PROCESS` is *local*:
+ * argv the launcher supplies, so it exists only for a process Flowpad spawned.
+ *
+ * `LOCAL` is the pre-existing spelling of what Python calls `LOCAL_PROJECT`;
+ * same wire value, so settings written before the rename keep resolving.
+ */
+export const GLOBAL_HOOK_SCOPES = [HookScope.USER, HookScope.PROJECT, HookScope.LOCAL] as const;
+
+/**
+ * SubAgent provider types
  */
 export enum AgentProvider {
   CLAUDE_CODE = 'claude_code',

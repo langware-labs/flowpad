@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Bell } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { cn } from '@src/lib/utils';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { useBadgeStore } from '../store';
 import { NotificationGlyph } from '../NotificationOutlet';
@@ -8,6 +9,9 @@ import { NotificationProcessLine } from '../NotificationProcessLine';
 import { DiagnoseIconButton } from '../diagnose/DiagnoseIconButton';
 import { runAction } from '../commands';
 import type { NotificationData } from '../types';
+import { AgenticProcess } from '@sdk';
+import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
+import { processIdFromTypeId } from '@src/navigation/agentic-process-open';
 
 function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismiss: (id: string) => void }) {
   const { t } = useLingui();
@@ -18,9 +22,14 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
     onDismiss(data.id);
   };
 
+  // cn() joins the classes, so the conditional cannot fuse into the static tail
+  // the way a bare template literal did (`bg-accent/50cursor-pointer`).
   return (
     <div
-      className={`group flex items-center gap-3 rounded-lg border border-border bg-card/50 px-3 py-2 transition-colors hover:bg-accent/50${primary ? ' cursor-pointer' : ''}`}
+      className={cn(
+        'group flex items-center gap-3 rounded-lg border border-border bg-card/50 px-3 py-2 transition-colors hover:bg-accent/50',
+        primary && 'cursor-pointer',
+      )}
       onClick={primary ? activate : undefined}
     >
       <div className="flex-shrink-0">
@@ -28,7 +37,9 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
       </div>
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm font-medium">{data.title}</span>
-        <span className="text-xs text-muted-foreground">{formatTimeAgo(new Date(data.timestamp).toISOString()) ?? t`just now`}</span>
+        <span className="text-xs text-muted-foreground">
+          {formatTimeAgo(new Date(data.timestamp).toISOString()) ?? t`just now`}
+        </span>
         <NotificationProcessLine data={data} />
       </div>
       {primary && (
@@ -43,7 +54,7 @@ function NotificationItem({ data, onDismiss }: { data: NotificationData; onDismi
         </button>
       )}
       <DiagnoseIconButton
-        data={data}
+        subject={data}
         className="flex-shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-primary/10 hover:text-primary group-hover:opacity-100"
       />
       <button
@@ -70,6 +81,13 @@ export function NotificationFeed() {
   const remove = useBadgeStore((s) => s.remove);
   const clearAll = useBadgeStore((s) => s.clearAll);
   const badges = useMemo(() => Object.values(byId).sort((a, b) => b.timestamp - a.timestamp), [byId]);
+  const shown = useMemo(() => badges.slice(0, 5), [badges]);
+  // Each process notification line names its process: load the shown ones in
+  // one batch instead of one GET per line.
+  const processIds = useMemo(
+    () => shown.map((b) => processIdFromTypeId(b.typeId)).filter((id): id is string => !!id),
+    [shown],
+  );
 
   if (badges.length === 0) return null;
 
@@ -89,11 +107,14 @@ export function NotificationFeed() {
       </div>
 
       <div className="flex flex-col gap-2">
-        {badges.slice(0, 5).map((data) => (
+        <EntityBatchHydrator type={AgenticProcess.type} ids={processIds} />
+        {shown.map((data) => (
           <NotificationItem key={data.id} data={data} onDismiss={remove} />
         ))}
         {badges.length > 5 && (
-          <p className="text-center text-xs text-muted-foreground"><Trans>+{badges.length - 5} more notifications</Trans></p>
+          <p className="text-center text-xs text-muted-foreground">
+            <Trans>+{badges.length - 5} more notifications</Trans>
+          </p>
         )}
       </div>
     </div>

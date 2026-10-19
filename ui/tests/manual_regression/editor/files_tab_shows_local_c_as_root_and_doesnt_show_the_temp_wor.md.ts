@@ -14,7 +14,13 @@ function realConsoleErrors(errors: string[]): string[] {
 test.describe('File explorer shows Unix-style root (not Windows C:/) on macOS (FLOWPAD-1594)', () => {
   test('root path is Unix-style and never shows C:\\ or C:/', async ({ page }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 
     const errors: string[] = [];
     page.on('console', (msg) => {

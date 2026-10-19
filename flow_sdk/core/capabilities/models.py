@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
@@ -7,6 +8,8 @@ from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.tags.grammar import tag_is_within
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 
 def now_iso() -> str:
@@ -38,6 +41,8 @@ class CapabilityKind(StrEnum):
     CLAUDE_CLI = "harness.claude.cli"
     CODEX_CLI = "harness.codex.cli"
     COPILOT_CLI = "harness.copilot.cli"
+    OPENCODE_CLI = "harness.opencode.cli"
+    DEEPAGENTS_CLI = "harness.deepagents.cli"
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
     # Source control: parent = "a GitHub connection FlowPad can use" (OAuth
     # token OR gh); child = the gh CLI specifically (installed + authenticated).
@@ -82,16 +87,32 @@ def is_mcp_capability_kind(kind: str) -> bool:
     return len(parts) >= 3 and parts[1] == MCP_CAPABILITY_INFIX
 
 
+def _spec_kind(spec: "ShapeForm | None") -> str | None:
+    """The registered kind of a named value spec; object forms have no kind.
+
+    The field already holds the authoring form, so there is nothing to render:
+    a bare string IS the kind, and an object or list form has none.
+    """
+    return spec if isinstance(spec, str) else None
+
+
 class CapabilitySpec(BaseModel):
     name: str
     kind: str
     description: str = ""
     icon: str = "BadgeCheck"
     homepage_url: str | None = None
-    # Static type of this capability's discovered ``value`` — a RecordType
-    # value (e.g. "folder" for CLI harnesses, whose value is the bin dir
-    # serialized as an FSRef dict). None → no typed value (pure status).
-    value_type: str | None = None
+    # The shape of this capability's discovered ``value`` — a ``DataSpec``
+    # (``DataSpec.parse("fs_ref")`` for CLI harnesses, whose value is the bin
+    # dir as an FSRef dict). None → no typed value (pure status).
+    value_spec: ShapeForm | None = None
+
+    @property
+    def value_type(self) -> str | None:
+        """The spec's kind — what the persisted row and the UI call ``value_type``.
+        A shape with no name (an object form) has no type string."""
+        return _spec_kind(self.value_spec)
+
     dependent_capability_kinds: list[str] = Field(default_factory=list)
     # Whether FlowPad can actually USE this capability once available. True for
     # everything FlowPad runs (harness CLIs, browsing, MCP for executor worker
@@ -106,6 +127,38 @@ class CapabilitySpec(BaseModel):
     # Prompt the install agentic process runs with. None → the registry's
     # DEFAULT_INSTALL_PROMPT.
     install_prompt: str | None = None
+    #: May the PASSIVE discovery sweep call this capability's ``test()``?
+    #:
+    #: True for the ordinary case: a test that shells out to `--version`,
+    #: reads a token file, or asks a driver what it already knows. Those are
+    #: cheap, offline and side-effect-free, which is what lets the sweep keep
+    #: every badge fresh for free.
+    #:
+    #: False when ``test()`` costs real work or has side effects — spawning a
+    #: vendor CLI, driving an agent, spending tokens. Those answer only to an
+    #: explicit user verb (the Test button, ``registry.test`` from a route);
+    #: a background sweep must never run them. ``chrome_authenticated`` is
+    #: the case in point: its test launches a real Claude agent to browse a
+    #: probe page, so every passive sweep was starting a worker and waiting
+    #: on it, which is a badge refresh costing a live agent run.
+    sweepable_test: bool = True
+    # One-liner that installs this capability from nothing, keyed by
+    # ``sys.platform`` ("darwin" / "linux" / "win32"). TYPED INTO a Flowpad
+    # terminal for the user to press Enter on — never run on their behalf, which
+    # is why it is a display string and not an argv. Assume a bare machine: no
+    # node, no npm, no package manager. Empty for capabilities with no
+    # unattended installer, and the UI's "try auto install" affordance is absent
+    # exactly then.
+    #
+    # The ``win32`` entry is POWERSHELL, because that is what the built-in
+    # terminal spawns there (``compute/providers/desktop/provider.py`` tries
+    # pwsh, then powershell, and only reaches cmd.exe when neither exists).
+    install_commands: dict[str, str] = Field(default_factory=dict)
+
+    @property
+    def install_command(self) -> str | None:
+        """The install one-liner for THIS machine, or None if there isn't one."""
+        return self.install_commands.get(sys.platform)
 
     def matches(self, query_kind: str) -> bool:
         return capability_kind_matches(query_kind, self.kind)
@@ -123,6 +176,11 @@ class CapabilityResult(BaseModel):
     # the persisted row state is derived via ``Capability.derive_state`` so
     # NONE ("never tried") survives passive discovery.
     state: str = CapabilityState.NONE.value
+    #: What the worker behind this result answered — an install or a probe is
+    #: an agent run, and its own verdict, detail and ``executor`` ride here
+    #: rather than being copied into ``details``. ``None`` for a check that
+    #: ran no worker.
+    answer: PromptResult | None = None
 
 
 class CapabilityScope(BaseModel):
@@ -141,15 +199,21 @@ class CapabilityCheck(BaseModel):
 class CapabilityValue(BaseModel):
     """A capability's discovered, typed value.
 
-    ``value is None`` ⇔ the capability is absent. ``value_type`` is the
-    spec's static RecordType (e.g. "folder" → ``value`` is an FSRef dict of
-    the CLI's bin directory). Produced by ``discover()`` sweeps, held in the
-    discovery module's global dict, and mirrored onto the Capability entity
-    row so the capabilities window shows exactly what workers consume.
+    ``value is None`` ⇔ the capability is absent. ``spec`` describes the
+    value's shape (``fs_ref`` → ``value`` is an FSRef dict of the CLI's bin
+    directory); ``value_type`` is its kind, kept as the name the persisted row
+    and the UI read. Produced by ``discover()`` sweeps, held in the discovery
+    module's global dict, and mirrored onto the Capability entity row so the
+    capabilities window shows exactly what workers consume.
     """
 
     kind: str
     value: Any | None = None
-    value_type: str | None = None
+    spec: ShapeForm | None = None
+
+    @property
+    def value_type(self) -> str | None:
+        return _spec_kind(self.spec)
+
     message: str = ""
     discovered_at: str = Field(default_factory=now_iso)

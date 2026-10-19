@@ -68,29 +68,84 @@ export async function hubLogin(email: string, password: string): Promise<HubLogi
   return { token, user: body.data.user ?? {} };
 }
 
+/** One authenticated hub call, unwrapped to its `data`. `path` is below
+ *  `/api/v1`; a `body` makes it a POST. Throws on a non-2xx with the hub's
+ *  answer in the message, so a failing setup step names itself. */
+export async function hubJson(token: string, path: string, body?: unknown, method?: string): Promise<any> {
+  const r = await fetch(`${HUB_URL}/api/v1${path}`, {
+    method: method ?? (body === undefined ? 'GET' : 'POST'),
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const parsed = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`${method ?? 'GET/POST'} ${path} → ${r.status}: ${JSON.stringify(parsed).slice(0, 200)}`);
+  return parsed.data;
+}
+
 /** Read a shared conversation's title straight from the hub (authenticated GET).
  *  Used by the reflection-proxy tests to verify a reflected rename landed on the
  *  hub, independent of any backend↔backend fan-out. Returns null on non-200. */
 export async function hubConversationTitle(token: string, convId: string): Promise<string | null> {
-  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) return null;
-  const body = (await r.json()) as { data?: { title?: string } };
-  return body.data?.title ?? null;
+  try {
+    return (await hubJson(token, `/graph/conversation/${convId}`))?.title ?? null;
+  } catch {
+    return null;
+  }
 }
 
-/** Read the hub's watcher list for a conversation (the GET side of the `watch`
- *  action — its `ConnectedThrough` peers). Non-empty once a backend has
- *  registered a hub watch (e.g. via BrowserContextWatch). Returns null on
- *  non-200, else the (possibly empty) list. */
-export async function hubConversationWatchers(token: string, convId: string): Promise<unknown[] | null> {
-  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/watch`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!r.ok) return null;
-  const body = (await r.json()) as { data?: unknown[] };
-  return Array.isArray(body.data) ? body.data : null;
+/** Bob's approved membership row on a hub conversation, read by `token`'s user
+ *  (`GET <conv>/list_members/<userId>`). Under the hub's default auto-watch
+ *  routing (`AUTO_WATCH_ENABLED`, hub resource_tracker.py)
+ *  an entity's data ops fan out to every live connection whose user holds a
+ *  ROLE path to it — so an approved row IS the hub's routing edge. The legacy
+ *  explicit `watch` action is a compatibility no-op there, and its GET always
+ *  answers `[]`, so it cannot be a barrier. Null on non-200 or no approved row. */
+export async function hubApprovedMembership(
+  token: string,
+  convId: string,
+  userId: string,
+): Promise<{ role: string; status: string } | null> {
+  try {
+    const rows = await hubJson(token, `/graph/conversation/${convId}/list_members/${userId}`);
+    if (!Array.isArray(rows)) return null;
+    return rows.find((r: any) => r?.status === 'approved') ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** The brand the hub masks every staff reply to. Must equal the hub's
+ *  HELPDESK_DISPLAY_NAME (hub config.py). */
+export const HELPDESK_DISPLAY_NAME = 'Flowpad Support';
+
+/** The deployment's own desk, from `/health/version`. Null when this hub
+ *  advertises none — the caller skips rather than guessing an id. */
+export async function hubDefaultDeskId(): Promise<string | null> {
+  try {
+    const r = await fetch(`${HUB_URL}/api/v1/health/version`);
+    if (!r.ok) return null;
+    const body = (await r.json()) as { data?: { helpdesk_project_id?: string } };
+    return body.data?.helpdesk_project_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** A help desk owned by `token`'s user for one test run: a fresh project with
+ *  `enable_helpdesk` (what stamps the guest role). `dispose` deletes it and
+ *  throws on a leak, so a stranded desk is loud. */
+export async function createDesk(token: string, displayName: string): Promise<{ deskId: string; dispose: () => Promise<void> }> {
+  const project = await hubJson(token, '/graph/project', { name: `desk-${Date.now()}` });
+  const deskId: string = project.id;
+  await hubJson(token, `/graph/project/${deskId}/enable_helpdesk`, { enabled: true, display_name: displayName, mode: 'human' });
+  return {
+    deskId,
+    dispose: async () => {
+      await hubJson(token, `/graph/project/${deskId}`, {}, 'DELETE').catch((e) => {
+        throw new Error(`LEAKED desk project ${deskId}: ${String(e)}`);
+      });
+    },
+  };
 }
 
 export function getAliceCreds(): Promise<{ email: string; password: string } | null> {
@@ -121,4 +176,30 @@ export async function localBackendIsCloudLoggedIn(localApiBase: string): Promise
   } catch {
     return false;
   }
+}
+
+/** Materialize one immediately assigned conversation through a local backend.
+ * Callers supply that backend's `/api/v1` base so paired tests cannot drift to
+ * a different instance. */
+export async function syncAssignedConversationAt<T = unknown>(
+  apiV1Base: string,
+  convId: string,
+  instanceName?: string,
+): Promise<T | undefined> {
+  const response = await fetch(`${apiV1Base}/graph/conversation-message-sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversation_id: convId }),
+  });
+  const body = (await response.json().catch(() => null)) as {
+    status?: string;
+    data?: T;
+  } | null;
+  if (!response.ok || body?.status !== 'SUCCESS') {
+    const location = instanceName ? ` on ${instanceName}` : '';
+    throw new Error(
+      `conversation sync failed${location}: HTTP ${response.status} ${JSON.stringify(body)}`,
+    );
+  }
+  return body.data;
 }

@@ -31,6 +31,7 @@ function asSearchResult(bookmark: Bookmark): SearchResult | null {
     modified_at: bookmark.updated_date ? new Date(bookmark.updated_date).toISOString() : '',
     asset_ref: (nav.asset_ref as string | undefined) ?? (nav.source_path as string | undefined) ?? '',
     session_id: nav.session_id as string | undefined,
+    parent_type_id: nav.parent_type_id as string | undefined,
   };
 }
 

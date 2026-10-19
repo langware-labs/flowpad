@@ -143,13 +143,13 @@ def get_database_paths() -> DatabasePathsResult:
 async def clear_index(types: list[str] | None = None) -> ClearIndexResult:
     """Clear FTS index + record-backed entities. Optionally scoped to specific types.
 
-    ``SchemaRegistry.clear_index`` is the authoritative implementation and is
+    ``index_log.clear_index`` is the authoritative implementation and is
     careful to delete only schema-registered record types (not arbitrary
     anonymous entities like user-created projects/workspaces).
     """
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
-    result = await SchemaRegistry.clear_index(types)
+    result = await index_log.clear_index(types)
     return ClearIndexResult(
         fts_cleared=result.fts_cleared,
         entities_cleared=result.entities_cleared,
@@ -421,6 +421,17 @@ def validate_db(db_path: Path | None = None) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _drop_process_caches() -> None:
+    """Forget every in-memory view of the rows a clear/restore just replaced. The cached
+    project list is one of them: a stale entry keeps a gone project in scope resolution."""
+    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache  # noqa: PLC0415
+
+    entity_cache.clear()
+    uname_cache.clear()
+    invalidate_projects_cache()
+
+
 async def clear_all_data() -> ClearAllResult:
     """Backup, wipe the SQLite DB, clear the index, reinitialize.
 
@@ -434,7 +445,22 @@ async def clear_all_data() -> ClearAllResult:
     # 1. Backup first
     backup = await backup_db()
 
-    # 2. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
+    # 2. Cancel detached auto-index work while it still belongs to the current
+    # graph. Otherwise a first-selection scan can keep its old writer alive
+    # across the DB swap and race bootstrap with `BEGIN IMMEDIATE`.
+    from flow_sdk.fs_store.indexer.auto_index import cancel_auto_indexes  # noqa: PLC0415
+
+    await cancel_auto_indexes()
+
+    # 3. Tear down every live PTY while its ComputeNode/provider identity is
+    # still queryable. The DB wipe removes those rows, after which registry-only
+    # cleanup can no longer reach the provider-owned OS child and workers leak
+    # across factory resets.
+    from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry  # noqa: PLC0415
+
+    await PtyRegistry.get_instance().close_all_sessions()
+
+    # 4. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
     # this queries the entity DB, and factory reset is exactly the operation
     # that must still work when that DB is broken (e.g. schema-less after an
     # interrupted clear). Its DB-row deletes are redundant with the wipe
@@ -444,35 +470,31 @@ async def clear_all_data() -> ClearAllResult:
     except Exception as e:  # noqa: BLE001
         logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
-    # 3. Drop in-memory caches
-    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
+    # 5. Drop in-memory caches
 
-    entity_cache.clear()
-    uname_cache.clear()
+    _drop_process_caches()
 
     # Capability system rows are wiped along with the DB below. No seed-guard
     # reset is needed: Capability._seeded_dbs is keyed on the live driver
     # object, and the reinit below constructs a fresh driver — the new DB
     # re-seeds on next access automatically.
 
-    # 4. Close DB, delete file, reinitialize
+    # 6. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415
         _driver_instances,
         db_lifecycle_guard,
         get_db_driver,
-        LazyDBDriver,
         remove_db_sidecars,
     )
-    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
-    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
     async def _wipe_and_reinit() -> None:
-        # Serialize the entire close→unlink→init→repoint→bootstrap block against
-        # any overlapping lifecycle swap AND against fresh-session opens so no two
-        # engines can straddle the unlink. The guard also flags this coroutine so
-        # the nested session opens below (init_db / bootstrap rebuild) bypass the
-        # same non-reentrant lock instead of self-deadlocking.
+        # Serialize the close→unlink→init→repoint block against overlapping
+        # lifecycle swaps and fresh-session opens so no two engines can straddle
+        # the unlink. Bootstrap deliberately runs after this guard; it takes
+        # per-record locks and must preserve the normal record→session order.
         async with db_lifecycle_guard():
             # Close the SQLiteDriver's own engine before wiping the file
             sqlite_driver = _driver_instances.get("sqlite")
@@ -494,43 +516,83 @@ async def clear_all_data() -> ClearAllResult:
             DBEntity._db = new_driver
             DBRelationship._db = new_driver
 
-            # Invalidate the bootstrap cache and immediately rebuild the @local
-            # entities. Without the rebuild, subsequent requests addressed via
-            # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-            # wiped) and the request middleware returns "Invalid request" until the
-            # client happens to call /bootstrap again.
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                bootstrap,
-                invalidate_bootstrap_cache,
-            )
-            invalidate_bootstrap_cache()
-            await bootstrap()
+        # Rebuild @local immediately after the atomic file/driver swap, but
+        # outside the lifecycle lock. Entity.save() takes a per-record sync
+        # lock before it opens a DB session. Holding the lifecycle lock while
+        # bootstrap seeds entities reverses that normal order and deadlocks
+        # when a background writer already owns a record lock and is waiting
+        # for the lifecycle swap to finish (capability discovery exposed this
+        # on minute-boundary clears). Once the new driver is repointed, the
+        # destructive swap is complete and normal record→session ordering can
+        # safely resume.
+        #
+        # Without this rebuild, subsequent requests addressed via
+        # `/compute_node/@local/...` cannot resolve `@local` and return
+        # "Invalid request" until a client happens to call /bootstrap again.
+        from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+            bootstrap,
+            invalidate_bootstrap_cache,
+        )
+        invalidate_bootstrap_cache(reset_local_entities=True)
+        await bootstrap()
 
-        # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
-        # only by the startup-index path — the bootstrap() route handler above
-        # rebuilds @local but NOT the system projects, so without this a factory
-        # reset silently loses them until the process restarts (same class of bug
-        # as the driver-keyed Capability._seeded_dbs guard). Their absence makes the FE
-        # assistant resolver log "Invalid entity type or ID" console errors on every
-        # page load. Non-fatal — mirror startup's best-effort handling.
+        # The process-wide capability cache survives a database replacement,
+        # but the rows mirrored into the capabilities UI do not.  Bootstrap
+        # deliberately does not wait for discovery, so without an explicit
+        # sweep here a factory reset leaves freshly-seeded rows at state=none
+        # while workers continue using the cached installed values.  Complete
+        # the reset only after the canonical discovery seam has realigned both.
+        from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+
+        await run_discovery()
+
+        # Rebuild the shipped system content through the same canonical pass as
+        # process startup. The bootstrap() route handler above only restores the
+        # @local graph; a factory reset also deletes the indexed system agents,
+        # skills, charts, and docs. Restoring only the project/markdown rows
+        # leaves callers such as Vibe unable to resolve their bundled agent until
+        # the whole process restarts.
+        #
+        # Await this pass: once the destructive reset response says "complete",
+        # every shipped asset must already be queryable. The pass itself remains
+        # best-effort, matching startup.
         try:
-            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-                _ensure_system_projects,
-                _index_system_project_markdowns,
-                get_or_create_local_user,
-            )
+            from flow_sdk.server.routes.bootstrap import index_system_content  # noqa: PLC0415
 
-            _user = await get_or_create_local_user()
-            _system_projects = await _ensure_system_projects(desktop_user=_user)
-            # Mirror the startup-index path: seed THEN index the system markdown so
-            # the assistant docs are searchable/browsable after a reset, not just
-            # present as empty project rows.
-            try:
-                await _index_system_project_markdowns(_system_projects)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"clear_all_data: failed to index system markdowns (non-fatal): {e}")
+            await index_system_content()
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"clear_all_data: failed to re-seed system projects (non-fatal): {e}")
+            logger.warning(f"clear_all_data: failed to re-seed system content (non-fatal): {e}")
+
+        # Re-seed the service rows, through the same seam startup uses.
+        #
+        # They are ROWS, so the wipe deleted them; nothing else re-seeds them,
+        # leaving a factory reset with no `builtin_system_heartbeat` — the cron
+        # kept logging "executed successfully" while nothing routed it into
+        # `_dispatch_heartbeat`, so every `register_heartbeat_task` job (e.g.
+        # data-source ingestion) silently stopped until the process restarted.
+        #
+        # Two invariants constrain any edit here:
+        #  1. STOP THE WATCHER FIRST. It holds pre-wipe `Trigger` entities in
+        #     its per-trigger tasks; re-seeding mints rows with NEW ids, and the
+        #     stale entities' `update()` then falls through to `_create_entity`
+        #     and collides on `uname` — a 409 storm that takes the backend out
+        #     mid-suite. Re-seeding without this stop is worse than the bug.
+        #  2. Restart with `catch_up=False`: it spawns the same watch tasks
+        #     without `start()`'s per-trigger catch-up disk walk. This runs on
+        #     EVERY `resetDb()`; that walk alone pushed a 60s-budget test to
+        #     50.9s. The reset path must stay cheap.
+        #     Re-arming is NOT optional: SCHEDULE triggers re-register
+        #     themselves on save, but FSOp ones would come back stored and
+        #     unwatched, which no row count can see.
+        try:
+            from flow_sdk.server.builtin_triggers import seed_service_entities  # noqa: PLC0415
+            from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
+
+            await fsop_watcher.stop()
+            await seed_service_entities()
+            await fsop_watcher.start(catch_up=False)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"clear_all_data: failed to re-install service rows (non-fatal): {e}")
 
     # The triggering HTTP request can be CANCELLED at any await (ASGI client
     # disconnect — e.g. the test runner being killed mid-clear). Without a
@@ -600,7 +662,6 @@ async def restore(backup_path: str) -> RestoreResult:
 
     db_path = get_db_path()
 
-    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import db_lifecycle_guard, remove_db_sidecars  # noqa: PLC0415
 
@@ -618,8 +679,7 @@ async def restore(backup_path: str) -> RestoreResult:
             remove_db_sidecars(db_path)
             logger.info(f"Database restored from: {src}")
 
-            entity_cache.clear()
-            uname_cache.clear()
+            _drop_process_caches()
 
             await init_db()
 
@@ -696,10 +756,10 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 
 async def get_scan_info() -> dict:
     """Return current index status. Reads JSONL bookkeeping + queries the DB
-    for live entity counts (single chokepoint via SchemaRegistry.get_index_status)."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    for live entity counts (single chokepoint via index_log.get_index_status)."""
+    from flow_sdk.fs_store.indexer import index_log  # noqa: PLC0415
 
-    status = await SchemaRegistry.get_index_status()
+    status = await index_log.get_index_status()
     total_indexed = sum(t.entity_count for t in status.per_type)
     return {
         "total_indexed": total_indexed,

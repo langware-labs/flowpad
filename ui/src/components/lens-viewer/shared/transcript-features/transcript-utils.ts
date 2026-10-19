@@ -5,12 +5,50 @@
 import type { ComponentType } from 'react';
 import type { GenericEntry, ProcessIconKey } from '@sdk';
 import { isToolUse } from '@sdk';
+import type { SessionWorker, WorkerType } from '@src/hooks/use-transcript';
 
-import { pickProcessIcon } from '../../../icons/process-icons';
+import { processIconTag } from '@sdk';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
 import type { UnifiedEntry } from './types';
 
 export { formatNumber, formatAgo, formatDuration, formatTime } from '../format-utils';
 import { formatTime } from '../format-utils';
+
+/**
+ * Worker ↔ session entity-type, the one map for that direction (mirrors the
+ * backend `SESSION_TYPE_BY_WORKER`). `workerForSessionType` is what lets any
+ * surface holding only a record type — a search row, a staged attachment —
+ * address the worker-generic transcript route.
+ *
+ * OpenCode and DeepAgents keep sessions in a store; their session type names the
+ * transcript FlowPad wrote, snapshotted when the session is shared.
+ *
+ * Typed `Partial<Record<WorkerType, …>>` so indexing it with a bare `WorkerType`
+ * yields `string | undefined` — callers must HANDLE the miss rather than
+ * interpolate it into a key string (`"undefined/ses_…"`).
+ *
+ * Note this uses the transcript-lens `WorkerType` (`claude`), NOT the launcher
+ * one (`claude_code`). The codebase carries several incompatible spellings of
+ * "which vendor"; picking the wrong one here silently yields undefined for
+ * every row.
+ */
+export const SESSION_TYPE_BY_WORKER: Partial<Record<WorkerType, string>> = {
+  claude: 'claude_session',
+  codex: 'codex_session',
+  copilot: 'copilot_session',
+  opencode: 'opencode_session',
+  deepagents: 'deepagents_session',
+};
+
+const WORKER_BY_SESSION_TYPE: Record<string, SessionWorker> = Object.fromEntries(
+  Object.entries(SESSION_TYPE_BY_WORKER).map(([worker, type]) => [type, worker]),
+) as Record<string, SessionWorker>;
+
+/** The worker whose transcripts this record type holds, or undefined when the
+ *  type isn't a worker session at all. */
+export function workerForSessionType(type: string | null | undefined): SessionWorker | undefined {
+  return type ? WORKER_BY_SESSION_TYPE[type] : undefined;
+}
 
 /** Display label for a worker key (`claude`, `codex`, …). */
 export function workerLabel(worker: string | undefined): string {
@@ -19,6 +57,8 @@ export function workerLabel(worker: string | undefined): string {
   if (key.startsWith('claude')) return 'Claude';
   if (key.startsWith('codex')) return 'Codex';
   if (key.startsWith('copilot')) return 'Copilot';
+  if (key.startsWith('opencode')) return 'OpenCode';
+  if (key.startsWith('deepagents')) return 'DeepAgents';
   if (key.startsWith('workflow')) return 'Workflow';
   // Capitalize unknown worker keys for a sensible default.
   return key.charAt(0).toUpperCase() + key.slice(1);
@@ -32,9 +72,10 @@ export function workerIcon(worker: string | undefined): ComponentType<{ classNam
     if (w.startsWith('claude')) return 'claude';
     if (w.startsWith('codex')) return 'codex';
     if (w.startsWith('copilot')) return 'copilot';
+    if (w.startsWith('opencode')) return 'opencode';
     return 'generic';
   })();
-  return pickProcessIcon(key);
+  return flowIconComponent(processIconTag(key));
 }
 
 export function resolveEntryTimestamp(entry: UnifiedEntry): string | null {
@@ -73,7 +114,7 @@ export function operationFilterKey(op: GenericEntry): string {
  */
 export function thinkingPreview(thinking: string | null | undefined): string {
   if (!thinking) return '';
-  if (thinking.startsWith('[')) return '';   // bracketed placeholder — leave row blank, badge already says "thinking"
+  if (thinking.startsWith('[')) return ''; // bracketed placeholder — leave row blank, badge already says "thinking"
   const stripped = thinking.replace(/^\*\*(.+?)\*\*\s*\n+/, '$1 — ');
   const firstNonEmpty = stripped.split('\n').find((l) => l.trim()) ?? '';
   return firstNonEmpty.trim();

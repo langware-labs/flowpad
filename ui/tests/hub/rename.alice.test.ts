@@ -44,6 +44,7 @@ const JOINED = '/tmp/flowpad_rename_joined.txt';
 const HTTP_DONE = '/tmp/flowpad_rename_http_done.txt';
 const HTTP_CONFIRMED = '/tmp/flowpad_rename_http_confirmed.txt'; // bob → alice (saw HTTP rename)
 const WS_DONE = '/tmp/flowpad_rename_ws_done.txt';
+const BOB_DONE = '/tmp/flowpad_rename_bob_done.txt';
 
 let skipReason: string | null = null;
 let bobEmail: string | null = null;
@@ -84,7 +85,7 @@ beforeEach(async (context: any) => {
 describe('hub: rename two-process — ALICE (owner: HTTP + WS reflect, hub-verified)', () => {
   it('renames over HTTP then WS; both reflect to the hub', async () => {
     await clearRendezvous();
-    for (const f of [JOINED, HTTP_DONE, HTTP_CONFIRMED, WS_DONE]) await fsp.unlink(f).catch(() => {});
+    for (const f of [JOINED, HTTP_DONE, HTTP_CONFIRMED, WS_DONE, BOB_DONE]) await fsp.unlink(f).catch(() => {});
 
     const conv = trackForCleanup(new Conversation({ title: testEntityName('conv') }));
     await conv.save();
@@ -127,6 +128,12 @@ describe('hub: rename two-process — ALICE (owner: HTTP + WS reflect, hub-verif
     ).toBe(wsName);
     console.log(`[rename.alice] WS rename reflected to hub → ${wsName} — done`);
     await fsp.writeFile(WS_DONE, conv.id, 'utf-8');
+
+    // Gate: hold the conversation until bob has read the WS rename on the hub
+    // and finished his receive check. Ending here runs the cleanup that DELETES
+    // the conversation on the hub — a deleted conversation stays gone — so bob's
+    // hub read would race the delete and never see ``wsName``.
+    await waitMarker(BOB_DONE, conv.id, 'bob finished (WS rename confirmed)');
 
     void dataContext;
   });

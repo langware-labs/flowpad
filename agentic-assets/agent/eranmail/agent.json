@@ -1,0 +1,14 @@
+{
+  "type": "agent",
+  "id": "e1bf3281-4a7f-4630-8408-ed977bf28fd1",
+  "name": "eranmail",
+  "version": 5,
+  "description": "",
+  "skills": [],
+  "mcp_servers": [],
+  "subagents": [],
+  "additional_dirs": [],
+  "load_flowpad_assistant": false,
+  "cli_options": {},
+  "enabled": true
+}

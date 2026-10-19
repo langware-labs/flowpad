@@ -1,0 +1,103 @@
+---
+id: e2caa81a-a812-456e-b1a6-56f7b7fc16e9
+---
+# Data Sources UI (Frontend)
+
+The Data Sources screen (`ViewType.DATA_SOURCES`, opened by asking for it in the top bar —
+it has no rail entry — and mounted lazily by `content-panel.tsx`) lists the
+configured `DataSource` entities, lets the user add/edit/pause/replay/delete
+one, and shows whether each is actually alive. Everything lives under
+`ui/src/components/data-sources/`. The backend model it renders is described in
+`data-sources.md`; this page covers only the frontend surface.
+
+## Components
+
+| File | Role |
+|------|------|
+| `DataSourcesView.tsx` | The grid. Owns the one instance each of the add/edit dialog, the replay dialog and the delete confirm ("list holds a nullable pending target, rows hold no dialog"). The position lives on the source row, so the grid watches one query. |
+| `DataSourceCard.tsx` | One source: lifecycle chip, health, `synced …` / `next …` countdown, the parked warning, the setup panel with **Verify**, the **Pull changes** button, and an expandable detail panel. |
+| `DataSourceDialog.tsx` | Add/edit form driven entirely by the installed `DataDriver`s. Writes `name`, `provider`, `account_key`, `config`, `status`, `poll_interval_seconds`, `window_days`; never `kind` or `channel` (the driver sets those on first poll). |
+| `SourceMenu.tsx` | The "more" menu: pause/resume, edit, replay, open a spec-shipped editor app, Events, Runs, delete. |
+| `ReplayDialog.tsx` | Optional `since` date, then `source.replay(since)`. |
+| `use-source-specs.ts` | `sourcesQuery` (shared with the stream inbox) and `useSourceSpecs()` → `{ specs, specFor(provider) }`. |
+| `source-form.ts` | Pure draft/validation helpers (`emptyDraft`, `specFields`, `validateDraft`, `buildConfig`, `accountKeyFor`); unit-tested in `ui/tests/unit/data-source-form.test.ts`. |
+| `status-style.ts`, `health-style.ts` | Chip label/colour tables keyed by `SourceStatus` and `SourceHealth`. |
+| `useAttentionPolling.ts` | Used by `ConversationView`, not by this screen: while a conversation bound to a source is the selected dock, calls `source.requestPoll()` every 25 s. |
+
+## Entities, queries and actions (all through `dataManager`)
+
+No file in this folder touches a backend URL, `fetch`, or `__API_URL__`; every
+call is an entity query or an entity action.
+
+**Queries** (`useEntitiesQuery` over a `QueryRequest`, all `scope: []` because a
+source is a property of the instance, not of a project):
+
+- `data-sources:list` — `DataSource.type` (in `use-source-specs.ts`, shared with the stream inbox's channel attribution).
+- `data-sources:specs` — `DataDriver.type`, the installed definitions. This replaced a hardcoded provider catalog: a spec added as an asset appears with no frontend release.
+
+**Writes** are entity saves: `new DataSource({...}).save()` (create, with
+`status: 'new'` so the backend resolves `setup` vs `active`), `editing.save()`
+followed by `markEdit()` when something changed, and `source.delete()` (the
+backend `delete_by_id` override cascades items; the view then
+`refetch()`es because a delete is the one mutation the live query does not see).
+
+**Actions** are `DataSource` methods in `ts_sdk/src/entities/data-source.ts`,
+each `this.post('<action>')` → `dataManager.callAction(ActionInfo)` →
+`POST /api/v1/graph/data_source/<id>/<action>`, matching the
+`@core_action.post` handlers in `flow_sdk/builtin/data_source.py`:
+
+| TS method | Backend action | Called from |
+|-----------|----------------|-------------|
+| `pollNow()` | `poll_now` | card **Pull changes** |
+| `verify()` | `verify` | card **Verify** (setup panel) |
+| `replay(since?)` | `replay` | `ReplayDialog` |
+| `requestPoll()` | `request_poll` | `useAttentionPolling` |
+| `reset()`, `purgeItems()` | `reset`, `purge_items` | not wired to this screen |
+
+Pause/resume is not an action: the card sets `status` to `'disabled'` or back to
+`'new'` and saves. "Connect" is the dialog's save; the config form is the
+spec's `config` map (`specFields(spec)` → `Object.entries(spec.config)`). There is no reflect verb in the UI — `reflect` is a
+field on the source ROW (`DataSource.reflect`, one of its driver's manifest modes; `ReflectMode`,
+`flow_sdk/ingest/reflect.py`) consumed by the ingest pipeline, not something the user triggers here.
+The drivers page shows each driver's **Family** (`DataDriver.family`: files, records or messages).
+
+## URL-first navigation
+
+The screen never writes `dataContext` before navigating. The only navigation it
+performs is in `SourceMenu`, and each item is a single
+`navigation.openDock(DockPointer…)` call:
+
+- `DockPointer.forAppEntity(app.typeId, { source: source.id })` for each editor app shipped as a child asset of the spec (`useAssetApps(spec?.typeId)`); the app reads the source id off its own query string.
+- `DockPointer.forAutomations({ place: 'bus', target: 'data_source:<id>' })` — the event bus narrowed to this source.
+- `DockPointer.forProcessRuns({ data_source_id })` — the Runs view.
+
+`useAttentionPolling` reads the URL the same way (`DockPointer.fromUrl(location)`)
+to decide whether its conversation is the selected one.
+
+## How status and health are rendered
+
+Two axes, shown together because they disagree in the interesting cases:
+
+- `status` (`new` / `setup` / `active` / `disabled`) is "should this run"; `health` (`never_synced` / `ok` / `transient_error` / `config_error`) is "does it work".
+- The chip and the card's left border use `healthStyle(source.health)` when the source `isActive`, else `statusStyle(source.status)` — health on a source that is not running describes the last time it ran and is stale by construction.
+- Why a source is not delivering is ONE classifier, `attentionReason(source)` (`ui/src/components/data-sources/source-attention.ts`), read by this screen, the stream inbox's channel marks, their hover list and the attention strip above the stream inbox's list. Its `ATTENTION` table gives each kind its mark, its recovery verb, a fallback sentence and the next step, so no two surfaces word a state or name a recovery differently.
+- `setup` (`needsSetup`) opens the amber setup panel with `setup_detail`, a `WikiButton` to the spec's `setup_wiki`, and **Verify**; **Pull changes** is disabled until verified.
+- `parked` (`isActive && health === 'config_error'`) shows a red note with the error and the next step, and **Verify** — the verb the strip offers too. Verify probes the connection and the driver's own check and answers; **Pull changes** in the menu also clears the latch, by simply retrying.
+- `unresolved` (`status === 'new'`, never polled) and `held` (a file changed on both sides) show an amber note with the next step: **Verify** and **Pull** respectively.
+- The card icon is the spec's `channel_icon_names[channel]`, else the spec's `icon_name` (both via `lucideByName`), else `iconForType(DataSource.type)` from the registry. The view header and the `ViewType` tab chip use the registry glyph (`Antenna`, matching the backend `TypeInfo.icon`).
+- Every verb reports through `notify` toasts; a not-ready `verify()` is an info toast, not an error.
+
+## Channels still to connect
+
+A message channel has three states on the stream inbox's channel line (errors aside), and only two of them are a source's:
+
+| State | What it is | How the mark draws it | Pressing it |
+|---|---|---|---|
+| not set up | a driver that declares `featured`, with no source of it for this owner | greyed glyph, no ring, a `+` badge | opens the add dialog on that channel |
+| set up, disabled | a source with `status: disabled` | dashed ring, greyed glyph | filters the list |
+| enabled | a source with `status: active` | solid ring, green dot | filters the list |
+
+- "Not set up" is the ABSENCE of a source, never a placeholder row: `channelOffers(specs, rows, forAgent)` (`ui/src/components/data-sources/use-source-specs.ts`) derives it from the installed drivers.
+- A driver opts in with `"featured": true` in its `data_driver.json` (`DataDriverSpec.featured`); any member of a group declares it for the group, which is offered as one choice. No provider is named in the UI.
+- The offers fold away once the owner has a source of ANY featured channel, whatever its status — from then on the `+` button is the way to more.
+- The same offers are the empty list's call to action (`ConnectChannelPrompt`). Both open `DataSourceDialog` with `initial`, which lands where pressing that provider's tile would.

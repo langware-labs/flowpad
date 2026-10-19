@@ -7,7 +7,7 @@
  *   hasTranscript= real assistant turn         → gates Fork + Open Transcript
  * CLI flag toggles persist straight to the entity on change; the backend save
  * hook flips process.restart_required when the worker-relevant snapshot drifts
- * from last_started_hash, lighting the Restart button (data-restart-required).
+ * from last_started_hash, lighting the Restart button (data-attention).
  * Restart is the only path back to a clean snapshot.
  *
  * NOTE: pty_pid renders as "none (detached)" for these sessions, so the .md's
@@ -16,10 +16,24 @@
  * (test 2/3) — that flag only resets on a real respawn.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, fetchProcess } from './_ap_helpers';
+import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, fetchProcess, sessionAction, debugMenuButton, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
-const restart = (page: Page) => activePanel(page).locator('[data-testid="process-toolbar-restart"]');
-const cliOptions = (page: Page) => activePanel(page).locator('button[aria-label="CLI Options"]');
+// Restart is an item of the session actions menu, and on the terminal surface
+// also a button beside the debug menu. That button carries the restart-required
+// signal there (`data-attention`, the amber glow); the menu button only glows
+// on the surfaces that have no Restart button of their own.
+const restartSignal = (page: Page) => activePanel(page).locator('[data-testid="process-toolbar-restart-button"]');
+async function clickRestart(page: Page) {
+  await restartSignal(page).click();
+}
+/** The same restart, from the session actions menu ("Restart session"). */
+async function clickRestartInMenu(page: Page) {
+  await (await sessionAction(page, 'process-toolbar-restart')).click();
+}
+async function expectRestartEnabled(page: Page, options?: { timeout?: number }) {
+  await expect(restartSignal(page)).toBeEnabled(options);
+}
+const cliOptions = debugMenuButton;
 
 test.describe('process restart and CLI flags', () => {
   test('test 1: Restart button respawns the PTY (clean, no console errors)', async ({ page }) => {
@@ -34,12 +48,12 @@ test.describe('process restart and CLI flags', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     // Restart is enabled while RUNNING.
-    await expect(restart(page)).toBeEnabled();
-    await restart(page).click();
+    await expectRestartEnabled(page);
+    await clickRestartInMenu(page);
 
     // After restart the session returns to RUNNING and the button is enabled again.
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restart(page)).toBeEnabled({ timeout: 30_000 });
+    await expectRestartEnabled(page, { timeout: 30_000 });
     // xterm still mounted/attached (banner re-renders into the same panel).
     await expect(page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows').first()).toBeAttached();
 
@@ -48,6 +62,8 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 2: toggling a CLI flag persists + lights the Restart glow; Restart clears it', async ({ page }) => {
+    // --chrome is a claude-only flag; other vendors do not render the toggle.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
@@ -56,7 +72,7 @@ test.describe('process restart and CLI flags', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     // Baseline: not glowing.
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false');
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false');
 
     // Toggle Chrome ON.
     await cliOptions(page).click();
@@ -71,22 +87,26 @@ test.describe('process restart and CLI flags', () => {
     }).toPass({ timeout: 10_000 });
 
     // Restart now flagged as required (glow).
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
 
     // Click Restart → respawn → glow clears.
-    await restart(page).click();
+    await clickRestart(page);
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false', { timeout: 30_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 30_000 });
   });
 
   test('test 3: out-of-band entity mutation lights the glow; reverting or a Restart clears it', async ({ page }) => {
+    // Drives the glow by mutating cli_config.chrome, which only claude carries:
+    // a vendor without the field never drifts from last_started_hash, so the
+    // glow correctly never lights and there is no toggle to revert.
+    test.skip(!AP_HAS_CLAUDE_ONLY_CLI_FLAGS, `${AP_OPENER} has no --chrome flag`);
     test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
     const pid = processIdFromUrl(page);
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false');
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false');
 
     // Mutate cli_config.chrome=true out-of-band on the cached entity + save.
     // (Chrome defaults OFF, so this is a real drift from last_started_hash;
@@ -103,7 +123,7 @@ test.describe('process restart and CLI flags', () => {
     }, pid);
 
     // Glow appears.
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
 
     // Reverting Chrome OFF in the dropdown returns cli_config to the running
     // worker's started hash, so the glow CLEARS: the restart-required contract
@@ -113,7 +133,7 @@ test.describe('process restart and CLI flags', () => {
     await cliOptions(page).click();
     await page.getByRole('menuitemcheckbox', { name: /Chrome browser/ }).click();
     await page.keyboard.press('Escape');
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 10_000 });
 
     // Re-drift out-of-band so there is a real pending change again, then prove a
     // Restart clears it.
@@ -127,12 +147,12 @@ test.describe('process restart and CLI flags', () => {
       p.cli_config = { ...(p.cli_config ?? {}), chrome: true };
       await p.save();
     }, pid);
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'true', { timeout: 10_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'true', { timeout: 10_000 });
 
     // Restart clears the glow.
-    await restart(page).click();
+    await clickRestart(page);
     await waitForRunningSession(page, apiBase(), pid);
-    await expect(restart(page)).toHaveAttribute('data-restart-required', 'false', { timeout: 30_000 });
+    await expect(restartSignal(page)).toHaveAttribute('data-attention', 'false', { timeout: 30_000 });
   });
 
   test('test 4: ProcessToolbar gating (no toolbar on plain shell; gated buttons once running)', async ({ page }) => {
@@ -149,21 +169,29 @@ test.describe('process restart and CLI flags', () => {
 
     // Toolbar now present in the active panel; Restart ENABLED (started=true).
     await expect(activePanel(page).locator('[data-testid="process-toolbar"]')).toBeVisible();
-    await expect(restart(page)).toBeEnabled();
+    await expectRestartEnabled(page);
 
     // Fork DISABLED — no assistant turn yet (hasTranscript=false).
     const fork = activePanel(page).locator(`button:has(svg.lucide-git-fork)`);
     await expect(fork).toBeDisabled();
 
     // Open Transcript DISABLED — no transcript yet.
-    const transcript = activePanel(page).locator(`button:has(svg.lucide-scroll-text)`);
+    // It is a row of the session actions menu, with the reason printed on it.
+    const transcript = await sessionAction(page, 'session-action-transcript');
     await expect(transcript).toBeDisabled();
+    await expect(transcript).toContainText('Send a message first — no transcript yet');
+    await page.keyboard.press('Escape');
 
     // CLI Options checkboxes ENABLED (started unlocks toggles).
     await cliOptions(page).click();
-    await expect(page.getByRole('menuitemcheckbox', { name: /Chrome browser/ })).toBeEnabled();
+    // Full Trust is the one toggle every vendor advertises (each with its own
+    // flag: --dangerously-skip-permissions / --allow-all / --auto). Chrome and
+    // Debug are claude-only, so assert them only on that arm.
     await expect(page.getByRole('menuitemcheckbox', { name: /Full Trust/ })).toBeEnabled();
-    await expect(page.getByRole('menuitemcheckbox', { name: /Debug logging/ })).toBeEnabled();
+    if (AP_HAS_CLAUDE_ONLY_CLI_FLAGS) {
+      await expect(page.getByRole('menuitemcheckbox', { name: /Chrome browser/ })).toBeEnabled();
+      await expect(page.getByRole('menuitemcheckbox', { name: /Debug logging/ })).toBeEnabled();
+    }
     await page.keyboard.press('Escape');
   });
 });

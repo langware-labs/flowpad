@@ -43,6 +43,15 @@ export enum FlowDataAttribute {
   PATH = 'path',
   WARNING = 'warning',
   ERROR = 'error',
+  /** Marks a client-minted placeholder row that an authoritative source will
+   *  replace — see `FlowData.isOptimisticEcho`. */
+  OPTIMISTIC_ECHO = 'optimistic-echo',
+  /** The BROWSER's clock when an optimistic echo was submitted — see `FlowData.submittedAt`. */
+  SUBMITTED_AT = 'submitted-at',
+  /** The client channel that delivered this item, stamped at the seam that built
+   *  it — a literal of that class's name, since minified builds rename classes.
+   *  A raw group only grows from the channel that opened it (FLOWPAD-2042). */
+  FRONTEND_EV_SOURCE_TYPE = 'frontend-ev-source-type',
 }
 
 /**
@@ -464,6 +473,42 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
    */
   get isFinal(): boolean {
     return this.attributes[FlowDataAttribute.FINAL] === 'true';
+  }
+
+  /**
+   * Whether this row is a client-minted PLACEHOLDER rather than an observation.
+   *
+   * A submitted user message is shown immediately, stamped with the host's
+   * latest time and carrying no transcript id — so it can never be matched against
+   * the persisted row the backend later records for it. Marked rows are
+   * retired once the authoritative source arrives, instead of being
+   * reconciled (which is impossible) or left to duplicate.
+   */
+  get isOptimisticEcho(): boolean {
+    return this.attributes[FlowDataAttribute.OPTIMISTIC_ECHO] === 'true';
+  }
+
+  /**
+   * When an optimistic echo was submitted, on the BROWSER's clock — for what is measured
+   * against the browser's "now" (a turn's elapsed clock). `timestamp` is the host's, for
+   * ordering. `null` on every other row.
+   */
+  get submittedAt(): string | null {
+    return this.attributes[FlowDataAttribute.SUBMITTED_AT] ?? null;
+  }
+
+  /**
+   * The transcript entry this row was built from, or `null`.
+   *
+   * History rows carry it in the typed `processEntry`; live frames lose that
+   * payload in `to_xml`, so the ones stamped with the `transcript-entry-id`
+   * attribute carry it only there. The optimistic echo and most live frames
+   * have neither — they are not (yet) transcript entries.
+   */
+  get transcriptEntryId(): string | null {
+    const entry = (this.processEntry as { transcript_entry?: { id?: unknown } } | null)?.transcript_entry;
+    const id = entry?.id ?? this.attributes['transcript-entry-id'];
+    return typeof id === 'string' && id ? id : null;
   }
 
   /**

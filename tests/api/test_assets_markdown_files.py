@@ -1,9 +1,9 @@
 """HTTP coverage for ``GET /api/v1/assets/markdown-files?root=`` — the
 gitignore-aware project walk that feeds the Markdown asset menu's folder tree.
 
-Drives the real FastAPI app. Regression: a project-ROOT ``.md`` (``streams_sdk.md``)
-must come back from the endpoint, not just files under ``docs/``. Also asserts
-gitignore + denylist pruning happens over the wire. No mocks.
+Drives the real FastAPI app. Only markdown inside a ``docs/`` or ``doc/`` folder is a
+document (``is_in_doc_dir``, bd4cf1239): a project-ROOT ``.md`` is not listed. Also
+asserts gitignore + denylist pruning happens over the wire. No mocks.
 """
 from __future__ import annotations
 
@@ -25,21 +25,21 @@ async def _files(client, root: Path) -> list[str]:
     return resp.json()["data"]["files"]
 
 
-async def test_root_and_docs_md_returned(client, tmp_path: Path) -> None:
-    _touch(tmp_path / "streams_sdk.md")            # the regression: project-root file
+async def test_only_docs_md_returned(client, tmp_path: Path) -> None:
+    _touch(tmp_path / "streams_sdk.md")            # project root: not a document
     _touch(tmp_path / "docs" / "STREAMS-ANALYSIS.md")
     _touch(tmp_path / "notes.txt")                 # non-md excluded
     files = await _files(client, tmp_path)
-    assert files == ["docs/STREAMS-ANALYSIS.md", "streams_sdk.md"]
+    assert files == ["docs/STREAMS-ANALYSIS.md"]
 
 
 async def test_gitignore_and_denylist_pruned_over_http(client, tmp_path: Path) -> None:
     _touch(tmp_path / ".gitignore", "private/\n")
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "private" / "secret.md")             # gitignored dir
-    _touch(tmp_path / "node_modules" / "pkg" / "readme.md")  # denylist
+    _touch(tmp_path / "docs" / "keep.md")
+    _touch(tmp_path / "docs" / "private" / "secret.md")              # gitignored dir
+    _touch(tmp_path / "docs" / "node_modules" / "pkg" / "readme.md")  # denylist
     files = await _files(client, tmp_path)
-    assert files == ["keep.md"]
+    assert files == ["docs/keep.md"]
 
 
 async def test_missing_root_returns_empty(client, tmp_path: Path) -> None:

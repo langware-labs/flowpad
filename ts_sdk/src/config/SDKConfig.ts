@@ -11,6 +11,7 @@ export class SDKConfig implements ISDKConfig {
   flowpad_app_host: string;
   flowpad_app_port?: number;
   check_refresh_token: boolean;
+  ui_version: string;
 
   constructor(config: ISDKConfig) {
     this.api_protocol = config.api_protocol;
@@ -21,6 +22,7 @@ export class SDKConfig implements ISDKConfig {
     this.flowpad_app_host = config.flowpad_app_host;
     this.flowpad_app_port = config.flowpad_app_port;
     this.check_refresh_token = config.check_refresh_token;
+    this.ui_version = config.ui_version;
   }
 
   private needsPortInUrl(): boolean {
@@ -37,6 +39,27 @@ export class SDKConfig implements ISDKConfig {
 
   get serverUrl(): string {
     return `${this.apiUrl}${API_PREFIX}`;
+  }
+
+  /**
+   * HTTP base URL for the axios client (the single base consumer).
+   *
+   * In local dev the FE (Vite dev server) and BE run on different ports, so an
+   * absolute `serverUrl` makes every non-simple POST cross-origin and pays a
+   * CORS preflight OPTIONS round-trip. Returning the RELATIVE `/api/v1` prefix
+   * keeps HTTP requests same-origin — Vite's `server.proxy` forwards them to the
+   * backend (the pattern already proven by `dep_graph`) — eliminating preflights.
+   *
+   * This relaxation is dev-only. Packaged/non-local builds (`deploy_env` other
+   * than `local`) and Electron/realm builds (which pin an absolute backend via
+   * `globalThis.__FLOWPAD_API_URL__`) keep the absolute `serverUrl`. `wsUrl`,
+   * `apiUrl` and `serverUrl` are intentionally left untouched.
+   */
+  get httpBaseUrl(): string {
+    const hasRuntimeOverride =
+      typeof globalThis !== 'undefined' &&
+      typeof (globalThis as { __FLOWPAD_API_URL__?: unknown }).__FLOWPAD_API_URL__ === 'string';
+    return this.isLocal && this.api_host === 'localhost' && !hasRuntimeOverride ? API_PREFIX : this.serverUrl;
   }
 
   get wsUrl(): string {

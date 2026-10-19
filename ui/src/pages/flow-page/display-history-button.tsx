@@ -1,17 +1,19 @@
-import type { DisplayEntry } from '@sdk';
+import { FSRef, TypeId, type DisplayEntry } from '@sdk';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { FileText, Globe, History } from 'lucide-react';
+import { displayFilePath, latestPerTarget } from './display-stack';
+import { FileText, FolderOpen, Globe, History } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
-/** Human label for a display target — a file's basename, a webapp's port, or the
+/** Human label for a display target — an app's name, a file's basename, or the
  *  entity's type/id. */
 function entryLabel(entry: DisplayEntry): string {
-  if (entry.kind === 'webapp' && entry.port != null) return `localhost:${entry.port}`;
+  if (entry.kind === 'app' && entry.name) return entry.name;
   if (entry.path) return entry.path.split('/').pop() || entry.path;
   if (entry.type && entry.id) return `${entry.type} · ${entry.id.slice(0, 8)}`;
   return entry.typeid || entry.type || 'display';
@@ -20,7 +22,7 @@ function entryLabel(entry: DisplayEntry): string {
 /** Per-entry glyph: the backend TypeInfo icon for a shown entity, else a
  *  kind-based fallback (file / globe). */
 function EntryIcon({ entry }: { entry: DisplayEntry }) {
-  if (entry.kind === 'webapp') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+  if (entry.kind === 'app') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   if (entry.type) {
     const Icon = iconForType(entry.type);
     return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
@@ -28,9 +30,61 @@ function EntryIcon({ entry }: { entry: DisplayEntry }) {
   return <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
 }
 
+/**
+ * The rows of a process's `flow show` history — one per target, newest first,
+ * each with the "ago" stamp of its latest show; clicking one calls `onOpen`.
+ * Shared by the display toolbar's history popover and the terminal ribbon's
+ * Shown stack, which differ only in their trigger.
+ */
+export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps) {
+  const { t } = useLingui();
+  const rows = latestPerTarget(stack);
+  return (
+    <ul className="flex max-h-80 flex-col overflow-y-auto">
+      {rows.map((entry, i) => {
+        const ago = formatTimeAgo(entry.shown_at);
+        const filePath = displayFilePath(entry);
+        const fsRef = filePath ? new FSRef(filePath, new TypeId('compute_node', '@local')) : null;
+        return (
+          <li key={`${entry.shown_at ?? ''}:${i}`}>
+            <button
+              type="button"
+              onClick={() => onOpen(entry)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
+              data-testid="display-history-row"
+            >
+              <EntryIcon entry={entry} />
+              <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
+              {ago ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span> : null}
+            </button>
+            {filePath && (
+              <div className="flex items-start gap-1 px-2 pb-2 text-muted-foreground">
+                <span className="min-w-0 flex-1 break-all font-mono text-[11px] select-text">{filePath}</span>
+                <CopyButton value={filePath} title={t`Copy path: ${filePath}`} className="shrink-0 rounded p-1 hover:bg-muted" />
+                {fsRef?.localComputeNodeId && (
+                  <button
+                    type="button"
+                    title={t`Reveal in Finder`}
+                    aria-label={t`Reveal in Finder`}
+                    onClick={() => void fsRef.open({ select: true })}
+                    className="shrink-0 rounded p-1 hover:bg-muted"
+                  >
+                    <FolderOpen className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 interface DisplayHistoryButtonProps {
-  /** The process's display stack (oldest first, as stored). */
-  stack: DisplayEntry[];
+  /** The process's display stack (oldest first, as stored). Read-only: the
+   *  component reverses a copy, and `displayHistory` hands back a readonly view. */
+  stack: readonly DisplayEntry[];
   /** Open a past display as its own standard tab. */
   onOpen: (entry: DisplayEntry) => void;
 }
@@ -44,9 +98,7 @@ interface DisplayHistoryButtonProps {
 export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProps) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
-  // Stored oldest-first; show newest-first.
-  const rows = [...stack].reverse();
-  if (rows.length === 0) return null;
+  if (stack.length === 0) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -67,35 +119,26 @@ export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProp
             </PopoverTrigger>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="bg-popover text-popover-foreground">
-            <p><Trans>Display history</Trans></p>
+            <p>
+              <Trans>Display history</Trans>
+            </p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <PopoverContent align="end" side="bottom" sideOffset={6} className="w-72 p-1" data-testid="display-history-popover">
-        <ul className="flex max-h-80 flex-col overflow-y-auto">
-          {rows.map((entry, i) => {
-            const ago = formatTimeAgo(entry.shown_at);
-            return (
-              <li key={`${entry.shown_at ?? ''}:${i}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onOpen(entry);
-                  }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  data-testid="display-history-row"
-                >
-                  <EntryIcon entry={entry} />
-                  <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
-                  {ago ? (
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span>
-                  ) : null}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+      <PopoverContent
+        align="end"
+        side="bottom"
+        sideOffset={6}
+        className="w-72 p-1"
+        data-testid="display-history-popover"
+      >
+        <DisplayHistoryList
+          stack={stack}
+          onOpen={(entry) => {
+            setOpen(false);
+            onOpen(entry);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );

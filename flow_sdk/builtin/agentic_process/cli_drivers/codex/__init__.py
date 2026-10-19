@@ -2,10 +2,10 @@
 
 Re-exports the public surface so callers can
 ``from flow_sdk.builtin.agentic_process.cli_drivers.codex import
-CodexDriver, CodexCliOptions, ...`` without knowing the per-file layout.
+CodexDriver, CodexAgentOptions, ...`` without knowing the per-file layout.
 """
 
-from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_event,
@@ -29,7 +29,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
 __all__ = [
     "CANCEL_GRACE_SECONDS",
     "CodexCLIStreamWorker",
-    "CodexCliOptions",
+    "CodexAgentOptions",
     "CodexDriver",
     "codex_tail_status",
     "codex_transcript_path_for_process",

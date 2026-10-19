@@ -6,16 +6,16 @@ id: 925602af-69eb-5555-b24b-230dd698c9cb
 test 1: Top-left Restart button respawns the PTY
 - navigate to {APP_URL}/dock/shell/new_terminal then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner (up to 45s) and note pty_pid (via Session Info popover -> PTY ID row, or websocket trace)
-- click the Restart icon (RotateCcw, data-testid="process-toolbar-restart") in the top-left of the process toolbar
+- open the session actions menu (hamburger right of Fork) and click "Restart session" (data-testid="process-toolbar-restart")
 - wait for the banner to re-render
 - validate the pty_pid is different from the previous value (new PTY spawned)
 - validate the xterm accepts keyboard input (e.g. type `echo hi` + Enter prints `hi`)
 - validate no console errors during the restart
 
-test 2: CLI Options dropdown — toggling a flag persists immediately and lights up the Restart glow
+test 2: debug menu CLI options — toggling a flag persists immediately and lights up the Restart glow
 - same starting state as test 1 (banner visible)
 - note current pty_pid; verify Restart button has data-restart-required="false" and is NOT glowing
-- open the Slider icon dropdown (CLI Options) and toggle "Chrome browser" ON
+- open the debug menu (bug icon, left of the process toolbar) and, under CLI Options, toggle "Chrome browser" ON
 - validate the dropdown checkbox stays checked after closing/reopening (the change persisted to the entity, no separate Apply step)
 - validate the Restart button now has data-restart-required="true" and is visibly glowing (amber + animate-pulse + ring)
 - pty_pid is UNCHANGED at this point — toggling does not auto-restart
@@ -42,7 +42,7 @@ test 4: ProcessToolbar gating (started, hasTranscript)
 - validate the ProcessToolbar is now visible and the Restart button is ENABLED
 - validate the Fork button is DISABLED — tooltip "Send a message first — fork requires conversation history" (no assistant turn yet ⇒ hasTranscript=false)
 - validate the Open Transcript button is DISABLED — tooltip "Send a message first — no transcript yet"
-- open CLI Options; validate Chrome / Full Trust / Debug checkboxes are ENABLED (started=true unlocks the toggles)
+- open the debug menu; under CLI Options validate Chrome / Full Trust / Debug checkboxes are ENABLED (started=true unlocks the toggles)
 - (manual setup): if the process can be put into status=STOPPED (e.g. terminate via Session Info), validate that the Restart button is now DISABLED with opacity-40 and tooltip "Session is not running" — even if restart_required is true, the not-running gate wins
 
 KNOWN BUG (fixed 2026-04-24): AgenticProcess fast-path in ts_sdk/src/process/agentic-process.ts compared

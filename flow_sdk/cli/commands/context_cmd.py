@@ -3,13 +3,14 @@
 Agent-oriented commands that read the browser-side data context — current
 project / process / workspace TypeIds, etc. — for use in skills like
 ``flowpad-assistance`` to compose actions like "navigate to current project"
-without asking the user for an id.
+without asking the user for an id. ``flow context display`` reads the calling
+process's display context instead: what the page it shows reported about itself.
 
 Error contract (parsed by the agent — keep stable):
 
     exit 0 — success, JSON written to stdout
     exit 3 — no active tab (nothing is open in a browser)
-    exit 4 — connection not found (when --connection-id is supplied)
+    exit 4 — connection not found (--connection-id) / process not found (display)
     exit 5 — connection error (server unreachable)
     exit 2 — invalid arguments
 """
@@ -24,11 +25,32 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    bad_response_message as _bad_response_message,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    get_graph_json as _get_graph_json,
+)
+from flow_sdk.cli.commands._common import (
+    graph_url as _graph_url,
+)
+from flow_sdk.cli.commands._common import (
+    server_error as _server_error,
+)
+from flow_sdk.cli.commands._common import (
+    resolve_process_id as _resolve_process_id,
+)
+from flow_sdk.cli.commands._common import (
+    local_get as _local_get,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
 )
-
 
 context_app = typer.Typer(
     name="context",
@@ -48,10 +70,7 @@ EXIT_CONNECTION_ERROR = 5
 
 @context_app.command(
     "list",
-    help=(
-        "Print the data-context snapshot for the active tab as JSON. "
-        "Pass --connection-id to target a specific tab."
-    ),
+    help=("Print the data-context snapshot for the active tab as JSON. Pass --connection-id to target a specific tab."),
 )
 def list_context(
     connection_id: Annotated[
@@ -72,7 +91,7 @@ def list_context(
     params = {"connection_id": connection_id} if connection_id else None
 
     try:
-        resp = requests.get(url, params=params, timeout=5)
+        resp = _local_get(url, params=params, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return
@@ -80,11 +99,7 @@ def list_context(
     try:
         body = resp.json()
     except ValueError:
-        _fail(
-            EXIT_CONNECTION_ERROR,
-            "CONNECTION_ERROR",
-            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
-        )
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
     if resp.status_code == 200 and body.get("ok"):
@@ -92,6 +107,7 @@ def list_context(
             {
                 "connection_id": body.get("connection_id"),
                 "context": body.get("context") or {},
+                "here": body.get("here") or {},
             }
         )
         return
@@ -103,3 +119,33 @@ def list_context(
         "CONNECTION_NOT_FOUND": EXIT_NOT_FOUND,
     }
     _fail(mapping.get(error_code, EXIT_CONNECTION_ERROR), error_code, error_msg)
+
+
+@context_app.command(
+    "display",
+    help=(
+        "Print the display context — the live state the page shown in this process's display "
+        "reported about itself — as JSON. `fresh` is false when nothing current is stored."
+    ),
+)
+def display_context(
+    process: Annotated[
+        Optional[str],
+        typer.Option(
+            "--process",
+            "-p",
+            help="Target AgenticProcess id (defaults to the calling process via FLOWPAD_EXECUTION_SCOPE).",
+        ),
+    ] = None,
+) -> None:
+    process_id = _resolve_process_id(process)
+    port = _discover_port()
+    url = _graph_url(port, f"agentic_process/{process_id}/display-context")
+
+    def _on_error(status_code: int, body: dict) -> None:
+        if status_code == 404:
+            _fail(EXIT_NOT_FOUND, "ENTITY_NOT_FOUND", str(body.get("message") or "not found"))
+        _server_error(status_code, body)
+
+    data = _get_graph_json(url, timeout=5, on_error=_on_error)
+    _ok({"process_id": process_id, **(data or {})})

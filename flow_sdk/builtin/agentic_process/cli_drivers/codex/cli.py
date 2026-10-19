@@ -1,6 +1,6 @@
-"""CodexCliOptions — builds OpenAI Codex CLI shell command strings.
+"""CodexAgentOptions — builds OpenAI Codex CLI shell command strings.
 
-Mirrors the shape of ``ClaudeCliOptions`` for the ``codex exec`` non-interactive
+Mirrors the shape of ``ClaudeAgentOptions`` for the ``codex exec`` non-interactive
 path. The codex worker runs ``codex exec --json`` per turn; the JSON event
 stream is what gets converted to FlowData.
 
@@ -20,26 +20,31 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import serialize_toml_cli_value
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgentOptions,
+    hide_flowpad_interpreter,
+    insert_capability_path_dir,
+    worker_bin_folder,
+)
 from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
 
-class CodexCliOptions(WorkerCLIOptions):
+class CodexAgentOptions(AgentOptions):
     """Builds a ``codex exec`` shell command string.
 
-    The intent is parity with ``ClaudeCliOptions`` so that the ``cmd_line``
+    The intent is parity with ``ClaudeAgentOptions`` so that the ``cmd_line``
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
 
-    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    # sm/md/lg → gpt-5.6-luna/gpt-5.6-terra/gpt-5.6-sol, applied when emitting command.
     MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
@@ -54,9 +59,12 @@ class CodexCliOptions(WorkerCLIOptions):
         add_dirs: list[str] | None = None,
         json_stream: bool = True,
         ephemeral: bool = True,
+        bypass_hook_trust: bool = False,
+        fork_session_id: str | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
+        self.fork_session_id = fork_session_id
         self.resume = resume
         self.model = model
         self.permission_mode = permission_mode
@@ -71,7 +79,10 @@ class CodexCliOptions(WorkerCLIOptions):
         # `-c key=val` overrides for API-key auth (the OpenRouter provider block).
         # Derived per-spawn from the harness Capability — excluded from to_json /
         # the restart hash, same as fork/resume.
-        self.extra_config_overrides: list[tuple[str, str]] = []
+        self.extra_config_overrides: list[tuple[str, Any]] = []
+        # Allows process-scoped command hooks for this launch only. Deliberately
+        # absent from ``to_json`` / ``from_json`` so trust is never persisted.
+        self.bypass_hook_trust = bypass_hook_trust
 
     # Overridden per-process in ``_reasoning_effort_flags`` (see there for why).
     # Chosen to stay under the 30s test timeout — keep in sync if that's relaxed.
@@ -79,7 +90,13 @@ class CodexCliOptions(WorkerCLIOptions):
 
     EXECUTABLE = "codex"
     PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
-    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
+
+    def configure_fork(self, source_session_id: str) -> None:
+        if self.json_stream:
+            raise NotImplementedError("Codex session forks require an interactive terminal")
+        self.session_id = None  # Codex allocates the child's native session identity.
+        self.resume = False
+        self.fork_session_id = source_session_id
 
     def _common_tail(self) -> list[str]:
         """Flags shared by both transports: cwd, model, add-dirs, resume."""
@@ -90,14 +107,17 @@ class CodexCliOptions(WorkerCLIOptions):
             tail.extend(["-m", self.resolved_model])
         for d in self.add_dirs:
             tail.extend(["--add-dir", d])
-        if self.resume and self.session_id:
+        if self.fork_session_id:
+            tail.extend(["fork", self.fork_session_id])
+        elif self.resume and self.session_id:
             tail.extend(["resume", self.session_id])  # positional subcommand, not a flag
         return tail
 
     def _developer_instruction_flags(self) -> list[str]:
         if not self.developer_instructions:
             return []
-        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+        value = serialize_toml_cli_value(self.developer_instructions)
+        return ["-c", f"developer_instructions={value}"]
 
     def _interactive_trust_flags(self) -> list[str]:
         """Trust the injected-input target only when full access was requested."""
@@ -115,12 +135,8 @@ class CodexCliOptions(WorkerCLIOptions):
             workdir = str(Path(self.workdir).resolve(strict=True))
         except OSError:
             workdir = self.workdir
-        # JSON and TOML basic strings share the escapes used here. JSON leaves
-        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
-        # codepoint while preserving non-BMP Unicode as real UTF-8.
-        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
-        trusted = json.dumps("trusted")
-        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+        projects = {workdir: {"trust_level": "trusted"}}
+        return ["-c", f"projects={serialize_toml_cli_value(projects)}"]
 
     def _interactive_update_flags(self) -> list[str]:
         """Keep Codex's startup updater out of automation-owned PTYs.
@@ -151,8 +167,36 @@ class CodexCliOptions(WorkerCLIOptions):
         ``-c`` helpers; empty in device mode."""
         flags: list[str] = []
         for key, value in self.extra_config_overrides:
-            flags.extend(["-c", f"{key}={json.dumps(value)}"])
+            flags.extend(["-c", f"{key}={serialize_toml_cli_value(value)}"])
         return flags
+
+    def _shell_path_flags(self) -> list[str]:
+        """Hand codex the worker PATH as ITS shell setting, so the pinned ``flow`` stays first.
+
+        Codex does not run a command with the PATH it was spawned with: it rebuilds one from the
+        user's shell startup files (a replayed snapshot, or a login shell), and whatever those
+        prepend — pyenv shims, a system Python — lands in front of the pin from
+        :func:`flow_cli_env_path`. ``shell_environment_policy.set`` is applied to the command's
+        environment by codex itself; ``allow_login_shell=false`` closes the fallback where a
+        login shell re-runs the startup files on top of it.
+
+        The value is the PATH the worker is spawned with, not the options' own: both transports
+        put the codex bin folder behind the pin after this argv is built (see
+        :func:`build_worker_spawn_env`). Empty when the worker env carries no pin.
+        """
+        path = self.env_vars.get("PATH")
+        if not path:
+            return []
+        folder = worker_bin_folder("codex")
+        if folder:
+            path = insert_capability_path_dir(folder, path)
+        path = hide_flowpad_interpreter({**self.env_vars, "PATH": path})["PATH"]
+        return [
+            "-c",
+            f"shell_environment_policy.set.PATH={serialize_toml_cli_value(path)}",
+            "-c",
+            "allow_login_shell=false",
+        ]
 
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
@@ -161,53 +205,54 @@ class CodexCliOptions(WorkerCLIOptions):
         Both end with the shared :meth:`_common_tail`.
         """
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        hook_trust = ["--dangerously-bypass-hook-trust"] if self.bypass_hook_trust else []
         dev_flags = self._developer_instruction_flags()
-        extra_cfg = self._extra_config_override_flags()
+        cfg_overrides = self._extra_config_override_flags() + self._shell_path_flags()
         if not self.json_stream:
             return (
-                bypass
+                hook_trust
+                + bypass
                 + self._interactive_update_flags()
                 + self._interactive_trust_flags()
                 + self._reasoning_effort_flags()
-                + extra_cfg
+                + cfg_overrides
                 + dev_flags
                 + self._common_tail()
             )
 
-        head = ["exec", "--skip-git-repo-check", *bypass]
+        head = ["exec", "--skip-git-repo-check", *hook_trust, *bypass]
         if self.ephemeral:
             head.append("--ephemeral")
         head.append("--json")
         head.extend(self._reasoning_effort_flags())
-        head.extend(extra_cfg)
+        head.extend(cfg_overrides)
         return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
-    def to_json(self) -> dict[str, Any]:
-        d = super().to_json()
-        d.update({
-            "worker_type": "codex",
-            "session_id": self.session_id,
-            "resume": self.resume,
-            "model": self.model,
-            "permission_mode": self.permission_mode,
-            "skill_names": self.skill_names,
-            "add_dirs": self.add_dirs,
-            "json_stream": self.json_stream,
-            "ephemeral": self.ephemeral,
-        })
-        return d
+    # ── Serialisation ───────────────────────────────────────────────────────
+    # The base AgentOptions.to_json / from_json do the work; this is the whole
+    # declaration of this vendor's wire shape. Key names and value types are
+    # frozen — see tests/unit/test_agent_options_serialization_golden.py.
 
-    @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "CodexCliOptions":
-        return cls(
-            session_id=data.get("session_id"),
-            resume=bool(data.get("resume", False)),
-            model=data.get("model"),
-            permission_mode=data.get("permission_mode", "bypassPermissions"),
-            skill_names=list(data.get("skill_names") or []),
-            workdir=data.get("workdir"),
-            env_vars=data.get("env_vars") or {},
-            add_dirs=list(data.get("add_dirs") or []),
-            json_stream=bool(data.get("json_stream", True)),
-            ephemeral=bool(data.get("ephemeral", True)),
-        )
+    SPARSE_FIELDS = ("fork_session_id",)
+    WORKER_TYPE = "codex"
+    SERIALIZED_FIELDS = (
+        "session_id",
+        "resume",
+        "model",
+        "permission_mode",
+        "skill_names",
+        "add_dirs",
+        "json_stream",
+        "ephemeral",
+    )
+    _COERCE = {
+        "resume": bool,
+        "json_stream": bool,
+        "ephemeral": bool,
+        "skill_names": lambda v: list(v or []),
+        "add_dirs": lambda v: list(v or []),
+    }
+
+
+#: The options class ``factory`` builds for this vendor.
+AGENT_OPTIONS = CodexAgentOptions

@@ -21,54 +21,28 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
+from flow_sdk.builtin.agentic_process.cli_drivers.session_paths import (
+    LAUNCH_LOOKBACK,
+    normalize_path,
+    parse_iso_datetime,
+    transcript_path_for_process,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.fs_store.indexer.functions.codex_sessions import is_subagent_rollout, thread_source_of
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
-_LAUNCH_LOOKBACK = timedelta(seconds=30)
-
-
-def _parse_iso_datetime(value: object) -> datetime | None:
-    if not value:
-        return None
-    if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _normalize_path(value: object) -> str | None:
-    if not value:
-        return None
-    try:
-        return str(Path(str(value)).expanduser().resolve())
-    except OSError:
-        return str(Path(str(value)).expanduser())
-
-
 def codex_transcript_path_for_process(process_id: str) -> Path:
-    """Return the canonical process-local transcript path for codex.
-
-    Lazily imported to avoid pulling Record machinery at module import time.
-    """
-    from flow_sdk.fs_store.record_paths import shadow_dir_for
-
-    d = shadow_dir_for("agentic_process", process_id)
-    d.mkdir(parents=True, exist_ok=True)
-    return d / "codex_transcript.jsonl"
+    """Process-local JSONL tee path for codex's stdout events."""
+    return transcript_path_for_process("codex", process_id)
 
 
 def find_codex_session_jsonl(thread_id: str) -> Path | None:
@@ -78,6 +52,7 @@ def find_codex_session_jsonl(thread_id: str) -> Path | None:
     glob-search for the suffix.
     """
     from flow_sdk.instance_settings import get_instance_settings
+
     sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
         return None
@@ -86,6 +61,18 @@ def find_codex_session_jsonl(thread_id: str) -> Path | None:
         if p.name.endswith(suffix):
             return p
     return None
+
+
+def find_codex_resumable_session(thread_id: str) -> Path | None:
+    """The rollout for ``thread_id`` when it is a session ``codex resume`` accepts.
+
+    A sub-agent thread has a rollout under the same naming scheme, but codex
+    refuses to resume it, so it is never a process's session.
+    """
+    path = find_codex_session_jsonl(thread_id)
+    if path is None or is_subagent_rollout(path):
+        return None
+    return path
 
 
 def read_codex_rollout_meta(path: Path) -> dict:
@@ -117,8 +104,13 @@ def find_latest_codex_session_jsonl(
     cwd: str | None,
     started_at: str | datetime | None = None,
 ) -> Path | None:
-    """Find the newest rollout matching cwd and, when available, launch time."""
-    normalized_cwd = _normalize_path(cwd)
+    """Find the newest top-level rollout matching cwd and, when available, launch time.
+
+    A sub-agent thread's rollout shares the cwd and lands after its parent's
+    launch, but it is not a session: codex refuses to ``resume`` it, so a
+    process that adopted one fails every relaunch with exit 1.
+    """
+    normalized_cwd = normalize_path(cwd)
     if not normalized_cwd:
         return None
     from flow_sdk.instance_settings import get_instance_settings
@@ -127,19 +119,21 @@ def find_latest_codex_session_jsonl(
     if not sessions_root.is_dir():
         return None
 
-    launch_dt = _parse_iso_datetime(started_at)
+    launch_dt = parse_iso_datetime(started_at)
     matches: list[tuple[datetime, Path]] = []
     for path in sessions_root.rglob("rollout-*.jsonl"):
         meta = read_codex_rollout_meta(path)
-        if _normalize_path(meta.get("cwd")) != normalized_cwd:
+        if normalize_path(meta.get("cwd")) != normalized_cwd:
             continue
-        raw_dt = _parse_iso_datetime(meta.get("_timestamp") or meta.get("timestamp"))
+        if thread_source_of(meta) == "subagent":
+            continue
+        raw_dt = parse_iso_datetime(meta.get("_timestamp") or meta.get("timestamp"))
         if raw_dt is None:
             try:
                 raw_dt = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
             except OSError:
                 continue
-        if launch_dt is not None and raw_dt < launch_dt - _LAUNCH_LOOKBACK:
+        if launch_dt is not None and raw_dt < launch_dt - LAUNCH_LOOKBACK:
             continue
         matches.append((raw_dt, path))
     if not matches:
@@ -186,15 +180,17 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
         parsed = AgentTranscriptFile("codex", transcript)
     except Exception as exc:
         logger.warning("Codex history parse failed for %s", transcript, exc_info=True)
-        return [FlowData(
-            flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
-            attributes={
-                "element-type": FlowElementType.ERROR,
-                "data-type": FlowDataType.TEXT,
-                "subtype": "history-parse-error",
-                "observation-kind": "replay",
-            },
-        )]
+        return [
+            FlowData(
+                flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
+                attributes={
+                    "element-type": FlowElementType.ERROR,
+                    "data-type": FlowDataType.TEXT,
+                    "subtype": "history-parse-error",
+                    "observation-kind": "replay",
+                },
+            )
+        ]
 
     for entry in parsed.entries:
         # Session metadata and unknown parser fallbacks are discovery/debug
@@ -209,19 +205,21 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
 # ── Per-entry conversion ───────────────────────────────────────────────────────
 
 
-_TOOL_USE_KINDS = frozenset({
-    "tool_use",
-    "shell_command",
-    "file_write",
-    "file_edit",
-    "file_read",
-    "skill_call",
-    "search",
-    "web_fetch",
-    "todo_update",
-    "agent_spawn",
-    "exit_plan_mode",
-})
+_TOOL_USE_KINDS = frozenset(
+    {
+        "tool_use",
+        "shell_command",
+        "file_write",
+        "file_edit",
+        "file_read",
+        "skill_call",
+        "search",
+        "web_fetch",
+        "todo_update",
+        "agent_spawn",
+        "exit_plan_mode",
+    }
+)
 
 
 def _entry_to_replay_flow_data(entry) -> list[FlowData]:
@@ -235,14 +233,16 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
         # TOKEN_USAGE) still get one STATUS frame — the live stream does the
         # same (see ``event_to_flowdata._wrap_live``), so replay stays
         # row-for-row comparable with what a live subscriber saw.
-        frames = [FlowData(
-            flow_value={},
-            created_time=entry.timestamp or "",
-            attributes={
-                "element-type": _element_type_for_kind(entry.kind.value),
-                "data-type": FlowDataType.OBJECT,
-            },
-        )]
+        frames = [
+            FlowData(
+                flow_value={},
+                created_time=entry.timestamp or "",
+                attributes={
+                    "element-type": _element_type_for_kind(entry.kind.value),
+                    "data-type": FlowDataType.OBJECT,
+                },
+            )
+        ]
 
     # SYSTEM entries carry a refined subtype (``turn_context``,
     # ``event_msg.error``, ...) that is strictly more informative than the
@@ -262,6 +262,11 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
         if subtype == "event_msg.turn_aborted":
             frame.attributes["turn-terminated"] = "true"
         frame.attributes["observation-kind"] = "replay"
+        # Lets a consumer filter the derivation layer's output without reaching
+        # into ``process_entry`` — a physical entry and its refinement share a
+        # tool_use_id, so anything counting calls needs to tell them apart.
+        if getattr(entry, "virtual", False):
+            frame.attributes["is-virtual"] = "true"
         frame.attributes.setdefault("transcript-entry-id", entry.id)
         if entry.entry_id:
             frame.attributes.setdefault("transcript-source-entry-id", entry.entry_id)

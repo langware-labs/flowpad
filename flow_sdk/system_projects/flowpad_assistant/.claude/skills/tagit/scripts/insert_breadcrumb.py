@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""Insert a breadcrumb `tag` capsule on top of a test.
+
+The mechanical half of the `tagit` skill. Resolves the anchor line for a test
+and writes the capsule through the PRODUCTION carrier
+(``LineCommentCapsule.write_at``), so placement, newline style, locking, atomic
+replacement and insert-vs-replace all behave exactly like identity-capsule
+injection — the only differences being the payload and the line.
+
+Placement rules this enforces, none of which are safe to leave to a model:
+
+* **Column 0.** An indented capsule raises inside the parser, and
+  ``scan_code_capsules`` swallows that — the whole FILE silently disappears
+  from ``flow tag get``. For a method inside a ``class Test...`` the anchor is
+  therefore hoisted to the class statement, never a line in its body.
+* **Above the decorators.** ``@pytest.mark.…`` lines belong to the test, so the
+  capsule goes above the first one.
+* **Merge, never stack.** A breadcrumb already anchored on this test is read
+  first and its tags are merged, so re-running adds a tag instead of replacing
+  the file's existing knowledge.
+
+``--print-fence`` additionally emits the ready-to-paste ```breadcrumb block for
+the rules doc. The capsule and that block state the same thing twice — the tag,
+the file, the line, the note — so having the script emit both is the only way
+they cannot disagree. It is the same argument as writing the capsule through
+this script rather than by hand.
+
+Usage:
+    python insert_breadcrumb.py --file tests/unit/test_x.py \\
+        --test test_catchup_pulls_backlog \\
+        --tag breadcrumb.test.catchup_login.rules \\
+        --note "FAILING? read this tag's rules before editing" \\
+        --print-fence
+
+Exit codes: 0 written (or already correct); 2 bad arguments / test not found.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(REPO_ROOT))
+
+from flow_sdk.capsules.data import CapsuleData  # noqa: E402
+from flow_sdk.capsules.line_comment import LineCommentCapsule  # noqa: E402
+from flow_sdk.tags.grammar import normalize_tag  # noqa: E402
+
+CAPSULE_NAME = "tag"
+
+
+def _fail(message: str) -> "None":
+    print(f"error: {message}", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _declaration(test: str) -> "re.Pattern[str]":
+    """Match how `test` is declared, in either of the repo's test languages.
+
+    pytest names a test with an identifier; vitest/playwright name it with a
+    title string on ``test``/``it``/``describe`` (with optional modifiers such
+    as ``test.describe`` or ``it.each``). Both are anchored the same way — the
+    capsule is hoisted to the enclosing column-0 statement — so only the
+    declaration syntax differs.
+    """
+    quoted = re.escape(test)
+    return re.compile(
+        rf"^(\s*)(?:"
+        rf"(?:async\s+)?def\s+{quoted}\s*\("
+        rf"|(?:test|it|describe)(?:\.\w+)*\s*\(\s*['\"`]{quoted}['\"`]"
+        rf")"
+    )
+
+
+def resolve_anchor(lines: list[str], test: str) -> int:
+    """1-indexed line the capsule must sit above, at column 0.
+
+    Walks up from the declaration over decorators; if it is indented (a method
+    on a test class, a case inside a ``describe`` block) the anchor is hoisted
+    to the enclosing column-0 statement so the block never lands inside a body.
+    """
+    pattern = _declaration(test)
+    index = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+    if index is None:
+        _fail(f"no test named {test} in the file (looked for a def or a test/it/describe title)")
+
+    if pattern.match(lines[index]).group(1):  # indented → hoist to the owner
+        index = next(
+            (
+                i
+                for i in range(index, -1, -1)
+                if lines[i].strip() and not lines[i][:1].isspace()
+            ),
+            None,
+        )
+        if index is None:
+            _fail(f"{test} is indented but has no column-0 owner to anchor above")
+
+    while index > 0 and lines[index - 1].lstrip().startswith("@"):
+        index -= 1
+    return index + 1
+
+
+def existing_tags(capsule: LineCommentCapsule, anchor: int) -> dict:
+    """Tags already carried by the block anchored on this test, if any."""
+    for block in capsule.read_all(CAPSULE_NAME):
+        if block.end_line == anchor - 1 or block.line == anchor:
+            carried = block.data.data.get("tags")
+            return dict(carried) if isinstance(carried, dict) else {}
+    return {}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--file", required=True, help="Path to the test file")
+    parser.add_argument("--test", required=True, help="Test function name")
+    parser.add_argument("--tag", required=True, help="Tag, e.g. breadcrumb.test.foo.rules")
+    parser.add_argument("--note", required=True, help="Imperative one-liner shown by `flow tag get`")
+    parser.add_argument(
+        "--print-fence",
+        action="store_true",
+        help="Also print the ```breadcrumb block to paste at the top of the rules doc",
+    )
+    args = parser.parse_args()
+
+    path = Path(args.file).expanduser()
+    if not path.is_file():
+        _fail(f"no such file: {path}")
+    try:
+        tag = normalize_tag(args.tag)
+    except (TypeError, ValueError) as exc:
+        _fail(f"invalid tag {args.tag!r}: {exc}")
+    if not args.note.strip():
+        _fail("--note is the only thing `flow tag get` shows for a code site; it cannot be empty")
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    anchor = resolve_anchor(lines, args.test)
+
+    capsule = LineCommentCapsule(path)
+    tags = existing_tags(capsule, anchor)
+    tags[tag] = args.note.strip()
+    capsule.write_at(CAPSULE_NAME, CapsuleData(1, {"tags": tags}), line=anchor)
+
+    placed = next(
+        block for block in capsule.read_all(CAPSULE_NAME) if tag in (block.data.data.get("tags") or {})
+    )
+    print(f"{path}:{placed.line} {CAPSULE_NAME} -> {', '.join(sorted(tags))}")
+    if args.print_fence:
+        print()
+        print(render_fence(path, placed.line, tag, args.note.strip()))
+    return 0
+
+
+def render_fence(path: Path, line: int, tag: str, note: str) -> str:
+    """The ```breadcrumb block for the top of the rules doc.
+
+    `rel_path` is relative to the repo root, because that is what the card
+    resolves against (the document's project root) and what the tag index
+    reports back for a code site — one shape for both halves of the hybrid.
+
+    The root is derived from the TARGET FILE, not from this script's own
+    location. Those are the same directory in the ordinary case and differ in
+    every interesting one — a sibling clone, a worktree, a monorepo package —
+    where anchoring on the script would emit an absolute path that no card can
+    resolve.
+
+    Values go out as JSON strings: a double-quoted YAML scalar escapes the same
+    way, and a note like "FAILING? read this" is not safe to emit bare (a
+    leading `?` is a YAML indicator).
+    """
+    resolved = path.resolve()
+    root = next((p for p in resolved.parents if (p / ".git").exists()), None)
+    try:
+        rel_path = resolved.relative_to(root or REPO_ROOT).as_posix()
+    except ValueError:
+        # Not inside any repo: emit what we were given and let the card report
+        # the unresolvable path rather than silently writing an absolute one.
+        rel_path = path.as_posix()
+    return "\n".join(
+        [
+            "```breadcrumb",
+            f"tag: {tag}",
+            "sites:",
+            f"  - rel_path: {json.dumps(rel_path)}",
+            f"    line: {line}",
+            f"    note: {json.dumps(note)}",
+            "```",
+        ]
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -26,7 +26,6 @@ export { RecordTypeRegistry, fsRecordTypeRegistry, type FsRecordConstructor } fr
 export { FsRecord, type FsRecordData } from './fs-record';
 
 // ── Collection classes ─────────────────────────────────
-export { ResourceRecordList } from './resource-record-list';
 export { SourceFileRecordList } from './source-file-record-list';
 
 // ── DataOp handler ─────────────────────────────────────

@@ -56,6 +56,8 @@ export enum ViewType {
   SHELL = 'shell',
   EDITOR = 'editor',
   WEB_APP = 'web-app',
+  // Retired decode-only aliases; the loader redirects to /dock/credentials/<subview>
+  // and `normalizeRetiredDockPointer` resolves saved tabs. See CREDENTIALS.
   ENVIRONMENT = 'environment',
   CONNECTIONS = 'connections',
   ARTIFACTS = 'artifacts', // Renamed from RESULTS
@@ -66,16 +68,23 @@ export enum ViewType {
   DOCS = 'docs',
   ASSISTANCE = 'assistance', // expert assistance tasks
   SURVEY = 'survey',
-  API_KEYS = 'api-keys',
+  API_KEYS = 'api-keys', // Retired decode-only alias; see ENVIRONMENT
   HOOKS = 'hooks', // Claude Code hooks configuration
   MACHINE = 'machine', // Machine overview (processes, network)
   EXPLORER = 'explorer', // File explorer view
   SKILLS = 'skills', // Claude Code skills editor
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
   SHOW = 'show', // MCP UI display dock pointer
+  // A question a ComputeOp put to a person. Drawn on its own in `win/`,
+  // where the routed view IS the window — the pointer is the question id.
+  ASK = 'ask',
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
   WORLDVIEW = 'worldview', // Shared projections - /dock[/hub]/worldview/<world|organization|deployment>
+  // People-and-teams admin: the plain master-detail screen (tree + member table).
+  // The org WORLDVIEW is the same data as a graph and stays the advanced view —
+  // this is the one a school administrator opens to add a class or change a role.
+  ORGANIZATION = 'organization', // /dock/hub/organization[/<type>/<id>]
   TAG = 'tag', // Tag taxonomy graph/tree - /dock/tag/graph[/<dot.name>]?view=tree
   SUBGRAPH = 'subgraph', // Generic entity-subgraph - /dock/subgraph/<projection>[/<focusKey>]
   K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
@@ -86,23 +95,73 @@ export enum ViewType {
   PREFERENCES = 'preferences', // User preferences screen (registry-driven, category tabs)
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
-  TRIGGERS = 'triggers', // Activation rules browser + editor
+  // Automations — "when X, do Y": the list, the runs, the event bus.
+  // /dock/automations[/runs|/bus][?trigger=<id>&creating=<kind>&run=<id>&tag=<t>]
+  AUTOMATIONS = 'automations',
+  // RETIRED onto AUTOMATIONS (retired-views.ts) — kept decodable because saved
+  // tabs, bookmarks and sent links still name them.
+  EVENTS = 'events', // Retired → automations (was: the merged rules + events screen)
+  TRIGGERS = 'triggers', // Retired → automations
   CAPABILITIES = 'capabilities', // System capability checks/install/test
-  AGENTIC_FLOWS = 'agentic-flows', // Flow-graph editor/observatory (FlowManager) — dev mode
+  GRAPH_WORKFLOWS = 'graph-workflows', // Flow-graph editor/observatory (GraphWorkflowManager) — dev mode
+  SIGNALS = 'signals', // Retired → automations/bus (was: global event-bus monitor + injector)
+  DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
+  RAG = 'rag', // Search indexes and the folders they cover — /dock/rag
+  SCHEMA_TREE = 'schema-tree', // A project's data schemas, top to bottom — /dock/schema-tree[/<kind>…], scoped to a project
+  ASSET_LIST = 'asset-list', // One home counter's assets as a table — /dock/asset-list?group=<g>&counter=<c>
+  PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
-  CRON = 'cron', // Scheduled cron jobs manager
+  CRON = 'cron', // Retired → automations (was: scheduled cron jobs manager)
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
-  INBOX = 'inbox', // Inbox — received FlowMessages from hub
+  AGENT = 'agent', // Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
+  STREAM_INBOX = 'stream_inbox', // Stream Inbox — received FlowMessages from hub
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
   SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
   GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>
   DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
   LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
+  HELPDESK = 'helpdesk', // Helpdesk portal — guides + ask + my tickets - /dock/helpdesk/<projectId>[/article/<path>]
   ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
+  CREDENTIALS = 'credentials', // Env vars + OAuth connections + API keys - /dock/hub/credentials/<subview>[/<projectId>]
+  // An Artifact-backed web app - /dock/app/artifact-<uuid>[?runtime=dev|served].
+  // The artifact IS the address; which runtime serves it (a dev server's port, or
+  // built output we host) is derived, never baked into the pointer, so a stale port
+  // can never become the identity of an app. Mirrors `ViewType.APP` in
+  // flow_sdk/core/dock_address.py — same value, same position.
+  APP = 'app',
+  LLM_ENDPOINTS = 'llm-endpoints', // Hub LLM endpoints (roots + chains) - /dock/hub/llm-endpoints[/<id>[/overview|usage|models]]
+  TOKEN_PLAN = 'token-plan', // Hub token plan (me / team / org budgets) - /dock/hub/token-plan[/me|team[/<id>]|org]
+  // DESK page: what funds this machine's harnesses (device logins, stored keys, hub endpoints)
+  LLM_SOURCES = 'llm-sources', // /dock/llm-sources[/<worker>] -- the harness in focus
+  // DESK page: the first-run chooser -- "what should issue your LLM calls". Its own address
+  // rather than a state on LLM_SOURCES because `flow llm set auto` opens it in a BROWSER, and
+  // a CLI can hand a user nothing but a URL. No pointer: the screen is one question.
+  LLM_SETUP = 'llm-setup', // /dock/llm-setup
+  // The Flowpad Assistant chat popped out of the floating window. Only ever drawn
+  // in `win/`, where the view IS the window; it follows the main window's context.
+  ASSISTANT = 'assistant', // /win/assistant
+  // A HOST tab: an agentic process shown as the Vibe workspace (chat + Display +
+  // nested child tabs). `DockPointer.tabHash` folds it onto the process's shell
+  // identity, so one process is one Tab row whichever of the two it is shown as.
+  VIBE = 'vibe', // /dock/vibe/agentic_process-<id>
+  // Inbound routing: the hub webhook claims (numbers / bots, sender + group rules) and where each
+  // one's messages go. Rendered on the hub page AND the desk (one component, the hub decides).
+  INBOUND = 'inbound', // /dock/<hub|desk>/inbound
+}
+
+/**
+ * CredentialsSubview enum for the credentials view's internal tabs.
+ * Used as pointer in dock/credentials/:pointer URLs, optionally followed by a
+ * project id: `credentials/environment/<projectId>`.
+ */
+export enum CredentialsSubview {
+  ENVIRONMENT = 'environment',
+  CONNECTIONS = 'connections',
+  API_KEYS = 'api-keys',
 }
 
 /**
@@ -118,12 +177,25 @@ export enum WebappSubview {
  * MachineSubview enum for machine overview sub-navigation
  * Used as pointer in dock/machine/:pointer URLs
  */
+/**
+ * TokenPlanKind enum for the hub token-plan scopes.
+ * Used as the leading pointer segment in dock/hub/token-plan/:pointer URLs,
+ * optionally followed by a team id: `token-plan/team/<teamId>`.
+ * Mirrors `TokenPlanKind` in flow_sdk/core/dock_address.py.
+ */
+export enum TokenPlanKind {
+  ME = 'me',
+  TEAM = 'team',
+  ORG = 'org',
+}
+
 export enum MachineSubview {
   PROCESSES = 'processes',
   NETWORK = 'network',
-  GATEWAY = 'gateway',
   METRICS = 'metrics', // E2B only - CPU/Memory charts
   LOGS = 'logs', // E2B only - sandbox logs
+  SECRETS = 'secrets', // Which project secrets this node may see. NOT E2B-gated
+                       // — the local desktop node needs it just as much.
 }
 
 /**

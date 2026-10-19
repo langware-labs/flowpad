@@ -17,6 +17,27 @@ const TEXT_MIME_BY_EXT: Record<string, string> = {
   '.xml': 'application/xml',
 };
 
+/**
+ * The globals a shown page needs to reach Flowpad with the SDK — set before the
+ * page's own scripts run. Mirrors the server-side `inject_api_origin` /
+ * `inject_process_id` (`flow_sdk/builtin/faas/serve_static.py`) for pages that
+ * never pass through `fs/serve` (an MCP App arrives in the sandbox as text).
+ */
+export function pageSdkPrelude(apiUrl: string, processId: string | null | undefined): string {
+  const assignments = [`globalThis.__FLOWPAD_API_URL__=${JSON.stringify(apiUrl)};`];
+  if (processId) assignments.push(`globalThis.__FLOWPAD_PROCESS_ID__=${JSON.stringify(processId)};`);
+  // `<` never appears unescaped inside the script body, so a value cannot close the tag.
+  return `<script>${assignments.join('').replace(/</g, '\\u003c')}</script>`;
+}
+
+/** Insert `snippet` right after `<head>` (or at the very start when there is none). Idempotent. */
+export function injectHeadScript(html: string, snippet: string): string {
+  if (html.includes(snippet)) return html;
+  const match = /<head[^>]*>/i.exec(html);
+  const at = match ? match.index + match[0].length : 0;
+  return html.slice(0, at) + snippet + html.slice(at);
+}
+
 function extensionOf(path: string): string {
   const withoutQuery = path.split(/[?#]/, 1)[0] ?? path;
   const idx = withoutQuery.lastIndexOf('.');

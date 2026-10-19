@@ -3,7 +3,6 @@
 Pure function over a string. No DB, no records, no fixtures beyond pytest's.
 """
 
-import pytest
 
 from flow_sdk.wiki.parser import parse_links
 
@@ -74,6 +73,16 @@ class TestMarkdownLinks:
     def test_wiki_dock_url_with_fragment(self):
         links = parse_links("See [foo](/dock/assets/wiki/foo#install).")
         assert _raws(links) == ["foo"]
+
+    def test_canonical_local_wiki_url_carries_namespace(self):
+        links = parse_links("See [foo](/dock/assets/wiki/@local/foo).")
+        assert _raws(links) == ["foo"]
+        assert links[0].wiki_ref == "@local"
+
+    def test_canonical_hub_wiki_url_carries_namespace(self):
+        links = parse_links("See [foo](/dock/hub/assets/wiki/@team/foo%20bar).")
+        assert _raws(links) == ["foo bar"]
+        assert links[0].wiki_ref == "@team"
 
 
 class TestCodeFenceSkipping:

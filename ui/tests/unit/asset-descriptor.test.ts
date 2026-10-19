@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { dataManager } from '@sdk';
+import { displayLabelForDescriptor } from '@src/components/asset-manager/asset-row-helpers';
 import {
   ASSET_SOURCE_LABEL,
   READONLY_ASSET_SOURCES,
@@ -61,7 +63,7 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
 
 describe('assetDescriptorHasUsage', () => {
   const base: AssetDescriptor = {
-    typeid: 'agent-11111111-1111-4111-8111-111111111111',
+    typeid: 'subagent-11111111-1111-4111-8111-111111111111',
     source: 'embedded',
     posix_path: '/tmp/.claude/agents/vibe.md',
     source_dir: null,
@@ -75,11 +77,29 @@ describe('assetDescriptorHasUsage', () => {
   it('is true for process-active and transcript-backed usage', () => {
     expect(assetDescriptorHasUsage({
       ...base,
-      usage: [{ kind: 'embedded_asset', path: base.posix_path }],
+      usage: [{ kind: 'skill_invoked', path: base.posix_path }],
     })).toBe(true);
     expect(assetDescriptorHasUsage({
       ...base,
       usage: [{ kind: 'transcript_file_read', path: base.posix_path, entry_id: 'entry-1' }],
     })).toBe(true);
   });
+
+  it('preserves true, false, and omitted remote compatibility states', () => {
+    const omitted: AssetDescriptor = { ...base };
+    expect(({ ...base, remote: true } satisfies AssetDescriptor).remote).toBe(true);
+    expect(({ ...base, remote: false } satisfies AssetDescriptor).remote).toBe(false);
+    expect(omitted.remote).toBeUndefined();
+  });
+});
+
+
+it('preserves the filesystem occurrence label when another copy is cached', () => {
+  const cached = vi.spyOn(dataManager, 'getByTypeIdFromCache').mockReturnValue({displayName: 'copy-one'} as never);
+  try {
+    expect(displayLabelForDescriptor({typeid: 'skill-11111111-1111-4111-8111-111111111111', name: 'copy-two'})).toBe('copy-two');
+    expect(cached).not.toHaveBeenCalled();
+  } finally {
+    cached.mockRestore();
+  }
 });

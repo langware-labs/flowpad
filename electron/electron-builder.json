@@ -10,17 +10,43 @@
   "files": [
     "main.js",
     "preload.js",
+    "shutdown.js",
+    "quit-gate.js",
+    "backend-wait.js",
+    "startup-error.js",
+    "runtime-repair.js",
+    "native-deps.json",
+    "fatal-failure.js",
+    "update-recovery.js",
+    "startup-watchdog.js",
+    "zip-writer.js",
+    "support-bundle.js",
+    "support-upload.js",
+    "log-redact.js",
+    "app-location.js",
+    "update-plan.js",
+    "update-test.js",
+    "failure-dialog.js",
+    "update-restart.js",
+    "progress-watchdog.js",
+    "semver.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
-    "semver.js",
     "loading.html",
     "loading-renderer.js",
     "loading-logo.png",
     "!**/*.map",
+    "!**/*.test.js",
+    "!signing/**",
+    "!resources/**",
+    "!entitlements.mac.plist",
+    "!electron-builder.json",
+    "!electron-builder.config.cjs",
     "!dist/**",
     "!build/**",
     "!scripts/**",
     "!*.md",
+    "!**/*.md",
     "!*.ts",
     "!tsconfig.json",
     "!**/__pycache__/**",
@@ -32,6 +58,10 @@
       "from": "resources/icons",
       "to": "icons",
       "filter": ["**/*"]
+    },
+    {
+      "from": "../pyproject.toml",
+      "to": "pyproject.toml"
     }
   ],
   "asar": true,
@@ -53,10 +83,12 @@
     ],
     "target": [
       {
-        "target": "dmg"
+        "target": "dmg",
+        "arch": ["universal"]
       },
       {
-        "target": "zip"
+        "target": "zip",
+        "arch": ["universal"]
       }
     ]
   },
@@ -93,6 +125,7 @@
         "arch": ["x64"]
       }
     ],
+    "signExts": [".exe", ".dll", ".node"],
     "azureSignOptions": {
       "endpoint": "https://eus.codesigning.azure.net/",
       "codeSigningAccountName": "",
@@ -109,13 +142,14 @@
     "installerHeaderIcon": "resources/icons/icon.ico",
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Flowpad"
+    "shortcutName": "Flowpad",
+    "include": "resources/installer.nsh"
   },
   "linux": {
     "icon": "resources/icons",
     "category": "Development",
     "artifactName": "${productName}-${arch}.${ext}",
-    "maintainer": "Langware Labs <eran@langware.ai>",
+    "maintainer": "Langware Labs <diagnosis@langware.ai>",
     "executableArgs": ["--no-sandbox"],
     "extraResources": [
       {

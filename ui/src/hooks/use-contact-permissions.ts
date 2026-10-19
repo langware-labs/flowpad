@@ -18,25 +18,32 @@ export function rowMatchesContact(p: ContactPermission, c: ContactKey | null): b
   return false;
 }
 
-/** Live list of one contact's permission rows (the receiver's local policy). */
+/** The standing-grant scope a contact holds for live sessions: the
+ *  project-scoped row wins, then the global row, else null. Pure. */
+export function sessionGrantScope(
+  permissions: readonly ContactPermission[],
+  projectId: string | null,
+): 'project' | 'global' | null {
+  const has = (p: ContactPermission) => (p.allowed_actions ?? []).includes(PermissionAction.AUTO_APPROVE_SESSION);
+  if (projectId && permissions.some((p) => (p.project_id ?? null) === projectId && has(p))) return 'project';
+  if (permissions.some((p) => (p.project_id ?? null) === null && has(p))) return 'global';
+  return null;
+}
+
+/** Live list of one contact's permission rows (the host's local policy). */
 export function useContactPermissions(contact: ContactKey | null) {
   const request = useMemo(() => new QueryRequest({ type: ContactPermission.type }), []);
-  const { data = [], refetch } = useEntitiesQuery<ContactPermission>(request);
-  const permissions = useMemo(
-    () => data.filter((p) => rowMatchesContact(p, contact)),
-    [data, contact],
-  );
-  return { permissions, refetch };
+  const { data = [], refetch, isSuccess } = useEntitiesQuery<ContactPermission>(request);
+  const permissions = useMemo(() => data.filter((p) => rowMatchesContact(p, contact)), [data, contact]);
+  return { permissions, refetch, loaded: isSuccess };
 }
 
 /** The (contact, project) row, or null. project null = the global row. */
 async function findRow(contact: ContactKey, projectId: string | null): Promise<ContactPermission | null> {
-  const all = await ContactPermission.query(new QueryRequest({}), true).catch(() => [] as ContactPermission[]);
-  return (
-    all.find(
-      (p) => rowMatchesContact(p, contact) && (p.project_id ?? null) === (projectId ?? null),
-    ) ?? null
+  const all = await ContactPermission.query(new QueryRequest({ type: ContactPermission.type }), true).catch(
+    () => [] as ContactPermission[],
   );
+  return all.find((p) => rowMatchesContact(p, contact) && (p.project_id ?? null) === (projectId ?? null)) ?? null;
 }
 
 /** Grant `action` to a contact for a project (null = global), creating the row if needed. */
@@ -70,11 +77,26 @@ export async function revokeContactPermission(
 ): Promise<void> {
   const row = await findRow(contact, projectId);
   if (!row) return;
-  const next = (row.allowed_actions ?? []).filter((a) => a !== action);
+  const next = (row.allowed_actions ?? []).filter((a) => a !== String(action));
   if (next.length === 0) {
     await row.delete();
     return;
   }
   row.allowed_actions = next;
   await row.save([]);
+}
+
+/** Move a contact's standing live-session grant to `next` (null = ask every
+ *  time). One row at a time: the scope it leaves is revoked first. */
+export async function setSessionGrantScope(
+  contact: ContactKey,
+  projectId: string | null,
+  current: 'project' | 'global' | null,
+  next: 'project' | 'global' | null,
+): Promise<void> {
+  if (current === next) return;
+  if (current === 'project') await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
+  if (current === 'global') await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
+  if (next)
+    await grantContactPermission(contact, next === 'project' ? projectId : null, PermissionAction.AUTO_APPROVE_SESSION);
 }

@@ -27,48 +27,44 @@ class FrontMatterFsRef(FSRef):
         """Return the markdown body (text after the closing --- delimiter). Returns '' if file absent."""
         if not self._path.exists():
             return ""
-        try:
-            from flow_sdk.fs_store.indexer._frontmatter import _extract_body
-            body = _extract_body(self._path.read_text(encoding="utf-8"))
-        except Exception:
-            return ""
-        from flow_sdk.capsules import strip_capsule_blocks
-        return strip_capsule_blocks(body)
+        from flow_sdk.assets.document import read_document
+
+        return read_document(self._path).body.strip()
+
+    def read_frontmatter_and_body(self) -> tuple[dict, str]:
+        """``(frontmatter, stripped body)`` from ONE read and parse of the file.
+
+        What ``read_frontmatter()`` then ``read_body()`` answer, for a caller that
+        needs both — each of those opens and parses the file again. An unreadable
+        or undecodable file raises, as ``read_body`` does.
+        """
+        if not self._path.exists():
+            return {}, ""
+        from flow_sdk.assets.document import read_document
+
+        document = read_document(self._path)
+        return document.fields, document.body.strip()
 
     def write_frontmatter(self, fields: dict) -> None:
         """Merge fields into the existing frontmatter, preserving the body."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _render_frontmatter
-        existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
-        existing_fm.update(fields)
-        body = ""
-        if self._path.exists():
-            body = _extract_body(self._path.read_text(encoding="utf-8"))
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(_render_frontmatter(existing_fm) + "\n" + body, encoding="utf-8")
+        from flow_sdk.assets.document import write_document
+
+        write_document(self._path, fields=fields)
 
     def write_body(self, body: str) -> None:
         """Replace the body while preserving the existing frontmatter."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
-        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
-        existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
-        existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
-        rendered = _render_frontmatter(existing_fm) + "\n" + body
-        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write_text(self._path, rendered)
+        from flow_sdk.assets.document import write_document
+
+        write_document(self._path, body=body)
 
     def write_doc(self, body: str, frontmatter: dict) -> None:
         """Atomically write frontmatter + body while preserving capsule blocks."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.capsules import restore_capsule_blocks, snapshot_capsule_blocks
-        from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text, _render_frontmatter
-        existing_text = self._path.read_text(encoding="utf-8") if self._path.exists() else ""
-        rendered = _render_frontmatter(frontmatter) + "\n" + body
-        rendered = restore_capsule_blocks(rendered, snapshot_capsule_blocks(existing_text))
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write_text(self._path, rendered)
+        from flow_sdk.assets.document import write_document
+
+        write_document(self._path, body=body, fields=frontmatter, replace_fields=True)

@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- mockify fast-mode mock. Copy this folder to <project>/agentic-assets/webapp/mock-<slug>/, fill webapp.json,
+     set MOCKIFY.key, write one <section data-step> per step of the mock row, paste assets/journey-bar.js into
+     the last <script>. Serve with `flow app serve "Mock — <title>"` so /sdk/ resolves and feedback saves. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock — TITLE</title>
+<!-- Flowpad screens: the product's own tokens (served by Flowpad). Another product: its look (colours, font, radius). -->
+<link rel="stylesheet" href="/sdk/flowpad.css">
+<script>
+  // Flowpad passes ?theme=light|dark and ?view=<mode>; apply both before first paint.
+  (function () { var p = new URLSearchParams(location.search), t = p.get('theme');
+    if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+    if (p.get('view')) document.documentElement.dataset.view = p.get('view'); })();
+</script>
+<style>
+  body { margin: 0; min-height: 100vh; font-family: var(--font-sans, system-ui, sans-serif); }
+  /* Keep the top 56px clear: the journey bar floats there (the reviewer can drag it away). */
+  [data-step] { min-height: 100vh; padding-top: 56px; box-sizing: border-box; }
+  .app-flowpad { background: hsl(var(--background)); color: hsl(var(--foreground)); }
+  .app-other   { background: #fff; color: #1f2328; font-family: -apple-system, "Segoe UI", sans-serif; }
+  /* An open decision is visible on the screen itself; its id is the mock row's (D1, D2…). */
+  [data-decision] { outline: 2px dashed #bf8700; outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<section data-step="start" class="app-flowpad">
+  <!-- The real copy, the real states, what each control does. -->
+  <!-- Every control that moves the journey says where it leads; the bar highlights the way onward. -->
+  <button data-next="next-step">Continue</button>
+  <p data-decision="D1">…</p>
+</section>
+
+<section data-step="next-step" class="app-other" hidden>
+</section>
+
+<script>
+  // The mock's row key in the project's `mocks` dataset — the journey, decisions and session come from it.
+  window.MOCKIFY = { key: 'SLUG', project: 'MOCK_PROJECT_ID' };
+</script>
+<script>/* PASTE assets/journey-bar.js HERE */</script>
+</body>
+</html>

@@ -1,3 +1,5 @@
+import { i18n } from '@lingui/core';
+import { Trans } from '@lingui/react/macro';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -39,8 +41,8 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
     <AlertDialog open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{INDEX_PROMPT_TITLE}</AlertDialogTitle>
-          <AlertDialogDescription>{INDEX_PROMPT_DESCRIPTION}</AlertDialogDescription>
+          <AlertDialogTitle>{i18n._(INDEX_PROMPT_TITLE)}</AlertDialogTitle>
+          <AlertDialogDescription>{i18n._(INDEX_PROMPT_DESCRIPTION)}</AlertDialogDescription>
         </AlertDialogHeader>
 
         {phase === 'indexing' && <ActivityIndicator variant="list" types={types} />}
@@ -48,9 +50,9 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
         {phase === 'confirm' && (
           <AlertDialogFooter>
             <Button variant="outline" onClick={handleDeny}>
-              Not Now
+              <Trans>Not Now</Trans>
             </Button>
-            <Button onClick={() => void startIndexing()}>{INDEX_BUILD_LABEL}</Button>
+            <Button onClick={() => void startIndexing()}>{i18n._(INDEX_BUILD_LABEL)}</Button>
           </AlertDialogFooter>
         )}
       </AlertDialogContent>

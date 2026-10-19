@@ -1,18 +1,13 @@
 import { cn } from '@src/lib/utils';
 import { FlowData, FlowElementTypes } from '@sdk';
-import {
-  Activity,
-  AlertTriangle,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-  Wrench,
-} from 'lucide-react';
+import { Activity, AlertTriangle, ChevronDown, ChevronRight, Sparkles, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { pairToolEvents, type ToolPair } from './groupTurnEvents';
 import { describeEvent } from './toolEventDescriptor';
 import { useChipTarget } from './useChipTarget';
+import { useLinkHandlers } from '@src/components/links/LinkHandlersContext';
+import { LinkifiedText } from '@src/components/links/LinkifiedText';
 
 interface ToolEntryRowProps {
   events: FlowData[];
@@ -28,10 +23,13 @@ interface OneLiner {
 }
 
 /**
- * Dense one-row summary of every non-text event in an assistant turn:
- * tool calls, reasoning, hook status, errors. Defaults to `count + latest
- * one-liner`; an expand chevron reveals every event, and individual tool
- * entries can expand again to show full args + result JSON.
+ * Dense one-row summary of every non-text, non-reasoning event in an
+ * assistant turn: tool calls, hook status, errors. Defaults to `count +
+ * latest one-liner`; an expand chevron reveals every event, and individual
+ * tool entries can expand again to show full args + result JSON.
+ *
+ * Reasoning is grouped separately by `groupTurnEvents` and rendered by
+ * `ThinkingSummary` — the REASONING handling below is defensive only.
  */
 export function ToolEntryRow({ events }: ToolEntryRowProps) {
   const [expanded, setExpanded] = useState(false);
@@ -72,22 +70,18 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
           'transition-colors',
         ].join(' ')}
       >
-        <OneLinerIcon
-          icon={latest?.icon ?? Wrench}
-          isError={latest?.isError}
-          inFlight={latest?.inFlight ?? false}
-        />
+        <OneLinerIcon icon={latest?.icon ?? Wrench} isError={latest?.isError} inFlight={latest?.inFlight ?? false} />
         {latest && <span className="whitespace-nowrap font-medium">{latest.label}</span>}
         {headlineDetail && (
           <span className="max-w-[260px] truncate font-mono text-[12px] text-muted-foreground/80">
             {headlineDetail}
           </span>
         )}
-        {totalCount > 1 && <span className="tabular-nums text-[11px] opacity-50">·&nbsp;{totalCount}</span>}
+        {totalCount > 1 && <span className="text-[11px] tabular-nums opacity-50">·&nbsp;{totalCount}</span>}
       </button>
 
       {expanded && (
-        <div className="ml-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
+        <div className="ms-3 max-w-full rounded-md border border-border/60 bg-muted/30 px-2 py-1">
           <TurnEventList events={events} />
         </div>
       )}
@@ -97,7 +91,7 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
 
 /**
  * The per-event list for one turn's dense events: paired TOOL_CALL/TOOL_RESULT
- * rows, other events (reasoning / status / error), then orphan results. Every
+ * rows, other events (status / error), then orphan results. Every
  * row is click-expandable to its pretty-printed payload (JSON-string payloads
  * are parsed and re-indented — the one-liner detail is truncated, so the
  * expansion is the only way to actually read an init / rate-limit event).
@@ -156,7 +150,7 @@ function ExpandableRow({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 items-center gap-1.5 text-left"
+          className="flex min-w-0 items-center gap-1.5 text-start"
         >
           {open ? (
             <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
@@ -196,7 +190,13 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
       <ExpandableRow
         payload={
           <>
-            <PayloadBlock label="input" value={(pair.call.data as Record<string, unknown> | undefined)?.args ?? (pair.call.data as Record<string, unknown> | undefined)?.input} />
+            <PayloadBlock
+              label="input"
+              value={
+                (pair.call.data as Record<string, unknown> | undefined)?.args ??
+                (pair.call.data as Record<string, unknown> | undefined)?.input
+              }
+            />
             <PayloadBlock label={inFlight ? 'output (running…)' : 'output'} value={resultOutput} />
           </>
         }
@@ -207,7 +207,7 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
               data-testid="tool-entry-target"
               title={desc.detail}
               onClick={openTarget}
-              className="min-w-0 flex-1 truncate text-left font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+              className="min-w-0 flex-1 truncate text-start font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
             >
               {desc.detail}
             </button>
@@ -238,9 +238,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
         payload={
           <>
             <PayloadBlock label="data" value={event.data} />
-            {Object.keys(event.attributes).length > 0 && (
-              <PayloadBlock label="attributes" value={event.attributes} />
-            )}
+            {Object.keys(event.attributes).length > 0 && <PayloadBlock label="attributes" value={event.attributes} />}
           </>
         }
       >
@@ -254,11 +252,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
 
 function OrphanResultItem({ event }: { event: FlowData }) {
   return (
-    <li
-      data-testid="tool-entry"
-      data-state="done"
-      className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}
-    >
+    <li data-testid="tool-entry" data-state="done" className={cn('px-1.5 py-0.5 text-[11px] text-muted-foreground')}>
       <span className="opacity-60">tool result (no matching call):</span>{' '}
       <span className="truncate font-mono text-[10px]">{extractText(event)}</span>
     </li>
@@ -266,6 +260,7 @@ function OrphanResultItem({ event }: { event: FlowData }) {
 }
 
 function PayloadBlock({ label, value }: { label: string; value: unknown }) {
+  const links = useLinkHandlers();
   if (value === null || value === undefined) return null;
   // Status-style events (init, rate-limit, …) carry their payload as a JSON
   // *string* — parse it back so the block shows indented JSON, not one long line.
@@ -291,7 +286,7 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
     <div className="mt-1">
       <div className="text-[9px] uppercase tracking-wider text-muted-foreground">{label}</div>
       <pre className="mt-0.5 max-h-48 overflow-auto rounded bg-muted/40 px-2 py-1 font-mono text-[10px] leading-snug">
-        {text}
+        {links ? <LinkifiedText text={text} handlers={links} /> : text}
       </pre>
     </div>
   );
@@ -331,17 +326,16 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
   return null;
 }
 
-const DENSE_OTHER = new Set<string>([
-  FlowElementTypes.REASONING,
-  FlowElementTypes.STATUS,
-  FlowElementTypes.ERROR,
-]);
+const DENSE_OTHER = new Set<string>([FlowElementTypes.REASONING, FlowElementTypes.STATUS, FlowElementTypes.ERROR]);
 
 function describeOther(event: FlowData): { icon: LucideIcon; label: string; isError?: boolean } {
   if (event.elementType === FlowElementTypes.REASONING) return { icon: Sparkles, label: 'thinking' };
   if (event.elementType === FlowElementTypes.ERROR) return { icon: AlertTriangle, label: 'error', isError: true };
-  // STATUS — surface the subtype if present (e.g. "PreToolUse")
+  // STATUS — surface the subtype if present (e.g. "PreToolUse"), except where
+  // the subtype names something the user is actively waiting on and deserves
+  // words rather than a machine token.
   const subtype = event.attributes['subtype'];
+  if (subtype === 'credential_refresh') return { icon: Activity, label: 'refreshing credentials' };
   return { icon: Activity, label: subtype || 'status' };
 }
 

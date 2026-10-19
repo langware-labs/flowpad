@@ -6,7 +6,6 @@ These replace the instance/class methods that used to live on
   * Per-entity data-dir helpers
     (``entity_data_dir``, ``file_summaries_dir``, ``file_summary_path``)
   * ``from_markdown`` — parse a markdown string into a Record
-  * ``write_frontmatter_fields`` — rewrite on-disk frontmatter merging updates
   * ``default_body`` — stub index.md for a newly created entity
   * ``read_inputs_hash`` — convenience accessor for frontmatter inputs_hash
 
@@ -20,29 +19,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from flow_sdk.assets.frontmatter import (
+    _render_frontmatter,
+)
 from flow_sdk.fs_store.fs_record import FSRecord
-from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_paths import get_default_records_data_root
 from flow_sdk.fs_store.record_types import RecordType
 
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
-    _extract_frontmatter,
-    _render_frontmatter,
-    _yaml_load,
-)
-
 # ── Metadata fields carried in frontmatter ────────────────────────────────────
 
-_META_FIELDS: tuple[str, ...] = (
-    "inputs_hash",
-    "template_version",
-    "prompt_version",
-    "parent_ref",
-    "file_count",
-    "subfolder_count",
-    "latest_process_ref",
-)
+
 
 
 # ── Per-entity data-dir helpers ───────────────────────────────────────────────
@@ -67,56 +53,32 @@ def file_summary_path(entity_id: str, content_hash: str) -> Path:
     return file_summaries_dir(entity_id) / f"{content_hash}.summary.md"
 
 
+def entity_id_for_root(root: Path | str) -> str:
+    """The MarkdownIndex entity id (bare uuid5) for a docs root path.
+
+    One home for the ``typeid_for(root)`` → strip-prefix derivation, so the
+    docs-graph routes, the `markdown_index` skill and docit's audit all resolve
+    the SAME per-entity dir. The dir is instance-scoped, so a divergent copy of
+    this derivation silently resolves an empty cache — and the only symptom is a
+    full-price re-summarisation of the whole tree.
+    """
+    from flow_sdk.llm_index import typeid_for  # noqa: PLC0415 (avoid import cycle)
+
+    return typeid_for(root).removeprefix("markdown_index-")
+
+
+def summaries_dir_for_root(root: Path | str) -> Path:
+    """The file-summary cache for a docs root, resolved from the root alone."""
+    return file_summaries_dir(entity_id_for_root(root))
+
+
 # ── Record constructors ───────────────────────────────────────────────────────
 
 
-def make_markdown_index_record(**kwargs: Any) -> FSRecord:
-    """Create a bare ``Record`` for type ``MARKDOWN_INDEX``."""
-    kwargs.setdefault("type", RecordType.MARKDOWN_INDEX)
-    kwargs.setdefault("status", "active")
-    kwargs.setdefault("asset_type", "markdown_index")
-    return FSRecord(**kwargs)
 
 
-def from_markdown(text: str, path: Path | None = None) -> FSRecord:
-    """Parse a markdown string with YAML frontmatter into a MarkdownIndex Record.
 
-    Mirrors ``MarkdownIndexRecord.from_markdown`` exactly — shares the same
-    ``parse_markdown_text`` helper from the markdown indexer module.
-    """
-    from flow_sdk.fs_store.indexer.functions.markdown import parse_markdown_text  # noqa: PLC0415
 
-    from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
-
-    data = parse_markdown_text(text, path=path)
-    data["asset_type"] = "markdown_index"
-
-    fm_text = _extract_frontmatter(text)
-    fields = _yaml_load(fm_text) if fm_text else {}
-
-    # The rendered index.md carries its TypeId in frontmatter (`id:
-    # markdown_index-<uuid>`). Strip our own type prefix, then validate-on-
-    # adopt; anything non-conforming falls back to the same uuid5(path) the
-    # TypeInfo.mint_id resolves — so re-indexing a rebuilt index.md updates the
-    # original entity row instead of allocating a fresh id.
-    raw_id = fields.get("id") or fields.get("asset_id")
-    if isinstance(raw_id, str) and raw_id.startswith(f"{RecordType.MARKDOWN_INDEX.value}-"):
-        raw_id = raw_id[len(f"{RecordType.MARKDOWN_INDEX.value}-"):]
-    adopted = adopt_entity_id(raw_id)
-    if adopted:
-        data["id"] = adopted
-    elif path is not None:
-        data["id"] = mint_uuid(str(path.resolve()))
-
-    rec = make_markdown_index_record(**data)
-    for key in _META_FIELDS:
-        if key in fields and fields[key] is not None:
-            # FSRecord is a plain attr bag — meta_dict() picks up every
-            # non-underscore attribute; no dirty bookkeeping exists.
-            setattr(rec, key, fields[key])
-    if path is not None:
-        object.__setattr__(rec, "_asset_ref", FSRef(path))
-    return rec
 
 
 def default_body(entity: Any) -> str:
@@ -142,29 +104,3 @@ def read_inputs_hash(rec: FSRecord) -> str:
     return str(getattr(rec, "inputs_hash", "") or "")
 
 
-def write_frontmatter_fields(rec: FSRecord, updates: dict[str, Any]) -> None:
-    """Rewrite the on-disk ``index.md`` frontmatter merging ``updates``.
-
-    Body is preserved verbatim. Caller is responsible for sync_to_db after.
-    """
-    ar = rec._asset_ref if hasattr(rec, "_asset_ref") else None
-    if ar is None or not ar.exists():
-        return
-    text = Path(ar._path).read_text(encoding="utf-8")
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    parsed: dict[str, Any] = {}
-    if fm:
-        loaded = _yaml_load(fm)
-        if isinstance(loaded, dict):
-            parsed.update(loaded)
-    parsed.update(updates)
-    Path(ar._path).write_text(
-        _render_frontmatter(parsed)
-        + "\n\n"
-        + body
-        + ("\n" if body and not body.endswith("\n") else ""),
-        encoding="utf-8",
-    )
-    for key, value in updates.items():
-        setattr(rec, key, value)

@@ -7,9 +7,9 @@ name = "flowpad"
 dynamic = ["version"]
 description = "A local-first AI development environment powered by Claude Code"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 authors = [
-    {name = "Langware Labs", email = "eran@langware.ai"},
+    {name = "Langware Labs", email = "diagnosis@langware.ai"},
 ]
 dependencies = [
     "platformdirs",
@@ -19,10 +19,19 @@ dependencies = [
     "httpx[http2]",
     "dpath~=2.2.0",
     "typer>=0.9.0",
+    # Installed transitively by typer, but `flow instance ctl` imports it
+    # directly to render instance/group tables — declare what we import.
+    "rich",
+    # Terminal QR for `flow connect` device-code enrollment (pure python).
+    "segno>=1.6",
+    # Project cleanup moves folders to the desktop Trash rather than deleting
+    # them, so a misclick is recoverable from Finder. Pure python, no build step.
+    "send2trash>=1.8",
     "python-dotenv",
     "keyring",
     "keyrings.alt",
-    "fastmcp",
+    # FastMCP 4 uses MCP 2.x; pydantic-ai 1.x's MCP integration requires MCP 1.x.
+    "fastmcp>=3,<4",
     "httpx>=0.24.0,<1.0",
     "websockets",
     "sqlalchemy~=2.0.27",
@@ -43,19 +52,33 @@ dependencies = [
     # <2.24: usearch 2.24+ depends on numkong, which ships no wheels for many
     # platforms and fails to build from source (needs omp.h) — breaks fresh installs.
     "usearch<2.24",
+    # <49 on Intel Mac: cryptography 49.0.0+ ships no macosx x86_64 wheel (arm64 only), and a fresh
+    # `uv tool install flowpad` ignores uv.lock and takes the newest release — so uv builds it from
+    # source with Rust and fails on any Mac without the Xcode command line tools. Reached
+    # transitively via mcp -> pyjwt[crypto]; 48.0.1 is the last release with a universal2 wheel.
+    "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "numpy",
     "bs4>=0.0.2",
     "h2",
     "groq",
     "openai",
     "anthropic",
-    "pydantic-ai-slim>=1.62,<2",
+    "pydantic-ai-slim[mcp]>=1.62,<2",
     "distro",
     "appdirs",
     "colorama",
     "apscheduler~=3.10",
     "pathspec",
     "pyyaml>=6.0",
+    # The builtin ``deepagents`` worker (cli_drivers/deepagents): a harness that ships as a
+    # Python package, so a box with nothing but an LLM endpoint still has a worker. Upper
+    # bounds are deliberate — ``[tool.uv] prerelease = "allow"`` below would otherwise let
+    # the resolver walk the LangChain stack onto a pre-release.
+    "deepagents>=0.7.15,<0.8",
+    "langchain-openai>=1.6,<2",
+    "langgraph-checkpoint-sqlite>=3.1,<4",
+    # NOT langchain's own MCPAdapter: it needs fastmcp>=4, and this project pins fastmcp<4.
+    "langchain-mcp-adapters>=0.3,<1",
 ]
 
 [project.urls]
@@ -78,6 +101,7 @@ dev = [
     "pytest-rerunfailures>=16.0",
     "memray>=1.19.2; sys_platform != 'win32'",
     "pre-commit>=4.0.0",
+    "pandas>=2.0.0",
 ]
 
 [tool.setuptools.dynamic]
@@ -92,10 +116,20 @@ include = ["flow_sdk*"]
     "system_projects/**/*",
     "system_projects/**/.claude/**/*",
     "server/static/**/*",
+    # Builtin asset editors (SDK apps declared through TypeMetadata.editors).
+    "assets/editors/**/*",
+    # Type icons addressed by path from TypeInfo.icon — see server/icons/README.
+    "server/icons/**/*",
+    # The vitest progress reporter `flow test run` adds to a vitest command.
+    "testing/*.mjs",
     # Separately-signed standalone flow-rs binaries (macOS universal2 +
     # Windows x64), vendored by scripts/deploy_to_github.sh. NOT the crate
     # source or target/ — only the signed binaries under rust/bin/.
     "rust/bin/**/*",
+    # The C++ runtime DLL search (usearch) needs on a Windows that lacks the redistributable — see rag/vcruntime/README.md.
+    "rag/vcruntime/**/*",
+    # The UI actions the smart navigator can pick (flow_sdk/core/navigator.py).
+    "core/ui_actions.json",
 ]
 
 # Keep skill UI source + the built main.html, but never ship node_modules,
@@ -107,6 +141,9 @@ include = ["flow_sdk*"]
     "system_projects/**/ui/dist/**",
     "system_projects/**/package-lock.json",
     "system_projects/**/.vite/**",
+    # Run journals are per-user EXECUTION OUTPUT written next to the authored
+    # flow/journey. They must never ship in the wheel.
+    "system_projects/**/runs/**",
 ]
 
 [tool.ruff]
@@ -132,6 +169,10 @@ extend-select = [
 "flow_sdk/server/app.py" = ["T20", "E402"]
 "examples/*" = ["T20"]
 "flow_sdk/db/drivers/sqlite/sqlite_driver.py" = ["E402"]
+# Registers its sub-typers at the BOTTOM of the file, each import immediately
+# above its own `app.add_typer` so the two cannot drift apart. Same shape, and
+# same exemption, as run.py and app.py above.
+"flow_sdk/cli/flow_cli.py" = ["E402"]
 "flow_sdk/fs_store/schema_registry.py" = ["F821"]
 
 [tool.pyright]

@@ -23,15 +23,18 @@ def test_artifact_reads_legacy_shape_but_emits_new_contract(tmp_path):
     assert uuid.UUID(artifact.id).version == 4
 
 
-def test_deployment_normalizes_kind_and_requires_valid_artifact_reference():
+def test_an_inventoried_resource_kind_rides_its_origin_and_artifact_references_are_valid():
+    """No stored kind on a Deployment (what it places is its parent); an inventoried cloud resource's
+    own kind (``gcp.run.service``) rides on what it carries — its origin."""
     deployment = Deployment(
         name="Service",
-        kind=" GCP.RUN.SERVICE ",
         target=DeploymentTarget(provider="gcp", scope="organizations/1"),
+        origin={"kind": "gcp.run.service", "provider": "gcp", "external_id": "//run.googleapis.com/x"},
         labels=["inventory"],
         provider_labels={"team": 7},
     )
-    assert deployment.kind == "gcp.run.service"
+    assert "kind" not in deployment.model_dump()
+    assert deployment.origin.kind == "gcp.run.service"
     assert deployment.provider_labels == {"team": "7"}
     deployment.add_label("cloud")
     assert deployment.get_labels() == ["inventory", "cloud"]
@@ -39,7 +42,6 @@ def test_deployment_normalizes_kind_and_requires_valid_artifact_reference():
     with pytest.raises(ValueError, match="artifact_id"):
         Deployment(
             name="bad",
-            kind="gcp.run.service",
             artifact_id="not-an-id",
             target={"provider": "gcp", "scope": "organizations/1"},
         )
@@ -48,7 +50,6 @@ def test_deployment_normalizes_kind_and_requires_valid_artifact_reference():
 def test_deployment_observations_distinguish_real_zero_from_missing_data():
     deployment = Deployment(
         name="Service",
-        kind="gcp.run.service",
         target={"provider": "gcp", "scope": "projects/demo"},
         observations={
             "cost": DeploymentObservation(

@@ -1,3 +1,4 @@
+import { usePrimaryContentPending } from '@sdk/react/primary-content';
 import { ReactNode } from 'react';
 import { APIEntity, FSRef } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -7,14 +8,20 @@ import { Button } from '@src/components/ui/button';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface EntityResolutionGateProps<T extends APIEntity<T>> {
-  /** Entity type, e.g. `Workflow.type`. */
-  type: string;
+  /** Type HINT, e.g. `Workflow.type` — the editor this gate wraps expects it.
+   *  The backend names the actual type from the path; a disagreement is only
+   *  reported, never used to pick the entity. */
+  type?: string;
   /** Path to resolve. */
   fsRef: FSRef;
   /** Display label for status messages, e.g. "workflow", "agent". */
   typeLabel: string;
   /** Render the editor when the entity resolves. */
   render: (entity: T) => ReactNode;
+  /** Entity already resolved by a TypeId route; skips path discovery. */
+  resolvedEntity?: T;
+  /** Exact document renderer, only for explicit backend projection errors. */
+  renderDocument?: (ref: FSRef) => ReactNode;
 }
 
 /**
@@ -36,11 +43,24 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
   fsRef,
   typeLabel,
   render,
+  resolvedEntity,
+  renderDocument,
 }: EntityResolutionGateProps<T>) {
   const { t } = useLingui();
-  const { entity, state, error, retry } = useEntityByPath<T>(type, fsRef);
+  const {
+    entity: pathEntity,
+    state,
+    error,
+    documentOnly,
+    retry,
+  } = useEntityByPath<T>(
+    resolvedEntity ? null : type ?? null,
+    resolvedEntity ? null : fsRef,
+  );
+  const entity = resolvedEntity ?? pathEntity;
+  usePrimaryContentPending(!resolvedEntity && (state === 'querying' || state === 'discovering'));
 
-  if (state === 'resolved' && entity) return <>{render(entity)}</>;
+  if (entity && (resolvedEntity || state === 'resolved')) return <>{render(entity)}</>;
 
   if (state === 'querying' || state === 'discovering') {
     const label = state === 'discovering' ? t`Discovering ${typeLabel}…` : t`Loading ${typeLabel}…`;
@@ -51,6 +71,16 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
       >
         <Loader2 className="h-4 w-4 animate-spin" />
         {label}
+      </div>
+    );
+  }
+
+  if (documentOnly && renderDocument) {
+    const document = FSRef.fromJson({ ...fsRef.toJSON(), path: documentOnly.body, ref_type: 'file' });
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div role="alert" className="border-b p-3 text-sm text-destructive">{documentOnly.error}</div>
+        <div className="min-h-0 flex-1">{renderDocument(document)}</div>
       </div>
     );
   }

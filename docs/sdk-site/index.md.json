@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-2c1662c6-f6d3-50df-9f63-0ccc6760cd3c",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "sdk-site",
+  "folder_name": "sdk-site",
+  "inputs_hash": "8df85aade3216e270726fc41b14192cbc24acb4fbb13e1db17660c5e22ff2e47",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "The public Flow SDK guide: typed schemas and values, agents, FlowCall outcomes and composition, channels, credentials, deployments, and executable examples.",
+  "files": [
+    {
+      "name": "flow-sdk.md",
+      "rel_path": "flow-sdk.md",
+      "title": "Flow SDK: Agentic orchestration SDK. Git-native agents you own.",
+      "summary": "Public Flow SDK guide to typed schemas, values, agents, FlowCall blocks and composition, datasets, channels, credentials, deployment, and examples.",
+      "content_hash": "8711acc2c5d01adceeaeb8e70130e7580a354943ff6d083998787881ac395936",
+      "size_bytes": 40213
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T08:56:00.140072+00:00",
+  "latest_process_ref": ""
+}

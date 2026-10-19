@@ -12,10 +12,10 @@ Key correctness points:
   under a skill folder) resolves to the owning folder entity, and the re-parse
   runs on the *folder's* asset_ref — never the raw inner path (which
   ``extract_skill`` would mis-name).
-- The re-parse goes through ``discover_record_by_path(..., notify=True)`` rather
-  than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds STALE
-  ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects the new
-  bytes in FTS/wiki/entity fields.
+- The re-parse goes through ``resolve_asset`` + ``index_one(notify=True)``
+  rather than ``get_record()+sync_to_db()``: the shadow ``metadata.json`` holds
+  STALE ``body``/``content``, so only a fresh ``from_disk_fn`` parse reflects
+  the new bytes in FTS/wiki/entity fields.
 - Best-effort per path: one bad path never sinks the batch.
 """
 from __future__ import annotations
@@ -27,15 +27,43 @@ from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
-# New-file mint inference. A brand-new file with no owning entity is minted only
-# for types whose discovery unambiguously matches by extension — never guessed,
-# to avoid minting the wrong type (e.g. a folder-asset sentinel as a markdown).
-# Editing an EXISTING file never hits this path (it resolves via its entity).
-_EXT_MINT_CANDIDATES: dict[str, tuple[str, ...]] = {
-    ".md": ("markdown",),
-    ".csv": ("spreadsheet",),
-    ".xlsx": ("spreadsheet",),
-}
+async def owning_asset_for_removed_path(path: str):
+    """``(row, root_gone)`` for a path a source reports as gone.
+
+    THE removal policy, in one place, because two callers need it and they must
+    not drift: ``reindex_paths``'s removal loop and ``reflect._retire_row``.
+
+    Exact match first, then containment — a folder-layout asset is named by its
+    ROOT, so an inner file's path never matches it exactly and an exact-only
+    lookup silently finds nothing and leaves a zombie row. ``root_gone`` is then
+    decided on the ROW'S OWN ``asset_ref``, never on the touched path: deleting
+    ONE file inside a folder asset must not reap the asset, and only the root
+    answers that. ``source_unreachable`` keeps the existing policy that an
+    unreadable volume is not a deletion.
+    """
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry  # noqa: PLC0415
+
+    row = await Entity.get_by_asset_ref(path, resolve_containing=False, strict=True)
+    if row is None:
+        row = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
+    if row is None:
+        return None, False
+    root = str(getattr(row, "asset_ref", "") or "")
+    if not root:
+        return row, False
+    # "Still there?" is the TYPE's question, not a bare stat: removing a folder
+    # asset's main_file leaves the directory behind, and an ``exists()`` on that
+    # empty shell reports a live asset that has no content. ``layout_of(verify)``
+    # is the registry's own answer — it requires the main_file for a folder type.
+    info = SchemaRegistry.get(row.get_type())
+    alive = (
+        info.layout_of(Path(root), verify=True).kind is not LayoutKind.NONE
+        if info is not None
+        else Path(root).exists()
+    )
+    return row, (not alive and not source_unreachable(root))
 
 
 @dataclass
@@ -55,36 +83,131 @@ def _norm(p: str) -> str:
     return str(Path(p).expanduser())
 
 
-def _mint_candidates(path: str) -> tuple[str, ...]:
-    return _EXT_MINT_CANDIDATES.get(Path(path).suffix.lower(), ())
+async def reparse_entity(entity, *, fallback: str = "", write: bool = True):
+    """Force-reparse ``entity``'s OWN asset from disk and sync its row; the record, or None when the
+    path no longer resolves (or the type has no parser).
+
+    The entity's asset_ref (folder path for folder types), not a raw touched path — extract_skill et
+    al. would mis-name a raw inner path. The row's id, scope and project_id are authoritative: the id
+    keeps a portable asset whose carrier was wiped on the SAME entity, and the labels keep an asset in
+    a workspace project from being relabelled ``user``.
+    """
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+
+    target = str(getattr(entity, "asset_ref", None) or fallback)
+    if not target:
+        return None
+    try:
+        resolved = await resolve_asset(target, write=write, type_name=entity.type, owner_id=str(entity.id) if entity.id else None)
+    except NotAnAsset as reason:
+        logger.debug("reparse %s: %s", target, reason)
+        return None
+    record = await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=getattr(entity, "project_id", None))
+    if record is not None and len(getattr(entity, "asset_occurrences", None) or []) > 1:
+        await _reflect_surviving_occurrences(entity, resolved)
+    return record
+
+
+async def _reflect_surviving_occurrences(entity, resolved) -> None:
+    """Re-resolve a collided asset's occurrence set after a targeted reparse.
+
+    A duplicate copy has no row of its own — only the primary's
+    ``asset_occurrences`` names it — so deleting one reaches nothing through the
+    path lookups above, and only a full index pass used to drop it: the
+    collision badge kept counting a file that was gone. The stored side is
+    re-validated read-only by the indexer's own ``resolve_collisions`` (a path
+    counts only while it exists and still carries this id). A decision that
+    would move the PRIMARY is left to the full index, which owns re-pointing
+    ``asset_ref``; here only the projection is refreshed.
+    """
+    from flow_sdk.fs_store.asset_occurrences import resolved_collision  # noqa: PLC0415
+
+    decision = await resolved_collision(entity.type, str(entity.id), entity, [resolved])
+    if decision is None or decision.primary_path != str(resolved.root):
+        return
+    fresh = await type(entity).get_one({"id": entity.id})
+    if fresh is not None:
+        await fresh.reflect_asset_occurrences(decision.occurrences, notify=True)
+
+
+def _under_records_root(path: str) -> bool:
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
+
+    try:
+        return Path(path).resolve().is_relative_to(get_default_records_root().resolve())
+    except OSError:
+        return False
+
+
+async def sources_gone_under(root: str | Path) -> list[str]:
+    """The ``asset_ref`` of every row stored under ``root`` whose source is gone.
+
+    A walk of ``root`` sees only what is still there, so a deleted asset needs this
+    lookup to be reconciled (``reindex_paths(deleted_paths=...)``).
+    """
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import asset_refs_under, source_gone  # noqa: PLC0415
+
+    likes = [ExpressionNode(op=QueryOp.LIKE, operands=["asset_ref", pattern]) for pattern in asset_refs_under(root)]
+    match = likes[0] if len(likes) == 1 else ExpressionNode(op=QueryOp.OR, operands=likes)
+    owners = Entity.asset_owner_classes()
+    found = await asyncio.gather(*[o.get_all(QueryFilter(type=o.get_type(), match=match)) for o in owners])
+    refs = list(dict.fromkeys(str(row.asset_ref) for rows in found for row in rows or [] if getattr(row, "asset_ref", None)))
+    return await asyncio.to_thread(lambda: [ref for ref in refs if source_gone(ref)])
 
 
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
+    *,
+    mint: bool = True,
+    write: bool = True,
+    placed_only: bool = False,
 ) -> ReindexResult:
     """Force-reindex ``paths`` (changed/created) and reconcile ``deleted_paths``.
 
     Returns a :class:`ReindexResult` with the per-bucket path lists. Each path
     is handled independently; failures are logged and counted as ``skipped``.
+
+    ``mint=False`` makes this resolution-only: a path with no owning entity is
+    left alone instead of minting one. Callers that resync a file a user just
+    wrote (``fs/write``) must pass it — minting there stamps an identity capsule
+    INTO the bytes the caller just saved, mutating arbitrary markdown that was
+    never an asset. New-file discovery belongs to the indexer, which owns root
+    scoping and consent.
+
+    ``write=False`` resolves identity without stamping it into the source (a
+    source that does not own its bytes — a git working tree under ``reflect``).
+
+    ``placed_only`` mints a file only where the walk would index it — by its name
+    or declared mount, never by extension alone. For a caller handed ARBITRARY
+    written paths (a session's file writes): by extension, every scratch ``.js``
+    became a dynamic workflow owned by no project, and so listed under all of them.
     """
-    from flow_sdk.builtin.faas.fs_records_actions import discover_record_by_path  # noqa: PLC0415
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.orphan_removal import remove_orphan_row  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import source_unreachable  # noqa: PLC0415
+    from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
     result = ReindexResult()
 
-    # Force-reparse an entity's OWN asset_ref (folder path for folder types), not
-    # the raw touched path — extract_skill et al. would mis-name a raw inner path.
     async def _resync(entity, fallback: str):
-        target = str(getattr(entity, "asset_ref", None) or fallback)
-        # Thread the already-resolved entity id so a portable asset whose in-file
-        # identity capsule was wiped by a full-content overwrite re-stamps the
-        # ORIGINAL id (same entity updates) instead of forking a fresh v4. Only
-        # consulted on a capsule miss; folder/carrier-intact types ignore it.
-        entity_id = getattr(entity, "id", None)
-        return await discover_record_by_path(
-            entity.type, target, notify=True, proposed_id=str(entity_id) if entity_id else None
-        )
+        return await reparse_entity(entity, fallback=fallback, write=write)
+
+    # A brand-new file with no owning entity: the registry names its type (an
+    # ambiguous ``.json`` is never guessed at) and the asset is indexed. The
+    # lookup above already proved the asset unowned — its exact match covers
+    # the path and its containment pass every ancestor, which is where a
+    # folder asset's root would be — so ``resolve_asset`` must not repeat it.
+    async def _mint(path: str) -> bool:
+        try:
+            resolved = await resolve_asset(path, write=write, known_unowned=True, placed_only=placed_only)
+        except NotAnAsset:
+            return False
+        return await index_one(resolved, notify=True) is not None
 
     # De-dupe while preserving order.
     changed = list(dict.fromkeys(_norm(x) for x in paths))
@@ -92,47 +215,58 @@ async def reindex_paths(
 
     for path in changed:
         try:
-            entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
+            entity = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
             if entity is not None:
                 found = await _resync(entity, path)
                 (result.reindexed if found is not None else result.skipped).append(path)
                 continue
 
-            # No owning entity — attempt a type-inferred mint (new file).
-            minted = False
-            for cand in _mint_candidates(path):
-                try:
-                    if await discover_record_by_path(cand, path, notify=True) is not None:
-                        result.minted.append(path)
-                        minted = True
-                        break
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("reindex mint %s as %s failed: %s", path, cand, exc)
-            if not minted:
+            # No owning entity — attempt a type-inferred mint (new file). Never inside the records
+            # root: a process's execution/input|output is run I/O, not project content, and minting
+            # stamps an ``id:`` into bytes a caller then reads back (``run(output_spec=…)``).
+            if not mint or _under_records_root(path):
                 result.skipped.append(path)
+                continue
+            (result.minted if await _mint(path) else result.skipped).append(path)
         except Exception as exc:  # noqa: BLE001
             logger.debug("reindex_paths: %s failed: %s", path, exc)
             result.skipped.append(path)
 
     for path in removed:
         try:
-            exact = await Entity.get_by_asset_ref(path, resolve_containing=False)
+            exact = await Entity.get_by_asset_ref(path, resolve_containing=False, strict=True)
             if exact is not None:
                 rec = await exact.get_record()
                 if rec is not None and rec.orphan:
-                    await type(exact).delete_by_id(str(exact.id))
+                    await remove_orphan_row(str(exact.id), exact.get_type())
                     result.orphaned.append(path)
+                elif rec is not None and source_unreachable(path):
+                    # `rec.orphan` already declined; without this we would fall
+                    # through to a resync on the same unreadable path.
+                    result.skipped.append(path)
                 else:
                     # Source still present (shouldn't be in deleted) — resync.
                     await _resync(exact, path)
                     result.reindexed.append(path)
                 continue
 
-            # Inner file removed from a still-present folder asset → resync folder.
-            folder = await Entity.get_by_asset_ref(path, resolve_containing=True)
+            # A file removed from inside a folder asset. Which of the two cases it
+            # is depends on the asset ROOT, not on the touched path: the root is
+            # what the row names now that folder types are typed correctly, and an
+            # exact-match lookup on an inner path can no longer find it.
+            folder = await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True)
             if folder is not None:
-                await _resync(folder, path)
-                result.reindexed.append(path)
+                root = str(getattr(folder, "asset_ref", "") or "")
+                if root and not Path(root).exists() and not source_unreachable(root):
+                    # The whole asset is gone — reap it, or deleting a skill would
+                    # leave a row pointing at nothing, searchable forever.
+                    await remove_orphan_row(str(folder.id), folder.get_type())
+                    result.orphaned.append(path)
+                else:
+                    # Root still there: ONE inner file went away. Never reap on
+                    # this branch — that asymmetry is load-bearing.
+                    await _resync(folder, path)
+                    result.reindexed.append(path)
             else:
                 result.skipped.append(path)
         except Exception as exc:  # noqa: BLE001

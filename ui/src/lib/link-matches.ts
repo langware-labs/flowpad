@@ -1,0 +1,133 @@
+/**
+ * What counts as a link in plain text — the one definition every surface shares.
+ * The terminal maps these matches onto buffer cells; a message renders them as spans.
+ * Candidate recognition only: the backend decides whether a reference exists.
+ */
+import { localWebUrl } from '@src/lib/link-kind';
+
+export interface LinkMatch {
+  text: string;
+  index: number;
+}
+
+/** WebLinksAddon's default URL pattern; one provider serves click and right-click alike. */
+const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*{}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`(<>]/;
+const URL_TRAIL = /[:,.!?]+$/;
+const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
+const UUID = String.raw`[0-9a-f]{8}-[0-9a-f-]{27}`;
+const ENTITY_REF = new RegExp(String.raw`^[a-z_]+-(?:@[\w.-]+|${UUID})$`, 'i');
+/** Text that ends the way a whole reference or its clause does: a position, an id, closing punctuation. */
+export const ENDS_WHOLE = new RegExp(String.raw`(?:${POSITION}|${UUID}|[,;!?)\]}])$`, 'i');
+// Names are not ASCII-only (`docs/מדריך/קובץ.md`, `café.md`), and a framework puts brackets,
+// `$`, `+`, `=`, `,` and `%` in folder names (`app/[slug]/page.tsx`, `routes/$id`).
+const WORD = String.raw`[\p{L}\p{N}_@.-]`;
+const SEGMENT = String.raw`[\p{L}\p{N}_@.+=$,%~()\[\] -]`;
+const BARE_FILE = new RegExp(String.raw`^${WORD}+\.(?:[A-Za-z][\w-]+${POSITION}?|[A-Za-z]${POSITION})$`, 'u');
+const RELATIVE_PATH = new RegExp(String.raw`^${WORD}+(?:[/\\]${SEGMENT}+)+[/\\]?(?:[:#]\w+(?::\d+)?)?$`, 'u');
+/** What a test runner appends to the file it names: `tests/a.py::test_x`, `a.py::TestA::test_b[1]`. */
+const TEST_ID = /(?:::[\w[\].-]+)+$/;
+
+const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
+export const HAS_RTL = new RegExp(`[${RTL}]`);
+// Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
+// Claude Code glues an attachment's label to its absolute path: `[image]/private/tmp/a.png`.
+const LABEL = String.raw`\[(?:image|file|pdf)\](?=/)`;
+const LEAD = new RegExp(`^(?:${LABEL}|[([{]|[${RTL}]+-)*`, 'i');
+// A Claude Code row on Windows is pre-reversed into visual order (see terminalConfig.ts), so in a
+// row carrying RTL text the sentence's `.`/`:` and a glued Hebrew prefix land at the path's START
+// / END instead. `./` and `../` stay paths.
+const RTL_LEAD = new RegExp(`^(?:${LABEL}|[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`, 'i');
+const TRAIL = new RegExp(`(?:[.,;:!?]|-[${RTL}]+)+$`);
+const OPENER: Record<string, string> = { ')': '(', ']': '[', '}': '{' };
+
+/**
+ * `value` without the prose punctuation after it. A closing bracket goes only when it closes
+ * nothing opened inside the reference: `(see a.ts)` loses it, `app/[slug]` and `Rust_(language)` keep it.
+ */
+function trimTrail(value: string, trail: RegExp): string {
+  for (;;) {
+    const cut = value.replace(trail, '');
+    const closer = cut.at(-1) ?? '';
+    const opener = OPENER[closer];
+    if (!opener || cut.split(opener).length >= cut.split(closer).length) return cut;
+    value = cut.slice(0, -1);
+  }
+}
+
+// A quote mark touching a letter is part of a word — `I've`, `users'`, Hebrew `צ'אט`, `צה"ל` —
+// not a quote: otherwise `I've … isn't` quotes, and hides, every path between them.
+const QUOTED = ['"', "'", '`'].map((q) => String.raw`(?<![\p{L}\p{N}_])${q}([^${q}\r\n]+)${q}(?![\p{L}\p{N}_])`);
+/** Box-drawing and block glyphs: a table's or a panel's borders, never part of a name. */
+export const BOX_GLYPHS = String.raw`\u2500-\u259f`;
+// Prose brackets an absolute path whose folder has a space: `(/Users/me/Flowpad workspace/a.md)`.
+// It must end in a file name, so a bracketed aside (`(/tmp is shared)`) stays prose.
+const BRACKETED_PATH = String.raw`\(((?:/|~/|[A-Za-z]:[/\\])[^()\r\n]*\.[A-Za-z]\w*(?::\d+){0,2})\)`;
+const TOKENS = new RegExp(`${[...QUOTED, BRACKETED_PATH].join('|')}|[^\\s"'\`<>${BOX_GLYPHS}]+`, 'gu');
+
+export function fileLinkMatches(text: string): LinkMatch[] {
+  const links: LinkMatch[] = [];
+  const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
+  for (const match of text.matchAll(TOKENS)) {
+    const quoted = match[1] ?? match[2] ?? match[3] ?? match[4];
+    const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
+    const value = quoted ?? trimTrail(match[0].slice(lead), TRAIL).replace(TEST_ID, '');
+    // webLinkMatches owns HTTP links, including their path portions.
+    if (!value || /^https?:/i.test(value)) continue;
+    // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.
+    // Checked on the raw token: trailing-punctuation stripping would eat the `...`.
+    if (/\.\.\.|…/.test(quoted ?? match[0]) || /^[./\\~]*$/.test(value) || /^file:\/*$/i.test(value)) continue;
+    if (
+      /^(?:file:\/\/|\.{0,2}\/|~\/|[A-Za-z]:[/\\])/.test(value) ||
+      RELATIVE_PATH.test(value) ||
+      localWebUrl(value) !== null ||
+      // A one-letter extension (`e.g`) is prose unless a position proves it is code (`main.c:3`).
+      BARE_FILE.test(value) ||
+      ENTITY_REF.test(value)
+    )
+      links.push({ text: value, index: match.index + (quoted === undefined ? lead : 1) });
+  }
+  return links;
+}
+
+/** WebLinksAddon's check: the match must parse as a URL whose origin it starts with. */
+function isUrl(text: string): boolean {
+  try {
+    const url = new URL(text);
+    const auth = url.username ? `${url.username}${url.password ? `:${url.password}` : ''}@` : '';
+    return text.toLowerCase().startsWith(`${url.protocol}//${auth}${url.host}`.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+export function webLinkMatches(text: string): LinkMatch[] {
+  return [...text.matchAll(new RegExp(URL_REGEX.source, 'g'))]
+    .map((match) => ({ text: trimTrail(match[0], URL_TRAIL), index: match.index }))
+    .filter((match) => isUrl(match.text));
+}
+
+/** Every file reference and web URL in `text`, in order, never overlapping. */
+export function linkMatches(text: string): LinkMatch[] {
+  const sorted = [...fileLinkMatches(text), ...webLinkMatches(text)].sort((a, b) => a.index - b.index);
+  const links: LinkMatch[] = [];
+  let end = 0;
+  for (const match of sorted) {
+    if (match.index < end) continue;
+    links.push(match);
+    end = match.index + match.text.length;
+  }
+  return links;
+}
+
+/** `text` cut into plain runs and links, for a surface that renders DOM. Joined, the runs are `text`. */
+export function linkSegments(text: string): Array<{ text: string; link: boolean }> {
+  const segments: Array<{ text: string; link: boolean }> = [];
+  let at = 0;
+  for (const match of linkMatches(text)) {
+    if (match.index > at) segments.push({ text: text.slice(at, match.index), link: false });
+    segments.push({ text: match.text, link: true });
+    at = match.index + match.text.length;
+  }
+  if (at < text.length) segments.push({ text: text.slice(at), link: false });
+  return segments;
+}

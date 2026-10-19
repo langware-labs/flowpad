@@ -10,8 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.builtin.git_origin import GitOrigin
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
 
 def _cn_id(bootstrap_payload: dict) -> str:
@@ -33,7 +33,9 @@ async def _fake_git_clone(clone_url: str, target_dir: str, branch=None, token=No
     last_clone.update(clone_url=clone_url, target_dir=target_dir, branch=branch, token=token)
     Path(target_dir).mkdir(parents=True, exist_ok=False)
     (Path(target_dir) / "README.md").write_text(f"cloned from {clone_url}")
-    return True, "Cloned successfully."
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    return CliResult.of_process("git clone", 0, detail="Cloned successfully.")
 
 
 # do not increase timeout without approval
@@ -43,7 +45,7 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())
 
-    target = Path(AGENT_MOUNT_FOLDER) / "Hello-World"
+    target = agent_workspace_root() / "Hello-World"
     if target.exists():
         # Sandboxed HOME — but be defensive against parallel-test leakage.
         import shutil
@@ -61,7 +63,59 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     project = payload["data"]["project"]
     assert project["fs_storage_mount_path"].endswith("/Hello-World")
     assert target.exists()
-    assert (target / "README.md").read_text().startswith("cloned from ")
+    # A root README is not a document (only docs/ .md is, ``is_in_doc_dir``): the index leaves
+    # it exactly as cloned, with no frontmatter ``id:`` stamped on it.
+    readme = (target / "README.md").read_text()
+    assert readme == "cloned from https://github.com/octocat/Hello-World.git"
+    # A repo with no flow.json declares nothing — and says so, rather than staying silent.
+    assert payload["data"]["dependencies"] == {"status": "none", "dependencies": []}
+    assert "bootstrap" not in payload["data"]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_create_project_from_git_reports_its_flow_json_dependencies(bootstrapped_client, tmp_path):
+    """The clone's ``flow.json`` is resolved after the scan, and the response
+    reports each dependency's state — a required one that did not land makes the
+    whole report ``failed`` (silence is what let a half-built project look finished)."""
+    import json
+    import shutil
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(bootstrap.json())
+
+    leaf = "Declaring-World"
+    target = agent_workspace_root() / leaf
+    if target.exists():
+        shutil.rmtree(target)
+    notes = tmp_path / "notes"
+    notes.mkdir()
+
+    async def _clone_with_flow_json(clone_url: str, target_dir: str, branch=None, token=None):
+        result = await _fake_git_clone(clone_url, target_dir, branch=branch, token=token)
+        (Path(target_dir) / "flow.json").write_text(
+            json.dumps({
+                "dependencies": {"notes": f"file:{notes}", "lost": f"file:{tmp_path / 'lost'}"},
+                "optionalDependencies": {"maybe": f"file:{notes}"},
+            }),
+            encoding="utf-8",
+        )
+        return result
+
+    with patch("flow_sdk.utils.git.git_clone", side_effect=_clone_with_flow_json):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/compute_node/{cn_id}/create-project-from-git",
+            json={"git_origin": _origin(f"https://github.com/octocat/{leaf}.git")},
+        )
+
+    assert r.status_code == 200, r.text
+    report = r.json()["data"]["dependencies"]
+    assert report["status"] == "failed", "a required dependency that is missing fails the report"
+    states = {d["name"]: d["state"] for d in report["dependencies"]}
+    assert states == {"notes": "ready", "lost": "missing", "maybe": "not_installed"}
+    project = r.json()["data"]["project"]
+    assert any(p.endswith("/notes") for p in project["include_dirs"])
 
 
 # do not increase timeout without approval
@@ -78,7 +132,7 @@ async def test_create_project_from_git_indexes_clone(bootstrapped_client, monkey
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "Indexed-World"
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -118,13 +172,13 @@ async def test_create_project_from_git_clones_with_user_token(bootstrapped_clien
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "Private-World"
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)
 
     async def _fake_token():
-        return "ghs_test_token", None
+        return "ghs_test_token"
 
     # Patched on the defining module — the action imports the helper lazily
     # inside the function body, so it resolves the patched version at call time.
@@ -148,7 +202,7 @@ async def test_create_project_from_git_collision_suggests(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "preexisting-repo"
-    existing = Path(AGENT_MOUNT_FOLDER) / leaf
+    existing = agent_workspace_root() / leaf
     existing.mkdir(parents=True, exist_ok=True)
     (existing / "marker").write_text("untouched")
 
@@ -174,8 +228,8 @@ async def test_create_project_from_git_accepts_suggested(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "twice-cloned"
-    base = Path(AGENT_MOUNT_FOLDER) / leaf
-    suggested = Path(AGENT_MOUNT_FOLDER) / f"{leaf}-2"
+    base = agent_workspace_root() / leaf
+    suggested = agent_workspace_root() / f"{leaf}-2"
     base.mkdir(parents=True, exist_ok=True)
     # Clean up the suggestion-target from any prior leaked run so the test is
     # idempotent — without this, a prior pass leaves the folder behind and the
@@ -221,11 +275,14 @@ async def test_create_project_from_git_clone_failure(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     async def _failing_clone(*_a, **_kw):
-        return False, "fatal: repository not found"
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+        return CliResult.of_process("git clone", 128, "", "fatal: repository not found",
+                                    detail="Git clone failed: fatal: repository not found")
 
     leaf = "does-not-exist"
     # Make sure the slot is free so we reach the clone call.
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)

@@ -1,243 +1,152 @@
-import { AgenticProcess, Shell, Tab, toplog, TypeId } from '@sdk';
+import { AgenticProcess, TabLifecycleState, tabInProject, tabKey, toplog, TypeId } from '@sdk';
+import { useContext } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
-import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { tabKey, useTerminalTabs } from '@src/tabs/useTabs';
-import { AlertTriangle, PlayCircle, RefreshCw } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
-import InteractiveTerminal from './interactive-terminal';
-import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
-import { allowRename, cleanTitle, isProgramIdentityTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
+import { useTabLifecycle, useTerminalTabs } from '@src/tabs/use-tab-manager';
+import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { terminalPool } from './terminal-pool';
+import { TerminalPanelErrorState } from './TerminalPanel';
 
 interface TabbedTerminalProps {
   className?: string;
-  /** Which terminals the body keeps warm-mounted: the active project +
-   *  projectless (`'project'`, default) or every project (`'all'`, the dev
+  /** Which terminal tabs this body answers for: the active project's exact
+   *  scope (`'project'`, default) or every scope (`'all'`, the dev
    *  sessions view). Matches the `scope` passed to the host's `UnifiedTabStrip`. */
   scope?: 'project' | 'all';
   /** Pin spawned shells/processes to this project (CollaborationSpace / dev view);
    *  otherwise the active project. */
   spawnProjectId?: string | null;
+  /**
+   * Process this pane is mounted for — a bare id or a full
+   * `agentic_process-<id>` pointer. When given and that process carries no
+   * shell, the pane renders "Disconnected" instead of the terminal body.
+   * Omitted by the plain /dock/shell host, which is not process-scoped.
+   */
+  processId?: string;
 }
 
 /**
- * Always-VISIBLE dead-end state for a panel that has nothing to render: the
- * process entity loaded but carries no shell and isn't headless. The specific
- * loader-recorded failure (if any) shows via `TerminalRuntimeErrorBanner` on
- * top; the centered body below is unconditional, so this branch can never
- * collapse to a silent blank pane again (the pty_mode=false regression).
+ * TabbedTerminal — the terminal BODY (docs/tab-management.md), and a SLOT of the
+ * terminal pool (docs/navigation/dock-loading.md, I6). It does not own terminals:
+ * `<TerminalPool/>` renders every panel once, above every layout, and this body
+ * shows the one the URL names by adopting its container. Unmounting this body —
+ * a layout swap, a view change, a project switch — gives the container back to
+ * the pool; the runtime keeps running and the next slot to show it is a
+ * visibility flip, not an `/open`, a pty-stream download and a replay.
+ *
+ * The chip strip is the shared `UnifiedTabStrip` the host renders above it. With
+ * no tabs in scope it renders `ProjectHome` (the shared project landing, which
+ * owns the spawn openers + their modals).
  */
-const TerminalPanelErrorState: React.FC<{
-  processId?: string;
-  /** Pass the parent's already-subscribed entity (TerminalPanel) to avoid a
-   *  duplicate subscription; omitted → the overlay path resolves its own. */
-  process?: AgenticProcess | null;
-}> = ({ processId, process }) => {
-  const [busy, setBusy] = useState(false);
-  const { data: fetched } = useEntity<AgenticProcess>(
-    !process && processId ? new TypeId(AgenticProcess.type, processId) : null,
-  );
-  const liveProcess = process ?? fetched;
-
-  // retryFailedStart (shared with the banner) resolves the process, calls
-  // start({visible:true, retry:true}) — clearing any server-side
-  // `start_failure` latch — and owns the success/error toasts. On success the
-  // entity broadcast delivers the new shell_id and the panel re-renders into
-  // InteractiveTerminal.
-  const handleRestart = async (): Promise<void> => {
-    if (!processId) return;
-    setBusy(true);
-    try {
-      await retryFailedStart(processId);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex h-full w-full flex-col" data-testid="terminal-panel-error">
-      <TerminalRuntimeErrorBanner />
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
-        <AlertTriangle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-        <div className="text-sm font-medium">This session has nothing to display</div>
-        <div className="max-w-md text-xs text-muted-foreground">
-          {/* Prefer the server-recorded launch failure (`start_failure` latch)
-              over the generic copy when the entity carries one. */}
-          {liveProcess?.start_failure ??
-            'No terminal or chat is attached to this process. Restart it to spawn a fresh session, or reload if this looks like a stale page.'}
-        </div>
-        <div className="mt-2 flex gap-2">
-          {processId && (
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => void handleRestart()}
-              data-testid="terminal-panel-error-restart"
-            >
-              <PlayCircle className="h-3.5 w-3.5" />
-              {busy ? 'Working…' : 'Restart session'}
-            </Button>
-          )}
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            onClick={() => window.location.reload()}
-            data-testid="terminal-panel-error-reload"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Reload
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * One warm-mounted terminal panel. Renders from a `Tab` plus its OWN live
- * entity (URL-first corollary: the view hydrates + attaches on mount, not via a
- * list-wide join). A process panel resolves its transport shell from the live
- * `AgenticProcess.shell_id` (so a worker restart reconnects the PTY); a plain
- * shell's transport is its target id. The OSC title auto-save saves the live
- * entity and mirrors the label onto the Tab via `set_name` (no `auto_rename` pin).
- */
-const TerminalPanel: React.FC<{
-  tab: Tab;
-  isActive: boolean;
-  isMounted: boolean;
-  flow: AgenticProcess | null;
-}> = ({ tab, isActive, isMounted, flow }) => {
-  const isProcess = tab.target_type === AgenticProcess.type;
-  const targetId = tab.target_id ?? '';
-  const { data: process } = useEntity<AgenticProcess>(
-    isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
-  );
-  const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null);
-  const transportShellId = isProcess ? (process?.shell_id ?? '') : targetId;
-  const source = isProcess ? process : shell;
-
-  const handleTitleChange = (title: string): void => {
-    if (tab.is_disabled) return;
-    if (!shouldAutoSaveTitleForTarget(tab.target_type, isProcess ? process : null)) return;
-    if (!source || !source.auto_rename) return; // user pinned this tab
-    // Clean spinner frames / icons / ANSI off the raw OSC title, then gate on
-    // real text and dedupe against the CLEANED name — so animation ticks that
-    // reduce to the same title never fire a save.
-    const clean = cleanTitle(title);
-    if (!allowRename(clean) || source.name === clean) return;
-    // A restarting worker re-announces itself (title `claude` / the exe path)
-    // before any tag title exists — never let that clobber the stored name.
-    if (isProgramIdentityTitle(clean, isProcess ? process : null)) return;
-    source.name = clean;
-    void source.save().catch(() => {});
-    // Mirror onto the durable Tab label so the chip stays right once inactive —
-    // set_name, NOT rename (which would pin auto_rename off).
-    void Tab.setNameById(tab.id, clean).catch(() => {});
-  };
-
-  return (
-    <div
-      data-testid="terminal-panel"
-      data-session-id={tab.dockPointer?.pointer ?? ''}
-      data-worker-session-id={isProcess ? (process?.session_id ?? '') : undefined}
-      data-pty-mode={isProcess ? String(process?.pty_mode ?? '') : undefined}
-      data-active={isActive ? 'true' : 'false'}
-      className="absolute inset-0 min-h-0 overflow-hidden"
-      style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
-    >
-      {isMounted &&
-        // A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
-        // — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
-        // shell-less.
-        (transportShellId || (isProcess && process?.isHeadless) ? (
-          <InteractiveTerminal
-            sessionId={transportShellId}
-            flow={flow}
-            className="h-full"
-            active={isActive}
-            process={isProcess ? (process ?? undefined) : undefined}
-            onTitleChange={handleTitleChange}
-          />
-        ) : isProcess && !process ? null /* process entity still hydrating */ : (
-          // Process loaded but has no shell and isn't headless (worker binary
-          // missing / start_failure latch / drift): an unconditional visible
-          // error + recovery instead of a silent blank panel.
-          <TerminalPanelErrorState processId={targetId} process={process} />
-        ))}
-    </div>
-  );
-};
-
-/**
- * TabbedTerminal — the terminal BODY (docs/tab-management.md). It renders only the
- * warm-mounted terminal panels; the chip strip is the shared `UnifiedTabStrip` the
- * host renders above it. Tabs come from the one backend-authoritative source
- * (`useTerminalTabs` → `tab` action), the active panel is URL-derived, and each
- * panel hydrates its own entity on mount. With no tabs it renders `ProjectHome`
- * (the shared project landing, which owns the spawn openers + their modals).
- */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId }) => {
-  const { flow } = useAgentContext();
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
+  className = '',
+  scope = 'project',
+  spawnProjectId,
+  processId,
+}) => {
   const { currentDock } = useDockNavigation();
-  const tabs = useTerminalTabs(scope, spawnProjectId);
+  const allTerminalTabs = useTerminalTabs('all');
+  // The project scope decides only the empty landing (no terminals here yet). The
+  // subscribed project, not a render-time read of the `dataContext` global.
+  const { project } = useContext();
+  const scopeProjectId = spawnProjectId === undefined ? (project?.id ?? null) : spawnProjectId;
+  const tabs = useMemo(
+    () => (scope === 'all' ? allTerminalTabs : allTerminalTabs.filter((tab) => tabInProject(tab, scopeProjectId))),
+    [allTerminalTabs, scope, scopeProjectId],
+  );
 
-  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash).
-  // A non-terminal dock's tabHash never matches a terminal tab, so no special-case.
+  // Process-scoped host: a process that loaded but carries no shell has nothing
+  // to attach to. Hook order is fixed — the entity is subscribed unconditionally
+  // and the guard is applied below.
+  const hostProcessId = processId
+    ? DockPointer.isAgenticProcessPointer(processId)
+      ? DockPointer.extractAgenticProcessId(processId)
+      : processId
+    : null;
+  const { data: hostProcess } = useEntity<AgenticProcess>(
+    hostProcessId ? new TypeId(AgenticProcess.type, hostProcessId) : null,
+  );
+  const hostDisconnected = !!hostProcess && !hostProcess.shell_id;
+
+  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash), looked
+  // up among ALL terminal tabs: the URL is the truth and the loader already aligned
+  // its scope (dock-loading step 3). Checking it against a project-filtered list
+  // made a second source of truth — for the render where they disagreed, the tab
+  // was "missing" and "This session has nothing to display" flashed.
   const activeKey = currentDock?.tabHash ?? '';
+  const activeTab = activeKey ? allTerminalTabs.find((t) => tabKey(t) === activeKey) : undefined;
 
-  // The URL names a session but NO tab in this scope backs it (scope filtering,
-  // backend refusal, cross-project drift): without this arm every panel stays
-  // hidden and the pane is silently blank — the recorded load error (if any)
-  // has no mounted reader. Rendered as an overlay so warm-mounted sibling
-  // panels survive. Loader-materialized tabs land in the store before first
-  // render (setupTab is awaited in the route loader), so this is not a
-  // hydration flash.
+  // The URL names a session but NO tab backs it (backend refusal, a closed tab):
+  // without this arm the slot stays empty and the pane is silently blank — the
+  // recorded load error (if any) has no mounted reader.
   const activePointer = currentDock?.pointer ?? '';
   const activeProcessId =
     activePointer && DockPointer.isAgenticProcessPointer(activePointer)
       ? DockPointer.extractAgenticProcessId(activePointer)
       : undefined;
-  const activeTabMissing = !!activeKey && tabs.length > 0 && !tabs.some((t) => tabKey(t) === activeKey);
+  // Closing the CURRENT tab hides its chip at once (lifecycle `Closing`), while the
+  // navigation to the next tab is still loading — the URL keeps naming the tab for
+  // that window. A tab this client closed is not a missing tab: remember the key it
+  // was closing (the entry is dropped once the backend acks, possibly before the URL
+  // moves) and paint nothing for it instead of the dead-end overlay. A tab that
+  // vanishes WITHOUT a close here (another window, a refusal) still gets the overlay.
+  const activeLifecycle = useTabLifecycle(activeKey);
+  const [closedKey, setClosedKey] = useState<string | null>(null);
+  if (activeLifecycle?.state === TabLifecycleState.Closing && closedKey !== activeKey) setClosedKey(activeKey);
+  const activeTabMissing = !!activeKey && tabs.length > 0 && !activeTab && activeKey !== closedKey;
 
-  // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
-  // (the Set never shrinks) so re-activation is instant.
-  const [mounted, setMounted] = useState<Set<string>>(() => new Set(activeKey ? [activeKey] : []));
+  // One line per time the dead-end overlay goes up.
   useEffect(() => {
-    if (!activeKey) return;
-    setMounted((prev) => {
-      // Warm switch = the panel is already in the Set (visibility flip only);
-      // cold = first visit mounts InteractiveTerminal (attach + replay).
-      toplog.log('process_load', `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`);
-      if (prev.has(activeKey)) return prev;
-      const next = new Set(prev);
-      next.add(activeKey);
-      return next;
-    });
-  }, [activeKey]);
+    if (!activeTabMissing) return;
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=terminal_active_tab_missing key=${activeKey} terminal_tabs=${allTerminalTabs.length}`,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per appearance
+  }, [activeTabMissing, activeKey]);
+
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [slot] = useState(() => Symbol('terminal-slot'));
+  const shownKey = hostDisconnected || !activeTab ? '' : activeKey;
+
+  // Layout effect: the container is in place before the browser paints, and
+  // before the pooled panel's own effects run for a first mount (they measure).
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!shownKey || !host) return;
+    // Warm = the pool already runs this panel (shown before, by any slot in any
+    // layout); cold = this activation mounts it (attach + replay).
+    const warm = terminalPool.has(shownKey);
+    toplog.log(
+      ['tab_switch', 'process_load', 'pty', 'agentic_process.load'],
+      `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${shownKey}`,
+    );
+    terminalPool.show(slot, shownKey, host);
+    return () => terminalPool.hide(slot);
+  }, [slot, shownKey]);
+
+  if (hostDisconnected) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+        <span className="text-sm">Disconnected</span>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-full ${className}`}>
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
-          {tabs.length === 0 ? (
-            <ProjectHome spawnProjectId={spawnProjectId} createOnly />
-          ) : (
-            tabs.map((tab) => {
-              const tabHash = tabKey(tab);
-              return (
-                <TerminalPanel
-                  key={tabHash}
-                  tab={tab}
-                  isActive={tabHash === activeKey}
-                  isMounted={mounted.has(tabHash)}
-                  flow={flow ?? null}
-                />
-              );
-            })
+          {/* The slot: the pool appends the shown panel's container here. No React
+              children, so React never reconciles against the adopted node. */}
+          <div ref={hostRef} className="absolute inset-0" data-testid="terminal-slot" />
+          {tabs.length === 0 && (
+            <div className="absolute inset-0 z-10 overflow-auto bg-background">
+              <ProjectHome spawnProjectId={spawnProjectId} createOnly />
+            </div>
           )}
           {activeTabMissing && (
             <div className="absolute inset-0 z-10 bg-background" data-testid="terminal-active-tab-missing">

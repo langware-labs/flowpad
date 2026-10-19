@@ -287,13 +287,19 @@ def write_secret(name: str, value: str, description: str = "") -> None:
     """Store the value in the per-instance sod and upsert the app_secret
     FSRecord metadata. Requires consent to have been granted — raises
     :class:`SecretsNotEnabledError` otherwise."""
+    from flow_sdk.core.entity.entity_env.env_utils import mask_confidential_value  # noqa: PLC0415
+
     get_instance_settings().sod.write(name, value)
+    # The shadow carries a masked ``****last4`` hint so a listing can say WHICH key is stored
+    # without opening the sod. Never the value.
+    hint = mask_confidential_value(value)
     existing = _get_app_secret(name)
     if existing is not None:
         existing.__dict__["description"] = description
+        existing.__dict__["hint"] = hint
         existing.save()
     else:
-        FSRecord(type=RecordType.APP_SECRET, id=name, name=name, description=description).save()
+        FSRecord(type=RecordType.APP_SECRET, id=name, name=name, description=description, hint=hint).save()
 
 
 async def delete_secret(name: str) -> None:
@@ -319,6 +325,8 @@ def get_secrets() -> list[dict]:
             "name": record.__dict__.get("name"),
             "description": record.__dict__.get("description") or "",
             "created_at": record.__dict__.get("created_date"),
+            # Masked ``****last4``; empty for a key stored before hints existed.
+            "hint": record.__dict__.get("hint") or "",
         })
     return out
 

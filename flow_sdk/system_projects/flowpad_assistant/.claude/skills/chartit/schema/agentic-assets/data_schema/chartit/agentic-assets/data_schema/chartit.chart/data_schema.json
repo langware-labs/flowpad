@@ -1,0 +1,11 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "title":    {"shape": "string", "description": "What the chart shows, in a few words."},
+    "type":     {"shape": "enum:sequence", "description": "The chart type; it names which data field is filled."},
+    "app_url":  {"shape": "?string", "description": "Where the chart is served (its Flowpad web app URL)."},
+    "session":  {"shape": "?string", "description": "The agentic process that builds the chart — where submitted feedback is sent."},
+    "status":   {"shape": "enum:draft|in_review|submitted|revised", "description": "draft: being built; in_review: shown, collecting feedback; submitted: feedback sent; revised: changed after feedback."},
+    "sequence": {"shape": "?chartit.sequence", "description": "The data of a sequence chart (type = sequence)."}
+  }
+}

@@ -1,23 +1,15 @@
 import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { EntityMerge } from '../IEntity';
+import { IUser } from './user-types';
+export type * from './user-types';
 
 export const local_domain = 'local.machine';
-export interface IUser extends IEntity {
-  name?: string;
-  email?: string;
-  picture?: string;
-  /**
-   * Foreign hub/cloud identity of a contact, distinct from the local entity
-   * ``id``. Lets a contact exist by hub id with no email. The local desktop
-   * user leaves this undefined (its own ``id`` is authoritative).
-   */
-  user_id?: string;
-  last_login?: Date;
-  /** Optional cloud organization the user belongs to (hub-authoritative). */
-  organization_id?: string;
-  /** The user's role on that organization. Defaults to "member". */
-  organization_role?: string;
-}
+
+// `implements IUser` only checks the class; it contributes no members, so every
+// field declared solely on IUser read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface User extends EntityMerge<IUser> {}
 
 @registerEntity
 export class User extends APIEntity<User> implements IUser {
@@ -28,6 +20,7 @@ export class User extends APIEntity<User> implements IUser {
   last_login?: Date;
   organization_id?: string;
   organization_role?: string;
+  onboarded?: boolean;
   static type: string = 'user';
 
   constructor(entity: Partial<IUser> = {}) {
@@ -39,6 +32,7 @@ export class User extends APIEntity<User> implements IUser {
     this.last_login = entity.last_login;
     this.organization_id = entity.organization_id;
     this.organization_role = entity.organization_role;
+    this.onboarded = entity.onboarded;
   }
 
   /**

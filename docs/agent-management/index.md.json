@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "agent-management",
+  "folder_name": "agent-management",
+  "inputs_hash": "822589af883834226ebcadbf518e7c84ae6c774c9b69bd4e312ceaa5c2daa735",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
+  "files": [
+    {
+      "name": "agent-records.md",
+      "rel_path": "agent-records.md",
+      "title": "Agent Records",
+      "summary": "Filesystem records and runtime state for agent management: shadow folders, execution input/output/assets layout, prompt queue, retention and what survives restarts.",
+      "content_hash": "cb8b6c5b201fbe42acccb5e6fa3b49d8d5ab95ce410ce15f87b5be6666407dfb",
+      "size_bytes": 38757
+    },
+    {
+      "name": "agentic-process.md",
+      "rel_path": "agentic-process.md",
+      "title": "AgenticProcess",
+      "summary": "AgenticProcess entity model, independent transport and visibility axes, worker drivers, lifecycle, configuration, Wizard execution, backend actions, and TypeScript interfaces.",
+      "content_hash": "c11c5e779481f7545adb488505e23a4beb9a36cb4ff6584730c43b00cb234bcf",
+      "size_bytes": 68364
+    },
+    {
+      "name": "claude-session-manager.md",
+      "rel_path": "claude-session-manager.md",
+      "title": "Claude Process Lifecycle, CLI Options & Restart Contract",
+      "summary": "Claude process lifecycle without a manager layer: createProcess and spawn flows, opening existing sessions, stop/restart/fork, CLI option storage, and restart-required detection.",
+      "content_hash": "71bd553cbe73990a250b8ea247b6f4f1d9eeff6d40c47aa23027fc140b9c9276",
+      "size_bytes": 14032
+    },
+    {
+      "name": "mode-switching.md",
+      "rel_path": "mode-switching.md",
+      "title": "Mode Switching (Chat/Headless ⇄ Interactive PTY)",
+      "summary": "Switching a preserved agent session between headless and PTY transports: state transitions, guards, readiness, session reuse, and restart distinctions.",
+      "content_hash": "c0cdd470e1db03ccd15f4ecf23a1176e352ed6a60bdeff0423818c40c5d9f2a5",
+      "size_bytes": 18594
+    },
+    {
+      "name": "pty-websocket.md",
+      "rel_path": "pty-websocket.md",
+      "title": "PTY, Shell State, and WebSocket Transport",
+      "summary": "PTY stack reference: Shell-owned state, backend PTY creation, WebSocket transport, connection-membership FSM, disk-backed framed replay, attach/input/resize/close semantics, headless mode and lifecycle holes.",
+      "content_hash": "8f5025b7d2f0ae6584105fa26d6edbfd4621d9484036c6441aa891b1a62ec4f7",
+      "size_bytes": 33947
+    },
+    {
+      "name": "tabs-management.md",
+      "rel_path": "tabs-management.md",
+      "title": "Terminal Tabs Management",
+      "summary": "Terminal tabs under the global Tab entity model: which entity a terminal chip targets, URL-first active state, and the retired Shell-query names.",
+      "content_hash": "d9851bf5cd251d13d25ef92dee5b82f2e65f1b8dc7ee8a97b80595eab6b31d4e",
+      "size_bytes": 12799
+    },
+    {
+      "name": "terminal-toolbars.md",
+      "rel_path": "terminal-toolbars.md",
+      "title": "Terminal Toolbars",
+      "summary": "Reference for the interactive terminal's ProcessToolbar: debug menu CLI options and gutters, session actions menu, restart-required signal, InteractiveTerminal state, and PTY versus headless mode.",
+      "content_hash": "0e5ac671e00cf689131c5c0cf992c53ad4b83a738ad0606eff5a975021b642ff",
+      "size_bytes": 29332
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T08:55:59.682235+00:00",
+  "latest_process_ref": ""
+}

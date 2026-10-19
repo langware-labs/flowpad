@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const read = (relative: string) => readFileSync(resolve(__dirname, '..', relative), 'utf8');
 
 const REALM_CONSUMERS = [
-  'api/project_context_dir.test.ts',
+  'api/project_dependencies.test.ts',
   'long_tests/_backend_lifecycle.ts',
   'long_tests/context_folder_real_worker.test.ts',
   'long_tests/decker_generate_deck_real_worker.test.ts',
@@ -19,7 +19,7 @@ const REALM_CONSUMERS = [
 ] as const;
 
 const LOG_HANDLE_OWNERS = [
-  'api/project_context_dir.test.ts',
+  'api/project_dependencies.test.ts',
   'api/project_fetch_fast.test.ts',
   'long_tests/context_folder_real_worker.test.ts',
   'long_tests/decker_generate_deck_real_worker.test.ts',

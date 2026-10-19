@@ -1,5 +1,6 @@
+import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AgenticProcess, Conversation, ProcessKind, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, FlowMessage, ProcessKind, TypeId } from '@sdk';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { mostRecentProcess } from '@src/utils/process-recency';
@@ -31,7 +32,9 @@ export function useConversationSession(opts: {
 }): {
   conversationProcess: AgenticProcess | null;
   starting: boolean;
-  launch: (worker: WorkerType) => void;
+  /** `prompt` overrides `buildPrompt` for this one launch (e.g. a message's ⋮ menu);
+   *  `messageId` stamps that message on the session, which shows as a chip on it. */
+  launch: (worker: WorkerType, prompt?: () => string, messageId?: string) => void;
   open: () => void;
 } {
   const { conversation, ensureMapped, buildPrompt } = opts;
@@ -54,7 +57,11 @@ export function useConversationSession(opts: {
   useEffect(() => {
     let cancelled = false;
     void Promise.all(
-      processTids.map((t) => AgenticProcess.getByIdFromCache<AgenticProcess>(t.id) ?? AgenticProcess.getById<AgenticProcess>(t.id).catch(() => null)),
+      processTids.map(
+        (t) =>
+          AgenticProcess.getByIdFromCache<AgenticProcess>(t.id) ??
+          AgenticProcess.getById<AgenticProcess>(t.id).catch(() => null),
+      ),
     ).then((procs) => {
       if (!cancelled) setLinkedProcesses(procs.filter((p): p is AgenticProcess => !!p));
     });
@@ -71,7 +78,7 @@ export function useConversationSession(opts: {
   );
 
   const startSession = useCallback(
-    async (workerType: WorkerType) => {
+    async (workerType: WorkerType, prompt: () => string = buildPrompt, messageId?: string) => {
       if (!conversation || starting) return;
       // The conversation owns the project (conversation.project_id). A worker
       // starts on the conversation's project and is linked back via the generic
@@ -83,10 +90,14 @@ export function useConversationSession(opts: {
       if (!workdir) return;
       setStarting(true);
       try {
-        const instruction = buildPrompt();
+        const instruction = prompt();
         const convTypeIdString = conversation.id
           ? new TypeId(Conversation.type, conversation.id).toString()
           : undefined;
+        // A message launch stamps the message on the process and keys it to the conversation —
+        // `useMessageSessions` reads that back as the chip on the message.
+        const messageTypeIdString = messageId ? new TypeId(FlowMessage.type, messageId).toString() : undefined;
+        const shared = [convTypeIdString, messageTypeIdString].filter((x): x is string => !!x);
         // Run in the conversation's OWN project (workdir) with the Flowpad
         // Assistant mounted, route the first prompt through the queue, and stamp
         // the Conversation kind so the header/drawer recognise it as THE
@@ -98,7 +109,8 @@ export function useConversationSession(opts: {
           launchPrompt: instruction,
           enableAssistant: true,
           processType: ProcessKind.Conversation,
-          sharedContextEntities: convTypeIdString ? [convTypeIdString] : undefined,
+          sharedContextEntities: shared.length ? shared : undefined,
+          ...(messageTypeIdString && convTypeIdString ? { target: convTypeIdString } : {}),
         });
         // Save the worker into the conversation's context so it surfaces as the
         // conversationProcess and is the target for per-message append.
@@ -111,7 +123,7 @@ export function useConversationSession(opts: {
         }
       } catch (err) {
         console.error('[useConversationSession] start session failed', err);
-        notify.error({ title: 'Failed to start session' });
+        notify.error({ title: t`Failed to start session` });
       } finally {
         setStarting(false);
       }
@@ -120,8 +132,8 @@ export function useConversationSession(opts: {
   );
 
   const launch = useCallback(
-    (worker: WorkerType) => {
-      const run = () => startSession(worker);
+    (worker: WorkerType, prompt?: () => string, messageId?: string) => {
+      const run = () => startSession(worker, prompt, messageId);
       if (ensureMapped) ensureMapped(run);
       else void run();
     },

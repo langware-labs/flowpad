@@ -1,0 +1,43 @@
+{"type":"session.start","timestamp":"2026-09-12T21:56:16.092Z","data":{"sessionId":"d9a04cec-8f3c-4bc7-8625-78b3eabb8ae2","copilotVersion":"1.0.83"}}
+{"type":"session.permissions_changed","timestamp":"2026-09-12T21:56:16.099Z","data":{"allowAllPermissions":true}}
+{"type":"session.model_change","timestamp":"2026-09-12T21:56:16.186Z","data":{}}
+{"type":"session.auto_mode_resolved","timestamp":"2026-09-12T21:56:19.221Z","data":{}}
+{"type":"user.message","timestamp":"2026-09-12T21:56:19.407Z","data":{"content":"Explain why the ocean appears blue. Reply with one short sentence. Ref 2b448c.","turnId":"0"}}
+{"type":"system.message","timestamp":"2026-09-12T21:56:19.408Z","data":{}}
+{"type":"assistant.turn_start","timestamp":"2026-09-12T21:56:19.409Z","data":{"turnId":"0"}}
+{"type":"model.turn_started","timestamp":"2026-09-12T21:56:19.415Z","data":{}}
+{"type":"model.model_call_started","timestamp":"2026-09-12T21:56:19.416Z","data":{}}
+{"type":"model.captured_assignment_context","timestamp":"2026-09-12T21:56:20.415Z","data":{}}
+{"type":"model.model_call_success","timestamp":"2026-09-12T21:56:20.416Z","data":{}}
+{"type":"model.message","timestamp":"2026-09-12T21:56:20.416Z","data":{}}
+{"type":"model.response","timestamp":"2026-09-12T21:56:20.416Z","data":{}}
+{"type":"model.turn_ended","timestamp":"2026-09-12T21:56:20.416Z","data":{}}
+{"type":"model.messages_snapshot","timestamp":"2026-09-12T21:56:20.416Z","data":{}}
+{"type":"assistant.message","timestamp":"2026-09-12T21:56:22.145Z","data":{"content":"The ocean appears blue because water absorbs red light more strongly than blue, so blue wavelengths are scattered back to our eyes.","toolRequests":[],"turnId":"0"}}
+{"type":"assistant.turn_end","timestamp":"2026-09-12T21:56:22.147Z","data":{"turnId":"0"}}
+{"type":"session.usage_checkpoint","timestamp":"2026-09-12T21:56:22.148Z","data":{"totalPremiumRequests":1}}
+{"type":"session.auto_mode_resolved","timestamp":"2026-09-12T21:56:27.308Z","data":{}}
+{"type":"user.message","timestamp":"2026-09-12T21:56:27.314Z","data":{"content":"Explain why leaves are green. Reply with one short sentence.","turnId":"0"}}
+{"type":"assistant.turn_start","timestamp":"2026-09-12T21:56:27.316Z","data":{"turnId":"0"}}
+{"type":"model.turn_started","timestamp":"2026-09-12T21:56:27.316Z","data":{}}
+{"type":"model.model_call_started","timestamp":"2026-09-12T21:56:27.316Z","data":{}}
+{"type":"model.captured_assignment_context","timestamp":"2026-09-12T21:56:28.224Z","data":{}}
+{"type":"model.model_call_success","timestamp":"2026-09-12T21:56:28.224Z","data":{}}
+{"type":"model.message","timestamp":"2026-09-12T21:56:28.225Z","data":{}}
+{"type":"model.response","timestamp":"2026-09-12T21:56:28.225Z","data":{}}
+{"type":"model.turn_ended","timestamp":"2026-09-12T21:56:28.225Z","data":{}}
+{"type":"model.messages_snapshot","timestamp":"2026-09-12T21:56:28.225Z","data":{}}
+{"type":"assistant.message","timestamp":"2026-09-12T21:56:29.624Z","data":{"content":"Leaves are green because chlorophyll absorbs red and blue light while reflecting green light.","toolRequests":[],"turnId":"0"}}
+{"type":"assistant.turn_end","timestamp":"2026-09-12T21:56:29.626Z","data":{"turnId":"0"}}
+{"type":"session.usage_checkpoint","timestamp":"2026-09-12T21:56:29.627Z","data":{"totalPremiumRequests":2}}
+{"type":"session.shutdown","timestamp":"2026-09-12T21:56:36.738Z","data":{"totalPremiumRequests":2}}
+{"type":"session.resume","timestamp":"2026-09-12T21:56:38.094Z","data":{}}
+{"type":"session.permissions_changed","timestamp":"2026-09-12T21:56:39.093Z","data":{"allowAllPermissions":false}}
+{"type":"session.permissions_changed","timestamp":"2026-09-12T21:56:39.094Z","data":{"allowAllPermissions":true}}
+{"type":"model.turn_started","timestamp":"2026-09-12T21:56:39.915Z","data":{}}
+{"type":"model.model_call_started","timestamp":"2026-09-12T21:56:39.915Z","data":{}}
+{"type":"model.captured_assignment_context","timestamp":"2026-09-12T21:56:40.096Z","data":{}}
+{"type":"model.model_call_failure","timestamp":"2026-09-12T21:56:40.096Z","data":{}}
+{"type":"model.turn_failed","timestamp":"2026-09-12T21:56:40.097Z","data":{}}
+{"type":"model.turn_ended","timestamp":"2026-09-12T21:56:40.097Z","data":{}}
+{"type":"session.shutdown","timestamp":"2026-09-12T21:56:59.810Z","data":{"totalPremiumRequests":2}}

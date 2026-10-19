@@ -1,19 +1,12 @@
 from __future__ import annotations
 
-from typing import ClassVar, List, Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from pydantic import model_validator
 
-from flow_sdk._compat import StrEnum
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import TypeId
-
-
-class SpecType(StrEnum):
-    PLAN = "plan"
-    ISSUE = "issue"
-    SUPPORT_TICKET = "support_ticket"
+from flow_sdk.schema.data_spec.spec_doc_spec import SpecType
 
 
 class Spec(Entity):
@@ -22,13 +15,14 @@ class Spec(Entity):
     content: Optional[str] = APIField(None, blob=True)
     spec_type: str = APIField(SpecType.PLAN)
     author_id: Optional[str] = APIField(None)
-    asset_ref: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     metadata: Optional[Dict[str, Any]] = APIField(None)
 
     @model_validator(mode="after")
     def _hydrate_content_from_asset_ref(self) -> "Spec":
-        """The spec body lives in its ``asset_ref`` file (``specs/<name>/spec.md``)
-        — the source of truth the indexer reads and the share bundle carries.
+        """The spec body lives in the main document of its ``asset_ref`` folder
+        (``specs/<name>/spec.md``) — the source of truth the indexer reads and
+        the share bundle carries.
         ``content`` is a blob field that the entity GET does not expand, so a
         spec loaded from the DB row arrives with ``content=None`` and the editor
         renders blank. Hydrate it from the file (frontmatter stripped) whenever
@@ -39,9 +33,11 @@ class Spec(Entity):
         if not (self.content or "").strip() and self.asset_ref:
             try:
                 from pathlib import Path  # noqa: PLC0415
-                from flow_sdk.fs_store.indexer._frontmatter import _extract_body  # noqa: PLC0415
 
-                p = Path(self.asset_ref)
+                from flow_sdk.assets.frontmatter import _extract_body  # noqa: PLC0415
+                from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+                p = SchemaRegistry.get(self.get_type()).body_path_for(Path(self.asset_ref))
                 if p.is_file():
                     object.__setattr__(self, "content", _extract_body(p.read_text(encoding="utf-8")))
             except OSError:

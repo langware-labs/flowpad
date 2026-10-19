@@ -6,11 +6,12 @@ record id as a compatibility alias for existing fs-record rows.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Iterator
 
-from flow_sdk.config import agent_workspace_root, is_hidden_project
+from flow_sdk.config import is_hidden_project
 from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
@@ -34,7 +35,7 @@ class ProjectInfo:
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
     last_active_at: int | None = None                     # entity last_active_at (epoch-ms), when known
-    system: bool = False                                  # SDK-shipped system project (any install)
+    hidden: bool = False                                  # app-managed: SDK-shipped, mount root, or helpdesk portal
 
 
 # ── GET vs FETCH ──────────────────────────────────────────────────────────────
@@ -51,9 +52,15 @@ _PROJECTS_CACHE: list | None = None
 def invalidate_projects_cache() -> None:
     """Drop the cached Project list. Called when a project is materialized; the
     scope resolver also force-refreshes on a token miss, so a freshly-created
-    project self-heals even without an explicit invalidate."""
+    project self-heals even without an explicit invalidate.
+
+    The indexer's cwd -> project id memo is the same fact in another shape, so
+    it goes with it: a deleted project must stop being stamped on new records."""
     global _PROJECTS_CACHE
     _PROJECTS_CACHE = None
+    from flow_sdk.fs_store.indexer.roots import forget_project_cwd_ids  # noqa: PLC0415
+
+    forget_project_cwd_ids()
 
 
 async def get_cached_projects(*, force: bool = False):
@@ -71,6 +78,12 @@ async def get_cached_projects(*, force: bool = False):
     return _PROJECTS_CACHE
 
 
+def is_inside_any(cwd: str, mounts) -> bool:
+    """True when a STRICT ancestor of ``cwd`` is one of ``mounts`` (canonical posix
+    paths) — the folder lies inside another project."""
+    return any(str(parent) in mounts for parent in PurePosixPath(cwd).parents)
+
+
 def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
     """Build a ``ProjectInfo`` from a Project entity row at canonical ``cwd``.
     ``worker_types`` is empty — that provenance comes from the FS scan."""
@@ -83,7 +96,7 @@ def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
         worker_types=[],
         modified_at=getattr(proj, "updated_date", None),
         last_active_at=getattr(proj, "last_active_at", None),
-        system=is_hidden_project(cwd, bool(getattr(proj, "system", False))),
+        hidden=is_hidden_project(cwd, bool(getattr(proj, "system", False))),
     )
 
 
@@ -134,15 +147,33 @@ def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
 
 
 def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
-    """Yield every immediate, non-hidden subdirectory of the Flowpad workspace.
+    """Yield every immediate, non-hidden subdirectory of every workspace root.
 
-    Each top-level folder under ``<user_home>/Flowpad workspace`` whose name does
-    not start with ``.`` is treated as a project, even with no worker
-    worker history. Hidden folders (``.claude``, ``.flow``, ``.git`` …) are
-    skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
-    temp paths excluded unless ``include_temp``.
+    Each top-level folder under this instance's default workspace root (``~/Flowpad
+    workspace`` for prod only — see ``agent_workspace_root``) and under each
+    user-created workspace's root whose name does not start with ``.`` is treated
+    as a project, even with no worker history. Hidden folders (``.claude``,
+    ``.flow``, ``.git`` …) are skipped. Same semantics as the Claude/Codex
+    iterators: only existing dirs, temp paths excluded unless ``include_temp``.
     """
-    workspace = agent_workspace_root()
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415 — call time, per instance
+
+    for workspace in all_workspace_roots():
+        yield from _iter_root_project_paths(workspace, include_temp)
+
+
+def iter_prod_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
+    """Yield prod's workspace folders (``~/Flowpad workspace``) on a non-prod instance,
+    so a test instance can pick the user's real projects too. Prod already scans it."""
+    from flow_sdk.config import all_workspace_roots  # noqa: PLC0415 — call time, per instance
+
+    prod_root = get_instance_settings().user_home / "Flowpad workspace"
+    if prod_root in all_workspace_roots():
+        return
+    yield from _iter_root_project_paths(prod_root, include_temp)
+
+
+def _iter_root_project_paths(workspace: Path, include_temp: bool) -> Iterator[Path]:
     try:
         # list() forces eager evaluation: iterdir() is a lazy generator, so a
         # missing workspace dir would otherwise raise at the for-loop below,
@@ -183,7 +214,7 @@ def _read_copilot_workspace_cwd(path: Path) -> str | None:
 
 def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield canonical Copilot workspace cwds from ``~/.copilot/session-state``."""
-    root = get_instance_settings().user_home / ".copilot" / "session-state"
+    root = get_instance_settings().copilot_session_state_dir
     if not root.is_dir():
         return
     seen: set[str] = set()
@@ -207,17 +238,14 @@ def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
         yield path
 
 
-async def get_all_projects(
-    *,
-    include_temp: bool = False,
-    create_missing: bool = True,
-) -> list[ProjectInfo]:
-    """Return every known project — FS scan + entity table, deduped by cwd,
-    sorted by modified_at desc (None last).
-    """
-    from flow_sdk.builtin.project import Project  # local: avoid circular import
+def scan_project_cwds(*, include_temp: bool = False) -> dict[str, tuple[str, ...]]:
+    """Blocking FS half of ``get_all_projects``: ``{canonical cwd: worker tags}``.
 
-    fs_by_cwd: dict[str, ProjectInfo] = {}
+    Four filesystem walks (every historical worker cwd + the workspace) —
+    seconds on a busy machine. Pure disk, no entity table, so a caller may hold
+    the result and re-join it against ``Project.get_all()`` via ``join_projects``.
+    """
+    found: dict[str, list[str]] = {}
 
     def _scan(paths: Iterator[Path], worker: str | None) -> None:
         for path in paths:
@@ -227,25 +255,55 @@ async def get_all_projects(
                 include_temp=include_temp,
             ):
                 continue
-            info = fs_by_cwd.get(canonical)
-            if info is None:
-                info = ProjectInfo(
-                    cwd=canonical,
-                    name=Path(canonical).name or canonical,
-                    project_id="",
-                    record_project_id=Project.derive_id_for_path(canonical) or "",
-                )
-                fs_by_cwd[canonical] = info
+            workers = found.setdefault(canonical, [])
             # Workspace folders (worker=None) register as projects without a
             # worker tag; they still flow through the same reconcile → mint →
-            # materialize path below as Claude/Codex-discovered cwds.
-            if worker and worker not in info.worker_types:
-                info.worker_types.append(worker)
+            # materialize path (``join_projects``) as Claude/Codex-discovered cwds.
+            if worker and worker not in workers:
+                workers.append(worker)
 
     _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
     _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
     _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
     _scan(iter_workspace_project_paths(include_temp=include_temp), None)
+    _scan(iter_prod_workspace_project_paths(include_temp=include_temp), None)
+    return {cwd: tuple(workers) for cwd, workers in found.items()}
+
+
+async def get_all_projects(
+    *,
+    include_temp: bool = False,
+    create_missing: bool = True,
+) -> list[ProjectInfo]:
+    """Return every known project — FS scan + entity table, deduped by cwd,
+    sorted by modified_at desc (None last).
+    """
+    # Kept OFF the event loop so a project picker cannot stall every other
+    # request behind the scan.
+    scanned = await asyncio.to_thread(scan_project_cwds, include_temp=include_temp)
+    return await join_projects(scanned, include_temp=include_temp, create_missing=create_missing)
+
+
+async def join_projects(
+    scanned: dict[str, tuple[str, ...]],
+    *,
+    include_temp: bool = False,
+    create_missing: bool = True,
+) -> list[ProjectInfo]:
+    """Entity half of ``get_all_projects``: join a ``scan_project_cwds`` result
+    with ``Project.get_all()``. Reads the table fresh on every call."""
+    from flow_sdk.builtin.project import Project  # local: avoid circular import
+
+    fs_by_cwd: dict[str, ProjectInfo] = {
+        cwd: ProjectInfo(
+            cwd=cwd,
+            name=Path(cwd).name or cwd,
+            project_id="",
+            record_project_id=Project.derive_id_for_path(cwd) or "",
+            worker_types=list(workers),
+        )
+        for cwd, workers in scanned.items()
+    }
 
     existing = await Project.get_all()
     by_cwd: dict[str, "Project"] = {}
@@ -253,7 +311,21 @@ async def get_all_projects(
         if proj.fs_storage_mount_path:
             canonical = canonical_posix_path(proj.fs_storage_mount_path)
             if is_valid_project_cwd(canonical, include_temp=include_temp):
-                by_cwd[canonical] = proj
+                # FIRST match wins — the contract `Project.find_by_cwd` and
+                # `Project.index_by_mount` both document and implement. This used
+                # to overwrite, so when two rows shared a mount path (a duplicate
+                # the find-then-create upsert let through) the picker attributed
+                # the folder to the LAST row while every find_by_cwd caller got
+                # the FIRST. One folder, two project ids, depending on who asked.
+                by_cwd.setdefault(canonical, proj)
+
+    # A session running is not a project, and projects do not nest. A folder an
+    # agent ran in INSIDE a project belongs to that project, and one that CONTAINS
+    # a project is not minted around it (``Project.save`` refuses both).
+    claimed = set(by_cwd) | set(fs_by_cwd)
+    for cwd in [c for c in fs_by_cwd if c not in by_cwd and (
+            is_inside_any(c, claimed) or any(is_inside_any(m, {c}) for m in by_cwd))]:
+        del fs_by_cwd[cwd]
 
     to_create: list[ProjectInfo] = []
     for cwd, info in fs_by_cwd.items():
@@ -263,7 +335,7 @@ async def get_all_projects(
             info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
             info.last_active_at = getattr(proj, "last_active_at", None)
-            info.system = is_hidden_project(cwd, bool(getattr(proj, "system", False)))
+            info.hidden = is_hidden_project(cwd, bool(getattr(proj, "system", False)))
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]
@@ -271,17 +343,23 @@ async def get_all_projects(
             info.project_id = Project.derive_id_for_path(cwd) or ""
             info.record_project_id = info.project_id
             info.is_new = True
-            info.system = is_hidden_project(cwd)
+            info.hidden = is_hidden_project(cwd)
             to_create.append(info)
 
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits
     # "database is locked" under contention from concurrent indexer scans.
     if create_missing and to_create:
+        import logging
+
+        from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415 — cycle
+
         for info in to_create:
             try:
                 await _materialize(info, include_temp=include_temp)
+            except DuplicateProjectNameError as exc:
+                # Refused loudly: the folder stays unindexed until it (or the other project) is renamed.
+                logging.error("get_all_projects: skip materialize %s: %s", info.cwd, exc)
             except Exception as exc:  # noqa: BLE001
-                import logging
                 logging.warning("get_all_projects: skip materialize %s: %s", info.cwd, exc)
 
     for cwd, proj in by_cwd.items():
@@ -314,8 +392,8 @@ async def get_all_scope_filter(
 
     This is the explicit replacement for the silent "no filter = walk the
     universe" pattern. Callers that previously passed ``scope_filter=None``
-    into the indexer (and got an implicit fanout via the
-    ``real_project_cwd_fn`` expander on ``USER_HOME_FOLDER``) should call this
+    into the indexer (and got an implicit fanout via the since-retired
+    ``USER_HOME_FOLDER`` expander walker) should call this
     helper instead — the returned filter materialises every Claude/Codex
     project cwd as an explicit ``REAL_PROJECT_CWD`` root via
     ``_resolve_scoped_roots``, so the work the scan does becomes visible at
@@ -355,3 +433,8 @@ async def _materialize(
     info.project_id = proj.id
     await proj.save()
     invalidate_projects_cache()  # a new project entity exists — drop the GET cache
+    # The project names its ontology now, while it is empty: a namespace is frozen once
+    # its assets have minted anything, so first sight is the only safe moment to seed it.
+    from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415 — cycle
+
+    await asyncio.to_thread(ensure_project_namespace, proj)

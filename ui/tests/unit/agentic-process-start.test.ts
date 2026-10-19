@@ -67,13 +67,13 @@ describe('AgenticProcess.start (open action)', () => {
     });
   });
 
-  it('forwards explicit PTY dimensions when provided', async () => {
+  it('forwards the PTY timeout, but never asserts the open-time size on the attach', async () => {
+    // cols/rows only seed a NEW pty in `open`; asserted on a live pty they resized it away from
+    // the view's real size on every entry (8529e9708). The view asserts its own size.
     const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
 
     await expect(agenticProcess.start({ cols: 132, rows: 42, ptyTimeout: 12_000 })).resolves.toBe(true);
     expect(fakeTransport.attachPty).toHaveBeenCalledWith({
-      cols: 132,
-      rows: 42,
       timeout: 12_000,
       ptyId: 'pty-00000000-0000-4000-8000-000000000002',
     });

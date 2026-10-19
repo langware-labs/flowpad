@@ -60,13 +60,14 @@ _TURN_TWO_PROMPT = f'Respond with exactly "{_TURN_TWO_REPLY}" and nothing else.'
 
 @pytest.fixture
 async def hub_and_node():
-    """Yields (httpx.AsyncClient, compute_node_id). Skips if hub isn't reachable."""
+    """Yield the client, compute node, and this test's owned process IDs."""
     if not HUB_URL:
         pytest.skip(
             "FLOWPAD_HUB_URL not set — point this e2e test at a DEDICATED instance "
             "(scripts/instance_ctl.sh launch <name>), never the main dev backend."
         )
     client = httpx.AsyncClient(base_url=HUB_URL, timeout=httpx.Timeout(10.0, read=25.0))
+    created_process_ids: list[str] = []
     try:
         try:
             r = await client.get("/api/v1/graph/bootstrap", params={"domain": "localhost"})
@@ -82,9 +83,31 @@ async def hub_and_node():
         if not cnid:
             await client.aclose()
             pytest.skip("no default compute node in bootstrap")
-        yield client, cnid
+        yield client, cnid, created_process_ids
     finally:
+        cleanup_errors: list[str] = []
+        for process_id in reversed(created_process_ids):
+            try:
+                close_response = await client.post(
+                    f"/api/v1/graph/agentic_process/{process_id}/close",
+                    json={},
+                )
+                close_payload = close_response.json()
+                assert close_response.status_code == 200 and close_payload.get("status") == "SUCCESS", (
+                    f"close {close_response.status_code}: {close_response.text[:300]}"
+                )
+
+                delete_response = await client.delete(
+                    f"/api/v1/graph/agentic_process/{process_id}"
+                )
+                delete_payload = delete_response.json()
+                assert delete_response.status_code == 200 and delete_payload.get("status") == "SUCCESS", (
+                    f"delete {delete_response.status_code}: {delete_response.text[:300]}"
+                )
+            except Exception as exc:
+                cleanup_errors.append(f"{process_id}: {exc}")
         await client.aclose()
+        assert not cleanup_errors, "process cleanup failed:\n" + "\n".join(cleanup_errors)
 
 
 def _require_binary(worker_type: str) -> None:
@@ -93,7 +116,14 @@ def _require_binary(worker_type: str) -> None:
         pytest.skip(f"{binary} CLI not installed — skipping {worker_type} rows")
 
 
-async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: str, pty_mode: bool) -> dict:
+async def _create(
+    hub_client,
+    compute_node_id: str,
+    workdir: str,
+    worker_type: str,
+    pty_mode: bool,
+    created_process_ids: list[str],
+) -> dict:
     """Create a process in the requested transport. Returns the process row."""
     context = {
         "workdir": workdir,
@@ -115,8 +145,9 @@ async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: s
     )
     assert r.status_code == 200, f"createProcess {r.status_code}: {r.text[:400]}"
     pid = (r.json().get("data") or r.json())["id"]
-    # createProcess returns a minimal row (id/type/shell_id/pty_pid); GET the
-    # entity to read the persisted fields (pty_mode, visible, session_id).
+    created_process_ids.append(pid)
+    # createProcess returns the full authoritative entity. GET it independently
+    # to confirm the transport fields persisted before exercising the live worker.
     g = await hub_client.get(f"/api/v1/graph/agentic_process/{pid}")
     assert g.status_code == 200, f"get process {g.status_code}: {g.text[:300]}"
     return g.json().get("data") or g.json()
@@ -132,6 +163,31 @@ def _has_exact_assistant_reply(received: bytes, expected_reply: str) -> bool:
     return re.search(pattern, received, re.DOTALL) is not None
 
 
+def _skip_if_worker_unavailable(received: bytes, worker_type: str) -> None:
+    """Skip when the PROVIDER says it cannot serve the turn (quota / rate limit).
+
+    Keyed on the normalized ``worker-unavailable`` frame the driver emits from
+    the vendor's own error event — never on a merely missing reply. A transport
+    or parsing regression produces no such frame and still fails red.
+    """
+    # Cheap membership test first: the regex rescans the whole accumulated
+    # buffer, and this runs on every chunk.
+    if b"</flow-worker-unavailable>" not in received:
+        return
+    match = re.search(
+        rb"<flow-worker-unavailable\b[^>]*>.*?</flow-worker-unavailable>",
+        received,
+        re.DOTALL,
+    )
+    if match is None:
+        return
+    frame = match.group(0).decode("utf-8", errors="replace")
+    pytest.skip(
+        f"{worker_type} CLI is provider-unavailable (account quota / rate "
+        f"limit) — external infra, not a transport regression: {frame[:300]}"
+    )
+
+
 def _raise_on_result_before_reply(received: bytes, expected_reply: str) -> None:
     """A result before assistant content is terminal, never proof of a turn."""
     match = re.search(rb"<flow-result\b[^>]*>.*?</flow-result>", received, re.DOTALL)
@@ -143,7 +199,7 @@ def _raise_on_result_before_reply(received: bytes, expected_reply: str) -> None:
 
 
 async def _prompt_until_assistant(
-    hub_client, process_id: str, message: str, expected_reply: str
+    hub_client, process_id: str, message: str, expected_reply: str, worker_type: str
 ) -> str:
     """Send a prompt; return only after its exact assistant chat frame arrives.
 
@@ -163,12 +219,20 @@ async def _prompt_until_assistant(
             received += chunk
             if _has_exact_assistant_reply(received, expected_reply):
                 break
+            _skip_if_worker_unavailable(received, worker_type)
             _raise_on_result_before_reply(received, expected_reply)
+    _skip_if_worker_unavailable(received, worker_type)
     return received.decode("utf-8", errors="replace")
 
 
 async def _send_turn(
-    hub_client, process_id: str, message: str, expected_reply: str
+    hub_client,
+    process_id: str,
+    message: str,
+    expected_reply: str,
+    worker_type: str,
+    *,
+    read_to_turn_end: bool = False,
 ) -> str:
     """Transport-agnostic turn: read through noise to the exact assistant reply.
 
@@ -177,10 +241,28 @@ async def _send_turn(
     break early and just wait for the worker to free up). A 409 that is NOT an
     in-flight race (e.g. ``status=failed``) is a real error and re-raised.
     Bounded so a wedged turn fails the test rather than hanging past the cap.
+
+    ``read_to_turn_end`` keeps consuming after the reply matched, until the
+    stream closes. Use it before reading the transcript back.
+
+    **Why that is the correct observation point, not a workaround.** The
+    transcript-durability contract
+    (``cli_drivers/transcript_durability_gate.py``) guarantees the turn's rows
+    are on disk before the turn's TERMINAL frames are released — it does not,
+    and cannot, guarantee it at the first sight of the answer TEXT. A vendor
+    that streams token deltas (copilot) delivers the full text mid-turn: the
+    consolidated ``assistant.message`` frame is suppressed precisely because
+    the deltas already carried it, so there is no terminal candidate to hold,
+    and the text is observable while the turn is still being written. Breaking
+    out there and reading ``transcript/full`` samples a turn in progress.
+    Reading to the stream's close asserts at the point the contract actually
+    covers. Nothing is weakened: the exact-reply assertion is unchanged, and
+    no timeout, retry or sleep budget is involved — the stream simply ends.
     """
     deadline_attempts = 20
     for _ in range(deadline_attempts):
         received = b""
+        matched = False
         async with hub_client.stream(
             "POST",
             f"/api/v1/graph/agentic_process/{process_id}/prompt",
@@ -195,10 +277,17 @@ async def _send_turn(
             assert r.status_code == 200, f"prompt {r.status_code}: {(await r.aread()).decode()[:300]}"
             async for chunk in r.aiter_bytes():
                 received += chunk
-                if _has_exact_assistant_reply(received, expected_reply):
-                    return received.decode("utf-8", errors="replace")
-                _raise_on_result_before_reply(received, expected_reply)
+                if not matched and _has_exact_assistant_reply(received, expected_reply):
+                    matched = True
+                    if not read_to_turn_end:
+                        return received.decode("utf-8", errors="replace")
+                if not matched:
+                    _skip_if_worker_unavailable(received, worker_type)
+                    _raise_on_result_before_reply(received, expected_reply)
+        if matched:
+            return received.decode("utf-8", errors="replace")
         # Stream closed with no expected reply — let the worker settle and retry.
+        _skip_if_worker_unavailable(received, worker_type)
         await asyncio.sleep(1.0)
     raise AssertionError(
         f"no assistant reply {expected_reply!r} after {deadline_attempts} attempts on {process_id}"
@@ -271,22 +360,29 @@ def _assert_two_real_turns(transcript: dict, session_id: str) -> None:
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
 @pytest.mark.parametrize("pty_mode", [True, False], ids=["pty", "headless"])
-async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_type, pty_mode):
+async def test_prompt_streams_in_both_transports(hub_and_node, run_workdir, worker_type, pty_mode):
     """The SAME create→prompt→flow-frame flow works in PTY and headless, per vendor.
 
     Mode-agnostic assertion (flow-* frames, not terminal bytes) so it holds for
     both transports — the whole point of `pty_mode` keeping the interface identical.
     """
     _require_binary(worker_type)
-    hub_client, cnid = hub_and_node
+    hub_client, cnid, created_process_ids = hub_and_node
 
-    proc = await _create(hub_client, cnid, str(tmp_path), worker_type, pty_mode)
+    proc = await _create(
+        hub_client,
+        cnid,
+        str(run_workdir),
+        worker_type,
+        pty_mode,
+        created_process_ids,
+    )
     pid = proc["id"]
     # The persisted transport intent must reflect the request.
     assert proc.get("pty_mode", True) is pty_mode, f"pty_mode not persisted: {proc.get('pty_mode')}"
 
     xml = await _prompt_until_assistant(
-        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type
     )
     assert _TURN_ONE_REPLY in xml, (
         f"{worker_type}/{'pty' if pty_mode else 'headless'}: "
@@ -296,7 +392,7 @@ async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
 @pytest.mark.parametrize("pty_mode", [True, False], ids=["pty", "headless"])
-async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_type, pty_mode):
+async def test_multi_turn_resumes_same_session(hub_and_node, run_workdir, worker_type, pty_mode):
     """Two turns on one process stream in both modes, and the session_id is stable.
 
     This is where headless resume can regress (e.g. a vendor whose resume gate
@@ -304,13 +400,26 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
     turn 2 would start fresh and split history.
     """
     _require_binary(worker_type)
-    hub_client, cnid = hub_and_node
+    hub_client, cnid, created_process_ids = hub_and_node
 
-    proc = await _create(hub_client, cnid, str(tmp_path), worker_type, pty_mode)
+    proc = await _create(
+        hub_client,
+        cnid,
+        str(run_workdir),
+        worker_type,
+        pty_mode,
+        created_process_ids,
+    )
     pid = proc["id"]
 
+    # This test reads the transcript back, so each turn is observed to its end
+    # (see _send_turn) — the point the durability contract covers. A PTY stream
+    # never closes, so only the headless transport can be read that far; PTY's
+    # transcript is written by the CLI itself as the turn runs.
+    to_end = not pty_mode
+
     xml1 = await _send_turn(
-        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY
+        hub_client, pid, _TURN_ONE_PROMPT, _TURN_ONE_REPLY, worker_type, read_to_turn_end=to_end
     )
     assert _TURN_ONE_REPLY in xml1, f"turn1 missing exact assistant reply: {xml1[:200]}"
 
@@ -319,7 +428,7 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
 
     # _send_turn retries on the in-flight 409 until turn 1 frees the worker.
     xml2 = await _send_turn(
-        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY
+        hub_client, pid, _TURN_TWO_PROMPT, _TURN_TWO_REPLY, worker_type, read_to_turn_end=to_end
     )
     assert _TURN_TWO_REPLY in xml2, f"turn2 missing exact assistant reply: {xml2[:200]}"
 

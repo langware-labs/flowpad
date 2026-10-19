@@ -1,5 +1,6 @@
 ---
 id: b27cd997-c564-573a-bf9c-ac5fa323b555
+ground_truth: true
 ---
 
 # Collaboration
@@ -62,15 +63,28 @@ skill, …) are anchored to the conversation and recursively auto-share.
    surfaces → one `ShareSource`), the three backend share paths (new / reply /
    forward), the `Conversation.share()` hub-invite sequence, and recursive share
    via the effective-remote parent chain.
-4. **[Invitations, Members & Sender Identity](./invites-members-identity.md)** —
+4. **[Cloud sharing — what leaves your machine](./cloud-sharing.md)** — the
+   user-facing privacy answer: metadata and git coordinates travel, document
+   bytes and secret values do not. Pinned against the code by
+   `tests/unit/test_cloud_share_contract.py`.
+5. **[Invitations, Members & Sender Identity](./invites-members-identity.md)** —
    the `Invitation` entity, the invite → accept → join algorithm, the role
    ladder, late-joiner history sync, and the hub-authoritative sender-identity
    model (resolution chain + unresolved-sender alert).
-5. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a
+6. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a
    local message reaches the hub and fans out (content-skips-sender,
-   status-honors-sender), the OSS receive/upsert path, the materialize pipeline,
-   conversation-list reconcile/staleness, and the URL-first conversation loader
-   cascade. (Supersedes the old root `DESIGN_loadConversation.md`.)
+   installation-gated status receipts), the OSS receive/upsert path, the
+   materialize pipeline, conversation-list reconcile/staleness, and the
+   URL-first conversation loader cascade. (Supersedes the old root
+   [`DESIGN_loadConversation.md`](../historical/DESIGN_loadConversation.md).)
+7. **[Live Sessions](./live-sessions.md)** — the unified prompt-session
+   model: every prompt is a session, the session-start marker and turn
+   markers, the session gate and snapshot header, and the delivery ledger
+   of what is built phase by phase.
+8. **[Ask for help](./ask-for-help.md)** — PLAN: the one design for asking a
+   person or a desk for help that never fails — capture locally first, one
+   `ask-for-help` action, one `Conversation.deliver()` outbox, one hub-failure
+   vocabulary, idempotent hub writes — and the phased plan to get there.
 
 ## Glossary
 
@@ -94,7 +108,7 @@ skill, …) are anchored to the conversation and recursively auto-share.
   branch/head, and safe repo-relative asset path. It is the single git pointer
   used by git-backed shares, project setup, and artifact resolution.
 - **git transfer** — a body-bundle transfer mode where the message carries
-  declaration metadata (`metadata.json`, `git_origins.json`, `git_transfers.json`)
+  declaration metadata (`metadata.json`, `fs_origins.json`, `git_transfers.json`)
   but does not copy git-backed file bytes. Receive means fetch/pull/clone as
   needed, index from the local filesystem, and preserve the sender's repo-relative
   layout.

@@ -105,8 +105,8 @@ describe('PromptAttachmentPreview', () => {
   });
 
   it('thumbnails a not-yet-uploaded image in the composer from its backing File', async () => {
-    // jsdom has no object-URL API; install harmless mocks (left in place so the
-    // component's unmount cleanup can still call revokeObjectURL).
+    // jsdom has no object-URL API; mocked here (kept through this file's afterEach so
+    // unmount can still revokeObjectURL) — tests/_restore-globals.ts removes it after the file.
     const createObjectURL = vi.fn(() => 'blob:pasted');
     (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL = createObjectURL;
     (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();

@@ -4,7 +4,7 @@ id: 7c3884f1-0581-5d94-9a65-7b2ed6b155a3
 
 # Gitignore-Aware Filesystem Walk
 
-Every tree walker in `flow_sdk` that recurses a real project directory shares one function: `gitignore_walk()` (`flow_sdk/fs_store/indexer/walk.py`). It is a generic pre-order DFS that yields one `(dir_path, subdirs, files)` tuple per surviving directory, applying a single skip policy so that the "what do we descend into" decision lives in exactly one place (`flow_sdk/fs_store/indexer/gitignore.py`) rather than being re-implemented by each consumer.
+Every tree walker in `flow_sdk` that recurses a real project directory shares one function: `gitignore_walk()` (`flow_sdk/fs_store/indexer/walk.py`). It is a generic pre-order DFS that yields one `(dir_path, subdirs, files)` tuple per surviving directory, applying a single skip policy so that the "what do we descend into" decision lives in exactly one place (`flow_sdk/fs_store/gitignore.py`) rather than being re-implemented by each consumer.
 
 > **This is a discovery walk, not the indexer DFS.** `gitignore_walk()` walks raw directories on disk. The `FSIndexer` DFS (`docs/data-management/scan-and-discovery.md`) walks typed `FSRef` nodes and dispatches per-type parsers. The folder walker that bridges them (`project_folder_walker_fn`) is one consumer of `gitignore_walk()`.
 
@@ -36,7 +36,7 @@ The three keyword flags select how much of the skip policy applies:
 
 ## Two-stage skip
 
-**Source:** `flow_sdk/fs_store/indexer/gitignore.py`
+**Source:** `flow_sdk/fs_store/gitignore.py`
 
 When `gitignore=True`, each entry passes through `is_ignored(path, is_dir, stack, root)`, which applies the policy in a fixed order.
 
@@ -52,9 +52,9 @@ When `gitignore=True`, each entry passes through `is_ignored(path, is_dir, stack
 | Python build/cache | `__pycache__`, `.tox`, `dist`, `build`, `.eggs`, `.mypy_cache`, `.pytest_cache`, `.ruff_cache` |
 | JS build/cache | `.next`, `.nuxt`, `coverage`, `.cache` |
 | macOS junk | `__MACOSX` (holds only AppleDouble `._*` resource-fork sidecars) |
-| Flowpad state dirs | `.flowpad`, `.markdown_index`, `.llm_index` (llm_index summary caches, markdown-index sidecars, instance state — never content) |
+| Flowpad state dirs | `.flow`, `.flowpad`, `.markdown_index`, `.llm_index` (asset-local capsule metadata, llm_index summary caches, markdown-index sidecars, instance state — never content) |
 
-`is_denylisted` is exported as a standalone predicate so walkers that want to skip generated/vendor dirs *without* honoring `.gitignore` can use it directly (this is what `gitignore=False, denylist=True` selects).
+`is_denylisted` is exported as a standalone predicate so walkers that want to skip generated/vendor dirs *without* honoring `.gitignore` can use it directly (this is what `gitignore=False, denylist=True` selects). Its sibling `is_under_denylisted_dir(path)` answers the same question for a path that was *stored* earlier and has no walk to ride along with — it checks every ancestor segment against `_WALK_IGNORED` (plus the worktree rule) as pure string work, so retention can apply the same policy discovery does over thousands of stored paths.
 
 ### Stage 2 — the `.gitignore` stack
 
@@ -70,7 +70,7 @@ Matching walks the stack outermost→innermost. Each spec matches the path **rel
 
 ### Force-include of `.claude/`
 
-**Source:** `_is_force_include` / `_is_claude_worktree` in `flow_sdk/fs_store/indexer/gitignore.py`
+**Source:** `_is_force_include` / `_is_claude_worktree` in `flow_sdk/fs_store/gitignore.py`
 
 Paths whose ancestor chain (up to `root`) contains a basename in `_FORCE_INCLUDE` — currently just `.claude` — are **never ignored**, even when `.claude/` is gitignored at the project root. This exists so project-level skills, agents, and commands under `.claude/` stay discoverable regardless of a repo's `.gitignore`.
 
@@ -88,13 +88,24 @@ Note how `project_folder_walker_fn` wires it: it passes `gitignore=opts.gitignor
 
 ---
 
+## Which implementation walks
+
+`gitignore_walk` has two implementations behind one switch, `FLOWPAD_DISKIO_BACKEND`
+(`python` by default; see [diskio.md](diskio.md)). With `rust`, a walk that honours
+`.gitignore` is answered by the `flowpad-diskio-scan` binary through
+`flow_sdk/diskio/stage1.py::stage1_items` — the same policy, the same order, the same
+entries, verified complete before a single tuple is yielded. A walk with `gitignore=False`
+always runs in-process: with nothing to match it is bounded by directory reads, and it measured
+slower through the binary. Whenever Python would answer anyway — the default, no binary on this
+platform, a failed stream — the descent described above runs unchanged.
+
 ## Consumers
 
 Everything that recurses a real project tree routes through the shared walk:
 
 | Consumer | Source | Notes |
 |---|---|---|
-| Project folder walker | `flow_sdk/fs_store/indexer/functions/project_folder_walker.py` | Emits one transient `FOLDER` `FSRef` per surviving directory (root included). Passes `include_files=False` (downstream FOLDER functions do their own file matching) and threads `opts.gitignore`. |
-| Markdown-dirs discovery | `flow_sdk/fs_store/operations/markdown_dirs.py` (`walk_markdown_files`) | Collects every `.md` under a root as sorted relative POSIX paths; walks the whole subtree, not just `docs/`. |
+| Project folder walker | `flow_sdk/fs_store/indexer/functions/project_folder_walker.py` | Emits one transient `FOLDER` `FSRef` per surviving directory (root included). Passes `include_files=False` (downstream FOLDER functions do their own file matching) and threads `opts.gitignore`. Before walking a root that sits in a tri-state protected folder (Documents/Desktop/Downloads) it probes one `os.scandir` read; a `PermissionError` there marks the folder `denied` (`special_folders.mark_denied`) and skips the root, so an OS refusal is recorded once instead of re-prompting on every scan. |
+| Markdown-dirs discovery | `flow_sdk/fs_store/operations/markdown_dirs.py` (`walk_markdown_files`) | Collects the `.md` files inside `docs`/`doc` folders under a root (or all of them, when the root is one) as sorted relative POSIX paths. |
 | llm_index Merkle scanner | `flow_sdk/llm_index/core.py` | Folds the pre-order walk into a post-order content-hash tree; the `gitignore` toggle honors `.gitignore` while the denylist always applies. |
 | fsop watcher filter | `flow_sdk/server/fsop_filters.py` | Does **not** call `gitignore_walk()` — it runs its own bounded `os.walk` but reuses the matching primitives directly (`_WALK_IGNORED`, `load_gitignore_stack`, `push_gitignore`, `is_ignored`) so its skip decisions match the shared policy. |

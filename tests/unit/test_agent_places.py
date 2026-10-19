@@ -1,0 +1,358 @@
+"""An agent runs on places; each place may override how it runs and own its email.
+
+A place is a Deployment of the agent. Its choices live in agent.json keyed by the
+Deployment id (``places``, ``email_place``), so they travel with the definition
+and each machine applies only the ones naming a placement that runs there.
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+import uuid
+from pathlib import Path
+
+import pytest
+
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.agent_places import (
+    PlaceError,
+    email_answers_here,
+    list_places,
+    set_email_place,
+    set_place_enabled,
+    set_place_override,
+    version_state,
+)
+from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.trigger_arming import runs_here
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
+from tests.unit.agent._seed import seed_agent, seed_project
+
+pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
+
+
+async def _agent(tmp_path: Path, name: str, **fields) -> Agent:
+    project = await seed_project(tmp_path / f"{name}-project")
+    return await seed_agent(Path(project.fs_storage_mount_path), name, project_id=project.id, **fields)
+
+
+def _document(agent: Agent) -> dict:
+    return json.loads((Path(agent.asset_ref) / "agent.json").read_text())
+
+
+async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-4333-8444-555555555555") -> Deployment:
+    deployment = Deployment(
+        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
+        target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": node},
+    )
+    await deployment.save()
+    return deployment
+
+
+async def _publish_into_hub_repo(tmp_path: Path, monkeypatch, agent: Agent):
+    """What ``publish_git_asset`` does, against a local bare repo: push the folder, record this desk's sync
+    ledger, and point the row (in memory) at the published tree. Returns the sync result."""
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.git_publish import GitAuthor
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
+    hub = tmp_path / "hub.git"
+    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
+    folder = Path(agent.asset_ref)
+    rel = f"agentic-assets/agent/{folder.name}"
+    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
+    mirror = hub_repo_sync.HubRepoMirror(
+        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
+    )
+    synced = await hub_repo_sync.sync_asset_with_hub(
+        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
+        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+    )
+    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
+                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
+    agent.remote = True
+    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
+    return synced
+
+
+def test_a_place_spec_says_only_what_it_overrides():
+    place = AgentPlaceSpec(deployment_id="d1", model="sonnet", mcp_servers=["zendesk"])
+    assert place.overrides() == {"model": "sonnet", "mcp_servers": ["zendesk"]}
+    doc = AgentSpec.model_validate({"places": [{"deployment_id": "d1", "effort": "high"}], "email_place": "d1"})
+    assert doc.places[0].effort == "high" and doc.email_place == "d1"
+    with pytest.raises(ValueError):
+        AgentSpec.model_validate({"places": [{"deployment_id": "d1", "max_turns": 3}]})
+
+
+@pytest.mark.asyncio
+async def test_a_place_override_reaches_the_launch_and_only_that_place(tmp_path):
+    agent = await _agent(tmp_path, "places-launch", model="haiku", permission_mode="bypassPermissions")
+    local = await agent.local_deployment()
+    cloud = await _cloud_place(agent)
+
+    await set_place_override(agent, local.id, "model", "sonnet")
+    await set_place_override(agent, local.id, "permission_mode", "askUser")
+
+    fresh = await Agent.get_by_id(agent.id)
+    here = await (await Deployment.get_by_id(local.id)).with_element(fresh).create_process("hi")
+    there = await (await Deployment.get_by_id(cloud.id)).with_element(fresh).create_process("hi")
+    assert here.cli_config["model"] == "sonnet"
+    assert here.cli_config["permission_mode"] == "askUser"
+    # The other place inherits the definition untouched.
+    assert there.cli_config["model"] == "haiku"
+    assert there.cli_config["permission_mode"] == "bypassPermissions"
+
+
+@pytest.mark.asyncio
+async def test_overrides_are_written_to_agent_json_and_reset_removes_them(tmp_path):
+    agent = await _agent(tmp_path, "places-file", model="haiku", system_prompt="Keep this prompt.")
+    local = await agent.local_deployment()
+    document = Path(agent.asset_ref) / "agent.json"
+    prompt = Path(agent.asset_ref) / "system_prompt.md"
+    assert "Keep this prompt." in prompt.read_text()
+
+    await set_place_override(agent, local.id, "effort", "high")
+    doc = _document(agent)
+    assert [(p["deployment_id"], p.get("effort")) for p in doc["places"]] == [(local.id, "high")]
+    # A header patch: the body (the system prompt) and the other fields survive.
+    assert "Keep this prompt." in prompt.read_text() and doc["model"] == "haiku"
+    assert (await Agent.get_by_id(agent.id)).system_prompt.strip() == "Keep this prompt."
+
+    await set_place_override(agent, local.id, "effort", None)
+    assert not (await Agent.get_by_id(agent.id)).places
+    assert not json.loads(document.read_text()).get("places")
+
+
+@pytest.mark.asyncio
+async def test_only_this_agents_places_and_known_fields_are_accepted(tmp_path):
+    agent = await _agent(tmp_path, "places-owner")
+    other = await _agent(tmp_path, "places-other")
+    foreign = await other.local_deployment()
+
+    with pytest.raises(PlaceError) as refused:
+        await set_place_override(agent, foreign.id, "model", "sonnet")
+    assert refused.value.status_code == 404
+    with pytest.raises(PlaceError):
+        await set_place_override(agent, (await agent.local_deployment()).id, "system_prompt", "x")
+
+
+def test_a_hub_recorded_node_id_is_recognised_as_this_machine():
+    """The hub records a node as ``compute_node-<uuid>``; the local id is bare.
+    Unnormalized, every hub-created placement read as elsewhere — on its own box too."""
+    here = Deployment(
+        name="here", target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{ComputeNode._local_id()}"},
+    )
+    elsewhere = Deployment(
+        name="elsewhere", target={"provider": "e2b", "scope": "machine"},
+        origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
+    )
+    assert here.is_local is True
+    assert elsewhere.is_local is False
+
+
+@pytest.mark.asyncio
+async def test_a_schedule_runs_only_on_its_place(tmp_path):
+    from flow_sdk.builtin.trigger import Trigger
+
+    agent = await _agent(tmp_path, "places-runs-on")
+    local = await agent.local_deployment()
+    cloud = await _cloud_place(agent)
+
+    assert await runs_here(Trigger(name="legacy")) is True
+    assert await runs_here(Trigger(name="here", runs_on=local.id)) is True
+    assert await runs_here(Trigger(name="cloud", runs_on=cloud.id)) is False
+    assert await runs_here(Trigger(name="gone", runs_on="99999999-2222-4333-8444-555555555555")) is False
+
+
+@pytest.mark.asyncio
+async def test_places_list_this_computer_first_with_what_each_owns(tmp_path):
+    agent = await _agent(tmp_path, "places-list")
+    cloud = await _cloud_place(agent)
+    local = await agent.local_deployment()
+    await set_place_override(agent, cloud.id, "model", "sonnet")
+
+    rows = await list_places(agent)
+    assert [r["deployment"].id for r in rows] == [local.id, cloud.id]
+    assert rows[0]["is_local"] is True and rows[1]["is_local"] is False
+    assert rows[1]["overrides"] == {"model": "sonnet"}
+    # No email place chosen: this computer answers (legacy rule).
+    assert [r["answers_email"] for r in rows] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_listing_places_creates_none_and_deploying_here_is_idempotent(tmp_path):
+    agent = await _agent(tmp_path, "places-none")
+    assert await list_places(agent) == []
+    assert await agent.deployments() == [], "looking at an agent's places deploys it nowhere"
+
+    first = await agent.deploy("local")
+    again = await agent.deploy("local")
+    assert first.id == again.id
+    rows = await list_places(agent)
+    assert [(r["deployment"].id, r["is_local"], r["answers_email"]) for r in rows] == [(first.id, True, True)]
+
+
+@pytest.mark.asyncio
+async def test_each_place_says_when_it_was_last_active(tmp_path):
+    """This computer: its newest run here. A cloud place: when its machine was last seen (its runs
+    live on its own box). Neither ever: None."""
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+
+    agent = await _agent(tmp_path, "places-active")
+    cloud = await _cloud_place(agent)
+    local = await agent.local_deployment()
+    rows = await list_places(agent)
+    assert [r["last_active"] for r in rows] == [None, None]
+
+    run = await AgenticProcess(name="a run", deployment_id=local.id, visible=False, pty_mode=False).save()
+    cloud.status = cloud.status.model_copy(update={"observed_at": "2026-09-23T10:00:00+00:00"})
+    await cloud.save()
+    local_row, cloud_row = await list_places(agent)
+    assert local_row["last_active"] and local_row["last_active"][:19] == run.updated_date.isoformat()[:19]
+    assert cloud_row["last_active"] == "2026-09-23T10:00:00+00:00"
+
+
+@pytest.mark.asyncio
+async def test_email_is_answered_by_exactly_the_chosen_place(tmp_path):
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.builtin.data_source import DataSource, SourceStatus
+
+    CloudEmailDriver = DataDriver.loaded("cloud_email")  # noqa: N806 — the registered source
+
+    agent = await _agent(tmp_path, "places-email", system_prompt="Answer mail.")
+    local = await agent.local_deployment()
+    cloud = await _cloud_place(agent)
+    source = DataSource(
+        name=f"Mailbox {uuid.uuid4().hex[:8]}", provider=CloudEmailDriver.provider, kind=CloudEmailDriver.kind,
+        config={CloudEmailDriver.identity_config_key: agent.id}, account_key="a@x.io",
+        owner=agent.typeid, status=SourceStatus.ACTIVE.value,
+    )
+    await source.save()
+
+    assert await email_answers_here(agent.id) is True
+
+    await set_email_place(agent, cloud.id)
+    assert "Answer mail." in (Path(agent.asset_ref) / "system_prompt.md").read_text()
+    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.DISABLED.value
+    assert await email_answers_here(agent.id) is False
+    assert _document(agent)["email_place"] == cloud.id
+
+    await set_email_place(agent, local.id)
+    assert (await DataSource.get_by_id(source.id)).status == SourceStatus.ACTIVE.value
+    assert await email_answers_here(agent.id) is True
+
+
+@pytest.mark.asyncio
+async def test_version_counts_what_is_not_published(tmp_path):
+    agent = await _agent(tmp_path, "places-version")
+    folder = Path(agent.asset_ref)
+    assert version_state(agent)["has_repo"] is False
+
+    root = folder.parents[2]
+    git = lambda *args: subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)  # noqa: E731
+    git("init", "-q")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
+    git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "agent")
+    state = version_state(agent)
+    assert state["has_repo"] is True and state["published"] is False
+    assert state["pending_changes"] == 1  # one commit, never published
+
+    (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
+    assert version_state(agent)["pending_changes"] == 2
+
+
+@pytest.mark.asyncio
+async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeypatch):
+    """Once published into the project's hub repo, the version compares the folder
+    with the published tree — the project folder itself is not a git repository."""
+    agent = await _agent(tmp_path, "places-hub-version")
+    folder = Path(agent.asset_ref)
+    synced = await _publish_into_hub_repo(tmp_path, monkeypatch, agent)
+
+    state = version_state(agent)
+    assert not (folder.parents[2] / ".git").exists()
+    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "pending_changes": 0}
+
+    (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
+    assert version_state(agent)["pending_changes"] == 1
+
+
+@pytest.mark.asyncio
+async def test_the_hubs_echo_of_a_published_agent_leaves_its_file_and_version(tmp_path, monkeypatch):
+    """Right after a publish the hub announces the agent back (``hub_bridge`` → ``upsert_from_hub_child``)
+    carrying the HUB's row — its defaults (``machine_size: sm``) included. That echo is not an edit: a
+    hub-repo asset's definition travels through the repo. Saving it printed the hub's copy into the file,
+    so an agent published a second ago read "1 change not published"."""
+    from flow_sdk.core.entity.entity_model import suppress_store
+
+    agent = await _agent(tmp_path, "places-hub-echo")
+    folder = Path(agent.asset_ref)
+    await _publish_into_hub_repo(tmp_path, monkeypatch, agent)
+    with suppress_store():  # what publish keeps: the row learns where it went, the file is left as it is
+        await agent.save(notify=False)
+    before = (folder / "agent.json").read_bytes()
+
+    hub_row = {**agent.model_dump(mode="json"), "machine_size": "sm", "description": "the hub's copy", "intro": ""}
+    echoed = await Agent.upsert_from_hub_child(hub_row, None, notify=False)
+
+    assert (folder / "agent.json").read_bytes() == before
+    assert echoed.remote is True
+    assert version_state(await Agent.get_by_id(agent.id))["pending_changes"] == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_force_republishes_an_agent_already_on_the_hub(tmp_path, monkeypatch):
+    from flow_sdk.builtin import asset_publishing
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+    from flow_sdk.fs_store.type_id import TypeId
+
+    calls: list[str] = []
+
+    async def _publish(entity, actor):
+        calls.append(entity.id)
+
+    async def _no_project(entity):
+        return None
+
+    monkeypatch.setattr(asset_publishing, "publish_git_asset", _publish)
+    monkeypatch.setattr(asset_publishing, "owning_project", _no_project)
+    agent = await _agent(tmp_path, "places-publish")
+    agent.remote = True
+    actor = TypeId(type="user", id="11111111-2222-4333-8444-555555555555")
+
+    # A legacy GitHub origin is not "on the hub": the next deploy republishes it.
+    object.__setattr__(agent, "origin", {"kind": "git", "head_commit": "abc"})
+    assert await agent.ensure_on_hub(actor) is True
+    assert calls == [agent.id]
+
+    agent.origin = HubRepoOrigin(
+        repo="git_repo-" + "1" * 32, rel_path="agentic-assets/agent/places-publish", head_commit="c" * 40, tree="t" * 40
+    )
+    assert await agent.ensure_on_hub(actor) is False
+    assert calls == [agent.id]
+    assert await agent.ensure_on_hub(actor, force=True) is True
+    assert calls == [agent.id, agent.id]
+
+
+@pytest.mark.asyncio
+async def test_a_place_can_be_switched_off_on_its_own(tmp_path):
+    agent = await _agent(tmp_path, "places-enabled")
+    local = await agent.local_deployment()
+    cloud = await _cloud_place(agent)
+
+    await set_place_enabled(agent, local.id, False)
+    fresh = await Agent.get_by_id(agent.id)
+    assert fresh.enabled_on(local.id) is False
+    assert fresh.enabled_on(cloud.id) is True, "the other place follows the definition"
+    with pytest.raises(RuntimeError, match="disabled"):
+        await (await Deployment.get_by_id(local.id)).with_element(fresh).create_process("hi")
+    assert [p.get("enabled") for p in _document(agent)["places"] if p["deployment_id"] == local.id] == [False]
+
+    with pytest.raises(PlaceError):
+        await set_place_enabled(fresh, local.id, "no")
+    await set_place_enabled(fresh, local.id, None)
+    assert (await Agent.get_by_id(agent.id)).enabled_on(local.id) is True

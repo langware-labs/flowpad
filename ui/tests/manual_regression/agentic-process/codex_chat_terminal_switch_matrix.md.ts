@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { apiBase, apiContext } from '../_shared/api';
+import { withViewMode } from '../_shared/view-mode';
 
 test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves transport identity', async ({ page }) => {
   const api = await apiContext();
@@ -32,23 +33,16 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
   try {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('viewMode', 'standard');
     });
-    await page.goto('/dock/home');
-    await page.evaluate(() => {
-      (window as unknown as { setView?: (view: string) => void }).setView?.('standard');
-    });
-    await page.evaluate((id) => {
-      (window as unknown as { navigation: { openShellProcess: (processId: string) => void } })
-        .navigation.openShellProcess(id);
-    }, processId);
+    await page.goto(withViewMode(`/dock/shell/agentic_process-${processId}`, 'standard'));
 
     await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${processId}`));
     const active = page.locator('[data-testid="terminal-panel"][data-active="true"]');
     await expect(active).toHaveAttribute('data-pty-mode', 'false');
     await expect(active.getByTestId('simple-chat-pane')).toBeVisible();
     await expect(active.locator('.xterm')).toHaveCount(0);
-    await expect(active.getByTestId('terminal-chat-toggle')).toHaveAccessibleName('Switch to terminal view');
+    // Headless ⇒ the Chat surface, which the footer mode selector shows selected.
+    await expect(page.getByTestId('session-surface-chat')).toHaveAttribute('aria-checked', 'true');
 
     await page.reload();
     await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${processId}`));
@@ -68,16 +62,16 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
 
 test('C02-C16: transport switching stays one URL-first process with busy and accessibility guards', () => {
   const repo = join(process.cwd(), '..');
-  const interactive = readFileSync(
-    join(repo, 'ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
-    'utf8',
-  );
-  const ribbon = readFileSync(
-    join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx'),
+  // The chat⇄terminal switch is the 3-mode control in the terminal footer; the
+  // always-mounted TerminalPanel owns the transport hook so its startup child
+  // cannot swallow a mode change.
+  const modeSwitch = readFileSync(join(repo, 'ui/src/components/terminal/interactive-terminal/SessionSurfaceSwitch.tsx'), 'utf8');
+  const modeSwitchHook = readFileSync(
+    join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-surface.ts'),
     'utf8',
   );
   const terminalPanel = readFileSync(
-    join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
+    join(repo, 'ui/src/components/terminal/TerminalPanel.tsx'),
     'utf8',
   );
   const sdk = readFileSync(join(repo, 'ts_sdk/src/process/agentic-process.ts'), 'utf8');
@@ -86,14 +80,15 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
     'utf8',
   );
 
-  expect(interactive).toContain('process.switchMode');
+  expect(terminalPanel).toContain('useProcessSurface');
+  expect(modeSwitchHook).toContain('.switchMode(');
   expect(terminalPanel).toContain('data-worker-session-id');
   expect(terminalPanel).toContain('data-pty-mode');
-  expect(ribbon).toContain('disabled={switching || !toggleEnabled}');
-  expect(ribbon).toContain('aria-label={toggleLabel}');
-  expect(ribbon).toContain('data-chat-active={chatActive}');
+  expect(modeSwitch).toContain('role="radiogroup"');
+  expect(modeSwitch).toContain('aria-label={LABELS[m]}');
+  expect(modeSwitch).toContain('aria-checked={active}');
   expect(sdk).toContain('_pendingTransport');
-  expect(sdk).toContain('async switchMode(mode: WorkerMode');
+  expect(sdk).toMatch(/async switchMode\(\s*mode: WorkerMode\b/);
   expect(backend).toContain('@action.post(action_name="switch-mode")');
   expect(backend).toContain('message="a turn is in flight"');
 });

@@ -8,6 +8,9 @@ export const config = {
   DEPLOY_ENV: sdkConfig.deploy_env.toUpperCase() as DeployEnv,
   AUTH_PROVIDER: sdkConfig.auth_provider,
   SERVER_URL: sdkConfig.serverUrl,
+  // HTTP axios base — relative same-origin in local dev (drops CORS preflights),
+  // absolute serverUrl when packaged/electron. See SDKConfig.httpBaseUrl.
+  httpBaseUrl: sdkConfig.httpBaseUrl,
   WS_URL: sdkConfig.wsUrl,
   FLOWPAD_APP_HOST: sdkConfig.flowpad_app_host,
   FLOWPAD_APP_PORT: sdkConfig.flowpad_app_port,
@@ -17,7 +20,5 @@ export const config = {
   LOGIN_QUERY_PARAM: 'login',
   SIGNUP_QUERY_PARAM: 'signup',
 };
-
-export const DEFAULT_MICRO_APP_ID = 'ff69b3dc-9b91-4283-8a09-e9467514bc3d';
 
 export default config;

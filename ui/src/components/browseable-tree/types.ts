@@ -98,8 +98,10 @@ export interface Browseable {
   /** Imperative activation fallback for nodes whose navigation cannot be
    *  expressed as a pure DockPointer (async entity resolution / side effects).
    *  Renderers resolve a click as `pointer ?? activate`. Prefer `pointer`
-   *  wherever possible — it keeps navigation URL-first and selectable. */
-  activate?: () => void | Promise<void>;
+   *  wherever possible — it keeps navigation URL-first and selectable.
+   *  `navigate` is the renderer's own dispatcher, for an arm that only has to
+   *  look its pointer up first. */
+  activate?: (navigate: (pointer: DockPointer) => void) => void | Promise<void>;
 
   /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
    *  arms, so a usage stamp can't miss the (majority) pointer case. Never
@@ -114,6 +116,13 @@ export interface Browseable {
    *  favorites open-counter). Never navigate, never gate navigation, never
    *  write view state. */
   onOpen?: () => void;
+
+  /** Fired when the pointer RESTS on the row for the host's `hoverSeenMs` —
+   *  "the user looked at this", short of opening it. Same contract as
+   *  `onOpen`: a side-effect-only usage stamp, never navigation. Re-fires on
+   *  each qualifying dwell, so make it idempotent. Honored by the TREE only —
+   *  the grid has no dwell of its own. */
+  onHoverSeen?: () => void;
 
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
    *  both the desktop grid and the tree. In the tree it doubles as the hover
@@ -182,8 +191,10 @@ export interface Browseable {
 export interface BrowseableRoot extends Browseable {
   kind: 'root';
 
-  /** Does this root own the given pointer? First truthy wins during
-   *  auto-expand. */
+  /** Does this root own the given pointer? Every matching root participates in
+   *  auto-expand. This is intentional for resource-addressed pointers: the
+   *  same VFS file can appear under both a semantic root (for example
+   *  Markdown) and a physical filesystem root (Files). */
   ownsPointer: (pointer: DockPointer) => boolean;
 
   /**
@@ -197,7 +208,7 @@ export interface BrowseableRoot extends Browseable {
 }
 
 /**
- * Inline hover action rendered to the right of a row.
+ * Inline hover action, rendered on the row's edge opposite the chevron.
  */
 export interface ToolbarAction {
   /** Stable id (React key). */
@@ -213,11 +224,14 @@ export interface ToolbarAction {
    *  want to navigate, use the row's `pointer` instead. */
   run: () => void | Promise<void>;
 
-  /** When to show the button. Default: `'hover'`. */
-  visibleWhen?: 'hover' | 'always' | 'selected';
-
   /** Optional busy indicator while `run()` is pending. Defaults to true. */
   showBusyIndicator?: boolean;
+
+  /** Removes something. As a button, the first click only ARMS it (it turns
+   *  into a confirm check) and the second runs it; leaving disarms. As a
+   *  context-menu item it is styled destructive and runs on select — opening
+   *  the menu was already the deliberate first step. */
+  destructive?: boolean;
 }
 
 /**
@@ -243,15 +257,54 @@ export interface BrowseableTreeProps {
    *  explicit collapse suppresses hover until the pointer leaves the row. */
   hoverExpandMs?: number;
 
-  /** Rendered as the last row of EVERY level: once at the root ('') and once at
-   *  the end of each expanded folder's children (its id). Its use is a build-
-   *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
-   *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
-  levelFooter?: (parentId: string) => ReactNode;
+  /** Dwell (ms) before hovering a row fires its `onHoverSeen` — menu mode.
+   *  Undefined (the default) never fires it, so ordinary navigators stamp
+   *  nothing on hover. Mouse only, and the dwell restarts on every entry, so a
+   *  pointer sweeping down a menu stamps nothing it merely crosses. */
+  hoverSeenMs?: number;
 
-  /** The currently-active pointer (from URL). Drives both row selection and
-   *  ancestor auto-expand. */
+  /** Rendered as the FIRST row of every level: once above the roots ('') and
+   *  once at the head of each expanded folder's children (its id). Its use is a
+   *  build-as-you-browse toolbar — "add into THIS level" — so the parent id is
+   *  handed in, and returning null opts a level out. Leading the level (rather
+   *  than trailing it) is what keeps nested footers apart: a trailing one
+   *  renders after the whole expanded subtree, so several open levels pile
+   *  their footers up together at the bottom with nothing to distinguish them.
+   *
+   *  The tree's own `mirrored` is handed in too, because the footer sits inside
+   *  a wrapper the tree indents on the MIRRORED edge — a footer laid out
+   *  leading-first ignores that indent and draws at the same x on every level.
+   *  Passing it beats asking each author to remember to thread the flag through
+   *  from wherever the tree got it.
+   *
+   *  Undefined ⇒ no footer, unchanged for ordinary navigators. */
+  levelFooter?: (parentId: string, mirrored: boolean) => ReactNode;
+
+  /**
+   * Lay the rows out mirrored — for a menu that grows against the reading
+   * direction, i.e. the bookmarks flyout hanging off the top bar's right edge.
+   *
+   * The tree was built for a panel anchored on the LEFT (the rail's flyout):
+   * glyphs lead the label, indentation grows away from the panel, the collapsed
+   * chevron points right and row previews open right — all "into open space".
+   * Pinned to the window's right edge every one of those points back at the
+   * panel, and the preview opens off-screen.
+   *
+   * Implemented as a flex-axis reversal, NOT by setting `dir`: direction is a
+   * property of the LANGUAGE, owned solely by `locale-context.tsx`, and which
+   * way a panel happens to grow is not a statement about language. Reversing
+   * also composes with an RTL locale rather than cancelling against it.
+   */
+  mirrored?: boolean;
+
+  /** The currently-active pointer (from URL). Drives exact row selection and
+   *  remains the navigation cursor. */
   activePointer: DockPointer | null;
+
+  /** Optional resolved resource identity for a URL whose serialized pointer
+   *  cannot carry the backing VFS path (for example a TypeId editor URL). Used
+   *  only for ancestor expansion, resource equality, and reveal/scroll. */
+  activeResourcePointer?: DockPointer | null;
 
   /** Optional URL-derived alternate selection key (e.g. the active entity's
    *  `<type>-<uuid>` typeid when the URL addresses an asset by typeid). A row is

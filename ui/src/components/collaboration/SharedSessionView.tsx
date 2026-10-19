@@ -6,6 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { ConversationView } from '@src/components/conversation/ConversationView';
 import { useAuth } from '@src/hooks/useAuth';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { LatestScroll } from '@src/components/conversation/LatestScroll';
 
 interface Props {
   sessionId: string;
@@ -13,7 +14,7 @@ interface Props {
 
 /**
  * A shared session's detail: the guest drives work on the host's machine, and
- * both sides watch the prompt/PromptResult turn exchange as a chat. The HOST
+ * both sides watch the prompt/PromptCompletion turn exchange as a chat. The HOST
  * (the machine being driven) sees a banner + Disconnect; the GUEST sees the
  * same chat + a "running on <host>'s machine" note.
  */
@@ -63,13 +64,8 @@ export function SharedSessionView({ sessionId }: Props) {
               <Trans>This session is running remotely by {guestName} on your machine.</Trans>
             </span>
           </div>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={handleDisconnect}
-            disabled={disconnecting || ended}
-          >
-            <PlugZap className="mr-1.5 h-4 w-4" />
+          <Button variant="destructive" size="sm" onClick={handleDisconnect} disabled={disconnecting || ended}>
+            <PlugZap className="me-1.5 h-4 w-4" />
             {ended ? <Trans>Disconnected</Trans> : <Trans>Disconnect</Trans>}
           </Button>
         </div>
@@ -79,15 +75,15 @@ export function SharedSessionView({ sessionId }: Props) {
           <Trans>Running on the host's machine · status: {session.status}</Trans>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {conversationId ? (
+      {conversationId ? (
+        <LatestScroll>
           <ConversationView conversationId={conversationId} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Trans>This session has no bound conversation.</Trans>
-          </div>
-        )}
-      </div>
+        </LatestScroll>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+          <Trans>This session has no bound conversation.</Trans>
+        </div>
+      )}
     </div>
   );
 }

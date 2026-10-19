@@ -56,8 +56,14 @@ class CLICommand(BaseModel):
             self._stderr_queue.put_nowait(line)
         self.stderr.append(line)
 
-    def mark_complete(self, exit_code: int) -> None:
-        """Mark the command as complete with an exit code."""
+    def mark_complete(self, exit_code: Optional[int]) -> None:
+        """Mark the command as complete with the process's own exit code.
+
+        ``None`` when there is no such code — the command never started, or its
+        end was lost. Never a made-up ``-1``: a reader cannot tell that from a
+        process that really exited -1, and an answer built from it claims the
+        command ran.
+        """
         self.exit_code = exit_code
         if hasattr(self, "_completed"):
             self._completed.set()

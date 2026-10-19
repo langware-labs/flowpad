@@ -1,6 +1,6 @@
 ---
 id: 57eef62d-9115-4cf9-82a7-18c2d6545a54
-version: 2
+version: 3
 ---
 
 # AgenticProcess
@@ -11,11 +11,11 @@ The current implementation is not an `AgenticProcessor` child model. Processes a
 
 ### Two independent axes: transport vs visibility
 
-A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`agentic_process.py:1824`, `:2210`, `:1843`, `:3843`; `load-process.ts:199`; `InteractiveTerminal.tsx:166`).
+A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`AgenticProcess.prompt()` and the `prompt` action `_http_prompt()` in `flow_sdk/builtin/agentic_process/agentic_process.py`; `get_worker_mode()` in `status_predicates.py`).
 
 | Axis                   | Field      | `true`                                                    | `false`                                                                                         |
 | ---------------------- | ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Transport** (worker) | `pty_mode` | Interactive PTY: long-lived worker in a `Shell`-owned PTY | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn, no `Shell`/PTY |
+| **Transport** (worker) | `pty_mode` | Interactive PTY: long-lived worker in a `Shell`-owned PTY | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn (it outlives the turn only while the agent's background work runs — a *parked* worker), no `Shell`/PTY |
 | **Visibility** (UI)    | `visible`  | Shown as a terminal tab / loader attaches an xterm        | Not attached as a terminal tab (chat surface, or backgrounded)                                  |
 
 In this codebase **"headless" is a synonym for** **`pty_mode === false`** (the JSON-stream transport). It is *not* a separate axis from `pty_mode` — it is the name for one pole of it. The genuine orthogonality is `pty_mode` (transport) ⟂ `visible` (tab shown), enforced deliberately: `set-visible` (`agentic_process.py:1783`) flips the tab without ever touching transport, and `prompt()`'s docstring is explicit that routing is "on the transport intent `pty_mode` (NOT tab-visibility)".
@@ -61,34 +61,34 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 
 `AgenticProcess` is a SQLite/API entity. Important fields are:
 
-| Field                                                          | Type                   | Description                                                                                                                                                                                                                                                                   |
-| -------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                                                                                                                                                                    |
-| `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                                                                                                                                                                          |
-| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                                                                                                                                                                          |
-| `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event.                                                                             |
-| `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.                                                                                                                                                                |
-| `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives. |
-| `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                                                   |
-| `shell_id`                                                     | `str \| None`          | Linked `Shell` entity ID for visible PTY mode. `None` in headless print mode.                                                                                                                                                                                                 |
-| `sidecar_shell_id`                                             | `str \| None`          | Optional sidecar shell link; cleared on process exit/close paths.                                                                                                                                                                                                             |
-| `cli_config`                                                   | `dict`                 | Serialized worker CLI options. Built by the frontend or `ComputeNode.createProcess`; deserialized through the driver.                                                                                                                                                         |
-| `workdir`                                                      | `str \| None`          | Working directory for the worker. Also used to set Claude `CLAUDE_PROJECT_DIR`.                                                                                                                                                                                               |
-| `context_data`                                                 | `dict`                 | Extra persisted context such as `instructions`, `project_id`, `max_thinking_tokens`, resume bookkeeping, and internal flags.                                                                                                                                                  |
-| `instruction_content`                                          | `str \| None`          | Stored prompt/instruction content when supplied by callers.                                                                                                                                                                                                                   |
-| `asset_ref`                                                    | `str \| None`          | Source asset reference when the process is attached to a file-backed record.                                                                                                                                                                                                  |
-| `favorite_index`                                               | `int \| None`          | Optional UI ordering/pin value.                                                                                                                                                                                                                                               |
-| `use_worker_history`                                           | `bool`                 | Whether history should be loaded from the worker transcript.                                                                                                                                                                                                                  |
-| `shell_mode`                                                   | `bool`                 | `false` by default: direct PTY spawn. `true`: legacy shell intermediary path.                                                                                                                                                                                                 |
-| `project_id`                                                   | `str \| None`          | Owning project. Resolved from context, ancestry, or `@local`.                                                                                                                                                                                                                 |
-| `project_encoded_name`                                         | `str \| None`          | Encoded project name used for transcript navigation.                                                                                                                                                                                                                          |
-| `collaboration_room_id`                                        | `str \| None`          | Collaboration room this process belongs to, if any.                                                                                                                                                                                                                           |
-| `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                                                                                                                                                                  |
-| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                                                                                                                                                                             |
-| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed.                                                                                                                                |
-| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                                                                                                                                                                         |
-| `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                                                                                                                                                                                |
-| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. `None` resolves via `FLOWPAD_DEFAULT_WORKER`, defaulting to `claude`.                                                                                                                                                                               |
+| Field                                                          | Type                   | Description                                                                                                                                                                                                                                                                       |
+| -------------------------------------------------------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                                                                                                                                                                        |
+| `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                                                                                                                                                                              |
+| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_from_busy()`.                                                                                                                                                                                                                              |
+| `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event.                                                                                 |
+| `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.                                                                                                                                                                    |
+| `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives.     |
+| `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                                                       |
+| `shell_id`                                                     | `str \| None`          | Linked `Shell` entity ID for visible PTY mode. `None` in headless print mode.                                                                                                                                                                                                     |
+| `sidecar_shell_id`                                             | `str \| None`          | Optional sidecar shell link; cleared on process exit/close paths.                                                                                                                                                                                                                 |
+| `cli_config`                                                   | `dict`                 | Serialized worker CLI options. Built by the frontend or `ComputeNode.createProcess`; deserialized through the driver.                                                                                                                                                             |
+| `workdir`                                                      | `str \| None`          | Working directory for the worker. Also used to set Claude `CLAUDE_PROJECT_DIR`.                                                                                                                                                                                                   |
+| `context_data`                                                 | `dict`                 | Extra persisted context such as `instructions`, `project_id`, `max_thinking_tokens`, resume bookkeeping, and internal flags.                                                                                                                                                      |
+| `instruction_content`                                          | `str \| None`          | Stored prompt/instruction content when supplied by callers.                                                                                                                                                                                                                       |
+| `asset_ref`                                                    | `str \| None`          | Source asset reference when the process is attached to a file-backed record.                                                                                                                                                                                                      |
+| `favorite_index`                                               | `int \| None`          | Optional UI ordering/pin value.                                                                                                                                                                                                                                                   |
+| `use_worker_history`                                           | `bool`                 | Whether history should be loaded from the worker transcript.                                                                                                                                                                                                                      |
+| `shell_mode`                                                   | `bool`                 | `false` by default: direct PTY spawn. `true`: legacy shell intermediary path.                                                                                                                                                                                                     |
+| `project_id`                                                   | `str \| None`          | Owning project. Resolved from context, ancestry, or `@local`.                                                                                                                                                                                                                     |
+| `project_encoded_name`                                         | `str \| None`          | Encoded project name used for transcript navigation.                                                                                                                                                                                                                              |
+| `collaboration_room_id`                                        | `str \| None`          | Collaboration room this process belongs to, if any.                                                                                                                                                                                                                               |
+| `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                                                                                                                                                                      |
+| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                                                                                                                                                                                 |
+| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed.                                                                                                                                    |
+| `embedded_subagent_ids`                                        | `list[str]`            | Names of embedded sub-agents materialized into the process assets folder.                                                                                                                                                                                                         |
+| `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                                                                                                                                                                                    |
+| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. The `createProcess` action resolves `None` through the persisted `harness` capability reference; an explicit value overrides that selection. Raw backend-only constructors still require an explicit worker when they must not use the driver fallback. |
 
 ### Related Shell Fields
 
@@ -142,11 +142,11 @@ Characteristics:
 | Aspect             | Current behavior                                                                                                                                      |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PTY                | None. No `Shell` is required.                                                                                                                         |
-| Worker lifetime    | One subprocess per prompt turn.                                                                                                                       |
+| Worker lifetime    | One subprocess per prompt turn — except Claude while the agent's background work runs: the subprocess outlives the turn, *parked* (see below).         |
 | Output             | Worker events are converted to `FlowData`.                                                                                                            |
 | Session continuity | `session_id` is persisted on the process and reused by later turns where supported.                                                                   |
 | Status             | `status` usually remains `running` after a successful turn so the process can accept another prompt; `worker_status` is derived from transcript tail. |
-| Concurrency        | One in-flight prompt per process, guarded by `_PROMPT_LOCKS`.                                                                                         |
+| Concurrency        | One in-flight prompt per process, guarded by `_PROMPT_LOCKS` — held for the TURN, not for the subprocess (a parked worker holds no lock).            |
 | Cancel             | `cancel-prompt` terminates the in-flight print-mode worker.                                                                                           |
 
 Backend routing:
@@ -155,7 +155,7 @@ Backend routing:
 POST /api/v1/graph/agentic_process/<id>/execute
   -> AgenticProcess._http_execute()
   -> AgenticProcess.prompt()
-  -> pty_mode is false        # NOT `visible` — see prompt() docstring, agentic_process.py:1806
+  -> pty_mode is false        # NOT `visible` — see prompt() docstring, agentic_process/agentic_process.py:3026
   -> process.driver.headless_prompt(process, instruction)
 ```
 
@@ -164,7 +164,7 @@ There is also a streaming HTTP prompt action:
 ```text
 POST /api/v1/graph/agentic_process/<id>/prompt
   body: { "message": "..." }
-  -> print-mode path routes on pty_mode=false (agentic_process.py:2210)
+  -> print-mode path routes on pty_mode=false (_http_prompt, agentic_process/agentic_process.py:3480)
   -> streams FlowData XML over text/event-stream
 ```
 
@@ -191,6 +191,57 @@ const { process } = await AgenticProcess.spawn(
   },
 );
 ```
+
+#### Background work: one worker, several turns (Claude)
+
+**Why.** `claude -p` waits for background commands the agent started instead of killing them
+(measured on 2.1.299; on 2.1.278 it killed a background shell ~5s after stdin closed — the change happened somewhere between, so re-check after a CLI update with the long test `tests/long_tests/test_parked_worker_messages.py`). Flowpad
+used to close the CLI's stdin at the turn's `result` and hold the answer until the process exited,
+so while background work ran the chat read "working", a message the user typed waited in the queue,
+and the report of the work finishing could not reach them live.
+
+**The story of one process** (`ClaudeCLIStreamWorker`, `WorkerTurns`):
+
+```text
+1. A message arrives -> a worker is spawned with the CLI's state events on
+   (CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: session_state_changed running|idle) and
+   background_tasks_changed (the COMPLETE set of live tasks).
+2. The agent starts background work and answers. The answer is released to the chat at `result`
+   (TranscriptDurabilityGate.result_proves_durability), not at process exit.
+3. The CLI reports `idle`. Decision, on EVERY report (stdin is the CLI's input; closing it is what
+   lets the process exit):
+       idle and no background tasks  -> close stdin: the process exits (the ordinary one-turn case)
+       idle and tasks running        -> keep stdin open: the worker is PARKED
+       a stop was requested          -> close stdin whatever is running
+   A CLI that never reports its state is closed at `result`, as before.
+4. PARKED: the turn is over. WorkerTurns.end() closes that turn's response stream, releases the
+   prompt lock and runs the turn-end tail (which also drains the prompt queue). `busy` is false;
+   the entity says `background_work: true`. The process stays registered.
+5. A message arrives (HTTP `prompt` or a queue drain):
+       parked? -> claim_for_message()   one synchronous step: of two racing deliveries, one wins
+                  WorkerTurns.begin()   `busy` on, lock taken, the sender's stream attached
+                  write_user_message()  to the SAME process's stdin; answered in about a second
+       not parked -> spawn a new worker, as always
+6. The background work ends. The CLI starts a turn ON ITS OWN to report it (`session_state_changed:
+   running` with no delivery behind it): WorkerTurns.route() calls begin() — `busy` on, no response
+   stream (nobody sent it; the transcript carries it and the UI follows it via `observe-turn`).
+7. That turn ends `idle`, no tasks left -> stdin closes -> the process exits -> the runner's
+   `finally` ends the last turn and unregisters the worker.
+```
+
+`WorkerTurns.route()` reads the worker's CURRENT state, not the frame in hand: a state frame can be
+handled after a delivered message already started the next turn, and the previous turn's `idle` must
+not end that one.
+
+**Ways out of the parked state.** The work finishes (steps 6-7); `stop-background` (the composer's
+"Background tasks" chip) ends the process and the work with it, with no abort/crash frame; a
+`switch-mode` to the terminal is refused (409) — the UI offers *Switch anyway*, which stops the work
+first (see `mode-switching.md`); the process exiting (`exit`, backend restart) ends everything, and a
+restart does not bring the work back.
+
+**What it costs.** A parked worker is a live `claude` process (~290MB) for as long as the work runs,
+and a work that never ends (a dev server) holds it until stopped. A per-turn `permission_mode` cannot
+change on a live CLI, so a delivered message runs in the mode the worker started with.
 
 Claude print mode uses `ClaudeCLIStreamWorker`:
 
@@ -296,8 +347,13 @@ type WizardProcessResult<T> = {
   status: 'done' | 'cancel' | 'error';
   data: T | null;
   errorStr?: string | null;
+  answer?: WizardResult; // the same close, as every wizard run answers
 };
 ```
+
+`status` is the agent's own word and keeps a cancel apart from an error for the
+person; `answer` is the backend's `WizardResult` for the same close (`OK` with
+`data` as its value when done, `NOT_YET` with the reason otherwise).
 
 There are two completion paths with the same backend contract. The popup footer
 calls `completeWizard(process, result)`. An agent running inside the wizard can
@@ -389,22 +445,26 @@ Worker status sets are mirrored between Python and TypeScript:
 `ready_for_input` is computed by `flow_sdk/builtin/agentic_process/status_predicates.py`:
 
 ```text
-process.status == "running"
-AND worker_status in {"idle", "complete", "interrupted"}
+not busy                                              # is_turn_busy(process, worker_status)
+AND (
+      process.status == "running"
+   OR (process.status == "new"     AND pty_mode is false)                 # fresh headless
+   OR (process.status == "stopped" AND pty_mode is false AND session_id)  # headless-idle
+)
 ```
 
-If no worker status can be discovered and `session_id` is empty, the process is treated as ready. If `session_id` exists but no transcript is available yet, it is treated as busy/initializing.
+`busy` (`is_turn_busy`) is true when the per-process prompt lock is held, a print-mode worker is registered and not parked on background work, a turn is marked in flight, or — PTY transport only — the raw `worker_status` is a mid-turn activity state. `is_ready_for_input(process)` computes `busy` itself; callers that already hold it (the serializer, `get_status`) call `is_ready_from_busy(status, busy, pty_mode=..., session_id=...)`.
 
 ### WorkerMode
 
-`WorkerMode` is not stored. `get_worker_mode()` derives it from **`visible`** (`status_predicates.py:60`):
+`WorkerMode` is not stored. `get_worker_mode()` derives it from the transport intent **`pty_mode`** (`status_predicates.py:80`; TS `getWorkerMode()` in `agentic-types.ts`):
 
 ```text
-visible=true  -> INTERACTIVE
-visible=false -> CLI
+pty_mode=true  -> INTERACTIVE
+pty_mode=false -> CLI
 ```
 
-> ⚠️ **`WorkerMode`** **is a display projection, not the transport.** It is derived from `visible`, whereas the actual execution transport is `pty_mode`. In the lock-stepped common case they agree, but in the decoupled quadrants they can disagree — e.g. a hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.CLI` while its worker is still a live PTY. Never route execution on `WorkerMode`; route on `pty_mode`. This visible-vs-pty\_mode split is a candidate for consolidation (see the arch note in the return report).
+> ⚠️ **`WorkerMode`** **is derived from `pty_mode`, not `visible`.** A hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.INTERACTIVE`. `visible` only decides whether a terminal tab is shown. (The TS `isPtyTransport()` falls back to `visible` only when the wire carries no `pty_mode` at all.)
 
 Python: `flow_sdk/builtin/agentic_process/status_predicates.py`
 TypeScript: `ts_sdk/src/process/agentic-types.ts`
@@ -421,15 +481,20 @@ worker_status = process.driver.tail_status(path)
 Serialization injects:
 
 ```python
-d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-d["ready_for_input"] = is_ready_for_input(self, computed)
+computed = self.fetch_worker_status()
+data["worker_status"] = str(computed) if computed else None
+busy = is_turn_busy(self, computed)
+data["busy"] = busy
+data["ready_for_input"] = is_ready_from_busy(
+    self.status, busy, pty_mode=self.pty_mode, session_id=self.session_id
+)
 ```
 
 Claude status comes from `flow_sdk/fs_records/agent_status.py` and the Claude JSONL tail. Examples:
 
 | Transcript signal                        | WorkerStatus                                                                                    |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Missing transcript                       | `initializing` when a path is known; otherwise no computed status and API falls back to `idle`. |
+| Missing transcript                       | `initializing` when a path is known; otherwise no computed status and the API sends `worker_status: null`. |
 | `last-prompt` after assistant completion | `complete`                                                                                      |
 | assistant `stop_reason=end_turn`         | `complete`                                                                                      |
 | assistant `stop_reason=stop_sequence`    | `error`                                                                                         |
@@ -456,7 +521,7 @@ interface AgenticContext {
   envVars?: Record<string, string>;
   model?: string;
   maxThinkingTokens?: number;
-  permissionMode?: 'bypassPermissions' | 'askUser';
+  permissionMode?: 'bypassPermissions' | 'askUser' | 'plan' | 'acceptEdits';
   projectId?: string;
   resumeSessionId?: string;
   forkSession?: boolean;
@@ -465,9 +530,13 @@ interface AgenticContext {
   debug?: boolean;
   worktree?: boolean;
   additionalDirs?: string[];
-  targetTypeIdStr?: string;
+  loadFlowpadAssistant?: boolean;
+  sharedContextEntities?: string[];
+  targetVfsPath?: string;
   outputFormat?: string;
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
   processType?: ProcessKind;
+  contextData?: Record<string, unknown>;
 }
 ```
 
@@ -483,17 +552,21 @@ Serialization mapping:
 | `forkSession`       | `fork_session`        |
 | `agentsJson`        | `agents_json`         |
 | `additionalDirs`    | `additional_dirs`     |
-| `targetTypeIdStr`   | `target_typeid_str`   |
+| `loadFlowpadAssistant` | `load_flowpad_assistant` |
+| `sharedContextEntities` | `shared_context_entities` |
+| `targetVfsPath`     | `target_typeid_str`   |
 | `outputFormat`      | `output_format`       |
+| `workerType`        | `worker_type`         |
 | `processType`       | `process_type`        |
+| `contextData`       | spread into the top level of the body |
 
-`ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeCliOptions`/`cli_config`; and leaves remaining context in `context_data`.
+`ComputeNode.createProcess` receives this serialized context. Backend `scan_actions._scan_create_process()` stores process-level fields such as `workdir`, `project_id`, and `target_typeid_str`; moves CLI-related fields into `ClaudeAgentOptions`/`cli_config`; and leaves remaining context in `context_data`.
 
 ### CLI Config
 
 `cli_config` stores serialized worker CLI options. `AgenticProcess.cli_options` reconstructs the live command through `process.driver.cli_options(process)`.
 
-For Claude, `ClaudeCliOptions` supports:
+For Claude, `ClaudeAgentOptions` supports:
 
 | Option                                | CLI effect                                                                                |
 | ------------------------------------- | ----------------------------------------------------------------------------------------- |
@@ -512,7 +585,7 @@ For Claude, `ClaudeCliOptions` supports:
 | `additional_dirs` / `add_dirs`        | repeated `--add-dir <path>`; includes generated assets dir when instructions/assets exist |
 | `print_mode`                          | `-p`                                                                                      |
 
-For Codex, `CodexCliOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
+For Codex, `CodexAgentOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
 
 ### Embedded Assets
 
@@ -526,7 +599,8 @@ process's assets directory:
   .agents
   .github/instructions/flowpad.instructions.md
   .claude/agents/<name>.md
-  .claude/skills/<name>/...
+  .claude/skills/<name>/...        # claude; copilot reads .github/skills,
+                                   # opencode .opencode/skills (WorkerDriver.skills_root)
 ```
 
 `AgenticProcess.embedded_assets` is `None` until needed. `ensure_embedded_assets()`
@@ -583,27 +657,27 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 
 ### AgenticProcess Actions
 
-| Action                  | Method     | Description                                                                                                  |
-| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
-| `open`                  | `POST`     | Start or reopen visible PTY mode through `AgenticProcess.start()`.                                           |
-| `exit`                  | `POST`     | Stop worker and PTY while preserving the linked `Shell` entity.                                              |
-| `restart`               | `POST`     | `exit()` then `start()`.                                                                                     |
-| `close`                 | `POST`     | Permanent teardown: close/delete linked `Shell`, clear shell links, stop process.                            |
-| `fork`                  | `POST`     | Create a sibling process that forks from this process's `session_id`.                                        |
-| `execute`               | `POST`     | Execute an instruction through `prompt()`; routes by `pty_mode`.                                             |
-| `prompt`                | `POST`     | Print-mode streaming HTTP prompt; the print-mode branch is taken when `pty_mode=false`.                      |
-| `cancel-prompt`         | `POST`     | Cancel an in-flight print-mode worker.                                                                       |
-| `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                                                   |
-| `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                                                      |
-| `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`.   |
-| `load-embedded-agent`   | `POST`     | Materialize agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
-| `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                                                     |
-| `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                                                        |
-| `list-embedded-assets`  | `GET`      | Return current embedded asset TypeIds.                                                                       |
-| `get-history`           | `GET`      | Load transcript history as `FlowData`.                                                                       |
-| `status`                | `GET/POST` | Return stored `status`, computed `worker_status`, and `ready_for_input`.                                     |
-| `add-dir`               | `POST`     | Append a directory to `additional_dirs`.                                                                     |
-| `input-dir`             | `GET`      | Return/create the process input directory.                                                                   |
+| Action                   | Method     | Description                                                                                                      |
+| ------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------- |
+| `open`                   | `POST`     | Start or reopen visible PTY mode through `AgenticProcess.start()`.                                               |
+| `exit`                   | `POST`     | Stop worker and PTY while preserving the linked `Shell` entity.                                                  |
+| `restart`                | `POST`     | `exit()` then `start()`.                                                                                         |
+| `close`                  | `POST`     | Permanent teardown: close/delete linked `Shell`, clear shell links, stop process.                                |
+| `fork`                   | `POST`     | Create a sibling process that forks from this process's `session_id`.                                            |
+| `execute`                | `POST`     | Execute an instruction through `prompt()`; routes by `pty_mode`.                                                 |
+| `prompt`                 | `POST`     | Print-mode streaming HTTP prompt; the print-mode branch is taken when `pty_mode=false`.                          |
+| `cancel-prompt`          | `POST`     | Cancel an in-flight print-mode worker.                                                                           |
+| `execute-plan`           | `POST`     | Inject a plan execution prompt into an active PTY session.                                                       |
+| `update-plan`            | `POST`     | Inject a plan-update prompt into an active PTY session.                                                          |
+| `entity-event`           | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`.       |
+| `load-embedded-subagent` | `POST`     | Materialize sub-agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
+| `attach-embedded-asset`  | `POST`     | Materialize an agent/skill under the process assets dir.                                                         |
+| `detach-embedded-asset`  | `POST`     | Remove a materialized embedded asset.                                                                            |
+| `list-embedded-assets`   | `GET`      | Return current embedded asset TypeIds.                                                                           |
+| `get-history`            | `GET`      | Load transcript history as `FlowData`.                                                                           |
+| `status`                 | `GET/POST` | Return stored `status`, computed `worker_status`, and `ready_for_input`.                                         |
+| `add-dir`                | `POST`     | Append a directory to `additional_dirs`.                                                                         |
+| `input-dir`              | `GET`      | Return/create the process input directory (`execution/input/`, mounted for the worker).                         |
 
 ### Shell Actions Used By PTY Mode
 
@@ -660,7 +734,7 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 | `workdir`                                                      | Worker working directory.                                                                    |
 | `shell_mode`                                                   | Direct PTY spawn vs legacy shell intermediary.                                               |
 | `additional_dirs`                                              | Extra `--add-dir` directories, including generated process assets when present.              |
-| `embedded_asset_refs`                                          | Embedded agent/skill refs.                                                                   |
+| `embedded_asset_refs`                                          | Embedded sub-agent/skill refs.                                                               |
 | `project_id`, `project_encoded_name`                           | Project linkage.                                                                             |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | Execution folder refs.                                                                       |
 
@@ -713,13 +787,13 @@ Convenience getters:
 
 `AgenticProcess` extends `APIEntity` and emits:
 
-| Event          | Description                           |
-| -------------- | ------------------------------------- |
-| `flow_data`    | New `FlowData` arrived.               |
-| `complete`     | Client-side stream marked complete.   |
-| `error`        | Client-side stream marked failed.     |
-| `state_change` | Delta for `status` or `workerStatus`. |
-| `restarted`    | Emitted after frontend `restart()`.   |
+| Event          | Description                                    |
+| -------------- | ---------------------------------------------- |
+| `flow_data`    | New `FlowData` arrived.                        |
+| `complete`     | Client-side stream marked complete.            |
+| `error`        | Client-side stream marked failed.              |
+| `state_change` | Delta for `status`, `busy`, or `workerStatus`. |
+| `restarted`    | Emitted after frontend `restart()`.            |
 
 ***
 
@@ -750,7 +824,7 @@ The following names appear in older docs or compatibility shims but are not the 
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | `flow_sdk/builtin/agentic_process/agentic_process.py`                    | Main `AgenticProcess` entity, lifecycle, prompt/open/close actions, serialization.           |
 | `flow_sdk/builtin/agentic_process/status_predicates.py`                  | `WorkerMode`, `is_ready_for_input`, process/worker predicate exports.                        |
-| `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py` | `AgenticContext`, `AgenticWorker`, `WorkerCLIOptions`, `WorkerDriver`, `get_driver()`.       |
+| `flow_sdk/builtin/agentic_process/cli_drivers/cli_worker_base_driver.py` | `AgenticContext`, `AgenticWorker`, `AgentOptions`, `WorkerDriver`, `get_driver()`.           |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py`          | Claude driver: CLI options, print turns, transcript path/status/history, prompt composition. |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | Claude CLI option builder and direct PTY spawn args.                                         |
 | `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`   | `claude -p --output-format stream-json` print-mode worker.                                   |

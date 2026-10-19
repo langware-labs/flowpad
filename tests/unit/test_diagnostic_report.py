@@ -12,8 +12,10 @@ through and print the ids.
 the CLI runner's job (CLI surface only). These tests therefore assert it creates the
 diagnosis record + support Conversation/FlowMessage and does NOT mint a FeedEntry.
 """
+
 import importlib.util
 import json
+import platform
 
 import pytest
 
@@ -23,9 +25,7 @@ from flow_sdk.config import flowpad_assistant_project_root
 # Load the co-located reporter script by path (the skill folder is not a package).
 # It ships inside the package under flow_sdk/system_projects/..., so resolve it
 # the same way `flow diagnose` does.
-_REPORT_PATH = (
-    flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose" / "report.py"
-)
+_REPORT_PATH = flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose" / "report.py"
 
 
 def _load_report():
@@ -122,6 +122,7 @@ async def test_create_support_conversation_self_bootstraps_local():
 # issue. Never posts a Home-Feed FeedEntry (that is the CLI runner's job).
 # --------------------------------------------------------------------------- #
 
+
 async def _bootstrap_local_user():
     from flow_sdk.server.routes.bootstrap import (
         get_or_create_local_project,
@@ -155,6 +156,13 @@ async def test_record_diagnosis_issue_creates_record_and_support():
     diag = await SchemaRegistry.get_entity_cls("flowpad_diagnosis").get_by_id(res["diagnosis_id"])
     assert diag is not None
     assert diag.summary == "Cleared a stale server.lock; the backend starts now."
+    # …and the reporting machine's environment snapshot, stamped at record time so
+    # the Details block survives being forwarded to a helper on another machine
+    # (who can only recompute their OWN os/version, which would be a lie).
+    assert diag.reported_by
+    assert diag.occurred_at
+    assert diag.os == platform.platform()
+    assert diag.app_version
 
 
 @pytest.mark.asyncio
@@ -187,17 +195,26 @@ async def test_record_diagnosis_informational_creates_no_support():
 # CLI entrypoint — how the skill actually invokes report.py in Step 7
 # --------------------------------------------------------------------------- #
 
+
 def test_parse_args_maps_flags():
     args = report._parse_args(
         [
-            "--title", "t",
-            "--symptoms", "sy",
-            "--rca", "rc",
-            "--fix", "fx",
-            "--summary", "s",
-            "--status", "fixed",
-            "--details", "d",
-            "--platform", "macOS",
+            "--title",
+            "t",
+            "--symptoms",
+            "sy",
+            "--rca",
+            "rc",
+            "--fix",
+            "fx",
+            "--summary",
+            "s",
+            "--status",
+            "fixed",
+            "--details",
+            "d",
+            "--platform",
+            "macOS",
         ]
     )
     assert args.title == "t"

@@ -62,6 +62,10 @@ def project_folder_walker_fn(
                 continue
             except OSError:
                 continue
+        staged = _stage1_folders(node, root_path, opts)
+        if staged is not None:
+            out.extend(staged)
+            continue
         for dir_path, _subdirs, _files in gitignore_walk(
             root_path,
             gitignore=opts.gitignore,
@@ -70,3 +74,38 @@ def project_folder_walker_fn(
         ):
             out.append(FSRef(dir_path, record_type=RecordType.FOLDER, parent=node))
     return out
+
+
+def _stage1_folders(node: FSRef, root_path: Path, opts: IndexerOptions) -> list[FSRef] | None:
+    """The same FOLDER refs from the diskio stage-1 scan, or None to walk in-process
+    (``stage1_items`` answers None whenever Python would do the work).
+
+    One request answers both the walk AND every per-folder declared scan, so each
+    FOLDER ref carries what was found in it (``FSRef.stage1_scan``) and ``layout_walker``
+    reads that instead of scanning the folder again.
+    """
+    from flow_sdk.diskio.contract import WalkEntry  # noqa: PLC0415
+    from flow_sdk.diskio.python.declared_scanner import folder_scan_specs  # noqa: PLC0415
+    from flow_sdk.diskio.stage1 import stage1_items  # noqa: PLC0415
+
+    # Only the folder-rooted walks: root-kind scans stay with their own walkers.
+    items = stage1_items(str(root_path), gitignore=opts.gitignore, denylist=opts.gitignore,
+                         file_exts=(), specs=folder_scan_specs())
+    if items is None:
+        return None
+    out: list[FSRef] = []
+    for item in items:
+        if isinstance(item, WalkEntry):
+            ref = FSRef(item.dir, record_type=RecordType.FOLDER, parent=node)
+            ref.stage1_scan = _NOTHING_FOUND
+            out.append(ref)
+        elif out:
+            ref = out[-1]
+            if ref.stage1_scan is _NOTHING_FOUND:
+                ref.stage1_scan = {}
+            ref.stage1_scan.setdefault(item.type_name or "", []).append(item)
+    return out
+
+
+#: Shared by every folder the scan found nothing in — almost all of them.
+_NOTHING_FOUND: dict = {}

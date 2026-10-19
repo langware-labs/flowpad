@@ -1,12 +1,24 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as path from 'path';
 
 import { apiBase } from '../_shared/api';
 
 const API = apiBase();
-// User-scope whiteboards live under the home dir's .claude/whiteboards/.
-const USER_WHITEBOARDS = `${os.homedir()}/.claude/whiteboards/`;
+// Whiteboard is a REPO asset, so user scope uses the same registry-owned
+// agentic-assets/<type> layout as project scope, rooted at the instance's user
+// asset root (`BaseSettings.user_asset_root`): the user's home for prod, and
+// `~/Flowpad workspaces/.home/<instance>` for every other instance, so a test
+// instance never writes into the home prod reads.
+const INSTANCE = process.env.FLOW_INSTANCE || 'prod';
+const USER_ASSET_ROOT =
+  INSTANCE === 'prod' ? os.homedir() : path.join(os.homedir(), 'Flowpad workspaces', '.home', INSTANCE);
+const USER_WHITEBOARDS = path.join(USER_ASSET_ROOT, 'agentic-assets', 'whiteboard');
+
+function projectWhiteboards(mount: string): string {
+  return path.join(mount, 'agentic-assets', 'whiteboard');
+}
 
 async function pickProject(request: APIRequestContext): Promise<{ id: string; mount: string }> {
   const res = await request.get(`${API}/api/v1/graph/project`);
@@ -23,20 +35,20 @@ async function pickProject(request: APIRequestContext): Promise<{ id: string; mo
 async function materialize(page: Page, id: string, assetRef: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
   // First save materializes the folder + board.json on disk.
   await page.evaluate(() => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     const els = lib.convertToExcalidrawElements([{ type: 'rectangle', x: 10, y: 10, width: 80, height: 40, label: { text: 'X' } }]);
     api.updateScene({ elements: els });
   });
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
-    (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+    const api = (window as any).__chartApi;
+    (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
   });
   for (let i = 0; i < 8; i++) {
     await page.waitForTimeout(1_000);
@@ -47,7 +59,13 @@ async function materialize(page: Page, id: string, assetRef: string) {
 test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   test('Sc1: project-scoped board creation materializes under the project mount', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id: projectId, mount } = await pickProject(request);
 
     const res = await request.post(`${API}/api/v1/graph/project/${projectId}/whiteboard`, {
@@ -55,11 +73,11 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     });
     expect(res.status()).toBe(200);
     const { id, asset_ref } = (await res.json()).data;
-    // asset_ref must live under the project mount (project-scoped boards live
-    // at <project>/.claude/whiteboards/<name>), NOT under the user home's
-    // ~/.claude/whiteboards/.
-    expect(asset_ref.startsWith(mount), `asset_ref ${asset_ref} under project mount ${mount}`).toBe(true);
-    expect(asset_ref.startsWith(USER_WHITEBOARDS), `asset_ref ${asset_ref} must NOT be user-scope`).toBe(false);
+    // Both scopes use agentic-assets/whiteboard; the scope root is what differs.
+    expect(path.dirname(asset_ref), `asset_ref ${asset_ref} under project mount ${mount}`).toBe(
+      projectWhiteboards(mount),
+    );
+    expect(path.dirname(asset_ref), `asset_ref ${asset_ref} must NOT be user-scope`).not.toBe(USER_WHITEBOARDS);
 
     await materialize(page, id, asset_ref);
     expect(fs.existsSync(asset_ref), 'project-scoped folder exists after mount').toBe(true);
@@ -71,7 +89,13 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id: projectId, mount } = await pickProject(request);
 
     const userRes = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name: `sc2-user-${Date.now() % 10000}` } });
@@ -82,8 +106,8 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
     const proj = (await projRes.json()).data;
 
     expect(user.id).not.toBe(proj.id);
-    expect(user.asset_ref).toContain('/.claude/whiteboards/');
-    expect(proj.asset_ref.startsWith(mount)).toBe(true);
+    expect(path.dirname(user.asset_ref)).toBe(USER_WHITEBOARDS);
+    expect(path.dirname(proj.asset_ref)).toBe(projectWhiteboards(mount));
 
     await materialize(page, user.id, user.asset_ref);
     await materialize(page, proj.id, proj.asset_ref);

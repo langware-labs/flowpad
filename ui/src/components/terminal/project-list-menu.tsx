@@ -1,0 +1,864 @@
+import { Trans, useLingui } from '@lingui/react/macro';
+import { FSRef, isHiddenProject, Project, Tab, tabKey, tabManager, TypeId } from '@sdk';
+import { CopyButton } from '@src/components/ui/copy-button';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { canonicalPath } from '@src/components/project-selector';
+import { useProjects } from '@src/hooks/use-projects';
+import { notify } from '@src/notifications';
+import type { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dockForGlobalEntry, dockForProjectEntry, globalHomeDock, leaveProjectScope } from '@src/tabs/project-entry';
+import {
+  useAncestorActiveTab,
+  useCurrentTabs,
+  useTabProjectBuckets,
+  type TabProjectBucket,
+} from '@src/tabs/use-tab-manager';
+import { useTabStripItems } from '@src/tabs/tab-row-item';
+import { ProjectLaunchBar } from './project-launch-bar';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
+import { WikiButton } from '@src/components/wiki-tip/WikiButton';
+import { FolderOpen, Globe, Loader2, RotateCcw, X } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
+import { useActiveWorkspace } from '@src/hooks/use-workspaces';
+import { WorkspacePickerRow } from '@src/components/workspace/workspace-switcher';
+
+/**
+ * THE project list — the "which open project am I in, and which can I switch
+ * to" menu — as a headless hook plus the list it renders. The navigation bar's
+ * {@link RuntimeChip} wears it: the chip owns its trigger, Popover and testids;
+ * the buckets, ordering, counts and URL-first selection live here, once.
+ */
+
+/**
+ * The project row tip's path affordances: reveal the folder in the OS file
+ * manager and copy its path. Reveal goes through the compute node the path
+ * belongs to — `localComputeNodeId` is null for a remote one, which hides it.
+ */
+function ProjectPathActions({ projectId, projectPath }: { projectId: string; projectPath: string }) {
+  const { t } = useLingui();
+  const fsRef = new FSRef(projectPath, new TypeId('compute_node', '@local'));
+  return (
+    <>
+      {fsRef.localComputeNodeId && (
+        <button
+          type="button"
+          onClick={() => void fsRef.open()}
+          title={t`Open in Finder/Explorer`}
+          aria-label={t`Open in Finder/Explorer`}
+          data-testid={`project-reveal-${projectId}`}
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        </button>
+      )}
+      <CopyButton
+        value={projectPath}
+        title={t`Copy project path`}
+        testId={`project-copy-path-${projectId}`}
+        iconClassName="h-3.5 w-3.5"
+        copiedIconClassName="text-green-500"
+        className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      />
+    </>
+  );
+}
+
+/**
+ * A project row's quick-tab-switch submenu: the project's open top-level tabs,
+ * as the strip renders them (same chips, same closing filter, same active
+ * resolution — a workspace child lights its parent). Mounted only while the
+ * row card is open. Active is derived from `currentDock` (URL), never context.
+ */
+function ProjectTabsSubmenu({ projectId, onSelectTab }: { projectId: string; onSelectTab: (tab: Tab) => void }) {
+  const projectTabs = useCurrentTabs(projectId);
+  const tabs = useMemo(() => tabManager.lifecycle.excludeClosing(projectTabs), [projectTabs]);
+  const items = useTabStripItems(tabs);
+  const { currentDock } = useDockNavigation();
+  const urlActiveKey = currentDock?.tabHash ?? '';
+  const ancestor = useAncestorActiveTab(tabs, urlActiveKey);
+  const activeKey = ancestor ? tabKey(ancestor.parent) : urlActiveKey;
+  if (tabs.length === 0) return null;
+  return (
+    <ul
+      className="flex max-h-80 flex-col overflow-y-auto border-t border-border pt-1"
+      data-testid={`project-tabs-submenu-${projectId}`}
+    >
+      {items.map((item, i) => {
+        const key = item.key;
+        const isActive = key === activeKey;
+        return (
+          <li key={key}>
+            <button
+              type="button"
+              aria-current={isActive ? 'true' : undefined}
+              disabled={item.isDisabled}
+              onClick={() => onSelectTab(tabs[i])}
+              className={`flex w-full min-w-0 items-center gap-2 rounded px-1.5 py-1 text-start text-sm hover:bg-muted disabled:opacity-50 ${
+                isActive ? 'bg-muted/60 font-medium' : ''
+              }`}
+              data-testid={`project-tabs-submenu-item-${key}`}
+            >
+              {item.icon}
+              <span className={`min-w-0 flex-1 truncate ${item.titleClassName ?? ''}`}>{item.title}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function bucketDisplayName(bucket: TabProjectBucket): string {
+  return bucket.project?.displayName ?? bucket.projectId;
+}
+
+/**
+ * Name shown on the chip's project label. Prefer the explicit current-project
+ * name; otherwise fall back to the matching open bucket's display name (the
+ * project entity may not have resolved one yet). Returns null when no project
+ * is known. Pure + dependency-free so it's unit-testable in isolation.
+ */
+export function resolveProjectChipName(
+  currentProjectName: string | null | undefined,
+  currentProjectId: string | null | undefined,
+  buckets: ReadonlyArray<TabProjectBucket>,
+): string | null {
+  if (currentProjectName?.trim()) return currentProjectName.trim();
+  const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
+  return bucket ? bucketDisplayName(bucket) : null;
+}
+
+/** The `closingId` value while the Global row's close-all is in flight — a
+ *  pseudo-scope, so it needs a key no project id can collide with. */
+const GLOBAL_ROW_ID = '__global__';
+
+/**
+ * A row's close-all X — a SIBLING of the row's select button, never a child: a
+ * button inside a button is invalid HTML, and browsers recover by dropping the
+ * inner one, so the row would swallow every close. Kept mounted (not
+ * hover-gated in the DOM) so it stays keyboard-reachable and testable; only
+ * opacity changes, revealed by the row's `group` hover.
+ */
+function CloseRowButton({
+  closing,
+  disabled,
+  label,
+  testId,
+  onClick,
+}: {
+  closing: boolean;
+  disabled?: boolean;
+  label: string;
+  testId: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={closing || disabled}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+      className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+    >
+      {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+    </button>
+  );
+}
+
+/**
+ * Hairline-flanked mid-list section title — the chip's "Active projects"
+ * separator. Exported so other project lists (the footer Switch Project
+ * dialog) render the identical separator instead of a lookalike.
+ */
+export function SectionHairlineTitle({
+  children,
+  testid = 'projects-counter-section-title',
+}: {
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5" data-testid={testid}>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+// Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
+// current-first or state-ranked — the list keeps a stable order as the user
+// switches projects or buckets change state; the current row is highlighted
+// instead of moved.
+function compareBuckets(a: TabProjectBucket, b: TabProjectBucket): number {
+  return bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId);
+}
+
+function bucketRowLabel(bucket: TabProjectBucket): string {
+  if (bucket.state === 'live') return bucketDisplayName(bucket);
+  if (bucket.state === 'loading') return 'Loading…';
+  return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
+}
+
+/**
+ * True when `childPath` names a location strictly INSIDE `parentPath` — the
+ * containment test that makes one project a subproject of another. Both inputs
+ * pass through {@link canonicalPath} first, so this is cross-platform: `\` →
+ * `/`, and trailing / duplicate separators are normalized away. The compare is
+ * case-insensitive so grouping is correct on case-insensitive filesystems
+ * (Windows, macOS) and remains safe on Linux for this display-only feature. The
+ * trailing-separator boundary stops `/foo/bar` from reading as inside
+ * `/foo/barn`. Pure + dependency-free so it's unit-testable in isolation.
+ */
+export function isPathInside(childPath: string, parentPath: string): boolean {
+  const child = canonicalPath(childPath).toLowerCase();
+  const parent = canonicalPath(parentPath).toLowerCase();
+  if (!child || !parent || child === parent) return false;
+  return child.startsWith(`${parent}/`);
+}
+
+/** One indentation column of a tree row: a pass-through vertical, the elbow that
+ *  connects a child to its parent (last child stops the vertical at center), or
+ *  blank space where an ancestor branch has already ended. */
+type GuideCell = 'blank' | 'through' | 'elbow' | 'elbow-last';
+
+/** A menu row plus the tree-guide columns to draw at its left (empty = top level). */
+export interface ProjectTreeRow {
+  bucket: TabProjectBucket;
+  guides: GuideCell[];
+}
+
+/**
+ * Arrange open project buckets into parent → subproject render order for the
+ * menu. A bucket is a SUBPROJECT of another when its mount path lives inside
+ * that other bucket's mount path (deepest enclosing open project wins as the
+ * parent). This is a pure DISPLAY grouping — no entity/graph relationship is
+ * created or implied. Buckets without a resolved path (loading / missing) can't
+ * be contained, so they stay top-level. Siblings at every level keep the flat
+ * {@link compareBuckets} order; a subproject stays nested under its parent
+ * regardless of which one is the current scope. Returns rows in render order,
+ * each carrying the guide columns for its depth.
+ */
+export function buildProjectTreeRows(buckets: ReadonlyArray<TabProjectBucket>): ProjectTreeRow[] {
+  const paths = new Map<string, string>(); // projectId -> canonical mount path
+  for (const b of buckets) {
+    const mount = b.project?.fs_storage_mount_path;
+    if (mount) paths.set(b.projectId, canonicalPath(mount));
+  }
+
+  // Each pathed bucket's parent = the DEEPEST other pathed bucket that contains
+  // it (longest matching parent path wins for correct multi-level nesting).
+  const parentId = new Map<string, string>();
+  for (const b of buckets) {
+    const childPath = paths.get(b.projectId);
+    if (!childPath) continue;
+    let best: { id: string; len: number } | null = null;
+    for (const other of buckets) {
+      if (other.projectId === b.projectId) continue;
+      const parentPath = paths.get(other.projectId);
+      if (parentPath && isPathInside(childPath, parentPath) && (!best || parentPath.length > best.len)) {
+        best = { id: other.projectId, len: parentPath.length };
+      }
+    }
+    if (best) parentId.set(b.projectId, best.id);
+  }
+
+  // Children index + roots, each sibling list in the flat compareBuckets order.
+  const childrenOf = new Map<string, TabProjectBucket[]>();
+  const roots: TabProjectBucket[] = [];
+  for (const b of [...buckets].sort(compareBuckets)) {
+    const pid = parentId.get(b.projectId);
+    if (!pid) {
+      roots.push(b);
+      continue;
+    }
+    const siblings = childrenOf.get(pid);
+    if (siblings) siblings.push(b);
+    else childrenOf.set(pid, [b]);
+  }
+
+  // Depth-first flatten, carrying the guide columns down each branch.
+  const rows: ProjectTreeRow[] = [];
+  const walkChildren = (ownerId: string, prefix: GuideCell[]) => {
+    const kids = childrenOf.get(ownerId) ?? [];
+    kids.forEach((kid, i) => {
+      const isLast = i === kids.length - 1;
+      rows.push({ bucket: kid, guides: [...prefix, isLast ? 'elbow-last' : 'elbow'] });
+      walkChildren(kid.projectId, [...prefix, isLast ? 'blank' : 'through']);
+    });
+  };
+  for (const root of roots) {
+    rows.push({ bucket: root, guides: [] });
+    walkChildren(root.projectId, []);
+  }
+  return rows;
+}
+
+/** Left-edge tree guides for one menu row (file-explorer style). Each column is
+ *  a 16px cell; verticals connect flush across adjacent rows because the row
+ *  buttons stack with no gap. Purely decorative, so `aria-hidden`. */
+function RowGuides({ guides }: { guides: GuideCell[] }) {
+  if (guides.length === 0) return null;
+  return (
+    <span aria-hidden className="flex shrink-0 self-stretch">
+      {guides.map((cell, i) => (
+        <span key={i} className="relative w-4 self-stretch">
+          {cell === 'through' || cell === 'elbow' ? (
+            <span className="absolute bottom-0 left-2 top-0 w-px bg-border" />
+          ) : null}
+          {cell === 'elbow-last' ? <span className="absolute left-2 top-0 h-1/2 w-px bg-border" /> : null}
+          {cell === 'elbow' || cell === 'elbow-last' ? (
+            <span className="absolute left-2 top-1/2 h-px w-2 bg-border" />
+          ) : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+interface ProjectListMenuOptions {
+  /** The scope the surrounding surface is in; highlights that row and decides Global. */
+  currentProjectId?: string | null;
+  /** Display name of the current project. Optional: the menu falls back to the
+   *  matching open bucket's name when the entity hasn't resolved one. */
+  currentProjectName?: string | null;
+}
+
+export interface ProjectListMenu {
+  /** Whether the list popover is showing. The trigger's Popover is controlled by this. */
+  open: boolean;
+  setOpen: (open: boolean) => void;
+  /** For the host's `PopoverContent`: a close that navigated leaves focus to the
+   *  destination view instead of returning it to the trigger. */
+  onCloseAutoFocus: (event: Event) => void;
+  currentProjectId: string | null;
+  /** Open project buckets with system projects filtered out, in arrival order. */
+  buckets: TabProjectBucket[];
+  projectTotal: number;
+  globalTabCount: number;
+  /** No project is current AND ≥1 global tab is open — strictly current-only. */
+  isGlobalScope: boolean;
+  /** The current project's name, or null when no project is known. */
+  projectName: string | null;
+  /** The active scope's label — the project name, or "Global" — or null when
+   *  there is no scope to name. */
+  scopeLabel: string | null;
+  /** "N open project(s)" — one line, used by tooltips and aria-labels alike. */
+  projectsLabel: string;
+  /** "N open tab(s)". */
+  tabsLabel: string;
+  /** The scope and both counts on one line, for a flat aria-label. */
+  recoveringId: string | null;
+  /** The bucket whose close-all is in flight, or null. */
+  closingId: string | null;
+  handleSelect: (bucket: TabProjectBucket) => Promise<void>;
+  handleSelectGlobal: () => Promise<void>;
+  /** Jump straight to one open tab (the row submenu's quick tab switch). */
+  handleSelectTab: (tab: Tab) => void;
+  /** Close every tab of `bucket`, which is what empties it out of the menu. */
+  handleCloseProject: (bucket: TabProjectBucket) => Promise<void>;
+  /** Close every global tab, which is what takes the Global row out of the menu. */
+  handleCloseGlobal: () => Promise<void>;
+  /** Whether the "Open project" dialog (the footer's Switch Project picker) is showing. */
+  projectDialogOpen: boolean;
+  setProjectDialogOpen: (open: boolean) => void;
+  /** Close the list and pop the "Open project" dialog. */
+  handleOpenProject: () => void;
+}
+
+/** The project list's state and actions, trigger-agnostic. */
+export function useProjectListMenu({
+  currentProjectId = null,
+  currentProjectName,
+}: ProjectListMenuOptions): ProjectListMenu {
+  const { t } = useLingui();
+  const [open, setOpenState] = useState(false);
+  // Radix hands focus back to the trigger when the popover closes. After a pick
+  // that navigates, the destination view owns focus (a terminal focuses itself on
+  // activation) — returning it to the chip would steal the cursor from that view.
+  const navigatedOnClose = useRef(false);
+  const setOpen = (next: boolean) => {
+    if (next) navigatedOnClose.current = false;
+    setOpenState(next);
+  };
+  const closeForNavigation = () => {
+    navigatedOnClose.current = true;
+    setOpen(false);
+  };
+  const onCloseAutoFocus = (event: Event) => {
+    if (!navigatedOnClose.current) return;
+    navigatedOnClose.current = false;
+    event.preventDefault();
+  };
+  const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const [closingId, setClosingId] = useState<string | null>(null);
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const { currentDock, navigation } = useDockNavigation();
+  const { buckets: allBuckets, globalTabCount, closeGlobal } = useTabProjectBuckets();
+
+  // App-managed projects (the shipped "Flowpad Assistant", a help-desk portal
+  // checkout) are kept out of the chip entirely — they stay reachable via
+  // Preferences → UI → "Show system projects". Same predicate the project
+  // CONTEXT rejects, so the chip can never list a project you cannot be in: the
+  // backend-computed `system` flag plus the portal's uname, whose hiddenness the
+  // backend derives from its location and never stamps on the entity. A bucket
+  // whose entity is still loading (project == null) is kept — it resolves from
+  // cache and re-filters once known.
+  // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
+  // (never minted, never listed), so no new tab can open on it here.
+  // And only the ACTIVE workspace's projects; Global tabs belong to every workspace.
+  const { contains } = useActiveWorkspace();
+  const buckets = useMemo(
+    () => allBuckets.filter((b) => !isHiddenProject(b.project) && contains(b.project?.fs_storage_mount_path)),
+    [allBuckets, contains],
+  );
+
+  const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
+  const projectTotal = buckets.length;
+
+  const projectName = useMemo(
+    () => resolveProjectChipName(currentProjectName, currentProjectId, buckets),
+    [currentProjectName, currentProjectId, buckets],
+  );
+
+  // The Global scope surfaces ONLY when no project is active AND there is ≥1
+  // global tab (strictly current-only — you enter Global by opening a global
+  // tab, not by picking it from within a project). It is then always the current
+  // scope: a violet "Global" label + a current-marked row above the projects.
+  const isGlobalScope = currentProjectId == null && globalTabCount > 0;
+
+  // Spelled-out, singular-aware labels for each count — used both in the
+  // hover tooltip (one line each so it's unmistakable which number is which)
+  // and, joined, in the flat aria-label.
+  const projectsLabel = `${projectTotal} open project${projectTotal === 1 ? '' : 's'}`;
+  const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
+  const scopeLabel = projectName ?? (isGlobalScope ? 'Global' : null);
+
+  const handleRecover = async (bucket: TabProjectBucket) => {
+    setRecoveringId(bucket.projectId);
+    try {
+      const recovered = await bucket.recover();
+      if (!recovered) {
+        notify.error({
+          title: t`Recovery failed`,
+          message: `Couldn't recover the project for ${bucket.tabCount} open tab${
+            bucket.tabCount === 1 ? '' : 's'
+          } (${bucket.projectId.slice(0, 8)}).`,
+          id: `project-recover:${bucket.projectId}`,
+        });
+        return;
+      }
+      closeForNavigation();
+      navigation.openDock(await dockForProjectEntry(recovered.id, currentDock), undefined, { topLevel: true });
+    } finally {
+      setRecoveringId(null);
+    }
+  };
+
+  // Selecting a project is an active-project switch. URL-first (CLAUDE.md): the
+  // click only resolves a destination and navigates — it resumes the project's
+  // most-recently-active tab (or its landing when it has none) via
+  // `dockForProjectEntry`. The loader that the navigation triggers is the single
+  // writer of project context; the strip re-scopes off the URL-resolved project.
+  const handleSelect = async (bucket: TabProjectBucket) => {
+    if (bucket.state === 'missing') {
+      await handleRecover(bucket);
+      return;
+    }
+    if (bucket.state === 'live' && bucket.project) {
+      closeForNavigation();
+      // A resumed tab is a TOP-LEVEL tab, as its chip is: never a child of the
+      // workspace being left, never painted in its mode.
+      navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock), undefined, { topLevel: true });
+    }
+    // 'loading' — ignore; spinner is rendered in the row.
+  };
+
+  // Close every tab of one project — the row's X, and the same verb as the
+  // strip's "Close all" applied to a bucket instead of the current scope. The
+  // row disappears as a CONSEQUENCE, not as a separate step: the menu is built
+  // from open tabs, so a project with none is no longer listed.
+  //
+  // Order matters when emptying the CURRENT scope. Leaving first (while its tabs
+  // still exist) keeps this URL-first (CLAUDE.md) — the destination is resolved
+  // from live rows, then the loader re-scopes. Closing first would strand the URL
+  // on a tab that no longer exists and leave the resolver nothing to pick. Global
+  // is the honest landing: the project being emptied cannot be the destination.
+  // Emptying the scope you are in is also the one close that ends your MEMBERSHIP
+  // of it, which is why this leaves via `leaveProjectScope` (it owns the context
+  // clear no loader can) rather than merely navigating.
+  //
+  // The Global row's X is the same verb: Global is always the CURRENT scope when
+  // its row shows, so it always leaves first — onto the all-scoped Home (see
+  // `globalHomeDock` for why not a bare one).
+  const closeScope = async (rowId: string, leave: DockPointer | null, close: () => Promise<void>) => {
+    setClosingId(rowId);
+    try {
+      if (leave) navigation.openDock(leave);
+      await close();
+    } catch (error) {
+      notify.error({
+        title: t`Couldn't close the tabs`,
+        message: error instanceof Error ? error.message : String(error),
+        id: `project-close-all:${rowId}`,
+      });
+    } finally {
+      setClosingId(null);
+    }
+  };
+  const handleCloseProject = async (bucket: TabProjectBucket) =>
+    closeScope(
+      bucket.projectId,
+      bucket.projectId === currentProjectId ? await leaveProjectScope(currentDock) : null,
+      bucket.closeAll,
+    );
+  const handleCloseGlobal = () => closeScope(GLOBAL_ROW_ID, globalHomeDock(), closeGlobal);
+
+  // Selecting the Global row re-focuses the Global scope (it's only shown while
+  // Global is already current). URL-first: resolve the most-recently-active
+  // global tab (or Home) and navigate; the loader re-scopes off the URL.
+  const handleSelectGlobal = async () => {
+    closeForNavigation();
+    navigation.openDock(await dockForGlobalEntry(currentDock));
+  };
+
+  // Quick tab switch from a row's submenu. URL-first: navigate to the tab's own
+  // dock; its loader re-scopes the project, so a tab in another project is a
+  // project switch too.
+  const handleSelectTab = (tab: Tab) => {
+    if (!tab.dockPointer) return;
+    closeForNavigation();
+    navigation.openDock(tab.dockPointer as DockPointer);
+  };
+
+  // The list only switches between projects that already own tabs; opening
+  // one that doesn't (or a brand-new folder) goes through the same
+  // OpenProjectComponent dialog the footer's Switch Project button uses. The
+  // dialog is rendered by the chip via {@link ProjectListOpenDialog}, outside
+  // the popover, since Radix unmounts the popover content on close.
+  const handleOpenProject = () => {
+    setOpen(false);
+    setProjectDialogOpen(true);
+  };
+
+  return {
+    open,
+    setOpen,
+    onCloseAutoFocus,
+    currentProjectId,
+    buckets,
+    projectTotal,
+    globalTabCount,
+    isGlobalScope,
+    projectName,
+    scopeLabel,
+    projectsLabel,
+    tabsLabel,
+    recoveringId,
+    closingId,
+    handleSelect,
+    handleSelectGlobal,
+    handleSelectTab,
+    handleCloseProject,
+    handleCloseGlobal,
+    projectDialogOpen,
+    setProjectDialogOpen,
+    handleOpenProject,
+  };
+}
+
+/**
+ * The "Open project" dialog the list's bottom button pops. The chip renders
+ * this once, as a sibling of its Popover (NOT inside the popover content,
+ * which unmounts on close and would take the dialog with it).
+ */
+export function ProjectListOpenDialog({ menu }: { menu: ProjectListMenu }) {
+  const { refetch: refetchProjects } = useProjects();
+  return (
+    <OpenProjectComponent
+      open={menu.projectDialogOpen}
+      onOpenChange={menu.setProjectDialogOpen}
+      onProjectChanged={() => void refetchProjects()}
+    />
+  );
+}
+
+/** The full-width "Open project" button that closes the project list. */
+function OpenProjectRow({ menu }: { menu: ProjectListMenu }) {
+  return (
+    <button
+      type="button"
+      onClick={menu.handleOpenProject}
+      className="flex w-full items-center justify-center gap-2 rounded border border-border px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+      data-testid="projects-counter-open-project"
+    >
+      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+      <Trans>Open project</Trans>
+    </button>
+  );
+}
+
+/** The two counts, one line each — the body of the chip's hover surface, so
+ *  which number is which is unmistakable. The caller names the scope above it. */
+export function ProjectCountsSummary({ menu }: { menu: ProjectListMenu }) {
+  return (
+    <>
+      <span className="text-muted-foreground">{menu.projectsLabel}</span>
+      <span className="text-muted-foreground">{menu.tabsLabel}</span>
+    </>
+  );
+}
+
+/**
+ * The open-projects count as the chip wears it on its trigger: hairline,
+ * project glyph, number, toned for the nav bar's runtime tint. Renders nothing
+ * at zero — a "0" advertises nothing.
+ */
+export function ProjectCountBadge({ menu }: { menu: ProjectListMenu }) {
+  if (menu.projectTotal === 0) return null;
+  const ProjectIcon = iconForType(Project.type);
+  return (
+    <span
+      className="inline-flex items-center gap-1 tabular-nums"
+      data-testid="project-count-badge"
+      aria-label={menu.projectsLabel}
+    >
+      <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-white/40" />
+      <ProjectIcon className="h-3 w-3 shrink-0 opacity-80" />
+      {menu.projectTotal}
+    </span>
+  );
+}
+
+/**
+ * The list itself — the `<ul>` that goes inside a `PopoverContent`. The caller
+ * owns the Popover and its content so the chip keeps its own testid, width
+ * and alignment. With nothing to list it says so, rather than opening onto an
+ * empty box.
+ *
+ * Hosts must disable open auto-focus on that content
+ * (`onOpenAutoFocus={(e) => e.preventDefault()}`): every row is a HoverCard
+ * trigger, which opens on focus, so auto-focusing the first row pops its tab
+ * submenu unhovered and leaves it stuck behind the row the pointer visits next.
+ */
+export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
+  const {
+    buckets,
+    currentProjectId,
+    isGlobalScope,
+    globalTabCount,
+    recoveringId,
+    closingId,
+    handleSelect,
+    handleSelectGlobal,
+    handleSelectTab,
+    handleCloseGlobal,
+    handleCloseProject,
+  } = menu;
+  const { t } = useLingui();
+  const openProjectRow = (
+    <div className="mt-1 border-t border-border pt-1">
+      <OpenProjectRow menu={menu} />
+    </div>
+  );
+
+  // Buckets in parent → subproject render order (a subproject is a project
+  // whose folder lives inside another open project's folder). Display-only
+  // nesting; see buildProjectTreeRows. Built here, not in the hook, so a closed
+  // chip never pays for it — Radix mounts this content only while open.
+  const treeRows = useMemo(() => buildProjectTreeRows(buckets), [buckets]);
+
+  // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
+  // a glyph for an entity type) — the same project icon every other surface shows.
+  // Global is a pseudo-scope (not an entity type), so it uses a plain `Globe` glyph.
+  const ProjectIcon = iconForType(Project.type);
+
+  if (!isGlobalScope && treeRows.length === 0) {
+    return (
+      <div>
+        <WorkspacePickerRow />
+        <div className="px-2 py-1.5 text-xs text-muted-foreground">
+          <Trans>No project has open tabs yet.</Trans>
+        </div>
+        {openProjectRow}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col">
+      <WorkspacePickerRow />
+      <ul className="flex flex-col">
+        {isGlobalScope ? (
+          // The Global scope row — violet-accented so it never reads as a
+          // regular project, and always the current scope when shown.
+          <li
+            key={GLOBAL_ROW_ID}
+            className="group flex w-full items-center gap-2 rounded bg-violet-500/10 pe-1 hover:bg-violet-500/15"
+          >
+            <button
+              type="button"
+              aria-current="true"
+              disabled={closingId === GLOBAL_ROW_ID}
+              onClick={() => void handleSelectGlobal()}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-start text-sm font-medium"
+              data-testid="projects-counter-global"
+            >
+              <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+              <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
+                <Trans>Global</Trans>
+              </span>
+              <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
+                {globalTabCount}
+              </span>
+            </button>
+            <CloseRowButton
+              closing={closingId === GLOBAL_ROW_ID}
+              label={t`Close all ${globalTabCount} global tabs`}
+              testId="projects-counter-close-global"
+              onClick={() => void handleCloseGlobal()}
+            />
+          </li>
+        ) : null}
+        {isGlobalScope && treeRows.length > 0 ? (
+          // Small mid-title separating the Global row from the project
+          // buckets below it.
+          <li key="__projects_title__" aria-hidden>
+            <SectionHairlineTitle>
+              <Trans>Active projects</Trans>
+            </SectionHairlineTitle>
+          </li>
+        ) : null}
+        {treeRows.map(({ bucket, guides }) => {
+          const isCurrent = bucket.projectId === currentProjectId;
+          const isRecovering = recoveringId === bucket.projectId;
+          const isMissing = bucket.state === 'missing';
+          // Live/loading rows lead with the per-type PROJECT icon from the
+          // TypeInfo registry (never a hardcoded glyph); a missing row
+          // swaps in its recover affordance instead.
+          let leadingIcon: React.ReactNode = (
+            <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+          );
+          if (isMissing) {
+            leadingIcon = isRecovering ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5 shrink-0" />
+            );
+          }
+          const isClosing = closingId === bucket.projectId;
+          // The `<li>` is the flex row; `group` lets the X reveal on row hover.
+          const rowClass = `group flex w-full items-center gap-2 rounded pe-1 hover:bg-muted ${
+            isCurrent ? 'bg-muted/60' : ''
+          }`;
+          const selectClass = `flex min-w-0 flex-1 items-center gap-2 rounded py-1.5 ps-2 text-left text-sm ${
+            isCurrent ? 'font-medium' : ''
+          } ${isMissing ? 'text-muted-foreground' : ''}`;
+          // The row's card leads with the SAME line the footer's project tip
+          // wears — path plus the wiki peek — so "where is this project" has one
+          // answer in both places. Then this list's own: the OS-terminal
+          // launchers (only with a resolved folder, so loading / missing buckets
+          // skip them) and the quick-tab-switch submenu. A card of its own, not
+          // WikiTip: WikiTip is a one-line help tip, this is a navigation menu.
+          const mountPath = bucket.project?.fs_storage_mount_path ?? null;
+          const folderMismatch = bucket.project?.folderNameMismatch ?? null;
+          const selectButton = (
+            <button
+              type="button"
+              aria-current={isCurrent ? 'true' : undefined}
+              disabled={bucket.state === 'loading' || isRecovering || isClosing}
+              onClick={() => void handleSelect(bucket)}
+              className={selectClass}
+            >
+              <RowGuides guides={guides} />
+              {leadingIcon}
+              <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+              {folderMismatch ? (
+                <span
+                  className="flex max-w-[9rem] shrink-0 items-center gap-1 rounded border border-amber-500/40 px-1 py-0.5 text-[10px] text-amber-600 dark:text-amber-400"
+                  title={t`The project is named "${bucketRowLabel(bucket)}" but its folder is "${folderMismatch}"`}
+                  data-testid={`project-folder-mismatch-${bucket.projectId}`}
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{folderMismatch}</span>
+                </span>
+              ) : null}
+              {isMissing && !isRecovering ? (
+                <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <Trans>recover</Trans>
+                </span>
+              ) : null}
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                {bucket.tabCount}
+              </span>
+            </button>
+          );
+          // The tip anchors on the whole ROW, not the select button: opening to
+          // the right of the button would lay the card over the close-all X.
+          return (
+            <HoverCard key={bucket.projectId} openDelay={200} closeDelay={100}>
+              <HoverCardTrigger asChild>
+                <li className={rowClass}>
+                  {selectButton}
+                  {/* Close-all-in-this-project. Emptying the bucket is what removes
+                  the row: the menu is built from open tabs, so a project with
+                  none simply stops being listed.
+                  Reachable on a MISSING row too — not as the only way out (the
+                  backend reaper hard-deletes a tab whose project cannot be
+                  resolved on the next tab list), but because `missing` is not
+                  only ever junk: it also latches when `Project.getById` fails
+                  transiently, and the reaper deliberately fails open on a
+                  lookup error. A user who wants those rows gone should not have
+                  to wait on a sweep that may correctly decline to run. */}
+                  <CloseRowButton
+                    closing={isClosing}
+                    disabled={isRecovering}
+                    label={t`Close all ${bucket.tabCount} tabs in this project`}
+                    testId={`projects-counter-close-${bucket.projectId}`}
+                    onClick={() => void handleCloseProject(bucket)}
+                  />
+                </li>
+              </HoverCardTrigger>
+              {/* Top-aligned to the row, with the toolbar as a row-high (h-8)
+                  first line: the launchers sit on the row's own horizontal
+                  center, so reaching them is a straight move right. The side
+                  offset clears the popover's padding + border; the align offset
+                  its top border. pointer-events-auto: the card portals to
+                  <body>, which a modal Radix layer marks pointer-events:none. */}
+              <HoverCardContent
+                side="right"
+                align="start"
+                sideOffset={6}
+                alignOffset={-1}
+                className="pointer-events-auto flex w-auto max-w-md flex-col gap-1 px-2 pb-1.5 pt-0"
+              >
+                <div className="flex h-8 shrink-0 items-center gap-0.5">
+                  {mountPath ? (
+                    <>
+                      <ProjectLaunchBar projectPath={mountPath} />
+                      <ProjectPathActions projectId={bucket.projectId} projectPath={mountPath} />
+                    </>
+                  ) : (
+                    <span className="truncate text-xs text-muted-foreground">{bucketDisplayName(bucket)}</span>
+                  )}
+                  <WikiButton
+                    wikiword="Flowpad project" /* the page the footer's project tip opens */
+                    label={t`What is a Flowpad project?`}
+                    className="ms-auto ps-1.5"
+                  />
+                </div>
+                {mountPath ? <span className="truncate px-1 text-xs text-muted-foreground">{mountPath}</span> : null}
+                <ProjectTabsSubmenu projectId={bucket.projectId} onSelectTab={handleSelectTab} />
+              </HoverCardContent>
+            </HoverCard>
+          );
+        })}
+      </ul>
+      {openProjectRow}
+    </div>
+  );
+}

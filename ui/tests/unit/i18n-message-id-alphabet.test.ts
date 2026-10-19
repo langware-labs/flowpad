@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
  * as their hash ("N40H-G", "y_0uwd", …) in the Electron build.
  *
  * The assertions deliberately use strings whose canonical id contains a `+` and
- * a `/`. An all-alphanumeric id (e.g. "Inbox" → "Gp4Yi6") is byte-identical in
+ * a `/`. An all-alphanumeric id (e.g. "Stream Inbox" → "ywdg1o") is byte-identical in
  * both alphabets and would NOT detect a drift — so those must not be the guard.
  */
 describe('lingui message-id generation (swc-plugin ⇄ catalog compiler)', () => {

@@ -1,0 +1,259 @@
+/**
+ * Data sources — the configured pullers, and a way to add one.
+ *
+ * Global by construction: `scope: []`, because a DataSource is a property of the
+ * instance, not of a project (flow_sdk/builtin/data_source.py says so, and the
+ * scheduler tick that polls it has no request context to resolve a scope from).
+ * Switching project must not change what this shows, which is also why the view
+ * is deliberately absent from SCOPE_SEEDED_VIEWS.
+ *
+ * This owns both per-card dialogs — replay and delete are one instance each,
+ * driven by the selected source, rather than 2N mounted with the grid. That
+ * "list holds a nullable pending target, rows hold no dialog" shape is the
+ * house pattern (connections-manager, chats-navigator, stream-inbox-view, …).
+ *
+ * Before this, sources rendered only inside the dev-only Signals pane and could
+ * not be created from the UI at all.
+ */
+import { useCallback, useMemo, useState } from 'react';
+import { DataSource } from '@sdk';
+import { Eye, Plus, Waypoints } from 'lucide-react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { DataSourceRow, HEADER_INSET, HEADER_ROW, ROW_GRID } from './DataSourceRow';
+import { useSourceDelete } from './use-source-delete';
+import { sourcesQuery, useSourceSpecs } from './use-source-specs';
+import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
+import { Sparkles } from 'lucide-react';
+import { cn } from '@src/lib/utils';
+import { DataSourceDialog } from './DataSourceDialog';
+import { Button } from '@src/components/ui/button';
+import { ReplayDialog } from './ReplayDialog';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { openChannels, openDriver, parseDataSourcesPointer } from './data-sources-pointer';
+import { DataDriverPage, DataDriversList } from './DataDriversView';
+import { MessageChannelsList } from './MessageChannelsList';
+import { DataSourcePage } from './DataSourcePage';
+import { useUiActionRequest } from '@src/navigation/ui-actions';
+
+export function DataSourcesView() {
+  const { t } = useLingui();
+  const { start: startVibe, installDialog } = useStartVibeSession();
+  const { data: sources = [], refetch } = useEntitiesQuery<DataSource>(sourcesQuery);
+  const { specFor } = useSourceSpecs();
+  const { navigation, currentDock } = useDockNavigation();
+  // What is shown comes from the URL: the sources, the drivers, or one driver.
+  const route = parseDataSourcesPointer(currentDock?.pointer);
+  // The drivers are the templates behind every source — a look under the hood, so Advanced only.
+  const advanced = useIsAdvanced();
+
+  // A separate flag, not the `null = closed` idiom its two neighbours use:
+  // `editing === null` is the legitimate "add new" state, so it cannot double
+  // as closed.
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editing, setEditing] = useState<DataSource | null>(null);
+  const [replaying, setReplaying] = useState<DataSource | null>(null);
+  const Icon = iconForType(DataSource.type);
+
+  const openAdd = useCallback(() => {
+    setEditing(null);
+    setEditorOpen(true);
+  }, []);
+  // "connect a data source" (smart navigation): the same editor the Add button opens.
+  useUiActionRequest(['new-data-source-dialog'], openAdd);
+
+  const openEdit = useCallback((source: DataSource) => {
+    setEditing(source);
+    setEditorOpen(true);
+  }, []);
+
+  // A delete removes a row rather than changing one, and the live query
+  // watches for writes — so this is the one mutation needing a re-read.
+  // Deleted from its own page: there is nothing left to show there, so back to the list.
+  const pageId = route.section === 'source' ? route.id : null;
+  const onDeleted = useCallback(
+    (gone: DataSource) => {
+      void refetch();
+      if (gone.id === pageId) navigation.openDock(DockPointer.forDataSources());
+    },
+    [refetch, pageId, navigation],
+  );
+  const { deleting, setDeleting, remove, confirm } = useSourceDelete(onDeleted);
+
+  // Newest first: the source you just added is the one you came to look at.
+  const sorted = useMemo(
+    () =>
+      [...sources].sort(
+        (a, b) =>
+          (b.created_date ? new Date(b.created_date).getTime() : 0) -
+            (a.created_date ? new Date(a.created_date).getTime() : 0) || (a.name || '').localeCompare(b.name || ''),
+      ),
+    [sources],
+  );
+
+  // What the URL addresses: one source's page, one driver, the drivers list, or the sources themselves.
+  const pageSource = route.section === 'source' ? (sources.find((s) => s.id === route.id) ?? null) : null;
+  const body =
+    route.section === 'source' ? (
+      <DataSourcePage
+        source={pageSource}
+        id={route.id}
+        tab={route.tab}
+        conversation={route.conversation}
+        thread={route.thread}
+        files={route.files}
+        spec={pageSource ? specFor(pageSource.provider) : null}
+        onEdit={openEdit}
+        onReplay={setReplaying}
+        onDelete={setDeleting}
+      />
+    ) : route.section === 'channels' ? (
+      <MessageChannelsList />
+    ) : route.section === 'drivers' ? (
+      route.driver ? (
+        <DataDriverPage name={route.driver} sources={sources} />
+      ) : (
+        <>
+          <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
+            <Trans>
+              The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code
+              and its tests. Pick one to see its config and the sources made from it.
+            </Trans>
+          </p>
+          <DataDriversList sources={sources} />
+        </>
+      )
+    ) : (
+      <>
+        <p className="mb-5 max-w-2xl text-sm text-muted-foreground">
+          <Trans>
+            One per remote feed or account. The poller syncs each on the heartbeat and turns what it finds into records
+            you can search, read and build flows on.
+          </Trans>
+        </p>
+
+        {sources.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+            <p className="text-sm text-muted-foreground">
+              <Trans>No sources yet. Connect a feed, a mailbox or a channel and the poller takes it from there.</Trans>
+            </p>
+            <div className="flex items-center gap-2">
+              <Button className="gap-1.5" onClick={openAdd}>
+                <Plus className="size-4" />
+                <Trans>New source</Trans>
+              </Button>
+              {/* The from-scratch entry: the data-integrations persona connects a source,
+                  shows a sample and agrees the output shape — the whole loop in one chat. */}
+              <Button
+                variant="outline"
+                className="gap-1.5"
+                data-testid="data-sources-ask-agent"
+                onClick={() =>
+                  startVibe(t`Connect a data source for me and help me define what I want out of each item.`)
+                }
+              >
+                <Sparkles className="size-4" />
+                <Trans>Ask the agent to connect one</Trans>
+              </Button>
+              {installDialog}
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <div className={cn(ROW_GRID, HEADER_ROW, HEADER_INSET)}>
+              <span>
+                <Trans>Source</Trans>
+              </span>
+              <span>
+                <Trans>Status</Trans>
+              </span>
+              <span>
+                <Trans>Synced</Trans>
+              </span>
+              <span>
+                <Trans>Next poll</Trans>
+              </span>
+              <span className="text-end">
+                <Trans>Actions</Trans>
+              </span>
+            </div>
+            {sorted.map((source) => (
+              <DataSourceRow
+                key={source.id}
+                source={source}
+                spec={specFor(source.provider)}
+                onEdit={openEdit}
+                onReplay={setReplaying}
+                onDelete={setDeleting}
+              />
+            ))}
+          </div>
+        )}
+      </>
+    );
+
+  return (
+    <div data-testid="data-sources-view" className="flex h-full flex-col overflow-y-auto p-6">
+      <header className="mb-1 flex items-center gap-2">
+        <Icon className="size-5 text-muted-foreground" />
+        <h1 className="text-lg font-semibold">
+          <Trans>Data sources</Trans>
+        </h1>
+        {sources.length > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{sources.length}</span>
+        )}
+        {route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`Every message channel and where its messages arrive`}
+            data-testid="data-sources-view-channels"
+            onClick={() => openChannels(navigation)}
+          >
+            <Waypoints className="size-3.5" />
+            <Trans>Channels</Trans>
+          </Button>
+        )}
+        {advanced && route.section === 'sources' && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1.5 px-2 text-muted-foreground"
+            title={t`View the drivers every source is made from`}
+            data-testid="data-sources-view-drivers"
+            onClick={() => openDriver(navigation)}
+          >
+            <Eye className="size-3.5" />
+            <Trans>Drivers</Trans>
+          </Button>
+        )}
+        {/* The primary act of this screen, where every list screen keeps it:
+            top right, before any row — not trailing the grid as a tile. */}
+        <Button className="ms-auto gap-1.5" onClick={openAdd} data-testid="add-data-source">
+          <Plus className="size-4" />
+          <Trans>New source</Trans>
+        </Button>
+      </header>
+      {body}
+
+      <DataSourceDialog open={editorOpen} onOpenChange={setEditorOpen} editing={editing} />
+
+      <ReplayDialog source={replaying} open={!!replaying} onOpenChange={(next) => !next && setReplaying(null)} />
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(next) => !next && setDeleting(null)}
+        variant="destructive"
+        {...confirm}
+        onConfirm={() => deleting && void remove(deleting)}
+      />
+    </div>
+  );
+}
+
+export default DataSourcesView;

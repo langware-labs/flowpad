@@ -95,7 +95,7 @@ export function LearningCard({
       {isInProgress && workerSessionId && (latestEvent || eventCount > 0) && (() => {
         const EvtIcon = latestEvent ? getEventIcon(latestEvent.event_type, latestEvent) : null;
         const evtColor = latestEvent ? getEventColor(latestEvent) : '';
-        const oneLiner = latestEvent ? getOneLiner(latestEvent.hook_data) : '';
+        const oneLiner = latestEvent ? getOneLiner(latestEvent) : '';
         return (
           <button
             type="button"

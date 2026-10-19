@@ -1,45 +1,44 @@
 """cookie-gate — admission control. Locks this instance to callers who can
-present its secret.
+present a credential the hub stands behind.
 
 Unarmed (no secret stored) every request passes. This is the default and every
 desktop install; the gate must be provably inert there.
 
-Armed, nothing is answered without the secret — not the UI, not static, not the
+Armed, nothing is answered without a credential — not the UI, not static, not the
 API, not a WebSocket. **No path is exempt**, including ``/health/status``,
 ``/auth/login_callback``, and ``/auth/gate``: the gate is not "block everything
-except these URLs", it is "block anything that cannot present the secret", and
+except these URLs", it is "block anything that cannot present a credential", and
 every legitimate caller can. A path exemption would be a permanent hole; this is
 a single rule with none.
 
-Three transports for one credential — not three special cases:
+Two credentials, three transports — not three special cases:
 
-* cookie ``__Host-cookie-gate`` — the browser, on every request after its first
-* header ``X-Cookie-Gate``      — machine callers (workers)
-* query  ``?cookie-gate=``      — the hub's loopback curl, and the browser's
-                                  *first* contact, which is necessarily
-                                  cookie-less (the callback that armed the
-                                  instance was made by curl inside the sandbox,
-                                  so its Set-Cookie went to curl)
+* header ``X-Cookie-Gate``   — the SECRET itself, from a machine that holds it: a worker on this
+                               box, the hub's relay, the hub's loopback curl. Never a browser.
+* cookie ``__Host-grant``    — a GRANT (``server/grants.py``): who may enter the ``system`` door,
+                               signed by this process. The browser, on every request after its first.
+* query  ``?ticket=``        — the hub's TICKET for the system door, signed with the secret: the
+                               browser's *first* contact, which is necessarily cookie-less. It is
+                               what ``GET /auth/gate`` trades for the cookie, and it admits the one
+                               request it rides on, for a minute.
 
-This middleware only decides pass/deny. Trading the secret for a cookie is
+The secret never rides a URL or a cookie: a copied link is a ticket that dies in a
+minute and names one caller, not the box's one key for everyone forever.
+
+This middleware only decides pass/deny. Trading a ticket for a cookie is
 ``GET /auth/gate`` (see ``flow_sdk/server/routes/auth.py``) — a route, because
-the caller states its intent by choosing it. Doing the exchange here instead
-would mean guessing that intent from request headers, and guessing wrong for the
-hub's re-login curl would swallow the login while returning the 302 that
-``_workspace_login`` reads as success.
+the caller states its intent by choosing it.
 
 Registered LAST in ``FlowServer.create`` so it runs FIRST — ``add_middleware`` is
 LIFO. Rejecting here happens before ``RequestTransactionMiddleware`` opens a
 transaction or attaches the ``@local`` user.
 
 Pure ASGI, not ``BaseHTTPMiddleware``, because it must see WebSocket scopes.
-``RequestTransactionMiddleware`` bails on non-HTTP scopes, which is exactly why
-no WS handshake in this app is authenticated today — cookies do ride the
-same-origin WS handshake, but nothing was there to check them.
 """
 
 from __future__ import annotations
 
+import logging
 import secrets
 
 from starlette.requests import HTTPConnection
@@ -47,11 +46,14 @@ from starlette.responses import HTMLResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketClose
 
-from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+from flow_sdk.instance_settings import cookie_gate
+from flow_sdk.server import grants
+from flow_sdk.server.service_proxy import SYSTEM_AUDIENCE
 
-COOKIE_NAME = "__Host-cookie-gate"
+#: The SECRET itself, from a machine that holds it. Browsers carry ``grants.COOKIE_NAME`` / ``grants.TICKET_PARAM``.
 HEADER_NAME = "x-cookie-gate"
-QUERY_NAME = "cookie-gate"
+
+logger = logging.getLogger(__name__)
 
 # Fully inline — static is gated too, so an external stylesheet here would itself
 # be Forbidden. The audience is a human who clicked a stale link, not a script
@@ -82,7 +84,7 @@ _FORBIDDEN_HTML = """<!doctype html>
 
 
 class CookieGateMiddleware:
-    """Gate every HTTP request and WebSocket handshake on the cookie-gate secret."""
+    """Gate every HTTP request and WebSocket handshake on a credential for the system door."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -92,7 +94,7 @@ class CookieGateMiddleware:
             await self.app(scope, receive, send)
             return
 
-        secret = get_cookie_gate()
+        secret = cookie_gate.get_cookie_gate()
         if secret is None:
             # Unarmed: the default. No connection is built, nothing is parsed.
             await self.app(scope, receive, send)
@@ -105,6 +107,13 @@ class CookieGateMiddleware:
         await self._deny(scope, receive, send)
 
     async def _deny(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Type and path only. What the caller presented is a credential (or a guess
+        # at one) and does not belong in a log.
+        logger.warning(
+            "cookie-gate: refused %s %s (no valid credential presented)",
+            scope["type"],
+            scope.get("path", "?"),
+        )
         if scope["type"] == "websocket":
             # Closing before accept: the server turns this into an HTTP 403 on
             # the handshake, which is the correct rejection for a WS upgrade.
@@ -114,19 +123,17 @@ class CookieGateMiddleware:
 
 
 def _presents(conn: HTTPConnection, secret: str) -> bool:
-    """Whether this caller carries the secret, by any of the three transports.
+    """Whether this caller holds a credential for the system door, by any of the three transports.
 
-    Each is checked independently rather than collapsed into ``a or b or c``.
-    ``or`` yields the first *present* value, so a stale cookie would short-circuit
-    and a valid ``?cookie-gate=`` could never override it — rotating the secret
-    would permanently lock out every browser holding an old cookie, with the one
-    link that should rescue them being the thing that gets ignored.
+    Each is checked independently rather than collapsed into ``a or b or c``: a stale
+    cookie must not veto a valid header, and a grant from before a restart must not
+    veto the fresh ticket that is there to replace it.
     """
-    for presented in (
-        conn.cookies.get(COOKIE_NAME),
-        conn.headers.get(HEADER_NAME),
-        conn.query_params.get(QUERY_NAME),
-    ):
-        if presented and secrets.compare_digest(presented, secret):
-            return True
-    return False
+    presented = conn.headers.get(HEADER_NAME)
+    if presented and secrets.compare_digest(presented, secret):
+        return True
+    grant = grants.read_grant(conn.cookies.get(grants.COOKIE_NAME), secret=secret)
+    if grant is not None and grant.audience == SYSTEM_AUDIENCE:
+        return True
+    ticket = grants.read_ticket(conn.query_params.get(grants.TICKET_PARAM), secret=secret)
+    return ticket is not None and ticket.audience == SYSTEM_AUDIENCE

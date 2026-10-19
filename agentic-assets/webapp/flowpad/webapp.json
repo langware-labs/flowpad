@@ -1,0 +1,26 @@
+{
+  "name": "flowpad",
+  "title": "Flowpad (dev, HMR)",
+  "description": "This checkout's own Flowpad: Vite with HMR on 4098, backend (instance oss) on 9008.",
+  "mounts": [
+    {
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "LINGUI_CONFIG=$PWD/../../../ui/lingui.config.ts ../../../ui/node_modules/.bin/vite ../../../ui --host 127.0.0.1 --port {port} --strictPort",
+        "ports": { "local": { "port": 4098 } }
+      }
+    }
+  ],
+  "services": [
+    {
+      "name": "api",
+      "protocol": { "spec_kind": "api.rest" },
+      "serving": {
+        "type": "proxy",
+        "start_cmd": "LOCAL_SERVER_PORT={port} uv run --project ../../.. -m flow_sdk.server.run",
+        "ports": { "local": { "port": 9008 } },
+        "health": "/health/status"
+      }
+    }
+  ]
+}

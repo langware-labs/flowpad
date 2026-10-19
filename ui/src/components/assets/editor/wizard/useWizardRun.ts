@@ -1,0 +1,243 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ActivityProgressSpec } from '@sdk/activity';
+import { deepestRunning, isTerminal } from '@sdk/activity';
+import { ExitCode, type Wizard, type WizardResult, type WizardRunDetail } from '@sdk';
+
+import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
+
+import { LIVE_STATE } from './wizard-doc';
+
+/** ONE step's answer — the op's own result (a `CliResult`, a `PromptResult`, an
+ *  `AskResult`, a nested `WizardResult`) — with the step it belongs to. */
+export type WizardStepAnswer = NonNullable<WizardResult['steps']>[string] & { step_id: string };
+
+/** A wizard that has never run has no answers — as a STABLE identity, so the
+ *  memo below is not invalidated on every render by a fresh `[]`. */
+const NO_ANSWERS: WizardStepAnswer[] = [];
+
+/** What a step's answer MEANS, in one word. Derived here from the answer's own
+ *  fields, never stored. A NOT_YET is told apart by the facts the answer carries
+ *  — it used to be "failed" whatever became of it, so a step that timed out, one
+ *  a person cancelled and one that never started all read as a failure. */
+export function stepStatus(
+  answer: Pick<WizardStepAnswer, 'exit_code' | 'ran' | 'timed_out' | 'busy' | 'cancelled'> | null | undefined,
+): string {
+  if (!answer) return '';
+  if (answer.exit_code === ExitCode.NOT_APPLICABLE) return 'not_applicable';
+  if (answer.exit_code === ExitCode.OK) return answer.ran === false ? 'satisfied' : 'completed';
+  if (answer.exit_code === ExitCode.REFUSED) return 'refused';
+  if (answer.exit_code === ExitCode.NOT_FOUND) return 'not_found';
+  if (answer.busy) return 'busy'; //               another run held the slot — try later
+  if (answer.timed_out) return 'timed_out'; //      the wait ended; the work may still be going
+  if (answer.cancelled) return 'cancelled'; //      a person declined to answer
+  if (answer.ran === false) return 'not_started'; // nothing ran: no harness, spawn failed
+  return 'failed';
+}
+
+function answersOf(result: WizardResult | null | undefined): WizardStepAnswer[] {
+  return Object.entries(result?.steps ?? {}).map(([step_id, answer]) => ({ ...answer, step_id }));
+}
+
+/** Shape of ONE op's own answer — just the fields `rungTrail` reads, present
+ *  on a CliResult/PromptResult regardless of which one a step settled on. */
+interface OpAnswerShape {
+  ran?: boolean;
+  cancelled?: boolean;
+  executor?: string | null;
+  steps?: Record<string, OpAnswerShape>;
+}
+
+/** Which rungs a step's goal actually went through, oldest first — derived
+ *  from the SAME durable answer already shown, never a new fetch or a live
+ *  subscription. Persists after a run ends, which is the point: "validated"
+ *  alone means the check already passed and nothing else ran; "validated,
+ *  cli" means the base command is what got there; "validated, cli, agent"
+ *  means the command alone did not and the agent fallback was reached
+ *  (whether or not it, in turn, succeeded — the step's own icon says that).
+ *
+ * A step here is usually itself a nested wizard (ask, then install) — the
+ * ladder belongs to "install", the goal these rungs are all attempts AT, not
+ * to "ask", which is a different question entirely.
+ */
+export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[] {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  if (!install) return [];
+  const trail = ['validation'];
+  if (install.ran) trail.push('cli');
+  if (install.executor) trail.push('agent');
+  return trail;
+}
+
+/** Whether the PERSON said no: the step's own question was declined ("Install Claude Code?" →
+ *  Skip). A decision, not a failure — nothing broke, so the row must not read as an error. The
+ *  step is usually a nested wizard (ask, then install), so the decline sits on its `ask` answer. */
+export function declinedByUser(outcome: WizardStepAnswer | null | undefined): boolean {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  return Boolean(asShape?.cancelled || asShape?.steps?.ask?.cancelled);
+}
+
+/** The agent rung's own executor typeid (``agentic_process-<id>``), or ``null`` when the step
+ *  never reached that rung — the process to resolve for "which harness, which model actually
+ *  ran" (see {@link AgentRungLabel} in `WizardViewer.tsx`). Same extraction as {@link rungTrail},
+ *  kept separate so a caller that only wants the id is not forced through the whole trail. */
+export function agentExecutorOf(outcome: WizardStepAnswer | null | undefined): string | null {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  return install?.executor ?? null;
+}
+
+/** What a step's live line says while it is parked on a question to the person
+ *  (`compute_op/runner.py::_ask` — "<label>: waiting for you…"). Nothing is running then,
+ *  so the row shows no spinner until the person answers. */
+export const WAITING_FOR_PERSON = /waiting for you/i;
+
+/** How long a running step's own activity node can sit with no new tick before
+ *  it is worth telling someone — a real install (`apt-get`) legitimately takes
+ *  a while, but an agent call that has printed nothing for this long is the
+ *  same shape as the rate-limit/network hangs this was written after seeing.
+ *  Three minutes: a silent winget/MSI install prints nothing for 1–2 minutes and is
+ *  not stuck. A Windows permission prompt is not counted here at all — the backend
+ *  says "waiting for you" while one is open (`runner.py::_permission_prompt_open`). */
+export const STUCK_AFTER_MS = 180_000;
+
+/** How long a step in flight has gone without a tick, in ms — 0 when it is not in flight (it has
+ *  answered, or has not started) or is waiting on a person, who is not a hang. Told apart from a
+ *  plain "still running" by TIME, not by a status the backend does not have: the node's own last
+ *  tick is the same signal the footer chip uses to grey a stalled row. */
+export function silentForMs(live: ActivityProgressSpec | null, outcome: unknown, now: number): number {
+  if (outcome || !live) return 0;
+  if (WAITING_FOR_PERSON.test(live.current ?? '')) return 0;
+  if (LIVE_STATE[live.state]?.status !== 'running') return 0;
+  const tickAt = Date.parse(live.updated_at || live.started_at || '');
+  return Number.isNaN(tickAt) ? 0 : now - tickAt;
+}
+
+/** One step, as the debugger sees it: what it is doing now, and what it answered. */
+export interface WizardRunStep {
+  step_id: string;
+  live: ActivityProgressSpec | null;
+  outcome: WizardStepAnswer | null;
+}
+
+/**
+ * The two halves of "what is this run doing", joined on `step_id`.
+ *
+ * They are genuinely different sources and neither subsumes the other:
+ *
+ * * **Live** is the Activity tree — present only while a run is in flight. A
+ *   trigger-fired run is instance-scoped by design (so it reaches the footer
+ *   chip too), but this hook watches BOTH scopes for the same path (see
+ *   `pickLiveActivity`), so an unattended run shows up here just as well as one
+ *   started from this viewer.
+ * * **Durable** is `run.json`, stamped when a run settles. It is the only
+ *   record of an unattended run, and the only place step output exists.
+ *
+ * So: live wins while the root is non-terminal (it is the fresher of the two),
+ * and the durable answer wins once it settles. Step output is fetched on the
+ * terminal EDGE and on demand — never polled.
+ */
+export function useWizardRun(wizard: Wizard) {
+  // The path is a computed field (re-deriving its slug convention here is how
+  // a viewer ends up subscribed to a tree nothing writes to) — but the SUBJECT
+  // differs by who started the run. `run_action` scopes an attended run to the
+  // wizard's own typeid, so the tree reaches this viewer's watchers. An
+  // unattended run (the first-run trigger) scopes to NOTHING on purpose — see
+  // `Wizard.run` — so it reaches the footer chip instead, whether or not this
+  // page is even open. Both land under the SAME path, which already carries
+  // this wizard's own id, so listening for both here can never cross-show a
+  // different wizard's run: whichever one is actually live wins.
+  const scoped = useActivitySpec(wizard.activity_path ?? '', wizard.typeId.toString());
+  const unattended = useActivitySpec(wizard.activity_path ?? '', undefined);
+  const root = pickLiveActivity(scoped, unattended);
+  const [detail, setDetail] = useState<WizardRunDetail | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  // Refs, not state: this tracks an EDGE, and putting it in state would make
+  // observing the edge itself cause the re-render that re-observes it.
+  const wasLive = useRef(false);
+
+  const loadDetail = useCallback(async () => {
+    setLoadingDetail(true);
+    try {
+      setDetail(await wizard.runDetail());
+    } catch {
+      // The debugger must not be the one screen you cannot open to find out
+      // what went wrong; an unreadable record leaves the durable answers from
+      // `run_state` showing, without their output.
+      setDetail(null);
+    } finally {
+      setLoadingDetail(false);
+    }
+  }, [wizard]);
+
+  // The terminal edge: a run we watched go live has just finished, so its
+  // output now exists on disk. One fetch, at the moment there is something new to fetch.
+  const live = Boolean(root && !isTerminal(root));
+  useEffect(() => {
+    if (live) wasLive.current = true;
+    else if (wasLive.current) {
+      wasLive.current = false;
+      void loadDetail();
+    }
+  }, [live, loadDetail]);
+
+  // `run_state` is AUTHORITATIVE for what each step answered: it rides the
+  // entity, so it is refreshed by every run and every reset. `run-detail` is
+  // fetched on a gesture and can therefore be older than the entity — letting
+  // it win wholesale meant an empty detail left over from a reset hid the
+  // answers of the run that followed. So detail contributes only what
+  // `strip_heavy` removes on its way to the entity — the step's OUTPUT —
+  // matched per step.
+  const recordedResult = wizard.run_state?.result;
+  const recorded = useMemo(() => (recordedResult ? answersOf(recordedResult) : NO_ANSWERS), [recordedResult]);
+  const detailed = detail?.result?.steps;
+  const outcomes: WizardStepAnswer[] = useMemo(() => {
+    if (!detailed) return recorded;
+    return recorded.map((o) => {
+      const from = detailed[o.step_id];
+      // Only the stripped fields are taken back: everything else on the
+      // entity's answer is fresher than this fetch.
+      return from
+        ? {
+            ...o,
+            stdout: from.stdout,
+            stderr: from.stderr,
+            text: from.text,
+            value: from.value,
+            check: from.check ?? o.check,
+          }
+        : o;
+    });
+  }, [recorded, detailed]);
+
+  /** Steps in DOCUMENT order — the order they will run, which is the order a
+   *  person reading the editor beside this expects. Answers for steps the
+   *  document no longer has are returned separately rather than dropped. */
+  const join = useCallback(
+    (stepIds: string[]): { steps: WizardRunStep[]; orphaned: WizardStepAnswer[] } => {
+      const byId = new Map(outcomes.map((o) => [o.step_id, o]));
+      const children = root?.children ?? [];
+      const steps = stepIds.map((step_id) => {
+        const node = children.find((child) => child.name === step_id) ?? null;
+        // A step here is usually itself a nested wizard (ask, then install),
+        // so ITS own `current` is never set — only `label` is. The granular
+        // phase text ("checking…", "…: cli", "…: agent") is written on
+        // whichever descendant is actually doing the work right now, so surface
+        // THAT node instead of the one that merely carries this step's name.
+        const active = node ? deepestRunning(node) : null;
+        return {
+          step_id,
+          live: active ?? node,
+          outcome: byId.get(step_id) ?? null,
+        };
+      });
+      const known = new Set(stepIds);
+      return { steps, orphaned: outcomes.filter((o) => !known.has(o.step_id)) };
+    },
+    [outcomes, root],
+  );
+
+  // Memoized as a whole: an unstable object here would defeat every
+  // `useCallback` downstream that lists it as a dependency.
+  return useMemo(() => ({ live, join, loadDetail, loadingDetail }), [live, join, loadDetail, loadingDetail]);
+}

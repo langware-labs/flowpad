@@ -1,0 +1,316 @@
+"""Who a channel reply is addressed to.
+
+The bug this pins was found live: a reply sent from the UI arrived back in our
+own mailbox. Our sent copies are ingested into the same thread, so "the newest
+message in this conversation" is frequently one we wrote — and replying to that
+one mails us instead of the correspondent.
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+
+from flow_sdk.builtin.source_item import EmailMessageSpec, SlackMessageSpec
+from flow_sdk.schema.data_spec.message_sender_spec import MessageSender
+from flow_sdk.stream_inbox.outbound import ChannelSendUnavailable, resolve_reply_target
+
+LOCAL_USER_ID = "9f0b1c2d-3e4f-4a5b-8c7d-6e5f4a3b2c1d"
+AGENT_ID = "5a1c9e77-0b2d-4f6a-9c3e-1d8b7a6f5e4c"
+AGENT_SENDER = MessageSender.agent(AGENT_ID).wire_id
+CONVERSATION = "023f16d6-ba1d-5f8b-8337-78bf9a2e9264"
+
+
+def _message(sender_id: str, item_id: str, kind: str = "agentmail", source_id: str = "ds-1"):
+    # Two halves, mirroring the entity: `origin` travels, `origin_local` does not.
+    return SimpleNamespace(
+        sender=MessageSender.from_wire(sender_id),
+        origin=SimpleNamespace(kind=kind),
+        origin_local=SimpleNamespace(data_source_id=source_id, source_item_id=item_id),
+    )
+
+
+def _shared_message(sender_id: str, kind: str = "agentmail"):
+    return SimpleNamespace(
+        sender=MessageSender.from_wire(sender_id),
+        origin=SimpleNamespace(kind=kind),
+        origin_local=None,
+    )
+
+
+def _item(item_id: str, author: str, subject: str, origin_namespace: str = ""):
+    # The origin namespace's trailing component is the CHANNEL on a chat record —
+    # what a channel-addressed driver replies to, and what an author-addressed one ignores.
+    return SimpleNamespace(
+        id=item_id, author_external_id=author, name=subject,
+        thread_key="t-1", external_id=f"<{item_id}@mail>",
+        origin_namespace=origin_namespace,
+    )
+
+
+@pytest.fixture
+def wire(monkeypatch):
+    """Stub the four reads `resolve_reply_target` makes."""
+    state: dict = {"messages": [], "items": {}, "sends": True, "source": SimpleNamespace(
+        id="ds-1", provider="agentmail", config={}),
+        # Overridable so a test can run with NO local user row — the state a
+        # process that never ran bootstrap is actually in.
+        "local": SimpleNamespace(id=LOCAL_USER_ID)}
+
+    async def _get_all(_query):
+        return state["messages"]
+
+    async def _get_local():
+        return state["local"]
+
+    async def _source_one(_q):
+        return state["source"]
+
+    async def _item_one(query):
+        return state["items"].get(query.get("id"))
+
+    monkeypatch.setattr("flow_sdk.builtin.flow_message.FlowMessage.get_all", _get_all)
+    monkeypatch.setattr("flow_sdk.builtin.user.User.get_local", _get_local)
+    # The cloud identity comes from the login state, not the DB — pinned so the
+    # developer's own hub login never leaks in. A test sets `state["cloud"]`.
+    state["cloud"] = None
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: state["cloud"] is not None)
+    monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": state["cloud"]})
+    state["address"] = []
+
+    async def _conversation_one(_q):
+        return SimpleNamespace(address=state["address"])
+
+    monkeypatch.setattr("flow_sdk.builtin.conversation.Conversation.get_one", _conversation_one)
+    monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", _source_one)
+    monkeypatch.setattr("flow_sdk.builtin.source_item.SourceItem.get_one", _item_one)
+    # A real driver answers `outbound_spec()`; the default is the email rule.
+    # A test flips `state["spec"]` to model a channel-addressed provider.
+    state["spec"] = EmailMessageSpec
+
+    monkeypatch.setattr(
+        "flow_sdk.builtin.data_driver.DataDriver.loaded",
+        lambda _p: SimpleNamespace(sends=state["sends"], outbound_spec=lambda _source: state["spec"]),
+    )
+    return state
+
+
+class TestItRepliesToTheCorrespondent:
+    @pytest.mark.asyncio
+    async def test_our_own_newest_message_is_skipped(self, wire):
+        # Newest first: our sent copy, then the mail we are actually answering.
+        wire["messages"] = [
+            _message(LOCAL_USER_ID, "mine"),
+            _message("agentmail:joe@agentmail.to", "theirs"),
+        ]
+        wire["items"] = {
+            "mine": _item("mine", "alice-1968@agentmail.to", "Re: Round trip"),
+            "theirs": _item("theirs", "joe@agentmail.to", "Round trip"),
+        }
+        target = await resolve_reply_target(CONVERSATION)
+
+        # The whole point. Addressing "mine" would mail us our own reply.
+        assert target.to == "joe@agentmail.to"
+        assert target.in_reply_to == "<theirs@mail>"
+
+    @pytest.mark.asyncio
+    async def test_our_reply_mirrored_back_under_the_cloud_id_is_skipped(self, wire):
+        # A reply sent through the hub mirror comes back stamped with the CLOUD user id.
+        wire["cloud"] = "cloud-7"
+        wire["messages"] = [_message("cloud-7", "mine"), _message("agentmail:joe@agentmail.to", "theirs")]
+        wire["items"] = {
+            "mine": _item("mine", "alice-1968@agentmail.to", "Re: Round trip"),
+            "theirs": _item("theirs", "joe@agentmail.to", "Round trip"),
+        }
+
+        assert (await resolve_reply_target(CONVERSATION)).to == "joe@agentmail.to"
+
+    @pytest.mark.asyncio
+    async def test_the_newest_inbound_wins_not_the_oldest(self, wire):
+        wire["messages"] = [
+            _message(LOCAL_USER_ID, "mine"),
+            _message("agentmail:newer@x.to", "newer"),
+            _message("agentmail:older@x.to", "older"),
+        ]
+        wire["items"] = {
+            "mine": _item("mine", "me@x.to", "Re: x"),
+            "newer": _item("newer", "newer@x.to", "x"),
+            "older": _item("older", "older@x.to", "x"),
+        }
+        assert (await resolve_reply_target(CONVERSATION)).to == "newer@x.to"
+
+    @pytest.mark.asyncio
+    async def test_a_thread_only_we_have_written_in_refuses(self, wire):
+        # No recipient is recorded anywhere for a thread we started. Guessing
+        # one is how a reply reaches the wrong person, so refuse instead.
+        wire["messages"] = [_message(LOCAL_USER_ID, "mine")]
+        wire["items"] = {"mine": _item("mine", "me@x.to", "Hello")}
+        with pytest.raises(ChannelSendUnavailable, match="no one else"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_thread_we_started_is_continued_to_whom_it_is_with(self, wire):
+        # The conversation records who it is with (its first message's recipients), so the one we
+        # started can be written to again before anyone answers — on its own thread.
+        wire["messages"] = [_message(LOCAL_USER_ID, "mine")]
+        wire["items"] = {"mine": _item("mine", "me@x.to", "Hello")}
+        wire["address"] = ["dana@x.io"]
+        target = await resolve_reply_target(CONVERSATION)
+        assert (target.to, target.thread_key) == ("dana@x.io", "t-1")
+
+    @pytest.mark.asyncio
+    async def test_agent_scope_ignores_a_newer_message_from_another_source(self, wire):
+        wire["messages"] = [
+            _message("agentmail:wrong@x.to", "wrong", source_id="ds-2"),
+            _message("agentmail:right@x.to", "right", source_id="ds-1"),
+        ]
+        wire["items"] = {
+            "wrong": _item("wrong", "wrong@x.to", "x"),
+            "right": _item("right", "right@x.to", "x"),
+        }
+
+        target = await resolve_reply_target(CONVERSATION, source_id="ds-1")
+
+        assert target.source.id == "ds-1"
+        assert target.to == "right@x.to"
+
+
+class TestItRefusesRatherThanGuess:
+    @pytest.mark.asyncio
+    async def test_a_conversation_with_no_channel_origin(self, wire):
+        wire["messages"] = [SimpleNamespace(sender_id="x", origin=None, origin_local=None)]
+        with pytest.raises(ChannelSendUnavailable, match="did not come from a channel"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_transport_that_cannot_send(self, wire):
+        wire["sends"] = False
+        wire["messages"] = [_message("agentmail:joe@x.to", "theirs")]
+        wire["items"] = {"theirs": _item("theirs", "joe@x.to", "x")}
+        with pytest.raises(ChannelSendUnavailable, match="cannot send"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_sender_with_no_address(self, wire):
+        wire["messages"] = [_message("agentmail:anon", "theirs")]
+        wire["items"] = {"theirs": _item("theirs", "", "x")}
+        with pytest.raises(ChannelSendUnavailable, match="no sender address"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_missing_record_is_not_reported_as_a_missing_address(self, wire):
+        wire["messages"] = [_message("agentmail:joe@x.to", "gone")]
+        wire["items"] = {}
+        with pytest.raises(ChannelSendUnavailable, match="record this arrived through is gone"):
+            await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_message_shared_from_another_machine(self, wire):
+        """FOREIGN is not GONE, and the refusal has to say which.
+
+        A received message keeps `origin` (SHARED — that is what draws its badge)
+        and never carries `origin_local`, whose row ids only resolve on the
+        machine that ingested it. Before the split those ids travelled, so the
+        receiver dereferenced them, missed, and reported a record that was alive
+        and elsewhere as deleted.
+        """
+        wire["messages"] = [_shared_message("agentmail:joe@x.to")]
+        wire["items"] = {}
+        with pytest.raises(ChannelSendUnavailable, match="shared from another machine"):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestItKnowsBothOfOurIdentities:
+    """An agent's mailbox is ours too, even though it is not the local user.
+
+    ``_sender_for`` deliberately stamps an agent's own sent copies with
+    ``MessageSender.agent`` rather than the human's id, so the owner does not appear to
+    have written replies they never saw. A reply resolver that knows only the
+    user id therefore reads those copies as a stranger — and since the recipient
+    IS the target message's sender, the agent ends up mailing itself.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_agents_own_sent_copy_is_not_a_correspondent(self, wire):
+        # Newest first: the agent's own reply, then the mail it was answering.
+        wire["messages"] = [
+            _message(AGENT_SENDER, "agent_reply"),
+            _message("agentmail:joe@agentmail.to", "theirs"),
+        ]
+        wire["items"] = {
+            "agent_reply": _item("agent_reply", "bot@agentmail.to", "Re: Ping"),
+            "theirs": _item("theirs", "joe@agentmail.to", "Ping"),
+        }
+        target = await resolve_reply_target(CONVERSATION)
+
+        assert target.to == "joe@agentmail.to", "the agent addressed its own mailbox"
+
+    @pytest.mark.asyncio
+    async def test_a_thread_only_the_agent_has_written_in_refuses(self, wire):
+        wire["messages"] = [_message(AGENT_SENDER, "agent_only")]
+        wire["items"] = {"agent_only": _item("agent_only", "bot@agentmail.to", "Hello")}
+
+        with pytest.raises(ChannelSendUnavailable):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestAnUnknownLocalUserIsNotEveryone:
+    """No local user means "we cannot identify ourselves", not "all of this is ours".
+
+    Bootstrap creates the row, so this is the state of any process that has not
+    run it. Folding the two together made every message look like ours and the
+    resolver refuse with "no one else has written in this thread yet" — a thread
+    full of strangers described as a thread full of us.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_external_message_still_resolves(self, wire):
+        wire["local"] = None
+        wire["messages"] = [_message("agentmail:joe@agentmail.to", "theirs")]
+        wire["items"] = {"theirs": _item("theirs", "joe@agentmail.to", "Ping")}
+
+        assert (await resolve_reply_target(CONVERSATION)).to == "joe@agentmail.to"
+
+    @pytest.mark.asyncio
+    async def test_an_agents_own_copy_is_still_ours_without_a_local_user(self, wire):
+        # The agent id is ours by construction, so this check stands alone —
+        # it does not depend on a user row being present to compare against.
+        wire["local"] = None
+        wire["messages"] = [_message(AGENT_SENDER, "agent_only")]
+        wire["items"] = {"agent_only": _item("agent_only", "bot@agentmail.to", "Hello")}
+
+        with pytest.raises(ChannelSendUnavailable):
+            await resolve_reply_target(CONVERSATION)
+
+
+class TestAChannelRepliesToTheChannel:
+    """Slack's `to` is the CHANNEL, not the author.
+
+    `resolve_reply_target` used to hand-roll the email rule — reply to whoever
+    wrote — so a Slack reply carried the author's user id. `chat.postMessage`
+    reads that as a DM, so the agent's answer went privately to the person
+    instead of into the channel everyone is reading. No error, no bounce: the
+    message simply arrived in the wrong place.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_slack_reply_is_addressed_to_the_channel_not_the_author(self, wire):
+        wire["spec"] = SlackMessageSpec
+        wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
+        wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="T0123/C0123456789")}
+
+        target = await resolve_reply_target(CONVERSATION)
+
+        assert target.to == "C0123456789", "the reply was addressed to the author — Slack DMs that"
+
+    @pytest.mark.asyncio
+    async def test_a_channel_record_with_no_channel_refuses(self, wire):
+        """Better a refusal than a post addressed to an empty string."""
+        wire["spec"] = SlackMessageSpec
+        wire["source"] = SimpleNamespace(id="ds-1", provider="slack", config={})
+        wire["messages"] = [_message("slack:U0123456789", "i-1", kind="slack")]
+        wire["items"] = {"i-1": _item("i-1", "U0123456789", "hello", origin_namespace="")}
+
+        with pytest.raises(ChannelSendUnavailable):
+            await resolve_reply_target(CONVERSATION)

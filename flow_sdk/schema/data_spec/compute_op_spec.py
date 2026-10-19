@@ -1,0 +1,741 @@
+"""``ComputeOpSpec`` — the shape of ``compute_op.json``.
+
+A ComputeOp is ONE CALL of one subkind: a shell one-liner, a model prompt, an
+agent, or a person. Reaching the SAME goal by other, more expensive means when
+the first call did not — cli, then an agent; a model, then an agent with more
+tools — is ``attempts``: further rungs of any subkind but ``ask``, tried in
+order against the one completion check, until it holds. ``ask`` is never a
+rung: a person belongs at the wizard level, where declining (Skip) stops only
+the one step asking — nothing inside an op can express "abort just this step".
+
+The words follow ``docs/ontology.md``: the type is ``compute_op``, ``subkind`` is
+a closed enum, and each subkind's structure is its OWN DataSpec, registered
+under the kind ``compute_op.<subkind>`` and nested in ``exe_data`` — never
+flattened onto the op, where every subkind's fields would sit side by side and
+a validator would have to refuse the ones that do not belong.
+
+Three things are load-bearing:
+
+* **ONE completion check, asked twice.** Before the call it decides whether to
+  act at all; after it, it is the proof. It is a ``CliOp`` — the very class a
+  cli op's ``exe_data`` is — because it IS a shell one-liner.
+* **It is OPTIONAL.** With one, the op is convergent: re-running is free and a
+  satisfied goal does nothing. Without one there is no "already done" state, so
+  the op always runs — which is what a value-producing call is. Absent means
+  *always execute*, never ``not_applicable``.
+* **Input and output are declared shapes.** ``input`` and ``output`` use the
+  existing ShapeForm grammar; ``output_spec_kind`` remains the named-output
+  spelling. Named kinds resolve through the one ``SchemaRegistry`` and are
+  refused at read when unknown — rather than answering ``Any`` in silence.
+
+The per-OS ``commands`` map belongs to ``CliOp``'s registered shape:
+``to_authoring_form`` renders its kind rather than expanding those fields.
+Keys are ``sys.platform`` values (``darwin`` / ``linux`` / ``win32``), the same
+convention as ``CapabilitySpec.install_commands``.
+
+Stdlib + pydantic only, like the rest of ``data_spec``.
+"""
+
+from __future__ import annotations
+
+import sys
+from typing import Any, ClassVar, Literal, Optional, Union
+
+from pydantic import Field, model_serializer, model_validator
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
+from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.confirm_spec import ConfirmSpec
+from flow_sdk.schema.data_spec.decision_spec import ChoiceQuestion, Question, ScoreQuestion, YesNoQuestion
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
+from flow_sdk.schema.data_spec.io.native import Text
+from flow_sdk.schema.data_spec.returned_value_spec import (
+    AskResult,
+    CliResult,
+    DecisionVerdict,
+    ExitCode,
+    NavigateResult,
+    PromptResult,
+    ReturnedValue,
+)
+
+#: What a call gets when its ``timeout_seconds`` is unset, by the ROLE it plays.
+#: One class serves as both the completion check and a cli op's work, so the
+#: class cannot carry the default — the reader knows which it is reading.
+#: A check is a question and must stay cheap enough to ask on a schedule.
+CHECK_TIMEOUT = 30.0
+CLI_TIMEOUT = 600.0
+#: A model call with no tools.
+PROMPT_TIMEOUT = 120.0
+AGENT_TIMEOUT = 1800.0
+#: How long a person gets to answer by DEFAULT. A product decision — the span
+#: someone is given before an op stops waiting — not a budget widened to ride out
+#: a flake. An ask op's own ``timeout_seconds``, or a caller's ``ask_timeout``,
+#: sets any other span: a step done in another application takes minutes, and a
+#: wizard that runs out of time is resumed, not failed. An op that is setup the
+#: machine cannot proceed without opts OUT of any deadline with
+#: ``AskOp.until_answered``.
+ASK_TIMEOUT_SECONDS = 60.0
+#: How long an AGENT following an op's ``setup`` gets once a person starts one on a question (the ask's
+#: AI Assist) — a different wait from ``ASK_TIMEOUT_SECONDS``: a person answering takes a minute, an agent
+#: working a provider's console takes minutes. From the launch, the question waits this long and the agent
+#: is stopped at it. An op's ``setup_timeout_seconds`` (a credential's own) sets any other span.
+SETUP_TIMEOUT = 600.0
+
+
+class OpSubkind(StrEnum):
+    """Who does the work. The order is the cost order.
+
+    ``navigate`` shows a place and answers whether it can be used there;
+    ``cli`` is a subprocess; ``decision`` is a closed question put to the Decision
+    API (no text, calibrated answers); ``prompt`` is a model with no tools;
+    ``agent`` is a spawned harness carrying an Agent's identity, with tools;
+    ``ask`` is a person — the most expensive thing to spend.
+    """
+
+    NAVIGATE = "navigate"
+    CLI = "cli"
+    PYTHON = "python"
+    DECISION = "decision"
+    PROMPT = "prompt"
+    AGENT = "agent"
+    ASK = "ask"
+
+
+#: Every ``OpSubkind`` a ``Rung`` may run as. Not ``ask`` — see ``Rung``.
+RUNG_SUBKINDS = (OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT)
+
+
+class ExeData(DataSpec):
+    """What every subkind's ``exe_data`` has. Declares no kind of its own.
+
+    Each subclass also carries the facts the runner needs about its subkind, so
+    a new subkind is one class here and one call in the runner — never a branch
+    in five places.
+    """
+
+    #: Absent ⇒ the default for the role this call plays (see ``CHECK_TIMEOUT``).
+    timeout_seconds: Optional[float] = None
+
+    #: The default when this class is run as an op's work.
+    DEFAULT_TIMEOUT: ClassVar[float] = CLI_TIMEOUT
+    #: The answer an op of this subkind returns.
+    ANSWER: ClassVar[type[ReturnedValue]] = ReturnedValue
+    #: Is the completion check asked again after the call? Only a person's
+    #: answer is its own verdict.
+    RECHECKED: ClassVar[bool] = True
+    #: Is the op's value what the CHECK prints once the goal holds (``flow
+    #: secret get`` prints the secret), rather than what the call returned?
+    VALUE_FROM_CHECK: ClassVar[bool] = False
+    #: Is the call its OWN completion check? Calling it again is the proof — so the op
+    #: is convergent with no ``completion_check``, and its ``attempts`` are judged by
+    #: calling it once more after each.
+    SELF_CHECKING: ClassVar[bool] = False
+    #: Does the call's value stand WITHOUT a declared ``output_spec_kind``? Only for a
+    #: call whose value is its own plain answer (a decision's chosen option) — every
+    #: other op's value is held to the kind it declared, or dropped.
+    PLAIN_VALUE: ClassVar[bool] = False
+    INPUT_FOLDER: ClassVar[bool] = False
+
+    def timeout(self, default: Optional[float] = None) -> float:
+        """This call's budget: its own when set, else the role's default."""
+        if self.timeout_seconds is not None:
+            return self.timeout_seconds
+        return self.DEFAULT_TIMEOUT if default is None else default
+
+
+class PythonOp(ExeData):
+    """An approved asset's synchronous or asynchronous ``call.py:call``."""
+
+    spec_kind: ClassVar[str] = "compute_op.python"
+
+
+class CliOp(ExeData):
+    """A shell one-liner, per OS. Also the shape of every completion check."""
+
+    INPUT_FOLDER: ClassVar[bool] = True
+    spec_kind: ClassVar[str] = "compute_op.cli"
+    ANSWER: ClassVar[type[ReturnedValue]] = CliResult
+    VALUE_FROM_CHECK: ClassVar[bool] = True
+
+    #: ``sys.platform`` -> shell one-liner.
+    commands: dict[str, str] = {}
+    #: A setup step of the run's data source (``{{source}}``), run IN this backend -- what ``flow source step
+    #: <source> <step> [--check] --value`` does, without starting a process, a shell or an HTTP call back into
+    #: this same backend. On a slow Windows box each of those costs 12-50 s; a wizard's check, call and re-check
+    #: were three. ``commands`` stays the fallback for a run with no source.
+    source_step: Optional[str] = None
+    #: A setup step of the run's web app (``{{webapp}}``: ``install`` / ``build`` / ``start``), run IN this
+    #: backend the same way (``builtin/webapp_setup.step``).
+    webapp_step: Optional[str] = None
+    #: What a setup requirement itself needs (``credential:<provider>`` / ``provider:<provider>``), answered for
+    #: the run's project (``{{project}}``) IN this backend (``builtin/project_setup.requirement_step``) — the
+    #: nodes a connection's own needs become in the setup tree.
+    requirement_step: Optional[str] = None
+
+    @model_validator(mode="after")
+    def _has_a_command(self) -> "CliOp":
+        if not self.commands and not self.source_step and not self.webapp_step and not self.requirement_step:
+            raise ValueError(
+                "a cli op needs a command for at least one platform, a source_step, a webapp_step or a requirement_step")
+        return self
+
+    def command_for(self, platform: str = "") -> Optional[str]:
+        """This machine's command, or ``None`` when there is none for it."""
+        return self.commands.get(platform or sys.platform)
+
+
+class PromptOp(ExeData):
+    """One model call with no tools. It cannot touch the machine."""
+
+    spec_kind: ClassVar[str] = "compute_op.prompt"
+    DEFAULT_TIMEOUT: ClassVar[float] = PROMPT_TIMEOUT
+    ANSWER: ClassVar[type[ReturnedValue]] = PromptResult
+
+    prompt: str
+
+
+class LaunchContext(DataSpec):
+    """What a caller may stamp on the process an agent op spawns, as ONE scope value
+    (``AgentOp.launch_context`` names it). The runner forwards it and reads none of it:
+    the lineage a sequence wants on its agent's session is the sequence's business.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.agent.launch_context"
+
+    #: Merged into the process's ``context_data``.
+    context_data: dict[str, Any] = {}
+    #: Context chips on the process (``<type>-<uuid>`` strings).
+    shared_context_entities: list[str] = []
+    #: What the session is keyed to, when not the run's own subject.
+    target_typeid_str: str = ""
+
+
+class AgentOp(ExeData):
+    """A spawned harness with tools, carrying an Agent's identity."""
+
+    spec_kind: ClassVar[str] = "compute_op.agent"
+    DEFAULT_TIMEOUT: ClassVar[float] = AGENT_TIMEOUT
+    ANSWER: ClassVar[type[ReturnedValue]] = PromptResult
+    #: The agent's own declared ``output`` is its contract: the launch already held the value to it.
+    PLAIN_VALUE: ClassVar[bool] = True
+
+    #: The agent's name, resolved through ``get_agent_local_deployment``.
+    agent: str
+    #: What it is asked to do. Appended to the op's description and setup.
+    prompt: str = ""
+    #: A scope value (by name) mounted as the process's INPUT folder — a ``DataSpec``
+    #: value, the way ``Agent.launch(input=…)`` mounts one. Empty: workdir mode.
+    input: str = ""
+    #: A scope value (by name) holding a ``LaunchContext``. Empty: nothing stamped.
+    launch_context: str = ""
+    #: Further turns when a turn ends and the completion check still fails. Not a new
+    #: process: the SAME session, told only what the check printed. A turn that ran out
+    #: of time is not retried — that process is busy, not finished.
+    retries: int = 0
+
+    @model_validator(mode="after")
+    def _has_an_agent(self) -> "AgentOp":
+        if not self.agent:
+            raise ValueError("an agent op needs an agent to run")
+        if self.retries < 0:
+            raise ValueError("retries cannot be negative")
+        return self
+
+
+#: How sure an answer must be when nobody says otherwise — one number for a requirement's own
+#: floor and for the sentence form of a decision.
+DEFAULT_SURE = 0.85
+
+
+class Require(DataSpec):
+    """What one answer must be for a ``decision`` op to be met. Exactly one of the
+    four, each for its question kind: ``choice`` names the option that must win
+    (``min`` sure); ``yes`` / ``no`` is the probability floor of that answer;
+    ``at_least`` names the lowest ``score`` level that counts.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.decision.require"
+    FIELDS: ClassVar[tuple[str, ...]] = ("choice", "yes", "no", "at_least")
+
+    choice: Optional[str] = None
+    yes: Optional[float] = Field(default=None, ge=0, le=1)
+    no: Optional[float] = Field(default=None, ge=0, le=1)
+    at_least: Optional[str] = None
+    #: The confidence floor for ``choice``; ``yes`` / ``no`` carry their own.
+    min: float = Field(default=DEFAULT_SURE, ge=0, le=1)  # noqa: A003 — the decision snippet's word
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "Require":
+        given = [name for name in self.FIELDS if getattr(self, name) is not None]
+        if len(given) != 1:
+            raise ValueError(f"a requirement is exactly one of choice / yes / no / at_least, got {given or 'none'}")
+        return self
+
+    @property
+    def kind(self) -> str:
+        return next(name for name in self.FIELDS if getattr(self, name) is not None)
+
+
+class DecisionOp(ExeData):
+    """A closed question put to the Decision API about one value in scope.
+
+    ``questions`` are the decision API's own (choice / score / yes_no); ``require`` says
+    what each named answer must be, and EVERY requirement must hold for the op to be met.
+    One call answers every question. The answer is a ``DecisionVerdict``: its own verdict,
+    never re-checked.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.decision"
+    DEFAULT_TIMEOUT: ClassVar[float] = PROMPT_TIMEOUT
+    ANSWER: ClassVar[type[ReturnedValue]] = DecisionVerdict
+    RECHECKED: ClassVar[bool] = False
+    PLAIN_VALUE: ClassVar[bool] = True
+    #: The scope name the questions are asked about when the op names none.
+    DEFAULT_INPUT: ClassVar[str] = "STATE"
+    #: The sentence form: ONE yes/no question under this name, met at ``SENTENCE_MIN``.
+    SENTENCE_QUESTION: ClassVar[str] = "match"
+    SENTENCE_MIN: ClassVar[float] = DEFAULT_SURE
+
+    questions: dict[str, Question]
+    require: dict[str, Require] = {}
+    #: The scope value (by name) the questions are asked about.
+    input: str = DEFAULT_INPUT
+    #: The one-line form this op was written as, when it was: kept so a document
+    #: round-trips the sentence a person typed. Carries no meaning of its own.
+    sentence: str = ""
+
+    @model_validator(mode="after")
+    def _requirements_name_questions(self) -> "DecisionOp":
+        if not self.questions:
+            raise ValueError("a decision op asks at least one question")
+        for name, req in self.require.items():
+            question = self.questions.get(name)
+            if question is None:
+                raise ValueError(f"require.{name} names no question (the questions are {sorted(self.questions)})")
+            wanted = {"choice": ChoiceQuestion, "yes": YesNoQuestion, "no": YesNoQuestion, "at_least": ScoreQuestion}[req.kind]
+            if not isinstance(question, wanted):
+                raise ValueError(f"require.{name}: a {req.kind} requirement needs a {wanted.model_fields['type'].default} question")
+            if req.choice is not None and req.choice not in question.options:
+                raise ValueError(f"require.{name}: {req.choice!r} is not one of its options {sorted(question.options)}")
+            if req.at_least is not None and req.at_least not in question.levels:
+                raise ValueError(f"require.{name}: {req.at_least!r} is not one of its levels {question.levels}")
+        return self
+
+    @classmethod
+    def from_sentence(cls, sentence: str, *, question: Question, min: float = DEFAULT_SURE) -> "DecisionOp":  # noqa: A002
+        """One yes/no question — written by whoever knows the state's field names — that
+        must be ``yes`` at least ``min`` sure. The sentence is kept for the document."""
+        if not isinstance(question, YesNoQuestion):
+            raise ValueError("a sentence is one yes/no question")
+        name = cls.SENTENCE_QUESTION
+        return cls(questions={name: question}, require={name: Require(yes=min)}, sentence=sentence)
+
+    @classmethod
+    def is_sentence_form(cls, data: dict) -> bool:
+        """Whether an op's document is exactly what ``from_sentence`` builds from its ``sentence`` —
+        so a file may keep the sentence alone and lose nothing."""
+        name = cls.SENTENCE_QUESTION
+        require = data.get("require") or {}
+        return bool(
+            data.get("sentence")
+            and list(data.get("questions") or {}) == [name]
+            and list(require) == [name]
+            and (require[name] or {}).get("yes") == cls.SENTENCE_MIN
+        )
+
+
+class NavigateOp(ExeData):
+    """Show a place, and answer whether it can be used there (``flow_sdk.core.navigate``).
+
+    Its own completion check: navigating again after a repair is the proof, and it
+    shows the place once more — which is what makes a display that was waiting on a
+    dead server reload. Only ``NOT_YET`` (resolved, not usable yet) is worth the
+    op's ``attempts``; a place that does not exist here, or a page that refuses to
+    be framed, is not something an agent can fix.
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.navigate"
+    ANSWER: ClassVar[type[ReturnedValue]] = NavigateResult
+    SELF_CHECKING: ClassVar[bool] = True
+
+    #: Where to go. Absent ⇒ the wizard input ``pointer`` (``FLOWPAD_WIZARD_INPUT_POINTER``,
+    #: the JSON of a ``DockPointerSpec``), so one op can open what a step binds.
+    target: Optional[DockPointerSpec] = None
+
+
+class AskChoiceSpec(DataSpec):
+    """One way to answer a question that offers several (``AskOp.choices``).
+
+    A value choice is typed (or picked, a ``file``); the answer is ``<value>=<what was given>``, one string.
+    A ``fields`` choice is several values given together: one input per field, answered as newline-joined
+    ``<field value>=<what was given>`` lines. A ``command`` choice has nothing to type: the person runs the command (a tool's own sign-in) and the
+    question closes by itself once its goal holds (``auto_continue``)."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask.choice"
+
+    #: What the answer names this choice by.
+    value: str
+    label: str = ""
+    hint: str = ""
+    #: Where to get the value — shown as a link under its input.
+    help_url: str = ""
+    #: The example shown in an empty input.
+    placeholder: str = ""
+    secret: bool = False
+    file: bool = False
+    #: The command the person runs instead of giving a value, on this machine.
+    command: str = ""
+    #: A sign-in through Flowpad instead of a value: the screen connects ``provider`` (covering ``scopes``) in the
+    #: person's browser, then answers ``<value>`` — nothing typed, nothing stored.
+    provider: str = ""
+    scopes: list[str] = []
+    #: Several values this choice is given as, together — each one typed (or picked) like a value choice.
+    fields: list["AskChoiceSpec"] = []
+
+
+class AskItemSpec(DataSpec):
+    """One question of several asked as ONE (``Question.items``) — everything a wizard run needs,
+    put to the person before it starts. The list's answer is ``{path: this item's value}``; an item
+    left out is declined."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask.item"
+
+    #: What the answer is keyed by — for a wizard, the asking step from the top down (``node/ask``).
+    path: str
+    #: The ``ask`` op behind it.
+    op: str = ""
+    #: What is asked, and what it is for.
+    prompt: str = ""
+    detail: str = ""
+    #: The answer's declared kind. ``confirm`` is an approval; anything else is one typed value.
+    kind: Optional[str] = None
+    secret: bool = False
+    #: Declining it leaves the run unfinished (``WizardStepSpec.required``).
+    required: bool = True
+
+    @property
+    def is_approval(self) -> bool:
+        """Nothing to type, only to agree to."""
+        return self.kind == ConfirmSpec.spec_kind
+
+
+class AskOp(ExeData):
+    """A person, asked for the op's declared output."""
+
+    spec_kind: ClassVar[str] = "compute_op.ask"
+    DEFAULT_TIMEOUT: ClassVar[float] = ASK_TIMEOUT_SECONDS
+    ANSWER: ClassVar[type[ReturnedValue]] = AskResult
+    RECHECKED: ClassVar[bool] = False
+
+    #: The question put to the person. Falls back to the op's label. Short: it is
+    #: the heading of the window.
+    prompt: str = ""
+    #: The answer is a secret (an API key): it is masked where it is typed and never echoed.
+    secret: bool = False
+    #: The answer is a file's content (a key file): the form offers a file picker and a paste box.
+    file: bool = False
+    #: A plain-language paragraph under the heading: why it is being asked, and
+    #: what each answer does. Not the op's `description` — that one is written for
+    #: whoever reads the document, this one for whoever is looking at the window.
+    detail: str = ""
+    #: The words on the two buttons, for a question whose answer is a choice
+    #: rather than a value ("Install" / "Skip"). Empty means the window's own
+    #: defaults, Send / Cancel. Cancel keeps its meaning whatever it is called:
+    #: the op's ``cancelled`` answer.
+    submit_label: str = ""
+    cancel_label: str = ""
+    #: The agent a person can hand this question to (the AI Assist button): it follows the op's
+    #: ``setup`` and answers the SAME question, so the op returns the same ``AskResult`` whoever
+    #: answered. Empty: no assist — the person answers or nobody does. Not a rung: a person starts it.
+    assist_agent: str = ""
+    #: Wait for the person with NO deadline. For install-time infrastructure —
+    #: a missing toolchain the app cannot run without — where giving up after a
+    #: minute only means asking again on the next boot. Safe only because a
+    #: question nobody could be shown is abandoned at once instead: without
+    #: that, a headless instance would wait forever holding the wizard's slot.
+    until_answered: bool = False
+    #: The person's answer is not the proof: on Send the op's completion check runs, and while it does
+    #: not hold the question stays open with the check's own reason under it ("not connected yet —
+    #: send the message from your phone first"). A gate a person cannot click past.
+    recheck: bool = False
+    #: The goal is reached ELSEWHERE (a phone sends a code), so nothing here needs a click: while the question
+    #: is open the op's check runs again every few seconds, and the moment it holds the question closes by itself
+    #: -- the person only watches. No Send button is offered. Needs ``recheck``, a check and a ``confirm`` shape:
+    #: closing by itself answers what Send would have, and only a confirm has nothing for a person to type.
+    auto_continue: bool = False
+    #: Several ways to answer, of which the person picks ONE (a ONE_OF credential's members). Empty: an
+    #: ordinary question. With a ``command`` choice ``auto_continue`` needs only a check: it is done elsewhere.
+    choices: list[AskChoiceSpec] = []
+
+    @model_validator(mode="after")
+    def _no_deadline_means_no_deadline(self) -> "AskOp":
+        if self.until_answered and self.timeout_seconds is not None:
+            # `until_answered` would silently win at runtime either way (see
+            # the runner) — refusing the document is better than an author's
+            # explicit budget being dropped on the floor with nothing to say
+            # why the wait outlived it.
+            raise ValueError(
+                "an ask op cannot set both `until_answered` and `timeout_seconds` — the deadline would never be reached"
+            )
+        return self
+
+
+#: Which ``exe_data`` class each subkind carries — the whole dispatch table.
+EXE_DATA: dict[OpSubkind, type[ExeData]] = {
+    OpSubkind.PYTHON: PythonOp,
+    OpSubkind.NAVIGATE: NavigateOp,
+    OpSubkind.CLI: CliOp,
+    OpSubkind.DECISION: DecisionOp,
+    OpSubkind.PROMPT: PromptOp,
+    OpSubkind.AGENT: AgentOp,
+    OpSubkind.ASK: AskOp,
+}
+
+
+def known_kind(kind: str) -> bool:
+    """Is ``kind`` a primitive or a registered shape?"""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — cycle-safe
+    from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
+
+    return kind in PRIMITIVES or SchemaRegistry.kind_type(kind) is not None
+
+
+def validate_shape(shape: Any) -> None:
+    """Strict kind preflight over the existing ShapeForm grammar; no coercion or I/O of values."""
+    from flow_sdk.schema.data_spec.spec import ENUM_PREFIX, KIND_UNION, OPTIONAL_MARK  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.value_ref import kind_of  # noqa: PLC0415
+
+    if isinstance(shape, (dict, list)):
+        for child in shape.values() if isinstance(shape, dict) else shape:
+            validate_shape(child)
+    elif isinstance(shape, str):
+        if shape.startswith(OPTIONAL_MARK):
+            validate_shape(shape[len(OPTIONAL_MARK):])
+        elif not shape.startswith(ENUM_PREFIX):
+            for kind in shape.split(KIND_UNION):
+                if not known_kind(kind_of(kind)):
+                    raise ValueError(f"unknown declared kind {kind!r}")
+
+
+def fields_of_kind(kind: Optional[str]) -> Any:
+    """A kind, opened one level: ``{field: form}`` for a registered DataSpec,
+    the kind itself for a primitive (or nothing).
+
+    A kind string names a shape; a person filling a form, or an agent writing a
+    receipt, needs the FIELDS. Nested registered kinds stay as their names.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415 — cycle-safe
+    from flow_sdk.schema.data_spec.spec import to_authoring_form  # noqa: PLC0415
+
+    if not kind:
+        return None
+    cls = SchemaRegistry.kind_type(kind)
+    if not (isinstance(cls, type) and issubclass(cls, DataSpec)):
+        return kind
+    return {name: to_authoring_form(field.annotation) for name, field in cls.model_fields.items()}
+
+
+def exe_data_by_subkind(data: Any) -> Any:
+    """Read ``exe_data`` as the class its ``subkind`` names — a ``before``
+    validator body shared by the document and the entity row that mirrors it.
+
+    A plain union would let pydantic pick whichever member happens to validate —
+    and ``AskOp``'s fields are a subset of ``PromptOp``'s. The subkind is the
+    discriminator, so it decides.
+    """
+    if not isinstance(data, dict):
+        return data
+    exe = data.get("exe_data")
+    subkind = OpSubkind(data.get("subkind") or OpSubkind.CLI)
+    wanted = EXE_DATA[subkind]
+    if isinstance(exe, dict):
+        return {**data, "exe_data": wanted.model_validate(exe)}
+    if isinstance(exe, ExeData) and not isinstance(exe, wanted):
+        raise ValueError(f"a {subkind} op takes {wanted.__name__} as exe_data, not {type(exe).__name__}")
+    return data
+
+
+class Rung(DataSpec):
+    """One further attempt at the op's OWN goal, tried after its own call did not
+    reach it — cli, prompt or agent, in the order they are listed, each judged by
+    the SAME completion check. Not ``ask``: see the module docstring.
+
+    Shaped like the op's own ``subkind``/``exe_data`` pair on purpose — a rung
+    IS an op's call, just not the first one — so the runner promotes one into a
+    full spec (``model_copy(update={"subkind": ..., "exe_data": ...})``) rather
+    than carrying a second, parallel notion of "a call".
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.rung"
+
+    subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]
+    exe_data: Union[CliOp, PromptOp, AgentOp]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exe_data_is_its_subkind(cls, data: Any) -> Any:
+        return exe_data_by_subkind(data)
+
+
+class CallLogSpec(DataSpec):
+    """A block's call log (``core/compute_op/call_log``): each call a row of a dataset in temp."""
+
+    #: The rows' registered dataset kind -- the block's eval set kind, so its eval reads the log.
+    #: Absent: rows in the block's own ``input`` / ``output`` shapes.
+    dataset_kind: Optional[str] = None
+    #: Rows kept; past it the oldest go. A log, not a store.
+    max_rows: int = Field(default=500, gt=0)
+    #: A row's ``input`` or ``output`` over this many JSON bytes is not kept (an input: no row).
+    max_row_bytes: int = Field(default=65536, gt=0)
+    #: The log's folder in temp. Absent: ``call-log-<block>``.
+    name: str = ""
+    #: The log dataset's title. Absent: ``CallLog <block>``.
+    title: str = ""
+    #: An instance preference that turns the log on (``preferences.advanced.smart_navigation_log``).
+    #: Absent: always on.
+    enabled_by: str = ""
+    #: A function in the block's ``call.py``, ``(input, answer) -> row | None``, that writes the row
+    #: as ``dataset_kind`` holds it; ``None`` skips the call. The run's trace joins its ``data``.
+    #: Absent: the block's ``input`` / ``output`` as they are.
+    row: str = ""
+
+
+class ComputeOpSpec(AssetDocumentSpec):
+    """``compute_op.json`` — the whole document."""
+
+    main_file: ClassVar[str | None] = "compute_op.json"
+    manifest_layout: ClassVar[str | None] = "entity"
+
+    # No ``spec_kind``: an asset spec is registered under its own type name by
+    # ``SchemaRegistry.register``.
+
+    name: str = ""
+    label: str = ""
+    description: str = ""
+    subkind: OpSubkind = OpSubkind.CLI
+    #: The call itself — the DataSpec ``compute_op.<subkind>``.
+    exe_data: Union[NavigateOp, CliOp, PythonOp, DecisionOp, PromptOp, AgentOp, AskOp]
+    input: Optional[ShapeForm] = None
+    output: Optional[ShapeForm] = None
+    #: The kind of what this op RETURNS: a registered DataSpec kind, or a
+    #: primitive (``string`` / ``int`` / ``float`` / ``bool``). Absent ⇒ no value.
+    output_spec_kind: Optional[str] = None
+    #: When this op is already done. Absent ⇒ it always runs: a call, not a goal.
+    completion_check: Optional[CliOp] = None
+    #: The same question when its answer is a STATUS fact (``install:<harness>``,
+    #: ``install:default``): answered in-process by the backend that owns the status
+    #: record -- that harness re-discovered, then its ``install`` read -- rather than by a
+    #: shell that starts the ``flow`` CLI only to ask this backend over HTTP. Either this
+    #: or ``completion_check``, not both.
+    status_check: Optional[str] = None
+    #: Run in a shell of its own instead of the run's shared one (see ``SharedShell``).
+    isolated_shell: bool = False
+    #: Further rungs at the SAME goal, tried in order while the completion check
+    #: still fails after the one before — the op's own call, then this list, for
+    #: as many rungs as are named. Needs a completion_check: nothing else can
+    #: say a rung missed.
+    attempts: list[Rung] = []
+    #: Exit codes from the completion check that mean "not this machine's
+    #: problem". EMPTY by default: nothing is ever silently skipped unless an
+    #: author asked for it.
+    not_applicable_codes: list[int] = []
+    #: How a person does this by hand — the file ``setup.md`` beside the manifest.
+    #: Every call that involves a model is given it.
+    setup: Text = ""
+    #: How long an agent following ``setup`` gets (an ask's AI Assist). Unset: ``SETUP_TIMEOUT``.
+    setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
+    #: Log every call of this block as a dataset row, with its run's trace. Absent: no log.
+    log: Optional[CallLogSpec] = None
+
+    def setup_timeout(self) -> float:
+        return self.setup_timeout_seconds or SETUP_TIMEOUT
+
+    @property
+    def output_shape(self) -> Any:
+        return self.output if self.output is not None else self.output_spec_kind
+
+    @model_serializer(mode="wrap")
+    def _legacy_document(self, handler):
+        result = handler(self)
+        for field in ("input", "output", "log"):
+            if field not in self.model_fields_set and getattr(self, field) is None:
+                result.pop(field, None)
+        return result
+
+    @model_validator(mode="after")
+    def _declared_shapes(self) -> "ComputeOpSpec":
+        for shape in (self.input, self.output):
+            if shape is not None:
+                validate_shape(shape)
+        if self.output is not None and self.output_spec_kind is not None and self.output != self.output_spec_kind:
+            raise ValueError("output and output_spec_kind declare conflicting shapes")
+        return self
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exe_data_is_its_subkinds(cls, data: Any) -> Any:
+        return exe_data_by_subkind(data)
+
+    @model_validator(mode="after")
+    def _attempts_need_a_check(self) -> "ComputeOpSpec":
+        if self.completion_check is not None and self.status_check:
+            raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
+        checked = self.completion_check is not None or bool(self.status_check)
+        if getattr(self.exe_data, "auto_continue", False) and not (checked and (
+            (self.exe_data.recheck and self.output_shape == ConfirmSpec.spec_kind)
+            or any(choice.command for choice in self.exe_data.choices)
+        )):
+            raise ValueError(
+                f"{self.name or 'this op'}: auto_continue needs a check, and either recheck with output "
+                "confirm or a choice that is a command"
+            )
+        if self.exe_data.SELF_CHECKING and (self.completion_check is not None or self.status_check):
+            raise ValueError(f"{self.name or 'this op'}: a {self.subkind} op is its own check — it takes no other")
+        if self.attempts and not self.convergent:
+            raise ValueError(
+                f"{self.name or 'this op'}: attempts need a completion_check — nothing else can say one missed"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _output_is_a_known_kind(self) -> "ComputeOpSpec":
+        if self.output_spec_kind is not None and not known_kind(self.output_spec_kind):
+            raise ValueError(
+                f"unknown kind {self.output_spec_kind!r} — output_spec_kind must name a "
+                "registered DataSpec or a primitive"
+            )
+        if self.subkind is OpSubkind.ASK and self.output_shape is None:
+            # Without a shape there is no field to draw and nothing to validate
+            # the answer against — caught at read, not with a person waiting.
+            raise ValueError(
+                f"{self.name or 'this op'} asks a person but declares no output (or output_spec_kind) — "
+                "there is nothing to ask the person FOR"
+            )
+        return self
+
+    @property
+    def display_label(self) -> str:
+        return self.label or self.name
+
+    @property
+    def convergent(self) -> bool:
+        """True when this op can answer "already done" without doing anything."""
+        return self.completion_check is not None or bool(self.status_check) or self.exe_data.SELF_CHECKING
+
+    def verdict_of(self, said: CliResult) -> ExitCode:
+        """Read one completion-check run: ``OK`` the goal holds, ``NOT_APPLICABLE``
+        not this machine's problem, ``NOT_YET`` there is work to do.
+
+        A timeout and a missing returncode are both ``NOT_YET``: an unanswered
+        question is not a satisfied one, and the cost of running an idempotent
+        call we did not need is far below the cost of skipping one we did.
+        """
+        if said.timed_out or said.returncode is None:
+            return ExitCode.NOT_YET
+        if said.returncode == 0:
+            return ExitCode.OK
+        if said.returncode in self.not_applicable_codes:
+            return ExitCode.NOT_APPLICABLE
+        return ExitCode.NOT_YET

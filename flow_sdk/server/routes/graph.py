@@ -13,13 +13,13 @@ from starlette.websockets import WebSocketDisconnect
 
 from flow_sdk import service_log
 from flow_sdk.actions import action
-from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.core.auth.custom import local_signin
 from flow_sdk.core.auth.models import SignupInfo
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_driver import DBResetProfile, get_db_driver
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info, get_current_service_config
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -132,20 +132,6 @@ async def get_by_id(target: TypeId) -> Tuple[Type[Entity], Entity]:
 async def handle_request(
     request: Request, response: Response | None = None, background_tasks: BackgroundTasks | None = None
 ) -> ApiResponse | Response:
-    import time as _bench_time
-
-    _hr_t0 = _bench_time.perf_counter()
-
-    def _hr_bench(label):
-        try:
-            with open("/tmp/bench_open.log", "a") as _f:
-                _f.write(
-                    f"[BENCH handle_request {request.url.path[-30:]}] {label}: {(_bench_time.perf_counter() - _hr_t0) * 1000:.1f}ms\n"
-                )
-        except Exception:
-            pass
-
-    _hr_bench("entry")
     request_info = get_current_request_info()
     if not request_info:
         service_log.warn("Request info not found in handle_request")
@@ -166,7 +152,6 @@ async def handle_request(
             detail=f"Action handler not found: {request_info.action}",
         )
 
-    _hr_bench("after action lookup")
     sig = inspect.signature(a.handler)
     params = sig.parameters
     kwargs = {}
@@ -175,7 +160,27 @@ async def handle_request(
     first_param = list(params.values())[0] if params else None
     if first_param:
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
-    _hr_bench("after fill_self_cls_param")
+
+    # A published Git-backed asset has no local byte authority. Forward its
+    # ordinary entity-VFS request before parsing/binding the action body so the
+    # exact method, path, query, multipart bytes, and download response remain
+    # intact. A Hub rejection is the response; there is deliberately no local
+    # fallback for this branch.
+    from flow_sdk.server.routes._hub_reflect import (
+        is_git_backed_remote_fs,
+        proxy_to_hub,
+    )
+
+    entity_for_early_fs_proxy = kwargs.get("self")
+    if entity_for_early_fs_proxy is None and request_info.auth_result is not None:
+        entity_for_early_fs_proxy = request_info.auth_result.target
+    if is_git_backed_remote_fs(entity_for_early_fs_proxy, a.action_name):
+        sub_path = request_info.sub_path or ""
+        if request.method == "GET" and sub_path.startswith("document/"):
+            from flow_sdk.server.routes._hub_reflect import read_hub_document
+
+            return await read_hub_document(request, entity_for_early_fs_proxy, sub_path.removeprefix("document/"))
+        return await proxy_to_hub(request)
 
     request_params = request_info.request_parameters
 
@@ -252,8 +257,6 @@ async def handle_request(
             if name in json_data:
                 kwargs[name] = json_data[name]
 
-    _hr_bench("before handler call")
-
     # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
     # entity has a hub counterpart (remote=True), forward the call to the
     # hub and mirror its response into the local row instead of running
@@ -285,7 +288,6 @@ async def handle_request(
                 request_info.method,
                 request_info.sub_path,
             )
-            _hr_bench("after hub reflect")
             # Write-through actions (entity files) mirrored to the hub but still
             # need their LOCAL write — the local store is the cache. Everything
             # else replaces the local handler with the hub's answer.
@@ -298,8 +300,12 @@ async def handle_request(
             # gates) into a silent fake success and drift local state from the
             # hub. Only transport failures (status_code == 0: DNS, refused,
             # timeout — i.e. offline) keep the degraded local fallback, and
-            # GETs always do (a stale local read beats an error).
-            if request_info.method.upper() != "GET" and e.status_code >= 400:
+            # GETs do too (a stale local read beats an error) — except a 403:
+            # the hub refusing THIS caller is the answer, not an outage, and a
+            # local read would either show what was refused or hide the refusal
+            # (People & teams turns it into the member's read-only card).
+            is_get = request_info.method.upper() == "GET"
+            if (not is_get and e.status_code >= 400) or (is_get and e.status_code == 403):
                 raise HTTPException(status_code=e.status_code, detail=e.reason)
             service_log.warn(
                 f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
@@ -322,7 +328,6 @@ async def handle_request(
     except Exception as e:
         service_log.error(f"Action failed: {request_info.action}, {e}")
         raise e
-    _hr_bench("after handler call")
 
     if isinstance(response, Response):
         return response
@@ -347,7 +352,6 @@ async def handle_request(
         if getattr(response, "status_code", None) != 404:
             service_log.warn(f"Action returned non-success: {request_info.action}, message: {response.message}")
 
-    _hr_bench("before return (response built)")
     return response
 
 
@@ -358,10 +362,10 @@ def _get_self_heal_indexers() -> dict[str, Any]:
     """Per-type single-file indexers used by the 404 self-heal path. Built
     lazily so import cost only lands when an actual self-heal happens.
 
-    v1 wires PLAN only (the original RCA target). Other file-backed types
-    (markdown, claude_md, claude_command, skill, claude_memory, claude_rules)
-    can be added when the chip→loader→hint_path wiring on the FE starts
-    sending hints for them.
+    Wires the seven file-backed types the FE sends ``hint_path`` for: plan
+    (the original RCA target), markdown, skill, claude_md, claude_memory,
+    claude_rules and command. A further type enrolls by adding its
+    single-file indexer to the map below.
     """
     global _SELF_HEAL_INDEXERS
     if _SELF_HEAL_INDEXERS is not None:
@@ -471,6 +475,13 @@ async def catch_all(request: Request, response: Response, background_tasks: Back
     """
     Catch all paths and HTTP methods and process them with this function.
     """
+    # A type that exists only on the hub has nothing here to parse an action against, read or
+    # write — forward the request whole, before any local resolution (see ``hub_only_type``).
+    from flow_sdk.server.routes._hub_reflect import hub_only_type, proxy_hub_only
+
+    entity_type = hub_only_type(request.url.path) if request.method != "OPTIONS" else None
+    if entity_type is not None:
+        return await proxy_hub_only(request, entity_type)
     try:
         request_info = get_current_request_info()
         if request_info is not None:

@@ -1,96 +1,299 @@
 ---
 id: 0d9157ba-e30c-5da0-a42f-87b215d6a4ab
 name: flowpad-navigation
-description: Drive the Flowpad UI to an entity or file. Use whenever the user asks
-  to open, show, navigate to, or jump to a TypeId or file path, including follow-ups
-  such as "open it" or "show it" after creating a file. TypeIds may be bare or
-  embedded in the request.
+description: Shows a file, entity or screen to the user in Flowpad with `flow show`,
+  or moves their browser tab with `flow navigate` when they explicitly ask to be taken
+  somewhere. Use whenever the user asks to open, show, display, preview or jump to a
+  file path, TypeId or screen — including bare follow-ups such as "open it" or "show
+  it" after creating or discussing a file — and to show a code snippet the user can
+  run (`flow show snippet`). Never use the operating system's `open`
+  command for this; Flowpad has its own surface. NOT for building the deliverable
+  itself (building-deliverables), or creating and indexing records
+  (flowpad-assistance).
 ---
 
 # flowpad-navigation
 
-**Act now. Do not research how to navigate — the recipe is right here. Never read
-other skill files, never `ls` the skills dir, never write a report.** Navigation
-is one side-effect that the user sees in their browser; it is a few commands, not
-an investigation.
+**Act now. Do not research how to show or navigate — the recipe is right here. Never
+read other skill files, never `ls` the skills dir, never write a report.** This is one
+side-effect the user sees in their browser; it is a few commands, not an investigation.
 
-> **Display sessions use `flow show`, not `flow navigate`.** Everything below
-> `flow navigate`s the user's browser tab. If you are in a vibe/creator session
-> with a display pane (asked to open/show something "in the display"), use
-> `flow show file <path>` / `flow show entity <typeid>` instead — see the
-> decision rule at the bottom.
+**Never open the target with the operating system** (`open`, `xdg-open`, `start`) or a
+browser. That puts the file outside Flowpad, where the user cannot act on it.
 
-## You already have a TypeId
+## The decision rule — `flow show` vs `flow navigate`
 
-Run exactly one command, then stop (Display session → `flow show entity <typeid>`
-instead):
+Key on the **intent**, not on the mode and not on who authored the file:
+
+- **"Here is the thing"** — presenting, handing over, or simply making something
+  visible → **`flow show`**, in every mode. It never navigates: in a vibe session it
+  pins the display pane; in any other mode it opens the target as a tab right after
+  your process and marks your chip. A background agent therefore cannot interrupt
+  anyone. **This is the default, and it is what a bare "open it" means.**
+- **"Take me there"** — the user explicitly asks to navigate to / jump to / go to /
+  be taken to something → **`flow navigate`**. The word "navigate" in the request is
+  itself that explicit ask. It moves the tab the user is looking at, so use it only
+  when being moved is what they asked for.
+
+When in doubt, `flow show` — the failure mode of showing is a tab the user ignores;
+the failure mode of navigating is yanking them out of their work.
+
+**A session opens as a live-session tab, not its transcript.** `flow show entity` opens
+nothing for a `claude_session` or `agentic_process`, and `flow navigate entity` lands
+on the read-only transcript. Show the session view instead — a tab beside your process,
+the user switches to it themselves:
 
 ```bash
-flow navigate entity <typeid>
+flow show view shell/agentic_process-<process-id>
 ```
 
-Exit `0` = done, stop immediately. (`2` bad TypeId, `3` no tab → tell the user to
-open Flowpad, `4` not found, `5` server down.)
-
-## You have a file path you just wrote (no TypeId yet)
-
-This is "open it" after creating a file. **First decide the target** (see the
-`flow show` vs `flow navigate` rule below):
-
-**Presenting it into the active process Display** (a vibe/creator session, or
-"open it in the display") → use `flow show` — no TypeId, no indexing needed:
+Have only the Claude session id (the transcript's `<uuid>.jsonl` name)? Look up the
+process that owns it:
 
 ```bash
-flow show file <absolute-path>   # sets the Display target; stop
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select id from entities where type='agentic_process' and json_extract(data,'\$.session_id')='<session-uuid>'"
 ```
 
-**Moving the user's own browser tab** to it → the file needs a Flowpad entity,
-then its TypeId. Two commands, no research:
+Exit 0 only means the show was delivered — confirm the tab is open before saying so
+(`1` = open):
 
 ```bash
-# 1. Index just this file — returns its TypeId in data.typeid.
-flow record index <absolute-path> --types markdown
+sqlite3 ~/.flow/instances/${FLOW_INSTANCE:-prod}/flowpad.db \
+  "select json_extract(data,'\$.visible') from entities where type='tab' and json_extract(data,'\$.target_id')='<process-id>'"
+```
 
-# 2. Navigate the browser tab to the returned TypeId. Stop.
+Open the transcript only when it is asked for
+(`flow show view lens/claude/transcript/<session-uuid>`).
+
+## You have a file path
+
+Apply the decision rule above to the user's words first — having a path does not
+make it a `flow show`.
+
+"Open it" / "show it" after writing or discussing a file → show it. No TypeId, no
+indexing needed:
+
+```bash
+flow show file <absolute-path>
+```
+
+Exit 0 = shown, done. Exit 1 with `verdict: not_running` = shown, but its server is down — start it, then show it again.
+
+"Navigate to it" / "take me to it" → the file needs an entity first. Two commands,
+no research:
+
+```bash
+flow record index <absolute-path> --types markdown   # returns data.typeid
 flow navigate entity <data.typeid>
 ```
 
-`flow record index` is path-scoped and fast; its JSON has `data.typeid`
-(e.g. `markdown-<uuid>`) — pass that straight to `flow navigate`. No search, no
-guessing. Do not read the file, do not open it with the OS, do not summarize.
+`flow record index` is path-scoped and fast; its JSON carries `data.typeid`
+(e.g. `markdown-<uuid>`). Pass it straight through — no search, no guessing.
 
-## "the current X" (no path, no id)
+## A code snippet to see and run
 
-Resolve via context, then navigate (Display session → `flow show entity` instead
-of `flow navigate`):
-
-```bash
-flow context list                      # JSON; read e.g. CurrentProjectTypeId
-flow navigate entity <that-typeid>     # if the value is null, tell the user and stop
-```
-
-## Presenting into a Display vs. moving the browser: `flow show` vs `flow navigate`
-
-Decision rule — key on the **target**, not on who authored the file:
-
-- **The active process Display** (a vibe/creator session with a display pane, or
-  the user says "in the display / on screen") → **always `flow show`**, whether
-  you created the file/entity or it already existed. `show` never moves the
-  user's browser; it sets the display focus for whoever is watching this session.
-- **The user's own browser tab** ("jump to", "take me to" an entity, standard
-  assistant with no Display) → `flow navigate`. It hijacks the visible tab, so
-  never use it to present something on a Display.
-
-Exit 0 = recorded, done — even if nothing is visibly open.
+When you and the user are working on a piece of code they should see **and run**,
+show it as a snippet: one code file split by comment markers into regions. Imports
+and setup stay folded away; the snippet view has a Run button, and the file runs in its
+own terminal below it — output streams as it is printed.
 
 ```bash
-flow show file <absolute-path>       # a file you just wrote (no TypeId needed)
-flow show entity <typeid>            # a known TypeId
-flow show webapp --port <port>       # a dev server / web app you started
+flow show snippet --lang py --name load-data <<'SNIP'
+# %% flowpad:hidden
+import json
+# %% flowpad:init
+data = {"a": 1}
+# %% flowpad:snippet
+print(json.dumps(data))
+SNIP
 ```
 
-One command, then stop. (`2` bad args, `4` entity not found, `5` server down.)
+- Markers: `# %% flowpad:hidden` (imports), `# %% flowpad:init` (setup),
+  `# %% flowpad:snippet` (what the user sees). Use `//` for js and rs. Without a
+  `flowpad:snippet` marker the command refuses (exit 2).
+- `--lang` is the file extension: `py`, `js`, `rs`, `sh`. With no PATH the code is
+  read from stdin into the OS temp dir; the JSON answer's `path` is that file. To
+  change it on a later turn, edit that file. An existing file:
+  `flow show snippet <path>` (on an explicit "take me there", `flow navigate file <path>`
+  opens the same snippet view).
+- The file runs top to bottom **as written** — the markers are only comments, so the
+  whole file must be a complete, valid program. A compiled language needs its entry
+  point: in rust, `fn main() { ... }` goes inside the snippet region (bare statements
+  do not compile).
+- Run it yourself exactly as the Run button does, and read the result before you
+  claim it works. Show first, then run THAT file by the `path` the show answered —
+  never a copy of the code (`python3 -c ...`, a scratch file): the user runs the
+  file on screen, and a copy that passes proves nothing about it:
 
-See `../flowpad-assistance/navigate.md` ONLY if a case above doesn't fit — but the
-above covers open/show/navigate. After a successful `flow navigate` or `flow show`
-(exit 0), you are done: no verification, no follow-up commands, no report.
+```bash
+flow snippet run <path> --timeout 30   # JSON stdout/stderr/returncode; exit 0 ok, 1 failed or timed out, 3 no runner, 4 no such file
+```
+
+- `flow snippet run` runs off-screen and answers once the file ends; a run that never
+  ends is killed at `--timeout`, keeping whatever it printed, and its stdin is closed,
+  so `input()` fails instead of waiting. The Run button is different: the file runs in
+  its own terminal under the editor (one per file — the last run is still there on the
+  next visit), with no time limit; Stop interrupts it (Ctrl-C, then kills what is left)
+  and the terminal stays.
+- The view watches the file: when you edit it on a later turn the open view
+  updates by itself — no need to show it again.
+
+## You already have a TypeId
+
+A TypeId has the shape `<type>-<id>` (`shell-<uuid>`, `markdown-<uuid>`, `task-<uuid>`).
+Run exactly one command, then stop:
+
+```bash
+flow show entity <typeid>       # presenting it — the default
+flow navigate entity <typeid>   # only on an explicit "take me there"
+```
+
+## A running web app you started
+
+```bash
+flow show webapp --port <port>            # for the project's end users (its `app`)
+flow show webapp --port <port> --admin    # for its operators (its `admin` app: a back office, a console)
+```
+
+Use the port the dev server actually reported, never an assumed one. Add `--admin` only when
+what you built is for the people who RUN the project, not the people who use it.
+
+## A web page (docs, a vendor's guide)
+
+```bash
+flow show url https://metallb.io/installation/
+```
+
+Opens the page in a tab beside the chat — each URL is its own tab, so several pages
+can stay open side by side. A site that forbids being framed shows blank there; then
+give the user the link as well.
+
+## A screen
+
+Screens are addressed by **view name**, optionally plus `/pointer` and `?opts` — the
+same string the URL bar carries after `/dock/`. Not by TypeId:
+
+```bash
+flow show view automations                  # presenting it — the default
+flow show view assets/list/skill
+flow show view "search?q=widget"            # quote anything containing a ?
+flow navigate view preferences/appearance   # only on an explicit "take me there"
+```
+
+**Find the screen in the table below — do not reason from the address.** The address is
+a slug and the user speaks English; several slugs read nothing like the screen they open
+(`rag` is Search indexes, `explorer` is Files, `project` is Collaboration). Match on the
+**Screen** or **also called** column, then copy the address verbatim. If the ask matches
+no row, say so and ask which screen — a near-miss address is not a near-miss result, it
+opens a different screen and reports success.
+
+### Open by name
+
+| Screen | address | also called |
+| --- | --- | --- |
+| AI Configuration | `ai-config` | ai config, llm apis, models |
+| Artifacts | `artifacts` | deliverables, what we delivered |
+| Asset list | `asset-list` | counter assets |
+| Assets | `assets` | library, docs tree |
+| Assistance | `assistance` | expert assistance |
+| Automations | `automations` | events, triggers, rules, schedules, scheduled jobs, cron, cron jobs, trigger history, new automation |
+| Capabilities | `capabilities` | checks, system checks |
+| Code Editor | `editor` | edit file |
+| Collaboration | `project` | room |
+| Credentials | `credentials` | connections, secrets, api keys, keys, env vars |
+| Data sources | `data-sources` | connectors, integrations, ingestion, sources |
+| Desktop | `desktop` | favorites |
+| Docs | `docs` | documentation, flowpad documentation, help pages |
+| Files | `explorer` | file tree, folders |
+| Flowpad Assistant | `assistant` | assistant chat, help chat |
+| Graph Workflows | `graph-workflows` | workflows |
+| Home | `home` | landing, start |
+| Hooks | `hooks` | claude hooks |
+| Inbound routing | `inbound` | webhooks, inbound webhooks, message routing |
+| Stream Inbox | `stream_inbox` | messages |
+| LLM Endpoints  *(hub)* | `llm-endpoints` | endpoints |
+| LLM sources | `llm-sources` | harness funding |
+| Set up LLM | `llm-setup` | llm setup, choose llm, connect llm |
+| Machine | `machine` | system, this machine |
+| Markdown | `markdown` |  |
+| Organization  *(hub)* | `organization` | people, teams, members |
+| Preferences | `preferences` | my preferences, appearance |
+| Runs | `process-runs` | history |
+| Schema | `schema-tree` | schema tree, data schema, schemas, data model |
+| Search | `search` | find |
+| Search indexes | `rag` | embeddings, knowledge index, vector index, brain, knowledge base |
+| Settings | `settings` | claude settings |
+| Survey | `survey` | — |
+| System Profile | `system_profile` | claude code status, live status |
+| Tasks | `tasks` | todo |
+| Token plan  *(hub)* | `token-plan` | budget, token budget |
+| Web App | `web-app` | web apps |
+| Worker | `shell` | chats, terminal |
+
+### Need an id
+
+These take a pointer; without one they are an error, not a landing. Get the id first
+(`flow record index`, or the `search` action of **flowpad-assistance**).
+
+| Screen | address | also called |
+| --- | --- | --- |
+| Agent stream inbox | `agent/<id>/stream_inbox` | — |
+| App | `app/<id>` | — |
+| Context | `graph_context/<id>` | frozen context |
+| Conversation | `conversation/<id>` | — |
+| Diagnosis | `diagnosis/<id>` | — |
+| Diff Viewer | `diff/<id>` | changes |
+| Entity  *(hub)* | `entity/<id>` | hub entity |
+| Graph | `graph/<id>` | dep graph, dependency graph |
+| Help desk | `helpdesk/<id>` | support |
+| Knowledge Browser | `k-browser/<id>` | docs browser |
+| Lens | `lens/<id>` | transcript |
+| Live Session | `live_session/<id>` | — |
+| Plan | `plan/<id>` | — |
+| Process | `agentic_process/<id>` | — |
+| Records  *(hub)* | `records/<id>` | hub records |
+| Show | `show/<id>` | — |
+| Ask | `ask/<id>` | — |
+| Skill apps | `apps/<id>` | — |
+| Spec | `spec/<id>` | — |
+| Subgraph | `subgraph/<id>` | — |
+| Tag Graph | `tag/<id>` | tags, taxonomy |
+| Vibe | `vibe/<id>` | vibe session, vibe workspace |
+| WorldView | `worldview/<id>` | world, org graph |
+
+A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.
+
+`flow schema views` is the same table, live, with each view's pointer rule. Reach for it
+only if the ask matches nothing above. Screens are **not** TypeIds: `flow navigate entity
+automations` is wrong and will fail.
+
+## You have no path and no id
+
+- **"the current X"** → the `context` action of the **flowpad-assistance** skill maps
+  the user's phrase to a key; show the TypeId it returns.
+- **You know only a name** → the `search` action of the same skill, which owns what to
+  do when several rows match; show the TypeId it settles on.
+
+Do not invent a TypeId and do not ask the user — that is what those actions are for.
+
+## Exit codes
+
+Showing a place participates in **FlowCall**: `NavigateResult` is the specialized
+`ReturnedValue` answer. Read its outcome separately from whether it was delivered.
+
+`flow show` and `flow navigate` print one JSON line to stdout — the answer, with
+`exit_code`, `verdict` and `detail` — and exit with that `exit_code`:
+
+```json
+{"ok": false, "exit_code": 1, "verdict": "not_running", "detail": "Nothing is answering at localhost:3000.", "delivered": true}
+```
+
+| Exit | Meaning |
+| ---- | ------- |
+| `0`  | Shown, and it can be used. Stop — no verification, no summary. |
+| `1`  | Not yet. `verdict` says why: `no_browser` — no Flowpad tab is open (`flow navigate`); tell the user to open Flowpad. `not_running` / `hung` / `server_error` — it IS shown, but the server behind it is down or failing: start or fix it, then show it again. |
+| `2`  | Bad argument (invalid TypeId, unknown view, or a view missing its pointer). Fix the argument. |
+| `4`  | Not found — the entity, file or pointer does not exist here. Tell the user. |
+| `5`  | Cannot reach the Flowpad server. Tell the user the server is down. |
+| `7`  | Refused — the page does not allow being shown inside Flowpad. Offer to open it in the browser. |

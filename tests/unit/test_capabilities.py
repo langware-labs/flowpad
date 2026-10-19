@@ -9,6 +9,7 @@ import flow_sdk.core.capabilities.discovery as discovery_mod
 from flow_sdk.core.capabilities import CapabilityKind, CapabilityResult, get_capability_registry
 from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
 from flow_sdk.core.capabilities.models import CapabilityValue
+from flow_sdk.schema.data_spec import DataSpec
 
 
 @pytest.fixture(autouse=True)
@@ -26,7 +27,7 @@ def _seed_cli_value(kind: str, folder: str) -> None:
         CapabilityValue(
             kind=kind,
             value={"path": folder, "ref_type": "folder"},
-            value_type="folder",
+            value_spec=DataSpec.parse("fs_ref"),
             message="seeded",
         )
     )
@@ -40,6 +41,7 @@ def test_capability_kind_ontology_prefix_matching():
 
     assert CapabilityKind.CLAUDE_CLI.value in harness_kinds
     assert CapabilityKind.CODEX_CLI.value in harness_kinds
+    assert CapabilityKind.DEEPAGENTS_CLI.value in harness_kinds
     assert claude_kinds == {CapabilityKind.CLAUDE_CLI.value}
 
 
@@ -51,6 +53,20 @@ def test_harness_capability_specs_include_install_homepages():
 
     assert claude.homepage_url == "https://docs.anthropic.com/en/docs/claude-code/getting-started"
     assert codex.homepage_url == "https://openai.com/codex/"
+
+
+@pytest.mark.asyncio
+async def test_default_worker_type_follows_persisted_harness_reference(monkeypatch):
+    import flow_sdk.core.capabilities.registry as registry_mod
+
+    runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
+
+    async def selected_codex():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(runner, "resolve_reference_kind", selected_codex)
+
+    assert await registry_mod.resolve_default_worker_type() == "codex"
 
 
 @pytest.mark.asyncio
@@ -106,12 +122,46 @@ async def test_cli_capability_install_starts_agentic_process(monkeypatch):
     assert seen_prompts == [None]
 
 
+def test_install_prompt_names_the_capability_being_installed():
+    """The install worker must be told WHICH capability to install.
+
+    The body alone says "this capability" with no antecedent, so the agent had
+    nothing to act on — it was asked to install something unnamed.
+    """
+    import flow_sdk.core.capabilities.registry as registry_mod
+
+    spec = registry_mod.get_capability_registry().get(CapabilityKind.CODEX_CLI.value).spec
+    prompt = registry_mod.install_prompt_for_spec(spec)
+
+    assert "Codex CLI" in prompt
+    assert CapabilityKind.CODEX_CLI.value in prompt
+    assert spec.homepage_url in prompt
+    assert prompt.endswith(registry_mod.DEFAULT_INSTALL_PROMPT)
+
+
+def test_install_prompt_names_the_capability_for_a_custom_connector_prompt():
+    """A connector's curated prompt gets the same identity preamble."""
+    import flow_sdk.core.capabilities.registry as registry_mod
+    from flow_sdk.core.capabilities.models import CapabilitySpec
+
+    spec = CapabilitySpec(
+        name="Gmail",
+        kind="gmail.mcp.claude_code",
+        description="Gmail connector.",
+        install_prompt="Install the Gmail MCP server.",
+    )
+    prompt = registry_mod.install_prompt_for_spec(spec)
+
+    assert "Gmail (gmail.mcp.claude_code)" in prompt
+    assert prompt.endswith("Install the Gmail MCP server.")
+    assert registry_mod.DEFAULT_INSTALL_PROMPT not in prompt
+
+
 @pytest.mark.asyncio
 async def test_capability_install_process_uses_default_harness_worker(monkeypatch, tmp_path):
     import flow_sdk.builtin.agentic_process as agentic_process_pkg
     import flow_sdk.core.capabilities.registry as registry_mod
     import flow_sdk.instance_settings as instance_settings_pkg
-    from flow_sdk.responses.response import ApiSuccessResponse
 
     created: list[dict] = []
     scheduled: list[tuple[str, str]] = []
@@ -126,17 +176,37 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
         async def save(self, notify=True):
             return self
 
-        async def prompt(self, prompt):
+        async def send_turn(self, prompt):
+            from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+
             created.append({"prompt": prompt})
-            return ApiSuccessResponse(data={"status": "started", "worker": "codex"})
+            return PromptResult.satisfied("The turn was accepted.", executor="agentic_process-install-process-id")
 
     async def fake_resolve_default_harness_kind():
         return CapabilityKind.CODEX_CLI.value
 
-    monkeypatch.setattr(instance_settings_pkg, "get_instance_settings", lambda: SimpleNamespace(flow_home=str(tmp_path)))
+    # Only `flow_home` is being redirected; everything else must stay real,
+    # because the install now launches through the named `capability-installer`
+    # Agent, and upserting its deployment reads settings this test never
+    # thought about (instance_name, records_root, …). Delegating beats
+    # enumerating — a substituted namespace goes stale the moment a new
+    # setting is read.
+    _real_settings = instance_settings_pkg.get_instance_settings()
+
+    class _FlowHomeOverride:
+        # A Path, matching the real `InstanceSettings.flow_home: Path` — callers
+        # do Path arithmetic on it (`local_entity_id` does `home / "global"`).
+        flow_home = tmp_path
+
+        def __getattr__(self, item):
+            return getattr(_real_settings, item)
+
+    monkeypatch.setattr(instance_settings_pkg, "get_instance_settings", _FlowHomeOverride)
     monkeypatch.setattr(agentic_process_pkg, "AgenticProcess", FakeAgenticProcess)
     monkeypatch.setattr(registry_mod, "resolve_default_harness_kind", fake_resolve_default_harness_kind)
-    monkeypatch.setattr(registry_mod, "_schedule_install_monitor", lambda process_id, kind: scheduled.append((process_id, kind)))
+    monkeypatch.setattr(
+        registry_mod, "_schedule_install_monitor", lambda process_id, kind: scheduled.append((process_id, kind))
+    )
 
     result = await registry_mod.run_capability_install_process(
         registry_mod.get_capability_registry().get(CapabilityKind.CLAUDE_CLI.value).spec
@@ -146,12 +216,46 @@ async def test_capability_install_process_uses_default_harness_worker(monkeypatc
     assert process_kwargs["worker_type"] == "codex"
     assert process_kwargs["cli_config"]["worker_type"] == "codex"
     assert process_kwargs["context_data"]["install_harness_kind"] == CapabilityKind.CODEX_CLI.value
-    assert created[1]["prompt"] == registry_mod.DEFAULT_INSTALL_PROMPT
+    # The worker is told WHAT to install, not just "this capability" — the
+    # prompt names the row the user clicked Set up on.
+    claude_spec = registry_mod.get_capability_registry().get(CapabilityKind.CLAUDE_CLI.value).spec
+    assert created[1]["prompt"] == registry_mod.install_prompt_for_spec(claude_spec)
+    assert CapabilityKind.CLAUDE_CLI.value in created[1]["prompt"]
+    assert created[1]["prompt"].endswith(registry_mod.DEFAULT_INSTALL_PROMPT)
     assert result.ok is True
     assert result.process_id == "install-process-id"
     assert result.details["harness_kind"] == CapabilityKind.CODEX_CLI.value
     assert result.details["worker_type"] == "codex"
     assert scheduled == [("install-process-id", CapabilityKind.CLAUDE_CLI.value)]
+
+
+@pytest.mark.asyncio
+async def test_capability_install_with_a_disabled_installer_answers_refused(monkeypatch):
+    """A disabled `capability-installer` is a refusal the result carries — the
+    install used to raise it out of the action."""
+    import flow_sdk.builtin.agent_registry as agent_registry
+    import flow_sdk.core.capabilities.registry as registry_mod
+    from flow_sdk.builtin.deployment import AgentUnavailable
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+
+    class Disabled:
+        async def create_process(self, prompt, **options):
+            raise AgentUnavailable("capability-installer is disabled here", ExitCode.REFUSED)
+
+    async def fake_deployment(ref):
+        return Disabled()
+
+    async def fake_harness():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(agent_registry, "get_agent_local_deployment", fake_deployment)
+    monkeypatch.setattr(registry_mod, "resolve_default_harness_kind", fake_harness)
+    spec = registry_mod.get_capability_registry().get(CapabilityKind.CLAUDE_CLI.value).spec
+
+    result = await registry_mod.run_capability_install_process(spec)
+
+    assert result.ok is False and result.answer.exit_code is ExitCode.REFUSED
+    assert "disabled" in result.message
 
 
 @pytest.mark.asyncio
@@ -324,6 +428,9 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
 
     monkeypatch.setattr(discovery_mod, "_run_env_probe", fake_probe)
     monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
+    # No vendor installer has put anything in its own folder either (af3b45196 searches those
+    # after a PATH miss, through the same shutil.which the line above stubs to always hit).
+    monkeypatch.setattr(discovery_mod, "in_install_dirs", lambda executable: None)
     monkeypatch.setattr(
         registry_mod.subprocess,
         "run",
@@ -335,9 +442,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
     class FakeRow:
         def __init__(self, kind):
             self.kind = kind
-            self.reference_kind = (
-                CapabilityKind.CODEX_CLI.value if kind == CapabilityKind.HARNESS.value else None
-            )
+            self.reference_kind = CapabilityKind.CODEX_CLI.value if kind == CapabilityKind.HARNESS.value else None
             self.value = None
             self.value_type = None
             self.last_check = None
@@ -371,7 +476,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
 
     codex = get_capability_value(CapabilityKind.CODEX_CLI.value)
     assert codex is not None and codex.value["path"] == str(bin_dir)
-    assert codex.value_type == "folder"
+    assert codex.value_type == "fs_ref"
 
     claude = get_capability_value(CapabilityKind.CLAUDE_CLI.value)
     assert claude is not None and claude.value is None  # probed, absent
@@ -383,7 +488,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
     # Rows mirrored (changed rows saved with the new value + refreshed badge).
     mirrored = {kind: (value, value_type, last_check) for kind, value, value_type, last_check in saved_rows}
     assert mirrored[CapabilityKind.CODEX_CLI.value][0]["path"] == str(bin_dir)
-    assert mirrored[CapabilityKind.CODEX_CLI.value][1] == "folder"
+    assert mirrored[CapabilityKind.CODEX_CLI.value][1] == "fs_ref"   # the spec's kind IS the row's value_type
     # last_check refreshed in the same sweep → badge agrees with the value.
     assert mirrored[CapabilityKind.CODEX_CLI.value][2]["available"] is True
     assert mirrored[CapabilityKind.CLAUDE_CLI.value][2]["available"] is False
@@ -415,6 +520,48 @@ async def test_partial_run_discovery_does_not_mark_full_sweep(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
+async def test_scoped_rediscovery_finds_a_cli_installed_after_the_first_sweep(monkeypatch, tmp_path):
+    """A CLI installed while the server is running is invisible until re-probed.
+
+    The full sweep runs once per backend start, and ``ensure_discovered`` is a
+    no-op afterwards — so a codex installed ten minutes after boot still reads
+    as absent. The Capabilities view's arrival re-probe fixes that by running a
+    SCOPED discovery for the one kind the user asked for; this pins that a
+    scoped sweep sees the new binary even though the full sweep is done.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    installed: set[str] = set()
+
+    async def fake_probe(executables):
+        return {
+            "path": str(bin_dir),
+            "executables": {exe: (str(bin_dir / exe) if exe in installed else None) for exe in executables},
+        }
+
+    async def fake_mirror(discovered):
+        return None
+
+    monkeypatch.setattr(discovery_mod, "_run_env_probe", fake_probe)
+    monkeypatch.setattr(discovery_mod, "_mirror_to_rows", fake_mirror)
+
+    # Boot sweep: nothing installed yet.
+    await discovery_mod.run_discovery()
+    assert get_capability_value(CapabilityKind.CODEX_CLI.value).value is None
+    assert discovery_mod._DISCOVERED_ONCE.is_set()
+
+    installed.add("codex")
+
+    # The startup path stays a no-op — the whole reason the row went stale.
+    await discovery_mod.ensure_discovered()
+    assert get_capability_value(CapabilityKind.CODEX_CLI.value).value is None
+
+    # The intent-scoped re-probe is what finds it.
+    await discovery_mod.run_discovery([CapabilityKind.CODEX_CLI.value])
+    assert get_capability_value(CapabilityKind.CODEX_CLI.value).value["path"] == str(bin_dir)
+
+
+@pytest.mark.asyncio
 async def test_ensure_discovered_runs_one_full_sweep(monkeypatch):
     calls = []
 
@@ -428,39 +575,6 @@ async def test_ensure_discovered_runs_one_full_sweep(monkeypatch):
     assert await discovery_mod.ensure_discovered() is True
     assert await discovery_mod.ensure_discovered() is True
     assert calls == [None]
-
-
-@pytest.mark.asyncio
-async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
-    import flow_sdk.core.capabilities.harness_state as harness_state_mod
-    import flow_sdk.core.capabilities.registry as registry_mod
-
-    async def fake_ensure_discovered():
-        return True
-
-    runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
-
-    async def fake_reference():
-        return CapabilityKind.CODEX_CLI.value
-
-    monkeypatch.setattr(harness_state_mod, "ensure_discovered", fake_ensure_discovered)
-    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
-    monkeypatch.setattr(
-        registry_mod.subprocess,
-        "run",
-        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
-    )
-    monkeypatch.setattr(runner, "_resolve_reference_kind", fake_reference)
-    _seed_cli_value(CapabilityKind.CODEX_CLI.value, "/bin")
-
-    state = await harness_state_mod.compute_harness_state()
-
-    assert state["show_harness_select"] is False
-    by_kind = {h["kind"]: h for h in state["harnesses"]}
-    assert by_kind[CapabilityKind.CODEX_CLI.value]["installed"] is True
-    assert by_kind[CapabilityKind.CODEX_CLI.value]["is_default"] is True
-    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["installed"] is False
-    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["is_default"] is False
 
 
 @pytest.mark.asyncio
@@ -524,13 +638,23 @@ def test_worker_path_env_prepends_discovered_folder(monkeypatch):
     assert env == {"PATH": "/discovered/bin:/usr/bin:/bin"}
 
 
-def test_worker_path_env_none_when_capability_absent():
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
+def test_worker_path_env_none_when_capability_absent(monkeypatch):
+    """Absent means absent everywhere — no discovered value AND not on PATH.
 
+    ``clear_harness_capability`` supplies both halves. An empty discovery dict is
+    no longer sufficient on its own: resolution falls back to ``shutil.which``,
+    so on a machine that has codex installed this would otherwise resolve and the
+    assertion would quietly stop asserting anything.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
+    from tests.utils.fake_cli import clear_harness_capability
+
+    clear_harness_capability(monkeypatch, "codex")
     assert worker_path_env("codex") is None
-    set_capability_value(
-        CapabilityValue(kind=CapabilityKind.CODEX_CLI.value, value=None, value_type="folder")
-    )
+
+    # A SWEPT negative also wins over the PATH fallback — a sweep looked with the
+    # login-shell PATH and found nothing, which outranks what this process sees.
+    set_capability_value(CapabilityValue(kind=CapabilityKind.CODEX_CLI.value, value=None, spec=DataSpec.parse("fs_ref")))
     assert worker_path_env("codex") is None
 
 
@@ -538,12 +662,10 @@ def test_worker_path_env_none_when_capability_absent():
 async def test_cli_runner_discover_produces_folder_value():
     runner = get_capability_registry().get(CapabilityKind.CODEX_CLI.value)
 
-    found = await runner.discover(
-        {"path": "/x", "executables": {"codex": "/some/dir/codex"}}
-    )
+    found = await runner.discover({"path": "/x", "executables": {"codex": "/some/dir/codex"}})
     assert found.value["path"] == "/some/dir"
-    assert found.value_type == "folder"
+    assert found.value_type == "fs_ref"
 
     missing = await runner.discover({"path": "/x", "executables": {"codex": None}})
     assert missing.value is None
-    assert missing.value_type == "folder"
+    assert missing.value_type == "fs_ref"

@@ -19,6 +19,28 @@
  * Note the tri-state skin: the Standard-view chat OVERLAY (chatUiOverride)
  * deliberately keeps the xterm mounted underneath (same `!isHeadless` gate),
  * so only the pty_mode TRANSPORT flip exercises this unmount/remount path.
+ *
+ * Regression 2 (Hebrew reversed for a whole session) is the OPPOSITE leg of
+ * the same conditional mount, and it is the one a user can actually reach:
+ * useProcessSurface only ever calls switchMode(WorkerMode.Interactive) — chat
+ * and vibe need no transport of their own — so a PTY session never returns to
+ * headless, but a session CREATED headless (`pty_mode: false`: open-new-chat,
+ * use-start-vibe-session, start-wizard-process) mounts its container for the
+ * first time when the user opens the Terminal view.
+ *
+ * The RTL/bidi contract `.xterm-rtl-grid` was stamped ONLY from the layout
+ * effect keyed on `[process?.worker_type]`. Through the whole headless phase
+ * that effect ran with no container to stamp, and by the time one mounts
+ * worker_type has long since resolved — so it never fires again and the
+ * first-ever container is bare. On Windows + Claude Code, whose RTL text is
+ * pre-reversed into visual order, the browser then reorders every RTL run a
+ * second time and the session reads backwards; a session started directly in
+ * the terminal is fine, because there the container exists on the first render
+ * while worker_type is still undefined. Container-mount and vendor-resolution
+ * are independent triggers, so the contract has to be stamped at term.open()
+ * too. What a bare container then PAINTS is asserted in
+ * tests/browser_render/xterm-rtl.spec.ts — jsdom has no bidi engine, so this
+ * tier can only assert the contract itself.
  */
 import { act, cleanup, render } from '@testing-library/react';
 import { ProcessStatus, type AgenticProcess } from '@sdk';
@@ -43,6 +65,9 @@ vi.mock('@xterm/xterm', () => {
     cols = 80;
     loadAddon() {}
     attachCustomKeyEventHandler() {}
+    registerLinkProvider() {
+      return { dispose() {} };
+    }
     open(el: HTMLElement) {
       xtermSpies.open.calls += 1;
       xtermSpies.open.lastContainer = el;
@@ -77,7 +102,6 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class {} }));
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 
 // ---------------------------------------------------------------------------
 // pty-sync — inert session so the real lifecycle effect can call initialize/
@@ -117,9 +141,19 @@ vi.mock('@src/components/terminal/interactive-terminal/PtySyncContext', () => ({
 // swapped views.
 // ---------------------------------------------------------------------------
 vi.mock('@src/components/terminal/interactive-terminal/ProcessToolbar', () => ({ ProcessToolbar: () => null }));
-vi.mock('@src/components/terminal/interactive-terminal/SimpleChatPane', () => ({
-  SimpleChatPane: () => <div data-testid="simple-chat" />,
-}));
+// The view-mode SURFACE and the chat pane's mount count, driven by the tests below.
+const paneControls = vi.hoisted(() => ({ surface: 'terminal' as string, mounts: 0 }));
+vi.mock('@src/components/terminal/interactive-terminal/SimpleChatPane', async () => {
+  const { useEffect } = await import('react');
+  return {
+    SimpleChatPane: () => {
+      useEffect(() => {
+        paneControls.mounts += 1;
+      }, []);
+      return <div data-testid="simple-chat" />;
+    },
+  };
+});
 vi.mock('@src/components/terminal/interactive-terminal/ChatComposerBar', () => ({ ChatComposerBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalBottomRibbon', () => ({
   TerminalBottomRibbon: () => null,
@@ -128,8 +162,8 @@ vi.mock('@src/components/terminal/interactive-terminal/ColumnHeaderBar', () => (
 vi.mock('@src/components/terminal/interactive-terminal/PaneBar', () => ({ PaneBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneSelectorBar', () => ({ PaneSelectorBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneView', () => ({ PaneView: () => null }));
-vi.mock('@src/components/terminal/interactive-terminal/SidecarShellTerminal', () => ({
-  SidecarShellTerminal: () => null,
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', () => ({
+  ShellTerminal: () => null,
 }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalSearchBar', () => ({ TerminalSearchBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner', () => ({
@@ -191,11 +225,11 @@ vi.mock('@src/components/terminal/interactive-terminal/pty-replay', () => ({
   fetchPtyStream: () => Promise.resolve(null),
   replayPtyStream: () => Promise.resolve(null),
 }));
-vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', () => ({
-  FONT_FAMILY: 'monospace',
-  FONT_SIZE_PX: 12,
-  applyRtlGridContract: () => {},
-  openTerminalLink: () => {},
+// terminalConfig is REAL: applyRtlGridContract is under test below. Only the
+// OSC 52 registration is stubbed — it installs an OSC handler on the terminal,
+// and the xterm stand-in above exposes `parser.registerCsiHandler` alone.
+vi.mock('@src/components/terminal/interactive-terminal/terminalConfig', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/terminal/interactive-terminal/terminalConfig')>()),
   registerOsc52ClipboardWrite: () => {},
 }));
 
@@ -210,6 +244,8 @@ vi.mock('@src/hooks/use-instance-preferences', () => ({ useInstancePreferences: 
 vi.mock('@src/hooks/use-preference', () => {
   const tuples = new Map<string, [Record<string, never>, () => void]>();
   return {
+    // Resolved: the surface reconcile only acts once the mode is known.
+    usePreferenceResolved: () => true,
     usePreference: (key: string) => {
       if (!tuples.has(key)) tuples.set(key, [{}, () => {}]);
       return tuples.get(key);
@@ -232,15 +268,18 @@ vi.mock('@src/navigation', () => ({
 }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 vi.mock('@src/components/view-mode', () => ({ useIsAdvanced: () => true }));
-vi.mock('@src/contexts/chat-ui-mode-context', () => ({
-  useChatUiOverride: () => null,
-  setChatUiOverride: () => {},
+// On the terminal surface unless a test moves it, so in the transport round trip only the
+// pty_mode flip moves the view.
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
+  useSessionSurface: () => paneControls.surface,
+  useViewMode: () => 'advanced',
 }));
 vi.mock('@src/notifications/notify', () => ({
   notify: { error: () => {}, success: () => {}, info: () => {}, warning: () => {} },
 }));
 vi.mock('@src/components/image-annotator/annotate-files', () => ({
-  annotateImageFiles: (files: File[]) => Promise.resolve(files),
+  annotateImageFiles: (files: File[]) => Promise.resolve({ files, caption: '' }),
 }));
 
 import InteractiveTerminal from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
@@ -265,6 +304,8 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  paneControls.surface = 'terminal';
+  paneControls.mounts = 0;
   // Deterministic timers: the lifecycle defers fit (50ms) and dispose (10ms)
   // behind setTimeout; fake timers keep each test synchronous and stop one
   // test's deferred dispose from leaking into the next test's spy counts.
@@ -283,19 +324,30 @@ afterEach(() => {
 // pty_mode/isHeadless from it, exactly like the entity after switchMode.
 let headless = false;
 
+// The CLI in the terminal. Only the RTL contract reads it, and only `claude`
+// takes the pre-reversed buffer-order contract — see applyRtlGridContract.
+let workerType = 'codex';
+
 const mockProcess = {
   id: '0b54c9f6-8f6e-4f0a-9a4e-2f0d64f7c111',
   typeId: null,
   status: ProcessStatus.RUNNING,
   busy: false,
   session_id: 'shell-sess-1',
-  worker_type: 'codex',
+  get worker_type() {
+    return workerType;
+  },
   workdir: '/tmp/proj',
   project_id: null,
   plan_path: null,
   sidecar_shell_id: null,
   shell_id: null,
   markdown_docs: [],
+  // The ribbon's artifacts chip reads the process property and hydrates it
+  // once; this stand-in has no server behind it.
+  artifacts: [],
+  loadArtifacts: () => Promise.resolve([]),
+  applyArtifactEvent: () => false,
   get pty_mode() {
     return !headless;
   },
@@ -315,7 +367,7 @@ const mockProcess = {
 // re-render comes from the reactive entity update after switchMode.
 const ui = (marker: string) => (
   <MemoryRouter>
-    <InteractiveTerminal sessionId="shell-sess-1" active={false} process={mockProcess} className={marker} />
+    <InteractiveTerminal sessionId="shell-sess-1" active process={mockProcess} className={marker} />
   </MemoryRouter>
 );
 
@@ -334,6 +386,10 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
     // terminal → chat: container unmounts, chat pane is the whole view.
     headless = true;
     rerender(ui('r2'));
+    // The pane mounts a frame after the panel is shown as chat (see `chatMounted`).
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
     expect(container.querySelector('[data-testid="simple-chat"]')).toBeTruthy();
     expect(container.contains(firstContainer)).toBe(false);
     expect(xtermSpies.open.calls).toBe(1); // no phantom re-init while headless
@@ -343,7 +399,9 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
     // leaving both the xterm and the chat pane absent (blank window).
     headless = false;
     rerender(ui('r3'));
-    expect(container.querySelector('[data-testid="simple-chat"]')).toBeNull();
+    // The pane is HIDDEN, not rebuilt, when the surface moves on — a flip back to chat
+    // must not re-render the transcript (FLOWPAD-2193) — so it stays in the tree, out of sight.
+    expect(container.querySelector('[data-testid="simple-chat-overlay"]')?.getAttribute('data-shown')).toBe('false');
     expect(xtermSpies.open.calls).toBe(2);
     expect(xtermSpies.open.lastContainer).not.toBe(firstContainer);
     expect(container.contains(xtermSpies.open.lastContainer)).toBe(true);
@@ -363,5 +421,113 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
       vi.advanceTimersByTime(15);
     });
     expect(xtermSpies.dispose.calls).toBe(1);
+  });
+});
+
+describe('InteractiveTerminal — the chat pane follows the panel being SHOWN, not the global surface', () => {
+  const frame = () =>
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+  const withProps = (active: boolean, marker: string) => (
+    <MemoryRouter>
+      <InteractiveTerminal sessionId="shell-sess-1" active={active} process={mockProcess} className={marker} />
+    </MemoryRouter>
+  );
+  const overlay = (c: HTMLElement) => c.querySelector('[data-testid="simple-chat-overlay"]');
+
+  // The surface (view mode) is one value for the whole app, and every pooled panel — shown
+  // or not — reads it. A flip to chat used to mount a full transcript render in EACH of them
+  // and the flip back unmounted them all: 11 s with three long chats pooled (FLOWPAD-2193).
+  it('mounts nothing in a panel that is not shown when the surface flips to chat', () => {
+    headless = false;
+    const { container, rerender } = render(withProps(false, 'a1'));
+    paneControls.surface = 'chat';
+    rerender(withProps(false, 'a2'));
+    frame();
+
+    expect(overlay(container), 'a hidden panel rendered a whole transcript').toBeNull();
+    expect(paneControls.mounts).toBe(0);
+  });
+
+  it('does not mount a pane on the tab being LEFT when the surface moves first', () => {
+    // On a switch the surface follows the new url at once, while the pool still lists the
+    // old panel as shown for one commit. That commit must not be enough to mount.
+    headless = false;
+    const { container, rerender } = render(withProps(true, 'b1'));
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'b2')); // surface is chat, panel still "active"
+    rerender(withProps(false, 'b3')); // ...and the very next commit it is not
+    frame();
+
+    expect(overlay(container), 'the tab being left mounted a pane').toBeNull();
+    expect(paneControls.mounts).toBe(0);
+  });
+
+  it('mounts the pane once when shown as chat, and hides — never rebuilds — it when the surface moves on', () => {
+    headless = false;
+    const { container, rerender } = render(withProps(true, 'c1'));
+    expect(overlay(container)).toBeNull(); // terminal surface: no pane
+
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'c2'));
+    frame();
+    const pane = overlay(container);
+    expect(pane, 'the pane did not mount for the panel shown as chat').not.toBeNull();
+    expect(pane!.getAttribute('data-shown')).toBe('true');
+    expect(paneControls.mounts).toBe(1);
+
+    paneControls.surface = 'terminal';
+    rerender(withProps(true, 'c3'));
+    frame();
+    expect(overlay(container), 'the flip to terminal rebuilt the pane').toBe(pane);
+    expect(pane!.getAttribute('data-shown')).toBe('false');
+
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'c4'));
+    frame();
+    expect(overlay(container), 'the flip back to chat rebuilt the pane').toBe(pane);
+    expect(pane!.getAttribute('data-shown')).toBe('true');
+    expect(paneControls.mounts, 'the transcript was rendered again on a flip').toBe(1);
+  });
+});
+
+// flowpad:capsule tag
+// version: 1
+// data:
+//   tags:
+//     breadcrumb.test.terminal_bidi.rules: FAILING? read this tag's rules before editing
+//       — the contract has TWO triggers (container mount AND vendor resolution); do
+//       not delete either stamp
+// flowpad:endcapsule tag
+describe('InteractiveTerminal — a session opened from chat gets the RTL grid contract', () => {
+  let savedPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    // The reporting host: applyRtlGridContract reads navigator.platform, and
+    // Windows + claude is the one pair that takes the buffer-order contract.
+    savedPlatform = Object.getOwnPropertyDescriptor(navigator, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true });
+    workerType = 'claude';
+  });
+  afterEach(() => {
+    if (savedPlatform) Object.defineProperty(navigator, 'platform', savedPlatform);
+    workerType = 'codex';
+  });
+
+  it('stamps the container a chat session mounts when it switches to the terminal', () => {
+    // A vibe/chat session (pty_mode=false): no container exists, so the
+    // vendor-keyed effect has nothing to stamp for the whole headless phase.
+    headless = true;
+    const { rerender } = render(ui('s1'));
+    expect(xtermSpies.open.calls).toBe(0);
+
+    // The user opens the Terminal view — the one direction switchMode goes.
+    // worker_type resolved long ago and does not move, so the vendor-keyed
+    // effect cannot be what stamps this first-ever container.
+    headless = false;
+    rerender(ui('s2'));
+    expect(xtermSpies.open.calls).toBe(1);
+    expect(xtermSpies.open.lastContainer!.classList.contains('xterm-rtl-grid')).toBe(true);
   });
 });

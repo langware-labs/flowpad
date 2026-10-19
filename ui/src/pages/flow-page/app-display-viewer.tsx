@@ -1,0 +1,305 @@
+import { ProjectLoadGate } from '@src/components/project-setup/ProjectLoadGate';
+import { webappAsset } from '@src/components/project-setup/use-project-load';
+import { PROVIDER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
+import { useCallback, useEffect, useRef } from 'react';
+import { type PersistentIframeHandle } from '@src/components/persistent-iframe';
+import { WebappDisplay } from '@src/components/webapp-display/WebappDisplay';
+import { WebappSetupGate } from '@src/components/webapp-display/WebappSetupGate';
+import { AppStatusLine } from '@src/components/webapp-display/AppStatusLine';
+import { WebappDisplayToolbar } from '@src/components/display-toolbar';
+import { hostBrand, useAppDisplay } from '@src/hooks/flow-hooks';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { APP_RUNTIME_PARAM, type AppRuntime } from '@src/navigation/app-dock';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useContext } from '@src/hooks/useContext';
+import { tryParseDock } from '@src/navigation/try-parse-dock';
+import { buildDockPointer } from '@src/components/conversation/EntityChip';
+import { useEntity } from '@sdk/react/hooks';
+import { Trans } from '@lingui/react/macro';
+import { isTypeId, TypeId, WebApp } from '@sdk';
+import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
+import { openExternal } from '@src/lib/open-external';
+import { isHubRelayed } from '@src/lib/hub-relayed';
+import { Button } from '@src/components/ui/button';
+
+/**
+ * An app, rendered from its ADDRESS, through the endpoints that serve it.
+ *
+ * `/dock/app/artifact-<id>` names an app built from source; which endpoint serves it —
+ * its dev server or the build we host — is derived here, never read out of the URL.
+ * That is the whole point of addressing the artifact: a dev server that dies, or a
+ * build that lands, changes what you see without changing where you are.
+ *
+ * `/dock/app/micro_app-<id>` names a webapp ASSET (served by the endpoint indexing
+ * gave it) and `/dock/app/service_endpoint-<id>` names an endpoint directly (a bare
+ * dev server). Same viewer, same toolbar.
+ *
+ * `?runtime=` is the one runtime fact the URL does carry, and only as the user's
+ * PREFERENCE. `useAppDisplay` still validates it against what is actually available,
+ * so a bookmark pinned to a `dev` server that is no longer running quietly falls
+ * back to `served` instead of rendering an empty frame. Because options are excluded
+ * from tab identity, flipping it re-points the same tab rather than forking one.
+ */
+export interface AppDisplayViewerProps {
+  /** Bare artifact uuid, for an app addressed by its source plane. */
+  artifactId: string | null;
+  /** Bare micro_app uuid, for a webapp asset addressed by its definition. */
+  microAppId?: string | null;
+  /** Bare service_endpoint uuid, for an app addressed by what serves it. */
+  endpointId?: string | null;
+  /** With `endpointId`: the app's mount on it — the endpoint is its placement's audience proxy. */
+  route?: string | null;
+  /** The user's runtime preference from the URL, if it pins one. */
+  runtime?: AppRuntime | null;
+  /** Dock options handed to the app as its query string (e.g. `source`). */
+  options?: Record<string, string>;
+  /** The host's content epoch — a re-show of the same app, or the agent's turn
+   *  end. A change reloads the frame; see `reloadOnNewEpoch`. */
+  reloadKey?: number;
+}
+
+/**
+ * The epoch each frame was last shown at, by `src`.
+ *
+ * The host re-keys its body to signal "something changed behind the same
+ * address", which REMOUNTS this viewer — but the iframe registry parks frames by
+ * `src` and hands the same document back, so a remount alone reloads nothing, and
+ * component state cannot tell a new epoch from a tab coming back into view. Held
+ * per `src` here: a new epoch reloads, the same epoch does not.
+ */
+const shownAtEpoch = new Map<string, number>();
+
+function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => void): void {
+  if (!src || epoch === undefined) return;
+  const seen = shownAtEpoch.get(src);
+  shownAtEpoch.set(src, epoch);
+  if (seen !== undefined && seen !== epoch) reload();
+}
+
+/** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
+const loadedVersion = new Map<string, string>();
+const VERSION_MARK = /<!-- flowpad-content-version: ([0-9a-f]+) -->/;
+
+/**
+ * Reload a parked frame whose app files changed since it loaded. Re-opening a tab hands the
+ * same document back (the frame is kept per `src`), so an app edited meanwhile kept showing
+ * its old code until a manual reload. One small read of the page per show; same version, no reload.
+ */
+async function reloadIfAppChanged(src: string, reload: () => void): Promise<void> {
+  if (!src) return;
+  let version: string | undefined;
+  try {
+    const page = await fetch(src, { cache: 'no-store' });
+    version = page.ok ? VERSION_MARK.exec(await page.text())?.[1] : undefined;
+  } catch {
+    return; // unreachable now: the frame shows its own error
+  }
+  if (!version) return;
+  const seen = loadedVersion.get(src);
+  loadedVersion.set(src, version);
+  if (seen !== undefined && seen !== version) reload();
+}
+
+/**
+ * The dock a guest app asks the host to open, or null: `{type: 'flowpad:navigate', address: '/dock/…'}`
+ * (only a `/dock/` address that parses is honoured — a guest navigates the app, never the window to
+ * an arbitrary URL), or `{…, typeid}` — an entity, opened where its type lives, inside the current
+ * project: the same rule an entity chip follows (`buildDockPointer`, then rebased onto the project).
+ */
+export function guestNavigation(data: unknown, projectId?: string | null): DockPointer | null {
+  const message = data as { type?: unknown; address?: unknown; typeid?: unknown } | null;
+  if (message?.type !== 'flowpad:navigate') return null;
+  if (typeof message.typeid === 'string' && isTypeId(message.typeid)) {
+    const typeId = new TypeId(message.typeid);
+    const pointer = buildDockPointer({ type: typeId.type, id: typeId.id }, undefined);
+    return pointer ? DockPointer.rebaseAssetsOntoProject(pointer, projectId) : null;
+  }
+  if (typeof message.address !== 'string' || !message.address.startsWith('/dock/')) return null;
+  return tryParseDock(message.address);
+}
+
+/**
+ * The outside page a guest app asks the host to open (`{type: 'flowpad:open-external', url}`, the
+ * SDK's `openExternal`), or null. Only an absolute http(s) address: a guest never gets a
+ * `file:`, `javascript:` or app-internal URL opened on its behalf.
+ */
+export function guestExternalUrl(data: unknown): string | null {
+  const message = data as { type?: unknown; url?: unknown } | null;
+  return message?.type === OPEN_EXTERNAL_MESSAGE ? externalUrl(message.url) : null;
+}
+
+export function AppDisplayViewer({
+  artifactId,
+  microAppId = null,
+  endpointId = null,
+  route = null,
+  runtime,
+  options,
+  reloadKey,
+}: AppDisplayViewerProps) {
+  const { currentDock, navigation } = useDockNavigation();
+  const { project } = useContext();
+  const frameRef = useRef<PersistentIframeHandle>(null);
+  const { data: definition, notFound } = useEntity<WebApp>(microAppId ? new TypeId(WebApp.type, microAppId) : null);
+
+  // No memo: `useAppDisplay` reduces this to strings before anything depends on
+  // it, so a fresh object per render produces an identical `src` and the frame
+  // (keyed on `src`) does not remount.
+  const appDisplay = useAppDisplay({ artifactId, microAppId, endpointId, route, options: options ?? {} }, runtime ?? null);
+
+  useEffect(() => {
+    reloadOnNewEpoch(appDisplay.src, reloadKey, () => frameRef.current?.refresh());
+  }, [appDisplay.src, reloadKey]);
+
+  useEffect(() => {
+    void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
+  }, [appDisplay.src]);
+
+  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): it is offered in a tab of its own.
+  const relayed = isHubRelayed(appDisplay.src);
+
+  // The theme is baked into the guest URL for its first paint, so a later change
+  // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
+  // the frame's identity, and reload the whole app to recolour it.
+  // Keyed on `src` as well as the theme: the URL is only a SEED for first paint,
+  // and a new frame identity (a runtime switch, a different app in this dock)
+  // carries whatever theme was frozen at mount. Pushing on every new frame makes
+  // the channel the authority, which is what the seed comment above promises.
+  const pushSkin = useCallback(() => {
+    frameRef.current?.postToGuest({
+      type: 'flowpad:theme',
+      theme: appDisplay.theme,
+      view: appDisplay.view,
+      // Read at send time: the palette is applied by an effect, so a value
+      // captured during render is empty on a deep-linked first paint.
+      ...hostBrand(),
+    });
+  }, [appDisplay.theme, appDisplay.view]);
+
+  // Push when the skin moves, and answer the guest's own request — a guest that
+  // finished loading after our push would otherwise never hear one.
+  // One listener for what the guest asks: its skin (answered to any window, as it always was), and
+  // to open another dock (the eval browser → the dataset editor) or an outside page (a record in
+  // a CRM) — URL-first, the host only navigates, and only for this frame's own guest.
+  useEffect(() => {
+    pushSkin();
+    const onGuest = (event: MessageEvent) => {
+      if ((event.data as { type?: string } | null)?.type === 'flowpad:skin-please') return pushSkin();
+      if (!frameRef.current?.isGuest(event.source)) return;
+      const dock = guestNavigation(event.data, project?.id);
+      if (dock) return navigation.openDock(dock);
+      const outside = guestExternalUrl(event.data);
+      if (outside) openExternal(outside);
+    };
+    window.addEventListener('message', onGuest);
+    return () => window.removeEventListener('message', onGuest);
+  }, [pushSkin, appDisplay.src, navigation, project?.id]);
+
+  // URL-carried, so the choice survives a reload and the Back button — it used to
+  // be component state and vanished on both.
+  const setRuntime = (next: string) => {
+    if (currentDock) navigation.openDock(currentDock.withOption(APP_RUNTIME_PARAM, next));
+  };
+
+  // A web app ASSET whose dev server does not answer is set up, not reported missing: its node of the
+  // project's setup tree runs with the live tree on screen, and the app takes over once it answers.
+  // Only once its endpoints answered: an app not looked up yet is not down, and setting it up would run
+  // a setup for an app (a built-in editor, say) that is no node of this project's tree.
+  if (appDisplay.loading) return null;
+  // The app itself is not on this machine (removed, or a link from another one): there is nothing to
+  // set up or wait for, and saying "opening" forever would be a lie.
+  if (microAppId && notFound && !appDisplay.src) {
+    return (
+      <div
+        role="alert"
+        data-testid="app-not-installed"
+        className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground"
+      >
+        <Trans>This app is not installed here. Add its project again from the project that uses it.</Trans>
+      </div>
+    );
+  }
+  const setupWebapp = appDisplay.idleDev?.webapp_id ?? (!appDisplay.src ? microAppId : null);
+  const setupProject = appDisplay.idleDev?.project_id ?? definition?.project_id ?? project?.id ?? '';
+  if (!appDisplay.src && setupWebapp && setupProject) {
+    return <WebappSetupGate projectId={setupProject} webappId={setupWebapp} />;
+  }
+
+  if (!appDisplay.src) {
+    return (
+      <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+        This app has no running dev server and no built output yet.
+      </div>
+    );
+  }
+
+  const display = (
+    <div className="flex h-full flex-col">
+      <WebappDisplayToolbar
+        host={appDisplay.src}
+        // A dev server is loaded at its own address, which is worth showing; a
+        // served build's address is this backend's own path.
+        address={appDisplay.runtime === 'dev' ? directHost(appDisplay.src) : ''}
+        runtime={appDisplay.runtime}
+        runtimes={appDisplay.available}
+        onRuntimeChange={setRuntime}
+        onRefresh={() => frameRef.current?.refresh()}
+      />
+      {definition?.project_id && definition.name ? (
+        <AppStatusLine projectId={definition.project_id} app={definition.name} />
+      ) : null}
+      {relayed ? (
+        <div
+          data-testid="app-opens-in-tab"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center"
+        >
+          <p className="text-lg font-medium">
+            <Trans>This app is served externally via Flowpad. Open it in a new tab.</Trans>
+          </p>
+          <Button onClick={() => openExternal(appDisplay.src)}>
+            <Trans>Open in new tab</Trans>
+          </Button>
+        </div>
+      ) : (
+      <div className="min-h-0 flex-1">
+        <WebappDisplay
+          // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
+          // place leaves both the outgoing and incoming frames parked at opacity-0:
+          // the iframe registry activates a container on mount, and an in-place src
+          // change retires the old one without ever activating the new one.
+          key={appDisplay.src}
+          ref={frameRef}
+          endpoint={appDisplay.endpoint}
+          testId="vibe-app-frame"
+          src={appDisplay.src}
+          // The repair run attaches to the webapp definition when there is one.
+          targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
+        />
+      </div>
+      )}
+    </div>
+  );
+  // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
+  const provider = appDisplay.endpoint?.project_id ?? definition?.project_id;
+  return provider && !currentDock?.options?.[PROVIDER_PROJECT_PARAM] && !currentDock?.isActiveDisplay
+    ? (
+      <ProjectLoadGate
+        key={provider}
+        projectId={provider}
+        // An artifact-addressed app is judged on the webapp serving it, not the whole project.
+        asset={webappAsset(microAppId ?? appDisplay.endpoint?.webapp_id)}
+      >
+        {display}
+      </ProjectLoadGate>
+    )
+    : display;
+}
+
+/** `host:port` of a direct address, for the toolbar label. */
+function directHost(src: string): string {
+  try {
+    return new URL(src).host;
+  } catch {
+    return '';
+  }
+}

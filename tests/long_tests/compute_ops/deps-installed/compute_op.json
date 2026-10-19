@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "name": "deps-installed",
+  "label": "the demo dependency",
+  "description": "The demo repo's one dependency imports.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "linux": "uv pip install --system -q -r /work/demo-repo/requirements.txt"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "linux": "python3 -c 'import tabulate'"
+    }
+  }
+}

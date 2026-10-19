@@ -1,36 +1,44 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+/**
+ * A view mode is read off a SESSION's address — and only there.
+ *
+ * Pinned: a page's `?viewMode` is ignored (one look); a session's is displayed
+ * without being saved as "the last mode selected"; only a marked switch — what
+ * the session's own switch navigates with — saves it.
+ */
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 
 import { PrefKey, instancePreferences } from '@sdk';
-import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
 import {
   setViewMode,
   useDockViewModeOverrideSync,
   useViewMode,
+  VIEW_MODE_SWITCH_STATE,
   ViewMode,
 } from '@src/contexts/view-mode-context';
 
-function Probe({ toggle = false }: { toggle?: boolean }) {
+function Probe() {
   useDockViewModeOverrideSync();
   const mode = useViewMode();
   const location = useLocation();
-
   return (
     <div>
       <div data-testid="effective-mode">{mode}</div>
-      <div data-testid="location">{location.pathname}{location.search}</div>
-      {toggle && <ViewToggle />}
+      <div data-testid="location">
+        {location.pathname}
+        {location.search}
+      </div>
     </div>
   );
 }
 
-function renderAt(path: string, toggle = false) {
+function renderAt(path: string) {
   const router = createMemoryRouter(
     [
-      { path: '/', element: <Probe toggle={toggle} /> },
-      { path: '/dock/:viewType', element: <Probe toggle={toggle} /> },
-      { path: '/dock/:viewType/*', element: <Probe toggle={toggle} /> },
+      { path: '/', element: <Probe /> },
+      { path: '/dock/:viewType', element: <Probe /> },
+      { path: '/dock/:viewType/*', element: <Probe /> },
     ],
     { initialEntries: [path] },
   );
@@ -38,12 +46,14 @@ function renderAt(path: string, toggle = false) {
   return router;
 }
 
+const SESSION = '/dock/shell/shell-1';
+const mode = () => screen.getByTestId('effective-mode').textContent;
+
 describe('DockPointer viewMode override', () => {
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.classList.remove('view-mode-glow-flicker');
     setViewMode(ViewMode.Standard);
-    resetRevealedModes();
   });
 
   afterEach(() => {
@@ -52,54 +62,49 @@ describe('DockPointer viewMode override', () => {
     document.documentElement.classList.remove('view-mode-glow-flicker');
   });
 
-  it('adopts ?viewMode on load: applies it AND persists it as the user default', async () => {
-    renderAt('/dock/settings?viewMode=advanced');
+  it.each(['/dock/settings?viewMode=advanced', '/?viewMode=standard', '/dock/assets/list/skill?viewMode=dev'])(
+    'a page has one look — %s shows the app mode',
+    async (url) => {
+      renderAt(url);
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
+      await waitFor(() => expect(mode()).toBe('vibe'));
+      expect(document.documentElement.getAttribute('data-view')).toBe('vibe');
+      expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    },
+  );
+
+  it("a session's ?viewMode on load is displayed, not saved as the last selected mode", async () => {
+    renderAt(`${SESSION}?viewMode=advanced`);
+
+    await waitFor(() => expect(mode()).toBe('advanced'));
     expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
-  it('keeps the adopted mode when navigating to a DockPointer without an override', async () => {
-    const router = renderAt('/dock/settings?viewMode=advanced');
+  it('a mode added to a bare session URL without the switch marker is displayed, not saved', async () => {
+    const router = renderAt(SESSION);
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
-    await router.navigate('/dock/settings');
+    await waitFor(() => expect(mode()).toBe('vibe'));
+    // What a redirect does: same dock, a mode appears, but the user switched nothing.
+    await router.navigate(`${SESSION}?viewMode=advanced`);
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
-    expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
+    await waitFor(() => expect(mode()).toBe('advanced'));
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
   });
 
-  it('footer click on a dock URL without an override navigates instead of writing the pref', async () => {
-    renderAt('/dock/settings', true);
+  it('a marked switch on a session saves the mode and shows the glow flicker', async () => {
+    const router = renderAt(`${SESSION}?viewMode=advanced`);
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
-
-    // Advanced is hidden by default — double-click the selected Standard
-    // button to reveal it first.
-    fireEvent.doubleClick(screen.getByTestId('view-toggle-standard'));
-    fireEvent.click(screen.getByTestId('view-toggle-advanced'));
-
-    // The click itself only navigates; the mode then lands via the load-time sync.
-    await waitFor(() =>
-      expect(screen.getByTestId('location').textContent).toContain('viewMode=advanced'),
-    );
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
-  });
-
-  it('switches an existing override through the URL and shows the glow flicker', async () => {
-    renderAt('/dock/agentic_process/123?viewMode=advanced', true);
-
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
+    await waitFor(() => expect(mode()).toBe('advanced'));
     document.documentElement.classList.remove('view-mode-glow-flicker');
 
-    fireEvent.click(screen.getByTestId('view-toggle-vibe'));
+    await router.navigate(`${SESSION}?viewMode=standard`, { state: VIEW_MODE_SWITCH_STATE });
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
-    expect(screen.getByTestId('location').textContent).toContain('viewMode=vibe');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('vibe');
+    await waitFor(() => expect(mode()).toBe('standard'));
+    await waitFor(() => expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard'));
     expect(document.documentElement.classList.contains('view-mode-glow-flicker')).toBe(true);
+
+    await router.navigate(`${SESSION}?viewMode=advanced`, { state: VIEW_MODE_SWITCH_STATE });
+    await waitFor(() => expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced'));
   });
 });

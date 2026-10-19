@@ -1,33 +1,46 @@
 """`flow navigate ...` CLI subgroup.
 
 Agent-oriented commands that drive the browser UI by POSTing to the
-local Flowpad server. Error contract (important — the agent parses these):
+local Flowpad server. Every navigation answers a ``NavigateResult``; its
+``exit_code`` IS the exit code (the same enum ``flow op`` exits with):
 
-    exit 0 — navigation succeeded
-    exit 3 — no active tab (nothing is open in a browser)
-    exit 4 — entity not found (or unknown type)
+    exit 0 — shown, and it can be used
+    exit 1 — not yet: no Flowpad tab is open to show it in, or the place is shown
+             but cannot be used yet (nothing answers, it errors) — see "verdict"
+    exit 4 — not found here (no such entity, file or view target)
+    exit 7 — refused: the page refuses to be shown inside Flowpad
+    exit 2 — invalid arguments (e.g. malformed typeid or view)
     exit 5 — connection error (server unreachable)
-    exit 2 — invalid arguments (e.g. malformed typeid)
 
-Success prints one JSON line to stdout. Failure prints a plain-text line
-to stderr *and* a JSON line to stderr, so both humans and programs can
-parse the outcome.
+The answer is one JSON line on stdout (``exit_code``, ``verdict``, ``detail``, …);
+when it is not OK the sentence also goes to stderr. Exits 2 and 5 print the
+usual error envelope to stderr.
 """
 
 from __future__ import annotations
 
+import json
+from typing import NoReturn, Optional
 
 import requests
 import typer
-from typing import Optional
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
-    discover_port as _discover_port,
-    fail as _fail,
-    ok as _ok,
+    bad_response_message as _bad_response_message,
 )
-
+from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
+)
+from flow_sdk.cli.commands._common import (
+    discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
+    fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
+    local_post as _local_post,
+)
 
 navigate_app = typer.Typer(
     name="navigate",
@@ -37,23 +50,40 @@ navigate_app = typer.Typer(
 )
 
 
-# Exit codes — stable contract for agents parsing the outcome.
+# Exit codes — stable contract for agents parsing the outcome. The outcomes are
+# ``ExitCode``'s values (``returned_value_spec``); 2 and 5 are the request's own.
 EXIT_OK = 0
+EXIT_NOT_YET = 1
 EXIT_INVALID_ARG = 2
-EXIT_NO_ACTIVE_TAB = 3
-EXIT_ENTITY_NOT_FOUND = 4
+EXIT_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
+EXIT_REFUSED = 7
+
+#: The fields of a ``NavigateResult`` worth a line on stdout.
+_RESULT_KEYS = ("exit_code", "verdict", "detail", "delivered", "connection_id", "pointer", "value")
 
 
-def _navigate(url: str, body: dict, success_keys: list[str], error_mapping: dict) -> None:
-    """POST a navigate request, echo the success fields, exit-map failures.
+def emit_navigate_result(data: dict, extra: "dict | None" = None) -> NoReturn:
+    """Print a ``NavigateResult`` as one JSON line and exit with its ``exit_code`` —
+    shared by ``flow navigate`` and ``flow show``."""
+    code = int(data.get("exit_code", EXIT_CONNECTION_ERROR))
+    line = {"ok": code == EXIT_OK, **(extra or {})}
+    line.update({key: data[key] for key in _RESULT_KEYS if data.get(key) not in (None, "")})
+    if code != EXIT_OK and data.get("detail"):
+        typer.echo(str(data["detail"]), err=True)
+    typer.echo(json.dumps(line))
+    raise typer.Exit(code)
 
-    The two subcommands differ only in the URL, request body, the response
-    fields echoed on success, and the error_code→exit_code mapping — everything
-    else (transport errors, non-JSON responses, the 200/ok branch) is identical.
+
+def _navigate(url: str, body: dict) -> None:
+    """POST a navigate request and exit with its answer's code.
+
+    Every subcommand differs only in the URL and the body: transport errors and a
+    non-JSON body are exit 5, a malformed request (HTTP 400) is exit 2, and anything
+    the server answered is a ``NavigateResult``.
     """
     try:
-        resp = requests.post(url, json=body, timeout=5)
+        resp = _local_post(url, json=body, timeout=5)
     except requests.exceptions.RequestException as e:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
         return  # unreachable — _fail raises typer.Exit
@@ -62,20 +92,15 @@ def _navigate(url: str, body: dict, success_keys: list[str], error_mapping: dict
     try:
         rbody = resp.json()
     except ValueError:
-        _fail(
-            EXIT_CONNECTION_ERROR,
-            "CONNECTION_ERROR",
-            f"Unexpected server response (status {resp.status_code}): {resp.text[:200]}",
-        )
+        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", _bad_response_message(resp))
         return
 
-    if resp.status_code == 200 and rbody.get("ok"):
-        _ok({k: rbody.get(k) for k in success_keys})
-        return
+    if resp.status_code == 200 and isinstance(rbody.get("data"), dict):
+        emit_navigate_result(rbody["data"])
 
     error_code = str(rbody.get("error_code") or "UNKNOWN")
-    error_msg = str(rbody.get("error") or f"HTTP {resp.status_code}")
-    _fail(error_mapping.get(error_code, EXIT_CONNECTION_ERROR), error_code, error_msg)
+    error_msg = str(rbody.get("error") or rbody.get("message") or f"HTTP {resp.status_code}")
+    _fail(EXIT_INVALID_ARG if resp.status_code == 400 else EXIT_CONNECTION_ERROR, error_code, error_msg)
 
 
 @navigate_app.command(
@@ -106,17 +131,44 @@ def navigate_entity(
     if connection_id:
         body["connection_id"] = connection_id
 
-    _navigate(
-        f"http://127.0.0.1:{port}/api/v1/agent/navigate/entity",
-        body,
-        ["connection_id", "type", "id"],
-        {
-            "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
-            "ENTITY_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
-            "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
-            "INVALID_TYPEID": EXIT_INVALID_ARG,
-        },
-    )
+    _navigate(f"http://127.0.0.1:{port}/api/v1/agent/navigate/entity", body)
+
+
+@navigate_app.command(
+    "view",
+    # NB: no square brackets in help strings — Rich parses them as markup tags.
+    help=(
+        "Navigate the active browser tab to a SCREEN by dock address, "
+        "'viewType' plus an optional '/pointer' and '?opts'. Examples: "
+        "'automations', 'assets/list/skill', 'preferences/appearance'. "
+        "Run `flow schema views`."
+    ),
+)
+def navigate_view(
+    address: Annotated[
+        str,
+        typer.Argument(help="Dock address, e.g. 'automations' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."),
+    ],
+    connection_id: Annotated[
+        Optional[str],
+        typer.Option("--connection-id", "-c", help="Target a specific WS connection by id."),
+    ] = None,
+) -> None:
+    """POST to /api/v1/agent/navigate/view and surface the server's verdict.
+
+    This HIJACKS the tab the user is looking at, so reserve it for an explicit
+    "take me there". To hand over a screen without interrupting, use
+    ``flow show view`` — it opens the same address as a tab and never navigates.
+    """
+    if not address or not address.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_VIEW", "Empty view address")
+
+    port = _discover_port()
+    body: dict = {"view": address.strip()}
+    if connection_id:
+        body["connection_id"] = connection_id
+
+    _navigate(f"http://127.0.0.1:{port}/api/v1/agent/navigate/view", body)
 
 
 @navigate_app.command(
@@ -127,7 +179,12 @@ def navigate_entity(
 def navigate_file(
     path: Annotated[
         str,
-        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/hello.md')"),
+        typer.Argument(
+            help=(
+                "File path - absolute, ~-relative, or relative to YOUR cwd "
+                "(resolved here before it is sent; e.g. './hello.md')"
+            )
+        ),
     ],
     connection_id: Annotated[
         Optional[str],
@@ -144,17 +201,10 @@ def navigate_file(
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
 
     port = _discover_port()
-    body: dict = {"path": path}
+    # Absolutized in the CALLER's process: the server resolves in its own,
+    # and the caller's cwd never crosses the wire (`flow show file` likewise).
+    body: dict = {"path": _caller_abs_path(path)}
     if connection_id:
         body["connection_id"] = connection_id
 
-    _navigate(
-        f"http://127.0.0.1:{port}/api/v1/agent/navigate/file",
-        body,
-        ["connection_id", "mode", "path", "type", "id"],
-        {
-            "NO_ACTIVE_TAB": EXIT_NO_ACTIVE_TAB,
-            "CONNECTION_NOT_FOUND": EXIT_ENTITY_NOT_FOUND,
-            "INVALID_PATH": EXIT_INVALID_ARG,
-        },
-    )
+    _navigate(f"http://127.0.0.1:{port}/api/v1/agent/navigate/file", body)

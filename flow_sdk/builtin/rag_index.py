@@ -1,0 +1,573 @@
+"""``RagIndex`` — one searchable index over a set of folders in a project.
+
+A project may hold several. Each one names its own **roots** (folders you added) and covers
+everything beneath them, so a large or noisy subtree can simply be left out rather than
+excluded. A folder outside every root is not indexed and shows no marker.
+
+**Roots are context links, not a stored list.** ``add_root`` mints the ``Folder`` entity and
+links it into this row's private context bucket with the canonical path in the per-entry
+sidecar; ``roots`` derives from those links synchronously. This mirrors
+``Project.add_context_dir`` / ``Project.include_dirs`` field for field, and it is deliberate:
+``Project`` used to carry a stored ``include_dirs: list[str]`` and that field was removed. A
+second list of paths would be a second answer to "which folders are covered", and the ``Folder``
+entity is what carries a directory's transportable identity.
+
+**What is NOT on this row: anything that churns.** No per-file state, no per-root hash, no chunk
+inventory. Those live in the store under the instance's records-data directory, because a row
+rewritten on every document edit is a diff a minute in whatever watches entities — the same
+reasoning that split ``DataDriver`` from ``DataSource``. What this row holds is the
+configuration and one verdict.
+
+**Status and health are separate axes**, as on ``DataSource``: status answers "should this be
+running", ``index_refusal`` answers "can it, right now, and if not why". A boolean could say
+neither well.
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
+
+from pydantic import computed_field
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.core import Entity
+from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
+
+if TYPE_CHECKING:
+    from flow_sdk.responses.response import ApiResponse
+    from flow_sdk.schema.data_spec.folder_change_spec import FolderChange
+
+#: The context bucket roots live in. PRIVATE, always: a root is an absolute path on THIS
+#: machine, and a receiver of a shared project has no such directory. Coverage is a local fact.
+_BUCKET = "private"
+
+#: What the box's single index is called until someone renames it.
+DEFAULT_INDEX_NAME = "Default RAG"
+
+#: One asyncio lock per index id, guarding its usearch handle. See ``RagIndex.open_store``.
+#: Weak-valued (``stream_inbox/_locks``): it lives only while a store is open or awaited.
+_STORE_LOCKS = new_registry()
+
+#: Index ids with an embed running in THIS process. ``indexing`` on a row that is not in here was
+#: left by a process that died mid-pass; see ``RagIndex.clear_stale_indexing``.
+_EMBEDDING: set[str] = set()
+
+
+class RagStatus(StrEnum):
+    """Where an index is in its life. A separate axis from whether it can run right now."""
+
+    #: Created, nothing funds embeddings yet. `verify` moves it out.
+    SETUP = "setup"
+    #: Indexing and answering.
+    ACTIVE = "active"
+    #: Paused by a person. Only a person moves it out.
+    DISABLED = "disabled"
+
+
+class RagIndex(Entity):
+    """One vector index over the folders it was given."""
+
+    _api_visible: ClassVar[bool] = True
+    _icon: ClassVar[str | None] = "Brain"
+
+    type: str = APIField(default=EntityType.RAG_INDEX.value)
+    name: str = APIField(default=DEFAULT_INDEX_NAME)
+    description: str = APIField(default="")
+
+    status: RagStatus = APIField(default=RagStatus.SETUP)
+    #: A covered document changed and the background pass has not caught up. Set by the
+    #: post-index observer, cleared when the pass finishes. Only ever flipped false→true by
+    #: that observer, so a thousand-file scan writes this row once rather than a thousand times.
+    pending: bool = APIField(default=False)
+    #: A pass is embedding right now — ``pending`` is cleared before a pass, so it cannot say so.
+    indexing: bool = APIField(default=False)
+
+    #: Which ``LLMEndpoint`` funds the embeddings. Empty ⇒ whatever funds this box.
+    #: PRIVATE: a funding choice is a fact about an account, not about the work.
+    endpoint_typeid: str = APIField(default="", sharing=Sharing.PRIVATE)
+    #: Both pinned at the first embed. Changing either is a rebuild, not a top-up — the store
+    #: refuses a vector of a different width, because two widths are two spaces.
+    model: str = APIField(default="")
+    dimensions: int = APIField(default=0)
+
+    chunk_count: int = APIField(default=0)
+    document_count: int = APIField(default=0)
+    last_indexed_at: Optional[datetime] = APIField(default=None)
+    #: Verbatim, rendered by the card and the status action. Never rewritten by a caller.
+    last_error: str = APIField(default="")
+
+    # ── roots ───────────────────────────────────────────────────────────────
+
+    @computed_field
+    @property
+    def roots(self) -> list[str]:
+        """The folders this index covers, derived from the context links.
+
+        Sync and in-memory, like ``Project.include_dirs``: the indexing pass reads this on a
+        hot path and must not pay a DB round-trip per call. An entry whose sidecar carries no
+        locally-resolvable path is skipped rather than guessed at.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for tid in self.context_of_type("folder", bucket=_BUCKET):
+            path = (self.get_context_entry_data(tid) or {}).get("path")
+            if isinstance(path, str) and path and path not in seen:
+                seen.add(path)
+                out.append(path)
+        return out
+
+    def covers(self, path: str) -> str:
+        """The root covering *path*, or ``""``. Pure string containment, no disk access.
+
+        Answers the DEEPEST root when several nest, so a nested root's own settings win and a
+        document is attributed to one place rather than two.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
+
+        candidate = canonical_posix_path(path)
+        matches = [r for r in self.roots if candidate == r or is_path_under(candidate, r)]
+        return max(matches, key=len) if matches else ""
+
+    async def add_root(self, path: str) -> "ApiResponse":
+        """Cover *path* and everything beneath it. Idempotent.
+
+        Mints (or reuses) the ``Folder`` for the directory and links it privately with the
+        canonical path in the sidecar, exactly as ``Project.add_context_dir`` does. The
+        directory on disk is never written to, and nothing is indexed here — the background
+        pass picks the new root up on its next tick.
+        """
+        from flow_sdk.builtin.folder import Folder
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+        if not path:
+            return ApiFailResponse(message="path is required")
+        canonical = canonical_posix_path(path)
+        if canonical in self.roots:
+            return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+        origin = await Folder.detect_origin(canonical)
+        folder = await Folder.mint_for_origin(origin, local_path=canonical)
+        self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": origin.kind})
+        # A new root means work to do; the pass decides how much.
+        self.pending = True
+        await self.save(notify=False)
+        await self._announce_coverage()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    async def remove_root(self, path: str) -> "ApiResponse":
+        """Stop covering *path*. No-op when it is not a root.
+
+        Unlinks the folder and drops that root's documents from the store. The ``Folder``
+        entity survives (another project may link it) and the directory is never touched.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+        if not path:
+            return ApiFailResponse(message="path is required")
+        canonical = canonical_posix_path(path)
+        doomed = [
+            tid
+            for tid in self.context_of_type("folder", bucket=_BUCKET)
+            if (self.get_context_entry_data(tid) or {}).get("path") == canonical
+        ]
+        if not doomed:
+            return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+        self.remove_private_context_entities(*doomed)
+        await self.forget_root(canonical)
+        # Refresh the counts before saving, so one write carries both halves of the change.
+        async with self.open_store() as store:
+            self.chunk_count = store.chunk_count()
+            self.document_count = len(store.document_refs())
+        await self.save(notify=False)
+        await self._announce_coverage()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    async def _announce_coverage(self) -> None:
+        """Tell every open screen that ``roots`` changed.
+
+        ``save`` returns early when no COLUMN changed, and linking a folder only touches the
+        context sidecar — so a coverage edit can be a completely silent write. Every tree in the
+        app derives its marker from ``roots``, and they went on showing the old answer until
+        someone reloaded. This says it explicitly rather than relying on some unrelated field
+        happening to move at the same time.
+        """
+        await self.notify_updated()
+
+    # ── the store ───────────────────────────────────────────────────────────
+
+    @property
+    def store_dir(self) -> Any:
+        """Where this index's vectors live: inside the instance, never inside a project.
+
+        Derived state, machine-local, and rebuildable — so it must not travel with a share and
+        must not sit in a git-tracked tree. Same root as the other per-entity derived artifacts.
+        """
+        from flow_sdk.fs_store.record_paths import get_default_records_data_root
+
+        return get_default_records_data_root() / EntityType.RAG_INDEX.value / str(self.id)
+
+    @asynccontextmanager
+    async def open_store(self):
+        """The store, held exclusively for the duration of the block.
+
+        usearch is a native index over files on disk, and two handles on one index — a pass
+        writing while a coverage edit deletes — do not merely race, they take the process down
+        with no traceback. That is not hypothetical: dropping a root during a running pass
+        killed the backend outright.
+
+        So there is one door, and it is serialized per index. The lock is per PROCESS, which is
+        the whole of the exposure: the store lives under the instance's own records-data root,
+        and one instance is one process.
+        """
+        from flow_sdk.rag.store import RagStore  # noqa: PLC0415
+
+        lock = keyed_loop_lock(_STORE_LOCKS, str(self.id))
+        async with lock:
+            with RagStore(self.store_dir) as store:
+                yield store
+
+    @asynccontextmanager
+    async def embedding(self):
+        """Say "indexing" on the row for the length of the block, then save the outcome.
+
+        The one owner of ``indexing`` for every path that embeds — the heartbeat pass and a pushed
+        ``apply`` alike — so a screen shows the same spinner and toast whichever ran. The closing
+        save notifies and carries whatever the block set on the row, so callers do not save again.
+        """
+        key = str(self.id)
+        _EMBEDDING.add(key)
+        self.indexing = True
+        await self.save(notify=True)
+        try:
+            yield
+        finally:
+            _EMBEDDING.discard(key)
+            self.indexing = False
+            await self.save(notify=True)
+
+    async def clear_stale_indexing(self) -> bool:
+        """End an ``indexing`` no pass in this process owns — one a crash or restart left behind.
+
+        Without it the card and the tree badge would spin until the next pass happened to run.
+        """
+        if not self.indexing or str(self.id) in _EMBEDDING:
+            return False
+        self.indexing = False
+        await self.save(notify=True)
+        return True
+
+    async def unstamped_roots(self) -> list[str]:
+        """Roots the store holds no tree hash for — work no marker can announce.
+
+        A hash is recorded when a root finishes indexing, so a missing one means this root has
+        never been done, or the store that recorded it is gone. Cheap on purpose: one sqlite
+        read per root, never a walk, because this runs on the heartbeat.
+        """
+        if not self.roots:
+            return []
+        async with self.open_store() as store:
+            return [root for root in self.roots if not store.tree_hash(root)]
+
+    async def forget_root(self, root: str) -> int:
+        """Drop every document of *root* from the store. Returns chunks removed."""
+        from flow_sdk.fs_store.path_utils import is_path_under
+
+        async with self.open_store() as store:
+            gone = 0
+            for doc_ref in list(store.document_refs()):
+                if doc_ref == root or is_path_under(doc_ref, root):
+                    gone += store.remove_document(doc_ref)
+            store.forget_tree(root)
+            return gone
+
+    # ── funding ─────────────────────────────────────────────────────────────
+
+    async def resolve_endpoint(self) -> "Any":
+        """The ``LLMEndpoint`` that funds this index's embeddings, or ``None``.
+
+        Resolved fresh on every use rather than held, because funding changes between runs — a
+        key is stored, an endpoint is bound, a hub login lapses — and a cached client would keep
+        spending the old one. In order:
+
+        1. the bound endpoint, when it is a local row;
+        2. the bound endpoint, when it is a hub one — the hub's row, never a local projection,
+           whose id would not be the one the hub authorizes;
+        3. any local key that resolves, so a box with its own key never spends a hub budget it
+           was not pointed at;
+        4. any hub endpoint this box can spend that speaks an embeddings API.
+
+        Signed out, the hub list is empty and 2 and 4 answer nothing — the index stays in SETUP.
+        """
+        # The worker picker's own answer to "can this box spend a hub budget", not a re-derivation:
+        # an index that disagreed with it would fund itself from a budget it cannot use.
+        from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _hub_spendable  # noqa: PLC0415
+        from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+        from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+        hub = None
+        if self.endpoint_typeid:
+            bound = await LLMEndpoint.get_by_id(self.endpoint_typeid.split("-", 1)[-1])
+            if bound is not None:
+                return bound
+            hub = await fetch_hub_llm_endpoints()
+            bound = next((e for e in hub if str(e.typeid) == self.endpoint_typeid), None)
+            if bound is not None:
+                return bound
+        rows = await LLMEndpoint.key_endpoints()
+        local = next((e for e in rows.values() if e.resolve_api_key()), None)
+        if local is not None or not _hub_spendable():
+            return local
+        hub = hub if hub is not None else await fetch_hub_llm_endpoints()
+        return next((e for e in hub if _hub_can_embed(e)), None)
+
+    async def settle_status(self) -> str:
+        """Promote out of SETUP once something funds it, and back when nothing does.
+
+        Without this an index minted before any key existed would stay in SETUP forever: the
+        reconciler only dispatches ACTIVE rows, so nothing would ever look again. Called
+        wherever a person touches the index, which is when the answer can have changed.
+
+        DISABLED is a person's decision and is never overridden here.
+        """
+        if self.status == RagStatus.DISABLED:
+            return self.index_refusal()
+
+        endpoint = await self.resolve_endpoint()
+        wanted = RagStatus.ACTIVE if endpoint is not None else RagStatus.SETUP
+        reason = "" if endpoint is not None else "no embedding endpoint is available yet"
+        if self.status != wanted or (wanted == RagStatus.SETUP and self.last_error != reason):
+            self.status = wanted
+            self.last_error = reason
+            await self.save(notify=True)
+        return self.index_refusal()
+
+    # ── verdicts ────────────────────────────────────────────────────────────
+
+    def index_refusal(self) -> str:
+        """Why this index cannot run right now, or ``""`` when it can.
+
+        The sentence, not a boolean: the reconciler logs it, the card shows it and ``verify``
+        stores it, so a bare yes/no would leave each of them inventing its own wording for the
+        same state.
+        """
+        if self.status == RagStatus.DISABLED:
+            return "this index is disabled"
+        if self.status == RagStatus.SETUP:
+            return self.last_error or "no embedding endpoint is bound yet"
+        if not self.roots:
+            return "this index covers no folders yet"
+        return ""
+
+    async def destroy(self) -> None:
+        """Erase the row AND its vectors.
+
+        The generic delete removes a record's shadow folder under the records root; nothing
+        sweeps the records-DATA root, so an index deleted without this leaves its vectors on
+        disk forever.
+        """
+        import shutil  # noqa: PLC0415
+
+        try:
+            shutil.rmtree(self.store_dir)
+        except (FileNotFoundError, OSError, ValueError):
+            pass
+        await super().destroy()
+
+    @classmethod
+    async def named(cls, name: str = "") -> "RagIndex":
+        """The index called *name*, created if it does not exist. Empty ⇒ the box's default.
+
+        Find-or-create by lookup, like its sibling ``ensure_default`` — never an id derived
+        from the name.
+        """
+        name = (name or "").strip()
+        if not name or name == DEFAULT_INDEX_NAME:
+            return await cls.ensure_default()
+        existing = await cls.get_one({"name": name})
+        return existing if existing is not None else await cls._mint(name)
+
+    async def apply(self, change: "FolderChange") -> "Any":
+        """Bring the index level with one page of changes. Returns an ``IndexReport``.
+
+        Never raises for a refusal — a report whose ``errors`` carry the sentence, matching
+        ``run_index`` — so a consumer acks and moves on; the heartbeat pass catches up once the
+        index can run. Idempotent: applying a page twice embeds nothing the second time.
+        """
+        from flow_sdk.rag import reconcile  # noqa: PLC0415
+        from flow_sdk.rag.indexing import IndexReport, document_hash, index_documents, remove_documents  # noqa: PLC0415
+
+        # A ``Delivered`` wrapping a page reads as the page itself — that is what its
+        # ``__getattr__`` is for — so this takes either without unwrapping.
+        report = IndexReport(root=change.root)
+
+        # Cover the folder if nothing does yet: the listener chose it, and a page arriving for
+        # a folder the index does not cover would otherwise be silently indexed nowhere.
+        if change.root and not self.covers(change.root):
+            await self.add_root(change.root)
+
+        refusal = await self.settle_status()
+        if refusal:
+            report.errors.append(refusal)
+            return report
+        try:
+            embed, model = await reconcile.embedder_for(self)
+        except reconcile.EmbeddingUnavailable:
+            report.errors.append(reconcile.NO_EMBEDDING)
+            return report
+
+        weight: dict[str, int] = {}
+        for path in change.removed:
+            weight[path] = weight.get(path, 0) - 1
+        for new, old in change.renamed.items():
+            weight[old] = weight.get(old, 0) - 1
+            weight[new] = weight.get(new, 0) + 1
+        for path in [*change.added, *change.changed]:
+            weight[path] = weight.get(path, 0) + 1
+
+        gone = [p for p, w in weight.items() if w < 0]
+        present = [p for p, w in weight.items() if w > 0 and Path(p).is_file()]
+        documents = []
+        for path in present:
+            try:
+                documents.append((path, document_hash(Path(path)), Path(path)))
+            except OSError as exc:
+                report.errors.append(f"{path}: {exc}")
+
+        async with self.embedding(), self.open_store() as store:
+            # The same whole-file skip `index_root` makes, and for the same reason: a page can
+            # name a file whose content did not change (a touch, a re-reflect, a page replayed
+            # after a crash), and chunking it again to arrive at the ids the store already
+            # holds is work with no output.
+            indexed = store.document_hashes()
+            documents = [(ref, h, p) for ref, h, p in documents if indexed.get(ref) != h]
+            report.skipped_unchanged = len(present) - len(documents)
+            remove_documents(store, gone, report=report)
+            await index_documents(store, documents, embed=embed, model=model or "", report=report)
+            store.flush()
+            self.chunk_count = store.chunk_count()
+            self.document_count = len(store.document_refs())
+            report.documents_changed = len(documents)
+            report.documents_removed = len(gone)
+        return report
+
+    async def search(self, question: str, *, top_k: int = 5) -> list[Any]:
+        """Nearest chunks to *question*, best first. ``EmbeddingUnavailable`` when nothing funds an
+        embedding — an empty answer would read as "nothing matched", which is a different fact."""
+        from flow_sdk.rag import reconcile  # noqa: PLC0415
+
+        embed, _model = await reconcile.embedder_for(self)
+        vectors = await embed([question])
+        async with self.open_store() as store:
+            return store.search(vectors[0], top_k=top_k)
+
+    async def chunks(self, doc_ref: str = "", *, offset: int = 0, limit: int = 50) -> dict[str, Any]:
+        """One page of what this index holds, for a person to browse. No embedding, no vectors.
+
+        ``total`` counts the chunks the page is drawn from (one document's, or all). The document
+        list rides only the unscoped call — a browser asks for it once, not on every page.
+        """
+        from flow_sdk.rag.store import RagStore  # noqa: PLC0415
+
+        # Not ``open_store``: its lock guards the usearch handle, which browsing never opens, and a
+        # pass holds it for the whole embed — the browser would hang exactly while "indexing" shows.
+        # A second SQLite reader is what WAL is for.
+        with RagStore(self.store_dir) as store:
+            page: dict[str, Any] = {
+                "chunks": [h.model_dump(mode="json") for h in store.list_chunks(doc_ref, offset=offset, limit=limit)],
+                "total": store.chunk_count(doc_ref),
+            }
+            if not doc_ref:
+                page["documents"] = [{"doc_ref": ref, "chunk_count": n} for ref, n in store.documents()]
+            return page
+
+    # ── lookup ──────────────────────────────────────────────────────────────
+
+    @classmethod
+    async def covering(cls, path: str, *, project_id: str | None = None) -> "RagIndex | None":
+        """The index covering *path*, or ``None``.
+
+        Deepest root wins. Scoped to a project when one is given, because the common caller —
+        the post-index observer — already knows which project the record belongs to and a
+        whole-table scan per indexed file would be the wrong shape entirely.
+        """
+        query: dict[str, Any] = {"status": RagStatus.ACTIVE.value}
+        if project_id:
+            query["project_id"] = project_id
+        best: "RagIndex | None" = None
+        best_len = -1
+        for index in await cls.get_all(query):
+            root = index.covers(path)
+            if root and len(root) > best_len:
+                best, best_len = index, len(root)
+        return best
+
+    @classmethod
+    async def ensure_default(cls) -> "RagIndex":
+        """The box's one index, created on first use.
+
+        Coverage is a per-folder decision and, until there is a reason to split, a per-folder
+        decision does not need the person making it to first choose WHICH index. So the toggle
+        in the tree finds this one or mints it, exactly as ``LLMEndpoint.ensure_for_secret``
+        does — a lookup, never a derived id, so it converges on the row that already exists.
+
+        Deliberately the OLDEST row rather than any row: two indexes minted by a race would
+        otherwise flip which one a toggle lands on between calls.
+        """
+        rows = await cls.get_all({"status": RagStatus.ACTIVE.value})
+        rows += await cls.get_all({"status": RagStatus.SETUP.value})
+        if rows:
+            return min(rows, key=lambda row: (row.created_date, str(row.id)))
+        return await cls._mint(DEFAULT_INDEX_NAME)
+
+    @classmethod
+    async def _mint(cls, name: str) -> "RagIndex":
+        """A new index, saved and with its status settled — the tail both find-or-creates share.
+
+        Settling on the way out is the point: an index minted mid-request is ACTIVE or SETUP
+        by the time its creator holds it, so the caller never has to know that a bare `save`
+        would have left it in the status a dispatcher skips.
+        """
+        index = cls(name=name)
+        await index.save()
+        await index.settle_status()
+        return index
+
+    @classmethod
+    async def toggle_root(cls, path: str) -> tuple["RagIndex", bool]:
+        """Cover *path*, or stop covering it. Returns the index and whether it is now covered.
+
+        One verb because the tree offers one button, and the button's meaning is "is this
+        folder searchable". Toggling on the exact root only: a folder INSIDE a root is already
+        covered, and removing it would need an exclusion list, which is a different feature.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+        index = await cls.ensure_default()
+        canonical = canonical_posix_path(path)
+        if canonical in index.roots:
+            await index.remove_root(canonical)
+            return index, False
+        await index.add_root(canonical)
+        return index, True
+
+
+def _hub_can_embed(endpoint: Any) -> bool:
+    """Whether a hub endpoint can fund an index unasked: enabled, its root embeds, and keyed.
+
+    The root's dialect decides, because the hub relays verbatim -- an Anthropic root has no
+    embeddings API however the budget is set up, and picking one would fail every pass. Checked
+    before the key, which is a credential-store read.
+    """
+    dialect = endpoint.dialect
+    return bool(endpoint.enabled and dialect and dialect.supports_embeddings and endpoint.resolve_api_key())
+
+
+__all__ = ["DEFAULT_INDEX_NAME", "RagIndex", "RagStatus"]

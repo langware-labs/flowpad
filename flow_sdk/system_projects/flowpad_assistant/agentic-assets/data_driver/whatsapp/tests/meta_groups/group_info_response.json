@@ -1,0 +1,18 @@
+{
+  "messaging_product": "whatsapp",
+  "id": "<GROUP_ID>",
+  "subject": "<SUBJECT>",
+  "creation_timestamp": "<TIMESTAMP>",
+  "suspended": "<SUSPENDED>",
+  "description": "<DESCRIPTION>",
+  "total_participant_count": "<TOTAL_PARTICIPANT_COUNT>",
+  "participants": [
+    {
+      "wa_id": "<WA_ID>"
+    },
+    {
+      "wa_id": "<WA_ID>"
+    }
+  ],
+  "join_approval_mode": "<JOIN_APPROVAL_MODE>"
+}

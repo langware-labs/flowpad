@@ -11,7 +11,7 @@ const WINDOWS_DRIVE_PATTERN = /^[A-Za-z]:[/\\]/;
 /**
  * True when ``path`` is an absolute machine path on either POSIX or Windows.
  *
- * - POSIX:   starts with ``/`` (e.g. ``/Users/Gadi/.flow/…``)
+ * - POSIX:   starts with ``/`` (e.g. ``/Users/alice/.flow/…``)
  * - Windows: starts with a drive letter + ``:`` + ``\`` or ``/`` (e.g.
  *            ``C:\Users\…\Temp\…`` or ``C:/Users/…``)
  *
@@ -29,7 +29,7 @@ export function isAbsoluteMachinePath(path: string): boolean {
 /**
  * VFSPath - Virtual File System path parser and normalizer
  *
- * Mirrors the backend VFSPath class (flowpad/hub/api/fs_api.py)
+ * Mirrors the backend VFSPath class (hub fs_api.py)
  *
  * Supported formats:
  * - Full URI: "vfs://compute_node-xxx/path/to/file"

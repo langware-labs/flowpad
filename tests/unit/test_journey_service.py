@@ -11,7 +11,8 @@ import pytest
 
 from flow_sdk.builtin.journey import Journey
 from flow_sdk.builtin.journey_journal import ACTIVE_STATUSES, JourneyJournal, JourneyStatus
-from tests.conftest import async_context
+from tests.pytest_plugin import async_context
+from tests.unit._project_deps import link_context_dirs
 
 USER = "user-1"
 OTHER = "user-2"
@@ -377,3 +378,107 @@ async def test_23_completed_project_journey_falls_back_to_system(tmp_path, only_
 
     j = await Journey.auto_launch_for(USER)
     assert j is not None and j.journey_id == system.id
+
+
+@async_context
+async def test_24_project_scoped_auto_launch_excludes_unrelated_projects(
+    tmp_path, only_my_journeys
+):
+    from flow_sdk.builtin.project import Project
+
+    project_a_root = tmp_path / "project-a"
+    project_b_root = tmp_path / "project-b"
+    content_root = tmp_path / "globex-content"
+    project_a_root.mkdir()
+    project_b_root.mkdir()
+    content_root.mkdir()
+    globex = await _make_auto(
+        content_root / "agentic-assets" / "journey", "globex-onboarding", "cloud"
+    )
+    unrelated = await _make_auto(
+        project_b_root / "agentic-assets" / "journey", "other-onboarding", "other"
+    )
+    project_a = Project(name="project-a", fs_storage_mount_path=str(project_a_root))
+    project_b = Project(name="project-b", fs_storage_mount_path=str(project_b_root))
+    await project_a.save()
+    await project_b.save()
+    # A journey under a flow.json dependency is the project's own to auto-launch.
+    await link_context_dirs(project_a, [content_root])
+
+    selected = await Journey.auto_launch_for(USER, project_id=project_a.id)
+
+    assert selected is not None and selected.journey_id == globex.id
+    assert await unrelated.progress(USER) is None
+
+
+@async_context
+async def test_25_project_manifest_selects_its_named_auto_launch_journey(
+    tmp_path, only_my_journeys
+):
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path / "project-with-two-journeys"
+    root.mkdir(parents=True)
+    (root / "flow.json").write_text(json.dumps({"autolaunchJourney": "preferred"}), encoding="utf-8")
+    other = await _make_auto(root / "agentic-assets" / "journey", "other", "other")
+    preferred = await _make_auto(root / "agentic-assets" / "journey", "preferred", "preferred")
+    project = Project(name="two", fs_storage_mount_path=str(root))
+    await project.save()
+
+    selected = await Journey.auto_launch_for(OTHER, project_id=project.id)
+
+    assert selected is not None and selected.journey_id == preferred.id
+    assert await other.progress(OTHER) is None
+
+
+@async_context
+async def test_26_a_dependency_names_its_own_auto_launch_journey(tmp_path, only_my_journeys):
+    """A dependency's own flow.json picks among the journeys it ships — a vendor
+    content repo with several journeys decides which one onboards the customer."""
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path / "customer"
+    content = tmp_path / "vendor-content"
+    root.mkdir()
+    content.mkdir()
+    (content / "flow.json").write_text(json.dumps({"autolaunchJourney": "preferred"}), encoding="utf-8")
+    other = await _make_auto(content / "agentic-assets" / "journey", "other", "other")
+    preferred = await _make_auto(content / "agentic-assets" / "journey", "preferred", "preferred")
+    project = Project(name="customer-with-vendor", fs_storage_mount_path=str(root))
+    await project.save()
+    await link_context_dirs(project, [content])
+
+    selected = await Journey.auto_launch_for(OTHER, project_id=project.id)
+
+    assert selected is not None and selected.journey_id == preferred.id
+    assert await other.progress(OTHER) is None
+
+
+@async_context
+async def test_expanded_journey_uses_actual_owning_project_with_custom_placement(tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    project = await Project(name=str(tmp_path), fs_storage_mount_path=str(tmp_path)).save()
+    journey = await Journey(name="custom", asset_ref=str(tmp_path / "custom"), project_id=project.id).save()
+    loaded = await Journey.get_one({"id": journey.id})
+    assert loaded is not None
+    assert loaded.project_root == str(tmp_path.resolve())
+    assert loaded.model_dump(mode="json")["project_root"] == str(tmp_path.resolve())
+
+
+@async_context
+async def test_expanded_journey_refuses_misattributed_or_symlinked_occurrence(tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    owner = tmp_path / "owner"
+    owner.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    project = await Project(name=str(owner), fs_storage_mount_path=str(owner)).save()
+    journey = Journey(name="outside", asset_ref=str(outside), project_id=project.id)
+    await journey.expand_blobs()
+    assert journey.project_root is None
+    (owner / "alias").symlink_to(outside, target_is_directory=True)
+    journey.asset_ref = str(owner / "alias")
+    await journey.expand_blobs()
+    assert journey.project_root is None

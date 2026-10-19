@@ -32,10 +32,16 @@ from flow_sdk.transcript_analyzer.entries import (
 from flow_sdk.transcript_analyzer.parsers.claude import (
     ClaudeParser,
     build_semantic_tool_entry,
+    parse_worker_unavailable_event,
 )
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 from .session_history import entry_to_flowdata
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import (
+    final_end_frame,
+    safe_dump,
+    status_frame,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +68,20 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
 
     if etype == "assistant":
         try:
-            out = _convert_assistant_event(event, _line_index)
+            worker_unavailable = parse_worker_unavailable_event(
+                event,
+                _base_for_event(event, _line_index, 0, ""),
+            )
+            if worker_unavailable is not None:
+                out = entry_to_flowdata(
+                    worker_unavailable,
+                    observation_kind="live",
+                )
+            else:
+                out = _convert_assistant_event(event, _line_index)
         except Exception:
             logger.debug("claude_event_to_flowdata: assistant parse failed", exc_info=True)
-            out = [_status("parse-error", _safe_dump(event))]
+            out = [status_frame("parse-error", safe_dump(event))]
         _line_index += 1
         return out
 
@@ -74,18 +90,18 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
             out = _convert_user_event(event, _line_index)
         except Exception:
             logger.debug("claude_event_to_flowdata: user parse failed", exc_info=True)
-            out = [_status("parse-error", _safe_dump(event))]
+            out = [status_frame("parse-error", safe_dump(event))]
         _line_index += 1
         return out
 
     if etype == "system":
-        return [_status(event.get("subtype") or "system", _safe_dump(event))]
+        return [status_frame(event.get("subtype") or "system", safe_dump(event))]
     if etype == "rate_limit_event":
-        return [_status("rate-limit", _safe_dump(event))]
+        return [status_frame("rate-limit", safe_dump(event))]
     if etype == "result":
         return _convert_result(event)
 
-    return [_status("unknown", _safe_dump(event))]
+    return [status_frame("unknown", safe_dump(event))]
 
 
 def convert_line(line: str) -> list[FlowData]:
@@ -101,17 +117,6 @@ def convert_line(line: str) -> list[FlowData]:
     if not isinstance(event, dict):
         return []
     return convert_event(event)
-
-
-def final_end_frame() -> FlowData:
-    """The terminal ``<flow-end>`` frame."""
-    return FlowData(
-        flow_value="",
-        attributes={
-            "element-type": FlowElementType.END,
-            "data-type": FlowDataType.TEXT,
-        },
-    )
 
 
 # ── Internals ─────────────────────────────────────────────────────────────────
@@ -200,7 +205,7 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
                 envelope={},
                 base=_base_for_event(event, line_index, block_index, tool_use_id),
             ))
-            out.append(entry_to_flowdata(entry, observation_kind="live"))
+            out.extend(entry_to_flowdata(entry, observation_kind="live"))
     return out
 
 
@@ -227,7 +232,7 @@ def _convert_user_event(event: dict[str, Any], line_index: int) -> list[FlowData
                 )
                 # Delegate to the history path's converter so the live frame
                 # is identical to the one a reload replays.
-                out.append(entry_to_flowdata(entry, observation_kind="live"))
+                out.extend(entry_to_flowdata(entry, observation_kind="live"))
             continue
         if block.get("type") != "tool_result":
             continue
@@ -311,19 +316,3 @@ def _convert_result(event: dict[str, Any]) -> list[FlowData]:
     ]
 
 
-def _status(subtype: str, value: str = "") -> FlowData:
-    return FlowData(
-        flow_value=value,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.TEXT,
-            "subtype": subtype,
-        },
-    )
-
-
-def _safe_dump(obj: Any) -> str:
-    try:
-        return json.dumps(obj, default=str)[:400]
-    except (TypeError, ValueError):
-        return str(obj)[:400]

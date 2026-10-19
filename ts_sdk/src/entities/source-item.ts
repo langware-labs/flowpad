@@ -1,0 +1,87 @@
+/**
+ * SourceItem — one ingested item of a DataSource
+ * (flow_sdk/builtin/source_item.py). Read-mostly: the drivers write these;
+ * the UI and editor apps list, star and mark them read.
+ */
+import { APIEntity, registerEntity } from '../APIEntity';
+import { IEntity, EntityMerge } from '../IEntity';
+import { ICloudOrigin } from '../models/CloudOrigin';
+
+/** The typed payload a source emitted, tagged with its registered kind. */
+export interface SourceItemData {
+  spec_kind?: string;
+  [field: string]: unknown;
+}
+
+export interface ISourceItem extends IEntity {
+  kind?: string;
+  provider?: string;
+  data_source_id?: string;
+  external_id?: string;
+  origin?: ICloudOrigin | null;
+  origin_kind?: string;
+  origin_namespace?: string;
+  origin_key?: string;
+  data?: SourceItemData | null;
+  thread_key?: string | null;
+  reply_to_external_id?: string | null;
+  permalink?: string | null;
+  occurred_at?: string | null;
+  author_external_id?: string | null;
+  author_display?: string | null;
+  body?: string;
+  read?: boolean;
+  starred?: boolean;
+}
+
+// `implements ISourceItem` only checks the class; it contributes no members, so every
+// field declared solely on ISourceItem read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface SourceItem extends EntityMerge<ISourceItem> {}
+
+@registerEntity
+export class SourceItem extends APIEntity<SourceItem> implements ISourceItem {
+  static type: string = 'source_item';
+
+  kind: string = '';
+  provider: string = '';
+  data_source_id: string = '';
+  external_id: string = '';
+  origin: ICloudOrigin | null = null;
+  origin_kind: string = '';
+  origin_namespace: string = '';
+  origin_key: string = '';
+  data: SourceItemData | null = null;
+  thread_key: string | null = null;
+  reply_to_external_id: string | null = null;
+  permalink: string | null = null;
+  occurred_at: string | null = null;
+  author_external_id: string | null = null;
+  author_display: string | null = null;
+  body: string = '';
+  read: boolean = false;
+  starred: boolean = false;
+
+  constructor(entity: Partial<ISourceItem> = {}) {
+    super(entity);
+    this.kind = entity.kind ?? this.kind;
+    this.provider = entity.provider ?? this.provider;
+    this.data_source_id = entity.data_source_id ?? this.data_source_id;
+    this.external_id = entity.external_id ?? this.external_id;
+    this.origin = entity.origin ?? this.origin;
+    this.origin_kind = entity.origin_kind ?? this.origin_kind;
+    this.origin_namespace = entity.origin_namespace ?? this.origin_namespace;
+    this.origin_key = entity.origin_key ?? this.origin_key;
+    this.data = entity.data ?? this.data;
+    this.thread_key = entity.thread_key ?? this.thread_key;
+    this.reply_to_external_id = entity.reply_to_external_id ?? this.reply_to_external_id;
+    this.permalink = entity.permalink ?? this.permalink;
+    this.occurred_at = entity.occurred_at ?? this.occurred_at;
+    this.author_external_id = entity.author_external_id ?? this.author_external_id;
+    this.author_display = entity.author_display ?? this.author_display;
+    this.body = entity.body ?? this.body;
+    this.read = entity.read ?? this.read;
+    this.starred = entity.starred ?? this.starred;
+  }
+}

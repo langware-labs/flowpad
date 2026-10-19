@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import { EventEmitter } from 'events';
 
 import { dataManager } from '../APIEntity';
@@ -7,13 +8,14 @@ import {
   CapabilityActionName,
   CapabilityCheck,
   CapabilityResult,
-  CapabilityState,
   ICapability,
 } from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
 import { EventBus } from '../tags/EventBus';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
+import { CapabilitiesSummary } from './summary';
+export type * from './summary';
 
 export interface CapabilitySnapshot {
   queryKind: string;
@@ -31,52 +33,8 @@ export interface CapabilitySnapshot {
    * capability's own kind.
    */
   resolvedKind: string | null;
-}
-
-/** One dependency edge in a CapabilityAccess (mirror of backend summary.py). */
-export interface CapabilityDependency {
-  kind: string;
-  available: boolean;
-}
-
-/**
- * One capability + everything the UI needs to show/use it. 1:1 with the
- * backend `CapabilityAccess` pydantic model (core/capabilities/summary.py).
- */
-export interface CapabilityAccess {
-  kind: string;
-  intent: string;
-  name: string;
-  description: string;
-  icon: string;
-  available: boolean;
-  checked: boolean;
-  /** Persisted four-state readiness (mirror of CapabilityState). */
-  state: CapabilityState;
-  runnable: boolean;
-  installable: boolean;
-  worker_type: string | null;
-  homepage_url: string | null;
-  reference_kind: string | null;
-  dependencies: CapabilityDependency[];
-  value: unknown | null;
-  value_type: string | null;
-  last_process_id: string | null;
-  message: string;
-}
-
-/** All capabilities answering one intent (segment-1 handle). */
-export interface CapabilityIntent {
-  intent: string;
-  label: string;
-  available: boolean;
-  capabilities: CapabilityAccess[];
-}
-
-export interface CapabilitiesSummary {
-  intents: CapabilityIntent[];
-  capabilities: CapabilityAccess[];
-  generated_at: string;
+  /** Canonical process worker behind `resolvedKind`, from the backend summary. */
+  resolvedWorkerType: string | null;
 }
 
 /**
@@ -91,8 +49,6 @@ export class CapabilityManager extends EventEmitter {
 
   private capabilities: Capability[] = [];
   private summary: CapabilitiesSummary | null = null;
-  private summaryPromise: Promise<CapabilitiesSummary> | null = null;
-  private loadPromise: Promise<Capability[]> | null = null;
   private actionPromises = new Map<string, Promise<CapabilityCheck>>();
   private ensureCheckPromises = new Map<string, Promise<CapabilitySnapshot>>();
   private actionResults = new Map<string, CapabilityCheck>();
@@ -125,35 +81,19 @@ export class CapabilityManager extends EventEmitter {
   }
 
   /** Fetch the capability list once; subsequent calls reuse the cache unless invalidated. */
-  async load(invalidate: boolean = false): Promise<Capability[]> {
-    if (this.loadPromise && !invalidate) {
-      return this.loadPromise;
-    }
-    if (this.capabilities.length && !invalidate) {
-      return this.capabilities;
-    }
+  load(invalidate = false): Promise<Capability[]> {
+    return invalidate ? lazyAssets.refresh(LazyAsset.Capabilities) : lazyAssets.load(LazyAsset.Capabilities);
+  }
 
-    this.loadPromise = (async () => {
-      // Hub mode: the hub backend has no `capability` entity, so this graph
-      // query would 422. Return an empty set — capabilities are local-only.
-      if (isHubOnly()) {
-        this.capabilities = [];
-        this.emit('change');
-        return this.capabilities;
-      }
-      const rows = await apiClient.get<unknown[]>('/graph/capability', {
-        params: { include_system: true },
-      });
-      this.capabilities = (rows ?? []).map((row: unknown) => dataManager.updateEntityFromJson<Capability>(row));
-      this.emit('change');
-      return this.capabilities;
-    })();
-
-    try {
-      return await this.loadPromise;
-    } finally {
-      this.loadPromise = null;
-    }
+  /** Registry loader; the manager remains the canonical live capability projection. */
+  async fetchSnapshot(isCurrent: () => boolean): Promise<Capability[]> {
+    const rows = isHubOnly()
+      ? []
+      : await apiClient.get<unknown[]>('/graph/capability', { params: { include_system: true } });
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    this.capabilities = (rows ?? []).map((row) => dataManager.updateEntityFromJson<Capability>(row));
+    this.emit('change');
+    return this.capabilities;
   }
 
   getAll(): Capability[] {
@@ -169,7 +109,15 @@ export class CapabilityManager extends EventEmitter {
   setSummary(summary: CapabilitiesSummary | null | undefined): void {
     if (!summary) return;
     this.summary = summary;
+    lazyAssets.client.setQueryData(lazyAssets.key(LazyAsset.CapabilitySummary), summary);
     this.emit('change');
+  }
+
+  /** Discovery is only an initial seed; a live or requested refresh takes precedence. */
+  seedSummary(summary: CapabilitiesSummary | null | undefined): void {
+    if (this.summary || lazyAssets.client.isFetching({ queryKey: lazyAssets.prefix(LazyAsset.CapabilitySummary) }))
+      return;
+    this.setSummary(summary);
   }
 
   /**
@@ -177,24 +125,16 @@ export class CapabilityManager extends EventEmitter {
    * Cached after first fetch; pass `invalidate` to force a refresh (e.g. after
    * an install completes).
    */
-  async getSummary(invalidate: boolean = false): Promise<CapabilitiesSummary> {
-    if (this.summary && !invalidate && !this.summaryPromise) {
-      return this.summary;
-    }
-    if (this.summaryPromise && !invalidate) {
-      return this.summaryPromise;
-    }
-    this.summaryPromise = (async () => {
-      const data = await apiClient.get<CapabilitiesSummary>('/graph/capabilities/summary');
-      this.summary = data ?? { intents: [], capabilities: [], generated_at: '' };
-      this.emit('change');
-      return this.summary;
-    })();
-    try {
-      return await this.summaryPromise;
-    } finally {
-      this.summaryPromise = null;
-    }
+  getSummary(invalidate = false): Promise<CapabilitiesSummary> {
+    return invalidate ? lazyAssets.refresh(LazyAsset.CapabilitySummary) : lazyAssets.load(LazyAsset.CapabilitySummary);
+  }
+
+  async fetchSummary(isCurrent: () => boolean): Promise<CapabilitiesSummary> {
+    const data = await apiClient.get<CapabilitiesSummary>('/graph/capabilities/summary');
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    this.summary = data ?? { intents: [], capabilities: [], generated_at: '' };
+    this.emit('change');
+    return this.summary;
   }
 
   /**
@@ -232,6 +172,10 @@ export class CapabilityManager extends EventEmitter {
     const resolvedKind = capability
       ? ((result?.details?.reference_kind as string | undefined) ?? capability.reference_kind ?? capability.kind)
       : null;
+    const resolvedWorkerType =
+      (resolvedKind ? this.summary?.capabilities.find((access) => access.kind === resolvedKind)?.worker_type : null) ??
+      (capability ? this.summary?.capabilities.find((access) => access.kind === capability.kind)?.worker_type : null) ??
+      null;
 
     return {
       queryKind: query,
@@ -243,6 +187,7 @@ export class CapabilityManager extends EventEmitter {
       dependencies: capability ? (this.actionResults.get(capability.kind)?.dependencies ?? {}) : {},
       processId,
       resolvedKind,
+      resolvedWorkerType,
     };
   }
 
@@ -378,11 +323,7 @@ export class CapabilityManager extends EventEmitter {
    * reference row), this writes the concrete LEAF capability, e.g.
    * `harness.claude.cli`. Persists via entity save() then re-checks.
    */
-  async setAuthMode(
-    queryKind: string,
-    mode: 'device' | 'api',
-    provider?: string | null,
-  ): Promise<CapabilitySnapshot> {
+  async setAuthMode(queryKind: string, mode: 'device' | 'api', provider?: string | null): Promise<CapabilitySnapshot> {
     return this.mutateAndRecheck(queryKind, (capability) => {
       capability.auth_mode = mode;
       capability.api_provider = mode === 'api' ? (provider ?? null) : null;
@@ -391,10 +332,7 @@ export class CapabilityManager extends EventEmitter {
 
   /** Persist a harness's tier→model override map ({provider: {name: slug}}),
    *  layered over the driver defaults at spawn. Written on the leaf capability. */
-  async setModelMap(
-    queryKind: string,
-    map: Record<string, Record<string, string>>,
-  ): Promise<CapabilitySnapshot> {
+  async setModelMap(queryKind: string, map: Record<string, Record<string, string>>): Promise<CapabilitySnapshot> {
     return this.mutateAndRecheck(queryKind, (capability) => {
       capability.model_map = map;
     });
@@ -436,11 +374,26 @@ export class CapabilityManager extends EventEmitter {
     }
   }
 
+  /**
+   * The best available verdict for a capability, strongest evidence first.
+   *
+   * ``actionResults`` is in-memory and lives only as long as the page, so the
+   * persisted fallbacks are what every reload depends on. ``last_check`` was
+   * missing from that chain, and it is the field the backend actually populates
+   * on a routine check (``restamp_capability_state`` writes ``row.last_check``)
+   * — so after any reload this returned null, ``getSnapshot`` computed
+   * ``checked = false``, and an installed, working CLI rendered as "not
+   * installed" until something happened to re-run a check.
+   *
+   * Ordered weakest-last on purpose: a setup or test is a stronger statement
+   * than a check, so ``last_check`` only answers when nothing better has.
+   */
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
       capability.last_setup ??
       capability.last_test ??
+      capability.last_check ??
       null
     );
   }

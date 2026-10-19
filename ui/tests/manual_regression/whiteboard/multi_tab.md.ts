@@ -13,10 +13,16 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 }
 
 async function openBoard(page: Page, id: string) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -25,27 +31,27 @@ async function openBoard(page: Page, id: string) {
 // committed scene (the 500ms gap lets updateScene commit before serialize).
 async function injectRect(page: Page, label: string) {
   // Re-wait for the live hooks: the editor can remount between openEditor() and
-  // here (a data-load re-render), clearing window.__whiteboardApi. Concrete signal.
+  // here (a data-load re-render), clearing window.__chartApi. Concrete signal.
   await page.waitForFunction(
-    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+    () => typeof (window as any).__chartApi === 'object' && !!(window as any).__chartApi
       && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
     null, { timeout: 15_000 },
   );
   await page.evaluate((text) => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: 30, y: 30, width: 90, height: 50, label: { text } }]) });
   }, label);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
-    (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+    const api = (window as any).__chartApi;
+    (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
   });
 }
 
 function boardLabels(page: Page): Promise<string[]> {
   return page.evaluate(() =>
-    (window as any).__whiteboardApi
+    (window as any).__chartApi
       .getSceneElements()
       .map((e: any) => e.text || '')
       .filter(Boolean),
@@ -91,7 +97,7 @@ test.describe('Whiteboard — Multi-tab (X1)', () => {
     // tab B's scene ("B"), not tab A's "A".
     await tabA.reload();
     await tabA.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-    await tabA.waitForFunction(() => (window as any).__whiteboardApi, null, { timeout: 15_000 });
+    await tabA.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
     await tabA.waitForTimeout(1_500);
     const aLabelsAfterReload = await boardLabels(tabA);
     expect(aLabelsAfterReload, "reloaded tab A shows tab B's last write").toContain('B');

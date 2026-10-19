@@ -1,20 +1,72 @@
 import { type TypeId, isImagePath } from '@sdk';
 import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ClipboardPaste,
+  Copy,
+  ExternalLink,
+  File,
+  FolderSearch,
+  RefreshCw,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-} from '@src/components/ui/dialog';
+import { useCopied } from '@src/components/ui/copy-button';
+import { Dialog, DialogContent } from '@src/components/ui/dialog';
 import { useFS } from '@src/hooks/useFS';
+import { cn } from '@src/lib/utils';
 
 interface InputFilesPanelProps {
   computeNodeTypeId: TypeId;
   inputDirAbsPath: string;
+  /** Insert a file's path into the input the user is typing in (composer or PTY), at the cursor. */
+  onInsertPath?: (path: string) => void;
 }
+
+interface RowActionProps {
+  label: string;
+  /** Tooltip; defaults to `label`. */
+  title?: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+}
+
+/** Hover-revealed icon button on a file row; never triggers the row's own click. */
+const RowAction: React.FC<RowActionProps> = ({ label, title = label, icon: Icon, onClick, className, disabled }) => (
+  <Button
+    variant="ghost"
+    size="sm"
+    className={cn('h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100', className)}
+    aria-label={label}
+    title={title}
+    disabled={disabled}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
+  >
+    <Icon className="h-3.5 w-3.5" />
+  </Button>
+);
+
+const CopyPathAction: React.FC<{ name: string; path: string }> = ({ name, path }) => {
+  const { t } = useLingui();
+  const { copied, copy } = useCopied();
+  return (
+    <RowAction
+      label={t`Copy path of ${name}`}
+      title={t`Copy path: ${path}`}
+      icon={copied ? Check : Copy}
+      onClick={() => void copy(path)}
+    />
+  );
+};
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -25,6 +77,7 @@ function formatSize(bytes: number): string {
 export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
   computeNodeTypeId,
   inputDirAbsPath,
+  onInsertPath,
 }) => {
   const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
@@ -89,12 +142,21 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
       className={`flex flex-1 flex-col overflow-hidden transition-colors ${isDragOver ? 'bg-muted/40 ring-1 ring-inset ring-primary/40' : ''}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDrop={(e) => { void handleDrop(e); }}
+      onDrop={(e) => {
+        void handleDrop(e);
+      }}
     >
       <div className="flex items-center justify-between border-b px-3 py-2">
-        <span className="text-sm font-medium"><Trans>Input Files</Trans></span>
+        <span className="text-sm font-medium">
+          <Trans>Input Files</Trans>
+        </span>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)} className="h-6 w-6 p-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, inputDirAbsPath)}
+            className="h-6 w-6 p-0"
+          >
             <ExternalLink className="h-3.5 w-3.5" />
           </Button>
           <Button variant="ghost" size="sm" onClick={handleRefresh} className="h-6 w-6 p-0">
@@ -112,7 +174,11 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
           <div className="flex flex-col gap-1">
             {items.map((item) => {
               const itemPath = `${inputDirAbsPath}/${item.name}`;
-              const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? itemPath);
+              // getDownloadUrl takes an ENTITY-RELATIVE path — it prepends
+              // `compute_node/<id>/fs/download/` itself. `vfs_abs_path` already
+              // carries that `compute_node-<id>/` prefix, so passing it doubled
+              // the entity segment and every thumbnail 404'd.
+              const downloadUrl = fs?.getDownloadUrl(item.relativePath || itemPath);
               const isImage = isImagePath(item.name);
               const isDeleting = deletingPath === itemPath;
               return (
@@ -122,11 +188,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
                   onClick={isImage && downloadUrl ? () => setSelectedImage(downloadUrl) : undefined}
                 >
                   {isImage && downloadUrl ? (
-                    <img
-                      src={downloadUrl}
-                      alt={item.name}
-                      className="h-12 w-12 shrink-0 rounded object-cover"
-                    />
+                    <img src={downloadUrl} alt={item.name} className="h-12 w-12 shrink-0 rounded object-cover" />
                   ) : (
                     <File className="h-5 w-5 shrink-0 text-muted-foreground" />
                   )}
@@ -136,20 +198,28 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
                       <p className="text-[10px] text-muted-foreground">{formatSize(item.size)}</p>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-                    aria-label={`Delete ${item.name}`}
-                    title={`Delete ${item.name}`}
+                  {onInsertPath && (
+                    <RowAction
+                      label={t`Paste path of ${item.name}`}
+                      title={t`Paste path at cursor`}
+                      icon={ClipboardPaste}
+                      onClick={() => onInsertPath(itemPath)}
+                    />
+                  )}
+                  <CopyPathAction name={item.name} path={itemPath} />
+                  <RowAction
+                    label={t`Reveal ${item.name} in Finder/Explorer`}
+                    title={t`Reveal in Finder/Explorer`}
+                    icon={FolderSearch}
+                    onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, itemPath, { select: true })}
+                  />
+                  <RowAction
+                    label={t`Delete ${item.name}`}
+                    icon={Trash2}
+                    className="hover:text-destructive"
                     disabled={isDeleting}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(itemPath);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                    onClick={() => void handleDelete(itemPath)}
+                  />
                 </div>
               );
             })}
@@ -157,14 +227,15 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
         )}
       </div>
 
-      <Dialog open={!!selectedImage} onOpenChange={(open) => { if (!open) setSelectedImage(null); }}>
+      <Dialog
+        open={!!selectedImage}
+        onOpenChange={(open) => {
+          if (!open) setSelectedImage(null);
+        }}
+      >
         <DialogContent className="max-h-[90vh] max-w-[90vw] p-2">
           {selectedImage && (
-            <img
-              src={selectedImage}
-              alt={t`Preview`}
-              className="max-h-[85vh] max-w-full rounded object-contain"
-            />
+            <img src={selectedImage} alt={t`Preview`} className="max-h-[85vh] max-w-full rounded object-contain" />
           )}
         </DialogContent>
       </Dialog>

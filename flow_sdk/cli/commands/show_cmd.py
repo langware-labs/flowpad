@@ -11,28 +11,43 @@ The target process is the calling AgenticProcess (``FLOWPAD_EXECUTION_SCOPE``,
 injected into every worker) or an explicit ``--process``. The command POSTs to
 the entity action ``/api/v1/graph/agentic_process/<id>/show``.
 
-Error contract (agents parse these):
+Every show answers a ``NavigateResult``; its ``exit_code`` IS the exit code
+(the same enum ``flow op`` exits with):
 
-    exit 0 — show event recorded (NOT a guarantee anyone is watching)
-    exit 2 — invalid arguments (malformed typeid/port, no process scope)
-    exit 4 — entity not found (typeid form only)
+    exit 0 — shown, and it can be used (NOT a guarantee anyone is watching)
+    exit 1 — shown, but it cannot be used yet — nothing answers at that address,
+             or the server errors (see "verdict"); fix it, then show it again
+    exit 4 — not found (typeid form, a missing file, an entity-shaped view pointer)
+    exit 7 — refused: the page refuses to be shown inside Flowpad
+    exit 2 — invalid arguments (malformed typeid/port/view, no process scope)
     exit 5 — connection error (server unreachable)
 """
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Optional
 
 import typer
 from typing_extensions import Annotated
 
 from flow_sdk.cli.commands._common import (
+    caller_abs_path as _caller_abs_path,
+)
+from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
-    ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
+from flow_sdk.cli.commands.navigate_cmd import emit_navigate_result
 
 show_app = typer.Typer(
     name="show",
@@ -50,7 +65,7 @@ EXIT_CONNECTION_ERROR = 5
 _PROCESS_HELP = "Target AgenticProcess id (defaults to the calling process via FLOWPAD_EXECUTION_SCOPE)."
 
 
-def _post_show(process_opt: Optional[str], body: dict) -> None:
+def _post_show(process_opt: Optional[str], body: dict, extra: Optional[dict] = None) -> None:
     """POST the show action for the resolved process and exit-map the outcome.
 
     Transport/parse handling is the shared ``post_graph_json``; this wrapper
@@ -69,7 +84,7 @@ def _post_show(process_opt: Optional[str], body: dict) -> None:
         _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
 
     data = _post_graph_json(url, body, timeout=5, on_error=_on_error)
-    _ok({"process_id": process_id, **data})
+    emit_navigate_result(data, {"process_id": process_id, **(extra or {})})
 
 
 @show_app.command(
@@ -95,13 +110,52 @@ def show_entity(
 def show_file(
     path: Annotated[
         str,
-        typer.Argument(help="File path, absolute or ~-relative (e.g. '~/Flowpad workspace/proj/index.html')"),
+        typer.Argument(
+            help=(
+                "File path — absolute, ~-relative, or relative to YOUR cwd "
+                "(resolved here before it is sent; e.g. './index.html')"
+            )
+        ),
     ],
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
 ) -> None:
     if not path or not path.strip():
         _fail(EXIT_INVALID_ARG, "INVALID_PATH", "Empty path")
-    _post_show(process, {"path": path})
+    # Absolutize HERE, in the caller's process. A relative path means "relative
+    # to the agent's cwd" and that cwd never crosses the wire, so the server
+    # resolves it against ITS OWN launch directory (in a packaged install,
+    # ~/.local/bin) and silently addresses a different, usually nonexistent
+    # file. Same expansion `flow record index` already applies (record_cmd).
+    _post_show(process, {"path": _caller_abs_path(path)})
+
+
+@show_app.command(
+    "view",
+    # NB: no square brackets in help strings — Rich parses them as markup tags.
+    help=(
+        "Show a SCREEN by dock address, 'viewType' plus an optional "
+        "'/pointer' and '?opts'. Examples: 'automations', 'assets/list/skill', "
+        "'preferences/appearance'. Run `flow schema views` for the list."
+    ),
+)
+def show_view(
+    address: Annotated[
+        str,
+        typer.Argument(
+            help="Dock address, e.g. 'automations' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
+        ),
+    ],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    """Show a dock address — the only form that reaches a view with no entity.
+
+    Grammar is validated server-side against the dock-address table, so a bad
+    view or a missing required pointer comes back as exit 2 rather than a silent
+    no-op in the browser.
+    """
+    if not address or not address.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_VIEW", "Empty view address")
+    _post_show(process, {"view": address.strip()})
 
 
 @show_app.command(
@@ -113,8 +167,101 @@ def show_webapp(
         int,
         typer.Option("--port", help="Port the dev server / app listens on (e.g. 3000)."),
     ],
+    admin: Annotated[
+        bool,
+        typer.Option("--admin", help="Serve it to the project's operators (its admin app), not its end users."),
+    ] = False,
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
 ) -> None:
     if port <= 0 or port > 65535:
         _fail(EXIT_INVALID_ARG, "INVALID_PORT", f"Invalid port: {port}")
-    _post_show(process, {"port": port})
+    _post_show(process, {"port": port, **({"audience": "admin"} if admin else {})})
+
+
+@show_app.command(
+    "url",
+    help="Show a web page (http/https) in a tab beside the chat, e.g. a docs page the user should read.",
+)
+def show_url(
+    url: Annotated[str, typer.Argument(help="The page's full address, e.g. https://metallb.io/installation/")],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    value = (url or "").strip()
+    if not value.startswith(("http://", "https://")):
+        _fail(EXIT_INVALID_ARG, "INVALID_URL", f"Not a web address: {value!r}")
+    _post_show(process, {"url": value})
+
+
+@show_app.command(
+    "app",
+    help="Show an app by its artifact id (runtime is derived: dev server, or built output).",
+)
+def show_app_cmd(
+    artifact_id: Annotated[
+        str,
+        typer.Argument(help="Artifact id of the app (bare uuid, or the artifact-<uuid> typeid)."),
+    ],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    """Show an app the agent already built or registered.
+
+    Distinct from ``show webapp --port`` on purpose: the ARTIFACT is the address,
+    and which runtime serves it — a live dev server, or built output we host — is
+    resolved server-side at show time. So this keeps working across a rebuild, a
+    restart, or a switch from dev to a built deployment, where a pinned port does
+    not.
+
+    A bare uuid or the full ``artifact-<uuid>`` typeid are both accepted; the
+    backend's own validation decides whether it names a real artifact (404 if not).
+    """
+    value = (artifact_id or "").strip()
+    if not value:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARTIFACT_ID", "Empty artifact id")
+    # Accept the typeid spelling as a convenience — it is what `flow show`'s own
+    # output and the dock URL both use, so round-tripping one must not need an edit.
+    if value.startswith("artifact-"):
+        value = value[len("artifact-") :]
+    _post_show(process, {"artifact_id": value})
+
+
+@show_app.command(
+    "snippet",
+    help=(
+        "Show a code snippet: regions marked '# %% flowpad:hidden|init|snippet' "
+        "('//' for js/rs), init/imports folded away, Run with output below. "
+        "PATH shows an existing file; without PATH the code is read from stdin "
+        "into the OS temp dir. The answer's 'path' is the file to edit later."
+    ),
+)
+def show_snippet(
+    path: Annotated[Optional[str], typer.Argument(help="Existing snippet file. Omit to read the code from stdin.")] = None,
+    lang: Annotated[str, typer.Option("--lang", help="File extension for stdin code: py, js, rs, sh.")] = "py",
+    name: Annotated[Optional[str], typer.Option("--name", help="Temp file name without extension (default: a timestamp).")] = None,
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    from flow_sdk.core.snippet import SnippetDoc, write_temp_snippet  # noqa: PLC0415
+
+    if path is None:
+        code = sys.stdin.read()
+        if not code.strip():
+            _fail(EXIT_INVALID_ARG, "EMPTY_SNIPPET", "No PATH and nothing on stdin")
+    else:
+        target = Path(_caller_abs_path(path))
+        if not target.is_file():
+            _fail(EXIT_ENTITY_NOT_FOUND, "NOT_FOUND", f"No such file: {target}")
+        code = target.read_bytes().decode("utf-8", errors="replace")
+    # Refused HERE rather than shown as a plain file: an agent that forgot the
+    # markers must hear it, not have the user find an ordinary editor.
+    if SnippetDoc.parse(code) is None:
+        _fail(EXIT_INVALID_ARG, "NOT_A_SNIPPET", "No '%% flowpad:snippet' marker line (e.g. '# %% flowpad:snippet', '//' for js/rs)")
+    if path is None:
+        path = str(write_temp_snippet(code, lang, name))
+    # Shown either way; the answer carries what the viewer will mark, so an agent hears about a
+    # broken import from the show itself instead of from the user after a Run.
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.core.snippet import check_snippet  # noqa: PLC0415
+
+    found = asyncio.run(check_snippet(Path(_caller_abs_path(path)), timeout_seconds=30.0))
+    _post_show(process, {"path": _caller_abs_path(path)}, {"diagnostics": [d.model_dump() for d in found]})
+

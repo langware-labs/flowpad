@@ -8,7 +8,7 @@
  * queue persistence, and URL-first rebinding after New.
  */
 import { expect, test } from '@playwright/test';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -43,7 +43,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         };
       });
       expect(browserProject.id).toBe(fixture.projectId);
-      expect(path.resolve(String(browserProject.mount))).toBe(path.resolve(fixture.root));
+      expect(realpathSync(String(browserProject.mount))).toBe(realpathSync(fixture.root));
 
       const processResponse = await request.get(
         `${API}/api/v1/graph/agentic_process/${fixture.processId}`,
@@ -51,7 +51,7 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
       expect(processResponse.status()).toBe(200);
       const process = (await processResponse.json()).data;
       expect(process.project_id).toBe(fixture.projectId);
-      expect(path.resolve(process.workdir)).toBe(path.resolve(fixture.root));
+      expect(realpathSync(process.workdir)).toBe(realpathSync(fixture.root));
       await expect(page.getByTestId('display-empty-state')).toBeVisible();
     } finally {
       await destroyVibeFixture(request, fixture);
@@ -89,8 +89,23 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         data: { asset_ref: firstFile },
       });
       expect(patch.status()).toBe(200);
+      // Don't open the editor until the PATCHed asset_ref is what the server
+      // serves — under load the read-back can lag the 200, and the editor
+      // would load the OLD ref and never show the marker.
+      await expect
+        .poll(async () => {
+          const r = await request.get(`${API}/api/v1/graph/skill/${first.id}`);
+          return ((await r.json()) as { data?: { asset_ref?: string } }).data?.asset_ref;
+        }, { message: 'patched asset_ref visible' })
+        .toBe(firstFile);
 
-      await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+      await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
       await page.goto(`/dock/assets/editor/skill/typeid/skill-${first.id}`);
       await expect(page.getByText('VIBE_FILE_REF_READY')).toBeVisible();
       await expect(page.getByText(/File is missing/i)).toHaveCount(0);
@@ -164,9 +179,13 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
       await input.fill('Reply with VIBE_NEW_REBOUND and do not create files.');
       await input.press('Enter');
 
-      await expect(page).toHaveURL(/\/dock\/shell\/agentic_process-.*viewMode=vibe/);
+      await expect(page).toHaveURL((url) => {
+        const processId =
+          url.pathname.match(/\/dock\/vibe\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
+        return processId !== null && processId !== fixture.processId;
+      });
       newProcessId =
-        page.url().match(/\/dock\/shell\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
+        page.url().match(/\/dock\/vibe\/agentic_process-([0-9a-f-]+)/)?.[1] ?? null;
       expect(newProcessId).toBeTruthy();
       expect(newProcessId).not.toBe(fixture.processId);
 
@@ -174,13 +193,11 @@ test.describe('Vibe Workspace confirmed-bug regressions', () => {
         await request.get(`${API}/api/v1/graph/agentic_process/${newProcessId}`)
       ).json()).data;
       expect(created.project_id).toBe(fixture.projectId);
-      expect(path.resolve(created.workdir)).toBe(path.resolve(fixture.root));
+      expect(realpathSync(created.workdir)).toBe(realpathSync(fixture.root));
       expect(created.embedded_asset_refs.length).toBeGreaterThan(0);
 
       await page.reload();
-      await expect(page).toHaveURL(
-        new RegExp(`/dock/shell/agentic_process-${newProcessId}\\?.*viewMode=vibe`),
-      );
+      await expect(page).toHaveURL(new RegExp(`/dock/vibe/agentic_process-${newProcessId}(\\?|$)`));
     } finally {
       if (newProcessId) {
         await request

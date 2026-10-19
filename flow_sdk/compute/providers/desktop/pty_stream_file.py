@@ -40,12 +40,57 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import threading
+import time
 from pathlib import Path
+
+from flow_sdk import toplog
+from flow_sdk.capsules.atomic import atomic_write
+from flow_sdk.instances.atomic import read_json
 
 # Truncate down to this fraction of max when the cap is exceeded, so the
 # (read + rewrite) compaction amortizes instead of running on every write.
 _TRUNCATE_TO_FRACTION = 0.75
+
+# Replay rebuilds the terminal from what the file still holds. A fullscreen TUI
+# (Claude Code) sets its screen and mouse modes ONCE, at startup, so these must
+# survive a cut and must not outlive the process that set them — otherwise the
+# rebuilt terminal is on the wrong screen and the mouse wheel has nothing to
+# scroll (docs/pty-scroll.md, issues 2 and 4).
+_PRIVATE_MODE = re.compile(rb"\x1b\[\?([0-9;]+)([hl])")
+_ALT_SCREEN = frozenset({47, 1047, 1049})
+_MOUSE_TRACKING = frozenset({9, 1000, 1002, 1003})
+_MOUSE_ENCODING = frozenset({1006, 1016})
+_FLAGS = frozenset({1, 1004, 2004})  # cursor keys, focus reporting, bracketed paste
+# Everything a dead process can leave on, turned off; written before a new
+# process's first output into the same file.
+_GENERATION_RESET = b"\x1b[?1049l\x1b[?1003l\x1b[?1006l\x1b[?1016l\x1b[?1004l\x1b[?2004l\x1b[?1l\x1b[?25h"
+
+
+def _modes_in_force(output: bytes) -> bytes:
+    """The escape sequences that re-establish the modes ``output`` leaves on."""
+    alt = mouse = encoding = None
+    flags: set[int] = set()
+    cursor_hidden = False
+    for m in _PRIVATE_MODE.finditer(output):
+        on = m.group(2) == b"h"
+        for param in m.group(1).split(b";"):
+            if not param.isdigit():
+                continue
+            mode = int(param)
+            if mode in _ALT_SCREEN:
+                alt = mode if on else None
+            elif mode in _MOUSE_TRACKING:
+                mouse = mode if on else None
+            elif mode in _MOUSE_ENCODING:
+                encoding = mode if on else None
+            elif mode in _FLAGS:
+                (flags.add if on else flags.discard)(mode)
+            elif mode == 25:
+                cursor_hidden = not on
+    active = [m for m in (alt, mouse, encoding) if m is not None] + sorted(flags)
+    return b"".join(b"\x1b[?%dh" % m for m in active) + (b"\x1b[?25l" if cursor_hidden else b"")
 
 
 class PtyStreamFile:
@@ -55,7 +100,7 @@ class PtyStreamFile:
         path: Filesystem path for the .pty file.
         cols/rows: Initial terminal size (header of a fresh file).
         max_size_bytes: Maximum file size before frame-boundary truncation
-            (default 10 MB on-disk, i.e. ~7.5 MB of raw output after base64).
+            (default 30 MB on-disk, i.e. ~22.5 MB of raw output after base64).
     """
 
     def __init__(
@@ -63,7 +108,7 @@ class PtyStreamFile:
         path: Path,
         cols: int = 80,
         rows: int = 24,
-        max_size_bytes: int = 10 * 1024 * 1024,
+        max_size_bytes: int = 30 * 1024 * 1024,
     ) -> None:
         self._path = path
         self._max_size_bytes = max_size_bytes
@@ -89,6 +134,19 @@ class PtyStreamFile:
         if seq is not None:
             frame.append(seq)
         self._append_line(json.dumps(frame))
+
+    def mark_new_generation(self) -> None:
+        """Turn off the modes a previous process left on, before a new one writes.
+
+        Recovery respawns into the SAME file. A process that died on the
+        alternate screen with mouse capture on never wrote the resets, so
+        replay would hand the new process's output a fullscreen canvas with no
+        scrollback. The frame carries no seq: generation-scoped readers
+        (``read_output_after_seq``, ``max_seq``) never see it.
+        """
+        if not self.size:
+            return
+        self._append_line(json.dumps(["o", base64.b64encode(_GENERATION_RESET).decode("ascii")]))
 
     def write_resize(self, cols: int, rows: int) -> None:
         """Append a resize frame. Every actual winsize change must be recorded —
@@ -185,8 +243,10 @@ class PtyStreamFile:
         """Drop whole frames from the front until under the compaction target.
 
         The header is rewritten to the winsize in effect at the first retained
-        frame (tracked through any dropped resize frames).
+        frame (tracked through any dropped resize frames), and the terminal
+        modes still in force at the cut are carried in a first output frame.
         """
+        t0 = time.monotonic()
         target = int(self._max_size_bytes * _TRUNCATE_TO_FRACTION)
         raw = self._path.read_bytes()
         lines = raw.split(b"\n")
@@ -196,26 +256,47 @@ class PtyStreamFile:
 
         size = len(raw)
         drop = 1  # index of first retained frame line (0 is the header)
+        dropped_output: list[bytes] = []
         while drop < len(lines) - 1 and size > target:
             line = lines[drop]
             try:
                 frame = json.loads(line)
                 if frame[0] == "r":
                     cols, rows = int(frame[1][0]), int(frame[1][1])
+                elif frame[0] == "o":
+                    dropped_output.append(base64.b64decode(frame[1]))
             except (ValueError, IndexError, TypeError):
                 pass  # malformed line (e.g. torn tail) — drop it
             size -= len(line) + 1
             drop += 1
 
-        new_header = json.dumps({"v": 1, "cols": cols, "rows": rows}).encode()
-        new_raw = new_header + b"\n" + b"\n".join(lines[drop:])
+        retained = lines[drop:]
+        modes = _modes_in_force(b"".join(dropped_output))
+        # `base` = the absolute number of the first retained frame, so a replay
+        # checkpoint ("the state after frame N") stays addressable across cuts.
+        # The synthetic modes frame takes the number of the last dropped frame.
+        base = header["base"] + (drop - 1) - (1 if modes else 0)
+        if modes:
+            retained = [json.dumps(["o", base64.b64encode(modes).decode("ascii")]).encode(), *retained]
+        new_header = json.dumps({"v": 1, "cols": cols, "rows": rows, "base": base}).encode()
+        new_raw = new_header + b"\n" + b"\n".join(retained)
         self._path.write_bytes(new_raw)
         self._size = len(new_raw)
+        # Runs on the PTY reader thread holding the file lock; a resize from the
+        # event loop waits on the same lock for this long.
+        toplog.log(
+            "pty", "stream_truncate file=%s bytes_before=%s bytes_after=%s ms=%.0f",
+            self._path.name, len(raw), len(new_raw), (time.monotonic() - t0) * 1000,
+        )
 
     # ── reading ──────────────────────────────────────────────────────────────
 
     def read_frames(self) -> dict | None:
-        """Return ``{"v", "cols", "rows", "events"}`` or None if no file.
+        """Every frame. See ``_read_frames``, which this is the whole-file case of."""
+        return self._read_frames()
+
+    def _read_frames(self, since_frame: int | None = None) -> dict | None:
+        """Return ``{"v", "cols", "rows", "base", "events"}`` or None if no file.
 
         ``events`` is a list of ``["o", b64]`` / ``["r", [cols, rows]]`` frames.
         Legacy raw files are surfaced as v0 with a single output frame and
@@ -223,6 +304,10 @@ class PtyStreamFile:
         unless a framed tail appended by a pre-upgrade-path build can be
         salvaged, in which case that tail is surfaced as v1 (replayable).
         A torn final line (crash mid-write) is dropped silently.
+
+        ``since_frame`` starts the events at that absolute frame, and the frames before
+        it are NEVER parsed — skipping them is the only reason a checkpoint saves
+        anything, since the parse of a long session is the dominant cost here.
         """
         if not self._path.exists():
             return None
@@ -235,18 +320,29 @@ class PtyStreamFile:
             salvaged = self._salvage_framed_tail(raw)
             if salvaged is not None:
                 events, (cols, rows) = salvaged
-                return {"v": 1, "cols": cols, "rows": rows, "events": events}
+                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}
             return {
                 "v": 0,
                 "cols": None,
                 "rows": None,
+                "base": 0,
                 "events": [["o", base64.b64encode(raw).decode("ascii")]],
             }
         lines = raw.split(b"\n")
         header = self._parse_header(lines[0])
-        events = []
+        # How many frames to walk past without parsing. A frame line is counted by its
+        # opening bytes — the same lines ``json.loads`` would accept, except a torn one,
+        # which only the FINAL line can be; a checkpoint that far along is not usable
+        # anyway and the caller re-reads whole.
+        to_skip = max(0, since_frame - header["base"]) if since_frame is not None else 0
+        events: list = []
+        skipped = 0
         for line in lines[1:]:
             if not line:
+                continue
+            if skipped < to_skip:
+                if line[:4] in (b'["o"', b'["r"'):
+                    skipped += 1
                 continue
             try:
                 frame = json.loads(line)
@@ -254,7 +350,13 @@ class PtyStreamFile:
                 continue  # torn tail line
             if isinstance(frame, list) and len(frame) in (2, 3) and frame[0] in ("o", "r"):
                 events.append(frame)
-        return {"v": header["v"], "cols": header["cols"], "rows": header["rows"], "events": events}
+        return {
+            "v": header["v"],
+            "cols": header["cols"],
+            "rows": header["rows"],
+            "base": header["base"] + skipped,
+            "events": events,
+        }
 
     def max_seq(self) -> int:
         """Highest output-frame seq persisted in the file (0 if none).
@@ -338,15 +440,76 @@ class PtyStreamFile:
     def _parse_header(line: bytes) -> dict:
         try:
             h = json.loads(line)
-            return {"v": int(h.get("v", 1)), "cols": h.get("cols"), "rows": h.get("rows")}
+            return {"v": int(h.get("v", 1)), "cols": h.get("cols"), "rows": h.get("rows"), "base": int(h.get("base", 0))}
         except ValueError:
-            return {"v": 1, "cols": None, "rows": None}
+            return {"v": 1, "cols": None, "rows": None, "base": 0}
+
+    # ── replay checkpoint ────────────────────────────────────────────────────
+    #
+    # A cold terminal open replays the whole recording in a headless xterm to get
+    # the screen — seconds, for a long session. A client that has done that posts
+    # the result back as a CHECKPOINT: "the serialized terminal after frame N, at
+    # cols x rows". The next cold open is then the checkpoint plus only the frames
+    # after it (docs/navigation/dock-loading.md, step 7). Frame numbers are
+    # absolute (header ``base``), so a checkpoint survives front truncation; one
+    # older than the retained window, or newer than the file, is simply not used.
+
+    @property
+    def _checkpoint_path(self) -> Path:
+        return self._path.with_name(self._path.name + ".ckpt")
+
+    def write_checkpoint(self, frame: int, cols: int, rows: int, serialized: str, last_seq: int) -> None:
+        """Store the replay state after absolute frame ``frame``. Last write wins."""
+        if frame < 0 or cols <= 0 or rows <= 0:
+            raise ValueError("checkpoint frame/cols/rows must be positive")
+        payload = {"frame": frame, "cols": cols, "rows": rows, "last_seq": last_seq, "serialized": serialized}
+        # Unique temp + fsync + replace: two windows posting at once never tear it.
+        atomic_write(self._checkpoint_path, json.dumps(payload).encode())
+
+    def read_checkpoint(self) -> dict | None:
+        ck = read_json(self._checkpoint_path)
+        return ck if isinstance(ck.get("serialized"), str) else None
+
+    def read_frames_since_checkpoint(self) -> dict | None:
+        """``read_frames``, reduced to the frames after a usable checkpoint.
+
+        Returns the full stream (no ``checkpoint`` key) when there is none, or it
+        lies outside the retained window. Otherwise ``events`` holds only the tail,
+        ``base`` is the checkpoint's frame, and ``checkpoint`` carries its state.
+        """
+        # The checkpoint first: it is a small file, and it says where to start reading,
+        # so the frames it stands in for are never parsed.
+        ck = self.read_checkpoint()
+        if ck is None:
+            return self.read_frames()
+        wanted = int(ck.get("frame", -1))
+        if wanted < 0:
+            return self.read_frames()
+        frames = self._read_frames(since_frame=wanted)
+        if frames is None or frames["v"] < 1:
+            return frames
+        if frames["base"] != wanted:
+            # Truncated past it, or from another recording: the file no longer holds the
+            # frame the checkpoint stands on, so the terminal is rebuilt from the whole
+            # recording. Reading it twice costs one read on a path that then replays
+            # everything anyway.
+            return self.read_frames()
+        return {
+            **frames,
+            "checkpoint": {
+                "cols": ck["cols"],
+                "rows": ck["rows"],
+                "last_seq": ck.get("last_seq", 0),
+                "serialized": ck["serialized"],
+            },
+        }
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
     def delete(self) -> None:
-        """Remove the stream file if it exists."""
+        """Remove the stream file (and its replay checkpoint) if it exists."""
         self._path.unlink(missing_ok=True)
+        self._checkpoint_path.unlink(missing_ok=True)
         self._size = None
 
     @property

@@ -73,12 +73,12 @@ Pass each hit as an absolute path: `--target /abs/path/to/page.html`.
 source files:
 
 - If the dev server is already up, use its URL (web-app-builder frontend is
-  `http://localhost:3000`; check the app's `flow-result` / README for the port).
+  `http://localhost:<port>`; the port is whatever the dev server printed / was `flow show`n — never assume 3000).
 - If it isn't running and the user wants it tested, start it per that app's own
   skill/README (e.g. web-app-builder: `cd assets/apps/<name>/frontend && npm run dev`),
   wait until it answers, then target it. Enumerate its routes (read the app's router
   / `app/` pages) and pass each meaningful route as a URL:
-  `--target http://localhost:3000/ --target http://localhost:3000/dashboard`.
+  `--target http://localhost:<port>/ --target http://localhost:<port>/dashboard`.
 
 If discovery finds nothing, tell the user there's no HTML to test and stop — don't
 invent targets.
@@ -105,7 +105,7 @@ python3 -m venv "$OUT/.venv" && "$OUT/.venv/bin/pip" -q install playwright \
 ```bash
 uv run --with playwright python \
   "<this skill's directory>/runner.py" --out "$OUT" \
-  --target http://localhost:3000/ \
+  --target http://localhost:<port>/ \
   --target /abs/path/to/page.html
 ```
 

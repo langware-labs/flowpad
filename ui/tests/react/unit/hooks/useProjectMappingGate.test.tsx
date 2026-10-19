@@ -97,6 +97,7 @@ vi.mock('@src/hooks/useContext', () => ({
 // mock instead of asserting on actual navigation.
 const openDockMock = vi.fn();
 vi.mock('@src/navigation/useDockNavigation', () => ({
+  useCurrentDock: () => null,
   useDockNavigation: () => ({
     navigation: { openDock: openDockMock },
     currentDock: null,

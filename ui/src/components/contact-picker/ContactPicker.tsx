@@ -1,9 +1,12 @@
-import { ContactsGroup, ConversationParticipant, normalizeEmail, User } from '@sdk';
+import { Trans } from '@lingui/react/macro';
+import { ContactsGroup, ConversationParticipant, normalizeEmail, Team, User } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Input } from '@src/components/ui/input';
 import { UsersRound, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
+import { filterTeams, useMessageableTeams, type MessageableTeam } from './use-team-suggestions';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -21,6 +24,10 @@ interface ContactPickerProps {
    *  bulk-adds its members as individual chips (deduped) — groups never
    *  become chips themselves. The group-create dialog turns this off. */
   includeGroups?: boolean;
+  /** Offer the user's hub TEAMS in the dropdown (default off) — only those whose
+   *  roster the user may read. Selecting one adds every member as an individual
+   *  chip (deduped); like a group, the team itself is never a chip. */
+  includeTeams?: boolean;
 }
 
 /**
@@ -42,18 +49,23 @@ export function ContactPicker({
   placeholder = 'Search by name or email — Enter to add',
   testId = 'contact-input',
   includeGroups = true,
+  includeTeams = false,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
   const { contacts } = useContacts(excludeUserId, enabled);
   const { groups } = useContactsGroups(enabled && includeGroups);
+  const { teams } = useMessageableTeams(enabled && includeTeams, excludeUserId);
+  const TeamIcon = iconForType(Team.type);
 
   const filteredContacts = useMemo(() => filterContacts(contacts, filterText), [contacts, filterText]);
   const filteredGroups = useMemo(
     () => (includeGroups ? filterGroups(groups, filterText) : []),
     [includeGroups, groups, filterText],
   );
+
+  const filteredTeams = useMemo(() => filterTeams(teams, filterText), [teams, filterText]);
 
   const isFull = typeof max === 'number' && value.length >= max;
 
@@ -90,12 +102,25 @@ export function ContactPicker({
     setListOpen(false);
   };
 
+  // A team adds its members (deduped, self excluded); the team itself is never
+  // a chip, so the conversation is sent to each member individually.
+  const addTeam = (team: MessageableTeam) => {
+    if (isFull) return;
+    const next = mergeGroupMembers(value, team.members, excludeUserId);
+    const capped = typeof max === 'number' ? next.slice(0, max) : next;
+    if (capped.length === value.length) return;
+    onChange(capped);
+    setFilterText('');
+    setListOpen(false);
+  };
+
   const trimmed = filterText.trim();
   const showList = !isFull && (trimmed.length > 0 || listOpen);
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
   const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
   const groupSource = trimmed.length > 0 ? filteredGroups : groups;
   const visibleGroups = listOpen && !trimmed ? groupSource : groupSource.slice(0, 4);
+  const visibleTeams = listOpen && !trimmed ? filteredTeams : filteredTeams.slice(0, 4);
 
   const removeParticipant = (participant: ConversationParticipant) => {
     const key = participantKey(participant);
@@ -132,7 +157,12 @@ export function ContactPicker({
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
           onDoubleClick={() => setListOpen(true)}
-          onBlur={() => setTimeout(() => setListOpen(false), 150)}
+          onBlur={() => {
+            // Moving on from a complete email adds it, as Enter would: the person typed who they
+            // meant and went to the next field. A partial name is left for the list.
+            if (EMAIL_RE.test(filterText.trim())) addFreeFormEmail();
+            setTimeout(() => setListOpen(false), 150);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setListOpen(false);
@@ -151,14 +181,14 @@ export function ContactPicker({
         />
       )}
 
-      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0) && (
+      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0 || visibleTeams.length > 0) && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
           {/* Groups first — one click adds every member. */}
           {visibleGroups.map((g) => (
             <button
               key={g.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addGroup(g)}
               disabled={disabled}
               data-testid={`contact-group-option-${g.id}`}
@@ -171,11 +201,30 @@ export function ContactPicker({
               <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
             </button>
           ))}
+          {/* Teams — one click adds every member of the team. */}
+          {visibleTeams.map((team) => (
+            <button
+              key={team.id}
+              type="button"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
+              onClick={() => addTeam(team)}
+              disabled={disabled}
+              data-testid={`contact-team-option-${team.id}`}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <TeamIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <span className="truncate">{team.name}</span>
+              </span>
+              <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
+                <Trans>Team</Trans>
+              </span>
+            </button>
+          ))}
           {visibleContacts.map((u) => (
             <button
               key={u.id}
               type="button"
-              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addContact(u)}
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
@@ -193,7 +242,7 @@ export function ContactPicker({
         !alreadyAdded({ email: filterText.trim() }) && (
           <button
             type="button"
-            className="rounded-md border border-dashed border-border px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+            className="rounded-md border border-dashed border-border px-2 py-1.5 text-start text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
             onClick={addFreeFormEmail}
             disabled={disabled}
           >

@@ -3,8 +3,10 @@
 // compute-node -> shell) hits the APIEntity circular-init and "Class extends
 // value undefined" at collection.
 import '@sdk';
-import { vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
 import { installLeakTripwire } from '../_cleanup';
+import { loadShippedIconPacks } from '../_icon-packs';
 
 // The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
 // listed first in this tier's setupFiles) and shared with the api/react tiers.
@@ -13,6 +15,29 @@ import { installLeakTripwire } from '../_cleanup';
 // a cheap regression guard for a future unit test that starts creating real
 // backend entities. No-ops silently when no backend is reachable.
 installLeakTripwire(['skill']);
+
+// Unmount whatever a test rendered, after EVERY test — the arrangement the react
+// tier already has, and the one RTL expects. Without it a file that renders a
+// Radix dialog and never unmounts the last one leaves `pointer-events: none` on
+// document.body, because Radix guards a modal by styling the body and undoes it
+// on unmount. The style then outlives the file: `isolate` gives the next file a
+// fresh module registry, but not a fresh jsdom document, so the next file's very
+// first click fails with "element has `pointer-events: none`" — a failure that
+// reads like a broken component and never reproduces in isolation.
+//
+// That is the whole of the tier's cross-file flakiness (~36% of full runs, a
+// different victim each time). Found by pairing vibe-start-failure.test.tsx with
+// project-publish-button.test.tsx: 4 failures in 8 runs together, 0 in 6 alone.
+// A per-file `cleanup()` in `beforeEach` does not cover it — it unmounts between
+// tests but never after the last one.
+afterEach(() => cleanup());
+
+// Icons resolve through the SDK registry, which the app fills from bootstrap
+// before its first render. This tier has no backend, so load the shipped
+// manifests off disk — otherwise every pack-defined name (Linear, Atlassian,
+// ClaudeCode…) answers "unknown" and the failure is the fixture's, not the
+// code's.
+loadShippedIconPacks();
 
 // Mock the ResizeObserver
 const ResizeObserverMock = vi.fn(() => ({
@@ -26,3 +51,24 @@ if (!window.ResizeObserver) {
 
 // Stub the global ResizeObserver
 vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+
+// The unit tier runs every file in ONE thread against ONE jsdom document, and
+// that document's URL is never reset between files. Production code legitimately
+// reads the real browser URL, so a file that leaves a query string on
+// `window.location` silently changes the URLs a LATER file asserts on.
+//
+// Reset per test. This is state isolation, not a wait/retry: the leak is the
+// previous test's query string, and this deletes it. A test that needs a
+// specific URL still sets it in its own body or `beforeEach`, which run after.
+//
+// The guard is LOAD-BEARING — do not "simplify" it away because `replaceState`
+// is idempotent. Calling it unconditionally on every one of the tier's 4393
+// tests breaks `prepare-avatar-image.test.ts` ("RangeError: Offset is outside
+// the bounds of the DataView"), which passes on its own and fails only in the
+// full tier. Measured, repeatedly: unguarded -> 2 failed, guarded -> 4393
+// passed. Only touch the URL when it actually needs resetting.
+beforeEach(() => {
+  if (window.location.search || window.location.hash || window.location.pathname !== '/') {
+    window.history.replaceState(null, '', '/');
+  }
+});

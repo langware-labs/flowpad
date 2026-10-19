@@ -1,0 +1,25 @@
+{
+  "type": "data_schema",
+  "fields": {
+    "id": {
+      "shape": "string",
+      "description": "Unique id; messages name it in from / to."
+    },
+    "label": {
+      "shape": "string",
+      "description": "The card title."
+    },
+    "note": {
+      "shape": "?string",
+      "description": "Shown on hover."
+    },
+    "sublabel": {
+      "shape": "?string",
+      "description": "A second, muted line under the title (a route, a product name)."
+    },
+    "icon": {
+      "shape": "?string",
+      "description": "An icon tag from the IconSpec registry (brands.sonos, lucide.database); drawn on the card. Must resolve \u2014 check with GET /api/v1/icons or the pack's icon_pack.json."
+    }
+  }
+}

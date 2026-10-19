@@ -1,0 +1,452 @@
+{
+  "about": "Counting rows: one table of (rows, question) -> answer for Dataset.count -- groups, date buckets (day / week / month / quarter, a week beginning Monday or Sunday) and metrics (distinct / min / max / sum). Run by tests/unit/test_data_spec/test_dataset_count_cases.py against flow_sdk.datasets.query.count, and by ui/tests/unit/dataset-count-cases.test.ts against the bucket keys the TypeScript side shows (bucketOf). Add a case here, never to one side only.",
+  "rows": [
+    {
+      "key": "a",
+      "input": {
+        "day": "2026-08-30",
+        "metric": "sent",
+        "email": "x@a.io",
+        "n": 2
+      }
+    },
+    {
+      "key": "b",
+      "input": {
+        "day": "2026-08-31",
+        "metric": "reply",
+        "email": "x@a.io",
+        "n": 3
+      }
+    },
+    {
+      "key": "c",
+      "input": {
+        "day": "2026-09-05",
+        "metric": "sent",
+        "email": "y@b.io",
+        "n": null
+      }
+    },
+    {
+      "key": "d",
+      "input": {
+        "day": "2026-09-06",
+        "metric": "sent",
+        "email": "y@b.io",
+        "n": 1
+      }
+    },
+    {
+      "key": "e",
+      "input": {
+        "day": "2026-10-01",
+        "metric": "reply",
+        "email": "z@c.io",
+        "n": 5
+      }
+    },
+    {
+      "key": "f",
+      "input": {
+        "day": null,
+        "metric": "sent",
+        "email": null,
+        "n": 4
+      }
+    }
+  ],
+  "buckets": [
+    {
+      "day": "2026-08-30",
+      "unit": "week",
+      "week_start": "sunday",
+      "key": "2026-08-30"
+    },
+    {
+      "day": "2026-08-30",
+      "unit": "week",
+      "week_start": "monday",
+      "key": "2026-08-24"
+    },
+    {
+      "day": "2026-08-31",
+      "unit": "week",
+      "week_start": "monday",
+      "key": "2026-08-31"
+    },
+    {
+      "day": "2026-09-05",
+      "unit": "week",
+      "week_start": "sunday",
+      "key": "2026-08-30"
+    },
+    {
+      "day": "2026-09-06",
+      "unit": "week",
+      "week_start": "sunday",
+      "key": "2026-09-06"
+    },
+    {
+      "day": "2027-01-01",
+      "unit": "week",
+      "week_start": "monday",
+      "key": "2026-12-28"
+    },
+    {
+      "day": "2026-09-30",
+      "unit": "month",
+      "week_start": "monday",
+      "key": "2026-09"
+    },
+    {
+      "day": "2026-09-30",
+      "unit": "quarter",
+      "week_start": "monday",
+      "key": "2026-Q3"
+    },
+    {
+      "day": "2026-10-01",
+      "unit": "quarter",
+      "week_start": "monday",
+      "key": "2026-Q4"
+    },
+    {
+      "day": "2026-10-01T23:30:00Z",
+      "unit": "day",
+      "week_start": "monday",
+      "key": "2026-10-01"
+    },
+    {
+      "day": "not a date",
+      "unit": "month",
+      "week_start": "monday",
+      "key": null
+    },
+    {
+      "day": null,
+      "unit": "week",
+      "week_start": "sunday",
+      "key": null
+    }
+  ],
+  "cases": [
+    {
+      "name": "rows per Sunday week, in order",
+      "ask": {
+        "group_by": [
+          "week:input.day"
+        ],
+        "week_start": "sunday",
+        "order_by": {
+          "week:input.day": "asc"
+        }
+      },
+      "groups": [
+        [
+          {
+            "week:input.day": "2026-08-30"
+          },
+          3
+        ],
+        [
+          {
+            "week:input.day": "2026-09-06"
+          },
+          1
+        ],
+        [
+          {
+            "week:input.day": "2026-09-27"
+          },
+          1
+        ],
+        [
+          {
+            "week:input.day": null
+          },
+          1
+        ]
+      ]
+    },
+    {
+      "name": "rows per Monday week",
+      "ask": {
+        "group_by": [
+          "week:input.day"
+        ],
+        "order_by": {
+          "week:input.day": "asc"
+        }
+      },
+      "groups": [
+        [
+          {
+            "week:input.day": "2026-08-24"
+          },
+          1
+        ],
+        [
+          {
+            "week:input.day": "2026-08-31"
+          },
+          3
+        ],
+        [
+          {
+            "week:input.day": "2026-09-28"
+          },
+          1
+        ],
+        [
+          {
+            "week:input.day": null
+          },
+          1
+        ]
+      ]
+    },
+    {
+      "name": "rows per month by metric",
+      "ask": {
+        "group_by": [
+          "month:input.day",
+          "input.metric"
+        ],
+        "order_by": [
+          {
+            "month:input.day": "asc"
+          },
+          {
+            "input.metric": "asc"
+          }
+        ]
+      },
+      "groups": [
+        [
+          {
+            "month:input.day": "2026-08",
+            "input.metric": "reply"
+          },
+          1
+        ],
+        [
+          {
+            "month:input.day": "2026-08",
+            "input.metric": "sent"
+          },
+          1
+        ],
+        [
+          {
+            "month:input.day": "2026-09",
+            "input.metric": "sent"
+          },
+          2
+        ],
+        [
+          {
+            "month:input.day": "2026-10",
+            "input.metric": "reply"
+          },
+          1
+        ],
+        [
+          {
+            "month:input.day": null,
+            "input.metric": "sent"
+          },
+          1
+        ]
+      ]
+    },
+    {
+      "name": "rows per quarter, largest first",
+      "ask": {
+        "group_by": [
+          "quarter:input.day"
+        ]
+      },
+      "groups": [
+        [
+          {
+            "quarter:input.day": "2026-Q3"
+          },
+          4
+        ],
+        [
+          {
+            "quarter:input.day": "2026-Q4"
+          },
+          1
+        ],
+        [
+          {
+            "quarter:input.day": null
+          },
+          1
+        ]
+      ]
+    },
+    {
+      "name": "distinct people overall",
+      "ask": {
+        "metrics": {
+          "people": "distinct:input.email"
+        }
+      },
+      "metrics": {
+        "people": 3
+      }
+    },
+    {
+      "name": "distinct people and first day per metric",
+      "ask": {
+        "group_by": [
+          "input.metric"
+        ],
+        "metrics": {
+          "people": "distinct:input.email",
+          "first": "min:input.day",
+          "last": "max:input.day",
+          "n": "sum:input.n"
+        },
+        "order_by": {
+          "input.metric": "asc"
+        }
+      },
+      "groups": [
+        [
+          {
+            "input.metric": "reply"
+          },
+          2,
+          {
+            "people": 2,
+            "first": "2026-08-31",
+            "last": "2026-10-01",
+            "n": 8
+          }
+        ],
+        [
+          {
+            "input.metric": "sent"
+          },
+          4,
+          {
+            "people": 2,
+            "first": "2026-08-30",
+            "last": "2026-09-06",
+            "n": 7
+          }
+        ]
+      ]
+    },
+    {
+      "name": "first email per person",
+      "ask": {
+        "match": {
+          "op": "$IS_NOT_NULL",
+          "operands": [
+            "input.email"
+          ]
+        },
+        "group_by": [
+          "input.email"
+        ],
+        "metrics": {
+          "first": "min:input.day"
+        },
+        "order_by": {
+          "first": "asc"
+        }
+      },
+      "groups": [
+        [
+          {
+            "input.email": "x@a.io"
+          },
+          2,
+          {
+            "first": "2026-08-30"
+          }
+        ],
+        [
+          {
+            "input.email": "y@b.io"
+          },
+          2,
+          {
+            "first": "2026-09-05"
+          }
+        ],
+        [
+          {
+            "input.email": "z@c.io"
+          },
+          1,
+          {
+            "first": "2026-10-01"
+          }
+        ]
+      ]
+    },
+    {
+      "name": "groups ordered by their count, then a metric",
+      "ask": {
+        "group_by": [
+          "input.email"
+        ],
+        "metrics": {
+          "n": "sum:input.n"
+        },
+        "order_by": [
+          {
+            "count": "desc"
+          },
+          {
+            "n": "desc"
+          }
+        ]
+      },
+      "groups": [
+        [
+          {
+            "input.email": "x@a.io"
+          },
+          2,
+          {
+            "n": 5
+          }
+        ],
+        [
+          {
+            "input.email": "y@b.io"
+          },
+          2,
+          {
+            "n": 1
+          }
+        ],
+        [
+          {
+            "input.email": "z@c.io"
+          },
+          1,
+          {
+            "n": 5
+          }
+        ],
+        [
+          {
+            "input.email": null
+          },
+          1,
+          {
+            "n": 4
+          }
+        ]
+      ]
+    }
+  ]
+}

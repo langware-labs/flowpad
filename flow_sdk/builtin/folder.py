@@ -18,69 +18,46 @@ A Folder's LOCATION is an ``FSOrigin`` (the transportable source of truth):
 sender (the dir is local), and set on a receiver only after ``resolve_location``
 materializes the origin. It is the local view; ``origin`` is what travels.
 
-Identity: ``origin.key()`` for transportable (git) origins — byte-stable and
-machine-independent, so sender and receiver mint the SAME folder id and a shared
-context ref resolves. Local origins keep the legacy path-derived v5 id
-(``mint_uuid(canonical_posix_path(base))``), so existing local folders + their
-links are untouched (zero migration).
+Identity is a UUID; ``origin_id`` stores the origin's natural key for lookup.
+Legacy folders whose ids were UUID-shaped origin keys remain discoverable,
+so their existing links are untouched.
 """
 
-from typing import Optional
+import logging
+from typing import ClassVar, Optional
 
-from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
-from flow_sdk.builtin.fs_origin_field import FSOriginField
-from flow_sdk.builtin.local_origin import LocalOrigin
+from pydantic import model_validator
+
+from flow_sdk.api.api_types.api_field import APIField, Sharing
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.local_origin import LocalOrigin, local_origin_for_path
+from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
+
+logger = logging.getLogger(__name__)
 
 
 class Folder(Entity):
     type: str = APIField(default=EntityType.FOLDER.value)
 
-    # Where the folder lives — the transportable source of truth (local / git /
-    # future s3/drive). Typed as the discriminated union so the right subclass
-    # (with its locator fields) reconstructs on load.
-    origin: Optional[FSOriginField] = APIField(
-        default=None,
-        description="FSOrigin locating the directory (local base / git repo+rel_path / …).",
-    )
-
     # LOCAL resolved-path cache on THIS machine (see module docstring). Not the
     # transportable identity; set at add time (sender) or on resolve (receiver).
-    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)")
+    path: Optional[str] = APIField(default=None, description="Local resolved path of the directory (per-machine cache)", sharing=Sharing.PRIVATE)
 
-    def __init__(self, **data):
-        # Tolerant backfill: an old row / bundle may carry a legacy ``path`` or
-        # ``git_origin`` (dict, possibly under ``metadata``) but no ``origin``.
-        # Synthesize ``origin`` so it loads without a DB migration. Mirrors
-        # Artifact.__init__'s lift-from-metadata.
-        if not data.get("origin"):
-            metadata = data.get("metadata") or {}
-            legacy_git = data.get("git_origin") or metadata.get("git_origin")
-            if legacy_git:
-                data["origin"] = legacy_git  # discriminated union reads kind→git
-            elif data.get("path"):
-                data["origin"] = LocalOrigin(base=canonical_posix_path(data["path"]))
-        data.pop("git_origin", None)  # dropped field — never let it reach the model
-        super().__init__(**data)
+    #: Memoized borrowed-checkout roots (see ``borrowed_checkout_paths``).
+    #: Declared here so the attribute exists rather than being conjured by the
+    #: first write and read back through ``getattr(..., None)``.
+    _borrowed_cache: ClassVar[Optional[set]] = None
 
-    def _hub_body(self) -> dict:
-        """Folder hub payload: never leak the local resolved path.
-
-        Folders normally travel as project context refs plus
-        ``shared_context_origins``. This guard keeps direct Folder share/create
-        paths from exposing a machine-local cache, and strips non-transportable
-        origins entirely.
-        """
-        body = super()._hub_body()
-        body.pop("path", None)
-        origin = self.origin
-        if origin is None or not origin.transportable:
-            body.pop("origin", None)
-        return body
+    @model_validator(mode="before")
+    @classmethod
+    def _origin_from_path(cls, data):
+        """A folder named only by its local ``path`` is a LocalOrigin at that path."""
+        if isinstance(data, dict) and not data.get("origin") and data.get("path"):
+            data = {**data, "origin": local_origin_for_path(canonical_posix_path(data["path"]))}
+        return data
 
     # ── Identity ─────────────────────────────────────────────────────────────
 
@@ -95,27 +72,33 @@ class Folder(Entity):
 
     @staticmethod
     def id_for_origin(origin: FSOrigin) -> str:
-        """Folder id = the origin's own key. Uniform across kinds: git →
-        machine-independent repo key (shared refs resolve); local →
-        ``local_origin_key`` == canonical path == ``id_for_path`` (byte-stable,
-        zero migration). No kind-branch — each origin owns its identity."""
+        """Legacy origin-derived handle; new folder identities come from mint_for_origin.
+
+        Only UUID-shaped handles were valid legacy entity ids.
+        """
         return origin.key()
 
     # ── Minting ──────────────────────────────────────────────────────────────
 
     @staticmethod
     async def detect_origin(path: str) -> FSOrigin:
-        """Classify a local path into an origin: a directory inside a git repo →
-        ``GitOrigin`` (transportable, whole-repo clone + rel_path); otherwise a
-        plain ``LocalOrigin``. Runs a blocking git probe — async only."""
-        from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+        """Classify a local path into an origin: the first registered driver
+        that recognises it wins (a directory inside a git repo → ``GitOrigin``,
+        transportable, whole-repo clone + rel_path); otherwise a plain
+        ``LocalOrigin``. Asks the REGISTRY, not ``"git"`` by name, so a new
+        origin kind is detected the moment it registers. Runs a blocking git
+        probe — async only."""
+        from flow_sdk.builtin.fs_origin_driver import ORIGIN_DRIVERS  # noqa: PLC0415
 
         canonical = canonical_posix_path(path)
-        try:
-            detected = await get_origin_driver("git").detect(canonical)
-        except Exception:
-            detected = None
-        return detected if detected is not None else LocalOrigin(base=canonical)
+        for _kind, driver in ORIGIN_DRIVERS.items():
+            try:
+                detected = await driver.detect(canonical)
+            except Exception:  # noqa: BLE001 — one driver's probe must not veto the rest
+                detected = None
+            if detected is not None:
+                return detected
+        return LocalOrigin(base=canonical)
 
     @staticmethod
     def derive_name(origin: FSOrigin, local_path: Optional[str] = None) -> Optional[str]:
@@ -139,26 +122,90 @@ class Folder(Entity):
         return None
 
     @classmethod
-    async def mint_for_origin(cls, origin: FSOrigin, *, local_path: Optional[str] = None) -> "Folder":
-        """Get-or-create the Folder for ``origin`` (idempotent, keyed by
-        ``id_for_origin``). ``local_path`` is the resolved local dir when known
-        (sender add-time); a bare received origin leaves it None until
-        ``resolve_location`` materializes it."""
-        folder_id = cls.id_for_origin(origin)
-        existing = await cls.get_by_id(folder_id)
+    async def mint_for_origin(
+        cls, origin: FSOrigin, *, local_path: Optional[str] = None, adopt_id: Optional[str] = None
+    ) -> "Folder":
+        """Find a folder by its origin handle, otherwise mint a UUID identity.
+
+        Legacy folders used UUID-shaped origin handles as ids; keep resolving
+        those rows without requiring every origin's natural key to be a UUID.
+        ``adopt_id``: the sender's id for a received folder — adopted when it is a valid entity id
+        nothing here holds yet, so the chip and every shared ref name the same folder on both sides.
+        """
+        origin_key = origin.key()
+        existing = await cls.get_one({"origin_id": origin_key})
+        if existing is None and is_valid_entity_id(origin_key):
+            existing = await cls.get_by_id(origin_key)
         if existing is not None:
             return existing
         # ``path`` (local cache) is set when the caller knows the local dir
         # (sender add-time); a bare received origin leaves it None until
         # ``resolve_location`` materializes it.
+        adopted = adopt_id if adopt_id and is_valid_entity_id(adopt_id) and await cls.get_by_id(adopt_id) is None else None
         folder = cls(
-            id=folder_id,
+            **({"id": adopted} if adopted else {}),
+            origin_id=origin_key,
             origin=origin,
             path=local_path,
             name=cls.derive_name(origin, local_path),
         )
         await folder.save()
         return folder
+
+    @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: Optional[dict] = None):
+        """A git context folder rides as its origin, in git mode only. A folder
+        with no usable origin fails the share closed — there is no byte-copy
+        carrier to fall through to."""
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            GitShareOriginError,
+            ReferencePack,
+            graph_entity_metadata,
+            resolve_git_reference_origin,
+        )
+        from flow_sdk.builtin.message_attachment import TransferMode  # noqa: PLC0415
+
+        if transfer_mode != TransferMode.GIT.value:
+            return None
+        ent = await cls.get_one({"id": entity_id})
+        if ent is None:
+            return None
+        origin = await resolve_git_reference_origin(ent, ent.origin, repo_cache)
+        if origin is None:
+            # Fail closed: a folder has no other carrier, so packing nothing
+            # would deliver a chip with no origin and no bytes.
+            raise GitShareOriginError(
+                f"{EntityType.FOLDER.value}-{entity_id} was shared with Git but is not in a "
+                f"Git repository with a usable origin — set up Git for this folder first."
+            )
+        # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
+        # existed — repo-root folders were named ".", rendering chips as bare
+        # typeids. Persist best-effort so the sender's own chip heals too.
+        if (ent.name or "").strip() in ("", "."):
+            healed = cls.derive_name(origin, ent.path)
+            if healed:
+                ent.name = healed
+                try:
+                    await ent.save()
+                except Exception:
+                    logger.debug("[folder] %s name heal failed", entity_id, exc_info=True)
+        # The local resolved path is machine-local; the receiver derives its own.
+        metadata = graph_entity_metadata(EntityType.FOLDER.value, entity_id, ent, strip=("path",))
+        return ReferencePack(metadata=metadata, origin=origin)
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Mint the receiver-local Folder from the origin — path unset, NO
+        clone; the message chip's wizard resolves a local checkout later."""
+        if not getattr(origin, "transportable", False):
+            return False
+        # Get-or-create keyed by origin (idempotent — a re-received chip
+        # reconciles with an already-minted folder). Local path stays unset.
+        folder = await cls.mint_for_origin(origin, adopt_id=str(entity_id))
+        if not getattr(folder, "name", None) and metadata.get("name"):
+            folder.name = metadata["name"]
+            await folder.save(owner_typeid)
+        return True
 
     @classmethod
     async def mint_for_path(cls, path: str) -> "Folder":
@@ -173,11 +220,92 @@ class Folder(Entity):
         origin = await cls.detect_origin(canonical)
         return await cls.mint_for_origin(origin, local_path=canonical)
 
+    async def save(self, owner=None, notify: bool = True) -> "Folder":
+        """Persist, then drop the borrowed-paths memo this row feeds.
+
+        Attaching, detaching or re-materializing a folder is exactly what
+        changes the answer to "may I write here?", so the memo is invalidated
+        where that happens rather than being given a lifetime to expire on.
+        """
+        saved = await super().save(owner, notify)
+        type(self)._invalidate_borrowed_cache()
+        return saved
+
+    @classmethod
+    async def borrowed_checkout_paths(cls) -> set:
+        """Canonical paths of every directory we materialized from a TRANSPORTABLE
+        origin — i.e. every checkout of somebody else's repo.
+
+        These are bytes we clone but do not author, and indexing must never
+        write into them: identity backends normally COMMIT the id they mint
+        back into the source (markdown gets a ``flowpad:capsule`` block
+        appended), which dirties every tracked file and makes the vendor's next
+        ``git pull`` abort on "local changes would be overwritten" — silently,
+        until somebody tries to update the folder.
+
+        Answered from the Folder rows rather than by a per-path probe because
+        the Folder IS the record of "this directory came from elsewhere". A
+        caller that has a root and wants to know whether it may write asks
+        here; it does not need to know how the directory was attached, which is
+        the whole reason this lives on the entity and not at the call sites
+        (there are at least three: context-folder add, folder resolve, and the
+        project walk that owns a checkout it did not attach).
+        """
+        if cls._borrowed_cache is not None:
+            return cls._borrowed_cache
+        paths = set()
+        for folder in await cls.get_all():
+            origin = folder.origin
+            if origin is None or not origin.transportable or not folder.path:
+                continue
+            paths.add(canonical_posix_path(folder.path))
+        cls._borrowed_cache = paths
+        return paths
+
+    @classmethod
+    async def is_borrowed_path(cls, path: str) -> bool:
+        """Is ``path`` inside a checkout of somebody else's repo?
+
+        The per-path form of :meth:`borrowed_checkout_paths`, for the callers
+        that hold one path rather than a list of roots to filter. Asked on the
+        entity-save path, so it reads through the cache below rather than
+        re-scanning the Folder table (and re-``realpath``-ing every row) for
+        every save.
+        """
+        if not path:
+            return False
+        roots = await cls.borrowed_checkout_paths()
+        canonical = canonical_posix_path(path)
+        return any(is_path_under(canonical, root) for root in roots)
+
+    @classmethod
+    def _invalidate_borrowed_cache(cls) -> None:
+        """Drop the memoized borrowed set. Called whenever a Folder is written.
+
+        The set changes only when a folder is attached, detached or
+        re-materialized — a handful of times per session — while it is READ on
+        every save of a file-backed entity. Memoizing it turns an unbounded
+        ``get_all()`` + one ``realpath`` per row into a set-membership test;
+        invalidating on write is what keeps that correct rather than merely
+        fast.
+        """
+        cls._borrowed_cache = None
+
     # ── Materialize ──────────────────────────────────────────────────────────
 
     @action.post(action_name="resolve-location")
-    async def resolve_location(self) -> "object":
+    async def resolve_location(
+        self,
+        *,
+        preferred_root=None,
+        strict_index: bool = False,
+    ) -> "object":
         """Materialize this folder's origin into a local path on THIS machine.
+
+        ``preferred_root`` directs where a fresh checkout lands. Callers that
+        manage a folder on the user's behalf (a helpdesk portal, say) pass a
+        root outside the visible workspace; ordinary context folders pass
+        nothing and take the driver's default placement.
 
         For a ``local`` origin: verify base+rel exist, set ``path``. For a
         transportable origin (git/…): clone/pull via the kind's driver, join the
@@ -198,7 +326,9 @@ class Folder(Entity):
         if rel and not is_safe_rel_path(rel):
             return ApiSuccessResponse(data={"kind": "error", "message": "origin has an unsafe rel_path"})
         try:
-            local_root, _project_id = await get_origin_driver(origin.kind).materialize(origin)
+            local_root, _project_id = await get_origin_driver(origin.kind).materialize(
+                origin, preferred_root=preferred_root
+            )
         except FileNotFoundError as exc:
             return ApiSuccessResponse(data={"kind": "error", "message": f"not present: {exc}"})
         except Exception as exc:  # driver/materialize failure (clone error, etc.)
@@ -222,7 +352,22 @@ class Folder(Entity):
                 _index_additional_dir,
             )
 
-            await _index_additional_dir(self.path)
-        except Exception:
-            pass
+            # A transportable origin means these bytes came from somewhere else
+            # — a repo we clone but do not author. Indexing normally COMMITS the
+            # id it mints back into the source (markdown gets a
+            # ``flowpad:capsule`` block appended), which dirties the whole
+            # checkout and makes the next ``git pull`` abort on "local changes
+            # would be overwritten". Owning the distinction here, at the one
+            # place that knows the origin, keeps every caller of
+            # ``resolve_location`` from having to remember it.
+            await _index_additional_dir(
+                self.path,
+                read_only=origin.transportable,
+                strict=strict_index,
+            )
+        except Exception as exc:
+            if strict_index:
+                return ApiSuccessResponse(
+                    data={"kind": "error", "message": f"Could not index content project: {exc}"}
+                )
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

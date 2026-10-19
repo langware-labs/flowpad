@@ -15,6 +15,7 @@ entity by itself.
 from __future__ import annotations
 
 import shutil
+import tempfile
 from pathlib import Path
 
 FLOW_MESSAGE_TYPE = "flow_message"
@@ -44,9 +45,39 @@ def staged_entry_rel_path(entry_key: str) -> str:
     return f"{UNPACKED_SUBDIR}/attachment/{entry_key}"
 
 
+def staged_attachments_dir(record_id: str) -> Path:
+    """The dir holding every staged attachment entry of one message."""
+    return default_data_dir(record_id) / UNPACKED_SUBDIR / "attachment"
+
+
+def staged_git_entry_dir(record_id: str, entry_key: str) -> Path:
+    """Staging dir of one GIT-mode entry: a pointer, so only its metadata is
+    staged (``unpacked/metadata/<key>``) — the bytes arrive by git on install."""
+    return default_data_dir(record_id) / UNPACKED_SUBDIR / "metadata" / entry_key
+
+
 def staged_entry_dir(record_id: str, entry_key: str) -> Path:
     """Staging dir of one bundle attachment entry (``<type>-@<id>`` key)."""
     return default_data_dir(record_id) / staged_entry_rel_path(entry_key)
+
+
+def lost_attachment_source(record_id: str, raw: str) -> Path | None:
+    """Where a FILE / PROMPT-file attachment's bytes survive, if not at home:
+    the unpacked bundle's copy, then the OS-temp root they lived under before
+    they moved to record-data (shared by every instance on the machine)."""
+    legacy = Path(tempfile.gettempdir()) / "flow-embedded-storage" / FLOW_MESSAGE_TYPE / record_id / raw
+    staged = staged_entry_dir(record_id, "files") / Path(raw).name
+    return next((src for src in (staged, legacy) if src.is_file()), None)
+
+
+def restore_attachment_file(record_id: str, raw: str, dest: Path) -> bool:
+    """Copy (never move) a lost attachment's surviving bytes back to ``dest``."""
+    src = lost_attachment_source(record_id, raw)
+    if src is None:
+        return False
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    return True
 
 
 def is_downloaded(record_id: str) -> bool:
@@ -55,7 +86,8 @@ def is_downloaded(record_id: str) -> bool:
 
 
 def is_unpacked(record_id: str) -> bool:
-    return (unpacked_dir(record_id) / "header.json").is_file()
+    root = unpacked_dir(record_id)
+    return (root / "flow_message.json").is_file() or (root / "header.json").is_file()
 
 
 async def purge_flow_message_local_data(record_id: str) -> None:

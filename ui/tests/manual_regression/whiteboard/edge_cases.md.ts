@@ -15,7 +15,7 @@ async function createWhiteboard(request: APIRequestContext, name: string) {
 async function openEditor(page: Page, id: string) {
   await page.goto(`/dock/assets/editor/whiteboard/typeid/whiteboard-${id}`);
   await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-  await page.waitForFunction(() => typeof (window as any).__whiteboardApi === 'object' && (window as any).__whiteboardApi, null, {
+  await page.waitForFunction(() => typeof (window as any).__chartApi === 'object' && (window as any).__chartApi, null, {
     timeout: 15_000,
   });
 }
@@ -24,13 +24,13 @@ async function openEditor(page: Page, id: string) {
 async function injectAndSave(page: Page, skeleton: unknown[]) {
   await page.evaluate((skel) => {
     const lib = (window as any).__excalidrawLib;
-    const api = (window as any).__whiteboardApi;
+    const api = (window as any).__chartApi;
     api.updateScene({ elements: lib.convertToExcalidrawElements(skel) });
   }, skeleton);
   await page.waitForTimeout(500);
   await page.evaluate(() => {
-    const api = (window as any).__whiteboardApi;
-    (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+    const api = (window as any).__chartApi;
+    (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
   });
 }
 
@@ -43,7 +43,13 @@ const TWO_BOXES_ARROW = [
 test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
   test('E1: idle does not loop the debounced save (no repeated writes without onChange)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e1-${Date.now() % 10000}`);
     await openEditor(page, id);
 
@@ -85,17 +91,23 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E2: close without save (documented behavior, no pass/fail gate)', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e2-${Date.now() % 10000}`);
     await openEditor(page, id);
 
     // Inject one element + fire onChange, then navigate away BEFORE the debounce.
     await page.evaluate(() => {
       const lib = (window as any).__excalidrawLib;
-      const api = (window as any).__whiteboardApi;
+      const api = (window as any).__chartApi;
       api.updateScene({ elements: lib.convertToExcalidrawElements([{ type: 'rectangle', x: 10, y: 10, width: 80, height: 40, label: { text: 'Z' } }]) });
-      const a = (window as any).__whiteboardApi;
-      (window as any).__whiteboardOnChange(a.getSceneElements(), a.getAppState(), a.getFiles());
+      const a = (window as any).__chartApi;
+      (window as any).__chartOnChange(a.getSceneElements(), a.getAppState(), a.getFiles());
     });
     // Navigate away well within the debounce window.
     await page.goto('/dock/home');
@@ -122,7 +134,13 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E3: crash-mid-edit recovery preserves saved elements', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e3-${Date.now() % 10000}`);
     await openEditor(page, id);
     await injectAndSave(page, TWO_BOXES_ARROW);
@@ -137,10 +155,10 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     // Hard reload (full page reload, simulating a crash + reopen).
     await page.reload();
     await page.locator('[data-testid="whiteboard-editor"]').waitFor({ state: 'visible', timeout: 20_000 });
-    await page.waitForFunction(() => (window as any).__whiteboardApi, null, { timeout: 15_000 });
+    await page.waitForFunction(() => (window as any).__chartApi, null, { timeout: 15_000 });
     await page.waitForTimeout(2_000);
 
-    const sceneLen = await page.evaluate(() => (window as any).__whiteboardApi.getSceneElements().length);
+    const sceneLen = await page.evaluate(() => (window as any).__chartApi.getSceneElements().length);
     expect(sceneLen, 'elements present after hard reload').toBeGreaterThanOrEqual(2);
 
     // No orphan temp files in the folder.
@@ -153,13 +171,19 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
 
   test('E4: large board (100 rects) persists all elements + mermaid block', async ({ page, request }) => {
     test.setTimeout(60_000);
-    await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+    await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
     const { id, assetRef } = await createWhiteboard(request, `e4-${Date.now() % 10000}`);
     await openEditor(page, id);
 
     await page.evaluate(() => {
       const lib = (window as any).__excalidrawLib;
-      const api = (window as any).__whiteboardApi;
+      const api = (window as any).__chartApi;
       const skel = Array.from({ length: 100 }, (_, i) => ({
         type: 'rectangle',
         x: (i % 10) * 60,
@@ -172,8 +196,8 @@ test.describe('Whiteboard — Edge Cases (E1–E5)', () => {
     });
     await page.waitForTimeout(500);
     await page.evaluate(() => {
-      const api = (window as any).__whiteboardApi;
-      (window as any).__whiteboardOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
+      const api = (window as any).__chartApi;
+      (window as any).__chartOnChange(api.getSceneElements(), api.getAppState(), api.getFiles());
     });
 
     // board.json holds the 100 rectangles + their text labels (~200 elements).

@@ -15,8 +15,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.builtin.fs_origin import FSOrigin, is_safe_rel_path
-from flow_sdk.builtin.local_origin import local_origin_key
+from flow_sdk.fs_store.origin.fs_origin import FSOrigin, is_safe_rel_path
+from flow_sdk.fs_store.origin.local_origin import local_origin_key
 
 
 class LocalOriginDriver:
@@ -32,6 +32,7 @@ class LocalOriginDriver:
         *,
         preferred_root: Optional[Path] = None,
         preferred_project_id: Optional[str] = None,
+        token: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
         base = getattr(origin, "base", "") or ""
         if not base:
@@ -41,6 +42,10 @@ class LocalOriginDriver:
             raise FileNotFoundError(f"local origin not present on this machine: {target}")
         # Return the ROOT (base); the caller joins rel_path as placement.
         return Path(base), preferred_project_id
+
+    async def materialize_pinned(self, origin, **kwargs):
+        """No version to pin: a received share opens where it materializes."""
+        return await self.materialize(origin, **kwargs)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:
         try:

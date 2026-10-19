@@ -7,21 +7,18 @@ for API wire compatibility. Cloud-only logic (GCP secret loading, init_env) is s
 
 import logging
 import os
-import re
 import string
 import sys
 import tempfile
 from enum import Enum
 from functools import lru_cache
-from flow_sdk._compat import StrEnum
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from flow_sdk.utils.validation import UUID_PATTERN
-
+from flow_sdk._compat import StrEnum
 
 # ---------------------------------------------------------------------------
 # URL constants
@@ -38,12 +35,15 @@ API_PREFIX = "/api/v1"
 
 def _flow_home() -> Path:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     return get_instance_settings().flow_home
 
 
 def _server_json_path() -> Path:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     return get_instance_settings().server_json_path
+
 
 # ---------------------------------------------------------------------------
 # System projects (shipped inside the flow_sdk package)
@@ -97,19 +97,39 @@ def is_system_project_path(path: str | Path) -> bool:
     match it structurally: ``<any-install>/flow_sdk/system_projects/<name>``.
     """
     p = Path(path)
-    return (
-        p.parent.name == SYSTEM_PROJECTS_DIRNAME
-        and p.parent.parent.name == "flow_sdk"
-    )
+    return p.parent.name == SYSTEM_PROJECTS_DIRNAME and p.parent.parent.name == "flow_sdk"
+
+
+@lru_cache(maxsize=1)
+def _running_system_projects_root() -> str:
+    """The running install's resolved ``system_projects`` folder — fixed for the process."""
+    return os.path.normcase(str(system_projects_root().resolve()))
+
+
+def is_running_install_path(path: str | Path) -> bool:
+    """True when ``path`` lies inside THIS running SDK's ``system_projects`` folder.
+
+    Stricter than :func:`is_system_project_path`, which matches any install by shape. When a
+    name resolves to several shipped-looking copies — this install's, plus a repo checkout or
+    an older install someone opened as a project — the running one is the copy to use: it is
+    the code this backend actually is. Compared the way the OS compares paths.
+    """
+    root = _running_system_projects_root()
+    try:
+        candidate = os.path.normcase(str(Path(path).resolve()))
+    except OSError:
+        return False
+    return candidate == root or candidate.startswith(root + os.sep)
 
 
 def _active_server_json_path() -> Path:
     """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
     return _server_json_path()
 
+
 # SDK repo root and UI build output
-_SDK_PKG_DIR = Path(__file__).resolve().parent          # .../flow-cli/flow_sdk/
-REPO_ROOT = _SDK_PKG_DIR.parent                          # .../flow-cli/
+_SDK_PKG_DIR = Path(__file__).resolve().parent  # .../flow-cli/flow_sdk/
+REPO_ROOT = _SDK_PKG_DIR.parent  # .../flow-cli/
 UI_DIST = REPO_ROOT / "ui" / "dist"
 
 STORAGE_FOLDER_DATE_FORMAT = "%Y-%m-%d-%H-%M-%S"
@@ -135,10 +155,12 @@ ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 # Enums (brought as-is from FlowPad for API wire compatibility)
 # ---------------------------------------------------------------------------
 
+
 class PublicApiPaths(StrEnum):
     """Public API paths that bypass auth in FlowPad.
     In flow-cli all routes are public, but this enum is kept for wire compat.
     """
+
     FAVICON = "favicon.ico"
     HEALTH = "health"
     SIGNUP = "signup"
@@ -161,6 +183,7 @@ class PublicApiPaths(StrEnum):
 
 class DeployEnv(str, Enum):
     """Deployment environment types."""
+
     DESKTOP = "desktop"
     LOCAL = "local"
     DEVELOPMENT = "development"
@@ -170,12 +193,14 @@ class DeployEnv(str, Enum):
 
 class SodProvider(str, Enum):
     """Secure Object Database (SOD) provider types."""
+
     DEV_FILE = "dev_file"  # Local file storage (development only)
-    GCP = "gcp"             # Google Cloud Secret Manager (production)
+    GCP = "gcp"  # Google Cloud Secret Manager (production)
 
 
 class StorageProvider(StrEnum):
     """Storage provider types for file system operations."""
+
     LOCAL = "local"
     S3 = "s3"
     AZURE = "azure"
@@ -185,22 +210,43 @@ class StorageProvider(StrEnum):
 
 
 class EmailProviderType(StrEnum):
-    """Email provider types."""
+    """How the system SENDS mail (notifications, invitations)."""
+
     MOCK = "mock"
+
+
+class AgentMailboxProviderType(StrEnum):
+    """Where an AGENT's own mailbox lives.
+
+    Separate from :class:`EmailProviderType` for the reason the hub states on
+    its own matching pair: the system sender and an agent's mailbox are different
+    capabilities, configured independently. Collapsing them means one field with
+    two meanings, and a value valid for one is a hard failure for the other.
+
+    Each value must be a REGISTERED driver kind in
+    ``flow_sdk/builtin/agent_mailbox_driver.py`` — an unregistered one raises at
+    the first mailbox call, not at startup. ``flowpad-hub`` matches
+    ``HubSecretDriver``'s kind so the two families spell "the hub" the same way.
+    """
+
+    HUB = "flowpad-hub"
 
 
 class ComputeProviderType(StrEnum):
     """Compute provider types."""
+
     LOCAL = "local"
     LOCAL_MACHINE = "local_machine"
     GCP = "gcp"
     AWS = "aws"
     E2B = "e2b"
-    DOCKER = "docker"
+    # This machine, enrolled on the hub with `flow connect` (hub-side provider name).
+    USER_MACHINE = "user_machine"
 
 
 class DBDriver(StrEnum):
     """Database driver types."""
+
     SQLITE = "sqlite"
     NEO4J = "neo4j"
     NETWORKX = "networkx"
@@ -208,6 +254,7 @@ class DBDriver(StrEnum):
 
 class AuthProviderType(StrEnum):
     """Authentication provider types."""
+
     AUTH0 = "auth0"
     CUSTOM = "custom"
 
@@ -215,6 +262,7 @@ class AuthProviderType(StrEnum):
 # ---------------------------------------------------------------------------
 # OS root path utility
 # ---------------------------------------------------------------------------
+
 
 def get_os_root_path() -> str:
     """Returns filesystem root path for current platform."""
@@ -236,11 +284,15 @@ def init_temp_dir():
     specifically for Flowpad, and cleans it up if it already exists.
     """
     global FLOWPAD_TEMP_DIR
+    # A module logger, not ``logging.info``: this runs at import, and the root-level call
+    # installs root's bare default handler, which turns the timestamped ``basicConfig``
+    # below into a no-op and leaves every stdlib line in the server log without a time.
+    log = logging.getLogger(__name__)
     if FLOWPAD_TEMP_DIR:
-        logging.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
+        log.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
     else:
         FLOWPAD_TEMP_DIR = str(Path(tempfile.gettempdir()) / "flowpad_temp")
-        logging.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
+        log.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
 
     # Create the temp directory
     os.makedirs(FLOWPAD_TEMP_DIR, exist_ok=True)
@@ -252,6 +304,7 @@ init_temp_dir()
 # ---------------------------------------------------------------------------
 # User desktop data folder
 # ---------------------------------------------------------------------------
+
 
 def get_user_desktop_data_folder() -> Path:
     """
@@ -282,21 +335,10 @@ def get_user_desktop_data_folder() -> Path:
 # Server info (server.json for external tools like Claude Code hooks)
 # ---------------------------------------------------------------------------
 
+
 def get_port_file_path() -> Path:
     """Get path to active server JSON file (dev or prod)."""
     return _active_server_json_path()
-
-
-class FlowpadServerInfo(BaseModel):
-    """Server connection info written to server.json for external tools."""
-
-    port: int
-    webhook_path: str = "/api/v1/webhook/listen"
-    health_path: str = "/api/v1/health/status"
-    url: str = ""
-    server_pid: int | None = None
-    monitor_pid: int | None = None
-    launch_iso_time: str | None = None  # ISO 8601
 
 
 def load_server_info() -> dict:
@@ -324,32 +366,35 @@ def save_server_info(data: dict) -> Path:
     return port_file
 
 
-def write_server_info(port: int) -> Path:
-    """Write server.json with connection info for external tools.
+def _server_info_write_lock():
+    """Serialises read-modify-write of server.json across processes.
 
-    Args:
-        port: The port the server is running on.
-
-    Returns:
-        Path to the written server.json file.
+    The backend, its monitor and the CLI launcher each merge their own keys
+    into the same file; without this, two of them updating within the same
+    millisecond lose one another's keys. ``server.lock`` is taken -- it is the
+    backend singleton -- so this is a sibling file. A holder that dies releases
+    it (kernel-owned); one that hangs is waited out, never deadlocked on.
     """
-    data = load_server_info()
-    data.update({
-        "port": port,
-        "webhook_path": "/api/v1/webhook/listen",
-        "health_path": "/api/v1/health/status",
-    })
-    return save_server_info(data)
+    from filelock import FileLock
+
+    port_file = get_port_file_path()
+    return FileLock(str(port_file.with_name(port_file.name + ".lock")), timeout=5)
 
 
 def set_server_info(data: dict) -> Path:
     """Merge-write data into the active server json (dev or prod). Atomic."""
-    existing = load_server_info()
-    existing.update(data)
-    return save_server_info(existing)
+    with _server_info_write_lock():
+        existing = load_server_info()
+        existing.update(data)
+        return save_server_info(existing)
 
 
-def clear_server_info() -> None:
+def clear_server_info(
+    *,
+    expected_pid: int | None = None,
+    expected_create_time: float | None = None,
+    expected_generation: str | None = None,
+) -> None:
     """Delete the active server.json — this server is no longer running.
 
     Every key in the file is runtime-only (port, pids, launch time), and a
@@ -358,6 +403,26 @@ def clear_server_info() -> None:
     re-routes their traffic to whichever server later recycles the port.
     """
     try:
+        with _server_info_write_lock():
+            _clear_server_info_locked(expected_pid, expected_create_time, expected_generation)
+    except Exception:
+        pass
+
+
+def _clear_server_info_locked(
+    expected_pid: int | None, expected_create_time: float | None, expected_generation: str | None
+) -> None:
+    try:
+        if expected_pid is not None or expected_create_time is not None or expected_generation is not None:
+            current = load_server_info()
+            if expected_pid is not None and current.get("server_pid") != expected_pid:
+                return
+            if expected_generation is not None and current.get("generation") != expected_generation:
+                return
+            if expected_create_time is not None:
+                actual = current.get("server_create_time")
+                if not isinstance(actual, (int, float)) or abs(actual - expected_create_time) > 1.0:
+                    return
         get_port_file_path().unlink(missing_ok=True)
     except Exception:
         pass
@@ -367,35 +432,173 @@ def clear_server_info() -> None:
 # Agent mount folder
 # ---------------------------------------------------------------------------
 
-def get_agent_mount_folder() -> str:
-    """
-    Get the agent mount folder based on deployment environment.
-
-    Returns:
-        Path to the agent mount folder:
-        - Desktop/Local mode: User home / "Flowpad workspace"
-        - Other modes: FLOWPAD_TEMP_DIR/flowpad_sandbox
-    """
-    # Desktop-only in flow-cli, always return user home workspace
-    agent_folder = Path.home() / "Flowpad workspace"
-    agent_folder.mkdir(parents=True, exist_ok=True)
-    return str(agent_folder)
-
-
-# Agent mount folder constant
-AGENT_MOUNT_FOLDER = get_agent_mount_folder()
-
 
 def agent_workspace_root() -> Path:
-    """Per-instance agent mount ROOT (``<user_home>/Flowpad workspace``).
+    """Per-instance agent mount ROOT: where new projects are placed, the folder
+    ``iter_workspace_project_paths`` scans, and the default agent working directory.
 
-    Matches the folder scanned by ``iter_workspace_project_paths`` and used as
-    the default agent working directory, resolved through instance settings so a
-    named dev instance points at its own home rather than ``Path.home()``.
+    ``~/Flowpad workspace`` for prod only; every other instance has its own (see
+    ``BaseInstanceSettings.workspace_root``). Resolved at CALL time — the instance is
+    not known at import, which is how every instance and test used to write into
+    prod's workspace.
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    return get_instance_settings().user_home / "Flowpad workspace"
+    return get_instance_settings().workspace_root
+
+
+# ---------------------------------------------------------------------------
+# Workspaces — folders of related projects
+# ---------------------------------------------------------------------------
+
+# The user-created workspaces' roots, ``{workspace id: canonical root}``. The DEFAULT
+# workspace is never in here: its root is ``agent_workspace_root()``, resolved per
+# call. An in-memory snapshot of the Workspace rows because the readers are sync and
+# hot (``is_protected_path`` runs per candidate cwd); ``Workspace.load_roots`` fills it
+# at bootstrap and every Workspace save/delete refreshes it. Empty == the app before
+# workspaces existed, which is the whole backward-compatibility story.
+_EXTRA_WORKSPACE_ROOTS: dict[str, str] = {}
+# The same roots as path-policy keys ``(flavour, key)`` (``path_utils._path_policy_key``:
+# Windows keys case-folded whatever the host OS), computed once per change — what
+# membership and ``is_protected_path`` compare against.
+_EXTRA_WORKSPACE_ROOT_KEYS: dict[str, tuple[str, str]] = {}
+# The default workspace's row id (the ``@local`` row). The UI names it once a second
+# workspace exists; it resolves to ``agent_workspace_root()`` like the uname does.
+_DEFAULT_WORKSPACE_IDS: set[str] = {"local"}
+
+
+def set_workspace_roots(roots: dict[str, str], default_id: str | None = None) -> bool:
+    """Replace the user-created workspace roots (``{id: root}``); True when they changed."""
+    from flow_sdk.fs_store.path_utils import _path_policy_key, canonical_posix_path  # noqa: PLC0415
+
+    if default_id:
+        _DEFAULT_WORKSPACE_IDS.add(default_id)
+    roots = {workspace_id: root for workspace_id, root in roots.items() if root}
+    canonical = {workspace_id: canonical_posix_path(root) for workspace_id, root in roots.items()}
+    changed = canonical != _EXTRA_WORKSPACE_ROOTS
+    _EXTRA_WORKSPACE_ROOTS.clear()
+    _EXTRA_WORKSPACE_ROOTS.update(canonical)
+    _EXTRA_WORKSPACE_ROOT_KEYS.clear()
+    for workspace_id, root in roots.items():
+        if keyed := _path_policy_key(root):
+            _EXTRA_WORKSPACE_ROOT_KEYS[workspace_id] = (keyed[0], keyed[1])
+    return changed
+
+
+def extra_workspace_roots() -> dict[str, str]:
+    """``{workspace id: canonical root}`` for every user-created workspace (not the default)."""
+    return dict(_EXTRA_WORKSPACE_ROOTS)
+
+
+def extra_workspace_root_keys() -> list[tuple[str, str]]:
+    """The user-created roots as path-policy keys ``(flavour, key)``."""
+    return list(_EXTRA_WORKSPACE_ROOT_KEYS.values())
+
+
+def all_workspace_roots() -> list[Path]:
+    """Every workspace root on this instance — the default one first."""
+    return [agent_workspace_root(), *(Path(root) for root in _EXTRA_WORKSPACE_ROOTS.values())]
+
+
+def workspace_id_for_path(path: str | Path) -> str | None:
+    """The user-created workspace whose root contains ``path``, else None (the default).
+
+    Membership is a LOCATION fact: a project anywhere outside every user-created
+    root — including the default root and a checkout found through worker history —
+    belongs to the default workspace. Compared as path-policy keys, so a Windows path
+    matches case-insensitively on any host.
+    """
+    from flow_sdk.fs_store.path_utils import _path_policy_key, _same_or_under  # noqa: PLC0415
+
+    if not _EXTRA_WORKSPACE_ROOT_KEYS:
+        return None
+    keyed = _path_policy_key(path)
+    if keyed is None:
+        return None
+    flavour, target, _root = keyed
+    for workspace_id, (root_flavour, root) in _EXTRA_WORKSPACE_ROOT_KEYS.items():
+        if root_flavour == flavour and _same_or_under(target, root):
+            return workspace_id
+    return None
+
+
+def path_in_workspace(path: str | Path | None, workspace_id: str) -> bool:
+    """``path`` belongs to ``workspace_id``: inside its root, or — for the default
+    workspace (any id that is not a user-created one) — outside every user-created root."""
+    if not path:
+        return False
+    owner = workspace_id_for_path(path)
+    return owner == workspace_id if workspace_id in _EXTRA_WORKSPACE_ROOTS else owner is None
+
+
+def workspace_root_for_id(workspace_id: str | None) -> Path | None:
+    """The root new projects of ``workspace_id`` go under: the default root for no id
+    or the default workspace's, None for an id that names no workspace on this node."""
+    if not workspace_id or workspace_id in _DEFAULT_WORKSPACE_IDS:
+        return agent_workspace_root()
+    root = _EXTRA_WORKSPACE_ROOTS.get(workspace_id)
+    return Path(root) if root else None
+
+
+# ---------------------------------------------------------------------------
+# Help-desk portal checkouts
+# ---------------------------------------------------------------------------
+
+# Dot-dir INSIDE the workspace, deliberately: it inherits the workspace's
+# per-instance home (so dev-1 and dev-2 never share a checkout), stays out of
+# the user's visible project area, and — being a DESCENDANT of the mount root
+# rather than the root itself — is not `is_protected_path`, which is what lets
+# the dev reset delete it. See `helpdesk_project_dir`.
+HELPDESK_DIRNAME = "helpdesk"
+
+# Stable uname for the local portal Project. Lets any surface answer "is this
+# the helpdesk portal?" from the entity already in hand — no request, the same
+# `@uname` convention the Flowpad Assistant uses.
+HELPDESK_PORTAL_UNAME = "helpdesk_portal"
+
+
+def helpdesk_root() -> Path:
+    """Root holding every helpdesk portal checkout on this instance.
+
+    ``<agent workspace>/.flow/helpdesk``. Built with ``pathlib`` so it is
+    correct on Windows as well as POSIX; callers that STORE the result (e.g.
+    ``Project.fs_storage_mount_path``) must pass it through
+    ``canonical_posix_path`` first, like every other stored path.
+    """
+    return agent_workspace_root() / ".flow" / HELPDESK_DIRNAME
+
+
+def helpdesk_project_dir(helpdesk_project_id: str) -> Path:
+    """Checkout slot for one desk's portal, keyed by its HUB project id.
+
+    Keying on the desk's hub id (not the local Project id) makes the path
+    deterministic before the local entity exists, and gives each tier of a
+    support chain its own slot without collision.
+    """
+    return helpdesk_root() / f"project-{helpdesk_project_id}"
+
+
+def is_helpdesk_portal_path(cwd: str | Path) -> bool:
+    """True when ``cwd`` is a helpdesk portal checkout.
+
+    A LOCATION test, matching ``is_system_project_path`` / ``is_agent_mount_root``:
+    the portal is app-managed infrastructure rather than one of the user's
+    projects, and that is a property of where it lives. Deriving hiddenness from
+    the path (instead of stamping ``system=True`` on the entity, which means
+    "SDK-shipped" and would be a lie here) also covers rows minted by the
+    per-cwd project walk, which never sets that flag.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under  # noqa: PLC0415
+
+    try:
+        # The ROOT goes through the cached canonicalizer, like `is_agent_mount_root`
+        # does: `is_hidden_project` calls this once per project in a list, and
+        # `helpdesk_root()` reaches instance settings, so re-resolving it per
+        # project made an almost-always-false check the expensive arm of the chain.
+        roots = _canonical_mount_roots(str(helpdesk_root()))
+        return any(is_path_under(canonical_posix_path(cwd), root) for root in roots)
+    except (OSError, ValueError):
+        return False
 
 
 @lru_cache(maxsize=8)
@@ -432,24 +635,32 @@ def is_agent_mount_root(path: str | Path) -> bool:
         target = canonical_posix_path(path)
     except (OSError, ValueError):
         return False
-    return target in _canonical_mount_roots(AGENT_MOUNT_FOLDER, str(agent_workspace_root()))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    # This instance's root and prod's: ``~/Flowpad workspace`` is never a project,
+    # whichever instance is looking at it — nor is any user-created workspace's root.
+    prod_root = get_instance_settings().user_home / "Flowpad workspace"
+    roots = (str(prod_root), *(str(root) for root in all_workspace_roots()))
+    return target in _canonical_mount_roots(*roots)
 
 
 def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:
     """True when a project should be hidden from the default project lists.
 
-    A project is hidden when it is an SDK-shipped system project OR the agent
-    mount ROOT (``~/Flowpad workspace``). The path checks route through the
-    workspace consts (``is_system_project_path`` / ``is_agent_mount_root``) —
-    never a hardcoded literal. Hidden projects are still revealable via the
-    "Show system projects" preference, which flips the ``system`` filter off.
+    A project is hidden when it is an SDK-shipped system project, the agent
+    mount ROOT (``~/Flowpad workspace``), or a helpdesk portal checkout. The
+    path checks route through the workspace consts (``is_system_project_path``
+    / ``is_agent_mount_root`` / ``is_helpdesk_portal_path``) — never a
+    hardcoded literal. Hidden projects are still revealable via the "Show
+    system projects" preference, which flips the ``system`` filter off.
     """
-    return system_flag or is_system_project_path(cwd) or is_agent_mount_root(cwd)
+    return system_flag or is_system_project_path(cwd) or is_agent_mount_root(cwd) or is_helpdesk_portal_path(cwd)
 
 
 # ---------------------------------------------------------------------------
 # Service URL configuration
 # ---------------------------------------------------------------------------
+
 
 class ServiceUrlsConfig(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
@@ -547,45 +758,9 @@ class ServiceUrlsConfig(BaseSettings):
 
 
 # ---------------------------------------------------------------------------
-# Micro app domain configuration
-# ---------------------------------------------------------------------------
-
-class MicroAppDomainConfig(BaseModel):
-    pattern: re.Pattern | None = None
-    view_action: str = "view"
-    app_domain: str = "flowpad.app"
-    port: int | None = None
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Build the pattern after the model is initialized
-        self._build_subdomain_regex()
-
-    def _build_subdomain_regex(self):
-        """
-        Builds a regex pattern to match subdomains of the given domain.
-        """
-        escaped_domain = re.escape(self.app_domain)  # safely escape dots, etc.
-        pattern_string = f"^({UUID_PATTERN})\\.{escaped_domain}(?::\\d+)?$"
-        self.pattern = re.compile(pattern_string)
-
-    @property
-    def _verified_pattern(self):
-        if self.pattern is None:
-            raise ValueError("Pattern is not built")
-        return self.pattern
-
-    def get_micro_app_id_from_host(self, host: str) -> str | None:
-        _micro_app_host = self._verified_pattern.match(host)
-        return _micro_app_host.group(1) if _micro_app_host else None
-
-    def is_micro_app_host(self, host: str):
-        return bool(self._verified_pattern.match(host))
-
-
-# ---------------------------------------------------------------------------
 # Main service configuration
 # ---------------------------------------------------------------------------
+
 
 class ServiceConfig(BaseSettings):
     """Service configuration loaded from environment variables.
@@ -594,6 +769,7 @@ class ServiceConfig(BaseSettings):
     API wire compatibility; cloud-only features (GCP, E2B sandbox timeouts,
     email sending, knowledge engine tuning) use sensible desktop defaults.
     """
+
     model_config = SettingsConfigDict(
         env_nested_delimiter="__", nested_model_default_partial_update=True, case_sensitive=False
     )
@@ -604,7 +780,6 @@ class ServiceConfig(BaseSettings):
     version: str = "0.0.0"
 
     # Sub-configs
-    micro_app_domain_config: MicroAppDomainConfig = MicroAppDomainConfig()
     service_urls_config: ServiceUrlsConfig = ServiceUrlsConfig()
 
     # Deployment
@@ -641,10 +816,16 @@ class ServiceConfig(BaseSettings):
     default_e2b_version: str = "v0-27-3"
     default_e2b_size: str = "sm"
     job_runner_type: Literal["local", "gcp"] = "local"
+    #: GCP project agent-driven deployments target (pinned into worker env as
+    #: CLOUDSDK_CORE_PROJECT et al). Isolated from google_cloud_project_id,
+    #: which is LLM/secrets infra. Empty string disables the pin.
+    gcp_deployment_project_id: str = "flowpad-playground"
     mcp_connector_pool_size: int = 5
 
     # Email (stub for desktop)
     email_provider: str = EmailProviderType.MOCK.value
+    #: Where an agent's mailbox is allocated — NOT the system sender above.
+    agent_mailbox_provider: str = AgentMailboxProviderType.HUB.value
     no_reply_email: str = "no-reply@example.com"
     flowpad_hub_url: str | None = None
 
@@ -717,9 +898,29 @@ class ServiceConfig(BaseSettings):
     local_user_allowed: str = "true"
     db_driver: str = DBDriver.SQLITE.value
     load_plugins: bool = False
+    # Opt-IN, but forgivingly: unset leaves the expensive suites skipped, while any
+    # value that is not an explicit denial turns them on. A strict bool parse made
+    # DEEP_TESTING=Enabled (or a typo of it) a hard validation error rather than the
+    # obvious yes it reads as, and a plain `bool` would have silently taken it as
+    # false — both punish the person trying to switch the suites ON.
     deep_testing: bool = False
     manual_testing: bool = False
     load_flowpad_assistant: bool = True
+    #: Whether this app starts (and keeps running) the process of every running local agent
+    #: deployment (``builtin/agent_serve.AgentServer``). On for every real app; the test tier
+    #: turns it off, since a lifespan there would spawn a loop process for every running
+    #: deployment in the shared DB — a test that exercises one starts it itself.
+    agent_run_deployments: bool = True
+    #: How often that supervisor looks again without being told — a deployment written by
+    #: another process (the tag bus is per process), or a loop process that died on its own.
+    agent_watch_seconds: float = 10.0
+
+    @field_validator("deep_testing", "manual_testing", mode="before")
+    @classmethod
+    def _enabled_unless_denied(cls, value: object) -> bool:
+        """Missing → off. An explicit denial → off. Anything else → on."""
+        text = str(value).strip().lower()
+        return bool(text) and text not in {"false", "disabled", "disable", "0", "no", "off", "none"}
 
     # Paths
     public_static_paths: list[str] = [
@@ -800,9 +1001,6 @@ class ServiceConfig(BaseSettings):
         Initialize desktop environment configuration.
         Sets database driver, compute provider, auth provider, and storage paths for desktop mode.
         """
-        # Get user data folder for desktop
-        user_data_folder = get_user_desktop_data_folder()
-
         # Determine database driver from DESKTOP_DB env var
         desktop_db = os.getenv(ENV_DESKTOP_DB, DBDriver.SQLITE.value).lower()
         valid_drivers = [DBDriver.SQLITE.value, DBDriver.NEO4J.value, DBDriver.NETWORKX.value]
@@ -875,7 +1073,9 @@ class ServiceConfig(BaseSettings):
 # Module-level initialization
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# The same shape as ``server/app.py``: this module is imported first, so its call is the one that
+# takes effect, and the server log names the logger on every timestamped line.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 
 # Global default service config instance
 default_service_config: ServiceConfig = ServiceConfig()

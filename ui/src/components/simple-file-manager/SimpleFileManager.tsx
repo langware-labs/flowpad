@@ -1,5 +1,8 @@
-import { Trans, useLingui } from '@lingui/react/macro';
-import { FSItem, fsManager, fsStore, TypeId } from '@sdk';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { FSEntry, FSRef, fsManager, fsStore, TypeId } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
+import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -16,16 +19,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useFS } from '@src/hooks/useFS';
 import {
   ArrowUp,
-  ChevronRight,
   ClipboardPaste,
   Copy,
   Download,
   Edit2,
   ExternalLink,
+  Eye,
+  EyeOff,
   File,
   FilePlus,
   FileText,
   Folder,
+  FolderOpen,
   FolderPlus,
   RefreshCw,
   Scissors,
@@ -36,16 +41,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
-import { fileShareSource } from '@src/hooks/share-sources';
+import { useFileShareSource } from '@src/hooks/use-file-share-source';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
-
-function formatFileSize(bytes: number): string {
-  if (bytes === 0) return '-';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+import { FilterName } from './filters';
+import { formatBytes } from '@src/utils/format-bytes';
 
 function formatDate(date: Date): string {
   return date.toLocaleDateString(undefined, {
@@ -234,7 +233,7 @@ function formatFsErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function fsItemToFileItem(fsItem: FSItem, currentPath: string): FileItem {
+function fsItemToFileItem(fsItem: FSEntry, currentPath: string): FileItem {
   const name = fsItem.relativePath?.split('/').pop() || fsItem.name || '';
   // Use relativePath for the full path, fallback to constructed path if relativePath is not available
   const itemPath = fsItem.relativePath || (currentPath === '/' ? `/${name}` : `${currentPath}/${name}`);
@@ -256,10 +255,12 @@ export function SimpleFileManager({
   onPathChange,
   filterDefinitions,
   enabledFilters,
+  onEnabledFiltersChange,
   compact = false,
   className = '',
   onFsMutated,
   isPathHighlighted,
+  initialSelectedName,
 }: SimpleFileManagerProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -267,6 +268,16 @@ export function SimpleFileManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  // The hidden-files toggle is offered only where the host can switch the HIDDEN filter.
+  const canToggleHidden =
+    !!onEnabledFiltersChange && !!filterDefinitions?.some((f) => f.name === FilterName.HIDDEN);
+  const showHidden = !enabledFilters?.includes(FilterName.HIDDEN);
+  const toggleHidden = () => {
+    const others = (enabledFilters ?? []).filter((f) => f !== FilterName.HIDDEN);
+    // Hiding dotfiles must not leave them selected — a hidden row can't be a delete/cut target.
+    if (showHidden) setSelectedItems(new Set());
+    onEnabledFiltersChange?.(showHidden ? [...others, FilterName.HIDDEN] : others);
+  };
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
@@ -275,10 +286,7 @@ export function SimpleFileManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
-  const shareSource = useMemo(
-    () => (sharePath ? fileShareSource({ computeNodeTypeId: typeidObj, absPath: sharePath }) : null),
-    [sharePath, typeidObj],
-  );
+  const shareSource = useFileShareSource(typeidObj, sharePath);
 
   // Use shared browse cache from fsStore
   const fs = useFS(typeidObj);
@@ -301,10 +309,23 @@ export function SimpleFileManager({
   }, [browseResult, currentPath, filterDefinitions, enabledFilters]);
 
   // Sync currentPath with initialPath when it changes (e.g., browser back/forward navigation)
+  // The entry the URL names, selected once when its row lists; reset per folder.
+  const appliedSelectRef = useRef<string | undefined>(undefined);
+  const [scrollToId, setScrollToId] = useState<string | null>(null);
   useEffect(() => {
     setCurrentPath(normalizeFsPath(initialPath));
     setSelectedItems(new Set());
+    appliedSelectRef.current = undefined;
   }, [initialPath]);
+
+  useEffect(() => {
+    if (!initialSelectedName || appliedSelectRef.current === initialSelectedName) return;
+    const item = files.find((f) => f.name === initialSelectedName);
+    if (!item) return;
+    appliedSelectRef.current = initialSelectedName;
+    setSelectedItems(new Set([item.id]));
+    setScrollToId(item.id);
+  }, [files, initialSelectedName]);
 
   // Dialogs
   const [showNewFolderDialog, setShowNewFolderDialog] = useState(false);
@@ -640,6 +661,17 @@ export function SimpleFileManager({
     [navigation, buildVfsPath],
   );
 
+  // Reveal in Finder / Explorer — only a compute node's paths are real OS paths.
+  const canReveal = typeidObj.type === 'compute_node';
+  const handleRevealInFinder = useCallback(
+    (item: FileItem) => {
+      void new FSRef(item.path, typeidObj).open({ select: item.type === 'file' }).catch((error) =>
+        notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, item.path) }),
+      );
+    },
+    [typeidObj, t],
+  );
+
   // Breadcrumb
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -651,7 +683,7 @@ export function SimpleFileManager({
       crumbs.push({ name: part, path });
     }
     return crumbs;
-  }, [currentPath]);
+  }, [currentPath, t]);
 
   const startRename = useCallback((item: FileItem) => {
     setRenameItem(item);
@@ -703,6 +735,27 @@ export function SimpleFileManager({
               <Trans>Refresh</Trans>
             </TooltipContent>
           </Tooltip>
+
+          {canToggleHidden && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  data-testid="file-manager-toggle-hidden-button"
+                  variant="ghost"
+                  size="icon"
+                  className={`h-7 w-7 ${showHidden ? 'bg-accent text-accent-foreground' : ''}`}
+                  aria-pressed={showHidden}
+                  aria-label={t`Show hidden files`}
+                  onClick={toggleHidden}
+                >
+                  {showHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <Trans>Show hidden files</Trans>
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {!compact && (
             <>
@@ -882,7 +935,9 @@ export function SimpleFileManager({
         <TooltipProvider>
           {breadcrumbs.map((crumb, idx) => (
             <span key={crumb.path} className="flex items-center gap-1">
-              {idx > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+              {/* Shares the address bar's chevron so the path trail mirrors in
+                  RTL exactly as the breadcrumb above it does. */}
+              {idx > 0 && <BreadcrumbChevron className="h-3 w-3 text-muted-foreground" />}
               <button
                 data-testid={idx === 0 ? 'file-manager-home-button' : `file-manager-breadcrumb-${idx}`}
                 onClick={() => navigateToPath(crumb.path)}
@@ -899,7 +954,7 @@ export function SimpleFileManager({
       {error && (
         <div className="border-b border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-yellow-900/50 dark:bg-yellow-950/30 dark:text-yellow-500">
           {error}
-          <button onClick={() => setError(null)} className="ml-2 underline hover:no-underline">
+          <button onClick={() => setError(null)} className="ms-2 underline hover:no-underline">
             <Trans>Dismiss</Trans>
           </button>
         </div>
@@ -948,12 +1003,13 @@ export function SimpleFileManager({
                     <ContextMenu key={item.id}>
                       <ContextMenuTrigger asChild>
                         <TableRow
+                          ref={item.id === scrollToId ? (el) => el?.scrollIntoView({ block: 'nearest' }) : undefined}
                           className={`cursor-pointer select-none ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
                           onClick={(e) => handleItemClick(item, e)}
                           onDoubleClick={() => handleItemDoubleClick(item)}
                           // Rows carry the same FsDragItem payload the
                           // navigator's Files tree writes, so they can drop
-                          // anywhere it can — e.g. onto a context-folder row
+                          // anywhere it can — e.g. onto a dependency row
                           // (copy into the folder). Without `draggable` the
                           // browser falls back to text selection on drag.
                           // Dragging a row that is part of the current
@@ -990,7 +1046,9 @@ export function SimpleFileManager({
                           </TableCell>
                           {!compact && (
                             <>
-                              <TableCell className="text-muted-foreground">{formatFileSize(item.size)}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                {item.size ? formatBytes(item.size) : '-'}
+                              </TableCell>
                               <TableCell className="text-muted-foreground">{formatDate(item.modifiedAt)}</TableCell>
                               <TableCell>
                                 {item.type === 'file' && isEditableFile(item.name) && (
@@ -1010,6 +1068,27 @@ export function SimpleFileManager({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <Trans>Open in Editor</Trans>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {canReveal && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        data-testid="file-row-reveal"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRevealInFinder(item);
+                                        }}
+                                      >
+                                        <FolderOpen className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <Trans>Open in Finder</Trans>
                                     </TooltipContent>
                                   </Tooltip>
                                 )}
@@ -1062,12 +1141,25 @@ export function SimpleFileManager({
 
       {/* Status bar */}
       <div className="flex items-center justify-between border-t bg-muted/30 px-3 py-1 text-xs text-muted-foreground">
+        {/* Counted with `plural`, not "N item(s)": the count and its noun have to
+            agree, and a language picks the form — so the number cannot be glued
+            to an English word here and still read correctly once translated. */}
         <span>
-          {sortedFiles.length} items{hasSelection && ` (${selectedCount} selected)`}
+          <Plural value={sortedFiles.length} one="# item" other="# items" />
+          {hasSelection && (
+            <>
+              {' '}
+              <Trans>({selectedCount} selected)</Trans>
+            </>
+          )}
         </span>
         {clipboard && (
           <span className="text-primary">
-            {clipboard.items.length} item(s) in clipboard ({clipboard.operation})
+            {clipboard.operation === 'copy' ? (
+              <Plural value={clipboard.items.length} one="# item copied" other="# items copied" />
+            ) : (
+              <Plural value={clipboard.items.length} one="# item cut" other="# items cut" />
+            )}
           </span>
         )}
       </div>
@@ -1181,7 +1273,7 @@ export function SimpleFileManager({
         </div>
       )}
 
-      {/* Delete Dialog - for file list selection only (tree deletion handled by DirectoryTree) */}
+      {/* Delete Dialog - for file list selection only (the tree deletes through its own toolbar) */}
       {showDeleteDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">

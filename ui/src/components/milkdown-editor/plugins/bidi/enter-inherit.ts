@@ -81,11 +81,14 @@ const bidiInheritOnEnter: Command = (state, dispatch) => {
   // forces paragraph-only scope). Passing unknown attrs to ``node.create``
   // would throw "Unsupported attribute".
   const supportsBidi = 'dir' in (newType.spec.attrs ?? {});
+  // `attrs` may leave out anything the schema gives a default: ProseMirror's
+  // `computeAttrs` fills those in when the node is built. (The old
+  // `...newType.defaultAttrs` spread was reading a NodeType internal that isn't
+  // in prosemirror-model's typings — and is `null` whenever any attribute has
+  // no default, so it contributed nothing then either.)
   const typesAfter = [{
     type: newType,
-    attrs: supportsBidi
-      ? { ...newType.defaultAttrs, ...inherited }
-      : { ...newType.defaultAttrs },
+    attrs: supportsBidi ? { ...inherited } : null,
   }];
 
   const splitPos = tr.mapping.map($from.pos);

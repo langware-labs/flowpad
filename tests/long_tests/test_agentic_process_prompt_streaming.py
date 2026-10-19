@@ -99,10 +99,10 @@ async def _create_print_mode_process(hub_client, compute_node_id: str, workdir: 
     return pid
 
 
-async def test_prompt_streams_xml_flowdata_for_trivial_turn(hub_and_node, tmp_path):
+async def test_prompt_streams_xml_flowdata_for_trivial_turn(hub_and_node, run_workdir):
     """Send a one-word prompt, assert flow-status + flow-chat + flow-end arrive."""
     hub_client, local_compute_node_id = hub_and_node
-    process_id = await _create_print_mode_process(hub_client, local_compute_node_id, str(tmp_path))
+    process_id = await _create_print_mode_process(hub_client, local_compute_node_id, str(run_workdir))
 
     body = b""
     async with hub_client.stream(
@@ -124,7 +124,7 @@ async def test_prompt_streams_xml_flowdata_for_trivial_turn(hub_and_node, tmp_pa
     assert close_tags[-1] == "</flow-end>", f"stream did not close with flow-end: last={close_tags[-1]}"
 
 
-async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, tmp_path):
+async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, run_workdir):
     """visible=true (PTY) processes are admitted to the unified prompt action.
 
     The prompt action is a single endpoint with two transports keyed off
@@ -136,7 +136,7 @@ async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, tmp
     hub_client, local_compute_node_id = hub_and_node
     body = {
         "context": {
-            "workdir": str(tmp_path),
+            "workdir": str(run_workdir),
             "permission_mode": "bypassPermissions",
             "model": ModelTier.SM.value,
         },

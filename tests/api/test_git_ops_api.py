@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -208,7 +207,7 @@ async def test_git_ops_init_seeds_gitignore(bootstrapped_client, tmp_path):
 
 @pytest.mark.asyncio
 async def test_git_ops_init_preserves_existing_gitignore(bootstrapped_client, tmp_path):
-    """Init never clobbers a user's existing .gitignore."""
+    """Init never clobbers a user's existing .gitignore: it keeps their rules and adds ``.env.local``."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _get_compute_node_id(bootstrap.json())
 
@@ -220,7 +219,7 @@ async def test_git_ops_init_preserves_existing_gitignore(bootstrapped_client, tm
     )
     assert r.status_code == 200
     assert r.json()["data"]["ok"] is True
-    assert (tmp_path / ".gitignore").read_text() == "my-custom-ignore\n"
+    assert (tmp_path / ".gitignore").read_text() == "my-custom-ignore\n.env.local\n"
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,7 @@
-import { UserRole } from '../services/membershipService';
 import { TypeId } from './TypeId';
+
+/** The roles a membership can carry — declared with the shapes that use it. */
+export type UserRole = 'owner' | 'admin' | 'editor' | 'guest' | 'reader' | 'anonymous_viewer';
 export type MembershipStatus = 'pending' | 'approved';
 
 export type InvitationMethod = 'id' | 'email' | 'invitation';

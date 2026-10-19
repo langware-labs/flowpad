@@ -65,6 +65,15 @@ describe('Shell Command FlowData Types - Unit Tests', () => {
     expect(output.attributes['exit-code']).toBe('0');
   });
 
+  it('a command that reported no exit code stays UNKNOWN, never success', () => {
+    // The stream can end without an exit code (a command that never started, a
+    // provider that dropped it). Reading that as 0 reported it as a clean exit.
+    const output = new ShellOutputFlowData('', '');
+    output.markComplete(undefined);
+    expect(output.exitCode).toBeUndefined();
+    expect(output.attributes['exit-code']).toBeUndefined();
+  });
+
   it('should create ShellOutputFlowData from response data', () => {
     const responseData = {
       exit_code: 0,

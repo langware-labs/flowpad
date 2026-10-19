@@ -3,7 +3,7 @@ id: 697610b8-0605-4836-b448-d137e239d0c7
 title: Vibe Mode
 ---
 
-# Vibe Mode — the simplest, creator-first "overlay" view mode
+# Vibe Mode — the creator-first workspace mode
 
 Vibe is the lowest tier of the **View mode** skin system (`Vibe ⊂ Standard ⊂
 Advanced ⊂ Dev`, see [View Modes](../viewmodes.md)). It is a **Lovable-style
@@ -11,51 +11,61 @@ creator surface**: a centered "what do you want to build?" prompt that opens a
 persistent **side chat next to a live "display"** — a web browser showing the app
 the agent builds.
 
-Vibe is deliberately built as a **pure overlay / lens** over the existing app,
-not a fork. Turning Vibe on changes only **theme + layout + chrome** (see
-[What Vibe changes](#what-vibe-changes)); turning
-it off leaves no special machinery behind. It reuses the existing chat, viewer,
-and navigation primitives wholesale, and — critically — changes **nothing** below
-the UI layer: the agentic-process / PTY / session lifecycle is byte-for-byte
-identical to Standard (see [Process semantics are unchanged](#process-semantics-are-unchanged-verified)).
+Vibe is a workspace presentation over the existing app, not a parallel asset
+system. It reuses the standard URL, loaders, tabs, chat, viewers, and process
+lifecycle. An asset or file can transition in place from Standard into a
+target-specific Vibe chat while keeping the same content surface mounted.
 
 > **Read the non-negotiable architecture below before touching Vibe.** The whole
 > point is that Vibe drags no baggage into the shared surfaces.
 
 ## Architecture (non-negotiable)
 
-1. **The URL is the standard agentic-process dock URL + the view mode.** A Vibe
-   session rides the normal `/dock/shell/agentic_process-<id>` URL with
-   `data-view="vibe"` on `<html>`. Vibe invents no route, no loader, no URL grammar.
-2. **The viewer shown in the display NEVER touches the URL.** Display selection
-   is local workspace state: an explicit `flow show` target (`on_show`, restored
-   from `context_data.last_shown`) wins first, the agent's `FlowData.focus`
-   stream is second, and the webapp preview is the fallback. None of these call
-   `navigation.openDock`, so the URL is stable while the display switches viewers.
-3. **No baggage.** The display resolves its data through the **existing**
-   structured channels — project-scoped artifacts + `focus.metadata.port` fed into
-   `useViewerStore.currentContext` (the exact channel `WebappViewer` already
-   reads). No prose port-sniffing, no viewer-specific override props.
+1. **A Vibe session is a HOST tab.** It lives at `/dock/vibe/agentic_process-<id>`,
+   an address that implies the Vibe mode (`data-view="vibe"` on `<html>`), and it
+   hosts its own nested tabs one level deep. Its `tabHash` folds onto the process's
+   shell identity, so one process is ONE `Tab` row in every mode, and it reuses the
+   shell loaders. Old `?viewMode=vibe` process URLs redirect to it once. See
+   [Tab Management → Host tabs](../tab-management.md#host-tabs-nested-tabs-one-level-deep)
+   and [Vibe Display surface](../tabs/display.md) §3.
+2. **Navigation stays URL-first.** Entering Vibe changes only the current dock's
+   `viewMode` option. A `flow show` target is an ADDRESS: the workspace navigates
+   to the target's own dock carrying `host` + `activeDisplay=1`
+   (`openActiveDisplay`), and that dock's loader is the only context writer. See
+   [Vibe Display surface](../tabs/display.md) §3.
+3. **No baggage.** The display renders the shown target through the **existing**
+   dock and viewer for it (`ContentPanel minimalChrome`); a running app is a
+   `ServiceEndpoint` addressed by the APP dock. No prose port-sniffing, no
+   viewer-specific override props.
 4. **MCP UI is a shown file target, not a Vibe URL.** A `.mcp.html` file shown
-   with `flow show file` is restored from `context_data.last_shown`, rendered by
-   `McpAppPreview`, read through a `ui://flowpad-local/...` MCP resource URI, and
+   with `flow show file` is addressed by its file dock like any shown file,
+   rendered by `McpAppPreview` (via `AssetEditorRouter`), read through a `ui://flowpad-local/...` MCP resource URI, and
    hosted in the backend sandbox proxy. See [MCP UI Architecture](../mcp-ui.md).
-5. **Skin-layer rule** (from [View Modes](../viewmodes.md)): Vibe only changes
-   *where/whether* things render + the theme — never data, hooks, or entity
-   behavior. Layout differences use `VibeSwap` (slot-builder + two arrangements).
+5. **One stable asset host.** Asset/file docks render through
+   `AssetVibeWorkspace` in both modes. Standard collapses the chat panel; Vibe
+   expands it beside the unchanged `ContentPanel`. This preserves editor
+   identity and dirty buffers across the transition.
 
 ## What Vibe changes
 
 Everything Vibe touches lives in the UI layer. Concretely:
 
 1. **Theme** — the `[data-view='vibe']` token block in `index.css` (hub palette,
-   blue accent, hero glow, Plus Jakarta Sans). Zero component edits.
-2. **Layout / chrome** — no left rail (`flow-page.tsx`), a centered VibeHome empty
-   state, and the chat↔display split (`VibeWorkspace`) on an active process. Layout
-   forks go through `VibeSwap`, never through data/hooks.
-3. **Chrome-less creator surfaces** — on the curated `VIBE_CREATOR_SURFACES`
-   ViewTypes (`content-panel.tsx`), Vibe strips the tab strip + navigator. Any
-   *other* surface keeps normal Standard chrome even in Vibe.
+   blue accent, hero glow, Plus Jakarta Sans).
+2. **Layout / chrome** — a centered VibeHome empty state, the process
+   chat↔Display split, and the asset chat↔content split. The shared left rail
+   retains its reserved footprint in every mode.
+3. **Vibe is a TAB** — once a prompt is sent, the session opens as a Vibe tab
+   (`/dock/vibe/<process>`) under the global tab strip, beside any other tabs
+   (terminals, documents, other Vibe tabs); its own nested strip (the Display
+   square + its children) sits inside it. Only the Vibe home (the hero prompt,
+   and the no-process pane) is tabless. On the curated `VIBE_CREATOR_SURFACES`
+   ViewTypes (`content-panel.tsx`) Vibe still drops the left navigator.
+   The strip's "+" opens tabs BESIDE the Vibe tab: "New Vibe" goes to the Vibe
+   home, an agent opener starts a chat/terminal in the user's last non-Vibe mode,
+   and a terminal or a chip click is top-level (`NavigationCommitOptions.topLevel`,
+   never adopted into the Vibe tab on screen). The skin follows the active tab;
+   only an explicit mode switch plays the glow.
 4. **Assets tabs keep their Standard structure** — opening an Assets tab in Vibe
    renders the same Standard asset catalog and navigator, so a deep-linked asset
    can expand its type and select its row. The Vibe skin may change the surrounding
@@ -66,16 +76,44 @@ That is the whole surface area. See below for what it explicitly does not touch.
 
 ## Entering Vibe
 
-- **Default is Standard; Vibe is opt-in.** `preferences.ui.view_mode` defaults to
-  `standard` (`ts_sdk/src/preferences/prefRegistry.ts`). Users cycle into Vibe via
-  the footer **View toggle** pill (`Vibe → Standard → Advanced → Vibe`;
-  `ui/src/components/view-toggle/view-toggle.tsx`). `window.setView('vibe')` works too.
+- **Vibe is the default.** `preferences.ui.view_mode` defaults to `vibe`
+  (`ts_sdk/src/preferences/prefRegistry.ts` — the ONE place the default lives);
+  users opt *up* to Chat/Terminal/Dev. The footer control is a segmented **mode
+  selector**, labelled by the surface each mode shows rather than by rank — Vibe,
+  Chat (`standard`), Terminal (`advanced`), Dev
+  (`ui/src/components/view-toggle/view-toggle.tsx`). `window.setView('vibe')` works too.
+  Selection is URL-first: on a dock route the click only
+  `openDock(currentDock.withViewMode(next))`; pointerless routes write the
+  preference directly.
 - **VibeHome** is the empty state: a centered hero ("Build something **amazing**")
   + the `SessionInput` prompt as the focal CTA. It is the `vibe` branch of a
   `VibeSwap` in `HomeLanding.tsx` — the full Standard 3-column home is the fallback
   and stays mounted-agnostic.
-- **No left rail.** In Vibe, `flow-page.tsx` drops the `CollapsedSidebar`; the
-  chat panel's header carries a "New" (back-to-VibeHome) affordance instead.
+- **Asset entry is local and explicit.** Every single asset/file content dock
+  shows a MessageSquare **Discuss** action. It calls only
+  `navigation.openDock(currentDock.withViewMode(ViewMode.Vibe))`.
+
+## Asset/file → Vibe
+
+Asset-origin Vibe is target-specific:
+
+1. The normal asset URL loader materializes or reuses its tab.
+2. The cold-parent resolver derives the exact target (resolved entity TypeId,
+   otherwise compute-node VFS path), finds the newest Chat with the same
+   `project_id + target_typeid_str`, or creates a headless Chat.
+3. The asset tab adopts that process tab as `parent_tab_id`.
+4. `FlowPage` keeps `AssetVibeWorkspace` mounted and expands the chat panel over
+   280 ms (`prefers-reduced-motion` disables the transition).
+5. The first prompt carries a one-shot context naming the exact active
+   TypeId/path. Update/refactor requests therefore apply to the original asset.
+6. `flow show` of a created or related asset materializes and focuses another
+   child tab while the parent Chat remains authoritative.
+
+Backend transcript flushes emit `file.write` for every file type and schedule a
+deduplicated reindex batch immediately. The workspace bridges that event into
+the canonical FS cache invalidation channel. Clean Markdown/source/HTML/media/
+PDF viewers refresh while the turn is running; dirty local editor buffers are
+not overwritten.
 
 ## The build flow
 
@@ -87,8 +125,18 @@ That is the whole surface area. See below for what it explicitly does not touch.
    - `loadFlowpadAssistant` mounts the **web-app-builder** skill (via `--add-dir`)
      so "build me a web app" scaffolds a running dev server.
    - The message is sent verbatim — no forced build nudge — so "hi" is just a chat.
-2. `flow-page.tsx` sees `isVibe` + an active agentic-process dock and renders the
-   **VibeWorkspace** split instead of the single content panel.
+   - `embedVibeSubagent` embeds the persona that carries the `flow show` contract:
+     the **SubAgent** `vibe` (`.claude/agents/vibe.md`, `scope: system`) — NOT the
+     launchable **Agent** of the same name (`agentic-assets/agent/vibe/agent.md`),
+     a ~20-line haiku front in the internal-agents family. Two assets, one word;
+     resolving by bare name picked the wrong one and every session ran a generic
+     "you are the project assistant" prompt, presenting deliverables with
+     `open <file>` into the user's browser instead of `flow show`. Verify a
+     session by its materialized `CLAUDE.md`: it must read *"You are the 'vibe'
+     agent"*, not *"the 'agent' agent"*.
+2. `resolveDockLayout` (`ui/src/navigation/dock-layout.ts`) answers
+   `VIBE_WORKSPACE` for `isVibe` + a resolved workspace session, and `flow-page`
+   renders the **VibeWorkspace** split instead of the single content panel.
 
 ## The workspace (side chat + display)
 
@@ -98,35 +146,35 @@ That is the whole surface area. See below for what it explicitly does not touch.
 [ EntityExecutionPanel (chat, ~36%) | Display (~64%) ]
 ```
 
-- **Chat** is the existing agentic-process chat UI — `EntityExecutionPanel` keyed
-  by the project TypeId `target` (so it attaches to the process the home submit
-  created). The "New" button rides its header via the additive `leadingSlot` prop.
-- **Display** is a preview-first viewer switch that **reuses the existing viewer
-  components** (`WebappViewer` / `CodeEditor` / `DiffViewer`) plus the MCP App
-  preview host for `.mcp.html` files. It defaults to the web preview.
-- **Display selection:** explicit `flow show` targets pin the display and are
-  restored from `context_data.last_shown`; stream focus is only the secondary
-  signal for code/diff/write noise. The web preview is the fallback when neither
-  exists.
-- **Focus → display wiring:** `useVibeFocus` reads the most-recent `FlowData.focus`
-  off the `AgenticProcess` stream (`focus` + `data.path` + `data.metadata.port` —
-  the same fields the shared `useActiveViewer.focusFromStream` reads) and writes
-  the port into `useViewerStore.setCurrentContext({ viewerOptions: { port } })`
-  when no shown webapp target overrides it. `WebappViewer` reads that port (its
-  existing `currentContext` priority), builds the `get-host` iframe URL, and
-  renders the running app. **No URL change.**
+- **Chat** is the existing agentic-process chat UI. Process-home sessions use
+  their existing target; asset-origin sessions are keyed by the exact
+  `target_typeid_str`. The standard New/Recent session controls remain present.
+- **Display** renders the URL: on a shown target's address (or a child tab) it
+  mounts `ContentPanel minimalChrome` for that dock, so every target uses its own
+  standard viewer. On the bare process URL it falls back to the stream `focus`
+  (`CodeEditor` / `DiffViewer`), then to the starter prompts.
+- **Display selection:** an explicit `flow show` navigates the workspace to the
+  target's address (`openActiveDisplay`). A reload restores the last one once per
+  browser session through the loader's `restoreDisplayRedirect`, which reads
+  `context_data.last_shown`. Stream focus is only the fallback for code/diff
+  noise on the bare process URL.
+- **A running app is an address:** `flow show webapp --port <p>` registers the
+  server as a `proxy` route (`port-<p>`) of the project's placement's `app` proxy
+  and the display NAVIGATES to its APP dock
+  (`/dock/app/service_endpoint-<id>?route=port-<p>`), like every other
+  shown target. Stream focus never carries a port into the display any more.
 
-### The live preview plumbing (all pre-existing, reused)
+### The live preview plumbing
 
-`WebappViewer → PersistentIframe → get-host?port=<n> → localhost:<port>`:
+`flow show webapp --port <p> → service_endpoint-<id> + route → APP dock → AppDisplayViewer →
+PersistentIframe → direct-url (localhost:<p>, or the box's audience door `https://<AUDIENCE_PORT>-<box>.e2b.dev/<route>/` in a sandbox)`:
 
-- The web-app-builder skill reports its running service as a `<flow-result
-  type="webapp" port=… focus="web-app"/>`, which becomes a **project-scoped WEBAPP
-  artifact** (`useCurrentArtifacts`) carrying `metadata.port`.
-- `useProcessWebApp` builds the iframe URL via the backend **`get-host`** action.
-  That action was ported to the `AgenticProcess` entity
-  (`flow_sdk/builtin/agentic_process/agentic_process.py`) because the legacy `Flow`
-  entity was removed — `useProcessWebApp` targets `AgenticProcess.type`.
+- `useAppDisplay` resolves an app address (a proxy and its mount, an artifact, a
+  webapp asset) to the routes serving it here (`ServedApp`): a `proxy` route is
+  the `dev` runtime, loaded at its `direct-url`; a `static` one is `served`,
+  loaded through `service_endpoint/<id>/service/<mount>/`.
+- `WebappDisplay` diagnoses a failing app through the endpoint's `probe` (it dials
+  the port from the machine the app runs on) and hands the fixer the endpoint.
 - When a WEBAPP artifact is received through a git-backed share, the artifact row
   is a declaration plus `GitOrigin`, not a copied sender path. Opening it first
   resolves the checkout via `resolve-git-location`; if the repo is missing, the
@@ -138,15 +186,27 @@ That is the whole surface area. See below for what it explicitly does not touch.
 MCP UI uses the same `flow show` pin as other display targets, but it renders
 through a dedicated MCP Apps host instead of the webapp preview:
 
-`flow show file <path.mcp.html> → context_data.last_shown → VibeWorkspace →
-McpAppPreview → @mcp-ui/client → backend sandbox proxy`
+`flow show file <path.mcp.html> → openActiveDisplay → file dock (host +
+activeDisplay) → AssetEditorRouter → McpAppPreview → @mcp-ui/client → backend
+sandbox proxy`
 
-The process dock URL stays the workspace URL. The shown file path becomes an
+The process stays the workspace host. The shown file path becomes an
 internal `ui://flowpad-local/...` resource URI; that URI is resolved through
 `onReadResource` and `FSRef`, not through browser navigation. The iframe itself
 loads `/mcp-sandbox/sandbox_proxy.html` from the backend origin and receives the
 guest HTML through MCP Apps JSON-RPC. Submissions come back as `ui/message` and
 are delivered to the same `AgenticProcess` as a prompt once the process is idle.
+
+## Agent intro row
+
+A session opened AS an Agent (`useLaunchingAgent` resolves it from the
+process's deployment) shows the agent's `intro` as its first message, above the
+transcript, in Vibe and Standard only (`AgentIntroMessage`, mounted by
+`EntityExecutionPanel` and `SimpleChatPane`). It is presentation: nothing in
+the stream, nothing on disk, nothing the model reads. Advanced/Dev omit it so
+the raw transcript stays faithful. Project agent auto-launch (see
+`docs/agents-management.md`) lands here too, with the queued prompt as the first
+real user turn.
 
 ## Theme (hub palette)
 
@@ -167,9 +227,9 @@ Lovable:
 
 `EntityExecutionPanel` (chat + image paste + session history), `WebappViewer` /
 `CodeEditor` / `DiffViewer` (display), `useViewerStore` / `useCurrentArtifacts` /
-`useProcessWebApp` (viewer wiring), `SessionInput` (home prompt), `VibeSwap` (the
-Vibe-tier analog of `ViewSwap`/`AdvancedOnly`), the `get-host` action, and the
-`ViewToggle`. Image paste is wired at the `EntityExecutionPanel` layer, so it
+`useAppDisplay` (viewer wiring), `SessionInput` (home prompt), `VibeSwap` (the
+Vibe-tier analog of `ViewSwap`/`AdvancedOnly`), the `ServiceEndpoint` actions, and
+the `ViewToggle`. Image paste is wired at the `EntityExecutionPanel` layer, so it
 works in the Vibe chat and every other `EntityExecutionPanel` consumer.
 
 ## Process semantics are unchanged (verified)
@@ -183,32 +243,24 @@ ordinary headless chat process:
   general `createProcess` option used elsewhere in the app — none is Vibe-specific,
   and none is read off the view mode. It then sends the message verbatim and
   navigates via the shared `navigation.openShellProcess(id)`.
-- The backend has **no** concept of Vibe. A repo-wide search finds exactly one
-  backend mention of "Vibe": a comment on the `get-host` action in
-  `flow_sdk/builtin/agentic_process/agentic_process.py:3933` explaining that the
-  in-app preview / Vibe display consumes it. No spawn path, default, or lifecycle
+- The backend has **no** concept of Vibe. No spawn path, default, or lifecycle
   branch keys off view mode; the backend `ViewMode` enum doesn't even contain
   `vibe`.
 - Headless↔PTY toggling, resume, session history, and process lifecycle are the
   shared `EntityExecutionPanel` / agentic-process machinery, identical to Standard.
-  The **only** Vibe-specific wiring is `useVibeFocus` reading the agent's `focus`
-  stream to pick which *viewer* the display shows — and that never touches the URL
-  or the process (principle #2).
+  The Vibe-specific wiring is the display navigation (`openActiveDisplay`, a URL
+  write like any click) and `useVibeFocus` reading the agent's `focus` stream for
+  the bare-process fallback — neither touches the process (principle #2).
 
-**Conclusion:** the "pure overlay" hypothesis holds. Vibe changes theme, layout,
-and chrome — and nothing about Assets-tab structure or process/session behavior.
+**Conclusion:** Vibe is still built from shared primitives, but asset-origin
+workspaces intentionally add target-specific process grouping and live
+invalidation below the visual skin. They do not fork asset viewers or loaders.
 
 ## What Vibe deliberately does NOT do (scoped-out / follow-ups)
 
-Matching the hub micro-app's **full** display (a tab dock + all ~17 viewer types +
-deep-linkable view state) is gated behind a **URL dock-sync** change: it requires
-the active `AgenticProcess` to stay anchored while the URL viewType changes, which
-means touching the shared loaders / `agent-layout` / `useActiveViewer` — core
-navigation infra used app-wide. That is intentionally **out of scope**; Vibe uses
-the local focus-driven store instead (principle #2). Also deferred: extracting a
-shared `useImagePasteUploader` hook + `inputDirReferenceLine` formatter (the
-paste-to-input-dir logic is currently duplicated with the interactive terminal),
-and pushing paste into `CompactExecutionInput` itself.
+Concurrent manual and agent edits to the same dirty buffer do not yet have merge
+or conflict UX. Live invalidation deliberately preserves the dirty buffer.
+Projectless asset entry also requires a project before a Chat can be created.
 
 ## Key files
 
@@ -219,23 +271,28 @@ and pushing paste into `CompactExecutionInput` itself.
 | Footer toggle | `ui/src/components/view-toggle/view-toggle.tsx` |
 | Theme (hub palette + gradients) | `ui/src/styles/index.css` (`[data-view='vibe']`) |
 | VibeHome + build submit | `ui/src/pages/home-landing/HomeLanding.tsx` |
-| Overlay shell (no rail, split vs home) | `ui/src/pages/flow-page/flow-page.tsx` |
+| Layout rule (workspace vs home vs content) | `ui/src/navigation/dock-layout.ts` (`resolveDockLayout`); `flow-page.tsx` renders it |
+| Show → navigate / reload restore | `ui/src/navigation/open-active-display.ts`, `ui/src/routes/loaders/load-shell.ts` (`restoreDisplayRedirect`) |
 | The chat↔display split + focus reader | `ui/src/pages/flow-page/vibe-workspace.tsx` |
+| Stable asset chat↔content host | `ui/src/pages/flow-page/asset-vibe-workspace.tsx` |
+| Asset classification and process target | `ui/src/navigation/content-asset-dock.ts` |
+| Host identity in the URL | `ui/src/navigation/DockPointer.ts` (`HOST_PARAM`, `withHost`), `ui/src/navigation/NavigationActions.ts` (sticky carry) |
+| Rail-resume chat lookup | `ui/src/pages/flow-page/vibe-process-resolver.ts` |
+| Live file revisions | `ts_sdk/src/stores/fsStore.ts`, `ui/src/hooks/useFS.ts` |
 | MCP UI host for `.mcp.html` display targets | `ui/src/components/mcp-app-preview/McpAppPreview.tsx` |
 | MCP UI resource and sandbox helpers | `ui/src/lib/mcp-app-resources.ts`, `ui/src/lib/mcp-sandbox.ts` |
 | Curated chrome-less surfaces | `ui/src/pages/flow-page/content-panel/content-panel.tsx` (`VIBE_CREATOR_SURFACES`) |
 | Chat (leadingSlot, image paste) | `ui/src/components/entity-execution-panel/EntityExecutionPanel.tsx` |
-| Display / web preview | `ui/src/components/webapp-viewer.tsx` |
-| Port → host resolution | `ui/src/hooks/flow-hooks/useProcessWebApp.ts` |
-| `get-host` backend action | `flow_sdk/builtin/agentic_process/agentic_process.py` |
+| App display (APP dock) | `ui/src/pages/flow-page/app-display-viewer.tsx` |
+| App address → endpoint → iframe src | `ui/src/hooks/flow-hooks/useAppDisplay.ts` |
+| Port → endpoint registration | `flow_sdk/builtin/webapp_placement.py` `register_dev_endpoint` |
 | web-app-builder skill | `flow_sdk/system_projects/flowpad_assistant/.claude/skills/web-app-builder/` |
 
 ## Gotchas
 
-- **Chat target is the id-based TypeId.** Use `new TypeId(Project.type,
-  project.id)`, **not** `project.typeId` (which is the uname form
-  `project-@local`) — VibeHome's created process and VibeWorkspace's chat must key
-  off the same string or the chat won't attach.
+- **Chat targets must match the entry surface.** VibeHome uses the id-based
+  Project TypeId. Asset-origin Vibe uses the resolved asset TypeId or canonical
+  compute-node VFS path. Do not substitute `project-@local` for either.
 - **Preview reliability depends on the agent emitting the `flow-result` artifact.**
   The prose port-sniffer was deliberately removed; if the preview stays empty, the
   fix is skill/prompt compliance, not re-adding a sniffer.

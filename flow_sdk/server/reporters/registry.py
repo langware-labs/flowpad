@@ -2,7 +2,8 @@
 Reporter registry - manages active reporters.
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from .base import BaseReporter
 
 

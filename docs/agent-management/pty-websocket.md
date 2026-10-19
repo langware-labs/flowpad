@@ -420,14 +420,14 @@ membership FSM (`pty_session_manager.py`):
 `close_session` (registry) also transitions the `ShellRecord` to CLOSED, deletes
 the stream file, and closes the OS PTY via the provider.
 
-> **Reaper status (important).** `PtyRegistry.start_cleanup_task` /
-> `cleanup_expired_sessions` implement two bounded reapers (orphan-TTL close +
-> parked-grace drop), but **no production code calls `start_cleanup_task`** — it is
-> invoked only from unit tests. In a running backend these reapers do **not** run,
-> so the doc-claimed "nothing leaks" guarantee does not hold. The only bound on
-> `PtyState` accumulation is the `_PTY_CAP = 70` FIFO eviction in
-> `start_machine_pty_session`, plus explicit close, provider death, and restart.
-> See §11.
+> **Reaper status (important).** `PtyRegistry.cleanup_expired_sessions`
+> implements two bounded reapers (orphan-TTL close + parked-grace drop). Server
+> startup (`_start_pty_parked_reaper`) runs `start_cleanup_task()` with no TTL,
+> so **only the parked-grace drop runs in production** (every 120 s, ids parked
+> > 900 s). The orphan-TTL close has no production caller: a viewer-less PTY is
+> never TTL-killed. The only bound on `PtyState` accumulation is the
+> `_PTY_CAP = 70` FIFO eviction in `start_machine_pty_session`, plus explicit
+> close, provider death, and restart. See §11.
 
 ---
 
@@ -563,17 +563,16 @@ or fork the transcript.
 
 For a later architecture review. Each is grounded in the code read for this doc.
 
-1. **The orphan/parked reapers do not run in production.**
-   `PtyRegistry.start_cleanup_task` is defined but has **no caller** outside unit
-   tests (`grep` confirms only `tests/unit/test_pty_session_manager.py` and the
-   class's own `cleanup_loop`). So `cleanup_expired_sessions` never fires in a
-   running backend. Consequences: a `PtyState` with all connections parked/detached
-   is **not** closed after the 900 s orphan TTL, and stale `detached_connections`
-   entries are **never** grace-reaped. The class docstring and prior versions of
-   this doc claim "nothing leaks" — that is currently false. Only mitigations that
-   actually run: the `_PTY_CAP = 70` FIFO eviction, explicit close, provider death,
-   and server restart. *Either wire `start_cleanup_task` at startup or delete the
-   dead code and document the cap as the real bound.*
+1. **The orphan-TTL reaper does not run in production; the parked-id reaper does.**
+   Server startup (`server/app.py::_start_pty_parked_reaper`) schedules
+   `start_cleanup_task()` with no TTL, so `reap_parked_connections` runs every
+   120 s and drops `detached_connections` entries older than 900 s (a page reload
+   parks a fresh id per shell that could never reconnect). `cleanup_expired_sessions`
+   still has no production caller: a `PtyState` with all connections parked/detached
+   is **not** closed after the 900 s orphan TTL. Mitigations that actually bound
+   PTY count: the `_PTY_CAP = 70` FIFO eviction, explicit close, provider death,
+   and server restart. *Turning the orphan close on is a product decision (it
+   would kill an unpinned agent shell 15 minutes after its viewer left).*
 
 2. **`PtyState` created without a connection never arms the orphan timer.**
    `is_expired` returns `False` while `last_detached_at is None`, and that field is

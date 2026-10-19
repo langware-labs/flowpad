@@ -1,179 +1,45 @@
 """SchemaRegistry — unified type system for Record + Entity layers.
 
-Files:
-  ~/.flow/schema/scan_log.jsonl                          — global scan log
-  ~/.flow/schema/index_log.jsonl                         — global index log
-  ~/.flow/schema/types/<sanitized_type>/type_info.json   — per-type TypeInfo
-  ~/.flow/schema/types/<sanitized_type>/scan_log.jsonl   — per-type scan log
-  ~/.flow/schema/types/<sanitized_type>/index_log.jsonl  — per-type index log
-
-Each log file keeps at most _MAX_LOG_ENTRIES entries (oldest trimmed on append).
+Index-run bookkeeping (scan/index logs, index status, scan issues) lives in
+``flow_sdk.fs_store.indexer.index_log``, not here.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
+import stat
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import MISSING, dataclass, field, fields
+from functools import cache, cached_property, partial
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar, Literal, Optional, get_args, get_origin
 
-from flow_sdk.capsules import CapsuleSpec
-from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityState
+from flow_sdk._driver_package import driver_module_identity
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.assets.identity_carrier import (
+    Absent,
+    Derived,
+    ForeignId,
+    Found,
+    IdentityCarrier,
+    NotWritable,
+    UnclaimedPath,
+    Unstamped,
+)
+from flow_sdk.assets.layout import (  # noqa: F401 — Layout/LayoutKind re-exported
+    File,
+    Folder,
+    Layout,
+    LayoutKind,
+    Walk,
+    shape_from_dict,
+    shape_from_spec,
+)
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
-
-_MAX_LOG_ENTRIES: int = 100
-def _schema_dir() -> Path:
-    """Resolve the per-instance schema dir at call time.
-
-    Lives on InstanceSettings — never cache the result, never construct
-    `~/.flow/<...>/schema` directly. This getter is the single chokepoint.
-    """
-    return get_instance_settings().schema_dir
-
-
-def _sanitize_type_name(type_name: str) -> str:
-    """Make a type name safe for use as a directory/file name component."""
-    return type_name.replace(":", "__").replace(" ", "_")
-
-
-def _schema_dir_for(type_name: str) -> Path:
-    return _schema_dir() / "types" / _sanitize_type_name(type_name)
-
-
-# ---------------------------------------------------------------------------
-# JSONL helpers
-# ---------------------------------------------------------------------------
-
-
-def _append_jsonl(path: Path, entry: dict[str, Any]) -> None:
-    """Append one JSON line to *path*, then trim to _MAX_LOG_ENTRIES lines."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(entry, default=str) + "\n"
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(line)
-    _trim_jsonl(path)
-
-
-def _trim_jsonl(path: Path) -> None:
-    """If the file exceeds _MAX_LOG_ENTRIES lines, keep only the last N."""
-    try:
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = fh.readlines()
-        if len(lines) <= _MAX_LOG_ENTRIES:
-            return
-        keep = lines[-_MAX_LOG_ENTRIES:]
-        tmp = path.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            fh.writelines(keep)
-        tmp.replace(path)
-    except Exception:
-        pass
-
-
-def _read_last_entry(path: Path) -> dict[str, Any] | None:
-    """Return the last JSON object from a JSONL file, or None."""
-    try:
-        if not path.exists():
-            return None
-        with open(path, "r", encoding="utf-8") as fh:
-            lines = [ln for ln in fh if ln.strip()]
-        if not lines:
-            return None
-        return json.loads(lines[-1])
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# SDK result types
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class ScanResult:
-    """Result of scanning a single record type."""
-
-    type_name: str
-    count: int
-    total_bytes: int
-    scan_ms: float
-    last_scan_at: str | None = None
-    records: list[dict] | None = None
-    avg_bytes: int = 0
-    min_bytes: int = 0
-    max_bytes: int = 0
-
-
-@dataclass
-class IndexResult:
-    """Result of indexing a single record type."""
-
-    type_name: str
-    indexed: int
-    skipped: int
-    duration_ms: float
-    last_index_at: str | None = None
-    errors: int = 0
-    fresh: int = 0
-
-
-PROGRESS_EMIT_EVERY: int = 25  # emit one event per this many records
-
-
-
-
-@dataclass
-class IndexRequest:
-    """Declarative description of a scan+index operation."""
-
-    types: list[str] | None = None
-    actions: list[str] = field(default_factory=lambda: ["scan", "index"])
-    start_time: datetime | None = None
-    end_time: datetime | None = None
-    trigger: str = "manual"
-    limit_per_type: int | None = None
-
-
-@dataclass
-class ClearResult:
-    fts_cleared: int
-    entities_cleared: int
-    types_cleared: list[str]
-
-
-@dataclass
-class TypeIndexStatus:
-    type_name: str
-    last_indexed_at: str | None
-    entity_count: int
-    stale: bool
-    orphan_count: int = 0
-
-
-@dataclass
-class IndexStatus:
-    never_indexed: bool
-    last_indexed_at: str | None
-    stale: bool
-    default_types: list[str]
-    per_type: list[TypeIndexStatus]
-    total_orphans: int = 0
-
-
-@dataclass
-class AssetStats:
-    """Live per-type asset counts for a ScopeFilter — counts only. Freshness
-    and orphans deliberately live in ``IndexStatus`` / ``get_index_status``;
-    this is the single source the UI counter surfaces render from."""
-
-    per_type: dict[str, int]
-    total: int
-
+from flow_sdk.schema.view_mode import LEGACY_DEV_TIER, ViewMode, view_mode_rank, visible_in
 
 # ---------------------------------------------------------------------------
 # Hardcoded fallback list so get_default_index_types() works before any
@@ -181,12 +47,15 @@ class AssetStats:
 # ---------------------------------------------------------------------------
 
 _BUILTIN_DEFAULT_TYPES: list[str] = [
-    # Filesystem-scannable types (must overlap with INDEXABLE_TYPES in
-    # flow_sdk/fs_store/indexer/builtin.py — the indexer can't walk types
-    # not registered there). Runtime-only types like BOOKMARK, ANNOTATION,
+    # Bootstrap fallback only: the types ``get_default_index_types()`` answers
+    # before any type has registered itself as ``indexed_by_default``. The set
+    # the indexer actually writes is derived from its walker graph
+    # (``flow_sdk.fs_store.indexer.builtin.indexable_types``), not kept in
+    # step with this list. Runtime-only types like BOOKMARK, ANNOTATION,
     # AGENTIC_PROCESS, RECORD_ERROR, CLAUDE_ERROR are written to the DB by
     # Record.save and intentionally excluded from this list.
     RecordType.SKILL,
+    RecordType.SUBAGENT,
     RecordType.AGENT,
     RecordType.TASK,
     RecordType.MARKDOWN,
@@ -211,6 +80,33 @@ def humanize_type(type_name: str) -> str:
     return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
 
 
+#: A field tagged ``merge`` is carried onto an existing registration by
+#: "non-default wins"; the untagged fields have bespoke rules in ``register``.
+_MERGE = {"merge": True}
+#: ``TypeInfo.manifest_layout`` of an ENTITY DOCUMENT: ``<type>.json`` + a ``<field>.md`` per ``Body``.
+ENTITY_LAYOUT = "entity"
+_DEFAULT_SHAPE = File(ext=".md")
+
+
+def _filesystem_contract(type_name: str, spec: type | None, authored_shape: Any, authored_layout: str | None) -> tuple:
+    """Validate declarations and return their runtime projection without mutating a type."""
+    shape = shape_from_spec(spec) if spec is not None else None
+    layout = getattr(spec, "manifest_layout", None)
+    if shape is not None and authored_shape is not None:
+        raise ValueError(f"{type_name}: shape is declared by asset_spec; remove TypeInfo.shape")
+    if shape is not None and authored_layout is not None:
+        raise ValueError(f"{type_name}: manifest_layout is declared by asset_spec")
+    if layout not in (None, "flat", "sections", ENTITY_LAYOUT):
+        raise ValueError(f"{type_name}: invalid spec manifest_layout {layout!r}")
+    if layout is not None and shape is None:
+        raise ValueError(f"{type_name}: spec manifest_layout needs a filesystem contract")
+    return shape or authored_shape or _DEFAULT_SHAPE, layout or authored_layout
+
+
+#: ``TypeInfo.receive_transfer`` value: the entry travels as a git reference.
+RECEIVE_TRANSFER_GIT_REFERENCE = "git_reference"
+
+
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -218,249 +114,551 @@ class TypeInfo:
     # --- Structural fields (included in hash, persisted) ---
     type_name: str
     uid_field: str = "id"
-    index_fields: list[str] = field(default_factory=list)
+    index_fields: list[str] = field(default_factory=list, metadata=_MERGE)
     defaults: dict[str, Any] = field(default_factory=dict)
-    indexed_by_default: bool = False
+    indexed_by_default: bool = field(default=False, metadata=_MERGE)
     # Minimum view mode at which this type is browseable (None ⇒ never). See
     # flow_sdk/schema/view_mode.py — visibility is cumulative.
     browseable_by: ViewMode | None = None
-    creatable: bool = False
-    api_visible: bool = False
-    icon: str | None = None
+    # Shown only with developer mode on, on top of ``browseable_by`` — Dev is a
+    # switch, not a tier (flow_sdk/schema/view_mode.py). Presentational: NOT in
+    # ``schema_hash``, so the flag never forces a reindex.
+    dev_only: bool = field(default=False, metadata=_MERGE)
+    creatable: bool = field(default=False, metadata=_MERGE)
+    api_visible: bool = field(default=False, metadata=_MERGE)
+    icon: str | None = field(default=None, metadata=_MERGE)
     parent_type: str | None = None
     locations: list[str] = field(default_factory=list)
     # UX-friendly label for the type (e.g. "Skills"). Presentational, surfaced to
     # the FE via ``to_dict``; deliberately NOT in ``schema_hash`` so relabeling a
     # type never forces a reindex. Read through ``get_display_name`` (falls back to
     # ``humanize_type``).
-    display_name: str | None = None
+    display_name: str | None = field(default=None, metadata=_MERGE)
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = field(default=None, compare=False, repr=False)
+    # The type's SHAPE — the ``DataSpec`` whose fields (and field TYPES) are
+    # what the medium persists: frontmatter scalars, a ``Body``, a
+    # ``FreeSection``, ``FileRef``s, rows, sub-assets. None ⇒ the legacy path
+    # (``default_body_fn`` / ``from_disk_fn``). Runtime-only, not in the hash.
+    asset_spec: type | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Optional post-sync hook: async Callable[[FSRecord], None] — runs after
     # FSRecord.sync_to_db completes its entity/FTS/wiki writes. Used by
     # types that reconcile cross-record relationships (e.g. markdown folder-doc
     # parent/child edges) that the base sync doesn't know about.
     post_sync_fn: Any = field(default=None, compare=False, repr=False)
+    # Optional async context manager around an authored document edit + index refresh.
+    # Disk ingestion does not invoke authoring policy (a checkout may contain legacy state).
+    document_edit_context: Any = field(default=None, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.type_name = str(self.type_name)   # an EntityType member is accepted, a str is stored
+        self.walk = (self.walk,) if isinstance(self.walk, Walk) else tuple(self.walk or ())
+        self._authored_shape = self.shape
+        self._authored_manifest_layout = self.manifest_layout
+        self._resolve_filesystem_contract()
+
+    def _resolve_filesystem_contract(self) -> None:
+        """Specs own filesystem facts; legacy declarations and wire mirrors keep working."""
+        self.shape, self.manifest_layout = _filesystem_contract(
+            self.type_name, self.asset_spec, self._authored_shape, self._authored_manifest_layout,
+        )
+        # Entity registration can precede the spec declaration; an early read
+        # must not cache the absence of a body forever.
+        self.__dict__.pop("body_file", None)
+        if self.manifest_layout == ENTITY_LAYOUT:
+            # An entity document carries its id in its own root and is fresh by its own files.
+            from flow_sdk.assets.identity import entity_document_fingerprint, native_json_identity  # noqa: PLC0415
+
+            if self.identity_carrier is None:
+                self.identity_carrier = native_json_identity()
+            if self.asset_hash_fn is None or (
+                isinstance(self.asset_hash_fn, partial)
+                and self.asset_hash_fn.func is entity_document_fingerprint
+            ):
+                self.asset_hash_fn = partial(entity_document_fingerprint, self)
+        elif getattr(self.shape, "main", None):
+            # Any other asset with a main file is fresh by that file too, not by its folder alone.
+            from flow_sdk.assets.identity import manifest_fingerprint  # noqa: PLC0415
+
+            if self.asset_hash_fn is None or (
+                isinstance(self.asset_hash_fn, partial) and self.asset_hash_fn.func is manifest_fingerprint
+            ):
+                self.asset_hash_fn = partial(manifest_fingerprint, self)
+
+    @property
+    def is_entity_document(self) -> bool:
+        """This type keeps its fields in ``<type>.json`` and its body beside it — THE one predicate."""
+        return self.manifest_layout == ENTITY_LAYOUT and self.asset_spec is not None
+
+    @cached_property
+    def body_file(self) -> str | None:
+        """An entity document's ``Body`` field name, or None. A spec declares at most one
+        (``field_kinds`` refuses a second), so this is the field, not a collection of them."""
+        if not self.is_entity_document:
+            return None
+        from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+
+        return spec_layout(self.asset_spec).body or None
+
+    @property
+    def default_origin_kind(self) -> str:
+        """The origin kind a store/load defaults to: the declared ``origin_kind``,
+        else "db" for a row-only type and "local" for an asset type."""
+        return self.origin_kind or ("db" if self.db_only else "local")
+
+    @property
+    def post_sync_callbacks(self) -> tuple:
+        """``post_sync_fn`` as a tuple, whichever shape it was declared in.
+
+        One callable, several, or none. Callers iterate and nobody branches on the shape — the
+        field held a single value for years, and a second consumer should not have to know that.
+        """
+        declared = self.post_sync_fn
+        if declared is None:
+            return ()
+        if callable(declared):
+            return (declared,)
+        return tuple(fn for fn in declared if callable(fn))
     # Per-type indexer dispatch callables, registered next to their definitions
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
-    #   identity_backend:  IdentityBackend — carrier observation/persistence
+    #   identity_carrier:  IdentityCarrier — WHERE the id lives (frontmatter / folder json / …)
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
-    #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
-    from_disk_fn: Any = field(default=None, compare=False, repr=False)
-    capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
-    identity_backend: IdentityBackend | None = field(default=None, compare=False, repr=False)
-    id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
-    id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
-    asset_hash_fn: Any = field(default=None, compare=False, repr=False)
+    #   asset_hash_fn:     Callable[[FSRef], int] — cheap freshness fingerprint, integer ns
+    from_disk_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    identity_carrier: IdentityCarrier | None = field(default=None, compare=False, repr=False)
+    id_stable_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    #   identity_key_fn:   Callable[[FSRef | Path], str] — the type's natural key.
+    #     The v5 key is derived as f"{type_name}:{identity_key_fn(ref)}"; set this
+    #     instead of id_stable_key_fn unless the type needs a different shape.
+    identity_key_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False, metadata=_MERGE)
+    asset_hash_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # Per-type default-body writer: Callable[[entity], str]. Read by
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
     # create. None ⇒ no auto-created body.
-    default_body_fn: Any = field(default=None, compare=False, repr=False)
+    default_body_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ entity saves re-render the backing file from default_body_fn on
     # EVERY store() (entity is the file's sole editor), not just on create.
-    owns_main_ref: bool = field(default=False, compare=False, repr=False)
+    owns_main_ref: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ sharing an entity of this type also shares its parent
     # (``parent_type_id``); the receive path materializes the parent first via
     # ``Entity.materialize_share_parent``. Runtime-only; not part of the
     # schema hash. Only safe when the parent type is deterministic/field-frozen.
-    parent_share_on_default: bool = field(default=False, compare=False, repr=False)
+    parent_share_on_default: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # True ⇒ this hub-hosted ``is_child`` type is pulled during the shared-context
     # catch-up sync (``_sync_shared_context_subtree``). The live bridge already
     # materializes any child type generically, so this flag only declares the
     # pull-side type list — sourced from the registry, not a hardcoded tuple.
     # Runtime-only; not part of the schema hash.
-    shared_child: bool = field(default=False, compare=False, repr=False)
-    # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
-    # was built from — home for type-specific extras beyond the flat fields.
-    # Runtime-only; the flat fields above remain the serialized surface.
-    metadata: Any = field(default=None, compare=False, repr=False)
+    shared_child: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # True for a type declared by a ``schema/type_info`` module (stamped by
+    # ``register(declared=True)``); False for an ad-hoc ``TypeInfo`` (a test
+    # probe, a ``from_dict`` mirror). Registry-wide checks over "the declared
+    # types" filter on this.
+    declared: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # True ⇒ Entity.save persists the row in the DB only and never creates an
+    # FSRecord shadow. Such types have no disk→DB adopt path. Runtime-only; not
+    # part of the schema hash.
+    db_only: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # Cloud delivery capability for file-backed assets. Serialized to the UI
+    # bootstrap but deliberately excluded from the local indexing schema hash.
+    cloud_file_transport: Literal["embedded", "git"] = field(
+        default="embedded", compare=False, repr=False, metadata=_MERGE
+    )
+    # True ⇒ the entity's file storage (``fs/upload`` / ``browse`` / ``download``)
+    # is its own asset folder, not ``records_data/<type>/<id>/embedded/``. Files
+    # then live INSIDE the asset, so the bundle packer (which copies the folder
+    # verbatim) carries them and the receiver restores them in place. Unlike
+    # ``cloud_file_transport="git"`` it changes nothing about hub delivery.
+    # Runtime-only; not part of the schema hash.
+    files_in_asset_folder: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
     # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
     # Runtime-only; not part of the schema hash.
-    meta_model: Any = field(default=None, compare=False, repr=False)
-    # --- Placement axis (the harness-aware replacement for ``main_subdir``) ---
-    # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / NONE);
+    meta_model: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # --- Serialization (HOW/WHERE) — runtime-only, not part of the schema hash ---
+    # The DECLARED origin kind ("db" | "local"); None = not declared, which
+    # resolves through ``default_origin_kind`` above. Kept None so an
+    # entity-class registration (which never knows ``db_only``) cannot
+    # overwrite a module's declaration through the registry merge.
+    origin_kind: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The path names the entity when the header carries no name: the folder
+    # name for a folder type (an Agent at ``agent/q/`` is ``q``), the file stem
+    # for a file type (``prompts/greet.md`` is ``greet``). A LAYOUT fact.
+    name_from_path: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
+    # Resolved from asset_spec (authored here only for legacy types).
+    # JSON main docs: ``"sections"`` = ``{metadata, data}`` (a dataset);
+    # ``"flat"`` = the header's keys merged into the payload's own document (a
+    # trace/report whose file predates us); ``"entity"`` = the ENTITY DOCUMENT —
+    # ``<type>.json`` holding ``type``, ``id``, ``name`` and every header field, each
+    # ``Body`` beside it as ``<field>.md`` (``ENTITY_LAYOUT``). None ⇒ flat when the
+    # class has no ``data_field``, sections otherwise.
+    manifest_layout: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Main documents this type USED to carry (``agent.md``). A folder holding one and not the current
+    # main is a RETIRED form: reported with the migration that converts it, never indexed or written.
+    retired_mains: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # Family folder names this type USED to live under (``data_spec``). Not read: a scan reports the
+    # folder as an issue naming the rename, so its assets never vanish without a word.
+    retired_families: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # What an orphan row of this type takes with it, awaited with the row's id before the row is dropped
+    # (``fs_store.orphan_removal``). ``None``: the row alone. A data source's records and cursors hang off
+    # its id, so removing the row without them leaves orphans no sweep reaches.
+    orphan_cascade_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # ``(file, how to port it)``: a folder holding one is a retired form NO migration converts — it is
+    # code to rewrite (a retired runtime's ``fetch.py``). Reported with the port, never indexed.
+    retired_files: tuple[tuple[str, str], ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # Facts the DISK carries that the header cannot say: counts over rows,
+    # links scraped from a body, a name from the path. ``(data, root, header_raw)``
+    # mutates the entity kwargs after the main doc and fields are read, before
+    # the class is constructed.
+    derive_fields_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    row_derive_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Optional async projection for process attachment/reveal/detach.
+    process_projection: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # ``async (row) -> DependencyRoots``: what a row of this type puts in context when something depends
+    # on it, and where its own ``flow.json`` lives (``flow_sdk/dependencies/resolve.py``). None: a folder
+    # asset is its own folder, a single-file asset neither.
+    dependency_roots_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The entity field naming the rows' on-disk layout (``"data_layout"`` for a
+    # dataset). Tells the disk serializer this type has layout-written rows,
+    # without the serializer ever naming the type.
+    rows_layout_field: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    rows_field: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    scaffold_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    scaffold_spec: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    render_fn: Any = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The canonical filename the asset's main doc is published under on the hub
+    # (``document.md`` for a markdown doc, ``SKILL.md`` for a skill folder).
+    # Also the opt-in: ``None`` keeps the generic embedded-VFS push.
+    hub_main_file: str | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # Row identity for row-only types: the fields whose tuple resolves an
+    # existing row (``SourceItem``: data_source · segment · external id). None ⇒
+    # identity is ``id`` alone. Read by ``DbSerializer.resolve``/``upsert``.
+    natural_key: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The no-op gate: the fields whose canonical digest decides "unchanged" on
+    # re-delivery. None ⇒ no gate (every save writes).
+    digest_fields: tuple[str, ...] | None = field(default=None, compare=False, repr=False, metadata=_MERGE)
+    # The row field that HOLDS the digest the gate compares against.
+    digest_field: str = field(default="content_digest", compare=False, repr=False, metadata=_MERGE)
+    # A row-only (``db_only``) type that is nonetheless searchable: the row field
+    # FTS indexes as ``content`` — fed from the row, no metadata.json shadow.
+    fts_content: tuple[str, ...] = field(default=(), compare=False, repr=False, metadata=_MERGE)
+    # --- Placement axis ---
+    # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / REPO / …);
     # ``harness`` names the owning harness for HARNESS types; ``family`` is the
-    # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Placement is
-    # resolved through ``flow_sdk.fs_store.placement``. ``main_subdir`` survives as
-    # a DERIVED, read-only property (below) — the canonical claude-default family
-    # subdir (``.claude/skills``, ``docs``) — so the many legacy consumers keep
-    # working unchanged. Not hashed.
-    asset_class: Any = None            # placement.AssetClass | None
-    harness: Any = None                # placement.HarnessType | None
-    family: str | None = None
-    main_layout: str = "file"
-    # For ``main_layout == "folder"`` owned types: the fixed inner filename of
-    # the primary asset (e.g. ``spec.md`` under ``specs/<name>/``). When set,
-    # ``compute_asset_ref`` targets ``<subdir>/<name>/<main_file>`` instead of
-    # the bare folder, so ``owns_main_ref`` folder types can write/round-trip
-    # the body file. Runtime-only; not part of the schema hash.
-    main_file: str | None = None
-    # Folder-layout types: True ⇒ asset_ref IS ``<subdir>/<name>/<main_file>``
-    # (spec); False ⇒ asset_ref is the bare folder and the default body is
-    # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
-    main_file_is_asset_ref: bool = False
-    # File extension for ``main_layout == "file"`` types — the suffix
-    # ``compute_asset_ref`` appends to ``<subdir>/<name>``. Defaults to ``.md``
-    # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
-    # backing file matches the indexer's glob. Runtime-only.
-    main_ext: str = ".md"
-    # Per-type ADDITIONS to the base sender-local field set
-    # (``entity_model._BASE_LOCAL_FIELDS``). Host-local fields that never travel in
-    # ``Entity.to_common_json()`` / the hub body. Resolved with the base via
-    # ``local_fields_for(type)``. Runtime-only; not part of the schema hash.
-    local_fields: frozenset = field(default_factory=frozenset, compare=False, repr=False)
+    # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Resolved
+    # through ``flow_sdk.assets.placement``; ``main_subdir`` below is the
+    # claude-default view. Not hashed.
+    asset_class: Any = field(default=None, metadata=_MERGE)  # placement.AssetClass | None
+    harness: Any = field(default=None, metadata=_MERGE)  # placement.HarnessType | None
+    family: str | None = field(default=None, metadata=_MERGE)
+    # A singleton's entity-type directory IS the asset root: ``agentic-assets/
+    # <type>/<main>`` with no ``<name>`` segment, one per scope. The walker,
+    # ``compute_asset_ref`` and ``main_file_owners`` each carry the one branch.
+    singleton: bool = field(default=False, metadata=_MERGE)
+    # Runtime projection of asset_spec; authored only for legacy types/wire mirrors.
+    shape: Any = field(default=None, metadata=_MERGE)  # flow_sdk.assets.layout.Shape
+    _authored_shape: Any = field(default=None, init=False, repr=False, compare=False)
+    _authored_manifest_layout: str | None = field(default=None, init=False, repr=False, compare=False)
+    # The asset editor that opens this type (``"markdown"``, ``"skill"``, …);
+    # shipped in the bootstrap so the frontend derives its editor tables from
+    # the registry instead of a hand-maintained per-type map. None ⇒ no editor.
+    editor: str | None = field(default=None, metadata=_MERGE)
+    # The declarative SCAN(s) for this type (``flow_sdk.assets.layout.Walk``):
+    # which root nodes each hangs on and which mounts it looks in. A single
+    # ``Walk`` is accepted and stored as a 1-tuple; ``()`` ⇒ the type is walked
+    # by a bespoke function (or not walked at all).
+    walk: tuple[Walk, ...] = field(default=(), metadata=_MERGE)
+    # Fields the ASSIGNEE of a shared entity owns. When the local user is the
+    # entity's assignee (and not its reporter), a hub-reflected update carries
+    # ONLY these — everything else on the row belongs to whoever handed the work
+    # over. Without it, one shared row means whole-row LWW
+    # (``Entity.is_stale``): the assignee's UI PUTs its entire snapshot, so a
+    # status click reverts the owner's title/body. Empty ⇒ no scoping.
+    # Runtime-only; not part of the schema hash.
+    assignee_owned_fields: tuple = field(default_factory=tuple, compare=False, repr=False, metadata=_MERGE)
+    # Filenames/globs inside a folder-backed asset that must NOT ride a share
+    # bundle. The packer copies the folder verbatim, so this is the only place a
+    # type can keep a private file at home (a task's inner ``spec.md`` — the
+    # plan). Consumed by ``flow_message_bundle._pack_ignore``. Runtime-only; not
+    # part of the schema hash.
+    pack_exclude: tuple = field(default_factory=tuple, compare=False, repr=False, metadata=_MERGE)
     # Reception seam (runtime-only; not in the schema hash). ``setup_skill`` is the
     # built-in skill that sets a received attachment of this type up in a Vibe
     # session (``None`` ⇒ just open it; a value equal to ``type_name`` ⇒ run the
     # received entity as its own skill). ``reception_verb`` is the receive CTA verb
     # (label = ``"<reception_verb> the <typeLabel>"``). Read by
     # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
-    setup_skill: str | None = None
-    reception_verb: str = "Open"
+    setup_skill: str | None = field(default=None, metadata=_MERGE)
+    reception_verb: str = field(default="Open", metadata=_MERGE)
     # ``receive_policy``: reception gate for a bundled entry of this type.
     # ``None`` ⇒ staged → review → explicit install; ``"auto"`` ⇒ row-only
     # payload installed immediately at unpack through the one install action
     # (no review dialog; its chip navigates). ``receive_row_overrides`` are the
     # local-state fields merged over the packed header when the row
     # materializes (backend-only; never serialized).
-    receive_policy: str | None = None
-    receive_row_overrides: dict | None = None
-
-    def asset_ref_for(self, folder: Path) -> Path:
-        """Where a folder-layout type's asset_ref points, given its folder.
-
-        Spec-style (``main_file_is_asset_ref``) anchors asset_ref on the inner
-        ``<folder>/<main_file>``; skill-style keeps it on the bare folder. The
-        inverse of ``body_path_for`` — both live here so the folder↔body
-        convention is stated once. Callers gate on ``main_layout == "folder"``.
-        """
-        if self.main_file and self.main_file_is_asset_ref:
-            return folder / self.main_file
-        return folder
-
-    def body_path_for(self, asset_path: Path) -> Path:
-        """Map an asset_ref path to the writable main-body file.
-
-        Folder-layout types whose asset_ref is the bare folder (skill-style,
-        ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
-        every other shape's asset_ref already IS the body target.
-        """
-        if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
-            return asset_path / self.main_file
-        return asset_path
-
-    def folder_for(self, asset_ref: Path) -> Path:
-        """Map an asset_ref back to its owning folder (inverse of ``asset_ref_for``).
-
-        Bare-folder asset_ref (skill-style) IS the folder; spec-style inner-file
-        asset_ref → its containing dir. Callers gate on ``main_layout == "folder"``.
-        """
-        return asset_ref if self.folder_backed else asset_ref.parent
+    receive_policy: str | None = field(default=None, metadata=_MERGE)
+    receive_row_overrides: dict | None = field(default=None, metadata=_MERGE)
+    # ``receive_transfer``: how a shared entry of this type travels when it is
+    # not a file-backed asset. ``RECEIVE_TRANSFER_GIT_REFERENCE`` ⇒ its row and
+    # GitOrigin ride, never repository bytes; the entity class's
+    # ``pack_reference`` / ``restore_reference`` hooks own what is particular
+    # to the type (not the hub's ``cloud_file_transport``).
+    receive_transfer: str | None = field(default=None, metadata=_MERGE)
+    # ``received_with``: the types a received git share of this type needs from
+    # the SAME checkout to work there — indexed over the whole worktree when it
+    # opens (a chart's sub-flows are sibling charts it opens by name, and its
+    # vendor logos are an icon pack). Bytes are already on disk at the pinned
+    # commit; this only makes them findable.
+    received_with: tuple[str, ...] = field(default=(), metadata=_MERGE)
 
     @property
-    def folder_backed(self) -> bool:
-        """True when ``asset_ref`` points at a browsable folder — a folder-layout
-        type whose asset_ref is the bare folder (skill-style,
-        ``main_file_is_asset_ref=False``), not the inner ``main_file``
-        (spec-style). The Assets sidebar expands these rows into their on-disk
-        file tree. Derived from the existing folder-layout fields so no type
-        carries a redundant flag."""
-        return self.main_layout == "folder" and not self.main_file_is_asset_ref
-
-    @staticmethod
-    def _identity_path(ref: Any) -> Path:
-        """Return the concrete asset path accepted by identity callbacks."""
-        return Path(getattr(ref, "_path", ref))
-
-    def capsule_target_for(self, ref: Any) -> Path:
-        """Return the owning file/folder used by this type's capsule backend."""
-        path = self._identity_path(ref)
-        if not self.folder_backed:
-            return path
-        if path.is_dir():
-            return path
-        if self.main_file and path.name == self.main_file:
-            return path.parent
-        return path
-
-    def extract_id(self, ref: Any) -> str | None:
-        """Read and validate this asset type's existing id without writing.
-
-        File/folder layout dispatch lives here so every caller follows the same
-        identity path.  Per-type readers only locate a candidate; this method is
-        the v4/v5 adoption gate.
-        """
-        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-
-        if self.identity_backend is None:
-            return None
-        observation = self.identity_backend.observe(self.capsule_target_for(ref))
-        if observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
-        return adopt_entity_id(observation.candidate) if observation.state is IdentityState.VALID else None
-
-    def mint_id(self, ref: Any, *, proposed_id: str | None = None) -> str:
-        """Return the existing id, or mint this asset type's configured id.
-
-        Portable assets have no stable key: they receive a random v4 only when
-        their backend commits it. If the asset cannot carry that id, the stable
-        path-v5 fallback keeps repeated scans idempotent. Natural/provider
-        identities supply ``id_stable_key_fn`` and mint deterministic v5 ids.
-        """
-        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
-
-        if proposed_id is not None and not is_valid_entity_id(proposed_id):
-            raise ValueError("proposed entity id must be a UUID v4 or v5")
-
-        path = self.capsule_target_for(ref)
-        observation = (
-            self.identity_backend.observe(path)
-            if self.identity_backend is not None
-            else None
+    def git_publishable(self) -> bool:
+        """Whether this registered type can be re-parsed for Git publication."""
+        return (
+            self.cloud_file_transport == "git"
+            and self.from_disk_fn is not None
+            and self.identity_carrier is not None
         )
-        if observation is not None and observation.state is IdentityState.MALFORMED:
-            if observation.error is not None:
-                raise observation.error
-            raise ValueError(observation.detail or "malformed asset identity")
-        if observation is not None and observation.state is IdentityState.VALID:
-            return str(observation.candidate)
 
-        stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
-        # Invalid canonical data is never overwritten or treated as a brand-new
-        # portable asset.  Derive a stable v5 until the source is repaired.
-        if observation is not None and observation.state is IdentityState.INVALID_ID:
-            return mint_uuid(stable_key or str(path.resolve()), namespace=self.id_namespace)
+    def layout_of(self, path: Path, *, verify: bool = False) -> "Layout":
+        """THE path→layout classifier: ``shape.locate``. ``NONE`` when the path
+        is not this type's shape; ``verify`` additionally requires the main
+        file / the file to exist (the indexer's gate)."""
+        return self.shape.locate(path, verify=verify)
 
-        minted = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
-        read_only = bool(getattr(ref, "read_only", False))
-        if self.identity_backend is not None and not read_only:
-            committed = self.identity_backend.store_if_absent(path, minted)
-            if committed.state is IdentityState.VALID:
-                return str(committed.candidate)
-            if committed.state is IdentityState.MALFORMED and committed.error is not None:
-                from flow_sdk.capsules import (  # noqa: PLC0415
-                    DuplicateCapsuleError,
-                    MalformedCapsuleError,
-                    UnsupportedCapsuleVersionError,
-                )
-                # OS/storage write failures fall back deterministically below;
-                # source corruption still fails closed.
-                if isinstance(
-                    committed.error,
-                    (MalformedCapsuleError, DuplicateCapsuleError, UnsupportedCapsuleVersionError),
-                ):
-                    raise committed.error
+    def body_path_for(self, asset_path: Path) -> Path:
+        """The writable main-body file for an asset_ref (the file itself for a
+        file type; ``<folder>/<main_file>`` for a folder type)."""
+        return self.layout_of(asset_path).body or asset_path
 
-        if stable_key:
-            return minted
-        return mint_uuid(str(path.resolve()), namespace=self.id_namespace)
+    def record_for(self, ref: Any, resolved_id: str) -> Any:
+        """Parse ONE asset whose id the caller already resolved through the
+        id seam; run ``from_disk_fn`` and answer the first record or None."""
+        if self.from_disk_fn is None:
+            return None
+        records = self.from_disk_fn(ref, resolved_id)
+        return records[0] if records else None
+
+    def storage_root_for(self, path: Path) -> Path:
+        """The asset ROOT a serializer stores at — the folder for a folder-layout
+        type (also when handed its main document); the file otherwise. The
+        shape's ``root_of``."""
+        return self.shape.root_of(path)
+
+    @property
+    def effective_meta_model(self) -> Any:
+        """The FS↔DB field-membership model for this type.
+
+        A hand-written ``meta_model`` wins. Otherwise it is DERIVED from the
+        type's ``asset_spec`` (what the asset file holds) ∪ its
+        ``Persist.TRUE`` fields (what the shadow index must carry — the
+        indexer-computed counts) ∪ ``BaseMeta``. One declaration: the class.
+        Membership only, never strict validation (``base_meta.py``)."""
+        if self.meta_model is not None:
+            return self.meta_model
+        if self.entity_cls is None or self.asset_spec is None:
+            return None
+        return _derived_meta_model(self.entity_cls, self.asset_spec)
+
+    def serializer(self, origin: Any = None) -> Any:
+        """The ``DataSerializer`` for ``origin`` (by its kind), else this type's
+        default. HOW/WHERE is the serializer's; this type only names a default."""
+        from flow_sdk.fs_store.serializer.registry import get_serializer  # noqa: PLC0415
+
+        kind = getattr(origin, "kind", None) or self.default_origin_kind
+        return get_serializer(kind, self)
+
+    @property
+    def keyed_by_ref(self) -> bool:
+        """The type's stable key reads MORE off its ref than the path — a
+        ``json_path`` fragment, the walk's scope (``needs_ref``). From a bare
+        path its key, and so its v5, is a different one, so only a walk ref may
+        identify it: ``resolve_asset`` refuses these types."""
+        key_fn = self.id_stable_key_fn or self.identity_key_fn
+        return bool(getattr(key_fn, "needs_ref", False))
+
+    def stable_key_for(self, ref) -> str | None:
+        """The v5 key text for *ref*, or None when this type has no stable key.
+        ``identity_key_fn`` yields ``<type>:<natural key>``; ``id_stable_key_fn``
+        is the escape hatch for a different shape. v5 ids depend on the text."""
+        if self.id_stable_key_fn is not None:
+            return self.id_stable_key_fn(ref)
+        if self.identity_key_fn is not None:
+            return f"{self.type_name}:{self.identity_key_fn(ref)}"
+        return None
+
+    def keyed_id(self, layout: "Layout", ref: Any = None) -> "tuple[str | None, str]":
+        """``(key, id)``: the v5 this type's stable key derives, or
+        ``(None, <fresh v4>)`` when it has none. THE one place a keyed asset id
+        is derived — ``mint`` and ``reconcile``'s fallback both come here."""
+        key = self.stable_key_for(ref if ref is not None else layout.root)
+        return key, mint_uuid(key or None, namespace=self.id_namespace)
+
+    def path_id(self, layout: "Layout", where: Path) -> str:
+        """The path-derived v5 — the one deterministic answer for a KEYLESS
+        type whose mint cannot be written (read-only source, failed write)."""
+        return mint_uuid(str(Path(layout.root or where).resolve()), namespace=self.id_namespace)
+
+    @property
+    def retired_migration(self) -> str:
+        """The migration that converts this type's retired main (markdown → ``<type>.json``), or ``""``."""
+        return "flow_sdk.migrations.migration_2026_09_entity_json_mains" if self.manifest_layout == ENTITY_LAYOUT else ""
+
+    # --- SCAN declarations ---
+
+    @property
+    def walks_anywhere(self) -> bool:
+        """One of the type's walks is the folder-wide one (a skill is a skill anywhere)."""
+        return any(walk.anywhere for walk in self.walk)
+
+    @property
+    def recursive_mounts(self) -> tuple[str, ...]:
+        """The declared mounts the type walks RECURSIVELY: an asset may sit at
+        any depth below one (``docs/network/net/CHART.md`` is a chart)."""
+        return tuple(dict.fromkeys(m for walk in self.walk if walk.recursive and not walk.anywhere for m in walk.mounts))
+
+    @property
+    def scan_mounts(self) -> tuple[str, ...]:
+        """Every root-relative directory a copy of this type may BE in: the
+        declared walk mounts plus placement's (``placement.scan_mounts``)."""
+        from flow_sdk.assets.placement import scan_mounts  # noqa: PLC0415
+
+        declared = (m for walk in self.walk if not walk.anywhere for m in walk.mounts)
+        return tuple(dict.fromkeys((*declared, *scan_mounts(*self._resolved_layout))))
+
+    # --- The id seam ---
+
+    @property
+    def carrier(self) -> IdentityCarrier:
+        """The declared carrier; a type without one derives (never writes)."""
+        return self.identity_carrier if self.identity_carrier is not None else Derived()
+
+    def layout_for(self, ref: Any) -> "Layout":
+        """Classify one ref for the id seam. A writable carrier refuses
+        (``UnclaimedPath``) a path the type does not claim; a derived type's
+        id is a keyed function of the source, never a write, so an unshaped
+        path is the file itself (mcp_server declares ``.json`` but also
+        derives from ``.toml`` and settings entries)."""
+        path = Path(getattr(ref, "_path", ref))
+        # A walker's ref carries the layout its walk already verified;
+        # locating it again would stat the same path for the same answer.
+        layout = getattr(ref, "layout", None) or self.layout_of(path)
+        if self.carrier.writable and (reason := self._refusal(path, layout)) is not None:
+            raise UnclaimedPath(self.type_name, path, reason)
+        return layout if layout.kind is not LayoutKind.NONE else Layout(LayoutKind.FILE, path, path)
+
+    def claims(self, path: Path) -> "str | None":
+        """Why this type does NOT claim ``path`` — or ``None`` when it does."""
+        return self._refusal(path, self.layout_of(path))
+
+    def _refusal(self, path: Path, layout: "Layout") -> "str | None":
+        """A path not on disk yet is a save target (claimed); a directory is a
+        folder asset receiving its capsule; a file is this type's unless
+        another walked folder type owns it as its main document (``SKILL.md``
+        is a skill, never a ``markdown``) or it is not the shape."""
+        try:
+            st = path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            return None
+        if stat.S_ISDIR(st.st_mode):
+            return None if isinstance(self.shape, Folder) else "a directory is not a file asset"
+        owners = SchemaRegistry.main_file_owners(path)
+        if owners and self.type_name not in owners:
+            return f"{path.name} is the main document of {', '.join(sorted(owners))}"
+        if layout.kind not in (LayoutKind.FILE, LayoutKind.MAIN_FILE):
+            return f"not shaped as a {self.type_name} ({self.shape})"
+        return None
+
+    def read_id(self, ref: Any) -> str | None:
+        """The valid id the source already carries, else None. Never writes."""
+        layout = self.layout_for(ref)
+        found = self.carrier.read(self.carrier.locate(layout))
+        return found.id if isinstance(found, Found) else None
+
+    def read_identity(self, layout: "Layout", *, ref: Any = None) -> str:
+        """Identity of a read-only filesystem view, without store reconciliation.
+
+        Valid carrier ids win. Missing/foreign carriers use the existing keyed
+        or path fallback. Never mint a transient v4 or write the source.
+        """
+        found = self.carrier.read(self.carrier.locate(layout))
+        if isinstance(found, Found):
+            return found.id
+        key = self.stable_key_for(ref if ref is not None else layout.root)
+        return mint_uuid(key, namespace=self.id_namespace) if key else self.path_id(layout, self.carrier.locate(layout))
+
+    def _stampable(self, layout: "Layout", where: Path) -> bool:
+        """The carrier accepts ``where`` AND a folder asset has its main
+        document: a folder without it (a yaml-only skill) is not the shape,
+        so nothing is ever written into it — a scan issue, not an asset."""
+        if isinstance(self.shape, Folder) and where == layout.body and not where.exists():
+            return False
+        return self.carrier.accepts(where)
+
+    def mint(self, layout: "Layout", *, write: bool = True, ref: Any = None, found: Any = None) -> str:
+        """MINT: ``Found`` is the answer; ``Foreign`` raises ``ForeignId``;
+        absent ⇒ mint (v5 when the type has a stable key, else v4) and, with
+        ``write``, stamp it through the carrier — which refuses
+        (``NotWritable``) a path that is not its own format. Without a write a
+        keyless id is not an answer (``Unstamped``). ``ref`` reaches the
+        stable-key function when it carries more than the path; ``found`` is
+        the carrier's read when the caller already has it."""
+        carrier = self.carrier
+        where = carrier.locate(layout)
+        if found is None:
+            found = carrier.read(where)
+        if isinstance(found, Found):
+            return found.id
+        if not isinstance(found, Absent):
+            raise ForeignId(where, found.raw)
+        key, new_id = self.keyed_id(layout, ref)
+        if not write:
+            if key:
+                return new_id
+            raise Unstamped(f"{self.type_name} at {where}: a keyless id must be written to be an answer")
+        if not self._stampable(layout, where):
+            # A keyed id is deterministic, so a carrier that cannot take the
+            # write (derived; a path not of its format) still has an answer.
+            if key:
+                return new_id
+            if not carrier.writable:
+                raise Unstamped(f"{self.type_name} at {where}: a derived identity has no key and is never written")
+            raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
+        try:
+            return carrier.stamp(where, new_id)
+        except OSError:
+            logging.debug("[asset-id] mint write failed for %s", where, exc_info=True)
+        if key:
+            return new_id
+        raise Unstamped(f"{self.type_name} at {where}: mint write failed")
+
+    def stamp_id(self, ref: Any, entity_id: str) -> str:
+        """The create-flow seam: persist ``entity_id`` into the source through
+        the carrier. A ``Found`` id wins and is returned; ``Foreign`` raises.
+        A ``read_only`` ref or a derived type answers the carrier or
+        ``entity_id`` without writing."""
+        return self._stamp(self.layout_for(ref), ref, entity_id)
+
+    def _stamp(self, layout: "Layout", ref: Any, entity_id: str) -> str:
+        if not is_valid_entity_id(entity_id):
+            raise ValueError("proposed entity id must be a UUID v4 or v5")
+        carrier = self.carrier
+        where = carrier.locate(layout)
+        write = carrier.writable and not getattr(ref, "read_only", False)
+        if write and not self._stampable(layout, where):
+            raise NotWritable(f"{self.type_name}: {type(carrier).__name__} cannot write into {where}")
+        found = carrier.read(where)
+        if isinstance(found, Found):
+            return found.id
+        if not write:
+            return entity_id
+        return carrier.stamp(where, entity_id)
+
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -470,12 +668,9 @@ class TypeInfo:
 
     @property
     def main_subdir(self) -> str | None:
-        """Derived, read-only: the canonical claude-default family subdir
-        (``.claude/skills``, ``docs``, ``assets/datasets``). The compatibility
-        view for the many consumers that still think in ``<scope>/<subdir>``; the
-        harness-aware source of truth is the placement axis. ``None`` for
-        non-file-backed types."""
-        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
+        """The claude-default family subdir (``.claude/skills``, ``docs``,
+        ``assets/datasets``); ``None`` for non-file-backed types."""
+        from flow_sdk.assets.placement import family_subdir  # noqa: PLC0415
 
         return family_subdir(self.asset_class, self.harness, self.family, default_worker="claude")
 
@@ -500,10 +695,6 @@ class TypeInfo:
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": sorted(self.locations),
-            "capsules": [
-                {"name": spec.name, "version": spec.version}
-                for spec in sorted(self.capsules, key=lambda item: item.name)
-            ],
         }
         return hashlib.md5(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
@@ -531,17 +722,28 @@ class TypeInfo:
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
             "browseable_by": self.browseable_by_str,
+            "dev_only": self.dev_only,
             "creatable": self.creatable,
             "api_visible": self.api_visible,
+            "cloud_file_transport": self.cloud_file_transport,
             "icon": self.icon,
             "display_name": self.display_name,
             "parent_type": self.parent_type,
             "locations": self.locations,
             "main_subdir": self.main_subdir,
-            "main_layout": self.main_layout,
-            "main_file": self.main_file,
-            "main_file_is_asset_ref": self.main_file_is_asset_ref,
-            "folder_backed": self.folder_backed,
+            "scan_mounts": list(self.scan_mounts),
+            # The placement axis itself, so the client never re-derives a mount
+            # from a hand-written table. ``main_subdir`` above is only the
+            # claude-default VIEW of these three; the FE needs the class to know
+            # whether a harness choice even applies (REPO/INTERNAL are
+            # harness-less) and the family to build a non-default harness mount.
+            "asset_class": str(self.asset_class) if self.asset_class else None,
+            "harness": str(self.harness) if self.harness else None,
+            "family": self.family,
+            # The resolved shape; the client reads this projection and derives
+            # (``kind``, ``main``), never a hand-written per-type table.
+            "shape": self.shape.to_dict(),
+            "editor": self.editor,
             # The entity owns its backing file (re-rendered from default_body on
             # every save) → a resolved-but-file-missing row can self-heal with a
             # single save. The editor uses this to rebuild an orphaned asset.
@@ -564,13 +766,17 @@ class TypeInfo:
             index_fields=data.get("index_fields", []),
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
-            browseable_by=ViewMode(data["browseable_by"]) if data.get("browseable_by") else None,
+            browseable_by=_browseable_tier(data.get("browseable_by")),
+            dev_only=bool(data.get("dev_only")) or data.get("browseable_by") == LEGACY_DEV_TIER,
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
+            cloud_file_transport=data.get("cloud_file_transport", "embedded"),
             icon=data.get("icon"),
             display_name=data.get("display_name"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
+            shape=shape_from_dict(data.get("shape")) or _DEFAULT_SHAPE,
+            editor=data.get("editor"),
         )
 
 
@@ -579,14 +785,246 @@ class TypeInfo:
 # ---------------------------------------------------------------------------
 
 
+@cache
+def _derived_meta_model(cls: type, spec: type) -> type:
+    """``create_model(<Cls>Meta, __base__=BaseMeta, <spec ∪ Persist.TRUE fields>)``, once per class."""
+    from pydantic import create_model  # noqa: PLC0415
+
+    from flow_sdk.api.api_types.api_field import Persist, persist_policy  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+    from flow_sdk.schema.type_info.base_meta import BaseMeta  # noqa: PLC0415
+
+    # The body / free section are the DOCUMENT, not metadata: they never
+    # enter the shadow (the body rides ``content`` for FTS instead).
+    names = set(spec_layout(spec).header_fields)
+    names |= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.TRUE}
+    # A header field the class marks Persist.FALSE (a DB-only payload such
+    # as SourceItem.raw) is selected by the header but never mirrored.
+    names -= {name for name, model_field in cls.model_fields.items() if persist_policy(model_field) == Persist.FALSE}
+    names -= set(BaseMeta.model_fields) | {"id", "type"}
+    return create_model(
+        f"{cls.__name__}Meta",
+        __base__=BaseMeta,
+        **{name: (Optional[Any], None) for name in sorted(names)},
+    )
+
+
+def _storage_flavours() -> "dict[type, type]":
+    from flow_sdk.schema.data_spec.io.native import Binary, FreeForm, Text  # noqa: PLC0415 — cycle-safe
+
+    return {Text: str, Binary: bytes, FreeForm: dict}
+
+
+class _Flavours(dict):
+    """The storage-flavour map, built on first use.
+
+    ``data_spec.io`` cannot be imported at module scope here, and this map is
+    read on every field of every registration.
+    """
+
+    def get(self, key: Any, default: Any = None) -> Any:  # noqa: D102
+        if not self:
+            self.update(_storage_flavours())
+        return dict.get(self, key, default)
+
+
+_STORAGE_FLAVOURS = _Flavours()
+
+
+def _core_compatible(spec: Any, entity: Any) -> bool:
+    """Equal cores, or the entity NARROWS the spec's core (``str`` → ``TypeId`` /
+    a ``StrEnum``), recursing through ``list[...]``. ``Any`` on the spec accepts all."""
+    from flow_sdk.fs_store.serializer.fields import unwrap_annotation  # noqa: PLC0415
+
+    if spec == entity or spec is Any:
+        return True
+    # ``typing.Dict[str, Any]`` and ``dict[str, Any]`` are one core: compare
+    # origin and arguments, not the alias objects.
+    s_origin, e_origin = get_origin(spec), get_origin(entity)
+    if s_origin is not None and e_origin is not None:
+        if s_origin is not e_origin:
+            return False
+        s_args, e_args = get_args(spec), get_args(entity)
+        return len(s_args) == len(e_args) and all(
+            _core_compatible(unwrap_annotation(a), unwrap_annotation(b)) for a, b in zip(s_args, e_args)
+        )
+    # One side bare (``dict``), the other parameterised (``dict[str, Any]``):
+    # compare the base classes.
+    s_base, e_base = s_origin or spec, e_origin or entity
+    if not (isinstance(s_base, type) and isinstance(e_base, type)):
+        return False
+    # A spec may declare a STORAGE flavour — ``Text`` (a ``str`` kept in its own
+    # file), ``Binary``, ``FreeForm``. Where a value is written is a filesystem
+    # fact, and the row that holds it is entitled to the plain builtin. Compare
+    # against that builtin, so a document can say "this string lives in a file"
+    # without every mirroring entity field having to say so too.
+    s_base = _STORAGE_FLAVOURS.get(s_base, s_base)
+    # A string on disk may be held as a ``str`` subclass (a ``StrEnum``) or a
+    # custom type that validates from one (``TypeId`` declares its own pydantic
+    # schema) — the row narrows. Not an ``int`` or a ``dict``.
+    if s_base is str:
+        return issubclass(e_base, str) or hasattr(e_base, "__get_pydantic_core_schema__")
+    return issubclass(e_base, s_base)
+
+
+def check_entity_layout(info: "TypeInfo") -> None:
+    """An entity document is a folder whose main is ``<type>.json``, whose spec has no
+    ``FreeSection`` and whose id lives in that document's root. Raises ``TypeError``."""
+    from flow_sdk.assets.identity_carrier import JsonRoot  # noqa: PLC0415
+    from flow_sdk.fs_store.serializer.fields import spec_layout  # noqa: PLC0415
+
+    name = info.type_name
+    if not isinstance(info.shape, Folder) or info.shape.main != f"{name}.json":
+        raise TypeError(f"{name}: an entity document is a folder whose main is {name}.json, not {info.shape!r}")
+    if info.asset_spec is None or spec_layout(info.asset_spec).free:
+        raise TypeError(f"{name}: an entity document needs an asset_spec without a FreeSection")
+    if not isinstance(info.identity_carrier, JsonRoot):
+        raise TypeError(f"{name}: an entity document carries its id in its own root (JsonRoot), not {info.identity_carrier!r}")
+
+
+def check_asset_spec(type_name: str, entity_cls: type, spec: type) -> None:
+    """Every spec field is an entity field with a compatible core type. The
+    spec is the lenient DISK form; the entity may narrow. Raises ``TypeError``
+    naming the field — at registration, not on the first save."""
+    from flow_sdk.fs_store.serializer.fields import (  # noqa: PLC0415
+        FieldKind,
+        asset_class,
+        asset_info,
+        field_kinds,
+        unwrap_annotation,
+    )
+
+    entity_fields = getattr(entity_cls, "model_fields", {})
+    kinds = dict(field_kinds(spec))
+    for name, spec_field in spec.model_fields.items():
+        if name not in entity_fields:
+            raise TypeError(f"{type_name}: asset_spec field {name!r} is not a field of {entity_cls.__name__}")
+        want = unwrap_annotation(spec_field.annotation)
+        got = unwrap_annotation(entity_fields[name].annotation)
+        if not _core_compatible(want, got):
+            raise TypeError(f"{type_name}.{name}: asset_spec declares {want!r} but {entity_cls.__name__} holds {got!r}")
+        if kinds[name] is FieldKind.SUB_ASSET_LIST:
+            # A list of assets is a directory of FILES, one per element — a
+            # class-shape fact, refused here rather than on the first save.
+            sub_cls, _ = asset_class(spec_field.rebuild_annotation())
+            if not isinstance(asset_info(sub_cls).shape, File):
+                raise TypeError(f"{type_name}.{name}: a list of {sub_cls.__name__} is a directory of files, but {sub_cls.__name__} is folder-layout")
+
+
+#: The ``merge``-tagged TypeInfo fields: a later registration's non-default value wins.
+_MERGE_SLOTS = tuple(f for f in fields(TypeInfo) if f.metadata.get("merge"))
+
+
+def _browseable_tier(value: str | None) -> ViewMode | None:
+    """A stored ``browseable_by``; the retired ``"dev"`` tier reads as ``ADVANCED``
+    (its developer-only half lands on ``dev_only``)."""
+    if not value:
+        return None
+    return ViewMode.ADVANCED if value == LEGACY_DEV_TIER else ViewMode(value)
+
+
+def _slot_default(slot: Any) -> Any:
+    return slot.default if slot.default is not MISSING else slot.default_factory()
+
+
+@dataclass(frozen=True)
+class _ShapeTables:
+    """The SCAN lookup tables, one dict lookup per classification:
+    main name → walked folder types (``SKILL.md`` → skill); fixed filename →
+    walked file types (``CLAUDE.md`` → claude_md); ``(ext, mount)`` → placed
+    file types (``.md`` under ``.claude/commands``), glob mounts bucketed by
+    ``(ext, depth)``; ext → walked file types (``.csv`` → spreadsheet)."""
+
+    by_main: dict[str, tuple[TypeInfo, ...]]
+    by_name: dict[str, tuple[TypeInfo, ...]]
+    by_ext: dict[str, tuple[TypeInfo, ...]]
+    by_mount: dict[tuple[str, tuple[str, ...]], tuple[TypeInfo, ...]]
+    wild: dict[tuple[str, int], tuple[tuple[tuple[str, ...], TypeInfo], ...]]
+    depths: tuple[int, ...]   # every mount depth, deepest first
+
+    @classmethod
+    def build(cls, infos: "Any") -> "_ShapeTables":
+        by_main: dict[str, list[TypeInfo]] = {}
+        by_name: dict[str, list[TypeInfo]] = {}
+        by_ext: dict[str, list[TypeInfo]] = {}
+        by_mount: dict[tuple[str, tuple[str, ...]], list[TypeInfo]] = {}
+        wild: dict[tuple[str, int], list[tuple[tuple[str, ...], TypeInfo]]] = {}
+        for info in infos:
+            if info.from_disk_fn is None:
+                continue   # a type with no walker never claims a path (test probes register too)
+            if isinstance(info.shape, Folder):
+                if info.shape.main:
+                    by_main.setdefault(info.shape.main.lower(), []).append(info)
+                continue
+            if not isinstance(info.shape, File):
+                continue
+            if info.shape.names:
+                for name in info.shape.names:
+                    by_name.setdefault(name.lower(), []).append(info)
+                continue   # a fixed-name file is never "any file of that extension"
+            for ext in info.shape.exts:
+                by_ext.setdefault(ext, []).append(info)
+                for mount in info.scan_mounts:
+                    parts = tuple(part.lower() for part in Path(mount).parts)
+                    if "*" in parts:
+                        wild.setdefault((ext, len(parts)), []).append((parts, info))
+                    else:
+                        by_mount.setdefault((ext, parts), []).append(info)
+        depths = {len(parts) for _ext, parts in by_mount} | {depth for _ext, depth in wild}
+        return cls(
+            by_main={k: tuple(v) for k, v in by_main.items()},
+            by_name={k: tuple(v) for k, v in by_name.items()},
+            by_ext={k: tuple(v) for k, v in by_ext.items()},
+            by_mount={k: tuple(v) for k, v in by_mount.items()},
+            wild={k: tuple(v) for k, v in wild.items()},
+            depths=tuple(sorted(depths, reverse=True)),
+        )
+
+
+
+def _same_definition(prior: Any, shape: Any) -> bool:
+    """Whether *shape* is *prior* defined again: two class objects with one module and one
+    qualified name -- a notebook cell re-run, or a data driver reloaded after its file changed
+    (a new content digest in its package name, the same folder). Two different classes that
+    claim one kind still differ here."""
+    return (
+        isinstance(prior, type)
+        and isinstance(shape, type)
+        and driver_module_identity(prior.__module__) == driver_module_identity(shape.__module__)
+        and prior.__qualname__ == shape.__qualname__
+    )
+
+
 class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
     _types: ClassVar[dict[str, TypeInfo]] = {}
+    # kind → a class or a DataSpec. Lives HERE, not in a second registry: a kind
+    # is a name in the same namespace type names draw from, and one lookup
+    # table is the standing rule. Runtime-only, like ``entity_cls`` — not part
+    # of ``to_dict()`` or the schema hash. A miss is None, never a mint.
+    _kinds: ClassVar[dict[str, Any]] = {}
+    #: Loaded on a miss, and handed the kind's NAMESPACE — ``None`` for ours, the
+    #: marker's name for anyone else's. Never chosen by how a kind is SPELLED.
+    #: Called SYNCHRONOUSLY from ``kind_type``, so it may not await.
+    _kind_loader: ClassVar[Optional[Callable[[Optional[str]], Any]]] = None
+    #: id(shape) → (shape, kind); the O(1) inverse. The SHAPE is kept beside its
+    #: kind, and read back only when it is still that same object: a shape is not
+    #: always hashable (``list[str]``) so the key must be its address, and an
+    #: address is reused once the object dies — a collected class handed its kind
+    #: to whatever was allocated there next (a parametrization once read as
+    #: ``test.triage``). Holding the shape also stops that reuse.
+    _kind_of_shape: ClassVar[dict[int, tuple[Any, str]]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
+    #: Run when an entity class first binds to a type (see ``on_entity_bound``).
+    _entity_bound_hooks: ClassVar[list[Callable[[], None]]] = []
     # Whether the declarative type-info registrations have run in this process.
     _loaded: ClassVar[bool] = False
+    _loading: ClassVar[bool] = False
+    # Whether the builtin entity modules (which attach ``entity_cls``) are imported.
+    _entities_loaded: ClassVar[bool] = False
+    _entities_loading: ClassVar[bool] = False
 
     # Backward compat: direct class attribute access for default_index_types
     default_index_types: ClassVar[list[str]] = _BUILTIN_DEFAULT_TYPES
@@ -606,22 +1044,146 @@ class SchemaRegistry:
         once per process. ``register_all()`` is idempotent, so a later explicit
         call (e.g. at server startup) is harmless.
         """
-        if cls._loaded:
+        if cls._loaded or cls._loading:
             return
         # Set the flag BEFORE running register_all: it calls register() many
         # times, which must not re-enter this loader.
-        cls._loaded = True
+        cls._loading = True
         try:
+            from flow_sdk.schema.data_spec._kinds import register_builtin_kinds  # lazy: avoid import cycle
             from flow_sdk.schema.type_info import register_all  # lazy: avoid import cycle
 
             register_all()
-        except Exception:
-            cls._loaded = False  # let the next access retry rather than wedge
-            raise
+            register_builtin_kinds()
+            cls._loaded = True
+        finally:
+            cls._loading = False
+
+    @classmethod
+    def _ensure_entities_loaded(cls) -> None:
+        """Bind every builtin ``entity_cls`` on the first read that asks for one.
+
+        ``entity_cls`` is attached by ``Entity.__init_subclass__``, i.e. only once
+        the entity modules are imported. A bare SDK script never imports them, so
+        without this ``get_entity_cls("markdown")`` is None and ``from_record``
+        builds a bare ``Entity``. Deliberately separate from ``_ensure_loaded``:
+        plain type metadata reads (the asset/source contract) must stay free of
+        application imports — only readers of ``entity_cls`` pay for them.
+        """
+        if cls._entities_loaded or cls._entities_loading:
+            return
+        cls._ensure_loaded()
+        # Flag BEFORE importing: the entity modules register on import, and any
+        # registry read made mid-import must not re-enter this loader.
+        cls._entities_loading = True
+        try:
+            import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — binds entity_cls
+            # Every builtin entity the server binds at boot. Without it a bare script indexes an
+            # ``agentic-assets/agent/*`` folder as a typeless ``Entity`` row — no ``asset_ref`` —
+            # so a project's home never lists the agent (the indexer covers only its own types).
+            import flow_sdk.models.entities  # noqa: F401, PLC0415
+            cls._entities_loaded = True
+        finally:
+            cls._entities_loading = False
 
     # ---------------------------------------------------------------------------
     # Registration
     # ---------------------------------------------------------------------------
+
+    @classmethod
+    def register_kind(cls, kind: str, shape: Any, *, derived: bool = False) -> None:
+        """Bind a kind to a class or a ``DataSpec`` so a bare kind can name it.
+
+        ``derived`` is for a kind nobody declared — a type name bound to its own
+        ``asset_spec``. Such a binding yields to anything already there rather
+        than raising (the class's own ``spec_kind`` is the author's word and
+        wins), and it claims the inverse only if the shape has none, so
+        ``to_authoring_form`` keeps emitting exactly what it always did.
+        """
+        from flow_sdk.schema.data_spec._kinds import PRIMITIVES  # noqa: PLC0415
+        from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
+
+        kind = normalize_tag(kind)
+        if kind in PRIMITIVES:
+            raise ValueError(f"{kind!r} is a reserved primitive and cannot be registered")
+        prior = cls._kinds.get(kind)
+        if prior is not None and prior is not shape and _same_definition(prior, shape):
+            # The SAME class defined again — a notebook cell re-run, a REPL paste, a module
+            # reloaded. The new class object replaces the old one: refusing would make every
+            # second run of a documented snippet raise, and nothing else can name that kind.
+            cls._kind_of_shape.pop(id(prior), None)
+            prior = None
+        if prior is not None and prior is not shape:
+            if derived:
+                return
+            # A kind names exactly ONE shape. Silently rebinding meant the last
+            # import won and a document's kind resolved to whichever class the
+            # process happened to load second.
+            raise ValueError(
+                f"kind {kind!r} is already bound to "
+                f"{getattr(prior, '__name__', prior)}; a kind names exactly one shape"
+            )
+        cls._kinds[kind] = shape
+        if derived:
+            cls._kind_of_shape.setdefault(id(shape), (shape, kind))
+        else:
+            cls._kind_of_shape[id(shape)] = (shape, kind)
+        # Registering IS naming: the class carries the name it was bound under, so a
+        # dump writes the key a read looks up. Stamped HERE rather than at the call
+        # site because this is the only writer of the binding — a registration made
+        # any other way would otherwise leave the class writing a name nothing
+        # resolves, which is the bug this pairing exists to prevent. The inverse map
+        # cannot serve: it is keyed on ``id(shape)``, so a subclass that declares no
+        # kind of its own has no entry, while the stamp inherits like ``spec_kind``.
+        if isinstance(shape, type) and hasattr(shape, "__spec_tag__"):
+            shape.__spec_tag__ = kind
+
+    @classmethod
+    def kind_for(cls, shape: Any) -> "str | None":
+        """The kind a class is registered under, or None. Inverse of ``kind_type``."""
+        cls._ensure_loaded()
+        known, kind = cls._kind_of_shape.get(id(shape), (None, None))
+        return kind if known is shape else None
+
+    @classmethod
+    def kind_type(cls, kind: str) -> Any:
+        """The shape a kind names, or None (anonymous — not an error).
+
+        Almost always a ``DataSpec``; ``fs_ref`` → ``FSRef`` is the one
+        SDK-registered exception, a plain value class pydantic can validate.
+
+        What holds WITHOUT exception is the other half: an entity type name
+        resolves to that type's ``asset_spec`` — its document shape — and never
+        to the Entity class. A row model is not a shape, and a ``ShapeForm`` field
+        holding one could not validate a value against it: it would demand ids
+        and DB columns the value has never heard of. A registered type with no
+        asset document therefore names nothing here, and ``resolve_kind`` turns
+        that into an error rather than a silent ``Any``."""
+        cls._ensure_loaded()
+        hit = cls._kinds.get(kind)
+        if hit is None and kind not in cls._types:
+            # A kind can be defined by code loaded on demand (an asset's value class).
+            # WHOSE it is decides who is asked, and the kind says so itself: bare is
+            # ours, ``--ns--.`` is theirs. Keying this on a spelling (it was
+            # ``kind.startswith("ingest.")``) asked the wrong loader for anything
+            # spelled differently, and could never reach an authored asset at all.
+            from flow_sdk.tags.grammar import split_namespace  # lazy: avoid import cycle
+
+            if cls._kind_loader is not None:
+                cls._kind_loader(split_namespace(kind)[0])
+            hit = cls._kinds.get(kind)
+        return hit
+
+    @classmethod
+    def set_kind_loader(cls, loader: Callable[[Optional[str]], Any]) -> None:
+        """Who to ask when a kind misses. Handed the namespace: ``None`` means ours.
+
+        Must be cheap once loaded and must not await — it runs inside ``kind_type``,
+        which a pydantic validator calls while restoring a row. Which loader serves
+        which namespace is the caller's to decide, because the module that owns the
+        loaders is the one that knows.
+        """
+        cls._kind_loader = loader
 
     @classmethod
     def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:
@@ -632,80 +1194,70 @@ class SchemaRegistry:
         (GET returns an empty list instead of 400). They are never auto-indexed,
         browseable, or creatable.
         """
-        cls.register(TypeInfo(
-            type_name=type_name,
-            icon=icon,
-            indexed_by_default=False,
-            browseable_by=None,
-            creatable=False,
-        ))
+        cls.register(
+            TypeInfo(
+                type_name=type_name,
+                icon=icon,
+                indexed_by_default=False,
+                browseable_by=None,
+                creatable=False,
+            )
+        )
 
     @classmethod
-    def register(cls, info: TypeInfo) -> None:
-        """Register or enrich a TypeInfo. O(1). Idempotent — merges on re-register."""
+    def on_entity_bound(cls, hook: Callable[[], None]) -> None:
+        """Run ``hook`` whenever an entity class first binds to a type.
+
+        The subscriber is ``core.schema`` (its payload memo must drop). A hook
+        rather than an import: entities register from ``__init_subclass__``
+        mid-import, and importing ``core.schema`` from here at that moment
+        re-enters the partially initialized entity package.
+        """
+        if hook not in cls._entity_bound_hooks:
+            cls._entity_bound_hooks.append(hook)
+
+    @classmethod
+    def register(cls, info: TypeInfo, *, declared: bool = False) -> None:
+        """Register or enrich a TypeInfo. O(1). Idempotent — merges on
+        re-register. ``declared`` marks a ``schema/type_info`` declaration."""
+        if declared:
+            info.declared = True
         existing = cls._types.get(info.type_name)
+        if existing is not None:
+            if existing.asset_spec is not None and info.asset_spec is not None and existing.asset_spec is not info.asset_spec:
+                raise ValueError(f"Conflicting asset spec registration for type {info.type_name!r}")
+            # Check the composed contract before mutating the live registration.
+            # A declaration and an entity binding can arrive in either order.
+            _filesystem_contract(
+                info.type_name,
+                info.asset_spec if info.asset_spec is not None else existing.asset_spec,
+                info._authored_shape if info._authored_shape is not None else existing._authored_shape,
+                info._authored_manifest_layout if info._authored_manifest_layout is not None
+                else existing._authored_manifest_layout,
+            )
+        cls._registry_generation += 1
+        # An entity class binding to a type AFTER the per-type schema payloads
+        # were memoized (``core.schema``) leaves that type's bootstrap ``schema``
+        # frozen at ``None``: entities self-register on import, and some are
+        # imported lazily by a server subsystem well after the first bootstrap
+        # assembled the cache (``Trigger`` via ``builtin_triggers``). A new
+        # binding therefore drops the memo so the next assembly sees the class.
+        newly_bound = info.entity_cls is not None and (existing is None or existing.entity_cls is None)
         if existing is not None:
             for loc in info.locations:
                 if loc not in existing.locations:
                     existing.locations.append(loc)
-            # Placement axis — enrich from whichever registration declares it
-            # (schema/type_info is the authoring home; entity/indexer modules
-            # register the same type first without these fields).
-            if info.asset_class is not None:
-                existing.asset_class = info.asset_class
-            if info.harness is not None:
-                existing.harness = info.harness
-            if info.family is not None:
-                existing.family = info.family
-            if info.main_layout != "file":
-                existing.main_layout = info.main_layout
-            if info.main_file is not None:
-                existing.main_file = info.main_file
-            if info.main_file_is_asset_ref:
-                existing.main_file_is_asset_ref = True
-            if info.main_ext != ".md":
-                existing.main_ext = info.main_ext
-            if info.local_fields:
-                existing.local_fields = frozenset(existing.local_fields) | frozenset(info.local_fields)
             if info.post_sync_fn is not None:
-                existing.post_sync_fn = info.post_sync_fn
-            if info.from_disk_fn is not None:
-                existing.from_disk_fn = info.from_disk_fn
-            if info.capsules:
-                merged_capsules = {spec.name: spec for spec in existing.capsules}
-                for spec in info.capsules:
-                    current = merged_capsules.get(spec.name)
-                    if current is not None and current != spec:
-                        raise ValueError(
-                            f"Conflicting capsule declaration for type {info.type_name!r}: "
-                            f"{current!r} vs {spec!r}"
-                        )
-                    merged_capsules[spec.name] = spec
-                existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
-            if info.identity_backend is not None:
-                if existing.identity_backend is not None and existing.identity_backend != info.identity_backend:
-                    raise ValueError(
-                        f"Conflicting identity backend registration for type {info.type_name!r}"
-                    )
-                existing.identity_backend = info.identity_backend
-            if info.id_stable_key_fn is not None:
-                existing.id_stable_key_fn = info.id_stable_key_fn
-            if info.id_namespace != uuid.NAMESPACE_URL:
-                existing.id_namespace = info.id_namespace
-            if info.asset_hash_fn is not None:
-                existing.asset_hash_fn = info.asset_hash_fn
-            if info.default_body_fn is not None:
-                existing.default_body_fn = info.default_body_fn
-            if info.owns_main_ref:
-                existing.owns_main_ref = True
-            if info.parent_share_on_default:
-                existing.parent_share_on_default = True
-            if info.shared_child:
-                existing.shared_child = True
-            if info.metadata is not None:
-                existing.metadata = info.metadata
-            if info.meta_model is not None:
-                existing.meta_model = info.meta_model
+                # Appended, not replaced: two modules may each register an observer for one type.
+                already = existing.post_sync_callbacks
+                existing.post_sync_fn = (
+                    *already,
+                    *(fn for fn in info.post_sync_callbacks if fn not in already),
+                )
+            if info.identity_carrier is not None:
+                if existing.identity_carrier is not None and existing.identity_carrier != info.identity_carrier:
+                    raise ValueError(f"Conflicting identity carrier registration for type {info.type_name!r}")
+                existing.identity_carrier = info.identity_carrier
             if info.entity_cls is not None:
                 if existing.entity_cls is None:
                     existing.entity_cls = info.entity_cls
@@ -718,34 +1270,25 @@ class SchemaRegistry:
                             f"'{existing_fqn}' vs '{new_fqn}'. "
                             f"Each entity type name must map to exactly one class."
                         )
-            if info.icon is not None:
-                existing.icon = info.icon
-            if info.display_name is not None:
-                existing.display_name = info.display_name
-            if info.setup_skill is not None:
-                existing.setup_skill = info.setup_skill
-            if info.reception_verb != "Open":
-                existing.reception_verb = info.reception_verb
-            if info.receive_policy is not None:
-                existing.receive_policy = info.receive_policy
-            if info.receive_row_overrides is not None:
-                existing.receive_row_overrides = info.receive_row_overrides
-            if info.creatable and not existing.creatable:
-                existing.creatable = True
             if info.browseable_by is not None and (
                 existing.browseable_by is None
                 or view_mode_rank(info.browseable_by) < view_mode_rank(existing.browseable_by)
             ):
                 # Keep the more permissive (lower-ordered) non-null level.
                 existing.browseable_by = info.browseable_by
-            if info.indexed_by_default and not existing.indexed_by_default:
-                existing.indexed_by_default = True
-            if info.api_visible and not existing.api_visible:
-                existing.api_visible = True
-            if info.index_fields:
-                existing.index_fields = list(info.index_fields)
             if info.defaults:
                 existing.defaults = {**existing.defaults, **info.defaults}
+            for slot in _MERGE_SLOTS:
+                if slot.name in ("shape", "manifest_layout"):
+                    # Resolved projections must never become authored overrides.
+                    attr = f"_authored_{slot.name}"
+                    value = getattr(info, attr)
+                    if value is not None:
+                        setattr(existing, attr, value)
+                    continue
+                value = getattr(info, slot.name)
+                if value != _slot_default(slot):
+                    setattr(existing, slot.name, value)
             info = existing
         else:
             cls._types[info.type_name] = info
@@ -757,6 +1300,43 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
+        final = cls._types[info.type_name]
+        final._resolve_filesystem_contract()
+        if newly_bound:
+            for hook in cls._entity_bound_hooks:
+                hook()
+        if final.asset_spec is not None:
+            # An asset spec is nameable by its own type name, so a document can
+            # write ``"output": "task"`` and get ``TaskSpec``. Derived, never
+            # declared: 16 of 20 asset specs carried no ``spec_kind`` at all.
+            cls.register_kind(final.type_name, final.asset_spec, derived=True)
+        if final.from_disk_fn is None and final.asset_spec is not None and not final.db_only:
+            from flow_sdk.fs_store.serializer.record import spec_extractor  # noqa: PLC0415
+
+            final.from_disk_fn = spec_extractor(info.type_name)   # the spec IS the parser
+        if info.asset_spec is not None:
+            from flow_sdk.fs_store.serializer.fields import field_kinds, spec_layout  # noqa: PLC0415
+            from flow_sdk.schema.data_spec.io.placement import placements  # noqa: PLC0415
+
+            # A new asset type can turn a field into a sub-asset, so every
+            # cached classification of a field is now a possibly-stale answer.
+            # All three read the registry; clearing only one left the other two
+            # holding the pre-registration verdict — harmless so far only
+            # because registration happens at import, before anything asks.
+            field_kinds.cache_clear()
+            spec_layout.cache_clear()
+            placements.cache_clear()
+
+    @classmethod
+    def check_asset_specs(cls) -> None:
+        """The shape and the row must agree — run once every class is complete
+        (``register_all``'s post-pass), never from an entity's ``__init_subclass__``.
+        A violation RAISES; it is a class-shape bug, not a degraded type."""
+        for info in cls._types.values():
+            if info.asset_spec is not None and info.entity_cls is not None:
+                check_asset_spec(info.type_name, info.entity_cls, info.asset_spec)
+            if info.manifest_layout == ENTITY_LAYOUT:
+                check_entity_layout(info)
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:
@@ -764,6 +1344,183 @@ class SchemaRegistry:
         if not isinstance(type_name, str):
             type_name = type_name.type  # TypeId duck-type: .type is the type string
         return cls._types.get(type_name)
+
+    # --- SCAN tables, built lazily from the declarations and keyed on the
+    # registry generation so a (re)registration or a test clearing ``_types``
+    # rebuilds them.
+    _registry_generation: int = 0
+    _shape_tables_key: Any = None
+    _tables: "_ShapeTables | None" = None
+
+    @classmethod
+    def _shape_tables(cls) -> "_ShapeTables":
+        cls._ensure_loaded()
+        key = (len(cls._types), cls._registry_generation)
+        if cls._shape_tables_key != key:
+            cls._tables = _ShapeTables.build(cls._types.values())
+            cls._shape_tables_key = key
+        return cls._tables
+
+    @classmethod
+    def main_file_owners(cls, path: "Path | str") -> frozenset[str]:
+        """The walked folder-layout types whose declared main document IS
+        ``path``: by name (case-insensitive) AND by placement — under one of
+        the type's ``scan_mounts``, or anywhere for a type that walks anywhere
+        (``agentic-assets/spec/<x>/spec.md`` is a spec, a loose ``SPEC.md`` is
+        a document; a ``SKILL.md`` is a skill wherever it sits). Two types may
+        share a name at one placement; the set carries that."""
+        from flow_sdk.assets.placement import mount_matches  # noqa: PLC0415
+
+        p = Path(path)
+        candidates = cls._shape_tables().by_main.get(p.name.lower())
+        if not candidates:
+            return frozenset()
+        # ``<mount>/<name>/<main>`` for a named asset; a singleton's main file
+        # sits directly in the mount, so its parent IS the mount.
+        named_parts = p.parent.parent.parts
+        singleton_parts = p.parent.parts
+        def below_recursive_mount(info) -> bool:
+            # The walk descends the whole mount, so any ancestor may be it.
+            return any(
+                mount_matches(named_parts[:k], Path(m).parts)
+                for m in info.recursive_mounts
+                for k in range(len(named_parts), 0, -1)
+            )
+
+        return frozenset(
+            info.type_name
+            for info in candidates
+            if info.walks_anywhere
+            or any(
+                mount_matches(singleton_parts if info.singleton else named_parts, Path(m).parts)
+                for m in info.scan_mounts
+            )
+            or below_recursive_mount(info)
+        )
+
+    @classmethod
+    def _placed_owners(cls, p: Path, suffix: str) -> "tuple[TypeInfo, ...]":
+        """The file types whose declared mount is the NEAREST ancestor of ``p``
+        that is any type's mount, for ``p``'s extension. ``.claude/commands/x.md``
+        → command; ``docs/guide/index.md`` → the docs family; a loose ``x.md`` → ()."""
+        from flow_sdk.assets.placement import mount_matches  # noqa: PLC0415
+
+        tables = cls._shape_tables()
+        parts = tuple(part.lower() for part in p.parent.parts)
+        for cut in range(len(parts), 0, -1):
+            for depth in tables.depths:
+                if depth > cut:
+                    continue
+                tail = parts[cut - depth:cut]
+                hit = tables.by_mount.get((suffix, tail))
+                if hit:
+                    return hit
+                wild = tuple(info for mount, info in tables.wild.get((suffix, depth), ()) if mount_matches(tail, mount))
+                if wild:
+                    return wild
+        return ()
+
+    @staticmethod
+    def _declared_type(p: Path) -> str | None:
+        """The ``type:`` a markdown document's own frontmatter declares, if any —
+        how two types sharing one mount and extension (``markdown`` and
+        ``markdown_index`` under ``docs``) are told apart."""
+        from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load  # noqa: PLC0415
+
+        try:
+            head = p.read_text(encoding="utf-8", errors="ignore")[:4096]
+        except OSError:
+            return None
+        fm = _extract_frontmatter(head)
+        if not fm:
+            return None
+        declared = _yaml_load(fm).get("type")
+        return str(declared).strip() if declared else None
+
+    @classmethod
+    def type_for(cls, path: "Path | str", *, placed_only: bool = False) -> str | None:
+        """THE registry-wide path → type classifier (name + placement + stat;
+        no walk roots). Precedence:
+
+        1. a folder type's declared main document, by name and placement
+           (``SKILL.md`` → ``skill``; ``agentic-assets/mcp/x/mcp.json`` → ``mcp``;
+           a folder holding one → that type);
+        2. a file type's declared FIXED filename (``CLAUDE.md`` → ``claude_md``);
+        3. a file type's declared family dir, for its extension, as the nearest
+           such ancestor (``.claude/commands/x.md`` → ``command``,
+           ``.agents/agents/x.md`` → ``subagent``, ``agentic-assets/plan/x.md``
+           → ``plan``); when several types share the mount, the document's own
+           frontmatter ``type:`` decides (``docs/index.md`` declaring
+           ``markdown_index``), else fall through;
+        4. a file type whose declared extension is unique among walked file
+           types (``.js`` → dynamic_workflow, ``.csv`` → spreadsheet);
+        5. ``markdown`` for any remaining ``.md``;
+        6. ``None`` — not an asset, or ambiguous (``.json``/``.jsonl`` are
+           claimed by several bespoke-walked types and need their roots).
+
+        A name shared by two types at one tier is ``None``, never registration
+        order. Every tier is read off the declarations (``shape``, ``asset_class``
+        / ``harness`` / ``family``); there is no hand-written path table.
+
+        ``placed_only`` drops the last two tiers — the ones that answer from the
+        EXTENSION alone, wherever the file sits. What is left is the confident
+        half: a path whose name or declared mount says what it is. A caller
+        that MINTS on the answer wants this, because "every ``.md`` is a
+        markdown asset" is true of the type system and false of the walk, which
+        only indexes a loose ``.md`` under a declared mount. ``flow show`` on a
+        scratch file must leave it a plain file, not mint a row for it.
+        """
+        p = Path(path)
+        tables = cls._shape_tables()
+        if p.is_dir():
+            try:
+                names = {entry.lower() for entry in os.listdir(p)}
+            except OSError:
+                return None
+            for name in names & tables.by_main.keys():
+                owners = cls.main_file_owners(p / name)
+                if len(owners) == 1:
+                    return next(iter(owners))
+            return None
+        owners = cls.main_file_owners(p)
+        if len(owners) == 1:
+            return next(iter(owners))
+        if owners:
+            return None
+        named = tables.by_name.get(p.name.lower(), ())
+        if named:
+            return named[0].type_name if len(named) == 1 else None
+        suffix = p.suffix.lower()
+        if not suffix:
+            return None
+        placed = cls._placed_owners(p, suffix)
+        if len(placed) == 1:
+            return placed[0].type_name
+        if placed:
+            declared = cls._declared_type(p)
+            names = {info.type_name for info in placed}
+            if declared in names:
+                return declared
+            # Several types share the mount and the document declares nothing
+            # (``docs`` is both markdown and markdown_index). The one that does
+            # NOT need a declaration is the answer — the same type the
+            # extension tier would give — so a plain ``docs/guide.md`` is a
+            # markdown here too, not an ambiguity that falls through.
+            fallback = cls._by_extension(suffix, tables)
+            if fallback in names:
+                return fallback
+        if placed_only:
+            return None
+        return cls._by_extension(suffix, tables)
+
+    @classmethod
+    def _by_extension(cls, suffix: str, tables: "_ShapeTables") -> str | None:
+        """The type an extension names on its own, wherever the file sits: a
+        unique walked declaration, else ``markdown`` for ``.md``."""
+        if suffix != ".md":
+            by = tables.by_ext.get(suffix, ())
+            return by[0].type_name if len(by) == 1 else None
+        return "markdown" if "markdown" in cls._types else None
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:
@@ -777,12 +1534,27 @@ class SchemaRegistry:
         return list(cls._types.keys())
 
     @classmethod
+    def browseable_type_names(cls) -> list[str]:
+        """Every type that has its own asset-tree root (``browseable_by`` set).
+
+        The containment predicate both tiers share: an asset whose parent is one
+        of THESE is already reachable under that parent's row, so it is not a
+        top-level row of its own type. ``project`` is deliberately absent — it
+        has no tree root, so a project's assets have nowhere else to show and
+        stay top-level. See ``apply_containment_filter``.
+        """
+        cls._ensure_loaded()
+        return [k for k, v in cls._types.items() if v.browseable_by is not None]
+
+    @classmethod
     def get_entity_cls(cls, type_name: str) -> type | None:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return info.entity_cls if info else None
 
     @classmethod
     def is_entity_type(cls, type_name: str) -> bool:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return bool(info and info.entity_cls is not None)
 
@@ -792,17 +1564,18 @@ class SchemaRegistry:
 
     @classmethod
     def is_public_entity(cls, type_name: str) -> bool:
+        cls._ensure_entities_loaded()
         info = cls.get(type_name)
         return bool(info and info.entity_cls is not None and info.api_visible)
 
     @classmethod
     def get_all_entity_types(cls) -> list[str]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
     def get_all_entity_classes(cls) -> list[type]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [v.entity_cls for v in cls._types.values() if v.entity_cls is not None]
 
     @classmethod
@@ -812,9 +1585,9 @@ class SchemaRegistry:
         Registry-driven companion to the live bridge (which materializes any child
         generically): the catch-up sync iterates this list instead of a hardcoded
         tuple, so a new shareable child type enrolls by setting ``shared_child=True``
-        on its ``TypeMetadata`` — no edit to the sync code.
+        in its ``TypeInfo`` declaration — no edit to the sync code.
         """
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
 
     @classmethod
@@ -825,14 +1598,10 @@ class SchemaRegistry:
         ``asset_class="repo"`` (and a ``family``). The indexer walker reads this
         directly (it needs each type's layout + marker), and the name/type-only
         views below derive from it so the predicate lives in one place."""
-        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+        from flow_sdk.assets.placement import AssetClass  # noqa: PLC0415
 
         cls._ensure_loaded()
-        return {
-            v.family: v
-            for v in cls._types.values()
-            if v.asset_class == AssetClass.REPO and v.family
-        }
+        return {v.family: v for v in cls._types.values() if v.asset_class == AssetClass.REPO and v.family}
 
     @classmethod
     def repo_family_to_type(cls) -> dict[str, str]:
@@ -846,8 +1615,28 @@ class SchemaRegistry:
         return [info.type_name for info in cls.repo_family_to_info().values()]
 
     @classmethod
-    def get_public_entity_types(cls) -> list[str]:
+    def harness_scoped_families(cls) -> frozenset[str]:
+        """Every family that mounts inside a harness dot-dir (``skills``,
+        ``agents``, ``commands``, ``rules``, ``workflows``).
+
+        The mirror of ``repo_family_to_info`` for the other half of the layout
+        space, and the SINGLE owner of the ``harness_scoped`` predicate. Walkers
+        that need "is this path already claimed by a typed indexer?" ask here
+        rather than hand-listing directory names — a type enrolls by declaring
+        its ``asset_class``, so the answer cannot drift behind the registry.
+        """
+        from flow_sdk.assets.placement import LAYOUT_REGISTRY  # noqa: PLC0415
+
         cls._ensure_loaded()
+        return frozenset(
+            v.family
+            for v in cls._types.values()
+            if v.asset_class and v.family and LAYOUT_REGISTRY[v.asset_class].harness_scoped
+        )
+
+    @classmethod
+    def get_public_entity_types(cls) -> list[str]:
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.api_visible]
 
     # --- Presentation read-through getters (registry is the single source) ---
@@ -879,9 +1668,13 @@ class SchemaRegistry:
         return info.browseable_by if info else None
 
     @classmethod
-    def is_browseable_in(cls, type_name: str, mode: ViewMode) -> bool:
-        """True iff ``type_name`` is browseable in the given view ``mode`` (cumulative)."""
-        return visible_in(cls.browseable_by(type_name), mode)
+    def is_browseable_in(cls, type_name: str, mode: ViewMode, *, dev: bool = False) -> bool:
+        """True iff ``type_name`` is browseable in view ``mode`` (cumulative) — and,
+        for a ``dev_only`` type, only with developer mode on."""
+        info = cls.get(type_name)
+        if info is None or (info.dev_only and not dev):
+            return False
+        return visible_in(info.browseable_by, mode)
 
     @classmethod
     def is_creatable(cls, type_name: str) -> bool:
@@ -895,7 +1688,7 @@ class SchemaRegistry:
 
     @classmethod
     def get_all_record_types(cls) -> list[str]:
-        cls._ensure_loaded()
+        cls._ensure_entities_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
@@ -905,296 +1698,3 @@ class SchemaRegistry:
         if cls._default_index_types:
             return list(cls._default_index_types)
         return list(_BUILTIN_DEFAULT_TYPES)
-
-    # ---------------------------------------------------------------------------
-    # Logging methods
-    # ---------------------------------------------------------------------------
-
-    @staticmethod
-    def append_scan(
-        trigger: str,
-        duration_ms: float,
-        total_records: int,
-        total_bytes: int,
-        types: list[dict[str, Any]],
-        type_name: str | None = None,
-    ) -> str:
-        """Log a scan operation. Returns the ISO timestamp written."""
-        now = datetime.now(timezone.utc).isoformat()
-
-        if type_name:
-            entry = {
-                "id": str(uuid.uuid4()),
-                "type": "scan_log",
-                "scan_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_records": total_records,
-                "total_bytes": total_bytes,
-                "type_name": type_name,
-                "created_at": now,
-            }
-            sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", entry)
-        else:
-            global_entry = {
-                "id": str(uuid.uuid4()),
-                "type": "scan_log",
-                "scan_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_records": total_records,
-                "total_bytes": total_bytes,
-                "types": types,
-                "created_at": now,
-            }
-            _append_jsonl(_schema_dir() / "scan_log.jsonl", global_entry)
-            for t in types:
-                t_name = t.get("type", "")
-                if not t_name:
-                    continue
-                t_entry = {
-                    "id": str(uuid.uuid4()),
-                    "type": "scan_log",
-                    "scan_trigger": trigger,
-                    "duration_ms": t.get("scan_ms", 0.0),
-                    "total_records": t.get("count", 0),
-                    "total_bytes": t.get("total_bytes", 0),
-                    "type_name": t_name,
-                    "created_at": now,
-                }
-                sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", t_entry)
-
-        return now
-
-    @staticmethod
-    def append_index(
-        trigger: str,
-        duration_ms: float,
-        total_indexed: int,
-        types: list[dict[str, Any]],
-        type_name: str | None = None,
-    ) -> str:
-        """Log an index operation. Returns the ISO timestamp written.
-
-        Per-type log only — the "global" timestamp is derived in
-        ``get_index_status`` as ``max(per_type[i].last_indexed_at)``. This
-        means per-type indexing (e.g. UI's "Index Now" loop) automatically
-        flips ``never_indexed`` to false without needing a separate global
-        write call.
-        """
-        now = datetime.now(timezone.utc).isoformat()
-
-        if type_name:
-            entry = {
-                "id": str(uuid.uuid4()),
-                "type": "index_log",
-                "index_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_indexed": total_indexed,
-                "type_name": type_name,
-                "created_at": now,
-            }
-            sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", entry)
-        else:
-            for t in types:
-                t_name = t.get("type", "")
-                if not t_name:
-                    continue
-                t_entry = {
-                    "id": str(uuid.uuid4()),
-                    "type": "index_log",
-                    "index_trigger": trigger,
-                    "duration_ms": 0.0,
-                    "total_indexed": t.get("indexed", 0),
-                    "type_name": t_name,
-                    "created_at": now,
-                }
-                sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", t_entry)
-
-        return now
-
-    @staticmethod
-    def get_last_scan_at(type_name: str) -> str | None:
-        sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "scan_log.jsonl")
-        return (entry or {}).get("created_at")
-
-    @staticmethod
-    def get_last_index_at(type_name: str) -> str | None:
-        sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "index_log.jsonl")
-        return (entry or {}).get("created_at")
-
-    # ---------------------------------------------------------------------------
-    # Internal helpers
-    # ---------------------------------------------------------------------------
-
-
-    @classmethod
-    async def clear_index(cls, types: list[str] | None = None) -> ClearResult:
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.record_error import clear_all, clear_for_type  # noqa: PLC0415
-
-        driver = get_db_driver()
-        if types is None:
-            fts_cleared = await driver.fts_clear() if hasattr(driver, "fts_clear") else 0
-            entities_cleared = (
-                await driver.delete_entities_by_type(None) if hasattr(driver, "delete_entities_by_type") else 0
-            )
-            global_log = _schema_dir() / "index_log.jsonl"
-            if global_log.exists():
-                global_log.unlink()
-            types_dir = _schema_dir() / "types"
-            if types_dir.is_dir():
-                for per_type_log in types_dir.glob("*/index_log.jsonl"):
-                    per_type_log.unlink()
-            types_cleared = cls.get_all_record_types()
-            await clear_all()
-        else:
-            fts_cleared = 0
-            entities_cleared = 0
-            types_cleared = []
-            for type_name in types:
-                if hasattr(driver, "delete_entities_by_type"):
-                    entities_cleared += await driver.delete_entities_by_type(type_name)
-                sanitized = _sanitize_type_name(type_name)
-                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
-                if log_file.exists():
-                    log_file.unlink()
-                types_cleared.append(type_name)
-                await clear_for_type(type_name)
-        return ClearResult(
-            fts_cleared=fts_cleared,
-            entities_cleared=entities_cleared,
-            types_cleared=types_cleared,
-        )
-
-    # New name alias
-    clear = clear_index
-
-    @classmethod
-    async def get_index_status(
-        cls,
-        types: list[str] | None = None,
-        scope: "object | None" = None,
-    ) -> IndexStatus:
-        """Snapshot of index state. DB-free for freshness.
-
-        * **Project scope** (``scope.projects == [one id]``) — the project IS a
-          record, so its three states come from the project record's own
-          on-disk ``.hash`` sentinel: ``never_indexed`` = no sentinel,
-          ``last_indexed_at`` = the sentinel time, ``stale`` = ``index_required``
-          ("changes pending"). No child aggregation.
-        * **Unscoped / type list** — footer/scanner view. ``last_indexed_at``
-          per type from the JSONL run-history (audit); ``entity_count`` from
-          ``count_entities_by_type`` (the live searchable count).
-
-        ``stale`` now means "changes pending next index", not a 24h timer.
-        Orphan counts come from a scan, not from here.
-        """
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-
-        driver = get_db_driver()
-        per_type: list[TypeIndexStatus] = []
-        latest_iso: str | None = None
-        for type_name in types or cls.get_default_index_types():
-            type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
-            if type_last and (latest_iso is None or type_last > latest_iso):
-                latest_iso = type_last
-            count = await cls._safe_count(driver, type_name, scope)
-            per_type.append(
-                TypeIndexStatus(
-                    type_name=type_name,
-                    last_indexed_at=type_last,
-                    entity_count=count,
-                    stale=False,
-                    orphan_count=0,
-                )
-            )
-
-        # Project-scoped freshness from the project record's own sentinel.
-        project_id = cls._single_project_id(scope)
-        if project_id is not None:
-            prec = cls._project_record_for_status(project_id)
-            indexed_at = prec.indexed_at if prec is not None else None
-            return IndexStatus(
-                never_indexed=indexed_at is None,
-                last_indexed_at=indexed_at,
-                stale=bool(prec.index_required) if prec is not None else False,
-                default_types=cls.get_default_index_types(),
-                per_type=per_type,
-                total_orphans=0,
-            )
-
-        return IndexStatus(
-            never_indexed=all(t.last_indexed_at is None for t in per_type),
-            last_indexed_at=latest_iso,
-            stale=False,
-            default_types=cls.get_default_index_types(),
-            per_type=per_type,
-            total_orphans=0,
-        )
-
-    @staticmethod
-    async def _safe_count(driver, type_name: str, scope: "object | None") -> int:
-        """Per-type live count, tolerant of a driver whose
-        ``count_entities_by_type`` predates the ``scope`` kwarg. Shared by
-        ``get_index_status`` and ``get_asset_stats`` so there is one counting
-        path, not two."""
-        try:
-            return await driver.count_entities_by_type(type_name, scope=scope)
-        except TypeError:
-            return await driver.count_entities_by_type(type_name)
-        except Exception:
-            return 0
-
-    @classmethod
-    async def get_asset_stats(cls, scope: "object | None" = None) -> AssetStats:
-        """Live per-type asset counts for a ScopeFilter, over the registry's
-        default index types (P5 — derived, not hardcoded). Counts only; reuses
-        the same per-type count path as ``get_index_status``."""
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-
-        driver = get_db_driver()
-        per_type = {
-            str(type_name): await cls._safe_count(driver, type_name, scope)
-            for type_name in cls.get_default_index_types()
-        }
-        return AssetStats(per_type=per_type, total=sum(per_type.values()))
-
-    @staticmethod
-    def _single_project_id(scope: "object | None") -> str | None:
-        """The lone project id when ``scope`` targets exactly one project, else None."""
-        projects = list(getattr(scope, "projects", None) or []) if scope is not None else []
-        return projects[0] if len(projects) == 1 else None
-
-    @staticmethod
-    def _project_record_for_status(project_id: str) -> "object | None":
-        """Load the project record with its asset_ref bound to the project
-        folder, so ``indexed_at`` / ``index_required`` resolve. None if the
-        record (or its mount path) is unknown."""
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-
-        prec = FSRecord.load_or_none("project", project_id)
-        return prec.ensure_asset_ref() if prec is not None else None
-
-    # New name alias
-    get_status = get_index_status
-
-
-    @classmethod
-    def get_errors(cls, type_name: "str | TypeId | None" = None) -> list:
-        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        results = FSRecord.discover(RecordType.RECORD_ERROR)
-        if type_name is not None:
-            if not isinstance(type_name, str):
-                type_name = type_name.type
-            results = [
-                e for e in results
-                if e.__dict__.get("source_record_type") == type_name or getattr(e, "type", None) == type_name
-            ]
-        return results

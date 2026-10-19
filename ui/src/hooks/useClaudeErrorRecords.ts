@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { ActionInfo, AgenticProcess, dataContext, dataManager, PrefKey, Task } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useMemo } from 'react';
@@ -26,12 +28,12 @@ export type ErrorCategory = (typeof ErrorCategory)[keyof typeof ErrorCategory];
 
 export type ErrorTimeSpan = '1m' | '1h' | '24h' | '1w' | 'all';
 
-export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: string; tooltip: string }[] = [
-  { value: '1m', ms: 60_000, label: '1m', tooltip: 'Last 1 minute' },
-  { value: '1h', ms: 3_600_000, label: '1h', tooltip: 'Last 1 hour' },
-  { value: '24h', ms: 86_400_000, label: '24h', tooltip: 'Last 24 hours' },
-  { value: '1w', ms: 604_800_000, label: '1w', tooltip: 'Last 1 week' },
-  { value: 'all', ms: Infinity, label: 'All', tooltip: 'All time' },
+export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: MessageDescriptor; tooltip: string }[] = [
+  { value: '1m', ms: 60_000, label: msg`1m`, tooltip: 'Last 1 minute' },
+  { value: '1h', ms: 3_600_000, label: msg`1h`, tooltip: 'Last 1 hour' },
+  { value: '24h', ms: 86_400_000, label: msg`24h`, tooltip: 'Last 24 hours' },
+  { value: '1w', ms: 604_800_000, label: msg`1w`, tooltip: 'Last 1 week' },
+  { value: 'all', ms: Infinity, label: msg`All`, tooltip: 'All time' },
 ];
 
 /** Result from the Flowpad cloud known-issues search. */
@@ -68,7 +70,7 @@ export interface ClaudeErrorRecord {
   error_msg: string;
   hook: string;
   event: string;
-  hooks: string[];  // all distinct hook names seen across occurrences
+  hooks: string[]; // all distinct hook names seen across occurrences
   root_cause: string;
   traceback: string[];
   occurrence_count: number;
@@ -187,7 +189,8 @@ export function useClaudeErrorRecords() {
         counts[e.error_status] = (counts[e.error_status] || 0) + 1;
       } else {
         const occCount = e.occurrences?.length
-          ? e.occurrences.filter((occ) => cutoff === 0 || !occ.timestamp || new Date(occ.timestamp).getTime() >= cutoff).length
+          ? e.occurrences.filter((occ) => cutoff === 0 || !occ.timestamp || new Date(occ.timestamp).getTime() >= cutoff)
+              .length
           : 1;
         counts.all += occCount;
         counts[e.error_status] = (counts[e.error_status] || 0) + occCount;
@@ -285,12 +288,10 @@ export function useClaudeErrorRecords() {
           task_type: 'task',
           priority: 'high',
           tags: ['error', error.error_category],
-          metadata: {
-            errorFingerprint: error.fingerprint,
-            errorCategory: error.error_category,
-            hook: error.hook,
-            event: error.event,
-          },
+          // First-class field, not the retired `metadata` blob: `metadata` is no
+          // longer part of Task, so this fingerprint was being dropped on save
+          // and `LearningCard`'s `task.error_fingerprint` never saw it.
+          error_fingerprint: error.fingerprint,
         });
         await task.save([projectTypeId]);
         const taskId = task.id;
@@ -344,12 +345,15 @@ export function useClaudeErrorRecords() {
   const clearAll = useCallback(async () => {
     if (!computeNode?.typeId?.id) return null;
     const info = new ActionInfo('clear-debug-errors', 'compute_node', computeNode.typeId.id, 'POST');
-    const result = await dataManager.callAction<unknown, {
-      deleted_debug_logs: number;
-      truncated_debug_logs: number;
-      skipped_debug_logs: string[];
-      deleted_error_records: number;
-    }>(info);
+    const result = await dataManager.callAction<
+      unknown,
+      {
+        deleted_debug_logs: number;
+        truncated_debug_logs: number;
+        skipped_debug_logs: string[];
+        deleted_error_records: number;
+      }
+    >(info);
     await refetch();
     return result ?? null;
   }, [computeNode?.typeId?.id, refetch]);
@@ -376,11 +380,16 @@ export function useClaudeErrorRecords() {
    * Returns per-fingerprint spawn results from the server.
    */
   const fixAllCloud = useCallback(
-    async (fingerprints: string[]): Promise<Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }>> => {
+    async (
+      fingerprints: string[],
+    ): Promise<Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }>> => {
       if (!computeNode?.typeId?.id || fingerprints.length === 0) return [];
       const info = new ActionInfo('fix-all-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
       info.bodyParameters = { fingerprints };
-      const result = await dataManager.callAction<unknown, { spawned: Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }> }>(info);
+      const result = await dataManager.callAction<
+        unknown,
+        { spawned: Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }> }
+      >(info);
       await refetch();
       return result?.spawned ?? [];
     },

@@ -1,14 +1,17 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
+import { canonicalPath, isOpenableProjectPath, selectProjectContext } from '@src/components/project-selector';
 import { projectScope } from '@src/lib/scope-filter';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
-import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { newProjectLocale } from '@src/contexts/locale-context';
 import { notify } from '@src/notifications';
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { dataContext, isHubOnly, PageId, Project } from '@sdk';
 import { useCallback } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { withHomePage } from '@src/project-home-page/home-page-state';
+import { ViewType } from '@src/types/ViewType';
 
 // ---------------------------------------------------------------------------
 // Shared path helpers — one source of truth for the project-open flow so the
@@ -43,7 +46,6 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const { currentDock, navigation } = useDockNavigation();
-  const isVibe = useIsVibe();
   // Surface-derived, not a prop: on ANY home surface (root `/` or /dock/home,
   // in any view mode) switching a project just changes the project and lands
   // on the fresh home; only from within a workspace/dock does it resume the
@@ -67,34 +69,22 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           // continuation errors shouldn't break the picker
         }
       } else {
-        // On a home surface, switching a project stays home — on the new
-        // project — in every view mode.
-        if (isVibe) {
+        // Hub: there's no desk home / vibe hero / tab strip to land on, and no
+        // build process to resume — the hub's own project card goes straight to
+        // the project dock on the hub page, so every hub open lands the same way.
+        if (isHubOnly()) {
           await selectProjectContext(project);
-          if (!isHome) {
-            const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
-            if (processId) {
-              void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
-              return;
-            }
-          }
-          // The HOME loader has no vibe-specific clears, so the vibe home
-          // adopts context imperatively (above) and resets the stale process/
-          // active entity before landing on the fresh hero. The scope filter
-          // makes a hard reload of the landing re-adopt the project.
-          await dataContext.setActiveEntityTypeId(null);
-          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-          navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true })
-              .withScopeFilter(projectScope(project.id))
-              .withViewMode(ViewMode.Vibe),
-          );
+          navigation.openDock(DockPointer.forProject(project.id).withPage(PageId.HUB));
           return;
         }
+        // Opening a project just opens the project — whatever surface is on screen.
+        // (Vibe used to resume the project's build process or land on a
+        // no-process Vibe pane; everything is a tab now, so the project's last tab
+        // — or its landing — is the answer for every surface.)
         if (isHome) {
           // URL-first: the scope-carrying HOME dock's loader
           // (adoptScopeProject) is the single writer of project context.
-          navigation.openDock(DockPointer.forHome().withScopeFilter(projectScope(project.id)));
+          navigation.openDock(withHomePage(DockPointer.forHome().withScopeFilter(projectScope(project.id))));
           return;
         }
         // Plain switch (footer Switch Project included): navigate to the
@@ -104,10 +94,17 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
         // (Assets/Explorer/Desktop) re-scopes to the destination, else the
         // project landing. No context pre-write here: the destination dock's
         // loader is the single writer of project context (URL-first).
-        navigation.openDock(await dockForProjectEntry(project.id, currentDock));
+        // A switch that lands on the project's page or the home asks for the
+        // project's home page. A resumed tab is left as it is: its loader runs
+        // no load redirect, and the option would only linger in its URL.
+        const entry = await dockForProjectEntry(project.id, currentDock);
+        const landing = entry.viewType === ViewType.PROJECT || entry.viewType === ViewType.HOME;
+        // A resumed tab is a TOP-LEVEL tab, the same as its chip in the strip:
+        // never a child of the workspace being left, never painted in its mode.
+        navigation.openDock(landing ? withHomePage(entry) : entry, undefined, { topLevel: true });
       }
     },
-    [isVibe, isHome, onProjectChanged, onPicked, navigation, currentDock],
+    [isHome, onProjectChanged, onPicked, navigation, currentDock],
   );
 
   const ensureProjectAndSetContext = useCallback(
@@ -115,18 +112,19 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
       if (!dataContext.someone) throw new Error(t`You must be logged in`);
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) throw new Error(t`Please provide a valid project path`);
+      if (!normalizedPath || !isOpenableProjectPath(normalizedPath)) {
+        throw new Error(t`Please provide a valid project path`);
+      }
 
       const pathKey = canonicalPath(normalizedPath);
-      const freshProjects = await Project.query(
-        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'open-project-dedup' }),
-      );
+      const freshProjects = await lazyAssets.refresh(LazyAsset.Projects);
+      // Dedup on the mount path alone — a name is not a location.
       let targetProject =
-        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || p.name || '') === pathKey) || null;
+        freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path || '') === pathKey) || null;
       const openedExisting = !!targetProject;
 
       if (!targetProject) {
-        targetProject = new Project({ name: normalizedPath });
+        targetProject = new Project({ name: normalizedPath, locale: newProjectLocale() });
         targetProject = await targetProject.save([dataContext.someone]);
       }
 

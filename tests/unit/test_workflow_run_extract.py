@@ -8,14 +8,11 @@ import pytest
 
 # Populate the SchemaRegistry so WORKFLOW_RUN type metadata resolves.
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
-
+from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
+from flow_sdk.assets.types.workflow_run import extract_workflow_run
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.indexer.functions.workflow_run import (
-    extract_workflow_run,
-    workflow_run_id,
-)
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.fixtures.identity import resolve_id
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -28,14 +25,14 @@ RUN_ID = "wf_a8e936fe-3a9"
 
 def test_extract_workflow_run_envelope():
     ref = FSRef(_JOURNAL)
-    recs = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_id(ref))
+    recs = extract_workflow_run(ref, resolve_id(SchemaRegistry.get("workflow_run"), ref))
     assert len(recs) == 1
     rec = recs[0]
 
     # Stable v5 id minted from the provider runId.
     assert rec.id == mint_uuid(RUN_ID)
     assert is_valid_entity_id(rec.id)
-    assert workflow_run_id(FSRef(_JOURNAL)) == rec.id
+    assert SchemaRegistry.get("workflow_run").read_identity(SchemaRegistry.get("workflow_run").layout_for(FSRef(_JOURNAL))) == rec.id
 
     assert rec.run_id == RUN_ID
     assert rec.name == "anatomy-probe"
@@ -52,7 +49,7 @@ def test_extract_workflow_run_envelope():
 
 def test_extract_asset_ref_is_read_only():
     ref = FSRef(_JOURNAL)
-    rec = extract_workflow_run(ref, SchemaRegistry.get("workflow_run").mint_id(ref))[0]
+    rec = extract_workflow_run(ref, resolve_id(SchemaRegistry.get("workflow_run"), ref))[0]
     ar = getattr(rec, "_asset_ref", None)
     assert ar is not None
     assert ar.read_only is True

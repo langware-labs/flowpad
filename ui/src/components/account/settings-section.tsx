@@ -1,6 +1,7 @@
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, type WizardResult } from '@sdk';
 import apiClient from '@sdk/client';
 import { SettingsCard, SettingRow } from '@src/components/settings/settings-card';
+import { openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
 import { Button } from '@src/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
@@ -38,6 +39,58 @@ export function SettingsSection() {
       setResettingOnboarding(false);
     }
   }, [refetchOnboarding, t]);
+
+  // First-run setup, again: opens its popup blank. Nothing runs until the person presses the
+  // popup's own Start — the same order the first-run trigger keeps — so its install questions
+  // never land on top of a popup that has not been read yet.
+  const [runningSetup, setRunningSetup] = useState(false);
+  const handleRunSetup = useCallback(async () => {
+    setRunningSetup(true);
+    window.dispatchEvent(new Event('close-account-dialog'));
+    try {
+      if (!(await openSetupWizard())) throw new Error(t`The setup wizard is not installed.`);
+    } catch (err) {
+      notify.error({
+        title: t`Could not open setup`,
+        message: err instanceof Error ? err.message : String(err),
+        forceToast: true,
+      });
+    } finally {
+      setRunningSetup(false);
+    }
+  }, [t]);
+
+  // TEMPORARY — DEBUG ONLY, for testing the `llm-setup` wizard end to end.
+  // Remove this button and handler once that work ships — see FLOWPAD-2171.
+  const [removingTools, setRemovingTools] = useState(false);
+  const handleRemoveTools = useCallback(async () => {
+    setRemovingTools(true);
+    try {
+      // The route also runs the wizard right after removing — the wizard
+      // page's icons are its LAST COMPLETED run's record, not a live check, so
+      // without that this button would remove tools and leave everything
+      // showing exactly as green as before.
+      const action = new ActionInfo('remove-tools', 'compute_node', '@local', 'POST');
+      const answer = await dataManager.callAction<
+        unknown,
+        { removed: string[]; absent: string[]; kept: string[]; failed: string[]; wizard: WizardResult | null }
+      >(action);
+      // One line per non-empty group: a tool that is already gone, or one that cannot be removed
+      // (Flowpad's own, a read-only system copy), is not an error and must not read like one.
+      const lines = [
+        answer.removed.length ? t`Removed: ${answer.removed.join(', ')}` : '',
+        answer.absent.length ? t`Already not installed: ${answer.absent.join(', ')}` : '',
+        answer.kept.length ? t`Kept (cannot or should not be removed): ${answer.kept.join(', ')}` : '',
+        answer.failed.length ? t`Could not remove: ${answer.failed.join(', ')}` : '',
+      ].filter(Boolean);
+      const notifyFn = answer.failed.length ? notify.warning : notify.success;
+      notifyFn({ title: t`Tools removed, wizard re-checked`, message: lines.join('\n') });
+    } catch (err) {
+      notify.error({ title: t`Could not remove tools`, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setRemovingTools(false);
+    }
+  }, [t]);
 
   const computeNode = dataContext.computeNode;
 
@@ -77,9 +130,7 @@ export function SettingsSection() {
 
       <SettingRow
         label={<Trans>Onboarding</Trans>}
-        description={
-          <Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>
-        }
+        description={<Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>}
         control={
           <Button
             size="sm"
@@ -93,6 +144,33 @@ export function SettingsSection() {
       />
 
       <SettingRow
+        label={<Trans>Setup</Trans>}
+        description={
+          <Trans>Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch.</Trans>
+        }
+        control={
+          // Stacked, so the description on the left keeps its width instead of wrapping word by word.
+          <div className="flex flex-col items-stretch gap-2">
+            <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
+              {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
+            </Button>
+            {/* TEMPORARY DEBUG BUTTON, Dev mode only — remove before shipping, see FLOWPAD-2171. */}
+            {isDev && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleRemoveTools()}
+                disabled={removingTools}
+                title="DEV ONLY — actually uninstalls claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
+              >
+                {removingTools ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
+              </Button>
+            )}
+          </div>
+        }
+      />
+
+      <SettingRow
         htmlFor="cli-log-level"
         label={<Trans>CLI Log Level</Trans>}
         description={<Trans>Debug level includes hook invocations.</Trans>}
@@ -102,8 +180,12 @@ export function SettingsSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="info"><Trans>Info</Trans></SelectItem>
-              <SelectItem value="debug"><Trans>Debug</Trans></SelectItem>
+              <SelectItem value="info">
+                <Trans>Info</Trans>
+              </SelectItem>
+              <SelectItem value="debug">
+                <Trans>Debug</Trans>
+              </SelectItem>
             </SelectContent>
           </Select>
         }

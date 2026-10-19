@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
+from importlib.metadata import PackageNotFoundError, distribution
 from typing import Any, Optional
 
 import httpx
@@ -12,16 +14,18 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from flow_sdk import __version__
+from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.server import self_update
 from flow_sdk.server.launch import get_status
 from flow_sdk.utils import hub
 from flow_sdk.utils.semver import _cmp_key, is_newer, string2semver
+from flow_sdk.utils.serialization import epoch_to_iso_utc
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-PYPI_URL = "https://pypi.org/pypi/flowpad/json"
+PYPI_URL = self_update.PYPI_URL
 GITHUB_RELEASES_URL = "https://api.github.com/repos/langware-labs/flowpad/releases"
 HTTP_TIMEOUT = 8.0
 MAX_RELEASES = 20
@@ -60,9 +64,11 @@ class HubInfo(BaseModel):
     version: Optional[str] = None
     deployed_at: Optional[str] = None
     generated_at: Optional[str] = None
-    # Fixed community/support project id (the app opens support tickets against
-    # it). Null on older hubs that don't advertise it.
-    community_project_id: Optional[str] = None
+    # Default helpdesk project id (the app opens support tickets against it).
+    # Null on older hubs that don't advertise it.
+    helpdesk_project_id: Optional[str] = None
+    # Portal repo for that desk — the help content the app clones locally.
+    helpdesk_portal_git_url: Optional[str] = None
 
 
 class VersionCheckResponse(BaseModel):
@@ -71,6 +77,11 @@ class VersionCheckResponse(BaseModel):
     releases: list[ReleaseInfo] = []
     github_error: Optional[str] = None
     hub: Optional[HubInfo] = None
+    #: When THIS machine installed the running flow SDK (not when it was
+    #: published). A LOCAL fact, so it sits beside ``hub`` rather than inside
+    #: ``pypi``: it holds whether or not the PyPI fetch succeeded, and says
+    #: nothing about the registry. ``None`` for a source checkout.
+    installed_at: Optional[str] = None
 
 
 class InstallVersionRequest(BaseModel):
@@ -98,11 +109,34 @@ def _hub_info_from_raw(hub_raw: dict[str, Any] | None) -> Optional[HubInfo]:
     if not hub_raw:
         return None
     return HubInfo(
-        community_project_id=_optional_str(hub_raw.get("community_project_id")),
+        helpdesk_project_id=_optional_str(hub_raw.get("helpdesk_project_id")),
+        helpdesk_portal_git_url=_optional_str(hub_raw.get("helpdesk_portal_git_url")),
         version=_optional_str(hub_raw.get("version")),
         deployed_at=_optional_str(hub_raw.get("deployed_at")),
         generated_at=_optional_str(hub_raw.get("generated_at")),
     )
+
+
+def _installed_at() -> Optional[str]:
+    """UTC ISO time this machine installed the running flowpad, or ``None``.
+
+    The installer writes ``flowpad-<version>.dist-info`` when it unpacks the
+    wheel, so that directory's mtime IS the install event — there is no
+    recorded field for it in package metadata. A source checkout resolves to
+    an ``.egg-info`` instead, whose mtime is whenever the metadata was last
+    regenerated rather than an install; report nothing there rather than a
+    number that looks authoritative and isn't.
+    """
+    try:
+        # ``_path`` is private, but importlib.metadata exposes no public way to
+        # reach a distribution's own metadata directory (``locate_file`` resolves
+        # paths relative to the install root, not to the dist-info itself).
+        path = getattr(distribution(self_update.PACKAGE), "_path", None)
+        if path is None or not str(path).endswith(".dist-info"):
+            return None
+        return epoch_to_iso_utc(os.path.getmtime(path))
+    except (PackageNotFoundError, OSError):
+        return None
 
 
 def _pypi_releases(releases_raw: Any) -> list[PypiRelease]:
@@ -143,7 +177,11 @@ def _pypi_releases(releases_raw: Any) -> list[PypiRelease]:
 
 async def _fetch_pypi(client: httpx.AsyncClient) -> PypiInfo:
     try:
-        resp = await client.get(PYPI_URL, timeout=HTTP_TIMEOUT)
+        # PyPI's CDN serves this document with max-age=900 and its edges
+        # disagree for minutes after an upload, so a fresh release can read as
+        # the previous one. A unique query string skips the edge cache; our own
+        # _CACHE_TTL_S still bounds how often we ask.
+        resp = await client.get(PYPI_URL, params={"t": time.time_ns()}, timeout=HTTP_TIMEOUT)
         resp.raise_for_status()
         data: dict[str, Any] = resp.json()
         latest = (data.get("info") or {}).get("version")
@@ -198,11 +236,16 @@ async def _fetch_github(client: httpx.AsyncClient) -> tuple[list[ReleaseInfo], O
         return [], str(exc)
 
 
-@router.get("/api/v1/version/check", response_model=VersionCheckResponse)
-async def check_version() -> VersionCheckResponse:
+@router.get("/api/v1/version/check", response_model=ApiSuccessResponse[VersionCheckResponse])
+async def check_version(refresh: bool = False) -> ApiSuccessResponse[VersionCheckResponse]:
+    """Standard ``{status, data}`` envelope; ``data`` is a :class:`VersionCheckResponse`.
+
+    ``refresh`` is the popover's "Check again": it skips the cache, because a
+    user who just heard about a release must not be shown the one before it.
+    """
     cached = _cache.get("v1")
-    if cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
-        return cached[1]
+    if not refresh and cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
+        return ApiSuccessResponse(data=cached[1])
     async with httpx.AsyncClient() as client:
         pypi_info, github_result, hub_raw = await asyncio.gather(
             _fetch_pypi(client),
@@ -217,16 +260,21 @@ async def check_version() -> VersionCheckResponse:
         releases=releases,
         github_error=github_error,
         hub=hub_info,
+        installed_at=_installed_at(),
     )
     # Only cache when both upstreams succeeded — keeps a transient outage from
     # pinning a broken response for 5 minutes.
     if pypi_info.error is None and github_error is None:
         _cache["v1"] = (time.monotonic(), resp)
-    return resp
+    return ApiSuccessResponse(data=resp)
 
 
-@router.post("/api/v1/version/install", response_model=InstallVersionResponse)
-async def install_version(req: InstallVersionRequest) -> InstallVersionResponse:
+@router.post("/api/v1/version/install", response_model=ApiSuccessResponse[InstallVersionResponse])
+async def install_version(req: InstallVersionRequest) -> ApiSuccessResponse[InstallVersionResponse]:
+    return ApiSuccessResponse(data=await _install_version(req))
+
+
+async def _install_version(req: InstallVersionRequest) -> InstallVersionResponse:
     """Reinstall a pinned flowpad version and restart the server via the monitor.
 
     Cross-platform / Electron-independent: the actual restart is performed by the
@@ -246,17 +294,20 @@ async def install_version(req: InstallVersionRequest) -> InstallVersionResponse:
             reason="editable",
             error="This is an editable/dev install — reinstall is disabled.",
         )
-    if not get_status().get("monitor_alive"):
+    if not (await asyncio.to_thread(get_status)).get("monitor_alive"):
         return InstallVersionResponse(
             success=False,
             reason="no_monitor",
             error="No monitor process is running, so the server can't auto-restart.",
         )
 
-    ok, output = await asyncio.to_thread(self_update.reinstall_version, version)
-    if not ok:
+    answer = await asyncio.to_thread(self_update.reinstall_version, version)
+    if not answer.ok:
         return InstallVersionResponse(
-            success=False, reason="install_failed", error="Install failed", output=output[-2000:]
+            success=False,
+            reason="install_failed",
+            error=answer.detail or "Install failed",
+            output=(answer.stdout + answer.stderr)[-2000:],
         )
 
     self_update.schedule_restart()

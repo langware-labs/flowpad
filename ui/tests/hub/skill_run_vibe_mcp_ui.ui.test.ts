@@ -4,7 +4,7 @@
  * Alice (runner, real browser).
  *
  *   1. Bob creates the "find me a product" skill and shares it with Alice (SDK).
- *   2. Alice accepts, opens the conversation, downloads it (staged chip), and
+ *   2. Alice receives it, opens the conversation, downloads it (staged chip), and
  *      clicks the RUN icon on the chip.
  *   3. A Vibe process opens; the skill is installed into the conversation
  *      project and run BY NAME (`run the skill <name>`).
@@ -20,7 +20,7 @@
  *   - a settled frontend (the concurrent project-home/context-folders refactor
  *     must land first — a churning tree yields false failures).
  *
- * The SDK share → accept → stage → install legs are already proven by
+ * The SDK share → receive → stage → install legs are already proven by
  * skill_share_two_client.test.ts; the install-then-run-by-name wiring is
  * unit-covered by tests/unit/use-run-received-skill.test.ts. This test covers
  * the NEW browser run surface; the mcp-ui selectors are reused verbatim from
@@ -33,13 +33,12 @@ import type { Browser } from 'playwright';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import { hubAvailable } from './_hub';
-import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as AUTHOR_INSTANCE,
   HUB_INST_2 as RUNNER_INSTANCE,
-  findPendingInvitation,
   getInstance,
   instanceAvailable,
+  syncAssignedConversation,
   type ResolvedInstance,
 } from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
@@ -145,15 +144,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     await post(bob.apiUrl, `/graph/flow_message/${fmId}/upload_body`, {});
     step(`shared fm=${fmId?.slice(0, 8)}`);
 
-    // 2. Alice accepts the invitation (SDK), then opens the conversation in her
-    //    real browser and downloads the bundle → staged chip.
-    const invitation = await pollUntil(
-      () => findPendingInvitation(alice, conv.id),
-      20_000,
-      'pending invitation on dev-2',
-    );
-    await alice.sdk.acceptInvitation({ invitation_id: invitation.id! });
-    step('alice accepted invitation');
+    // 2. Alice synchronizes the immediate assignment, then opens the conversation
+    //    in her real browser and downloads the bundle → staged chip.
+    await syncAssignedConversation(alice, conv.id);
+    step('alice synchronized assignment');
 
     const page = alicePage.page;
     await page.goto(`${alicePage.feUrl}/dock/conversation/${conv.id}?viewMode=advanced`, {
@@ -161,16 +155,26 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     });
     step('alice opened conversation');
     const download = page.getByTestId('download-attachments-button');
-    // Accept deliberately materializes only the message header; the user-owned
-    // Download action is what pulls + stages the bundle. Locator.isVisible's
-    // timeout option is ignored by Playwright, so probing it here races the
-    // first conversation render and can incorrectly skip this required step.
-    // A locator click uses Playwright's existing actionability wait.
-    await download.click({ force: true });
-    step('clicked download');
+    const runIcon = page.getByTestId('skill-run-icon').first();
+    // Depending on the assignment materialization path, the first
+    // browser render legitimately starts in either state:
+    //   • remote body → Download button; the user click stages the bundle;
+    //   • body already staged by assignment sync → the Run chip is present directly.
+    // Race those two production surfaces inside the click's existing
+    // actionability window. An instantaneous isVisible probe would race the
+    // conversation render and misclassify the required branch.
+    const firstSurface = await Promise.race([
+      download.waitFor({ state: 'visible' }).then(() => 'download' as const),
+      runIcon.waitFor({ state: 'visible' }).then(() => 'staged' as const),
+    ]);
+    if (firstSurface === 'download') {
+      await download.click({ force: true });
+      step('clicked download');
+    } else {
+      step('assignment sync already staged the bundle');
+    }
 
     // 3. The run icon appears on the staged skill chip → click it.
-    const runIcon = page.getByTestId('skill-run-icon').first();
     await runIcon.waitFor({ state: 'visible', timeout: 30_000 });
     step('run icon visible');
     await runIcon.click({ force: true });
@@ -179,9 +183,10 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     // A projectless shared conversation prompts for a project (the chosen
     // behavior); a project-mapped one runs directly. Race the two: pick the
     // first project if the picker appears, else the run already resolved one.
-    // A Vibe session opens at the display URL (/dock/display/agentic_process-…?
-    // viewMode=vibe — the vibe Display FSM), not /dock/shell/.
-    const VIBE_URL = /\/dock\/(display|shell)\/agentic_process-/;
+    // A Vibe session opens as its host tab (/dock/vibe/agentic_process-…) or, once it shows
+    // something, at its display address (/dock/project/<P>/process/agentic_process-…/display/…)
+    // — docs/tab-management.md.
+    const VIBE_URL = /\/dock\/vibe\/agentic_process-|\/dock\/project\/[0-9a-f-]+\/process\/agentic_process-/;
     const pickerRow = page.locator('[data-testid^="project-selector-row-"]').first();
     const shell = page.waitForURL(VIBE_URL, { timeout: 40_000 }).then(() => 'shell' as const).catch(() => null);
     const picker = pickerRow.waitFor({ state: 'visible', timeout: 40_000 }).then(() => 'picker' as const).catch(() => null);
@@ -194,7 +199,7 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     const opened = (await shell) === 'shell';
     if (!opened) {
       const text = (await page.locator('body').textContent().catch(() => '')) ?? '';
-      step(`NO /dock/shell/ — url=${page.url().replace(alicePage.feUrl, '')} toast=${/could not start|failed/i.test(text)} errs=${JSON.stringify((alicePage.consoleErrors ?? []).slice(-5))}`);
+      step(`NO Vibe session — url=${page.url().replace(alicePage.feUrl, '')} toast=${/could not start|failed/i.test(text)} errs=${JSON.stringify((alicePage.consoleErrors ?? []).slice(-5))}`);
       if (LIVE_AGENT_UNAVAILABLE.test(text)) return void ctx.skip();
       throw new Error('Vibe process did not open after clicking run');
     }

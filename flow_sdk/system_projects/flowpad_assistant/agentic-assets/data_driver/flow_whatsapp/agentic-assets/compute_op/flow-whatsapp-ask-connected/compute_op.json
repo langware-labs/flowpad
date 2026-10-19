@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "id": "62b245bc-ccbc-454f-ad1e-dcdc182f240d",
+  "name": "flow-whatsapp-ask-connected",
+  "label": "Send it from your phone",
+  "description": "The phone sends its code; the hub validates it. The step finishes by itself once the phone is connected.",
+  "subkind": "ask",
+  "output_spec_kind": "confirm",
+  "exe_data": {
+    "prompt": "Connect WhatsApp to {{connect.name}}",
+    "detail": "**1. Open WhatsApp** — [tap here]({{connect.link}}) on your phone, or scan:\n\n![Scan with your phone]({{connect.qr}})\n\n**2. Send the code** `{{connect.code}}` — it is already typed in the message.\n\n**3. Status:** waiting for your message…",
+    "recheck": true,
+    "timeout_seconds": 1800,
+    "auto_continue": true
+  },
+  "status_check": "source_step:{{source}}:connected"
+}

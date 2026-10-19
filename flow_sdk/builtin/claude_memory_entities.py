@@ -13,7 +13,7 @@ from typing import ClassVar, List, Optional, Type
 
 from pydantic import BaseModel
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.context_data_schemas import (
     ClaudeMdContextData,
@@ -28,7 +28,7 @@ class Translation(BaseModel):
 
     A translation is NOT a separate entity — it is an alternate body file of the
     same asset, living under the asset's record-data folder at
-    ``translations/<lang>.md`` (see ``flow_sdk/fs_store/operations/translation.py``).
+    ``translations/<lang>.md`` (see ``flow_sdk/assets/translations.py``).
     The UI selects it inline via the ``?lang=<code>`` dock prop (same tab,
     ``DockPointer.options`` are excluded from tab identity).
 
@@ -46,6 +46,12 @@ class Translation(BaseModel):
     process_id: Optional[str] = None
 
 
+
+
+
+
+
+
 class Markdown(Entity):
     """Base entity for all markdown-file-backed record types.
 
@@ -55,18 +61,22 @@ class Markdown(Entity):
     _abstract: ClassVar[bool] = True
     name: str = APIField(default="")
     asset_type: str = APIField(default="")
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     status: str = APIField(default="")
     # Folder-containment fields (populated at index time by MarkdownRecord.from_markdown).
     # parent_path is the immediate containing directory; vault_root is the scan root.
     # These power the Obsidian-style Wiki folder tree in the UI.
-    parent_path: str = APIField(default="")
-    vault_root: str = APIField(default="")
+    # Sender-local placement: never rides a bundle or the hub.
+    parent_path: str = APIField(default="", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+    vault_root: str = APIField(default="", persist=Persist.TRUE, sharing=Sharing.PRIVATE)
+    # The document text — the serializer's ``Body``. Never a DB column: the
+    # file is the source of truth and viewers stream it via FSRef.
+    body: str = NoDBAPIField(default="")
     # Translated copies of this doc's primary body. Each entry points at a
     # ``translations/<lang>.md`` file under the record-data folder; the UI lists
     # them in the Translations side panel and swaps the editor body inline via
     # the ``?lang=`` dock prop. Appended by the ``add_translation`` action.
-    translations: List[Translation] = APIField(default_factory=list)
+    translations: List[Translation] = APIField(default_factory=list, sharing=Sharing.PRIVATE)  # local sidecars
     _api_visible: ClassVar[bool] = True
     # Sidecar shape when another entity puts a `markdown-<id>` /
     # `claude_memory-<id>` / `claude_rules-<id>` / `docs-<id>` reference in
@@ -78,10 +88,13 @@ class Markdown(Entity):
 class Docs(Markdown):
     type: str = APIField(default="markdown")
     title: str = APIField(default="")
+    # Hub storage is entity-scoped and canonical, independent of the sender's
+    # local asset path. Share-time byte transport publishes this record's main
+    # ref under the stable Hub name.
     # OKF-compatible metadata. Values are preserved as authored for
     # storage/search; the tag binding readers independently select and
     # normalize the grammar-valid dot paths used by the taxonomy.
-    tags: List[str] = APIField(default_factory=list)
+    tags: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
     links: List[str] = APIField(default_factory=list)
 
 

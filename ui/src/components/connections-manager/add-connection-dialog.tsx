@@ -1,0 +1,135 @@
+import * as React from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
+import { KeyRound, KeySquare } from 'lucide-react';
+import type { Credential, OAuthProvider } from '@sdk';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { getIconPacks, resolveIcon } from '@sdk/icons';
+import { flowIconComponent } from '@sdk/react/FlowIcon';
+import { DesktopTile, TileSection } from '@src/components/quick-create/QuickCreatePanel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+
+/**
+ * The connection catalogue, as tiles.
+ *
+ * The table lists what EXISTS; everything you could add lives here — the same
+ * split the desktop makes between your files and "New …".
+ *
+ * `DesktopTile` and `TileSection` are the project-home tiles, imported rather
+ * than restyled: they are exported precisely "so sibling surfaces present the
+ * same shape rather than inventing a second look for the same kind of act", and
+ * adding a connection is the same kind of act as adding an asset.
+ */
+export interface AddConnectionDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** OAuth providers with no credential held yet. */
+  providers: OAuthProvider[];
+  /** Credential definitions with nothing declared or detected yet. */
+  specs: Credential[];
+  onPickProvider: (providerName: string) => void;
+  onPickCredential: (spec: Credential) => void;
+  /** Declare your own set of environment variables. */
+  onPickCustom: () => void;
+  /** Set while a pick is in flight, so the tile can spell "working". */
+  busyKey?: string | null;
+}
+
+/** A credential definition's glyph — `icon_name` is asset data, not a TYPE
+ *  icon, so `iconForType` is the wrong registry here. */
+function specIcon(iconName?: string) {
+  return iconName ? lucideByName(iconName) : KeyRound;
+}
+
+/** The ref a brand answers to: its own name if the packs know it, else whatever
+ *  the backend published.
+ *
+ *  The provider's NAME first — going straight to the published icon is what put
+ *  a generic key on the Google tile and a theme-blind octocat on GitHub's. The
+ *  packs carry those brands under their own names, so asking by name is both
+ *  the override and the fix.
+ */
+function brandRef(name: string, published?: string): string | undefined {
+  return resolveIcon(name, getIconPacks()).kind !== 'none' ? name : published;
+}
+
+function providerIcon(provider: OAuthProvider) {
+  const ref = brandRef(provider.name, provider.icon);
+  return ref ? flowIconComponent(ref) : KeyRound;
+}
+
+/** A credential definition's glyph, brand first.
+ *
+ *  Same order as a provider's, because the two sections show the same companies:
+ *  "Anthropic" and "Anthropic API key" are one brand and must not wear two
+ *  different colours one row apart. */
+function credentialIcon(spec: Credential) {
+  const ref = brandRef(String(spec.name ?? ''), spec.icon_name);
+  return ref ? flowIconComponent(ref) : KeyRound;
+}
+
+export function AddConnectionDialog({
+  open,
+  onOpenChange,
+  providers,
+  specs,
+  onPickProvider,
+  onPickCredential,
+  onPickCustom,
+  busyKey,
+}: AddConnectionDialogProps) {
+  const { t } = useLingui();
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl" data-testid="add-connection-dialog">
+        <DialogHeader>
+          <DialogTitle>
+            <Trans>Add connection</Trans>
+          </DialogTitle>
+          <DialogDescription>
+            <Trans>Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere.</Trans>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-5">
+          {providers.length > 0 && (
+            <TileSection title={<Trans>Sign in with a provider</Trans>}>
+              {providers.map((p) => {
+                const Icon = providerIcon(p);
+                return (
+                  <DesktopTile
+                    key={p.name}
+                    Icon={Icon}
+                    label={p.display_name || p.name}
+                    loading={busyKey === p.name}
+                    data-testid={`add-connection-${p.name}`}
+                    onClick={() => onPickProvider(p.name)}
+                  />
+                );
+              })}
+            </TileSection>
+          )}
+
+          <TileSection title={<Trans>Use an API key</Trans>}>
+            {specs.map((spec) => (
+              <DesktopTile
+                key={spec.name}
+                Icon={credentialIcon(spec)}
+                label={spec.title || String(spec.name ?? '')}
+                loading={busyKey === spec.name}
+                data-testid={`add-connection-${spec.name}`}
+                onClick={() => onPickCredential(spec)}
+              />
+            ))}
+            <DesktopTile
+              Icon={KeySquare}
+              label={t`Custom credentials`}
+              data-testid="add-connection-custom"
+              onClick={onPickCustom}
+            />
+          </TileSection>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

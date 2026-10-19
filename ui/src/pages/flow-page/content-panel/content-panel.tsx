@@ -1,90 +1,141 @@
+import { OwnerLoadGate } from '@src/components/project-setup/OwnerLoadGate';
+import { AgentHomeAfterLoad } from '@src/project-home-page/AgentHomeAfterLoad';
+import { PROVIDER_PROJECT_PARAM, HOME_AGENT_PARAM, CONSUMER_PROJECT_PARAM } from '@src/project-home-page/dependency-home';
+import { PrimaryContentRegion, PrimaryContentFallback } from '@sdk/react/primary-content';
 import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
-import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import { ArtifactsView } from '@src/components/artifacts';
 import { AssistanceViewer } from '@src/components/assistance-viewer/AssistanceViewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
-import EnvVarsManager from '@src/components/EnvVarsManager';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
-import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
-import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 import { HubRecordsView } from '@src/pages/hub-browse/HubRecordsView';
 import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
+import { HubProjectPage } from '@src/pages/hub-project/HubProjectPage';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, PageId, type OAuthConnection } from '@sdk';
-import { useAuth, useContext } from '@sdk/react/hooks';
+import { PageId } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { HubAssetsPage } from '@src/components/assets/HubAssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
-import { ConnectionsManager } from '@src/components/connections-manager';
+import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
-import { InboxView } from '@src/components/inbox-view/InboxView';
+import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
+import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
-import { TriggersView } from '@src/components/triggers-view';
-import { Button } from '@src/components/ui/button';
+import { HubTerminal } from '@src/components/terminal/HubTerminal';
+import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { Tab } from '@sdk';
-import { useTerminalTabs } from '@src/tabs/useTabs';
+import { Tab, tabForDockKey } from '@sdk';
+import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { appDockAddress } from '@src/navigation/app-dock';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
+import {
+  DEFAULT_NAVIGATOR_POLICY,
+  NavigatorCollapsePolicyContext,
+  POPOUT_NAVIGATOR_POLICY,
+} from '@src/components/navigator-panel/NavigatorPanel';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
 import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
 import { useSurveyStore } from '@src/store/use-survey-store';
-import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
+import { TabLifecycleState } from '@sdk';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
 import { useDockLoadError } from '@src/routes/loaders/dock-load-error-store';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
+import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
-import { AlertTriangle, LogIn } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo } from 'react';
+import { lazyWebglView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
 // WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
 // the entire app in any WebGL-less context (headless browsers, GPU-disabled
 // CI, software-render fallbacks). Loading it only when the graph tab opens
-// keeps app bootstrap independent of WebGL availability.
-const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
-const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
-const TagGraphView = lazy(() =>
+// keeps app bootstrap independent of WebGL availability, and the
+// Every sigma-bearing view goes through `lazyWebglView`, which keeps the sigma
+// chunk from ever being evaluated when WebGL is missing — the tab shows
+// WebglUnavailableView instead of crashing. Use it for any new graph view:
+// repeating the check by hand is what let TagGraphView and GenericSubgraphView
+// ship unguarded.
+const GraphView = lazyWebglView(() =>
+  import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })),
+);
+// Lazy like its neighbours: the portal drags react-markdown + the article
+// renderer, which no user who never opens a help desk should pay for.
+const HelpdeskPortalPage = lazy(() =>
+  import('@src/components/helpdesk/HelpdeskPortalPage').then((m) => ({ default: m.HelpdeskPortalPage })),
+);
+// Lazy like its neighbours: both hub token screens pull recharts, which no
+// user who never opens them should pay for in this chunk.
+const LlmSourcesView = lazy(() =>
+  import('@src/components/llm-sources/LlmSourcesView').then((m) => ({ default: m.LlmSourcesView })),
+);
+const LlmEndpointsView = lazy(() =>
+  import('@src/components/llm-endpoints/LlmEndpointsView').then((m) => ({ default: m.LlmEndpointsView })),
+);
+// Lazy like its neighbours: a one-question onboarding screen most sessions never open.
+const LlmSetupView = lazy(() =>
+  import('@src/components/llm-setup/LlmSetupView').then((m) => ({ default: m.LlmSetupView })),
+);
+// Lazy like its neighbours: one screen (hub page and desk alike) most sessions never open.
+const InboundView = lazy(() => import('@src/components/inbound/InboundView').then((m) => ({ default: m.InboundView })));
+const TokenPlanView = lazy(() =>
+  import('@src/components/token-plan/TokenPlanView').then((m) => ({ default: m.TokenPlanView })),
+);
+const WorldView = lazyWebglView(() =>
+  import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })),
+);
+const TagGraphView = lazyWebglView(() =>
   import('@src/components/graph-view/TagGraphView').then((m) => ({ default: m.TagGraphView })),
 );
-const GenericSubgraphView = lazy(() =>
+const GenericSubgraphView = lazyWebglView(() =>
   import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
 );
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
-const AgenticFlowsView = lazy(() =>
-  import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
+const GraphWorkflowsView = lazy(() =>
+  import('@src/components/graph-workflows/GraphWorkflowsView').then((m) => ({ default: m.GraphWorkflowsView })),
 );
-const SurveyView = lazy(() =>
-  import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
+const AutomationsView = lazy(() =>
+  import('@src/components/automations/AutomationsView').then((m) => ({ default: m.AutomationsView })),
 );
-const ShowView = lazy(() =>
-  import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })),
+const AssetListView = lazy(() =>
+  import('@src/components/asset-counters/AssetListView').then((m) => ({ default: m.AssetListView })),
 );
-const AppHost = lazy(() =>
-  import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })),
+const DataSourcesView = lazy(() =>
+  import('@src/components/data-sources/DataSourcesView').then((m) => ({ default: m.DataSourcesView })),
 );
+const SchemaTreeView = lazy(() =>
+  import('@src/components/schema-tree/SchemaTreeView').then((m) => ({ default: m.SchemaTreeView })),
+);
+const RagView = lazy(() => import('@src/components/rag/RagView').then((m) => ({ default: m.RagView })));
+const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => ({ default: m.RunsView })));
+const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
+const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
+const AskView = lazy(() => import('@src/components/ask/AskView'));
+const AssistantPopoutView = lazy(() => import('@src/components/floating-chat/AssistantPopoutView'));
+const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -99,8 +150,10 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
   ViewType.HOME,
   ViewType.CONVERSATION,
   ViewType.SHELL,
+  ViewType.VIBE,
   ViewType.AGENTIC_PROCESS,
   ViewType.WEB_APP,
+  ViewType.APP,
   ViewType.EDITOR,
   ViewType.DIFF,
   ViewType.MARKDOWN,
@@ -114,7 +167,26 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
-export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolean } = {}) {
+/**
+ * True under a host that draws the global tab strip ITSELF (`flow-page`), above
+ * every layout: one owner, one mounted strip, so switching between a Vibe tab and
+ * another tab never remounts it. A ContentPanel under it frames its body as if the
+ * strip were its own, but does not draw a second one.
+ */
+export const TabStripOwnedAbove = createContext(false);
+
+export function ContentPanel(props: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
+  return (
+    <PrimaryContentRegion>
+      <ContentPanelBody {...props} />
+    </PrimaryContentRegion>
+  );
+}
+
+function ContentPanelBody({
+  minimalChrome = false,
+  contentEpoch,
+}: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
   const activeLifecycle = useTabLifecycle(currentDock?.tabHash);
@@ -122,8 +194,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { user } = useAuth();
 
-  const { agent } = useAgentContext();
-  const { project: contextProject } = useContext();
+  const { agent, project } = useAgentContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer();
@@ -144,30 +215,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
-  const { addEnvVar, deleteEnvVar } = useEnvVarsStore();
-  const [connections, setConnections] = useState<OAuthConnection[]>([]);
-
-  const handleConnectionConnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) =>
-        conn.id === connectionId ? { ...conn, status: ConnectionStatus.CONNECTED, connectedAt: new Date() } : conn,
-      ),
-    );
-  }, []);
-
-  const handleConnectionDisconnect = useCallback((connectionId: string) => {
-    setConnections((prev) =>
-      prev.map((conn) => (conn.id === connectionId ? { ...conn, status: ConnectionStatus.DISCONNECTED } : conn)),
-    );
-  }, []);
-
-  const { setOpenEnvironmentTab } = useEnvVarsStore();
-
-  // Same live retry path as vibe-workspace: prompt the active process.
-  const onWebappErrorRetry = useCallback(
-    (retryMessage: string) => void dataContext.agenticProcess?.prompt(retryMessage),
-    [],
-  );
 
   const handleExplorerFileSelect = useCallback(
     (path: string) => {
@@ -180,17 +227,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
 
-  // React to shouldOpenEnvironmentTab flag
-  useEffect(() => {
-    setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
-  }, [navigation, setOpenEnvironmentTab]);
-
   // When the URL's active terminal is closing (is_disabled), redirect to the
   // first alive tab. A pointer-less shell URL is loader-owned (the loader
   // resolves the default target), so we only act when a tab matches the URL.
   useEffect(() => {
-    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
-    const active = terminalTabs.find((t) => t.dockPointer?.tabHash === currentDock.tabHash);
+    if (!DockPointer.isSessionView(currentDock?.viewType) || !currentDock?.pointer) return;
+    const active = tabForDockKey(terminalTabs, currentDock.tabHash);
     if (active?.is_disabled) {
       const alive = terminalTabs.find((t) => t.id !== active.id && !t.is_disabled);
       if (alive) navigateToTab(alive);
@@ -217,7 +259,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // Chrome-less either because the host asked (embedded, e.g. the vibe display
   // pane) or a Vibe creator surface. No longer vibe-only — hence `suppressChrome`.
   const isVibe = useIsVibe();
-  const suppressChrome = minimalChrome || (isVibe && VIBE_CREATOR_SURFACES.has(bodyViewType));
+  // Only a dock that HAS a mode (a session, or a child its workspace hosts) can
+  // be a Vibe creator surface; an ordinary page keeps its navigator and framing.
+  const suppressChrome =
+    minimalChrome || (isVibe && !!currentDock?.carriesViewMode && VIBE_CREATOR_SURFACES.has(bodyViewType));
 
   // Chrome-less when the surface is full-bleed (Home — a welcome landing, not a
   // tabbed workspace), in the win/ focus layout, or a Vibe creator surface.
@@ -228,11 +273,13 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // surfaces hide it. `hideChrome` (strip conditions + fullbleed) governs the
   // navigator/border framing — derived from `showTabStrip` so the shared
   // conditions exist exactly once.
-  const showTabStrip = !windowMode && !suppressChrome;
+  // Every real tab shows the strip — a Vibe tab is a tab like any other. Only the
+  // win/ focus layout and an embedded host (`minimalChrome`: the Vibe display pane,
+  // the asset workspace, which draw under flow-page's strip) go without. The Vibe
+  // creator surfaces still drop the NAVIGATOR and framing (`suppressChrome`).
+  const showTabStrip = !windowMode && !minimalChrome;
+  const stripOwnedAbove = useContext(TabStripOwnedAbove);
   const hideChrome = !showTabStrip || VIEWER_REGISTRY[bodyViewType]?.chrome === 'fullbleed';
-
-  // File manager filters
-  const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
 
   // The single body switch (one place, was duplicated between the overview slot
   // and a per-viewType TabsContent ladder). Renders the surface for `vt`; only
@@ -245,10 +292,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
     switch (vt) {
       case ViewType.WORLDVIEW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <WorldView />
           </Suspense>
         );
+      case ViewType.ORGANIZATION:
+        return <OrganizationPage />;
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
       case ViewType.HUB_ENTITY:
@@ -256,6 +305,33 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.CONVERSATION:
         // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
         return <ConversationRoute />;
+      case ViewType.SHELL:
+        // A terminal on a hub compute node (a connected machine's PTY session).
+        return <HubTerminal className="h-full" />;
+      case ViewType.ASSETS:
+        return <HubAssetsPage />;
+      case ViewType.PROJECT:
+        return <HubProjectPage />;
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
+      case ViewType.LLM_ENDPOINTS:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <LlmEndpointsView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
+      case ViewType.TOKEN_PLAN:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <TokenPlanView pointer={currentDock?.pointer} />
+          </Suspense>
+        );
+      case ViewType.INBOUND:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <InboundView />
+          </Suspense>
+        );
       case ViewType.HOME:
       default:
         return <HubHome />;
@@ -295,11 +371,23 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
     switch (vt) {
       case ViewType.SHELL:
+      case ViewType.VIBE:
+        // A slot of the terminal pool: unmounting it (any view change) moves the
+        // terminal back to the pool, it never tears the runtime down.
         return <TabbedTerminal className="h-full" />;
       case ViewType.EDITOR:
         return <CodeEditor activePath={editorActivePath} />;
       case ViewType.WEB_APP:
-        return <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />;
+        return <WebappViewer />;
+      case ViewType.APP: {
+        // An app addressed by its artifact, its webapp definition or its endpoint.
+        // Distinct from WEB_APP (a raw external URL): the address is stable
+        // identity and the endpoint that serves it is derived, which is what makes
+        // a shown app bookmarkable and restorable at all. The epoch rides along
+        // because a remount alone does not reload a frame the registry parked.
+        const app = appDockAddress(currentDock);
+        return app ? <AppDisplayViewer {...app} reloadKey={contentEpoch} /> : null;
+      }
       case ViewType.DIFF:
         if (currentDock?.pointer?.startsWith('asset-compare/')) {
           return <AssetCompareView pointer={currentDock.pointer} />;
@@ -315,7 +403,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <MarkdownViewer />;
       case ViewType.SURVEY:
         return activeSurveyData && onSurveyComplete ? (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
           </Suspense>
         ) : (
@@ -325,43 +413,30 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.SYSTEM_PROFILE:
         return <LiveStatus />;
-      case ViewType.ENVIRONMENT:
-        return user?.id && dataContext.project?.typeId ? (
-          <EnvVarsManager
-            entityTypeId={dataContext.project.typeId}
-            onEnvVarSaved={addEnvVar}
-            onEnvVarDeleted={deleteEnvVar}
-            onEnvVarUpdated={() => {
-              // noteItemUpdated was a Flow entity method - no-op for now
-            }}
-          />
-        ) : (
-          <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
-            <LogIn className="h-10 w-10 text-gray-400" />
-            <div>
-              <h2 className="text-lg font-semibold">
-                <Trans>Login Required</Trans>
-              </h2>
-              <p className="mt-1 text-sm text-gray-500">
-                <Trans>Please log in to view and manage environment variables.</Trans>
-              </p>
-            </div>
-            <Button onClick={() => void navigator.navigateToLogin()} className="px-6">
-              <Trans>Login</Trans>
-            </Button>
-          </div>
-        );
-      case ViewType.CONNECTIONS:
+      case ViewType.CREDENTIALS:
+        return <CredentialsView />;
+      // DESK only: every fact it renders is a box fact, and its box action 404s on the hub.
+      case ViewType.LLM_SOURCES:
         return (
-          <ConnectionsManager
-            connections={connections}
-            currentProject={contextProject?.typeId}
-            onConnectionConnect={handleConnectionConnect}
-            onConnectionDisconnect={handleConnectionDisconnect}
-          />
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <LlmSourcesView pointer={currentDock?.pointer} />
+          </Suspense>
         );
-      case ViewType.API_KEYS:
-        return <ApiKeysView />;
+      // DESK only, same reason. No pointer: the screen is one question — see
+      // `llm-setup-pointer.ts`.
+      case ViewType.LLM_SETUP:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <LlmSetupView />
+          </Suspense>
+        );
+      // The same screen as the hub page's: every claim is the hub's, "This computer" is one more place.
+      case ViewType.INBOUND:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <InboundView />
+          </Suspense>
+        );
       case ViewType.AI_CONFIG:
         return <AIConfigView />;
       case ViewType.HOOKS:
@@ -377,64 +452,104 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.MACHINE:
         return <MachineOverview />;
       case ViewType.EXPLORER:
+        return <ExplorerView onFileSelect={handleExplorerFileSelect} />;
+      // The retired events / triggers / signals / cron ids are rewritten to this
+      // before render (retired-views.ts).
+      case ViewType.AUTOMATIONS:
         return (
-          <ExplorerView
-            filterDefinitions={getAllFilterDefinitions()}
-            enabledFilters={enabledFilters}
-            onEnabledFiltersChange={setEnabledFilters}
-            onFileSelect={handleExplorerFileSelect}
-          />
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AutomationsView />
+          </Suspense>
         );
-      case ViewType.TRIGGERS:
-      case ViewType.CRON:
-        return <TriggersView />;
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
       case ViewType.SHOW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <ShowView />
+          </Suspense>
+        );
+      case ViewType.ASK:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AskView />
+          </Suspense>
+        );
+      case ViewType.ASSISTANT:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AssistantPopoutView />
           </Suspense>
         );
       case ViewType.APPS:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <AppHost />
           </Suspense>
         );
       case ViewType.GRAPH:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <GraphView />
           </Suspense>
         );
       case ViewType.WORLDVIEW:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <WorldView />
           </Suspense>
         );
       case ViewType.TAG:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <TagGraphView />
           </Suspense>
         );
       case ViewType.SUBGRAPH:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <GenericSubgraphView />
           </Suspense>
         );
-      case ViewType.AGENTIC_FLOWS:
+      case ViewType.GRAPH_WORKFLOWS:
         return (
-          <Suspense fallback={null}>
-            <AgenticFlowsView />
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <GraphWorkflowsView />
+          </Suspense>
+        );
+      case ViewType.ASSET_LIST:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AssetListView />
+          </Suspense>
+        );
+      case ViewType.DATA_SOURCES:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <DataSourcesView />
+          </Suspense>
+        );
+      case ViewType.SCHEMA_TREE:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <SchemaTreeView />
+          </Suspense>
+        );
+      case ViewType.RAG:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <RagView />
+          </Suspense>
+        );
+      case ViewType.PROCESS_RUNS:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <RunsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:
         return (
-          <Suspense fallback={null}>
+          <Suspense fallback={<PrimaryContentFallback />}>
             <DocsGraphView />
           </Suspense>
         );
@@ -454,7 +569,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <SearchView />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
-          <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
+          <TabbedTerminal className="h-full" key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             <Trans>No process ID specified</Trans>
@@ -470,6 +585,8 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
+      case ViewType.HELPDESK:
+        return <HelpdeskPortalPage />;
       case ViewType.PROJECT: {
         // A project dock scoped to a collaboration_room (…/collaboration_room/<id>)
         // renders the collaboration room; a bare project dock is the assets
@@ -477,8 +594,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         const { roomId } = DockPointer.parseProjectPointer(currentDock?.pointer);
         return roomId ? <CollaborationPage /> : <AssetsPage />;
       }
-      case ViewType.INBOX:
-        return <InboxView />;
+      case ViewType.STREAM_INBOX:
+        return <StreamInboxView />;
+      case ViewType.AGENT:
+        return <AgentStreamInboxView />;
       case ViewType.CONVERSATION:
         return <ConversationRoute />;
       case ViewType.SPEC:
@@ -493,6 +612,30 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
     }
   };
 
+  const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
+  const display = currentDock?.isActiveDisplay ? (currentDock.hostProcessId ?? '') : '';
+  const isAppBody = bodyViewType === ViewType.APP;
+  // Only an app needs its project running; a file or entity in the display opens as it is.
+  const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);
+  const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
+  const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
+  const renderedBody = homeAgent && consumerProject
+    ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
+    : renderBody(bodyViewType);
+  const appAddress = isAppBody && !homeAgent ? appDockAddress(currentDock) : null;
+  const body = loadProject ? (
+    <OwnerLoadGate
+      urlProject={loadProject}
+      appId={appAddress?.microAppId ?? null}
+      artifactId={appAddress?.artifactId ?? null}
+      display={display}
+    >
+      {renderedBody}
+    </OwnerLoadGate>
+  ) : (
+    renderedBody
+  );
+
   return (
     <div data-testid="content-panel" className="flex h-full w-full flex-col bg-background">
       {/* Simple header - show UserDropdown only for non-logged-in users */}
@@ -504,9 +647,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
       {/* Unified tab strip — persistent fixture chrome: visible on every
           surface (including Home/fullbleed, where no chip is active but the
-          open tabs + openers stay reachable). Only the win/ focus layout and
-          Vibe creator surfaces are deliberately chrome-less. */}
-      {showTabStrip && <UnifiedTabStrip />}
+          open tabs + openers stay reachable). Only the win/ focus layout and an
+          embedded ContentPanel (`minimalChrome`) are deliberately strip-less. */}
+      {showTabStrip && !stripOwnedAbove && <UnifiedTabStrip />}
 
       {/* Zone B — shared left-menu slot, now nested UNDER the tab strip so the
           active view's navigator (assets tree / workflows / docs / triggers /
@@ -515,15 +658,36 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
           body's top edge; the active chip's `-mb-px border-b-transparent`
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
-      <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
-        {!suppressChrome && <NavigatorSlot />}
+      <div
+        className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip && !stripOwnedAbove ? 'border-t border-border' : ''}`}
+      >
+        {/* A win/ popout starts its navigator collapsed and keeps toggles local. */}
+        {!suppressChrome && (
+          <NavigatorCollapsePolicyContext.Provider
+            value={windowMode ? POPOUT_NAVIGATOR_POLICY : DEFAULT_NAVIGATOR_POLICY}
+          >
+            <NavigatorSlot />
+          </NavigatorCollapsePolicyContext.Provider>
+        )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
               so xterm fits on first paint — a flex-col parent broke its initial sizing.
               No entrance animation: a tab switch must be visually instant (a fade
               reads as page navigation, not a tab switch). */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">{renderBody(bodyViewType)}</div>
+          {/* `contentEpoch` re-keys the body to force a remount. It exists because
+              the vibe display is now an ADDRESS, and two of its refresh signals are
+              not addresses: a re-`flow show` of the same target (same URL — a no-op
+              navigation, yet the file behind it may have been rebuilt) and the
+              agent's turn-end (the CLI stream carries no per-file write items, so
+              the turn edge is the only "something changed" signal there is — the
+              host gates it, so a turn that only talked or read does not bump it;
+              see `display-refresh-gate`).
+              Undefined for every other host, which keeps the default a plain
+              uncontrolled body. */}
+          <div key={contentEpoch} className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
+            {body}
+          </div>
         </div>
       </div>
     </div>

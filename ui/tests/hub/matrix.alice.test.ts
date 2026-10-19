@@ -94,9 +94,9 @@ describe('hub: matrix two-process — ALICE', () => {
     expect(conv.remote).toBe(true);
 
     // Collect every inbound message on this conv via the production SDK tap.
-    const inbox: IFlowMessage[] = [];
+    const receivedMessages: IFlowMessage[] = [];
     const offMessage = conv.on(ConversationEvents.MESSAGE, (m: IFlowMessage) => {
-      inbox.push(m);
+      receivedMessages.push(m);
     });
 
     try {
@@ -108,7 +108,7 @@ describe('hub: matrix two-process — ALICE', () => {
       // Bob sends "bob-joined" right after he accepts + joins. Receiving it
       // proves bob is a live participant before alice sends anything real.
       await pollUntil(
-        () => inbox.find((m) => (m.text || '').trim() === 'bob-joined'),
+        () => receivedMessages.find((m) => (m.text || '').trim() === 'bob-joined'),
         20_000,
         'bob-joined handshake',
       );
@@ -120,7 +120,7 @@ describe('hub: matrix two-process — ALICE', () => {
 
       // ── Step 4: wait for bob's text reply. ──────────────────────────────
       await pollUntil(
-        () => inbox.find((m) => (m.text || '').trim() === 'hi-from-bob'),
+        () => receivedMessages.find((m) => (m.text || '').trim() === 'hi-from-bob'),
         15_000,
         'hi-from-bob reply',
       );
@@ -144,7 +144,7 @@ describe('hub: matrix two-process — ALICE', () => {
 
       // ── Step 6: wait for bob's "thanks" (he sends it after download). ───
       await pollUntil(
-        () => inbox.find((m) => (m.text || '').trim() === 'thanks'),
+        () => receivedMessages.find((m) => (m.text || '').trim() === 'thanks'),
         20_000,
         'thanks from bob',
       );

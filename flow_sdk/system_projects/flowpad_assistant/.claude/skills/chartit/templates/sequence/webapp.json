@@ -1,0 +1,6 @@
+{
+  "name": "chart-SLUG",
+  "title": "Chart — TITLE",
+  "description": "An interactive chart (chartit). Its data and feedback live in the project's charts / chart-feedback datasets.",
+  "build": "."
+}

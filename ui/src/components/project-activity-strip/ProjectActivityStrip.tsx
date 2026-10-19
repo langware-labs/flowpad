@@ -1,6 +1,15 @@
+import { RESOURCE_META } from '@src/components/project-resource-list/resource-meta';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { type ProjectResourceListItem, type ProjectResourceType } from '@src/components/project-resource-list';
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
-import { isClassificationTask, isActionTask, getArtifactPaths, openArtifact } from '@src/components/task-bar/task-utils';
+import {
+  isClassificationTask,
+  isActionTask,
+  getArtifactPaths,
+  openArtifact,
+} from '@src/components/task-bar/task-utils';
 import type { Task } from '@sdk';
 import { useAnalysisTaskProgress } from '@src/hooks/use-analysis-task-progress';
 import { useClassificationResult } from '@src/hooks/use-classification-result';
@@ -32,23 +41,6 @@ import { SessionStatusDot } from '@src/components/ui/session-status-dot';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import './ProjectActivityStrip.css';
 
-interface ResourceMeta {
-  label: string;
-  icon: LucideIcon;
-}
-
-const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
-  skill: { label: 'Skill', icon: Sparkles },
-  mcp_server: { label: 'MCP Server', icon: Plug },
-  plugin: { label: 'Plugin', icon: Settings },
-  hook: { label: 'Hook', icon: Terminal },
-  command: { label: 'Command', icon: Command },
-  agent: { label: 'Agent', icon: Bot },
-  session: { label: 'Session', icon: FolderOpen },
-  collaboration_room: { label: 'Collaboration Room', icon: FolderOpen },
-  todo: { label: 'Todo', icon: CheckSquare },
-  claude_md: { label: 'CLAUDE.md', icon: FileText },
-};
 
 // ---------------------------------------------------------------------------
 // renderEventIndicator — shared rendering for the event indicator line
@@ -64,7 +56,7 @@ function renderEventIndicator(
   if (event) {
     const EvtIcon = getEventIcon(event.event_type, event);
     const evtColor = getEventColor(event);
-    const oneLiner = getOneLiner(event.hook_data);
+    const oneLiner = getOneLiner(event);
     return (
       <button
         type="button"
@@ -74,13 +66,12 @@ function renderEventIndicator(
           onOpenEventDialog?.(sessionId, sessionName);
         }}
       >
-        {count > 0 && (
-          <span className="activity-event-badge">{count}</span>
-        )}
+        {count > 0 && <span className="activity-event-badge">{count}</span>}
         <Maximize2 className="h-3 w-3 shrink-0 text-muted-foreground" />
         <EvtIcon className={`h-3 w-3 shrink-0 ${evtColor}`} />
         <span className="min-w-0 truncate text-[11px] text-muted-foreground">
-          {event.event_type}{oneLiner ? ` · ${oneLiner}` : ''}
+          {event.event_type}
+          {oneLiner ? ` · ${oneLiner}` : ''}
         </span>
       </button>
     );
@@ -151,69 +142,73 @@ function SessionRow({
     >
       {/* Full-width name at top */}
       <div className="activity-card-name">
-        <span className="activity-name-text">
-          {item.name.split('\n').find((l) => l.trim()) ?? item.name}
-        </span>
-        {classificationInfo && (() => {
-          const isActing = isActionRunning || actingSessionId === item.sessionId;
+        <span className="activity-name-text">{item.name.split('\n').find((l) => l.trim()) ?? item.name}</span>
+        {classificationInfo &&
+          (() => {
+            const isActing = isActionRunning || actingSessionId === item.sessionId;
 
-          if (isActionComplete && actionArtifacts.length > 0) {
-            return (
-              <span className="activity-name-subtitle flex items-center gap-1.5">
-                {actionArtifacts.map((artifact) => (
-                  <button
-                    key={artifact.path}
-                    type="button"
-                    className="activity-classification-link"
-                    data-testid="artifact-link"
-                    title={artifact.path}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (artifact.skillDockPath) {
-                        navigation.openDock(DockPointer.forSkills(artifact.skillDockPath));
-                      } else {
-                        openArtifact(artifact.path, navigation);
-                      }
-                    }}
-                  >
-                    {artifact.label}
-                  </button>
-                ))}
-              </span>
-            );
-          }
+            if (isActionComplete && actionArtifacts.length > 0) {
+              return (
+                <span className="activity-name-subtitle flex items-center gap-1.5">
+                  {actionArtifacts.map((artifact) => (
+                    <button
+                      key={artifact.path}
+                      type="button"
+                      className="activity-classification-link"
+                      data-testid="artifact-link"
+                      title={artifact.path}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (artifact.skillDockPath) {
+                          navigation.openDock(DockPointer.forSkills(artifact.skillDockPath));
+                        } else {
+                          openArtifact(artifact.path, navigation);
+                        }
+                      }}
+                    >
+                      {artifact.label}
+                    </button>
+                  ))}
+                </span>
+              );
+            }
 
-          if (isActing) {
-            return (
-              <span className="activity-name-subtitle flex items-center gap-1 opacity-60" data-testid="action-running">
-                <Loader2 className="inline h-3 w-3 animate-spin" />
-                <Trans>Creating {classificationInfo.category}...</Trans>
-              </span>
-            );
-          }
+            if (isActing) {
+              return (
+                <span
+                  className="activity-name-subtitle flex items-center gap-1 opacity-60"
+                  data-testid="action-running"
+                >
+                  <Loader2 className="inline h-3 w-3 animate-spin" />
+                  <Trans>Creating {classificationInfo.category}...</Trans>
+                </span>
+              );
+            }
 
-          if (onActAccordingToClassification) {
-            return (
-              <button
-                type="button"
-                className="activity-classification-link"
-                data-testid="classification-link"
-                title={`Create ${classificationInfo.category}: ${classificationInfo.title}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onActAccordingToClassification(item, classificationInfo.command);
-                }}
-              >
-                <span className="classification-category">{classificationInfo.category}</span>
-                {classificationInfo.title}
-              </button>
-            );
-          }
+            if (onActAccordingToClassification) {
+              return (
+                <button
+                  type="button"
+                  className="activity-classification-link"
+                  data-testid="classification-link"
+                  title={`Create ${classificationInfo.category}: ${classificationInfo.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onActAccordingToClassification(item, classificationInfo.command);
+                  }}
+                >
+                  <span className="classification-category">{classificationInfo.category}</span>
+                  {classificationInfo.title}
+                </button>
+              );
+            }
 
-          return null;
-        })()}
+            return null;
+          })()}
         {!classificationInfo && item.subtitle && (
-          <span className="activity-name-subtitle">{item.subtitle.split('\n').find((l) => l.trim()) ?? item.subtitle}</span>
+          <span className="activity-name-subtitle">
+            {item.subtitle.split('\n').find((l) => l.trim()) ?? item.subtitle}
+          </span>
         )}
         {renderEventIndicator(latestEvent, eventCount, item.sessionId ?? '', item.name, onOpenEventDialog)}
       </div>
@@ -223,7 +218,11 @@ function SessionRow({
         <span className="activity-card-time">
           {item.status && <SessionStatusDot status={item.status} />}
           {timeAgo}
-          {!!item.messageCount && <span className="activity-card-msgs"><Trans>{item.messageCount} msgs</Trans></span>}
+          {!!item.messageCount && (
+            <span className="activity-card-msgs">
+              <Trans>{item.messageCount} msgs</Trans>
+            </span>
+          )}
         </span>
         {onSessionResume && (
           <div className="activity-cell-actions">
@@ -254,9 +253,7 @@ function SessionRow({
           </div>
         )}
       </div>
-      {projectLabel && (
-        <span className="activity-card-project">{projectLabel}</span>
-      )}
+      {projectLabel && <span className="activity-card-project">{projectLabel}</span>}
     </div>
   );
 }
@@ -324,7 +321,7 @@ export function ProjectActivityStrip({
         return (
           item.name.toLowerCase().includes(query) ||
           (item.subtitle || '').toLowerCase().includes(query) ||
-          (meta?.label || item.type).toLowerCase().includes(query)
+          (meta?.label ? i18n._(meta.label) : item.type).toLowerCase().includes(query)
         );
       })
       .slice(0, maxItems);
@@ -417,7 +414,7 @@ export function ProjectActivityStrip({
   const refreshButton = onRefresh && (
     <button
       type="button"
-      className="ml-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      className="ms-auto flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
       onClick={onRefresh}
       title={t`Refresh activity`}
     >
@@ -445,7 +442,9 @@ export function ProjectActivityStrip({
       {uploadError && <p className="mt-1 text-xs text-destructive">{uploadError}</p>}
       {uploadConflicts && (
         <div className="mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs">
-          <p className="font-medium text-foreground"><Trans>Entities already exist:</Trans></p>
+          <p className="font-medium text-foreground">
+            <Trans>Entities already exist:</Trans>
+          </p>
           <p className="text-muted-foreground">{uploadConflicts.map((c) => `${c.type}:${c.id}`).join(', ')}</p>
           <div className="flex gap-1.5 pt-0.5">
             <button
@@ -457,7 +456,10 @@ export function ProjectActivityStrip({
             </button>
             <button
               type="button"
-              onClick={() => { setPendingFile(null); setUploadConflicts(null); }}
+              onClick={() => {
+                setPendingFile(null);
+                setUploadConflicts(null);
+              }}
               className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
             >
               <Trans>Cancel</Trans>
@@ -473,11 +475,15 @@ export function ProjectActivityStrip({
       <div className="activity-table" data-testid="project-activity-strip">
         {uploadSection}
         <div className="activity-table-header">
-          <span className="activity-table-title"><Trans>Sessions</Trans></span>
+          <span className="activity-table-title">
+            <Trans>Sessions</Trans>
+          </span>
           {refreshButton}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center py-12">
-          <span className="text-sm text-muted-foreground"><Trans>No recent activity</Trans></span>
+          <span className="text-sm text-muted-foreground">
+            <Trans>No recent activity</Trans>
+          </span>
         </div>
       </div>
     );
@@ -487,7 +493,9 @@ export function ProjectActivityStrip({
     <div className="activity-table" data-testid="project-activity-strip">
       {uploadSection}
       <div className="activity-table-header">
-        <span className="activity-table-title"><Trans>Sessions</Trans></span>
+        <span className="activity-table-title">
+          <Trans>Sessions</Trans>
+        </span>
         {refreshButton}
         <div className="activity-table-search">
           <Search className="activity-table-search-icon" />
@@ -503,16 +511,14 @@ export function ProjectActivityStrip({
 
       <div className="activity-table-scroll">
         {filtered.length === 0 ? (
-          <div className="activity-cell-empty">
-            {search.trim() ? t`No matching sessions` : t`No recent sessions`}
-          </div>
+          <div className="activity-cell-empty">{search.trim() ? t`No matching sessions` : t`No recent sessions`}</div>
         ) : (
           filtered.map((item) => (
             <SessionRow
               key={item.id}
               item={item}
-              classificationTask={item.sessionId ? sessionClassificationMap.get(item.sessionId) ?? null : null}
-              actionTask={item.sessionId ? sessionActionMap.get(item.sessionId) ?? null : null}
+              classificationTask={item.sessionId ? (sessionClassificationMap.get(item.sessionId) ?? null) : null}
+              actionTask={item.sessionId ? (sessionActionMap.get(item.sessionId) ?? null) : null}
               eventCount={item.sessionId ? (sessionEventCounts?.get(item.sessionId) ?? 0) : 0}
               latestEvent={item.sessionId ? (sessionLatestEvent.get(item.sessionId) ?? null) : null}
               isLoading={!!loadingSessionId && loadingSessionId === item.sessionId}

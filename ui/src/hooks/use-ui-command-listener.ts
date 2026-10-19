@@ -1,5 +1,17 @@
-import { editorForPath, ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
+import {
+  editorForPath,
+  ConnectionManager,
+  DockPointerData,
+  dataManager,
+  Layout,
+  PageId,
+  TypeId,
+  ViewType,
+  type IDockPointer,
+  type UiCommandMessage,
+} from '@sdk';
 import { useEffect } from 'react';
+import { NavigationActions } from '@src/navigation/NavigationActions';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
@@ -8,10 +20,20 @@ import {
   type NotificationClickTarget,
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
+import { openInstallRequest } from '@src/components/install/install-request-store';
+import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/ask/ask-modal-store';
+import { openWizardPopup } from '@src/components/assets/editor/wizard/wizard-popup-store';
+import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
-  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => void;
+  /**
+   * Subscribe to main-process banner clicks. Returns a disposer — but only on a
+   * shell new enough to hand one back: the desktop shell and this UI ship as
+   * SEPARATELY VERSIONED artifacts (an installed shell can be months behind the
+   * UI it loads), so the return is optional and every caller must degrade.
+   */
+  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => (() => void) | void;
 }
 
 /**
@@ -31,14 +53,10 @@ export function useUiCommandListener(): void {
   useEffect(() => {
     const cm = ConnectionManager.getInstance();
 
-    // Rewrite the URL to a dock pointer — react-router's createBrowserRouter
-    // listens for popstate. Shared by every ui_command handler.
-    const navigateTo = (pointer: IDockPointer) => {
-      const fullUrl = new DockPointer(pointer).toUrl(window.location.pathname);
-      if (fullUrl === window.location.pathname + window.location.search) return;
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    };
+    // Rewrite the URL to a dock pointer. This listener is mounted above the
+    // router, so it commits through the detached entry point rather than
+    // keeping its own copy of the push-and-popstate idiom.
+    const navigateTo = (pointer: IDockPointer) => NavigationActions.commitDetached(pointer);
 
     const handleNavigateEntity = async (msg: UiCommandMessage) => {
       if (!msg.type || !msg.id) {
@@ -89,9 +107,40 @@ export function useUiCommandListener(): void {
       navigateTo(AssetDocPointer.forVfs(editor, msg.path).toDockPointer());
     };
 
+    // `navigate_dock`: go to a SCREEN. Unlike the two above there is nothing to
+    // resolve — the backend validated the view and its pointer requirement
+    // against the dock-address table, and sends the frontend's own field names,
+    // so this is a construction.
+    const handleNavigateDock = (msg: UiCommandMessage) => {
+      if (!msg.view_type) {
+        console.warn('[ui_command] navigate_dock missing view_type', msg);
+        return;
+      }
+      // A question from a wizard run a screen is showing is drawn THERE, not by sending the tab away.
+      if ((msg.view_type as ViewType) === ViewType.ASK && msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer))
+        return;
+      navigateTo(
+        new DockPointer(
+          msg.view_type as ViewType,
+          msg.pointer ?? undefined,
+          msg.options ?? undefined,
+          // The layout the backend asked for. This argument used to be
+          // hardcoded `undefined`, so a pushed command could only ever land in
+          // the dock — there was no way to raise a chrome-less `win/` window
+          // from the backend at all.
+          (msg.layout as Layout | undefined) ?? undefined,
+          msg.page as PageId | undefined,
+        ),
+      );
+    };
+
     const onUiCommand = (msg: UiCommandMessage) => {
       if (msg.kind === 'navigate_entity') {
         void handleNavigateEntity(msg);
+        return;
+      }
+      if (msg.kind === 'navigate_dock') {
+        handleNavigateDock(msg);
         return;
       }
       if (msg.kind === 'navigate_vfs') {
@@ -102,6 +151,38 @@ export function useUiCommandListener(): void {
         renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
         return;
       }
+      // `install_request`: the hub relayed a one-click install to this desktop.
+      // Open the Add-asset dialog with the published row; the person picks the
+      // project and confirms there — nothing is written until then.
+      if (msg.kind === 'install_request') {
+        if (msg.request?.typeid) openInstallRequest(msg.request);
+        else console.warn('[ui_command] install_request without a typeid', msg);
+        return;
+      }
+      // `open_ask_modal`: a ComputeOp `ask` was raised and this tab is live.
+      // Open it as a dialog over whatever the tab is already showing — never a
+      // navigation, so a wizard's own progress page (or anything else) stays
+      // visible right behind it. See `ask_window.py::_push_to_live_tab`.
+      if (msg.kind === 'open_ask_modal') {
+        // A setup screen showing the run that asked draws it in place instead (`ask-claims`).
+        if (msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
+        if (msg.pointer) openAskModal(msg.pointer);
+        else console.warn('[ui_command] open_ask_modal without a pointer', msg);
+        return;
+      }
+      // `open_wizard_popup`: a popup wizard (first-run setup) is being put in front of this live tab.
+      // A dialog over whatever the tab is showing — never a navigation, so the page stays as it was.
+      if (msg.kind === 'open_wizard_popup') {
+        if (msg.pointer) openWizardPopup(msg.pointer);
+        else console.warn('[ui_command] open_wizard_popup without a pointer', msg);
+        return;
+      }
+      // `close_ask_modal`: the op stopped waiting (its run was replaced). Close
+      // only if this tab still shows THAT question — a newer one stays open.
+      if (msg.kind === 'close_ask_modal') {
+        if (msg.pointer && useAskModalStore.getState().payload === msg.pointer) closeAskModal();
+        return;
+      }
       // Forward-compat: log unknown kinds but don't crash.
       console.debug('[ui_command] unhandled kind', msg.kind);
     };
@@ -110,15 +191,21 @@ export function useUiCommandListener(): void {
 
     // Banner click (from main process) → navigate to the payload's generic
     // click target (URL-first, works for any notify_type — the OS badge is
-    // handled separately by useSyncOsBadge, driven by InboxManager.unread).
+    // handled separately by useSyncOsBadge, driven by StreamInboxManager.unread).
     const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
-    bridge?.onNotificationClick?.(({ clickTarget }) => {
+    const disposeNotificationClick = bridge?.onNotificationClick?.(({ clickTarget }) => {
       const pointer = dockPointerForClickTarget(clickTarget);
       if (pointer) navigateTo(pointer);
     });
 
     return () => {
       cm.off('on_ui_command', onUiCommand);
+      // Release the bridge subscription too — without this every remount added
+      // another IPC listener (MaxListenersExceededWarning at 11), and each one
+      // navigates, so a single banner click fired `navigateTo` once per leak.
+      // Guarded rather than called blindly: an older shell's preload returns
+      // nothing, and we must stay mountable on it.
+      if (typeof disposeNotificationClick === 'function') disposeNotificationClick();
     };
   }, []);
 }

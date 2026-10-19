@@ -1,9 +1,11 @@
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * Live MCP Apps/Vibe regression.
+ * Deterministic MCP Apps/Vibe regression.
  *
- * Requires a running backend + frontend and a usable live Vibe agent.
+ * Requires a running backend + frontend. The scenario drives the real Vibe
+ * preview and asserts the generated process prompt at the transport boundary;
+ * model latency belongs to the separate live-agent suites.
  *
  * Run:
  *   npx playwright test --config ui/src/test/manual_regression/mcp-ui/playwright.config.ts

@@ -2,10 +2,25 @@ import { expect, test, type Page } from '@playwright/test';
 import { apiBase } from '../_shared/api';
 import { ensureAgentAndSkill } from './_seed';
 
+/**
+ * The asset-type tree and its "Select a type to browse" placeholder are the
+ * UNSCOPED surface. Under a project scope the bare `/dock/assets` URL is the
+ * project landing (`isProjectHomeSurface`, asset-body-content.ts: "Bare and
+ * UNSCOPED stays a type picker") — and a QA instance always has a discovered
+ * project in scope. `scope-mode=all` addresses the picker explicitly.
+ */
+const UNSCOPED_ASSETS = '/dock/assets?scope-mode=all';
+
 const API = apiBase();
 
 async function dismissSetupModal(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
 }
 // Assets page = collapsible BrowseableTree (asset-type roots) + AssetListView.
 // The older LayoutList/Network mode toggle + type pills never shipped.
@@ -21,7 +36,7 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
 
   test('1: /dock/assets renders the tree sidebar + placeholder right panel', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets');
+    await page.goto(UNSCOPED_ASSETS);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByRole('tree'), 'asset-type sidebar tree visible').toBeVisible({ timeout: 15_000 });
@@ -31,7 +46,7 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
 
   test('2: header renders assets controls (no LayoutList/Network toggles)', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets');
+    await page.goto(UNSCOPED_ASSETS);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByText('Assets', { exact: false }).first()).toBeVisible();
@@ -40,14 +55,24 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
       '[aria-label*="hierarchy"], [aria-label*="list mode"], button:has(svg.lucide-layout-list), button:has(svg.lucide-network)',
     );
     expect(await toggles.count(), 'no LayoutList/Network mode toggles exist').toBe(0);
-    // The refresh / rebuild-index control is present.
-    const rebuild = page.locator('[data-testid="rebuild-index"], button[title="Refresh search data"]');
-    expect(await rebuild.count(), 'rebuild-index / refresh control present').toBeGreaterThanOrEqual(1);
+    // Current header controls: search plus the scope selector. Scanning belongs
+    // to each type row, not to a page-level rebuild button.
+    await expect(page.getByTestId('navigator-search-open')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'All assets (user + every project)' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'User assets only' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Pick specific projects…' })).toBeVisible();
+    // An EXPLICIT global scope (`scope-mode=all`) never inherits a default
+    // project (adoptScopeProject, load-dock-pointer.ts), and this is a fresh
+    // browser with no remembered one — so the Project option is present, not
+    // selected, and says so, instead of naming a project nobody chose.
+    const projectOption = page.getByRole('button', { name: 'No current project' });
+    await expect(projectOption).toBeVisible();
+    await expect(projectOption).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('3: /dock/assets/list/skill renders an AssetListView (not the placeholder)', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets/list/skill');
+    await page.goto('/dock/assets/list/skill?scope-mode=all'); // list route: scope param inline (UNSCOPED_ASSETS is the bare-page URL)
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByText('Select a type to browse', { exact: false })).toHaveCount(0);
@@ -62,23 +87,28 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
 
   test('4: sidebar treeitems include the core asset types', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets');
+    await page.goto(UNSCOPED_ASSETS);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByRole('tree')).toBeVisible({ timeout: 15_000 });
     // The asset tree renders a curated root set (agent/skill/markdown/spec);
     // assert the stable creatable core. (Workflow is no longer an asset-tree root.)
-    for (const name of ['Agent', 'Skill', 'Markdown']) {
+    // Match the type roots by their chevron's stable testid PREFIX, per the
+    // spec's own rule — the human labels ("Sub-agents", "Documents") come from
+    // the backend type registry and are free to change. The filter-signature
+    // suffix (`:all:v3`) is only appended for some types, so the prefix must
+    // stop at the type slug, with no trailing colon.
+    for (const type of ['subagent', 'skill', 'markdown']) {
       await expect(
-        page.getByRole('treeitem', { name: new RegExp(name, 'i') }).first(),
-        `treeitem ${name} present`,
+        page.locator(`[data-testid^="browseable-chevron-asset-type:${type}"]`).first(),
+        `treeitem ${type} present`,
       ).toBeVisible();
     }
   });
 
   test('5: expand a populated type via its chevron prefix-match selector', async ({ page }) => {
     await dismissSetupModal(page);
-    await page.goto('/dock/assets');
+    await page.goto(UNSCOPED_ASSETS);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await expect(page.getByRole('tree')).toBeVisible({ timeout: 15_000 });
 
@@ -101,7 +131,7 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     const body = await res.json();
     expect(body.status).toBe('SUCCESS');
     const names: string[] = (body.data.types as Array<{ type_name: string }>).map((t) => t.type_name);
-    for (const core of ['agent', 'skill', 'workflow', 'markdown']) {
+    for (const core of ['agent', 'skill', 'markdown']) {
       expect(names, `types includes ${core}`).toContain(core);
     }
   });

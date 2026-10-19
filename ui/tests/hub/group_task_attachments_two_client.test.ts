@@ -81,14 +81,13 @@ function makeGitFolder(token: string): string {
   return worktree;
 }
 
-/** Register a folder as a project context dir and return its minted GitOrigin —
+/** Add a folder as a project dependency and return its minted GitOrigin —
  *  the same value the attachment UI reads off the Folder entity at attach time. */
 async function gitOriginForFolder(inst: ResolvedInstance, folderPath: string, token: string) {
   const project = trackForCleanup(new inst.sdk.Project({ name: `gt-proj-${token.slice(-8)}` }));
   await project.save();
-  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-context-dir`, {
-    path: folderPath,
-    scope: 'private',
+  const res = await post(inst.apiUrl, `/graph/project/${project.id}/add-dependency`, {
+    source: folderPath,
   });
   expect(res.status, JSON.stringify(res)).toBe('SUCCESS');
 
@@ -171,11 +170,12 @@ describe('group task attachments — file + git folder across two instances', ()
       members: [{ email: bob.email }],
     });
     expect(created.status, JSON.stringify(created)).toBe('SUCCESS');
+    const memberTaskIds = ((created?.data?.children ?? []) as string[])
+      .map((typeid) => typeid.replace(/^task-/, ''))
+      .filter(Boolean);
+    expect(memberTaskIds.length, JSON.stringify(created?.data)).toBeGreaterThan(0);
 
-    // ── Bob: observe an auto-accepted assignment, or accept it explicitly ──
-    // Current hubs auto-accept task-only assignments between same-org users.
-    // Older hubs retain the pending-invitation path, so exercise it when present.
-    let acceptedInvitation: string | null = null;
+    // ── Bob: observe the immediately assigned member task. ──
     const memberTask = await pollUntil(
       async () => {
         const rows = (await bob.sdk.Task.query(
@@ -183,16 +183,6 @@ describe('group task attachments — file + git folder across two instances', ()
           true,
         ).catch(() => [])) as any[];
         if (rows[0]) return rows[0];
-
-        await bob.sdk.fetchConversations();
-        const all: any[] = await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => []);
-        const invitation = all.find(
-          (inv) => !inv.accepted && (inv.target_url_path || '').includes(task.id),
-        );
-        if (invitation && acceptedInvitation !== invitation.id) {
-          acceptedInvitation = invitation.id!;
-          await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
-        }
         return null;
       },
       30_000,

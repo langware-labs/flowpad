@@ -15,6 +15,7 @@ gate", not "skip the pipeline". This pins the contract:
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 import tempfile
@@ -31,6 +32,7 @@ from flow_sdk.builtin.message_attachment import MessageAttachment
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
+
 async def _roundtrip(entity, type_name: str, fm_id: str) -> Path:
     fm = FlowMessage.model_validate(
         {"text": "share", "attachment": [{"attachment_type": "type_id", "data": f"{type_name}-{entity.id}"}]}
@@ -43,23 +45,31 @@ async def _roundtrip(entity, type_name: str, fm_id: str) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_claude_session_stages_and_auto_installs() -> None:
-    sess = ClaudeSession.model_validate({"name": "shared session", "slug": "shared-session"})
+async def test_claude_session_stages_and_waits_for_review() -> None:
+    """``claude_session`` is NOT an auto type — it is a file-backed asset that
+    stages and waits for the normal review → pick-a-project → install gate.
+
+    It was briefly declared ``receive_policy='auto'``, which auto-installed the
+    row at unpack: the chip went straight to solid with no dialog and no project
+    choice. This pins the opposite contract; the auto lane below (diagnosis) is
+    unaffected."""
+    transcript = Path(tempfile.mkdtemp()) / "sess.jsonl"
+    transcript.write_text('{"type":"user","message":{"role":"user","content":"hi"}}\n', encoding="utf-8")
+    sess = ClaudeSession.model_validate(
+        {"name": "shared session", "slug": "shared-session", "asset_ref": str(transcript)}
+    )
     await sess.save(None)
     fm_id = "aaaaaaaa-0000-4000-8000-0000000000fe"
     await _roundtrip(sess, "claude_session", fm_id)
 
     mas = await MessageAttachment.get_all({"flow_message_id": fm_id})
     ma = next((m for m in mas if m.asset_type == "claude_session"), None)
-    assert ma is not None, "unpack must stage an MA row for the row-only entry"
-    assert ma.installed and ma.scope == "user"
-    assert not ma.project_id, "auto-install never stamps a project (parent-chain fallback owns scope)"
+    assert ma is not None, "unpack must stage an MA row for the session entry"
+    assert not ma.installed, "session must NOT auto-install — the review gate owns that"
 
-    restored = await ClaudeSession.get_one({"id": sess.id})
-    assert restored is not None, "install must materialize the row from the staged header"
-    assert restored.received is True, "receive_row_overrides must apply (received=True)"
-    assert restored.remote is False
-    assert restored.name == "shared session"
+    assert await ClaudeSession.get_one({"id": sess.id}) is None, (
+        "row materialized at unpack — the review gate was bypassed"
+    )
 
 
 @pytest.mark.asyncio

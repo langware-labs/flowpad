@@ -1,15 +1,15 @@
 /**
- * Context folders → real worker, end to end (vitest long tier).
+ * Dependencies → real worker, end to end (vitest long tier).
  *
- * Chain under test: `project.addContextDir(dir)` (mints a Folder entity,
- * links it into the project's private context bucket; `include_dirs` is now
- * server-computed from those links) → worker spawn mounts the folder via
+ * Chain under test: `project.addDependency(dir)` (declares it in `flow.json`,
+ * resolves it to a linked Folder entity; `include_dirs` is server-computed
+ * from those links) → worker spawn mounts the folder via
  * --add-dir → a REAL Claude turn reads a sentinel file planted inside the
- * context folder (which lives OUTSIDE the worker's workdir) and echoes its
+ * dependency folder (which lives OUTSIDE the worker's workdir) and echoes its
  * random token back into the chat output.
  *
  * Spawns its OWN isolated backend (fresh instance + port, pattern of
- * tests/api/project_context_dir.test.ts) with FLOWPAD_DEFAULT_WORKER=claude —
+ * tests/api/project_dependencies.test.ts) with FLOWPAD_DEFAULT_WORKER=claude —
  * never touches a running dev/prod instance and always exercises THIS
  * checkout's backend code. Requires Claude Code installed + authed.
  */
@@ -101,13 +101,15 @@ describe('context folder reaches a real worker', () => {
     await fs.mkdir(contextDir, { recursive: true });
     const token = `CTXTOKEN-${Math.random().toString(36).slice(2, 14)}`;
     await fs.writeFile(path.join(contextDir, 'sentinel.txt'), `${token}\n`);
-    const workdir = path.join(tmpRoot, 'wd');
+    // Project names are unique and this instance outlives the run: a fixed 'wd' made the
+    // next run's project collide with the last one's (400 "a project named 'wd' already exists").
+    const workdir = path.join(tmpRoot, `wd-${Math.random().toString(36).slice(2, 10)}`);
     await fs.mkdir(workdir);
 
     // Attach the folder via the real HTTP action; the server-computed
     // include_dirs (derived from the Folder context link) must carry it.
     const project = await new sdk.Project({ name: workdir }).save();
-    await project.addContextDir(contextDir);
+    await project.addDependency(contextDir);
     expect(project.include_dirs).toContain(contextDir);
     const reloaded = await sdk.Project.getById(project.id);
     expect(reloaded?.include_dirs ?? []).toContain(contextDir);

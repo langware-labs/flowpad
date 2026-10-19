@@ -1,0 +1,470 @@
+"""What a call returns — ONE answer for every call in the system.
+
+A ComputeOp, a wizard, a shell command, an agent turn and a person's reply all
+answer with a ``ReturnedValue`` — or the subclass their kind of work carries:
+``CliResult`` (a process: command, returncode, stdout, stderr), ``PromptResult``
+(a model or an agent: the reply ``text``), ``AskResult`` (a person: ``cancelled``)
+and ``WizardResult`` (a sequence: each step's OWN answer in ``steps``). A caller
+that only composes reads the base; a caller that knows what it called reads the
+rest. There is no wrapper. A NESTED answer (a step's, a check's) is a
+``Tagged`` value: its dump carries ``spec_kind``, so it reads back as the same
+subclass.
+
+They used to answer a dozen ways — ``ShellResult``, ``CommandResult``, two
+``RunResult``s, ``ProcessResult``, ``AttemptResult``, ``StepOutcome``,
+``WizardRunResult``, ``RunOutput``, a dict, a 409 envelope, and three
+exceptions — so a caller had to know what it had called before it could read
+the answer, which is the opposite of composing.
+
+``ExitCode`` is deliberately the SAME enum ``flow op`` exits with, so an
+in-process call and a shell pipeline agree by construction. Nothing raises for
+an outcome: refused, busy, never started, timed out and failed are all returned
+(``raise_for_status`` is the opt-in for a caller who would rather raise). Only
+bad input and a broken system raise.
+
+* ``exit_code`` says what happened, for a machine — one named constructor per
+  code, so a call site never spells one by hand.
+* ``detail`` says it in one sentence, for a person — never a paragraph.
+* ``value`` is held to the callee's ``output_spec_kind``; ``None`` when nothing
+  was declared.
+* ``ran``, ``timed_out``, ``executor`` and ``check`` are the facts a caller
+  branches on that are not a verdict.
+
+The decisions, one problem at a time: ``docs/snippets/call-returns.md``.
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum
+from typing import Annotated, Any, ClassVar, Optional
+
+from pydantic import BeforeValidator, WrapSerializer, model_serializer
+from typing_extensions import Self
+
+from flow_sdk.schema.data_spec._missing import MISSING
+from flow_sdk.schema.data_spec.spec import DataSpec, Tagged, _by_kind, _with_kind
+
+
+def _value_by_kind(value: Any) -> Any:
+    """Restore a value's DataSpec class from its ``spec_kind`` — leniently.
+
+    ``Tagged`` for a field that may ALSO hold a primitive, a list or a plain dict.
+    A kind nobody registered stays a dict: an unreadable value must not make the
+    whole answer (a ``run.json``) unreadable.
+    """
+    if isinstance(value, list):
+        return [_value_by_kind(item) for item in value]
+    if isinstance(value, dict):
+        if "spec_kind" in value:
+            try:
+                return _by_kind(value)
+            except ValueError:
+                pass
+        return {key: _value_by_kind(item) for key, item in value.items()}
+    return value
+
+
+def _value_with_kind(value: Any, handler: Any, info: Any) -> Any:
+    """Tag a DataSpec value with its kind on the way out; anything else as usual."""
+    if isinstance(value, DataSpec):
+        return _with_kind(value, info)
+    if isinstance(value, list):
+        return [_value_with_kind(item, handler, info) for item in value]
+    if isinstance(value, dict):
+        return {key: _value_with_kind(item, handler, info) for key, item in value.items()}
+    return handler(value)
+
+
+#: A value that comes back as the class it went out as. Without it a DataSpec
+#: value — an op's declared output — read back from ``run.json`` as a plain dict,
+#: so "an instance of output_spec_kind" held only until the first save.
+TaggedValue = Annotated[Any, BeforeValidator(_value_by_kind), WrapSerializer(_value_with_kind)]
+
+#: What a process record keeps of each stream. A command that prints a megabyte
+#: is reporting about its own noise, not its outcome.
+OUTPUT_CAP = 8192
+
+
+def capped(text: str, limit: int = OUTPUT_CAP) -> str:
+    """*text*, keeping the END — where the error is: a compiler's last line, a
+    traceback's final frame, the shell's complaint."""
+    return text if len(text) <= limit else text[-limit:]
+
+
+class ExitCode(IntEnum):
+    """Why a call ended. The values ARE the CLI's exit codes.
+
+    ``NOT_APPLICABLE`` is not ``OK``: an op skipped on a machine it does not apply
+    to must never read as one that succeeded, or a caller believes a goal was
+    reached that nobody attempted. Note 2 is absent on purpose — the CLI already
+    spends it on "invalid argument", and a skip indistinguishable from a typo is
+    worse than no skip at all.
+    """
+
+    #: The goal holds, or the call produced its value.
+    OK = 0
+    #: It does not hold yet — attempts ran and the check still fails.
+    NOT_YET = 1
+    #: This does not apply to this machine. Nothing ran; nothing is wrong.
+    NOT_APPLICABLE = 3
+    #: Nothing by that name.
+    NOT_FOUND = 4
+    #: Refused — not approved to run here.
+    REFUSED = 7
+
+
+class ReturnedValue(DataSpec):
+    """The answer from any call in the compute system.
+
+    Each ComputeOp subkind answers with its own subclass — ``CliResult``,
+    ``PromptResult``, ``AskResult`` — so a caller that only composes reads this
+    base, and a caller that knows what it called reads the rest. There is no
+    wrapper: the subclass IS the answer.
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned"
+
+    exit_code: ExitCode = ExitCode.OK
+    #: What the call produced, validated against the callee's ``output_spec_kind``.
+    #: A DataSpec value round-trips as its own class (``TaggedValue``).
+    value: TaggedValue = None
+    #: Explicit presence for typed calls. None preserves ambiguous legacy nulls.
+    value_present: Optional[bool] = None
+    invocation_id: Optional[str] = None
+    #: One sentence for a person. Never a code, never a stack, never a paragraph.
+    detail: str = ""
+    #: Did anything actually execute? ``False`` means nothing did: the goal
+    #: already held, or the call never started, was busy, or was refused. A
+    #: caller reports the first as *skipped*, not *completed*.
+    #: It is a FIELD because the producer knows it and the consumer needs it:
+    #: it was once recovered by searching ``detail`` for "already satisfied",
+    #: so rewording — or translating — a human sentence silently reclassified
+    #: every skipped step.
+    ran: bool = True
+    #: The wait ended before the work did. Not an exit code: the call may still
+    #: be running (an agent turn, a command in a terminal), so it is NOT_YET and
+    #: must not be re-run on top of itself.
+    timed_out: bool = False
+    #: Something else holds the slot this call needs — a wizard's lock, an
+    #: Activity address, a turn already in flight. NOT_YET and ``ran=False``, and
+    #: the one case a caller should simply retry later. A FIELD for the same
+    #: reason ``ran`` is one: "busy" and "never started" were both NOT_YET with
+    #: ``ran=False``, told apart only by the sentence, so an HTTP edge guessing
+    #: from ``ran`` sent a wizard that called itself — and a box with no agent
+    #: harness — to 409 as if they were merely busy.
+    busy: bool = False
+    #: The callee gave its OWN account of the outcome (an agent's receipt). With NOT_YET it tells
+    #: the two failures apart: reported -> the callee ran and says it could not do it (``detail`` is
+    #: its reason); not reported -> the run itself broke (``detail`` is ours). A FIELD, like ``ran``,
+    #: so nobody tells them apart by reading the sentence.
+    reported: bool = False
+    duration_s: float = 0.0
+    #: The typed id of what ran it — ``agentic_process-<id>`` or ``shell-<id>``.
+    #: ``None`` for a plain subprocess, or when nothing ran. A STRING, because a
+    #: result travels (REST, ``run.json``, the CLI); ``get_by_typeid`` resolves it.
+    #: A process or a shell only — never an Agent, which is a definition.
+    executor: Optional[str] = None
+    #: The LAST completion-check run — the verdict's evidence.
+    check: Optional[Tagged["CliResult"]] = None
+
+    @model_serializer(mode="wrap")
+    def _legacy_wire(self, handler):
+        result = handler(self)
+        if self.value_present is None:
+            result.pop("value_present", None)
+        if self.invocation_id is None:
+            result.pop("invocation_id", None)
+        return result
+
+    @property
+    def has_value(self) -> bool:
+        """Whether a consumable value was explicitly produced (including null)."""
+        return self.value_present if self.value_present is not None else self.value is not None
+
+    @property
+    def ok(self) -> bool:
+        """Did this reach its goal?
+
+        ``NOT_APPLICABLE`` counts: a goal that does not apply here is not an
+        outstanding one, and a sequence must move past it rather than abort.
+        The distinction it keeps is in ``exit_code``, where a reader can see it.
+        """
+        return self.exit_code in (ExitCode.OK, ExitCode.NOT_APPLICABLE)
+
+    def trimmed(self, limit: int = OUTPUT_CAP) -> "Self":
+        """A copy fit to PERSIST: every stream and reply kept to its last
+        ``limit`` characters — here, the check, and every nested step.
+
+        The one place output is cut. A result a program reads arrives whole; one
+        written to disk (``run.json``) or shown to a person (the snippet view)
+        goes through this, so a command that printed a megabyte does not become a
+        megabyte on every save, or in every editor.
+        """
+        update: dict[str, Any] = {}
+        for name in ("stdout", "stderr", "text"):
+            value = getattr(self, name, None)
+            if isinstance(value, str) and len(value) > limit:
+                update[name] = capped(value, limit)
+        if self.check is not None:
+            update["check"] = self.check.trimmed(limit)
+        steps = getattr(self, "steps", None)
+        if isinstance(steps, dict):
+            update["steps"] = {key: step.trimmed(limit) for key, step in steps.items()}
+        return self.model_copy(update=update) if update else self
+
+    def raise_for_status(self) -> "ReturnedValue":
+        """Opt-in: raise ``OpNotReached`` unless ``ok``. Returns self when it is.
+
+        A result is returned, never raised, because it crosses boundaries an
+        exception cannot (REST, ``run.json``, an exit code). A caller that would
+        rather raise asks for it here, and the exception CARRIES the result.
+        """
+        if not self.ok:
+            raise OpNotReached(self)
+        return self
+
+    @classmethod
+    def satisfied(cls, detail: str = "", value: Any = MISSING, *, ran: bool = True, **fields: Any) -> "Self":
+        # Non-null legacy values already express presence; only explicit null needs a new fact.
+        if value is None:
+            fields.setdefault("value_present", True)
+        if value is not MISSING:
+            fields["value"] = value
+        return cls(exit_code=ExitCode.OK, detail=detail, ran=ran, **fields)
+
+    @classmethod
+    def not_yet(cls, detail: str = "", **fields: Any) -> "Self":
+        return cls(exit_code=ExitCode.NOT_YET, detail=detail, **fields)
+
+    @classmethod
+    def held(cls, detail: str = "", **fields: Any) -> "Self":
+        """Busy: the slot this call needs is held by something else. Nothing ran,
+        and trying again later is the right move. (Not named ``busy`` — that is
+        the field, and a pydantic field and a method of one name collide.)"""
+        return cls(exit_code=ExitCode.NOT_YET, detail=detail, **{"ran": False, "busy": True, **fields})
+
+    @classmethod
+    def not_applicable(cls, detail: str = "", **fields: Any) -> "Self":
+        return cls(exit_code=ExitCode.NOT_APPLICABLE, detail=detail, **{"ran": False, **fields})
+
+    @classmethod
+    def not_found(cls, detail: str = "", **fields: Any) -> "Self":
+        """Nothing by that name. Nothing ran, so ``ran`` is False."""
+        return cls(exit_code=ExitCode.NOT_FOUND, detail=detail, **{"ran": False, **fields})
+
+    @classmethod
+    def refused(cls, detail: str = "", **fields: Any) -> "Self":
+        """Not approved to run here. Refusing is not failing, and it never
+        waits — a caller that can ask turns this into a question."""
+        return cls(exit_code=ExitCode.REFUSED, detail=detail, **{"ran": False, **fields})
+
+
+class ItemAnswer(DataSpec):
+    """One reached item in an explicit map call; index preserves input identity."""
+
+    spec_kind: ClassVar[str] = "compute.returned.item"
+    index: int
+    key: Optional[str] = None
+    answer: Tagged[ReturnedValue]
+
+
+class CollectionResult(ReturnedValue):
+    """A batch's aggregate outcome and every reached item's own answer."""
+
+    spec_kind: ClassVar[str] = "compute.returned.collection"
+    items: list[ItemAnswer] = []
+
+    def trimmed(self, limit: int = OUTPUT_CAP) -> "Self":
+        return super().trimmed(limit).model_copy(update={
+            "items": [item.model_copy(update={"answer": item.answer.trimmed(limit)}) for item in self.items],
+        })
+
+
+class CliResult(ReturnedValue):
+    """What a shell one-liner did. ``exit_code`` is the op's verdict;
+    ``returncode`` is the process's own, which a caller may branch on."""
+
+    spec_kind: ClassVar[str] = "compute.returned.cli"
+
+    #: As resolved for this platform — without it a failure cannot be reproduced by hand.
+    command: str = ""
+    #: The raw process exit. ``None`` = it never started.
+    returncode: Optional[int] = None
+    stdout: str = ""
+    stderr: str = ""
+
+    @classmethod
+    def of_process(
+        cls,
+        command: str = "",
+        returncode: Optional[int] = None,
+        stdout: str = "",
+        stderr: str = "",
+        *,
+        timed_out: bool = False,
+        duration_s: float = 0.0,
+        detail: str = "",
+        cap: Optional[int] = None,
+        **fields: Any,
+    ) -> "CliResult":
+        """THE way a process record becomes an answer.
+
+        Every site that ran a command builds its result here, so the verdict is
+        derived from the raw exit in exactly one place: ``OK`` only when the
+        process exited 0 inside its budget. Built any other way, ``exit_code``
+        would default to ``OK`` and a failed command would read as ``.ok``.
+        Output arrives WHOLE by default: a caller may parse it (a file from
+        ``git show``, JSON, an op's declared value), and a record cut to its last
+        8 KB reads as if it were the whole thing. Trimming belongs where a result
+        is PERSISTED or SHOWN TO A PERSON — see ``trimmed()`` — never where a
+        program reads it. ``cap`` keeps each stream's END, where the error is,
+        for a caller that wants that.
+        """
+        if cap is not None:
+            stdout, stderr = capped(stdout, cap), capped(stderr, cap)
+        reached = returncode == 0 and not timed_out
+        if not detail:
+            if returncode is None and not timed_out:
+                detail = "The command could not be started."
+            elif timed_out:
+                detail = f"The command did not finish within {duration_s:.0f}s." if duration_s else "The command timed out."
+            elif not reached:
+                detail = f"The command exited {returncode}."
+        return cls(
+            exit_code=ExitCode.OK if reached else ExitCode.NOT_YET,
+            command=command, returncode=returncode, stdout=stdout, stderr=stderr,
+            timed_out=timed_out, duration_s=duration_s, detail=detail,
+            ran=returncode is not None or timed_out,
+            **fields,
+        )
+
+    def tail(self, limit: int = 300) -> str:
+        """The most useful thing to show a person: stderr if there is any, else stdout."""
+        return capped((self.stderr or self.stdout or "").strip(), limit)
+
+
+class PromptResult(ReturnedValue):
+    """What a model — with tools or without — said. A ``prompt`` op and an
+    ``agent`` op both answer with this; the agent's has an ``executor``."""
+
+    spec_kind: ClassVar[str] = "compute.returned.prompt"
+
+    #: The full reply, beside the declared ``value``.
+    text: str = ""
+    #: A declared-output run's files (``run(output_spec=…)``): what it left in its output folder
+    #: (``<record>/execution/output``), relative to it. An agent's answer to a channel message
+    #: (``process_message``): the files it saved to send back, absolute. Empty for a model call and a
+    #: workdir-mode run.
+    files: list[str] = []
+    #: The LLM endpoint that answered a ``prompt`` op (its TypeId): which model a logged call measured.
+    endpoint: Optional[str] = None
+
+
+class AskResult(ReturnedValue):
+    """What a person answered. A timeout is ``timed_out``; a cancel is this."""
+
+    spec_kind: ClassVar[str] = "compute.returned.ask"
+
+    cancelled: bool = False
+
+
+class NavigateResult(ReturnedValue):
+    """What showing a place did: where it went, and whether it can be used there.
+
+    ``exit_code`` is the verdict: ``OK``; ``NOT_YET`` — resolved but not usable yet
+    (nothing answers, it errors, or no browser is open to show it in);
+    ``NOT_FOUND`` — it does not resolve on this machine; ``REFUSED`` — the page
+    refuses to be shown inside Flowpad. Only ``NOT_YET`` is worth a repair.
+
+    The browser's own rendering is NOT part of it: a call never waits for the UI
+    to acknowledge. ``delivered`` means "handed to a live session or browser tab".
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.navigate"
+
+    #: The ``Tab.pointer`` JSON as delivered — resolved for THIS machine, so a file
+    #: names its local path (which a declared, travelling pointer must not).
+    pointer: str = ""
+    #: The browser tab it was sent to; ``None`` when it went to a session display.
+    connection_id: Optional[str] = None
+    delivered: bool = False
+    #: Why, in the display's own vocabulary (``ui/src/components/webapp-display/classify.ts``):
+    #: ``ok`` · ``not_running`` · ``hung`` · ``server_error`` · ``redirect_loop`` · ``not_http`` ·
+    #: ``not_found`` · ``frame_blocked`` · ``no_browser``. ``None`` when nothing was checked.
+    verdict: Optional[str] = None
+
+
+class DecisionVerdict(ReturnedValue):
+    """What a ``decision`` op answered: did every requirement hold, and how sure.
+
+    ``OK`` when ``met``; ``NOT_YET`` when a requirement did not hold (``ran=True`` — the
+    question WAS asked), or when it could not be asked (``ran=False``, ``unavailable``
+    names the closed reason). ``value`` is the plain answer(s) a later step can bind: one
+    question's answer on its own, several as ``{name: answer}``.
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.decision"
+
+    met: bool = False
+    #: The deciding requirement's own probability — the LEAST sure of them when several.
+    confidence: float = 0.0
+    #: Why, in a sentence: the requirement that held, or the first that did not.
+    reason: str = ""
+    #: Every question's answer, as the decision API gave it.
+    answers: dict[str, Any] = {}
+    #: The ``DecisionError.reason`` when the question could not be asked.
+    unavailable: Optional[str] = None
+    #: The APIEndpoint that answered, as ``api_endpoint-<id>``.
+    endpoint: str = ""
+    latency_ms: float = 0.0
+
+
+class WizardResult(ReturnedValue):
+    """A wizard's answer: its own verdict, and each step's answer as the step's
+    OWN result — a ``CliResult``, a ``PromptResult``, a nested ``WizardResult``.
+
+    A step that was never reached is absent. ``value`` is ``{step_id: value}``.
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.wizard"
+
+    steps: dict[str, Tagged[ReturnedValue]] = {}
+    #: The step whose ``on_fail: stop`` ended the run early; empty when none did.
+    stopped_at: str = ""
+
+    def first_executor(self) -> Optional[str]:
+        """The first step's ``executor`` naming an agentic process — nested wizards walked too."""
+        for step in self.steps.values():
+            executor = getattr(step, "executor", None)
+            if executor and str(executor).startswith("agentic_process-"):
+                return str(executor)
+            if isinstance(step, WizardResult):
+                nested = step.first_executor()
+                if nested:
+                    return nested
+        return None
+
+    def outline(self, detail_cap: int = 300) -> dict[str, Any]:
+        """How the run went, small enough for a history row that is polled: the verdict and, per
+        step, its exit code, a short detail and the session it started — never a step's output."""
+        def short(text: Any) -> str:
+            return str(text or "")[:detail_cap]
+
+        steps: dict[str, dict[str, Any]] = {}
+        for key, step in self.steps.items():
+            executor = step.first_executor() if isinstance(step, WizardResult) else getattr(step, "executor", None)
+            steps[key] = {"exit_code": int(step.exit_code), "detail": short(step.detail),
+                          **({"executor": str(executor)} if executor else {})}
+        return {"exit_code": int(self.exit_code), "detail": short(self.detail),
+                **({"stopped_at": self.stopped_at} if self.stopped_at else {}), "steps": steps}
+
+
+ReturnedValue.model_rebuild()
+
+
+class OpNotReached(Exception):
+    """Raised by ``ReturnedValue.raise_for_status`` — and only there."""
+
+    def __init__(self, answer: ReturnedValue):
+        self.answer = answer
+        super().__init__(answer.detail or f"exit {int(answer.exit_code)}")

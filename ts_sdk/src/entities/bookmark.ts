@@ -1,6 +1,6 @@
 import { ActionInfo } from '../models';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 
 export enum BookmarkType {
   NOTE = 'note',
@@ -36,12 +36,22 @@ export interface IBookmark extends IEntity {
   /** Times this favorite has been opened. 0/unset = never opened — what the
    *  desktop's unread badges count (see `isUnopened` in use-favorites.ts). */
   counter?: number;
+  /** Looked at without being opened — a rest of the pointer on the row in the
+   *  favorites menu. Clears the unread badge alongside `counter`, but stays a
+   *  separate flag so a hover never inflates the open count. */
+  seen?: boolean;
   /** Owning project id, stamped at favorite-creation time from the current
    *  project context. Carried as a plain field (the record still saves under
    *  the unscoped @local desktop so webhook-created favorites stay visible);
    *  the bookmarks slider filters favorites by this against the scope filter. */
   project_id?: string | null;
 }
+
+// `implements IBookmark` only checks the class; it contributes no members, so every
+// field declared solely on IBookmark read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface Bookmark extends EntityMerge<IBookmark> {}
 
 @registerEntity
 export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
@@ -58,6 +68,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   parent_id?: string;
   order?: number;
   counter?: number;
+  seen?: boolean;
   project_id?: string | null;
   static type: string = 'bookmark';
 
@@ -76,6 +87,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.parent_id = entity.parent_id;
     this.order = entity.order;
     this.counter = entity.counter;
+    this.seen = entity.seen;
     this.project_id = entity.project_id ?? null;
   }
 
@@ -90,8 +102,21 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
    *
    *  Callers `void` it (a click path must never block navigation on a usage
    *  stamp); the save promise is returned so tests can await the write. */
-  async markOpened(): Promise<void> {
+  async markOpened(): Promise<Bookmark> {
     this.counter = (this.counter ?? 0) + 1;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
+  }
+
+  /** Record that the user has LOOKED at this favorite without opening it — a
+   *  rest of the pointer on its row in the favorites menu is enough to stop it
+   *  reading as new. Sets its own flag rather than touching `counter`, so a
+   *  hover never claims an open that didn't happen. Idempotent: a favorite
+   *  already seen (or already opened) writes nothing, so sweeping the same
+   *  menu twice is free. Reactivity contract as {@link markOpened}. */
+  async markSeen(): Promise<Bookmark | undefined> {
+    if (this.seen || (this.counter ?? 0) > 0) return;
+    this.seen = true;
     dataManager.notifyEntityChanged(this);
     return this.save([]);
   }

@@ -1,0 +1,239 @@
+"""Dataset value models — ``RowSpec``, ``DatasetSpec``, and the three leaves.
+
+``Spec`` is the suffix for a VALUE model: not an entity, never a row of its own.
+The one entity is ``Dataset`` (``flow_sdk/builtin/dataset.py``); everything here
+lives inside it or on disk as JSON.
+
+Generics type the slots. ``RowSpec[I, O, C]`` says what one row's
+``input`` / ``output`` / ``context`` are; ``DatasetSpec[E]`` says what every row
+is. ``DatasetSpec[MyRow]`` validates rows as ``MyRow`` — a dataset can be
+typed by the agent that produced it. A PARAMETRIZATION inherits its origin's
+``spec_kind`` and deliberately does not register; only a named subclass does.
+
+The three leaves are what a slot holds when it is a FILE, a FOLDER, or a CSV
+cell. A ``str`` is not a ``DataSpec``, so a cell needs ``TextSpec``; and the
+file/folder distinction is the TYPE — a lone file is a ``FileRef``, never a
+one-member folder.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Generic, Optional, TypeVar, Union
+
+from pydantic import ConfigDict, Field
+
+from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec.spec import DataSpec, to_authoring_form
+
+
+class DataLayoutEnum(StrEnum):
+    """How a dataset's rows are physically stored on disk."""
+
+    CSV = "csv"               # one delimited file; each row is a row
+    IO_FOLDER = "io_folder"   # a folder of per-row input/output/ground_truth slots
+
+
+class RowKind(StrEnum):
+    """Per-row role. 'The eval set' = rows whose kind == EVAL."""
+
+    TRAIN = "train"
+    EVAL = "eval"
+    TEST = "test"
+
+
+# ── the leaves ────────────────────────────────────────────────────────────────
+
+class FileRef(DataSpec):
+    """A file: its row-relative POSIX path. Resolved by the layout, never here."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind = "file_ref"
+    path: str
+
+
+class FolderSpec(DataSpec):
+    """A folder of files: its own row-relative path and its members, recursively."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind = "folder"
+    path: str
+    files: dict[str, Union["FileRef", "FolderSpec"]] = Field(default_factory=dict)
+
+
+class TextSpec(DataSpec):
+    """A literal — a CSV cell."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind = "text"
+    text: str
+
+
+#: What an un-spec'd slot may hold.
+Artifact = Union[FileRef, FolderSpec, TextSpec]
+
+FolderSpec.model_rebuild()
+
+
+# ── one row ───────────────────────────────────────────────────────────────
+
+#: A slot's shape. Deliberately UNBOUND: ``bound=DataSpec`` advertised a
+#: restriction that does not exist — Python never checks a TypeVar bound at
+#: runtime, so ``RowSpec[int, int, DataSpec]`` was always accepted and
+#: worked — and it contradicted the authoring grammar, where ``"int"`` is a
+#: reserved primitive and a perfectly good slot shape.
+InputSpecT = TypeVar("InputSpecT")
+OutputSpecT = TypeVar("OutputSpecT")
+ContextSpecT = TypeVar("ContextSpecT")
+
+
+def _generic_args(cls: type) -> tuple:
+    """The type arguments of ``cls``'s parametrization -- its own, else the nearest base's.
+
+    A NAMED subclass (``class NavDataset(DatasetSpec[NavRow]): spec_kind = ...``) is how a
+    shape becomes a registered kind, and pydantic gives that subclass empty generic args: the
+    arguments live on the parametrized base it extends. Reading only the class's own metadata
+    answered "no slot types" for every named dataset kind, so ``Dataset.input_shape`` was None.
+    """
+    for klass in cls.__mro__:
+        args = (getattr(klass, "__pydantic_generic_metadata__", None) or {}).get("args")
+        if args:
+            return args
+    return ()
+
+
+class RowSpec(DataSpec, Generic[InputSpecT, OutputSpecT, ContextSpecT]):
+    """One row: ``input`` + ``output`` + ``context``, plus the gold answer.
+
+    ``output`` and ``ground_truth`` share a shape — that is what makes scoring a
+    structural diff. Either may be absent: gold only (hand-authored, not yet
+    run), produced only (captured, not yet annotated), or neither (unlabeled).
+    N occurrences on disk (``output-1``, ``output-2``) arrive as ``list[O]``.
+
+    ``kind`` is the ROW role (train/eval/test) — a field. The registration hook
+    is ``spec_kind``, so the two never collide.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str = ""                                 # layout-assigned
+    key: str = ""                                # layout-assigned: the row folder's name
+    version: str = ""                            # layout-assigned: digest of the row's files (put/delete ``expected``)
+    kind: RowKind = RowKind.TRAIN
+    input: InputSpecT
+    output: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
+    ground_truth: Optional[Union[OutputSpecT, list[OutputSpecT]]] = None
+    context: Optional[ContextSpecT] = None
+    metadata: dict[str, Any] = Field(default_factory=dict)  # row.json metadata ∪ sidecars by filename
+    data: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def layout(self) -> Optional[str]:
+        return self.metadata.get("layout")
+
+    @classmethod
+    def slot_type(cls, slot: int) -> Any:
+        """The ``I``/``O``/``C`` of a parametrization, by slot. THE one place
+        that knows the generic arg order — no caller reaches into pydantic."""
+        args = _generic_args(cls)
+        return args[slot] if slot < len(args) else None
+
+    @classmethod
+    def input_type(cls) -> Any:
+        return cls.slot_type(0)
+
+    @classmethod
+    def output_type(cls) -> Any:
+        return cls.slot_type(1)
+
+    @classmethod
+    def context_type(cls) -> Any:
+        return cls.slot_type(2)
+
+
+# ── the dataset ───────────────────────────────────────────────────────────────
+
+RowSpecT = TypeVar("RowSpecT", bound=RowSpec)
+
+
+class DatasetSpec(DataSpec, Generic[RowSpecT]):
+    """A dataset: a list of rows of one shape."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rows: list[RowSpecT]
+
+    @classmethod
+    def row_type(cls) -> type:
+        """The ``E`` of a parametrization."""
+        (e,) = _generic_args(cls) or (RowSpec,)
+        return e
+
+    @classmethod
+    def parse(cls, data: Any) -> type:
+        """The keyword authoring form → ``DatasetSpec[RowSpec[I, O, C]]``.
+
+            {"rows": [{"input": <shape>, "output": <shape>, "context"?: <shape>}]}
+
+        One row describes every row (the list carries exactly one element).
+        ``output`` and ``ground_truth`` share ``O``; if both are authored they
+        must agree.
+        """
+        if isinstance(data, type):
+            return data
+        if isinstance(data, str):
+            from flow_sdk.schema.data_spec._kinds import resolve_kind  # noqa: PLC0415
+            from flow_sdk.tags.grammar import normalize_tag  # noqa: PLC0415
+
+            found = resolve_kind(normalize_tag(data))
+            if not (isinstance(found, type) and issubclass(found, DatasetSpec)):
+                raise ValueError(f"{data!r} is not a registered dataset shape")
+            return found
+        if not isinstance(data, dict) or set(data) != {"rows"}:
+            raise ValueError('a dataset shape is {"rows": [<one row shape>]}')
+        rows = data["rows"]
+        if not isinstance(rows, list) or len(rows) != 1:
+            raise ValueError("a dataset shape carries exactly one row shape — the shape every row has")
+        row = rows[0]
+        if not isinstance(row, dict) or "input" not in row:
+            raise ValueError('a row shape needs at least "input"')
+        extra = set(row) - {"input", "output", "ground_truth", "context"}
+        if extra:
+            raise ValueError(f"unknown row slots: {sorted(extra)}")
+        out_form = row.get("output", row.get("ground_truth"))
+        if "output" in row and "ground_truth" in row and row["output"] != row["ground_truth"]:
+            raise ValueError("output and ground_truth share one shape")
+        i = _slot_type("input", row["input"])
+        o = _slot_type("output", out_form) if out_form is not None else DataSpec
+        c = _slot_type("context", row["context"]) if "context" in row else DataSpec
+        hit = DatasetSpec[RowSpec[i, o, c]]  # type: ignore[valid-type]   (Pydantic caches parametrizations)
+        if hit.__authoring__ is None:
+            # Remember the form, so `to_authoring_form` — the ONE serializer — can
+            # emit it back; a parametrization has no spec_kind and no fields to describe.
+            form: dict[str, Any] = {"input": to_authoring_form(i)}
+            if o is not DataSpec:
+                form["output"] = to_authoring_form(o)
+            if c is not DataSpec:
+                form["context"] = to_authoring_form(c)
+            hit.__authoring__ = {"rows": [form]}
+        return hit
+
+
+class UnregisteredKind(ValueError):
+    """A dataset slot names a kind nobody has registered (yet)."""
+
+
+def _slot_type(slot: str, form: Any) -> Any:
+    """One slot's shape. A kind NAME that resolves to nothing is refused by name: ``DataSpec.parse``
+    reads it as ``Any``, and a row typed ``Any`` failed later as a wall of artifact-shape errors
+    (``FolderSpec`` / ``TextSpec``) that never said which kind was missing."""
+    shape = DataSpec.parse(form)
+    if shape is Any:
+        raise UnregisteredKind(
+            f"{slot}: {form!r} names a kind nobody registered -- apply its data_schema folder "
+            "(`flow schema apply <folder>`), or in a script call "
+            "`flow_sdk.schema.data_spec.declared.load_root(<project root>)` first")
+    return shape
+
+
+#: What an un-spec'd dataset validates with.
+DEFAULT_DATASET_SPEC = DatasetSpec[RowSpec[Artifact, Artifact, DataSpec]]  # type: ignore[valid-type]

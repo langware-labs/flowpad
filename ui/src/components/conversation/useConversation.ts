@@ -20,7 +20,7 @@ export interface UseConversationResult {
 
 /**
  * Resolve a Conversation by id along with its parent Task and local Project.
- * Lets any view (inbox reader, conversation route, embedded panels) drop in
+ * Lets any view (stream inbox reader, conversation route, embedded panels) drop in
  * `<ConversationPanel task={task} conversationId={...} />` without each one
  * re-implementing the same useEntity dance.
  *

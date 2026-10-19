@@ -1,5 +1,6 @@
 export const EntityTypes = {
   AgenticProcess: 'agentic_process',
+  SubAgent: 'subagent',
   Agent: 'agent',
   Annotation: 'annotation',
   ApiKey: 'api_key',
@@ -10,7 +11,6 @@ export const EntityTypes = {
   ComputeNode: 'compute_node',
   CronEvent: 'cron_event',
   Flow: 'flow',
-  FsItem: 'fs_item',
   Func: 'func',
   GraphContext: 'graph_context',
   Job: 'job',
@@ -30,6 +30,8 @@ export const EntityTypes = {
   User: 'user',
   Visitor: 'visitor',
   WebDomain: 'web_domain',
+  Wiki: 'wiki',
+  WikiEntry: 'wiki_entry',
   Workflow: 'workflow',
   Workspace: 'workspace',
 } as const;

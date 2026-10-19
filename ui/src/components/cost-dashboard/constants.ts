@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 /**
  * Category definitions for the Cost Dashboard.
  *
@@ -12,7 +14,8 @@ export type ValueFormat = 'currency' | 'tokens' | 'number';
 
 export interface CostCategory {
   id: string;
-  label: string;
+  /** Lazy lingui descriptor — render with `i18n._(...)`. */
+  label: MessageDescriptor;
   icon: LucideIcon;
   color: string;
   bgColor: string;
@@ -27,7 +30,7 @@ export interface CostCategory {
 export const COST_CATEGORIES: CostCategory[] = [
   {
     id: 'totalCost',
-    label: 'Total Cost',
+    label: msg`Total Cost`,
     icon: DollarSign,
     color: 'text-green-500',
     bgColor: 'bg-green-500/10',
@@ -36,7 +39,7 @@ export const COST_CATEGORIES: CostCategory[] = [
   },
   {
     id: 'totalTokens',
-    label: 'Total Tokens',
+    label: msg`Total Tokens`,
     icon: Zap,
     color: 'text-purple-500',
     bgColor: 'bg-purple-500/10',
@@ -45,7 +48,7 @@ export const COST_CATEGORIES: CostCategory[] = [
   },
   {
     id: 'inputTokens',
-    label: 'Input Tokens',
+    label: msg`Input Tokens`,
     icon: ArrowDownToLine,
     color: 'text-blue-500',
     bgColor: 'bg-blue-500/10',
@@ -54,7 +57,7 @@ export const COST_CATEGORIES: CostCategory[] = [
   },
   {
     id: 'outputTokens',
-    label: 'Output Tokens',
+    label: msg`Output Tokens`,
     icon: ArrowUpFromLine,
     color: 'text-cyan-500',
     bgColor: 'bg-cyan-500/10',
@@ -63,7 +66,7 @@ export const COST_CATEGORIES: CostCategory[] = [
   },
   {
     id: 'cacheSavings',
-    label: 'Cache Savings',
+    label: msg`Cache Savings`,
     icon: Database,
     color: 'text-emerald-500',
     bgColor: 'bg-emerald-500/10',
@@ -72,7 +75,7 @@ export const COST_CATEGORIES: CostCategory[] = [
   },
   {
     id: 'sessions',
-    label: 'Sessions',
+    label: msg`Sessions`,
     icon: Activity,
     color: 'text-orange-500',
     bgColor: 'bg-orange-500/10',
@@ -84,11 +87,11 @@ export const COST_CATEGORIES: CostCategory[] = [
 /**
  * Time cohort definitions for filtering.
  */
-export const TIME_COHORTS: { id: TimeCohort; label: string }[] = [
-  { id: 'today', label: 'Today' },
-  { id: 'thisWeek', label: 'Week' },
-  { id: 'thisMonth', label: 'Month' },
-  { id: 'allTime', label: 'All' },
+export const TIME_COHORTS: { id: TimeCohort; label: MessageDescriptor }[] = [
+  { id: 'today', label: msg`Today` },
+  { id: 'thisWeek', label: msg`Week` },
+  { id: 'thisMonth', label: msg`Month` },
+  { id: 'allTime', label: msg`All` },
 ];
 
 /**

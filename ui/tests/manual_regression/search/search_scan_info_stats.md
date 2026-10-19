@@ -3,7 +3,9 @@ id: 0c35b90d-e469-51ac-ab87-9e99233a590d
 ---
 
 test 1: Bootstrap API response includes scan_info with expected shape
-- [api] GET {API_URL}/api/v1/graph/bootstrap
+# scan_info is served by the deferred /api/v1/graph/info route, not /graph/bootstrap
+# (split out of bootstrap so boot does not wait on it; see docs/boot.md).
+- [api] GET {API_URL}/api/v1/graph/info
 - [api] validate HTTP response status is 200
 - [api] validate response body has status equal to "SUCCESS"
 - [api] validate data.scan_info is an object (not null)
@@ -51,6 +53,7 @@ test 6: SearchView rebuild-index button archives, clears, scans, indexes and ref
 - [browser] wait up to 8 seconds for the "N indexed" badge to appear
 - [browser] read the leading integer N from the "N indexed" badge and remember it as INDEXED_BEFORE
 - [browser] locate the rebuild-index Button via data-testid="rebuild-index" (ghost-icon button with the PackageSearch icon; tooltip "Refresh search data")
+- [api] wait until GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/activity-status returns data null (indexer idle — the button is disabled by design while any index runs, and a cleared DB indexes on its first page load)
 - [browser] validate that button is enabled (not disabled)
 - [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/archive
 - [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/clear-index

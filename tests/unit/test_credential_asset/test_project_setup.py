@@ -1,0 +1,452 @@
+"""``flow project setup`` — collect what a project needs, compile an ephemeral wizard, run it.
+
+The collector and compiler are pure; the run is the CLI's own ``_run`` on this test's loop, with
+every ``flow credentials …`` the wizard shells out to run through the REAL Typer app (in a thread,
+its service calls bridged back onto this loop — the ``flow_runner`` pattern). Nothing but the
+shell's process boundary, the terminal and the agent launch is replaced.
+``tests/long_tests/test_project_setup_cli.py`` runs the literal ``flow project setup`` against a
+real backend.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import shlex
+from pathlib import Path
+
+import pytest
+from dotenv import dotenv_values
+from typer.testing import CliRunner
+
+from flow_sdk.builtin import credential_service, project_setup
+from flow_sdk.builtin.credential import Credential
+from flow_sdk.builtin.credential_service import CredentialError, save_credential
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.cli.commands import credentials_cmd, project_cmd
+from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
+from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_PACK
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+from tests.unit.test_credential_asset._shipped import shipped_credential_folders
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
+
+SHIPPED = shipped_credential_folders()
+TOKEN = "123456:telegram-token-never-printed"
+
+
+def _sources(monkeypatch, *providers: str) -> None:
+    """The project's data sources, one per driver (the drivers are the shipped ones)."""
+    rows = [DataSource(name=f"{p} source", provider=p) for p in providers]
+
+    async def of_project(_project):
+        return rows
+
+    async def source_step(op, env, *, check, platform):
+        # Unsaved rows have no steps of their own to answer; a source's verify is the setup tree's last word on
+        # it, and these tests are about the credentials before it.
+        from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+        return CliResult.of_process(f"source step {op.source_step}", 0)
+
+    from flow_sdk.core.compute_op import runner as op_runner  # noqa: PLC0415
+
+    monkeypatch.setattr(project_setup, "project_sources", of_project)
+    monkeypatch.setattr(op_runner, "_source_step", source_step)
+
+
+# ── the spec: every credential says how it is set up ─────────────────────────
+
+
+async def test_every_shipped_credential_carries_setup_instructions():
+    repo_packs = Path(__file__).parents[3] / "agentic-assets/credential"
+    folders = [*SHIPPED.values(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
+    manifests = [
+        # setup.md beside the manifest; a pack written before that carries it inline (read the same way).
+        {**(doc := json.loads((f / "credential.json").read_text())),
+         "setup": (f / "setup.md").read_text() if (f / "setup.md").is_file() else str(doc.get("setup") or "")}
+        for f in folders if (f / "credential.json").is_file()
+    ]
+    assert manifests
+    # An oauth credential is obtained by a person's consent click in the browser: no values to describe.
+    bare = [m["name"] for m in manifests if m.get("kind") != "oauth" and not str(m.get("setup") or "").strip()]
+    assert bare == [], "a credential Flowpad ships must say how to obtain and store its values"
+    for manifest in (m for m in manifests if m.get("kind") != "oauth"):
+        assert f"flow credentials set {manifest['name']} --stdin" in manifest["setup"], (
+            f"{manifest['name']}: a value is piped in, never an argument (argv and the agent's transcript both keep it)"
+        )
+
+
+async def test_a_credential_without_setup_instructions_is_refused(project):
+    with pytest.raises(CredentialError, match="setup instructions"):
+        await save_credential(
+            manifest={"name": "bare", "vars": {"BARE_KEY": {}}}, scope="project", project_id=project.id
+        )
+
+
+async def test_a_pack_without_setup_still_loads_and_is_reported_as_having_no_ai_setup(project, templates, monkeypatch):
+    spec = await save_credential(
+        manifest={"name": "legacy", "vars": {"LEGACY_KEY": {}}, "setup": "x"}, scope="project", project_id=project.id
+    )
+    spec.setup = ""  # a pack written before `setup` existed, as read from disk
+    await spec.save()
+    _sources(monkeypatch)
+
+    (req,) = await project_setup.collect_requirements(project)
+
+    assert (req.kind, req.name, req.setup) == (REQUIREMENT_PACK, "legacy", "")
+    assert "AI Assist unavailable" in req.note
+    wizard, ops = project_setup.compile_setup(project.id, [req])
+    assert [s.id for s in wizard.steps] == ["ask-legacy-LEGACY_KEY", "store-legacy"]
+    assert ops["ask-legacy-LEGACY_KEY"].exe_data.assist_agent == "", "no AI Assist without instructions"
+
+
+async def test_a_value_that_does_not_match_its_pattern_is_refused(project):
+    spec = await save_credential(
+        manifest={"name": "pat", "vars": {"PAT_KEY": {"pattern": "^sk-"}}, "setup": "x"},
+        scope="project",
+        project_id=project.id,
+    )
+    with pytest.raises(CredentialError, match="does not look right"):
+        await credential_service.set_credential_values(str(spec.typeid), {"PAT_KEY": "nope"})
+
+
+# ── collect ──────────────────────────────────────────────────────────────────
+
+
+async def test_the_collector_reads_the_project_and_its_sources_drivers(project, templates, monkeypatch):
+    await save_credential(
+        manifest={
+            "name": "stripe",
+            "needed_for": "Charges cards at checkout.",
+            "justification": "app/pay.py creates a charge on every checkout.",
+            "vars": {"STRIPE_KEY": {"label": "Secret key"}},
+            "setup": "From the Stripe dashboard.",
+        },
+        scope="project",
+        project_id=project.id,
+    )
+    _sources(monkeypatch, "gdrive", "gcs", "telegram", "gmail", "voice_phone")
+
+    reqs = await project_setup.collect_requirements(project)
+    by = {(r.kind, r.name): r for r in reqs}
+
+    assert [r.kind for r in reqs] == sorted((r.kind for r in reqs), key=[REQUIREMENT_PACK, REQUIREMENT_GAP].index)
+    # A connection the sources act through IS a credential of the project (kind: oauth), declared with the
+    # union of their scopes — an indexed asset with a row, listed like any other credential.
+    google = by[(REQUIREMENT_PACK, "google")]
+    assert google.is_oauth and google.provider == "google" and google.typeid.startswith("credential-")
+    assert google.used_by == ["gdrive source", "gcs source"], "one connection, every requester"
+    assert set(google.scopes) == {
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/devstorage.read_only",
+        # A Drive source writes back unless it is read-only: its `writes` permission is asked for too.
+        "https://www.googleapis.com/auth/drive",
+    }
+    assert google.satisfied is False and google.vars == [], "no grant here; nothing to type"
+    declared = await Credential.get("google", project)
+    assert declared.scope == "project" and declared.is_oauth and set(declared.scopes) == set(google.scopes)
+
+    stripe = by[(REQUIREMENT_PACK, "stripe")]
+    assert stripe.used_by == ["project"] and stripe.declared and [v.env_var for v in stripe.missing] == ["STRIPE_KEY"]
+    telegram = by[(REQUIREMENT_PACK, "telegram")]
+    assert not telegram.declared and telegram.setup and telegram.used_by == ["telegram source"], "a driver's credential"
+    # What it is needed for rides the requirement — from the declared row, and from a shipped template.
+    assert (stripe.needed_for, stripe.justification) == (
+        "Charges cards at checkout.", "app/pay.py creates a charge on every checkout.")
+    declared_stripe = await Credential.get("stripe", project)
+    on_disk = json.loads((Path(declared_stripe.asset_ref) / "credential.json").read_text())
+    assert on_disk["needed_for"] == "Charges cards at checkout.", "declare writes it to credential.json"
+    assert telegram.needed_for, "a template's own line"
+    assert by[(REQUIREMENT_PACK, "gmail")].used_by == ["gmail source"], "env names → the template declaring them"
+    assert by[(REQUIREMENT_PACK, "twilio")].used_by == ["voice_phone source"]
+    assert by[(REQUIREMENT_PACK, "openai")].used_by == ["voice_phone source"], "one source may span several credentials"
+    gap = by[(REQUIREMENT_GAP, "voice_phone source")]
+    assert "OPENAI_WEBHOOK_SECRET" in gap.note and "TWILIO" not in gap.note
+
+
+async def test_a_credential_with_its_values_is_ready(project, templates, monkeypatch):
+    await save_credential(
+        manifest={"name": "stripe", "vars": {"STRIPE_KEY": {}}, "setup": "x"},
+        scope="project",
+        project_id=project.id,
+        values={"STRIPE_KEY": "sk_live"},
+    )
+    _sources(monkeypatch)
+
+    (req,) = await project_setup.collect_requirements(project)
+
+    assert req.satisfied and req.missing == []
+
+
+# ── compile ──────────────────────────────────────────────────────────────────
+
+
+async def test_a_credential_compiles_to_asks_with_ai_assist_then_a_store_on_one_check(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram", "gdrive")
+    reqs = await project_setup.collect_requirements(project)
+
+    wizard, ops = project_setup.compile_setup(project.id, reqs)
+
+    assert [s.id for s in wizard.steps] == [
+        "connect-google", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram",
+    ], "AI Assist is the question's, not a step of its own"
+    assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
+    ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
+    assert ask.exe_data.secret
+    assert ask.setup == reqs[1].setup and ask.setup.strip(), "the credential's guide rides the question"
+    assert ask.setup_timeout() == SETUP_TIMEOUT, "no declared span: the default"
+    assert ask.completion_check == ops["store-telegram"].completion_check, "a resumed run asks nobody once stored"
+    assert wizard.steps[1].bind == "telegram__TELEGRAM_BOT_TOKEN"
+    assert ask.exe_data.assist_agent == "provisioner"
+    store = ops["store-telegram"]
+    assert "credentials check telegram --project" in store.completion_check.command_for("linux")
+    assert "credentials test" not in ops["connect-google"].completion_check.command_for("linux")
+    assert "connections test google --scope" in ops["connect-google"].completion_check.command_for("linux")
+
+    _no_ai, plain = project_setup.compile_setup(project.id, reqs, ai=False)
+    assert plain["ask-telegram-TELEGRAM_BOT_TOKEN"].exe_data.assist_agent == ""
+
+
+async def test_a_credentials_own_setup_timeout_rides_its_questions(project, templates):
+    await save_credential(
+        manifest={"name": "slow-key", "setup": "Request a key; it takes a while to issue.", "setup_timeout_seconds": 1500,
+                  "vars": {"SLOW_KEY": {}}},
+        scope="project", project_id=project.id,
+    )
+    reqs = await project_setup.collect_requirements(project)
+
+    _wizard, ops = project_setup.compile_setup(project.id, reqs)
+
+    assert ops["ask-slow-key-SLOW_KEY"].setup_timeout() == 1500
+
+
+async def test_a_deployment_setup_stores_and_checks_where_that_deployment_keeps_values(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram")
+    reqs = await project_setup.collect_requirements(project, "d-1")
+
+    _wizard, ops = project_setup.compile_setup(project.id, reqs, deployment_id="d-1")
+
+    for name in ("ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram"):
+        assert "--deployment d-1" in ops[name].completion_check.command_for("linux")
+    assert "--deployment d-1" in ops["store-telegram"].exe_data.command_for("linux")
+
+
+# ── run: `flow project setup`, its shell bridged into the real CLI ───────────
+
+
+@pytest.fixture
+async def cli(monkeypatch, project):
+    """The wizard's shell runs `flow …` through the real Typer app; the terminal answers from a list."""
+    from flow_sdk.cli import flow_cli
+
+    loop = asyncio.get_running_loop()
+    monkeypatch.setattr(credentials_cmd, "discover_port", lambda required=True: None)
+    monkeypatch.setattr(credentials_cmd, "_here", lambda coro: asyncio.run_coroutine_threadsafe(coro, loop).result())
+    ran: list[list[str]] = []
+
+    def invoke(argv: list[str], env: dict, stdin: str = "") -> CliResult:
+        ran.append(argv)
+        said = CliRunner().invoke(flow_cli.app, argv, env=env, input=stdin)
+        return CliResult(
+            exit_code=0 if said.exit_code == 0 else 1,
+            returncode=said.exit_code,
+            stdout=said.stdout,
+            stderr=getattr(said, "stderr", ""),
+        )
+
+    async def shell(command, *, timeout_seconds, workdir, extra_env=None, platform="", **_):
+        argv = shlex.split(command)
+        argv = argv[argv.index("flow_sdk.cli.flow_cli") + 1 :]
+        return await asyncio.to_thread(invoke, argv, dict(extra_env or {}))
+
+    answers: list[str] = []
+    asked: list[tuple[str, bool]] = []
+
+    def read(prompt: str, secret: bool) -> str:
+        asked.append((prompt, secret))
+        return answers.pop(0) if answers else ""
+
+    monkeypatch.setattr(project_cmd, "_shell", shell)
+    monkeypatch.setattr(project_cmd, "_read", read)
+    return {"answers": answers, "asked": asked, "ran": ran, "invoke": invoke}
+
+
+def _env_file(project) -> dict:
+    return dict(dotenv_values(Path(project.fs_storage_mount_path) / ".env.local"))
+
+
+async def test_a_typed_key_is_stored_never_printed_and_a_rerun_skips_it(project, templates, cli, monkeypatch, capsys):
+    _sources(monkeypatch, "telegram")
+    cli["answers"].append(TOKEN)
+
+    code = await project_cmd._run(project.id, dry_run=False, ai=True, as_json=False)
+    out = capsys.readouterr()
+
+    assert code == 0, out.out
+    assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN, "declared from its template, value in the project"
+    assert TOKEN not in out.out + out.err, "a value is never printed"
+    assert cli["asked"] == [(cli["asked"][0][0], True)] and cli["asked"][0][0].startswith("Telegram bot: Bot token\n")
+    assert "Bot token: answered" in out.out and "✓  Store Telegram bot: done" in out.out
+    assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the value travels as env, never argv"
+
+    cli["asked"].clear()
+    again = await project_cmd._run(project.id, dry_run=False, ai=True, as_json=True)
+    result = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+    assert again == 0 and result["ok"] and cli["asked"] == [], "a re-run asks nothing"
+
+
+async def test_an_empty_answer_hands_the_question_to_ai_assist(project, templates, cli, monkeypatch, capsys):
+    """At a terminal there is no button: an empty answer is the person's "AI Assist, please". The agent's
+    answer becomes this question's answer, and the store step stores it like a typed one."""
+    _sources(monkeypatch, "telegram")
+    handed: list = []
+
+    async def assist(question):
+        handed.append(question)
+        return TOKEN
+
+    monkeypatch.setattr(project_cmd, "_assist", assist)
+
+    code = await project_cmd._run(project.id, dry_run=False, ai=True, as_json=False)
+    captured = capsys.readouterr()
+    out = captured.out
+
+    assert code == 0, out
+    (question,) = handed
+    assert question.assist_agent == "provisioner"
+    assert "@BotFather" in question.guide, "the credential's own setup instructions"
+    assert question.setup_timeout == SETUP_TIMEOUT
+    assert "Leave it empty for AI Assist" in cli["asked"][0][0]
+    assert "AI Assist is working on it" in captured.err
+    assert "✓  Telegram bot: Bot token: answered" in out and "✓  Store Telegram bot: done" in out
+    assert TOKEN not in out + captured.err, "a value is never printed"
+    assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN
+
+
+async def test_without_ai_an_empty_answer_leaves_it_missing_and_says_so(project, templates, cli, monkeypatch, capsys):
+    _sources(monkeypatch, "telegram")
+
+    async def never(_question):
+        raise AssertionError("--no-ai handed a question to AI Assist")
+
+    monkeypatch.setattr(project_cmd, "_assist", never)
+
+    code = await project_cmd._run(project.id, dry_run=False, ai=False, as_json=False)
+    out = capsys.readouterr().out
+
+    assert code == 1
+    assert "AI Assist" not in out and "Not set up yet: telegram" in out
+    assert "Leave it empty" not in cli["asked"][0][0], "no AI Assist, so no offer of one"
+
+
+async def test_dry_run_lists_and_changes_nothing(project, templates, cli, monkeypatch, capsys):
+    _sources(monkeypatch, "telegram", "gdrive", "voice_phone")
+
+    code = await project_cmd._run(project.id, dry_run=True, ai=True, as_json=True)
+    listed = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+
+    assert code == 0 and cli["ran"] == [] and cli["asked"] == []
+    assert [(r["kind"], r["credential_kind"], r["name"], r["state"]) for r in listed["requirements"]][:2] == [
+        ("pack", "oauth", "google", "not connected"),
+        ("pack", "env", "telegram", "missing TELEGRAM_BOT_TOKEN"),
+    ]
+    assert any(r["kind"] == "gap" for r in listed["requirements"])
+
+
+async def test_the_documented_commands_are_real():
+    """`docs/snippets/secret-stores.md` § 7 — every line is a command this CLI parses."""
+    from flow_sdk.cli import flow_cli
+    from tests.utils.snippets import doc, fence_under
+
+    lines = [
+        ln.split("#")[0].split()
+        for ln in fence_under(doc("secret-stores.md"), "7. Set up a project", lang="bash").splitlines()
+    ]
+    commands = [ln for ln in lines if ln and ln[0] == "flow"]
+    assert len(commands) == 8
+    for argv in commands:
+        said = CliRunner().invoke(flow_cli.app, [*argv[1:], "--help"])
+        assert said.exit_code == 0, (argv, said.output)
+
+
+# ── declare / set --stdin: the public surface a project and an agent use ─────
+
+DEMO = {
+    "name": "demo-service",
+    "title": "Demo service",
+    "vars": {
+        "DEMO_API_KEY": {"label": "API key", "pattern": "^demo_[0-9a-f]{32}$"},
+        "DEMO_ENDPOINT": {"label": "Endpoint", "pattern": "^https?://", "secret": False},
+    },
+    "setup": "Generate DEMO_API_KEY, read DEMO_ENDPOINT from service.url; pipe both into "
+    "`flow credentials set demo-service --stdin`.",
+}
+DEMO_KEY = "demo_" + "0123456789abcdef" * 2
+
+
+def _manifest(tmp_path, body: dict) -> str:
+    path = tmp_path / f"{body.get('name', 'x')}.json"
+    path.write_text(json.dumps(body))
+    return str(path)
+
+
+async def test_declare_puts_the_credential_in_the_project_and_twice_is_once(project, cli, tmp_path):
+    first = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {}
+    )
+    assert first.ok, first.stdout
+    folder = Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service"
+    assert json.loads((folder / "credential.json").read_text())["vars"].keys() == DEMO["vars"].keys()
+
+    again = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "declare", _manifest(tmp_path, {**DEMO, "title": "Demo 2"}), "--project", project.id],
+        {},
+    )
+    assert again.ok, again.stdout
+    assert json.loads(again.stdout)["typeid"] == json.loads(first.stdout)["typeid"], "updated in place, not a twin"
+    assert json.loads((folder / "credential.json").read_text())["title"] == "Demo 2"
+
+
+async def test_declare_refuses_a_credential_that_does_not_say_how_it_is_set_up(project, cli, tmp_path):
+    bare = {k: v for k, v in DEMO.items() if k != "setup"}
+    said = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "declare", _manifest(tmp_path, bare), "--project", project.id], {}
+    )
+    assert not said.ok and "setup instructions" in said.stdout + said.stderr
+    assert not (Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service").exists()
+
+
+async def test_set_stdin_stores_checks_the_pattern_and_prints_no_value(project, cli, tmp_path):
+    assert (
+        await asyncio.to_thread(
+            cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {}
+        )
+    ).ok
+
+    wrong = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+        {},
+        "DEMO_API_KEY=not-a-demo-key\n",
+    )
+    assert not wrong.ok, "a value off its pattern is refused at the write"
+    assert "DEMO_API_KEY" not in _env_file(project)
+
+    stored = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+        {},
+        f"# the key\nDEMO_API_KEY={DEMO_KEY}\n\nDEMO_ENDPOINT=https://demo.test/api\n",
+    )
+    assert stored.ok, stored.stdout
+    assert json.loads(stored.stdout)["stored"] == ["DEMO_API_KEY", "DEMO_ENDPOINT"]
+    assert DEMO_KEY not in stored.stdout
+    assert _env_file(project) == {"DEMO_API_KEY": DEMO_KEY, "DEMO_ENDPOINT": "https://demo.test/api"}
+
+    check = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "check", "demo-service", "--project", project.id], {}
+    )
+    assert check.ok and json.loads(check.stdout)["ready"], check.stdout

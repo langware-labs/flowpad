@@ -11,24 +11,31 @@ from typing import Any
 
 from starlette.responses import StreamingResponse
 
+from flow_sdk.actions import action
 from flow_sdk.api.fs.desktop_open import open_in_os
 from flow_sdk.api.fs.fs_api import allowed_fs_actions, get_request_fs_info
-from flow_sdk.actions import action
 from flow_sdk.request_context import get_current_request_info
 from flow_sdk.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
 from .fs_actions import (
     browse,
     copy,
     create_symlink,
     delete,
+    document,
     download,
     download_zip,
+    ensure_document,
+    extract_preview,
     mkdir,
     move,
+    read_optional,
     rename,
     resolve_symlink,
+    serve,
     upload,
     upload_zip,
+    watch_file,
     write,
 )
 
@@ -45,6 +52,9 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
     - browse: List directory contents
     - upload: Upload files
     - download: Download file
+    - read_optional: Read a maybe-absent text file in ONE request (200 either way)
+    - extract_preview: Extract a local .zip to a temp folder to look inside it
+    - serve: Serve a file for the browser to render (inline, url mirrors the path)
     - download_zip: Download directory as zip
     - upload_zip: Upload zip file
     - delete: Delete file/folder
@@ -75,6 +85,12 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await upload(current_request_info, fs_info)
         elif fs_info.fs_action == "download":
             return await download(current_request_info, fs_info)
+        elif fs_info.fs_action == "extract_preview":
+            return await extract_preview(current_request_info, fs_info)
+        elif fs_info.fs_action == "read_optional":
+            return await read_optional(current_request_info, fs_info)
+        elif fs_info.fs_action == "serve":
+            return await serve(current_request_info, fs_info)
         elif fs_info.fs_action == "download_zip":
             return await download_zip(current_request_info, fs_info)
         elif fs_info.fs_action == "upload_zip":
@@ -91,12 +107,18 @@ async def fs() -> ApiResponse[Any] | StreamingResponse:
             return await mkdir(current_request_info, fs_info)
         elif fs_info.fs_action == "write":
             return await write(current_request_info, fs_info)
+        elif fs_info.fs_action == "ensure_document":
+            return await ensure_document(current_request_info, fs_info)
+        elif fs_info.fs_action == "document":
+            return await document(current_request_info, fs_info)
         elif fs_info.fs_action == "open":
             return await open_in_os(current_request_info, fs_info)
         elif fs_info.fs_action == "create_symlink":
             return await create_symlink(current_request_info, fs_info)
         elif fs_info.fs_action == "resolve_symlink":
             return await resolve_symlink(current_request_info, fs_info)
+        elif fs_info.fs_action in ("watch", "unwatch"):
+            return await watch_file(current_request_info, fs_info, on=fs_info.fs_action == "watch")
         else:
             return ApiSuccessResponse(data=[])
 

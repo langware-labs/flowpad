@@ -23,6 +23,11 @@ supabase db reset                # apply supabase/migrations/
 The landing page at http://localhost:3000 shows live status for all three
 services.
 
+
+## FlowCall integration
+
+When integrating Flowpad processing, load the shipped FlowCall guide through the docs-browse skill. A FlowCall block is a ComputeOp with declared input/output and, for Python work, call.py:call. Use the entity SDK call, preserve ReturnedValue outcomes and explicit output presence, and correlate each invocation independently. Standalone app endpoints retain their own contracts.
+
 ## Layout
 
 ```

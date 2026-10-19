@@ -2,8 +2,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { cn } from '@src/lib/utils';
 import { CheckCircle2, MinusCircle, RotateCw, XCircle } from 'lucide-react';
 
-import type { AnchoredItem, AnchoredTrack } from '../types';
-
 export type TraceMarkStatus = 'done' | 'retried' | 'error' | 'skip';
 
 export interface TraceMark {
@@ -18,21 +16,8 @@ export interface TraceMark {
   startedAt?: string;
   endedAt?: string;
   /** USD cost of usage entries whose timestamp falls in [startedAt, endedAt],
-   *  resolved via ModelPricing.costOf. Undefined when transcript is missing. */
+   *  summed from each entry's backend `cost_usd`. Undefined when transcript is missing. */
   costUsd?: number;
-}
-
-export const TRACE_TRACK_WIDTH = 112;
-
-/** @deprecated Use buildMarkerTrack from '../tracks/MarkerTrack' with kind: 'trace' items. */
-export function buildTraceTrack(items: AnchoredItem<TraceMark>[]): AnchoredTrack<TraceMark> {
-  return {
-    id: 'trace',
-    side: 'left',
-    width: TRACE_TRACK_WIDTH,
-    items,
-    renderItem: (item) => <TraceMarker mark={item.data} />,
-  };
 }
 
 export { TraceMarker };
@@ -70,9 +55,7 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
         {mark.startedAt && ` · started ${new Date(mark.startedAt).toLocaleTimeString()}`}
       </div>
       {mark.errorMessage && (
-        <div className="mt-1 max-w-[280px] whitespace-pre-wrap text-[10px] text-amber-200">
-          {mark.errorMessage}
-        </div>
+        <div className="mt-1 max-w-[280px] whitespace-pre-wrap text-[10px] text-amber-200">{mark.errorMessage}</div>
       )}
     </div>
   );
@@ -81,9 +64,12 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
       <TooltipTrigger asChild>
         <div className="flex h-full items-start justify-end gap-1 px-1.5 pt-1 text-[10px] tabular-nums text-muted-foreground">
           <Icon className={cn('h-3 w-3 shrink-0', color)} />
-          <span className="truncate">{main}{retried}</span>
+          <span className="truncate">
+            {main}
+            {retried}
+          </span>
           {cost && (
-            <span className="ml-0.5 truncate text-muted-foreground/80" data-testid="trace-mark-cost">
+            <span className="ms-0.5 truncate text-muted-foreground/80" data-testid="trace-mark-cost">
               {cost}
             </span>
           )}

@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
+  "parent_ref": "markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "interface",
+  "folder_name": "interface",
+  "inputs_hash": "148df96da87fd48e3398513decc845796183e0d8350a721ffef2697d4af6b64f",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
+  "files": [
+    {
+      "name": "README.md",
+      "rel_path": "README.md",
+      "title": "Interface Reference — the agentic-process stack",
+      "summary": "Index of the interface reference pages for the agentic-process stack, and the layering from AgenticProcess through Shell down to the PTY.",
+      "content_hash": "a7759d2aba3ef3180bfba9742286c6ee92c6ce601147e25ae4d5643ad10b678c",
+      "size_bytes": 7537
+    },
+    {
+      "name": "agentic-process.md",
+      "rel_path": "agentic-process.md",
+      "title": "AgenticProcess — interface",
+      "summary": "Complete AgenticProcess Python, backend action, and TypeScript interface reference, with transport, visibility, lifecycle, and execution flows.",
+      "content_hash": "8d635ec6c542dfac3416d80c0c5591d72363a27d673c833f7ed4281cdf6e5037",
+      "size_bytes": 62468
+    },
+    {
+      "name": "cli-drivers.md",
+      "rel_path": "cli-drivers.md",
+      "title": "CLI drivers — interface",
+      "summary": "WorkerDriver protocol, vendor implementations, naming traits, launch modes, session access, cancellation, and integration flows for agent CLI drivers.",
+      "content_hash": "bab73c53b2de2a687b0a9ab1c4d9b3b6372663594c5bc82dd664696816129aec",
+      "size_bytes": 40376
+    },
+    {
+      "name": "compute-node.md",
+      "rel_path": "compute-node.md",
+      "title": "ComputeNode — interface",
+      "summary": "ComputeNode entity interface: the @local singleton, six action mixins, Python and TypeScript locations, and PTY, file, desktop and scan actions.",
+      "content_hash": "9ac0bb4623a247eb0dba89eeaa16a1117cc79130e17541a4ddb6c42b008f755f",
+      "size_bytes": 17689
+    },
+    {
+      "name": "flows.md",
+      "rel_path": "flows.md",
+      "title": "Agentic-process flows (test-derived)",
+      "summary": "Test-derived agentic-process flows across SDK, HTTP, Python, PTY, streaming, restart, recovery, queues, forks, and shell tabs.",
+      "content_hash": "793567709a6774c254a986a6eb808da775e9a016b59523cb51a715d823884763",
+      "size_bytes": 33523
+    },
+    {
+      "name": "pty-layer.md",
+      "rel_path": "pty-layer.md",
+      "title": "PTY layer — interface",
+      "summary": "Internal PTY layer API surface: PtyRegistry and PtyState membership FSM, PtyStreamFile framed stream, LocalComputeProvider, terminal-command endpoints, WS lifecycle, replay route and seq rule.",
+      "content_hash": "e84c0601cf9ed6eb87dd5723452bfae42f74a8a583729bb136876fe3e14a4a83",
+      "size_bytes": 17023
+    },
+    {
+      "name": "session-naming.md",
+      "rel_path": "session-naming.md",
+      "title": "Worker session names",
+      "summary": "Worker session naming: the backend naming service, five-phase priority reducer, provider provenance and tab projection for process names.",
+      "content_hash": "d6078597376aa7c3e5ff9b6a2b1902b3f869855519dee537377f89639305b6b4",
+      "size_bytes": 6612
+    },
+    {
+      "name": "shell.md",
+      "rel_path": "shell.md",
+      "title": "Shell — interface",
+      "summary": "Shell interface reference covering PTY metadata, lifecycle, HTTP actions, TypeScript methods, and FlowCall command results.",
+      "content_hash": "970bf382995ceddcae5a5123f0525729cbb34651384e6d1a9cea904fbcb32796",
+      "size_bytes": 19689
+    },
+    {
+      "name": "status-model.md",
+      "rel_path": "status-model.md",
+      "title": "Status model — interface",
+      "summary": "Interface reference for the two-axis process status model: stored ProcessStatus versus transcript-derived WorkerStatus, their enums, and derived projections.",
+      "content_hash": "3f54d1450e81fcb62c20f646c8023070fc92ec2fe08f79d0ca1cf2df759f4b98",
+      "size_bytes": 15382
+    },
+    {
+      "name": "test-coverage.md",
+      "rel_path": "test-coverage.md",
+      "title": "Test coverage — the agentic-process stack, per area × per front",
+      "summary": "Audit matrix of test coverage for the agentic-process stack (AgenticProcess, Shell, PTY layer, ComputeNode, CLI drivers, status model) by front, with remaining gaps.",
+      "content_hash": "9731c2f06231f9d9714a16083729d1a635bc9735012e30c522f95b7b1e8d681f",
+      "size_bytes": 20090
+    }
+  ],
+  "subfolders": [],
+  "generated_at": "2026-10-15T08:55:59.960001+00:00",
+  "latest_process_ref": ""
+}

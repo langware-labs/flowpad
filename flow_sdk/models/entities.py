@@ -24,9 +24,13 @@ except ImportError as e:
     print(f"[WARN] Failed to import Project: {e}")
 
 try:
-    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
+    from flow_sdk.builtin.wiki import Wiki, WikiEntry  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import SecretOrigin: {e}")
+    print(f"[WARN] Failed to import Wiki entities: {e}")
+
+# A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
+from flow_sdk.builtin.credential import Credential  # noqa: F401
+from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
@@ -45,8 +49,9 @@ except ImportError as e:
 
 try:
     from flow_sdk.builtin.agent import Agent  # noqa: F401
+    from flow_sdk.builtin.subagent import SubAgent  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Agent: {e}")
+    print(f"[WARN] Failed to import SubAgent: {e}")
 
 try:
     from flow_sdk.builtin.api_key import ApiKey  # noqa: F401
@@ -106,9 +111,9 @@ except ImportError as e:
     print(f"[WARN] Failed to import RemoteWorkerSession: {e}")
 
 try:
-    from flow_sdk.builtin.prompt_result import PromptResult  # noqa: F401
+    from flow_sdk.builtin.prompt_completion import PromptCompletion  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import PromptResult: {e}")
+    print(f"[WARN] Failed to import PromptCompletion: {e}")
 
 try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
@@ -121,9 +126,9 @@ except ImportError as e:
     print(f"[WARN] Failed to import Skill: {e}")
 
 try:
-    from flow_sdk.builtin.whiteboard import Whiteboard  # noqa: F401
+    from flow_sdk.builtin.chart import Chart  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Whiteboard: {e}")
+    print(f"[WARN] Failed to import Chart: {e}")
 
 try:
     from flow_sdk.builtin.deck_template import DeckTemplate  # noqa: F401
@@ -166,24 +171,29 @@ except ImportError as e:
     print(f"[WARN] Failed to import FlowpadDiagnosis: {e}")
 
 try:
+    from flow_sdk.builtin.diagnosis_request import DiagnosisRequest  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import DiagnosisRequest: {e}")
+
+try:
     from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
 
 try:
-    from flow_sdk.builtin.flow_node import FlowNode  # noqa: F401
+    from flow_sdk.builtin.graph_workflow_node import GraphWorkflowNode  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import FlowNode: {e}")
+    print(f"[WARN] Failed to import GraphWorkflowNode: {e}")
 
 try:
-    from flow_sdk.builtin.agentic_flow import AgenticFlow  # noqa: F401
+    from flow_sdk.builtin.graph_workflow import GraphWorkflow  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import AgenticFlow: {e}")
+    print(f"[WARN] Failed to import GraphWorkflow: {e}")
 
 try:
-    from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun  # noqa: F401
+    from flow_sdk.builtin.graph_workflow_run import GraphWorkflowRun  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import AgenticFlowRun: {e}")
+    print(f"[WARN] Failed to import GraphWorkflowRun: {e}")
 
 try:
     from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
@@ -264,6 +274,7 @@ except ImportError as e:
 try:
     from flow_sdk.builtin.artifact import Artifact  # noqa: F401
     from flow_sdk.builtin.deployment import Deployment  # noqa: F401
+    from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Artifact/Deployment entities: {e}")
 
@@ -271,6 +282,21 @@ try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")
+
+try:
+    from flow_sdk.builtin.rag_index import RagIndex  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import RagIndex: {e}")
+
+try:
+    from flow_sdk.builtin.consumer_position import ConsumerPosition  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ConsumerPosition: {e}")
+
+try:
+    from flow_sdk.builtin.source_change import SourceChange  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import SourceChange: {e}")
 
 try:
     from flow_sdk.builtin.file import File  # noqa: F401
@@ -283,8 +309,8 @@ except ImportError as e:
     print(f"[WARN] Failed to import Tab: {e}")
 
 try:
-    from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: F401
+    from flow_sdk.builtin.stream_inbox_manager import StreamInboxManager  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import InboxManager: {e}")
+    print(f"[WARN] Failed to import StreamInboxManager: {e}")
 
 __all__ = []

@@ -1,0 +1,14 @@
+{
+  "type": "agent",
+  "id": "880a5165-c5bc-41b4-b113-64f1ff2e0fb4",
+  "name": "slack-poster",
+  "description": "Posts messages on the user's behalf into Slack through the harness's own Slack connector, and records what it posted. Delivery only — never composes, never edits.",
+  "avatar": "📮",
+  "worker_type": "claude",
+  "model": "sonnet",
+  "permission_mode": "bypassPermissions",
+  "subagents": [
+    "slack_sender"
+  ],
+  "enabled": true
+}

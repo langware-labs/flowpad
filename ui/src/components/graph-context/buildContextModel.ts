@@ -1,4 +1,4 @@
-import { APIEntity, GraphContext, TypeId, dataManager, isTypeId } from '@sdk';
+import { APIEntity, GraphContext, TypeId, dataManager, isTypeId, type AnyEntity } from '@sdk';
 
 /** Upper bound on nodes so a deeply-connected context can't blow up the canvas. */
 export const MAX_NODES = 250;
@@ -81,7 +81,7 @@ export async function buildContextModel(
     const resolvedLevel = await Promise.all(
       level.map(async (f) => {
         const tid = new TypeId(f.tidStr);
-        let entity: APIEntity<any> | null = null;
+        let entity: AnyEntity | null = null;
         try {
           entity = await dataManager.getByTypeId(tid);
         } catch {

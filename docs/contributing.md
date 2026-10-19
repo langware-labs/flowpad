@@ -58,20 +58,17 @@ flowpad/
 │   ├── db/                    # Database drivers (SQLite)
 │   ├── builtin/               # Built-in entities
 │   ├── actions/               # Action system
-│   ├── hooks/                 # Hook system
 │   ├── discovery/             # Service discovery
-│   ├── fs_records/            # File system record CRUD
 │   ├── fs_store/              # File system storage
 │   ├── mcp_server/            # MCP server
-│   └── client.py              # FlowpadClient
+│   └── server/                # FastAPI server
+│       ├── run.py             # Server entry point
+│       ├── app.py             # FastAPI app
+│       ├── routes/            # API endpoints
+│       ├── middleware/        # Request middleware
+│       ├── reporters/         # Event reporters
+│       └── static/            # Built UI assets (generated)
 ├── ts_sdk/                    # TypeScript SDK
-├── server/                    # FastAPI server
-│   ├── run.py                 # Server entry point
-│   ├── server.py              # FastAPI app
-│   ├── routes/                # API endpoints
-│   ├── middleware/            # Request middleware
-│   ├── reporters/             # Event reporters
-│   └── static/                # Built UI assets (generated)
 ├── ui/                        # Frontend source (React/Vite)
 │   ├── src/
 │   ├── vite.config.ts
@@ -79,7 +76,7 @@ flowpad/
 ├── electron/                  # Electron desktop app wrapper
 ├── tests/                     # Backend tests (unit, api, cli)
 ├── pyproject.toml
-└── build_ui.py                # Builds UI into server/static/
+└── build_ui.py                # Builds UI into flow_sdk/server/static/
 ```
 
 ---
@@ -117,11 +114,11 @@ cd ui && npm run build && npm run lint
 ## Building for pip install
 
 ```bash
-# 1. Build UI assets into server/static/ (required before packaging)
+# 1. Build UI assets into flow_sdk/server/static/ (required before packaging)
 python build_ui.py
 
 # 2. Build the wheel
 uv build
 ```
 
-`build_ui.py` must run before `uv build`. It compiles the frontend into `server/static/assets/` which gets included in the wheel via `package-data` in `pyproject.toml`. Without this step, the pip-installed server will serve the HTML shell but 404 on JS/CSS assets.
+`build_ui.py` must run before `uv build`. It compiles the frontend into `flow_sdk/server/static/assets/` which gets included in the wheel via `package-data` in `pyproject.toml`. Without this step, the pip-installed server will serve the HTML shell but 404 on JS/CSS assets.

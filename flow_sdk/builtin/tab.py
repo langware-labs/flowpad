@@ -27,16 +27,18 @@ import contextlib
 import json as _json
 import logging
 import uuid
+from typing import Any, Callable
 
 from flow_sdk.actions.action_registry import action as _action_registry
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
 from flow_sdk.builtin.tab_order import (
     compute_insert_new,
     compute_reorder,
     filter_for_project,
 )
 from flow_sdk.core import Entity
-from flow_sdk.fs_store.identifier import is_valid_uuid, mint_uuid
+from flow_sdk.core.dock_address import VIEW_META, PageId, ViewType, parse_view_type
+from flow_sdk.api.api_types.identifier import is_valid_uuid, mint_uuid
 from flow_sdk.schema.types import EntityType
 
 logger = logging.getLogger(__name__)
@@ -75,38 +77,113 @@ def _pointer_to_hash(pointer: str) -> str:
     return pointer
 
 
+def _is_page_id(segment: str) -> bool:
+    """Is this hash segment a `PageId` (i.e. a page prefix, not a viewType)?"""
+    try:
+        PageId(segment)
+    except ValueError:
+        return False
+    return True
+
+
+def _pointer_target(pointer: str | None, *, fold: bool = True) -> tuple[str, str]:
+    """The (viewType, inner pointer) a stored pointer addresses — what it SHOWS, as
+    opposed to ``_pointer_to_hash``, which answers which tab it IS.
+
+    The two diverge only for rows whose identity is deliberately coarser than their
+    target: a scope-keyed Assets tab, and the vibe workspace's active display. That
+    gap is exactly what makes "did this row re-point?" a question worth asking, and
+    answering it structurally keeps the backend from having to recognise particular
+    identity namespaces by name.
+    """
+    if not pointer:
+        return ('', '')
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+        except (ValueError, TypeError):
+            return (pointer, '')
+        vt, sub = str(data.get('viewType') or ''), str(data.get('pointer') or '')
+    else:
+        vt, _, sub = pointer.partition('|')
+    # A process shown as the Vibe host and as a shell is ONE target shown two ways
+    # (the Vibe dock folds onto the shell identity): switching between them is not
+    # a re-point, so it must not refresh the tab's label or icon. ``fold=False``
+    # reads the presentation as written.
+    if fold and vt == ViewType.VIBE:
+        vt = ViewType.SHELL.value
+    return (vt, sub)
+
+
 def _pointer_view_type(pointer: str | None) -> str | None:
-    """The dock viewType a stored pointer addresses. Derived from
-    ``_pointer_to_hash`` — the one owner of the pointer-format grammar — whose
-    canonical hash always leads with the viewType (``vt|sub``, and the
-    scope-keyed ``tabHash`` form too). A malformed pointer yields a string no
-    real viewType equals, so equality checks fail closed."""
+    """The dock viewType a stored pointer addresses.
+
+    Derived from ``_pointer_to_hash`` — the one owner of the pointer-format
+    grammar. Its canonical hash leads with the viewType (``vt|sub``, and the
+    scope-keyed form too) EXCEPT on a non-desk page, where the page namespaces
+    the identity and the hash is ``page|vt|sub``. Strip that prefix first, or a
+    hub tab reports its view as ``hub``.
+
+    Returns a raw string, deliberately NOT a
+    :class:`~flow_sdk.core.dock_address.ViewType`: the reaper below matches
+    ``display``, a view type that was REMOVED when the vibe display collapsed
+    back onto the shell dock. Coercing through the live enum would map those
+    legacy rows to ``None`` and silently stop reaping them. ``ViewType`` is a
+    ``StrEnum``, so callers can still compare against a member directly.
+
+    A malformed pointer yields a string no real viewType equals, so equality
+    checks fail closed.
+    """
     if not pointer:
         return None
-    return _pointer_to_hash(pointer).split('|', 1)[0] or None
+    segments = _pointer_to_hash(pointer).split('|')
+    # `desk` is never emitted, so a leading page segment is always non-desk.
+    if len(segments) > 2 and _is_page_id(segments[0]):
+        segments = segments[1:]
+    return segments[0] or None
+
+
+#: The viewType of the retired `/dock/display/<proc>` URL family. It is NOT a
+#: member of `ViewType` — the family was collapsed back onto the shell dock —
+#: but rows minted under it persist and are reaped by `list_all` below. Kept as
+#: a literal here precisely because the live enum can no longer express it.
+_LEGACY_DISPLAY_VIEW = "display"
 
 
 # Target types that can never be workspace CHILDREN. A vibe workspace groups the
-# content assets it opens under its process tab (``parent_tab_id``); a live
-# session anchor (process/shell) or a whole project is never "inside" another
-# workspace — adopting one was how nested-display / shell-under-display
-# corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
-# adopts only content-asset docks, this deny-list is the backend belt.
-# ``ensure_tab`` drops the hint silently (an old client may still send it) and
+# content it opens under its process tab (``parent_tab_id``): assets/files, and a
+# plain terminal — a shell opened from inside the workspace is content in its
+# display, the same as a file. What is never a child is a workspace ANCHOR: the
+# agentic process whose tab the workspace is mounted over, or a whole project.
+# Adopting one of those was how nested-display / shell-under-display corruption
+# arose, so they stay denied. Mirrors the FE allow-list
+# (``isAdoptableChildDock``); this deny-list is the backend belt. ``ensure_tab``
+# drops a forbidden hint silently (an old client may still send it) and
 # null-heals legacy corrupt rows on touch.
 _PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
-    EntityType.SHELL.value,
     EntityType.AGENTIC_PROCESS.value,
     EntityType.PROJECT.value,
 })
 
 
 def _pointer_is_adoptable_child(pointer: str | None) -> bool:
-    """Only a content-asset dock may be a workspace CHILD — the pointer-shape
-    mirror of the FE allow-list (``dockAddressesAsset``): an assets
+    """Only workspace CONTENT may be a workspace CHILD — the pointer-shape
+    mirror of the FE allow-list (``isAdoptableChildDock``): an assets
     ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
-    (``<project-id>/editor/...``). Navigation surfaces (assets lists /
-    project-home, explorer, shell, project, inbox, …) are never children.
+    (``<project-id>/editor/...``), a raw ``editor`` file pointer, or a PLAIN
+    shell (a terminal). Workspace anchors are never children.
+
+    **A plain SCREEN is also adoptable** (``events``, ``preferences``,
+    ``capabilities``, …): ``flow show view`` presents one into the session that
+    asked for it, and the frontend keeps the narrower test for a dock the USER
+    navigated to (``isAdoptableChildDock``'s ``shown`` flag — a distinction this
+    belt cannot see, since only a ``parent_tab_id`` hint reaches it).
+
+    The four view types above keep their bespoke rules rather than falling into
+    that clause, and ``assets`` is the reason: it is SCOPE-KEYED, so every
+    sub-pointer of a scope folds into ONE tab. Blanket-adopting an
+    ``assets/list/...`` pointer would drag the user's existing Assets tab for
+    that scope into the workspace instead of minting a new child.
 
     Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
     ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
@@ -122,15 +199,69 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
             return False
         vt = str(data.get('viewType') or '')
         sub = str(data.get('pointer') or '')
+        workspace_content = data.get('workspaceContent') is True
     else:
         vt, _, sub = pointer.partition('|')
+        workspace_content = False
+    if vt == 'editor':
+        # The generic source viewer is a first-class content surface too. Empty
+        # pointers are the editor landing shell, not an addressable child.
+        return bool(sub.strip())
     if vt == 'assets':
-        return sub.startswith('editor/')
+        # Scope-keyed Assets tabs deliberately fold their sub-pointer to ''.
+        # DockPointer preserves this one URL-owned bit so an editor/wiki opened
+        # inside Vibe remains a child without changing one-tab-per-scope identity.
+        return workspace_content or sub.startswith('editor/')
     if vt == 'project':
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
+        # The vibe workspace HOST is spelled in the URL as
+        # ``<project-id>/process/<typeid>/display/<tail>`` but is carried to us in
+        # the client's URL options, never inside the stored pointer — that is what
+        # keeps tab identity (and this very check) unchanged. If one ever reaches
+        # here the client failed to lift it, and the row would be refused as a
+        # child SILENTLY: no error, the document just stops being part of its
+        # workspace on the next list read. Name it instead of swallowing it.
+        if asset_sub.startswith('process/'):
+            logger.error(
+                'Tab pointer carries a workspace host; the client should keep it in URL options: %s',
+                pointer,
+            )
         return asset_sub.startswith('editor/')
-    return False
+    if vt == 'shell':
+        # A PLAIN terminal is workspace content. The process's own dock is the
+        # workspace ANCHOR — same viewType, ``agentic_process-<id>`` pointer —
+        # and adopting it would nest a workspace inside itself. ``new_terminal``
+        # is the launcher landing, never a materialized session.
+        s = sub.strip()
+        return bool(s) and s != 'new_terminal' and not s.startswith('agentic_process-')
+    if _view_hosts_tabs(vt):
+        # A HOST tab is never a child: nesting is one level deep.
+        return False
+    # Any other ADDRESSABLE screen. Unknown/retired view types are refused, so a
+    # malformed pointer still fails closed.
+    meta = VIEW_META.get(parse_view_type(vt))  # type: ignore[arg-type]
+    return bool(meta and meta.addressable)
+
+
+# HOST tabs: views that draw their own nested strip of child tabs, one level
+# deep. Each maps to the rule for which pointers it accepts as children. The
+# frontend twin is ``ui/src/navigation/tab-hosts.ts``; both are pinned by
+# ``tests/fixtures/tab_host_children.json``. Vibe is the first host, and its rule
+# is the workspace-content rule the vibe workspace always used.
+_HOST_CHILD_RULES: dict[str, Callable[[str | None], bool]] = {
+    ViewType.VIBE.value: _pointer_is_adoptable_child,
+}
+
+
+def _view_hosts_tabs(view_type: str) -> bool:
+    return view_type in _HOST_CHILD_RULES
+
+
+def _pointer_is_host(pointer: str | None) -> bool:
+    """Is this stored pointer shown as a HOST tab? Read UNFOLDED: a Vibe host
+    folds onto its shell identity, so the folded view type would always say shell."""
+    return _view_hosts_tabs(_pointer_target(pointer, fold=False)[0])
 
 
 def tab_id_for(pointer: str) -> str:
@@ -162,6 +293,10 @@ class Tab(Entity):
     # soft-closed parent leaves it dangling-but-inert, and the deterministic
     # uuid5 id regroups children when the parent's pointer reopens.
     parent_tab_id: str | None = APIField(default=None)
+    # Set on a child hidden BECAUSE its host closed (the close cascade), cleared
+    # when a tab is closed on its own. Reopening the host brings back exactly the
+    # children that went with it — never one the user closed individually.
+    closed_with_parent: bool = APIField(default=False)
 
     # Display primitives the strip draws straight off the Tab, so the chip never
     # has to fetch its backing Shell/AgenticProcess (docs/tab-management.md). Both
@@ -192,6 +327,10 @@ class Tab(Entity):
     # Never persisted — re-resolved on every list/close/rename action.
     status: str | None = APIField(default=None, persist=Persist.FALSE)
     is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
+    target_remote: bool = NoDBAPIField(default=False)
+    # The CONTENT target's own project. Differs from ``project_id`` on a guest
+    # tab — an asset of another project shown inside this one.
+    target_project_id: str | None = NoDBAPIField(default=None)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -212,9 +351,15 @@ class Tab(Entity):
         entity owns its own ``teardown_for_tab`` (e.g. a shell/agentic_process
         tears down its PTY/worker; a markdown/skill survives untouched). A
         target without that method is a no-op.
+
+        Closing a HOST closes its nested children with it (one level deep, so
+        children have none of their own): a workspace does not outlive its tab.
         """
-        await self._soft_hide()
-        await self._dispatch_teardown()
+        closing = await _with_children([self])
+        for tab in closing:
+            await tab._soft_hide()
+        for tab in closing:
+            await tab._dispatch_teardown()
 
     async def _soft_hide(self) -> None:
         """The membership-removal half of close — ONE definition of "soft-close"
@@ -228,30 +373,41 @@ class Tab(Entity):
         if target is not None and callable(teardown):
             await teardown()
 
-    async def set_label(self, name: str) -> None:
-        """Set ONLY the Tab label — no target reflect, no ``auto_rename`` change.
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        from flow_sdk.schema.types import EntityType
 
-        The PTY auto-title mirror: the active panel already saved the live name onto
-        its Shell/AgenticProcess; this keeps the durable ``Tab.name`` in step so the
-        chip stays right once inactive. Unlike :meth:`rename`, it must NOT touch the
-        target (which would pin ``auto_rename=False`` and stop future auto-titles)."""
+        return ("name",) if current_data.get("target_type") == EntityType.AGENTIC_PROCESS else ()
+
+    async def reconcile_target_name(self, target=None) -> None:
+        """Process tab names project durable naming state, even on reopen."""
+        if target is None:
+            target = await self._target_entity()
+        reconcile = getattr(target, "reconcile_name", None)
+        if callable(reconcile):
+            current = await reconcile()
+            if current is not None:
+                self.name = current.name
+
+    async def set_label(self, name: str) -> None:
+        """Set an ordinary label; worker labels always project their target."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await self.reconcile_target_name(target)
+            return
         if name and self.name != name:
             self.name = name
             await self.save()
 
     async def rename(self, name: str) -> None:
-        """``Tab.name`` is the generic source of truth for the tab label. Set it,
-        then reflect onto the backing entity by calling its generic ``rename`` —
-        base ``Entity.rename`` adopts the name onto ANY target (conversation,
-        agentic_process, shell, markdown, …); shell/agentic_process override it
-        to also pin ``auto_rename=False`` (and the FE sends the PTY ``/rename``).
-        Dispatch is by method, not by ``if target_type==`` (slick P6) — exactly
-        like ``close`` → ``teardown_for_tab``. A target-less tab keeps the label
-        on the Tab alone.
-        """
+        """A process target owns the transaction that names it and its tabs."""
+        target = await self._target_entity()
+        if callable(getattr(target, "reconcile_name", None)):
+            await target.rename(name)
+            self.name = target.name
+            return
         self.name = name
         await self.save()
-        target = await self._target_entity()
         if target is not None:
             await target.rename(name)
 
@@ -284,12 +440,17 @@ async def _visible_tabs_sorted() -> list[Tab]:
 async def _project_exists(project_id: str | None) -> bool:
     if not project_id:
         return True
-    try:
-        uuid.UUID(str(project_id))
-    except (TypeError, ValueError):
-        # Legacy/test project identifiers are not reliable Project primary keys;
-        # only UUID-shaped project refs are eligible for stale-row deletion.
-        return True
+    # NO shape gate. A ``project_id`` that is not UUID-shaped cannot ever name a
+    # Project: every Project id is allocated as a uuid (``allocate_id``), and even
+    # a path-recovered one is an "opaque uuid4" (``Project.recover_by_path``). The
+    # old gate exempted non-UUID ids as "legacy/test identifiers" — which made a
+    # TEST id the one thing the reaper could never collect, so a UI fixture that
+    # reached a real backend (``project_id="proj-123"``) pinned an undeletable
+    # phantom project in the projects chip forever: unrecoverable (the recover
+    # endpoint reads a ``workdir`` off shell/agentic_process dependents, and a
+    # conversation tab has none) and unreachable (the chip's row routes to recover,
+    # never to navigation). Absence is decided by the lookup below, for every id
+    # shape alike; the ``except`` remains the only fail-open.
     try:
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
@@ -377,8 +538,20 @@ async def _load_status_targets(
 def _pointer_project_id(pointer: str | None) -> str | None:
     """The project id NAMED by a project-scoped dock pointer — pure parse, no
     existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
-    Returns the id only when UUID-shaped (same reap-eligibility rule as
-    ``_existing_project_ids``); any other pointer shape → ``None``."""
+
+    The UUID check here is a PARSE guard, deliberately NOT the reap-eligibility
+    rule ``_existing_project_ids`` uses — those two once agreed, and no longer do.
+    This one asks "does this pointer segment name an id at all", the address
+    question every URL/VFS matcher asks, which is why it goes through the
+    version-agnostic ``is_valid_uuid`` (CLAUDE.md forbids tightening it).
+    ``_existing_project_ids`` asks the different question "is this ref dangling",
+    and answers it from the DB for every id shape.
+
+    Consequence worth knowing: a pointer naming a NON-id (``proj-123``) parses to
+    ``None`` and so escapes the pointer-orphan reap, even though its ``project_id``
+    twin is now collected. Such a tab navigates to ``/dock/project/<junk>`` →
+    "Project not found" forever (RCA 2026-07-08). Closing that gap means reaping
+    on un-parseable pointers too, which is a separate behaviour change."""
     if not pointer:
         return None
     try:
@@ -402,17 +575,16 @@ async def _existing_project_ids(
     pointer-orphan reap so each pointer is parsed a single time per list call.
 
     Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
-    set of distinct UUID-shaped ``project_id``s (the only ones eligible for
-    reaping — legacy/non-UUID ids aren't reliable Project keys, same rule as
-    ``_project_exists``) and ``existing_ids`` is the subset of those that exist.
+    set of distinct non-empty ``project_id``s — EVERY shape, matching
+    ``_project_exists``: a non-UUID id can never be a Project key, so it is the
+    most certainly-dangling ref there is, not an exempt one — and ``existing_ids``
+    is the subset of those that exist.
     The caller reaps ``candidate_ids - existing_ids`` without re-validating shape.
     ``ok`` is ``False`` if the lookup raised, so the caller fails open and reaps
     nothing.
     """
     candidates = {
-        str(t.project_id)
-        for t in tabs
-        if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
+        str(t.project_id) for t in tabs if getattr(t, "project_id", None)
     }
     # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
     # can carry a live (target-healed) ``project_id`` while its URL still names a
@@ -462,7 +634,7 @@ async def _reap_orphans(
     The reaped target types are exactly ``_DB_BACKED_TARGET_TYPES`` (shell +
     agentic_process): those rows are always DB-backed, so absence == orphan,
     whereas a missing ``markdown``/asset target is a valid unindexed-but-on-disk
-    row (see ``_backfill_tab_projects``) and is left alone.
+    row (see ``_resolve_tab_projects``) and is left alone.
     """
     if not tabs:
         return tabs
@@ -485,7 +657,7 @@ async def _reap_orphans(
             )
 
     # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
-    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # no longer exists. ``_resolve_tab_projects`` may still heal such a tab's
     # ``project_id`` from its TARGET — so the projects chip advertises a live
     # project — but opening the tab, or entering that project via the chip
     # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
@@ -540,7 +712,7 @@ async def _reap_orphans(
         for t in tabs
         if t.id not in deleted_ids
         and "display" in (t.pointer or "")
-        and _pointer_view_type(t.pointer) == "display"
+        and _pointer_view_type(t.pointer) == _LEGACY_DISPLAY_VIEW
     ]
     # Same-target shell siblings are live visible rows, so resolve them from the
     # already-loaded list — no extra query.
@@ -554,7 +726,7 @@ async def _reap_orphans(
                 and tab.target_type
                 and s.target_type == tab.target_type
                 and str(s.target_id) == str(tab.target_id)
-                and _pointer_view_type(s.pointer) == "shell"
+                and _pointer_view_type(s.pointer) == ViewType.SHELL
             ),
             None,
         )
@@ -677,14 +849,26 @@ async def _reparent_children(mapping: "dict[str, str | None]") -> bool:
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
     """Assign ``tab_order = contiguous index`` over ``new_order``; save only rows
-    whose index changed (no-op order ⇒ no write). Returns whether anything wrote."""
+    whose index changed (no-op order ⇒ no write). Returns whether anything wrote.
+
+    ``by_id`` is a snapshot taken before the status/reap pass of
+    ``_visible_tabs_sorted``, so a ``close_many`` can commit ``visible=False``
+    between that read and this write. Saving the snapshot row would write its
+    stale ``visible=True`` back and resurrect the closed tab — so the order is
+    applied to the LIVE row, and a row hidden or gone meanwhile is skipped."""
     wrote = False
     for idx, tid in enumerate(new_order):
         tab = by_id.get(tid)
-        if tab is not None and getattr(tab, "tab_order", 0) != idx:
-            tab.tab_order = idx
-            await tab.save()
-            wrote = True
+        if tab is None or getattr(tab, "tab_order", 0) == idx:
+            continue
+        # Field-scoped stamp: the earlier live-read-then-save() still lost a
+        # `close_many` that committed between the read and the save (the whole
+        # row went back, visible=True included). The driver stamp hydrates the
+        # authoritative row INSIDE the writer transaction, no-ops on a hidden
+        # row, and json_sets only tab_order. Callers broadcast tabs_changed.
+        tab.tab_order = idx
+        _, stamped = await Tab._db.stamp_tab_order(tid, idx)
+        wrote = wrote or stamped
     return wrote
 
 
@@ -740,7 +924,13 @@ async def _load_target_entity(target_type: str | None, target_id: str | None):
     return await entity_cls.get_one({"id": str(target_id)})
 
 
-async def ensure_tab(
+async def ensure_tab(pointer: str, **options: Any) -> Tab:
+    """Deterministic get-or-create for a tab — ``ensure_tab_created`` without the flag."""
+    tab, _created = await ensure_tab_created(pointer, **options)
+    return tab
+
+
+async def ensure_tab_created(
     pointer: str,
     *,
     target_type: str | None = None,
@@ -751,8 +941,10 @@ async def ensure_tab(
     worktree: bool | None = None,
     after_tab_id: str | None = None,
     parent_tab_id: str | None = None,
-) -> Tab:
+) -> tuple[Tab, bool]:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
+    Returns the tab and whether this call minted its row (a hidden row re-shown
+    is a reopen, not a create).
 
     On reopen (same pointer) the existing row is reused and re-shown
     (``visible=True``); the denormalized target/project/name hints are refreshed
@@ -782,7 +974,19 @@ async def ensure_tab(
     # though the target HAS a project. When the client didn't supply a usable
     # project, resolve it from the target entity server-side (``reconcile_tab_project``
     # keeps it fresh on later target-project changes).
-    if (project_id is _UNSET or not project_id) and target_type and target_id:
+    # Explicit project dock URLs also own their presentation project: showing a
+    # file from another project must not move its tab out of the caller's strip.
+    # A SCOPE-KEYED row is the exception: its project is its scope, never its
+    # target's (``_pointer_scope_project``), so the target derivation below must
+    # not run for one. Stamping it at rest — not only on the read path — is what
+    # keeps ``_reap_orphans`` and ``reconcile_tab_project``, which both read the
+    # PERSISTED value, from acting on a project the row never belonged to.
+    scope_keyed, scope_project = _pointer_scope_project(pointer)
+    if scope_keyed:
+        project_id = scope_project
+    elif pointer_project := await _project_from_pointer(pointer):
+        project_id = pointer_project
+    elif (project_id is _UNSET or not project_id) and target_type and target_id:
         resolved = await _project_of_target(target_type, target_id)
         if resolved:
             project_id = resolved
@@ -793,14 +997,40 @@ async def ensure_tab(
     # *second* canonical row → two visible chips for one pointer. Query the pointer:
     # reuse the canonical (``id == tid``) row, and soft-hide any foreign-id strays
     # sharing that pointer so a pre-existing duplicate self-heals on next open.
+    # A loader label is presentation, never naming evidence for a worker.
+    # Initialize legacy authority before inserting a new tab with a UI hint.
+    if target_type == "agentic_process":
+        name = None
     same_pointer = await Tab.get_all({"pointer": pointer})
     existing = next((t for t in same_pointer if t.id == tid), None)
     for stray in same_pointer:
         if stray.id != tid and stray.visible:
             stray.visible = False
             await stray.save()
+    # Scope-keyed docks can change only their presentation metadata while
+    # retaining the same canonical tabHash/id (for example Assets content
+    # carries ``workspaceContent`` while its browser root does not). Reconcile
+    # that variant through the canonical id instead of attempting to insert a
+    # second row with the same identity.
+    if existing is None:
+        existing = await Tab.get_one({"id": tid})
     if existing is not None:
         dirty = False
+        # A row whose IDENTITY is stable while its TARGET moves — the vibe
+        # workspace's active display, and the scope-keyed Assets variant. Record
+        # whether the target actually changed; the label refresh below needs it,
+        # and after this assignment the fact is no longer readable.
+        repointed_target = _pointer_target(existing.pointer) != _pointer_target(pointer)
+        # A HOST re-pointed to a non-host presentation (a Vibe tab switched to its
+        # terminal): its nested tabs move out to the top level (below).
+        left_host = (
+            existing.pointer != pointer
+            and _pointer_is_host(existing.pointer)
+            and not _pointer_is_host(pointer)
+        )
+        if existing.pointer != pointer and _pointer_to_hash(existing.pointer) == _pointer_to_hash(pointer):
+            existing.pointer = pointer
+            dirty = True
         # Heal legacy "viewType|sub" pointers on access — migrate to JSON format
         if existing.pointer and not existing.pointer.startswith('{'):
             parts = existing.pointer.split('|', 1)
@@ -808,8 +1038,10 @@ async def ensure_tab(
             sub = parts[1] if len(parts) > 1 else ''
             existing.pointer = _json.dumps({"viewType": vt, "pointer": sub})
             dirty = True
-        if not existing.visible:
+        reopened = not existing.visible
+        if reopened:
             existing.visible = True
+            existing.closed_with_parent = False
             dirty = True
         for attr, val in (
             ("target_type", target_type),
@@ -830,10 +1062,21 @@ async def ensure_tab(
         # was never a user rename, and a null icon_key/worktree predates the
         # field, so filling heals legacy rows on next open without clobbering a
         # user-chosen name.
-        if not existing.name and name:
+        #
+        # A row that RE-POINTED is the documented exception. The vibe workspace's
+        # active display keeps one identity (the hosting workspace) while the agent
+        # moves its target on every ``flow show``; under the backfill-only rule its
+        # chip would keep the FIRST target's label and icon forever, which reads as a
+        # stuck display. Keyed on the target having actually changed rather than on
+        # who the row belongs to: a user cannot have renamed a chip whose content
+        # they do not choose, and the scope-keyed Assets variant re-points only its
+        # presentation metadata (same viewType, same inner pointer) so it keeps the
+        # never-clobber rule.
+        refresh_label = repointed_target
+        if name and (refresh_label or not existing.name) and existing.name != name:
             existing.name = name
             dirty = True
-        if not existing.icon_key and icon_key:
+        if icon_key and (refresh_label or not existing.icon_key) and existing.icon_key != icon_key:
             existing.icon_key = icon_key
             dirty = True
         if not existing.worktree and worktree:
@@ -860,9 +1103,21 @@ async def ensure_tab(
             elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
                 existing.parent_tab_id = parent_tab_id
                 dirty = True
+            elif not parent_tab_id and existing.parent_tab_id is not None:
+                # Reopened from outside any workspace while its group is closed: no
+                # strip can show a child of a closed parent, so it comes back top-level.
+                parent = await Tab.get_one({"id": existing.parent_tab_id})
+                if parent is None or not parent.visible:
+                    existing.parent_tab_id = None
+                    dirty = True
         if dirty:
             await existing.save()
-        return existing
+        if reopened:
+            await _place_reopened(existing, after_tab_id)
+        if left_host and existing.pointer == pointer:
+            await _carry_children_out(existing)
+        await existing.reconcile_target_name()
+        return existing, False
     # Fresh create: place the new tab in the GLOBAL order — immediately after the
     # opener. ``after_tab_id`` is the explicit opener when given; otherwise the
     # opener defaults to the most-recently-active visible tab (browser-style: a
@@ -902,7 +1157,81 @@ async def ensure_tab(
     tab.tab_order = new_order.index(tid)
     await _persist_global_order(new_order, {t.id: t for t in visible})
     await tab.save()
-    return tab
+    await tab.reconcile_target_name()
+    return tab, True
+
+
+#: The hash namespace of a Vibe workspace's ACTIVE DISPLAY row
+#: (``workspaceActive|<host>``) — mirrors ``ACTIVE_DISPLAY_HASH_NS`` in
+#: ``ui/src/navigation/DockPointer.ts``.
+ACTIVE_DISPLAY_HASH_NS = "workspaceActive"
+
+
+def _is_active_display(pointer: str | None) -> bool:
+    """Is this the Vibe workspace's active-display row (its hash is host-keyed)?"""
+    return bool(pointer) and _pointer_to_hash(pointer).split('|', 1)[0] == ACTIVE_DISPLAY_HASH_NS
+
+
+async def _carry_children_out(tab: Tab) -> None:
+    """``tab`` stopped being a host (its Vibe tab became a terminal): its visible
+    nested tabs become top-level tabs, right after it, in their order. The
+    workspace's ACTIVE DISPLAY row (``workspaceActive|<host>``) is workspace
+    chrome, not a tab of its own: it stays attached (the global strip never shows
+    a child) and is the Display again when the session returns to Vibe."""
+    children = [
+        child
+        for child in await Tab.get_all({"parent_tab_id": tab.id, "visible": True})
+        if not _is_active_display(child.pointer)
+    ]
+    if not children:
+        return
+    for child in children:
+        child.parent_tab_id = None
+        await child.save()
+    await _move_block(await _visible_in_order(), [c.id for c in _in_tab_order(children)], tab.id)
+
+
+def _in_tab_order(tabs: list[Tab]) -> list[Tab]:
+    return sorted(tabs, key=lambda t: (t.tab_order or 0, t.id))
+
+
+async def _visible_in_order() -> list[Tab]:
+    """The visible tabs in global order — for REORDERING only: unlike
+    ``_visible_tabs_sorted`` it loads no status targets and reaps nothing."""
+    return _in_tab_order(await Tab.get_all({"visible": True}))
+
+
+async def _move_block(visible: list[Tab], moving: list[str], after_id: str | None) -> None:
+    """Persist ``moving`` as one contiguous block right after ``after_id`` in the
+    global order (first when ``after_id`` is None or not visible)."""
+    order = [t.id for t in visible if t.id not in moving]
+    at = order.index(after_id) + 1 if after_id in order else 0
+    await _persist_global_order(order[:at] + moving + order[at:], {t.id: t for t in visible})
+
+
+async def _place_reopened(tab: Tab, after_tab_id: str | None) -> None:
+    """A hidden row was just reopened. With an explicit opener it lands right
+    after it (a session reopened from inside a tab opens beside that tab); the
+    children that closed WITH it (``closed_with_parent``) come back, placed right
+    after it. Without an opener and with no children it keeps its old slot."""
+    revived = _in_tab_order(
+        await Tab.get_all({"parent_tab_id": tab.id, "visible": False, "closed_with_parent": True})
+    )
+    for child in revived:
+        child.visible = True
+        child.closed_with_parent = False
+        await child.save()
+    if not revived and not after_tab_id:
+        return
+    visible = await _visible_in_order()
+    moving = [tab.id, *(child.id for child in revived)]
+    anchor = after_tab_id
+    if not anchor:
+        # No opener: the host keeps its slot — after the row that preceded it.
+        ids = [t.id for t in visible]
+        preceding = [tid for tid in ids[: ids.index(tab.id)] if tid not in moving]
+        anchor = preceding[-1] if preceding else None
+    await _move_block(visible, moving, anchor)
 
 
 async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
@@ -914,6 +1243,35 @@ async def _tabs_for_target(target_type: str, target_id: str) -> list["Tab"]:
         return await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
     except Exception:
         return []
+
+
+async def process_tab(process_id: str) -> "Tab | None":
+    """The open Tab row of an agentic process — its terminal, chat and Vibe
+    presentations all fold onto one row, found by its target like every other
+    target-driven tab lookup (``_tabs_for_target``)."""
+    rows = await _tabs_for_target("agentic_process", process_id)
+    return next((t for t in rows if t.visible), None)
+
+
+async def show_placement(process_id: str) -> dict[str, Any]:
+    """Where a ``flow show`` from *process_id* is presented — decided ONCE, here,
+    so every client (browser tabs, ``/win`` popouts, the desktop shell) agrees.
+
+    ``host`` is true when the process is open as a HOST tab (Vibe): its own Display
+    pane pins the target, and a screen nests as that tab's child. Otherwise the
+    target becomes a tab beside ``tab_id`` (or at the end, with no open tab — a
+    background agent). The decision used to be the frontend's, read from the one
+    app-wide view mode, which two sessions shown two ways cannot share.
+
+    ``project_id`` comes from the calling tab, falling back to the process's
+    project when no tab is open. A shown file keeps this presentation project
+    even when the file itself belongs to another project.
+    """
+    tab = await process_tab(process_id)
+    project_id = tab.project_id if tab is not None else await _project_of_target("agentic_process", process_id)
+    if tab is None:
+        return {"tab_id": None, "host": False, "project_id": project_id}
+    return {"tab_id": tab.id, "host": _pointer_is_host(tab.pointer), "project_id": project_id}
 
 
 async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
@@ -954,8 +1312,10 @@ async def reconcile_tab_project(target_type: str, target_id: str, project_id: st
     """
     changed = 0
     for tab in await _tabs_for_target(target_type, target_id):
-        if tab.project_id != project_id:
-            tab.project_id = project_id
+        presentation_project = await _project_from_pointer(tab.pointer)
+        resolved_project = presentation_project or project_id
+        if tab.project_id != resolved_project:
+            tab.project_id = resolved_project
             await tab.save()
             changed += 1
     if changed:
@@ -1034,6 +1394,74 @@ async def _populate_tab_statuses(
         tab.is_disabled = tab.status == "closing"
 
 
+async def _load_remote_targets(
+    tabs: list[Tab],
+    seed: "dict[tuple[str, str], object] | None" = None,
+) -> "dict[tuple[str, str], object]":
+    """Batch-load content targets needed by the tab cloud-state projection."""
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    by_type_id = dict(seed or {})
+    ids_by_type: dict[str, set[str]] = {}
+    for tab in tabs:
+        if (
+            not tab.target_type
+            or not tab.target_id
+            or tab.target_type in _DB_BACKED_TARGET_TYPES
+            or (tab.target_type, str(tab.target_id)) in by_type_id
+        ):
+            continue
+        ids_by_type.setdefault(tab.target_type, set()).add(str(tab.target_id))
+
+    for target_type, ids in ids_by_type.items():
+        target_cls = SchemaRegistry.get_entity_cls(target_type)
+        if target_cls is None:
+            continue
+        try:
+            rows = await target_cls.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.IN,
+                        operands=["id", sorted(ids)],
+                    )
+                )
+            )
+        except Exception:
+            logger.debug(
+                "tab remote-target batch load failed for %s",
+                target_type,
+                exc_info=True,
+            )
+            continue
+        for row in rows:
+            by_type_id[(target_type, str(row.id))] = row
+    return by_type_id
+
+
+def _populate_tab_target_fields(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object]",
+) -> None:
+    """Populate the API-only target fields (cloud state, content project) without persisting Tab rows."""
+    for tab in tabs:
+        target = (
+            target_map.get((tab.target_type, str(tab.target_id)))
+            if tab.target_type and tab.target_id
+            else None
+        )
+        tab.target_remote = bool(getattr(target, "remote", False))
+        tab.target_project_id = (
+            getattr(target, "project_id", None)
+            if tab.target_type not in _DB_BACKED_TARGET_TYPES
+            else None
+        )
+
+
 async def _project_from_pointer(pointer: str | None) -> str | None:
     """The owning project NAMED by a project-scoped dock pointer
     (``viewType:"project"`` → ``<project_id>/...``). A tab opened under
@@ -1052,8 +1480,47 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     return candidate if await _project_exists(candidate) else None
 
 
-async def _backfill_tab_projects(tabs: list[Tab]) -> None:
-    """Backfill a null ``project_id`` server-side, so the chip renders
+def _pointer_scope_project(pointer: str | None) -> "tuple[bool, str | None]":
+    """``(is_scope_keyed, the project the SCOPE names)`` for a stored pointer.
+
+    A scope-keyed row (Assets, Explorer) is ONE tab per scope — its identity is
+    the scope filter, not whatever it currently shows — so its project is a
+    property of that scope: ``project:<id>`` owns a project, ``all`` / ``user`` /
+    ``filter:…`` are Global. Deriving it from the row's denormalized TARGET
+    instead pins the single ``assets|all`` row to whichever asset was opened in
+    it first, and the strip (which filters by the active project) then hides the
+    very chip the loader just activated — "no active tab" (RCA 2026-09-09).
+    Read by both writers of ``project_id``: ``ensure_tab`` (at rest) and
+    ``_resolve_tab_projects`` (the read path, for rows never re-minted).
+
+    Discriminated on the scope-key grammar (``scopeFilterKey``,
+    ts_sdk/src/utils/scope-filter.ts), not on "has a tabHash": the workspace's
+    active display carries an explicit hash too (``workspaceActive|<host>``) and
+    is NOT scope-keyed — its project legitimately follows its target. Reads the
+    hash through ``_pointer_to_hash`` (the one owner of the pointer-format
+    grammar), like ``_pointer_view_type``; the ``rsplit`` also tolerates the
+    non-desk ``page|vt|scope`` form.
+    """
+    # Cheap substring pre-filter before any parse: only a scope-keyed row stores
+    # an explicit ``tabHash``, so the steady state (shells, processes, editors)
+    # never pays a JSON parse on this read path. Same idiom, same reason, as the
+    # ``"display" in pointer`` guard in ``_reap_orphans``.
+    if pointer and pointer.startswith('{') and '"tabHash"' not in pointer:
+        return (False, None)
+    tab_hash = _pointer_to_hash(pointer or '')
+    if '|' not in tab_hash:
+        return (False, None)
+    scope = tab_hash.rsplit('|', 1)[1]
+    if scope in ('all', 'user') or scope.startswith('filter:'):
+        return (True, None)
+    if scope.startswith('project:'):
+        return (True, scope.removeprefix('project:') or None)
+    return (False, None)
+
+
+async def _resolve_tab_projects(tabs: list[Tab]) -> None:
+    """Resolve each chip's ``project_id`` server-side — a backfill for the null
+    case, and a correction for a scope-keyed row — so the chip renders
     project-colored even for a row the FE re-shows WITHOUT re-minting — an
     existing tab persisted projectless before its project was resolvable (an
     unindexed claude-session lens, an editor on an unindexed markdown), or minted
@@ -1068,17 +1535,26 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
     durable persistence of the heal moves to the next ``ensure_tab``/open of the
     same pointer.
 
-    Resolution order: the target entity's own project (authoritative — includes
-    the claude-session on-disk recovery), else the project a project-scoped dock
-    URL itself declares (``/dock/project/<id>/...``)."""
+    Explicit presentation wins: scope-keyed rows use their scope; project dock
+    URLs use their named project, including when an old stamp names the target's
+    project. Other rows retain their stamp or resolve it from the target.
+    """
     for tab in tabs:
+        # Overrides, not just fills: the stamp it replaces was derived from a
+        # target this row no longer shows.
+        scope_keyed, scope_project = _pointer_scope_project(tab.pointer)
+        if scope_keyed:
+            tab.project_id = scope_project
+            continue
+        pointer_project = await _project_from_pointer(tab.pointer)
+        if pointer_project:
+            tab.project_id = pointer_project
+            continue
         if tab.project_id:
             continue
         resolved: str | None = None
         if tab.target_type and tab.target_id:
             resolved = await _project_of_target(tab.target_type, tab.target_id)
-        if not resolved:
-            resolved = await _project_from_pointer(tab.pointer)
         if not resolved:
             continue
         tab.project_id = resolved
@@ -1086,19 +1562,21 @@ async def _backfill_tab_projects(tabs: list[Tab]) -> None:
 
 async def _build_tab_list(project: str | None) -> list[Tab]:
     """The ordered, project-filtered list of Tabs with runtime status resolved.
-    Global order filtered to ``{project OR projectless}`` (decision 3), each Tab
+    Global order filtered to the exact project (or Global) scope, each Tab
     fully populated with status/is_disabled. The Tab objects are serialized
     directly for API responses — no separate projection."""
     tabs, target_map = await _visible_tabs_sorted_with_targets()
     # Heal projectless chips BEFORE filtering, so a backfilled tab routes to its
     # real project's view rather than staying in the projectless bucket.
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     order_ids = [t.id for t in tabs]
     project_of: dict[str, str | None] = {t.id: t.project_id for t in tabs}
     filtered = filter_for_project(order_ids, project_of, _normalize_project(project))
     by_id = {t.id: t for t in tabs}
     result = [by_id[tab_id] for tab_id in filtered]
     await _populate_tab_statuses(result, target_map)
+    remote_target_map = await _load_remote_targets(result, target_map)
+    _populate_tab_target_fields(result, remote_target_map)
     return result
 
 
@@ -1120,6 +1598,8 @@ def _serialize_row(tab: Tab) -> dict:
         "visible": tab.visible,
         "status": tab.status,
         "is_disabled": tab.is_disabled,
+        "target_remote": bool(tab.target_remote),
+        "target_project_id": tab.target_project_id,
     }
 
 
@@ -1152,11 +1632,11 @@ async def broadcast_tabs_changed() -> None:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
 
-async def _list_response(project: str | None):
+async def _list_response(project: str | None, **extra: object):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs = await _build_tab_list(project)
-    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
+    return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs], **extra})
 
 
 async def _http_new_tab(
@@ -1173,8 +1653,9 @@ async def _http_new_tab(
 ):
     """POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
     right after ``after_tab_id`` (the opener); reopen keeps its slot. Returns the
-    updated project-filtered list."""
-    await ensure_tab(
+    updated project-filtered list, and ``created`` — whether this call minted the
+    row, which the client's view-mode memory policy keys ``TabCreate`` on."""
+    tab, created = await ensure_tab_created(
         pointer,
         target_type=target_type,
         target_id=target_id,
@@ -1186,7 +1667,7 @@ async def _http_new_tab(
         parent_tab_id=parent_tab_id,
     )
     await broadcast_tabs_changed()
-    return await _list_response(project_id)
+    return await _list_response(tab.project_id, created=created)
 
 
 _action_registry.register(
@@ -1200,7 +1681,7 @@ _action_registry.register(
 
 async def _http_list(cls, project: str | None = None):
     """GET /graph/tab/list?project=<id> — the deterministic, fully-resolved,
-    ordered render list for one project view (projectless tabs inline)."""
+    ordered render list for one exact project scope (empty project = Global)."""
     return await _list_response(project)
 
 
@@ -1217,16 +1698,18 @@ async def _http_list_all(cls):
     """GET /graph/tab/list_all — EVERY visible Tab (any kind, ALL projects), fully
     resolved, in global order.
 
-    The project-scoped ``list`` is ``{that project} + projectless`` and ``list(None)``
-    is projectless-only, so neither gives the global picture that the developer
+    A scoped ``list`` returns exactly one project or the Global scope, so neither
+    gives the global picture that the developer
     sessions view (``/dev``) and the footer projects-chip need. This is the single
     unscoped projection (via the ``tab`` action, refreshed on the ``tabs_changed``
     ping) that replaces the old reactive ``tab?visible=true`` entity query."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     tabs, target_map = await _visible_tabs_sorted_with_targets()
-    await _backfill_tab_projects(tabs)
+    await _resolve_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
+    remote_target_map = await _load_remote_targets(tabs, target_map)
+    _populate_tab_target_fields(tabs, remote_target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 
@@ -1292,11 +1775,54 @@ async def _http_close(self: Tab):
     logged (``Shell.close`` already swallowed its sub-failures anyway).
     Programmatic callers keep the synchronous semantics via ``Tab.close``.
     """
-    await self._soft_hide()
+    # A host closes with its nested children (see ``Tab.close``) — in the same
+    # broadcast, so no client ever sees the children orphaned for a beat.
+    closing = await _with_children([self])
+    for tab in closing:
+        await tab._soft_hide()
     await broadcast_tabs_changed()
     response = await _list_response(self.project_id)
-    tab_id = self.id
-    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    for tab in closing:
+        _schedule_teardown(tab)
+    return response
+
+
+async def _with_children(tabs: list[Tab]) -> list[Tab]:
+    """``tabs`` plus every visible tab nested under one of them — what closing them
+    closes (a host closes with its children; nesting is one level deep)."""
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    ids = [tab.id for tab in tabs]
+    if not ids:
+        return []
+    # A tab closed directly is not one that "went with" a parent.
+    for tab in tabs:
+        tab.closed_with_parent = False
+    children = await Tab.get_all(
+        QueryFilter(
+            match=ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.IN, operands=["parent_tab_id", ids]),
+                    ExpressionNode(op=QueryOp.EQ, operands=["visible", True]),
+                ],
+            )
+        )
+    )
+    swept = [child for child in children if child.id not in ids]
+    for child in swept:
+        child.closed_with_parent = True
+    return [*tabs, *swept]
+
+
+def _schedule_teardown(tab: Tab) -> None:
+    """Run a hidden tab's target teardown without delaying the close response."""
+    tab_id = tab.id
+    task = asyncio.create_task(tab._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
     _PENDING_TEARDOWNS[tab_id] = task
 
     def _done(t: asyncio.Task) -> None:
@@ -1305,13 +1831,61 @@ async def _http_close(self: Tab):
             logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
 
     task.add_done_callback(_done)
-    return response
 
 
 _action_registry.register(
     action_name="close",
     function_name="close",
     handler=_http_close,
+    methods="post",
+    types=["tab"],
+)
+
+
+async def _http_close_many(
+    cls,
+    tab_ids: list[str],
+    project: str | None = None,
+):
+    """POST /graph/tab/close_many — durably hide a set of tabs in one request.
+
+    The close-all UI must not issue independent requests that a reload can
+    abort after the optimistic chips disappear. Resolve every requested row,
+    persist all membership flips, broadcast once, and only then acknowledge.
+    Target teardown remains background work, matching the single-close seam.
+    """
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+
+    ids = list(dict.fromkeys(str(tab_id) for tab_id in tab_ids if tab_id))
+    if not ids:
+        return await _list_response(project)
+
+    rows = await Tab.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids]))
+    )
+    by_id = {tab.id: tab for tab in rows}
+    # Hosts close with their nested children (see ``Tab.close``).
+    closing = await _with_children([by_id[tab_id] for tab_id in ids if tab_id in by_id and by_id[tab_id].visible])
+
+    for tab in closing:
+        await tab._soft_hide()
+
+    if closing:
+        await broadcast_tabs_changed()
+    response = await _list_response(project)
+    for tab in closing:
+        _schedule_teardown(tab)
+    return response
+
+
+_action_registry.register(
+    action_name="close_many",
+    function_name="close_many",
+    handler=_http_close_many,
     methods="post",
     types=["tab"],
 )

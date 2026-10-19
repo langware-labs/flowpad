@@ -21,11 +21,13 @@ def _identity(candidate: tuple[str, str, str]):
 
 
 def _resolve(candidates, stored=None, git=None):
+    """``git`` is a per-path answer (a dict's ``.get``, a fake); the resolver asks in one batch."""
+    per_path = git or (lambda _path: None)
     return resolve_asset_collisions(
         candidates,
         stored or {},
         _identity,
-        git or (lambda _path: None),
+        lambda paths: {path: per_path(path) for path in paths},
         NOW,
     )
 
@@ -144,23 +146,45 @@ def test_type_id_isolation_validation_and_duplicate_candidate_collapse() -> None
     assert all(len(item.occurrences) == 1 for item in decisions)
 
 
-def test_git_probe_is_collision_only_and_failure_is_best_effort() -> None:
-    calls: list[str] = []
+def test_git_probe_is_collision_only_batched_and_failure_is_best_effort() -> None:
+    calls: list[list[str]] = []
 
-    def probe(path: str):
-        calls.append(path)
-        if path.endswith("b"):
-            raise RuntimeError("git unavailable")
-        return None
+    def probe(paths):
+        calls.append(list(paths))
+        raise RuntimeError("git unavailable")
 
-    _resolve([("skill", "one", "/single")], git=probe)
-    assert calls == []
+    resolve_asset_collisions([("skill", "one", "/single")], {}, _identity, probe, NOW)
+    assert calls == [], "a lone path is never compared, so never probed"
 
-    decision = _resolve(
-        [("skill", "many", "/a"), ("skill", "many", "/b")], git=probe
+    decision = resolve_asset_collisions(
+        [("skill", "many", "/a"), ("skill", "many", "/b"), ("skill", "two", "/c"), ("skill", "two", "/d")],
+        {},
+        _identity,
+        probe,
+        NOW,
     )[0]
-    assert calls == ["/a", "/b"]
+    assert calls == [["/a", "/b", "/c", "/d"]], "every collided path in ONE call"
     assert decision.primary_path == "/a"
+
+
+def test_a_path_an_earlier_pass_ranked_is_never_probed_again() -> None:
+    """When a path entered its repository is history; the stored occurrence kept the answer."""
+    first = _resolve(
+        [("skill", "many", "/a"), ("skill", "many", "/b")], git={"/a": OLD, "/b": NOW}.get
+    )[0]
+    stored = {("skill", "many"): first.occurrences}
+    calls: list[list[str]] = []
+
+    def probe(paths):
+        calls.append(list(paths))
+        return {path: OLD - timedelta(days=1) for path in paths}
+
+    again = resolve_asset_collisions(
+        [("skill", "many", "/a"), ("skill", "many", "/b"), ("skill", "many", "/c")], stored, _identity, probe, NOW
+    )[0]
+
+    assert calls == [["/c"]], "only the path no pass has ranked is asked"
+    assert again.primary_path == "/c"
 
 
 def test_scoped_resolution_retains_live_stored_path_and_first_seen(
@@ -182,7 +206,7 @@ def test_scoped_resolution_retains_live_stored_path_and_first_seen(
         [("markdown", "same", str(current))],
         {("markdown", "same"): [stored_occurrence]},
         identity,
-        lambda _path: None,
+        lambda _paths: {},
         NOW,
     )
 
@@ -209,7 +233,121 @@ def test_stored_missing_and_rekeyed_paths_are_pruned(tmp_path: Path) -> None:
         path = candidate[2] if isinstance(candidate, tuple) else candidate
         return ("markdown", "new", path)
 
-    decision = resolve_asset_collisions([], stored, identity, lambda _path: None, NOW)[0]
+    decision = resolve_asset_collisions([], stored, identity, lambda _paths: {}, NOW)[0]
     assert decision.primary_path is None
     assert decision.occurrences == ()
     assert decision.changed is True
+
+
+def test_evidence_is_carried_only_for_collided_groups(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lone occurrence stays byte-identical; a collided one explains itself.
+
+    The single-path case matters as much as the collided one: evidence there
+    would dirty every asset row in the corpus on the first index after upgrade,
+    for a panel that never renders.
+    """
+    a, b = str((tmp_path / "a.md").resolve()), str((tmp_path / "vendor" / "a.md").resolve())
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", {a: OLD}.get)
+
+    lone = _resolve([("markdown", "solo", a)])[0].occurrences[0]
+    assert (lone.introduced_at, lone.birth_time, lone.rank_basis) == (None, None, "")
+    assert lone.origin == occurrence_module.ORIGIN_LOCAL
+    assert occurrence_module.asset_occurrence_dicts([lone]) == [
+        {"path": a, "first_seen_at": lone.first_seen_at.isoformat()}
+    ]
+
+    introduced = {a: NOW - timedelta(days=3)}
+    primary, duplicate = _resolve(
+        [("markdown", "dup", a), ("markdown", "dup", b)], git=introduced.get
+    )[0].occurrences
+    assert primary.path == a
+    assert primary.introduced_at == introduced[a]
+    assert primary.birth_time == OLD
+    # Git separated them, and only the primary explains the group's decision.
+    assert (primary.rank_basis, duplicate.rank_basis) == ("git", "")
+    assert duplicate.origin == occurrence_module.ORIGIN_DEPENDENCY
+
+
+def test_rank_basis_names_the_signal_that_actually_decided(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    a, b = str((tmp_path / "a.md").resolve()), str((tmp_path / "b.md").resolve())
+    candidates = [("markdown", "id", a), ("markdown", "id", b)]
+
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", {a: OLD, b: NOW}.get)
+    assert _resolve(candidates)[0].occurrences[0].rank_basis == "created"
+
+    # No git, no birth time, no stored history: only the path separates them.
+    monkeypatch.setattr(occurrence_module, "_trusted_birth_time", lambda _path: None)
+    assert _resolve(candidates)[0].occurrences[0].rank_basis == "path"
+
+    stored = {("markdown", "id"): [AssetOccurrence(b, OLD)]}
+    assert _resolve(candidates, stored)[0].occurrences[0].rank_basis == "first_seen"
+
+
+def test_origin_classification_is_narrow_by_design() -> None:
+    classify = occurrence_module.classify_origin
+    assert classify("/repo/.venv/lib/python3.12/site-packages/pkg/doc.md") == (
+        occurrence_module.ORIGIN_INSTALLED_PACKAGE
+    )
+    assert classify("/repo/ui/node_modules/pkg/doc.md") == occurrence_module.ORIGIN_DEPENDENCY
+    # A real user folder that merely *contains* the substring is not vendored.
+    assert classify("/repo/docs/my-vendored-notes/doc.md") == occurrence_module.ORIGIN_LOCAL
+
+
+def test_stored_path_under_a_walk_denylisted_dir_is_not_retained(tmp_path: Path) -> None:
+    """A vendored copy the walker can NEVER reach must not be re-admitted.
+
+    ``.venv`` is in the indexer's ``_WALK_IGNORED``, so discovery never yields
+    these paths — the live candidate list below contains only the real file,
+    exactly as an instrumented index run showed (the live-candidate branch fired
+    zero times for any ``site-packages`` path). Retention, however, admits any
+    stored path that still exists and still resolves to the same id, so one
+    historical bad index keeps itself alive on every subsequent run and no
+    tightening of the ignore rules can ever evict it.
+    """
+    real = tmp_path / "repo" / "docs" / "doc.md"
+    vendored = (
+        tmp_path
+        / "repo"
+        / ".venv"
+        / "lib"
+        / "python3.12"
+        / "site-packages"
+        / "pkg"
+        / "docs"
+        / "doc.md"
+    )
+    for path in (real, vendored):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("shipped doc\n", encoding="utf-8")
+
+    # The reader resolves a stored path to the same identity — the observed
+    # behaviour of the real indexer reader, which is why retention fires.
+    def identity(candidate):
+        path = candidate[2] if isinstance(candidate, tuple) else candidate
+        return ("markdown", "shipped", path)
+
+    decision = resolve_asset_collisions(
+        [("markdown", "shipped", str(real))],
+        {("markdown", "shipped"): [AssetOccurrence(str(vendored), OLD)]},
+        identity,
+        lambda _paths: {},
+        NOW,
+    )[0]
+
+    assert [item.path for item in decision.occurrences] == [str(real.resolve())]
+    assert decision.duplicate_paths == ()
+
+
+def test_denylisted_ancestor_detection_is_ancestor_only(tmp_path: Path) -> None:
+    """Only ANCESTOR directories disqualify a path — never the file's own name."""
+    from flow_sdk.fs_store.gitignore import is_under_denylisted_dir
+
+    assert is_under_denylisted_dir("/repo/.venv/lib/site-packages/pkg/doc.md") is True
+    assert is_under_denylisted_dir("/repo/ui/node_modules/pkg/doc.md") is True
+    assert is_under_denylisted_dir("/repo/docs/guide.md") is False
+    # A FILE named like a denylisted dir is still a file the user wrote.
+    assert is_under_denylisted_dir("/repo/docs/.venv") is False

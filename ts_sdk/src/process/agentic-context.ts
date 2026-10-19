@@ -6,6 +6,7 @@
  * field managed internally by the backend process runtime.
  */
 
+import { launchSurfaceField } from './launch-surface';
 import type { ProcessKind } from './process-types';
 
 /**
@@ -91,15 +92,19 @@ export interface AgenticContext {
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   targetVfsPath?: string;
 
+  /** The dock view the process belongs to. The Flowpad Assistant keeps one
+   * chat per context and finds it by this key. */
+  contextKey?: string;
+
   /** One of "text" | "json" | "stream-json"; omit for CLI default. When
    * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
    * streams per-event FlowData over HTTP. */
   outputFormat?: string;
 
-  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'`). Default: backend's
-   * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
-   * launch alternate CLI tabs from the same opener flow. */
-  workerType?: 'claude_code' | 'codex' | 'copilot';
+  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'` | `'opencode'`). When omitted,
+   * the backend resolves the persisted default `harness` capability reference.
+   * Surfaced so an explicit UI selection can override that default. */
+  workerType?: 'claude_code' | 'codex' | 'copilot' | 'opencode';
 
   /** Discriminates how this process is being used (chat vs execution). */
   processType?: ProcessKind;
@@ -169,8 +174,11 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     load_flowpad_assistant: ctx.loadFlowpadAssistant,
     shared_context_entities: ctx.sharedContextEntities,
     target_typeid_str: ctx.targetVfsPath,
+    context_key: ctx.contextKey,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
     process_type: ctx.processType,
+    // Last, so a caller's contextData can never mislabel the launch.
+    ...launchSurfaceField(),
   };
 }

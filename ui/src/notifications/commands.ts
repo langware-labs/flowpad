@@ -1,9 +1,16 @@
-import { toast as sonnerToast } from 'sonner';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager } from '@sdk';
-import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
-import { closeTerminalTab } from '@src/tabs/useTabs';
-import { useBadgeStore } from './store';
+import { t } from '@lingui/core/macro';
+import {
+  oauthService,
+  OAUTH_PROVIDERS,
+  copyToClipboard,
+  AgenticProcess,
+  dataContext,
+  snifferManager,
+  tabManager,
+} from '@sdk';
+import { gitResolvePrompt } from '@src/lib/git-resolve-prompt';
 import { notify } from './notify';
+import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
 
 /**
@@ -22,6 +29,14 @@ export function registerCommand(name: string, fn: CommandHandler): void {
   registry.set(name, fn);
 }
 
+// The answer to an `askNotification` button. Built in here rather than registered by ask.ts as it
+// loads: ask.ts can load while THIS module is still loading (notify → the toast UI → … → the
+// notifications index → ask.ts), and a registration then reaches `registry` before it exists.
+registry.set('notification.answer', (args, ctx) => {
+  settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
+  notify.dismiss(ctx.id);
+});
+
 export function runCommand(name: string, args: CommandArgs, ctx: { id: string }): void {
   const fn = registry.get(name);
   if (fn) fn(args, ctx);
@@ -38,9 +53,10 @@ export function navigateTo(href: string): void {
   else window.location.assign(href);
 }
 
-/** Run a notification action: imperative `command`, else URL-first `href`. */
-export function runAction(action: NotificationAction, id: string): void {
-  if (action.command) runCommand(action.command, action.args ?? {}, { id });
+/** Run a notification action: imperative `command`, else URL-first `href`. `extra` is merged into
+ *  the command's args — what the toast itself knows at click time (the `remember` box). */
+export function runAction(action: NotificationAction, id: string, extra?: CommandArgs): void {
+  if (action.command) runCommand(action.command, { ...action.args, ...extra }, { id });
   else if (action.href) navigateTo(action.href);
 }
 
@@ -52,16 +68,23 @@ registerCommand('cloud.signin', () => {
 });
 
 registerCommand('terminal.terminate', (args) => {
-  if (args.typeId) void closeTerminalTab(String(args.typeId));
+  if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
-// `Resolve` on a failed-push toast: launch an agentic process in the current
-// project, seeded with a conflict-resolution prompt for the given branch. Uses
-// dataContext.project/computeNode (AgenticProcess.openTab default).
+// `Resolve` — THE way out of a git conflict, from any surface that hit one
+// (built by `resolveConflictAction` in lib/git-outcome.ts). Launches an agentic
+// process seeded with the conflict-resolution prompt for the branch
+// (`origin: 'pull'` finishes without pushing) in the repo that conflicted:
+// `workdir`, keeping the current project when it is that repo (a task repo or a
+// context folder is not); absent → the current project.
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
-  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
-    notify.error({ title: 'Could not start resolver', message: String(e) });
+  const origin = args.origin === 'pull' ? 'pull' : 'push';
+  const workdir = typeof args.workdir === 'string' && args.workdir ? args.workdir : null;
+  const where =
+    workdir && workdir !== dataContext.project?.fs_storage_mount_path ? { fs_storage_mount_path: workdir } : undefined;
+  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch, origin), where).catch((e: unknown) => {
+    notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });
 
@@ -72,17 +95,20 @@ registerCommand('sniffer.disable', (_args, ctx) => {
   void snifferManager
     .disable()
     .then(() => {
-      sonnerToast.dismiss(ctx.id);
-      notify.success({ title: 'Hook sniffer disabled', message: 'Claude Code hooks were removed from your settings.' });
+      notify.dismiss(ctx.id);
+      notify.success({
+        title: t`Hook sniffer disabled`,
+        message: t`Claude Code hooks were removed from your settings.`,
+      });
     })
     .catch((e: unknown) => {
-      notify.error({ title: 'Could not disable the sniffer', message: String(e) });
+      notify.error({ title: t`Could not disable the sniffer`, message: String(e) });
     });
 });
 
 registerCommand('notification.dismiss', (_args, ctx) => {
-  sonnerToast.dismiss(ctx.id);
-  useBadgeStore.getState().remove(ctx.id);
+  // One dismiss path for all three surfaces — toast, sidebar badge, alert log.
+  notify.dismiss(ctx.id);
 });
 
 // `Detail` on a cloud-error toast. Surfaces the raw transport detail the
@@ -100,7 +126,7 @@ registerCommand('debug.logHubError', (args) => {
 
   notify.info({
     id: 'cloud-error-detail',
-    title: 'Cloud error detail (copied to clipboard)',
+    title: t`Cloud error detail (copied to clipboard)`,
     message: detail || 'No additional detail was provided.',
     durationMs: 15000,
   });

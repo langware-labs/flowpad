@@ -123,7 +123,9 @@ export class WatchQueryMap<T> {
 
     let watchedQuery = this.watchedQueries.get(key);
     if (!watchedQuery) {
-      watchedQuery = new WatchedQuery<T>(request, results, pendingPromise);
+      // An in-flight record only. Subscribing is registerWatch's job: it is the
+      // one that hands back the unsubscribe.
+      watchedQuery = new WatchedQuery<T>(request, results, pendingPromise, { subscribe: false });
       this.watchedQueries.set(key, watchedQuery);
     } else {
       watchedQuery.results = results;
@@ -131,6 +133,19 @@ export class WatchQueryMap<T> {
       if (pendingPromise) {
         watchedQuery.pendingPromise = pendingPromise;
       }
+    }
+  }
+
+  /**
+   * Drop a settled entry nobody subscribes to — what a one-shot query leaves
+   * once its fetch is over. An entry is kept by its subscribers (it is their
+   * cache and receives their data-ops) or by a fetch still in flight (so a
+   * concurrent caller joins it), and by nothing else.
+   */
+  public releaseIfUnwatched(request: QueryRequest): void {
+    const watchedQuery = this.watchedQueries.get(request.key);
+    if (watchedQuery && !watchedQuery.pendingPromise && !watchedQuery.hasCallbacks()) {
+      this.watchedQueries.delete(request.key);
     }
   }
 
@@ -216,6 +231,39 @@ export class WatchQueryMap<T> {
           }
         }
       }
+    }
+  }
+
+  /** Whether a live query's results hold the entity cached under any of `keys`. */
+  public holdsEntity(keys: TypeId[]): boolean {
+    for (const watchedQuery of this.watchedQueries.values()) {
+      if (!watchedQuery.results || watchedQuery.request.type !== keys[0].type) continue;
+      if (watchedQuery.results.some((row: any) => keys.some((key) => key.equals(row.typeId)))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Insert a newly-created entity into every matching query's results and notify.
+   *
+   * Mirror of {@link removeEntityFromResults} for the `create` data-op: the WS
+   * data-op already delivered (and materialized) the full entity, so there is no
+   * need to re-run the LIST query over the network — splice it in locally.
+   *
+   * Gated by the same `query.validate(data)` scope check the data-op path uses
+   * elsewhere, so scope-filtered queries only gain rows they would actually
+   * match. Queries that have not been fetched yet (`results` undefined) are
+   * skipped — their initial fetch will already include the entity. Ids already
+   * present are not duplicated.
+   */
+  public insertEntityIntoResults(type: string, entityTypeId: TypeId, entity: T, data: any): void {
+    for (const watchedQuery of this.watchedQueries.values()) {
+      if (watchedQuery.request.type !== type || !watchedQuery.results) continue;
+      if (watchedQuery.request.query && !watchedQuery.request.query.validate(data)) continue;
+      const exists = watchedQuery.results.some((e: any) => e.typeId.equals(entityTypeId));
+      if (exists) continue;
+      watchedQuery.results.push(entity);
+      watchedQuery.notifyCallbacks();
     }
   }
 

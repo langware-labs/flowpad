@@ -51,7 +51,7 @@ async def test_setup_on_receive_no_skill_opens_entity():
 @pytest.mark.asyncio
 async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
     from flow_sdk.builtin.artifact import Artifact
-    from flow_sdk.builtin.local_origin import LocalOrigin
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
     import flow_sdk.core.entity.entity_model as em
 
     # Don't actually launch a Claude worker in a unit test — assert the process is
@@ -66,7 +66,7 @@ async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
 
     art = Artifact(
         id=mint_uuid(),
-        name="spora",
+        name="acme",
         kind="application.web",
         origin=LocalOrigin(base=str(tmp_path), rel_path="."),
     )
@@ -95,7 +95,7 @@ async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
 @pytest.mark.asyncio
 async def test_non_webapp_artifact_opens_entity_without_setup_spawn(monkeypatch, tmp_path):
     from flow_sdk.builtin.artifact import Artifact
-    from flow_sdk.builtin.local_origin import LocalOrigin
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
     import flow_sdk.core.entity.entity_model as em
 
     # A non-webapp artifact must NOT spawn a setup session — it's a produced file.
@@ -116,13 +116,13 @@ async def test_non_webapp_artifact_opens_entity_without_setup_spawn(monkeypatch,
 @pytest.mark.asyncio
 async def test_artifact_origin_is_data_not_setup_workdir(tmp_path):
     from flow_sdk.builtin.artifact import Artifact
-    from flow_sdk.builtin.local_origin import LocalOrigin
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
 
-    served = tmp_path / "webapps" / "spora"
+    served = tmp_path / "webapps" / "acme"
     served.mkdir(parents=True)
     art = Artifact(
         id=mint_uuid(),
-        name="spora",
+        name="acme",
         kind="application.web",
         origin=LocalOrigin(base=str(served.parent), rel_path=served.name),
     )

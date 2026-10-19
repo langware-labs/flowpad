@@ -1,10 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { apiBase } from '../_shared/api';
+import { waitForIndexerIdle, apiBase } from '../_shared/api';
 
 const API = apiBase();
 const createdRoots = new Set<string>();
@@ -42,7 +42,7 @@ async function createProject(request: APIRequestContext, root: string): Promise<
 async function createAsset(
   request: APIRequestContext,
   projectId: string,
-  type: 'agent' | 'skill',
+  type: 'subagent' | 'skill',
   name: string,
 ): Promise<SeededAsset> {
   const response = await request.post(`${API}/api/v1/graph/project/${projectId}/${type}`, {
@@ -57,11 +57,27 @@ async function createAsset(
 async function indexType(
   request: APIRequestContext,
   projectId: string,
-  type: 'agent' | 'skill',
+  type: 'subagent' | 'skill',
 ): Promise<void> {
+  // Single-flight index: creating the fixture asset kicks an auto-index, and a
+  // second POST while it runs is refused with 409. Wait on the node's own idle
+  // signal; budget 0 = bounded only by the test cap.
+  expect(await waitForIndexerIdle(request, 0), 'index activity idle').toBe(true);
   const response = await request.post(
     `${API}/api/v1/graph/compute_node/@local/fs-records/index` +
       `?type=${type}&projects=${projectId}&user=false&force=true`,
+  );
+  expect(response.status(), await response.text()).toBe(200);
+}
+
+async function invalidateDeletedPaths(
+  request: APIRequestContext,
+  survivingPath: string,
+  deletedPaths: string[],
+): Promise<void> {
+  const response = await request.post(
+    `${API}/api/v1/graph/compute_node/@local/fs-records/invalidate`,
+    { data: { paths: [survivingPath], deleted_paths: deletedPaths } },
   );
   expect(response.status(), await response.text()).toBe(200);
 }
@@ -72,10 +88,25 @@ async function entity(request: APIRequestContext, type: string, id: string): Pro
   return (await response.json()).data as ReflectedAsset;
 }
 
-async function openAsset(page: Page, type: 'agent' | 'skill', id: string): Promise<void> {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+async function openAsset(page: Page, type: 'subagent' | 'skill', id: string): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* sandboxed frame (mcp-ui): no storage, and nothing there needs the flag */
+    }
+  });
   await page.goto(`/dock/assets/editor/${type}/typeid/${type}-${id}`);
   await expect(page.locator('[data-testid="asset-collision-warning"]')).toBeVisible();
+}
+
+/**
+ * The panel hoists the common prefix into a "Common path" line and prints only
+ * the per-row suffix, so the visible text never holds the whole path — the
+ * full path lives on the row's `title`.
+ */
+function rowPath(row: Locator): Locator {
+  return row.locator('.font-mono[title]').first();
 }
 
 test.afterEach(async ({ request }) => {
@@ -101,25 +132,25 @@ test('File collision state, URL panel, and removal lifecycle', async ({ page, re
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-collision-file-')));
   createdRoots.add(root);
   const projectId = await createProject(request, root);
-  const seeded = await createAsset(request, projectId, 'agent', `collision-agent-${randomUUID()}`);
+  const seeded = await createAsset(request, projectId, 'subagent', `collision-agent-${randomUUID()}`);
   const source = path.resolve(seeded.asset_ref);
   const copyA = path.join(path.dirname(source), `copy-a-${randomUUID()}.md`);
   const copyB = path.join(path.dirname(source), `copy-b-${randomUUID()}.md`);
   fs.copyFileSync(source, copyA);
   fs.copyFileSync(source, copyB);
 
-  await indexType(request, projectId, 'agent');
-  await expect.poll(async () => (await entity(request, 'agent', seeded.id)).duplicate_count).toBe(2);
+  await indexType(request, projectId, 'subagent');
+  await expect.poll(async () => (await entity(request, 'subagent', seeded.id)).duplicate_count).toBe(2);
 
-  await openAsset(page, 'agent', seeded.id);
+  await openAsset(page, 'subagent', seeded.id);
   const badge = page.locator('[data-testid="asset-collision-warning"]');
   await expect(badge).toContainText('2');
   await badge.click();
 
-  await expect.poll(() => decodeURIComponent(new URL(page.url()).search)).toContain('asset-duplicates:agent-');
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).search)).toContain('asset-duplicates:subagent-');
   const panel = page.locator('[data-testid="asset-collision-panel"]');
   await expect(panel).toBeVisible();
-  await expect(panel.locator('[data-testid="asset-collision-row-primary"]')).toContainText(source);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-primary"]'))).toHaveAttribute('title', source);
   await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toHaveCount(2);
 
   await page.goBack();
@@ -128,14 +159,14 @@ test('File collision state, URL panel, and removal lifecycle', async ({ page, re
   await expect(panel).toBeVisible();
 
   fs.unlinkSync(copyB);
-  await indexType(request, projectId, 'agent');
-  await expect.poll(async () => (await entity(request, 'agent', seeded.id)).duplicate_count).toBe(1);
+  await invalidateDeletedPaths(request, source, [copyB]);
+  await expect.poll(async () => (await entity(request, 'subagent', seeded.id)).duplicate_count).toBe(1);
   await expect(badge).toContainText('1');
   await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toHaveCount(1);
 
   fs.unlinkSync(copyA);
-  await indexType(request, projectId, 'agent');
-  await expect.poll(async () => (await entity(request, 'agent', seeded.id)).duplicate_count).toBe(0);
+  await invalidateDeletedPaths(request, source, [copyA]);
+  await expect.poll(async () => (await entity(request, 'subagent', seeded.id)).duplicate_count).toBe(0);
   await expect(badge).not.toBeVisible();
   await expect(panel).not.toBeVisible();
 });
@@ -170,6 +201,6 @@ test('Git precedence and folder-backed collision parity', async ({ page, request
 
   const panel = page.locator('[data-testid="asset-collision-panel"]');
   await expect(panel).toBeVisible();
-  await expect(panel.locator('[data-testid="asset-collision-row-primary"]')).toContainText(original);
-  await expect(panel.locator('[data-testid="asset-collision-row-duplicate"]')).toContainText(copy);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-primary"]'))).toHaveAttribute('title', original);
+  await expect(rowPath(panel.locator('[data-testid="asset-collision-row-duplicate"]'))).toHaveAttribute('title', copy);
 });

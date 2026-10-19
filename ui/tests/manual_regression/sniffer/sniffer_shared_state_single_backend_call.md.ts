@@ -4,8 +4,12 @@ import { apiBase } from '../_shared/api';
 
 const API = apiBase();
 
+// The sniffer state (sniffer_hook / sniffer_installed) is served by the deferred
+// /api/v1/graph/info route, not /graph/bootstrap (split out of bootstrap so boot
+// does not wait on it; see docs/boot.md).
+
 async function snifferHook(request: APIRequestContext) {
-  const res = await request.get(`${API}/api/v1/graph/bootstrap`);
+  const res = await request.get(`${API}/api/v1/graph/info`);
   expect(res.status()).toBe(200);
   return (await res.json()).data.sniffer_hook;
 }

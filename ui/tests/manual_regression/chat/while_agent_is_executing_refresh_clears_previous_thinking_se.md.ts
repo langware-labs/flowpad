@@ -64,7 +64,9 @@ test('refresh preserves all previous thinking segments and the final response', 
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(responseBody()),
+      // The route answers with the ApiResponse envelope; `apiClient` unwraps
+      // `data`, so a bare body reaches the app as undefined.
+      body: JSON.stringify({ status: 'SUCCESS', data: responseBody() }),
     });
   });
 

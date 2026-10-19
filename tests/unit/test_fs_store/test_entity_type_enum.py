@@ -16,11 +16,15 @@ EXPECTED = {
     "TASK": "task",
     "RULE": "rule",
     "SKILL": "skill",
+    "SUBAGENT": "subagent",
+    # Launchable agent (identity + launch bundle) — additive member; the
+    # subagent rename freed the noun, no existing value changed.
     "AGENT": "agent",
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
     "DEPLOYMENT": "deployment",
+    "SERVICE_ENDPOINT": "service_endpoint",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",
@@ -37,7 +41,9 @@ EXPECTED = {
     "CLAUDE_MEMORY": "claude_memory",
     "CLAUDE_RULES": "claude_rules",
     "COMMAND": "command",
+    "MCP": "mcp",
     "MCP_SERVER": "mcp_server",
+    "PROJECT_MANIFEST": "project_manifest",
     "MCP_SERVER_SOURCE": "mcp_server_source",
     "PLUGIN": "plugin",
     "CLAUDE_MD": "claude_md",
@@ -53,6 +59,8 @@ EXPECTED = {
     "TRANSCRIPT_CUSTOM_TITLE": "transcript_entry:custom_title",
     "TRANSCRIPT_PR_LINK": "transcript_entry:pr_link",
     "COMPUTE_NODE": "compute_node",
+    "COMPUTE_OP": "compute_op",
+    "ASSET_SETUP": "asset_setup",
     "ENVIRONMENT": "environment",
     "SESSION_ANALYSIS": "session_analysis",
     "SESSION_CLASSIFICATION": "session_classification",
@@ -92,9 +100,9 @@ EXPECTED = {
     "SPEC": "spec",
     "PROMPT": "prompt",
     "CONVERSATION": "conversation",
-    "WHITEBOARD": "whiteboard",
+    "CHART": "chart",
+    "ICON_PACK": "icon_pack",
     "DATASET": "dataset",
-    "SECRET_ORIGIN": "secret_origin",
     "COLLABORATION_ROOM": "collaboration_room",
     "USER_HOME_FOLDER": "user_home_folder",
     "REAL_PROJECT_CWD": "real_project_cwd",
@@ -126,7 +134,7 @@ EXPECTED = {
     "SYSTEM_JOB": "system_job",
     "JOB_EXECUTION": "job_execution",
     "API_KEY": "api_key",
-    "CODE_REF": "code_ref",
+    "LLM_ENDPOINT": "llm_endpoint",
     "AGENT_HOOK": "agent_hook",
     "TRIGGER": "trigger",
     "PROCESS_RESULT": "process_result",
@@ -136,20 +144,25 @@ EXPECTED = {
     "MESSAGE_ATTACHMENT": "message_attachment",
     "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification",
-    "INBOX_MANAGER": "inbox_manager",
+    "STREAM_INBOX_MANAGER": "stream_inbox_manager",
     "RUN": "run",
-    "PROMPT_RESULT": "prompt_result",
+    "PROMPT_COMPLETION": "prompt_completion",
     "REMOTE_WORKER_SESSION": "remote_worker_session",
+    "RAG_INDEX": "rag_index",
+    "CONSUMER_POSITION": "consumer_position",
+    "SOURCE_CHANGE": "source_change",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
     # added it missed this freeze.
     "FILE": "file",
     "ARTIFACT_RELATION": "artifact_relation",
-    "FS_ITEM": "fs_item",
     "KNOWLEDGE_BASE": "knowledge_base",
     "SKILLIT_SESSION": "skillit_session",
     "SKILLIT_CONFIG": "skillit_config",
     "COPILOT_SESSION": "copilot_session",
+    "OPENCODE_SESSION": "opencode_session",
+    "DEEPAGENTS_SESSION": "deepagents_session",
     "FLOWPAD_DIAGNOSIS": "flowpad_diagnosis",
+    "DIAGNOSIS_REQUEST": "diagnosis_request",
     # Tab entity system + AgentTrace — additive members; the commits that added
     # them missed this freeze. New members are allowed; existing values stay frozen.
     "AGENT_TRACE": "agent_trace",
@@ -173,15 +186,42 @@ EXPECTED = {
     # Deck and spreadsheet features (47d82b8e, 7531a7c0) — additive members;
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
-    "DECK": "deck", "SPREADSHEET": "spreadsheet",
+    "DECK": "deck",
+    "SPREADSHEET": "spreadsheet",
     # Tag vocabulary consolidation: blessed taxonomy tags are a first-class
     # entity type. Flow-graph v2 added the run model.
     "TAG": "tag",
-    "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
-    "AGENTIC_FLOW_RUN": "agentic_flow_run",
+    "WIKI": "wiki",
+    "WIKI_ENTRY": "wiki_entry",
+    "GRAPH_WORKFLOW": "graph_workflow",
+    "GRAPH_WORKFLOW_NODE": "graph_workflow_node",
+    "GRAPH_WORKFLOW_RUN": "graph_workflow_run",
     # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
     # DB-only journal — additive members, no existing value changed.
-    "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",
+    "JOURNEY": "journey",
+    "JOURNEY_JOURNAL": "journey_journal",
+    # Wizard — the autonomous counterpart of JOURNEY. Additive member; every
+    # existing value stays frozen.
+    "WIZARD": "wizard",
+    # Help desk (0.2.114): folder-backed support portal discovered by indexing a
+    # cloned repo that ships agentic-assets/helpdesk/<name>/helpdesk.json —
+    # additive member, no existing value changed.
+    "HELPDESK": "helpdesk",
+    # Cloud data-source ingestion (flow_sdk/ingest): the configured remote
+    # source, its per-stream cursor, and the records it produces — additive
+    # members, no existing value changed.
+    "DATA_SOURCE": "data_source",
+    "CREDENTIAL": "credential",
+    "DATA_DRIVER": "data_driver",
+    "DATA_SCHEMA": "data_schema",
+    "SOURCE_ITEM": "source_item",
+    # The stream inbox projection's thread grouping — additive member, no existing
+    # value changed.
+    "MESSAGE_THREAD": "message_thread",
+    # The Hub's server-minted mailbox row. Its value deliberately differs from
+    # the Agent action name ("mailbox") so graph paths stay unambiguous —
+    # additive member, no existing value changed.
+    "AGENT_MAILBOX": "agent_mailbox",
 }
 
 
@@ -202,4 +242,21 @@ def test_back_compat_aliases_are_the_same_class():
     assert BuiltinEntityType is EntityType
     assert SkillitRecordType is EntityType
     # shared members resolve to the same singleton
-    assert RecordType.AGENT is BuiltinEntityType.AGENT
+    assert RecordType.SUBAGENT is BuiltinEntityType.SUBAGENT
+
+
+#: Values an EntityType once had and may never be given again. A persisted row, shadow folder or
+#: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
+RETIRED_VALUES: dict[str, str] = {
+    "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
+    "credential_spec": "the named set of environment variables, then secret_pack (0.2.170; old rows are pruned at boot)",
+    "secret_pack": "the named set of environment variables, now credential (0.2.178; folders moved, old rows pruned at boot)",
+    "data_source_cursor": "a source's per-segment position, now DataSource.cursor (one source = one stream; old rows are pruned at boot)",
+    "inbox_manager": "the unread-badge singleton, now stream_inbox_manager (old rows are pruned at boot, no migration)",
+    "code_ref": "a pointer to a file/folder/glob/URL, Artifact's old base class; the class went in 0a425adcd, the name lingered unused",
+}
+
+
+def test_a_retired_value_is_never_reused():
+    reused = {value: why for value, why in RETIRED_VALUES.items() if value in {m.value for m in EntityType}}
+    assert not reused, f"retired EntityType values were reused: {reused}"

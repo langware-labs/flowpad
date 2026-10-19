@@ -1,8 +1,10 @@
 """Cost analytics — token usage and cost aggregation by time windows.
 
 Pure aggregation over session dicts. Sources its sessions from the indexer
-(``load_recent_sessions_for_cost``). Relocated from the deleted
-``system_profile/_collectors/cost_collector.py``.
+(``load_recent_sessions_for_cost``), which keeps each transcript's stats in a
+per-file cache (``cost_stats_cache.sqlite`` beside the worker-history cache)
+validated by ``(mtime_ns, size)`` — an unchanged transcript is never re-parsed.
+Relocated from the deleted ``system_profile/_collectors/cost_collector.py``.
 """
 
 from collections import defaultdict
@@ -14,6 +16,25 @@ from flow_sdk.builtin.faas.analytics._pricing import (
     get_model_pricing,
 )
 
+# Bump when the cached payload's shape or meaning changes; an older row misses.
+_PAYLOAD_VERSION = 1
+
+# Exactly the session fields the aggregation in this module reads.
+_COST_FIELDS = (
+    "id",
+    "name",
+    "cwd",
+    "created_at",
+    "modified_at",
+    "primary_model",
+    "message_count",
+    "tool_uses",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_creation_tokens",
+)
+
 
 def load_recent_sessions_for_cost(limit: int = 100) -> list[dict]:
     """Load the most-recent ``limit`` Claude sessions (with full stats).
@@ -23,35 +44,72 @@ def load_recent_sessions_for_cost(limit: int = 100) -> list[dict]:
     cost overview needs the actually-recent N sessions, not an arbitrary
     alphabetical slice (matches the legacy ``get_recent_sessions`` ordering).
 
-    Returns session dicts normalized to the field names the aggregation below
-    expects (``cache_read_tokens`` / ``cache_creation_tokens`` / ``tool_uses``),
-    which differ from the indexer record's stat field names.
+    Each session's stats are served from the per-file cache while the file's
+    ``(mtime_ns, size)`` is unchanged; only new or changed transcripts are
+    parsed, and all misses are written back in one batch.
+
+    Returns session dicts carrying the fields the aggregation below reads,
+    normalized to its names (``cache_read_tokens`` / ``cache_creation_tokens`` /
+    ``tool_uses``), which differ from the indexer record's stat field names.
     """
-    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
-        discover_claude_session_paths_iter,
-        ensure_claude_session_stats,
-        extract_claude_session_from_path,
-    )
+    from flow_sdk.assets.types.claude_sessions import extract_claude_session_from_path
+    from flow_sdk.fs_store.indexer.functions import claude_sessions as _cs
 
     by_mtime = []
-    for path in discover_claude_session_paths_iter():
+    for path in _cs.discover_claude_session_paths_iter():
         try:
-            by_mtime.append((path.stat().st_mtime, path))
+            st = path.stat()
         except OSError:
             continue
-    by_mtime.sort(key=lambda t: t[0], reverse=True)
+        by_mtime.append((path, st.st_mtime_ns, st.st_size))
+    by_mtime.sort(key=lambda t: t[1], reverse=True)
     if limit and limit > 0:
         by_mtime = by_mtime[:limit]
 
+    cache = _open_cost_cache()
+    cached = cache.get_many([(str(p), mns, sz) for p, mns, sz in by_mtime]) if cache is not None else {}
+
     sessions: list[dict] = []
-    for _mtime, path in by_mtime:
+    misses: list[tuple[str, int, int, str, dict]] = []
+    for path, mtime_ns, size in by_mtime:
+        payload = cached.get(str(path))
+        if payload is None or payload.get("v") != _PAYLOAD_VERSION:
+            try:
+                # Stats only: the searchable content is a second full parse the
+                # aggregation never reads.
+                rec = extract_claude_session_from_path(path, include_content=False)
+                _cs.ensure_claude_session_stats(rec)
+            except Exception:
+                continue
+            d = _normalize_session(rec.to_dict())
+            payload = {"v": _PAYLOAD_VERSION, **{k: d.get(k) for k in _COST_FIELDS}}
+            misses.append((str(path), mtime_ns, size, "claude", payload))
+        sessions.append({k: v for k, v in payload.items() if k != "v"} | {"content": ""})
+
+    if cache is not None and misses:
         try:
-            rec = extract_claude_session_from_path(path)
-            ensure_claude_session_stats(rec)
-        except Exception:
-            continue
-        sessions.append(_normalize_session(rec.to_dict()))
+            cache.put_many(misses)
+        except Exception:  # noqa: BLE001 — cache is best-effort
+            pass
     return sessions
+
+
+def _open_cost_cache():
+    """Instance-scoped stats cache for the cost loader, or None when unavailable.
+
+    A separate db from the worker-history cache: both key rows by ``path`` alone,
+    so sharing a file would let each evict the other's payloads. Settings come
+    from the same module the discovery reads, so the cache belongs to whichever
+    instance the sessions were found under. Never raises.
+    """
+    try:
+        from flow_sdk.builtin.worker_history_cache import WorkerSessionStatsCache  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions import claude_sessions as _cs  # noqa: PLC0415
+
+        wh_path = _cs.get_instance_settings().worker_history_cache_path
+        return WorkerSessionStatsCache(wh_path.with_name("cost_stats_cache.sqlite"))
+    except Exception:  # noqa: BLE001 — no cache, just parse
+        return None
 
 
 def _normalize_session(d: dict) -> dict:

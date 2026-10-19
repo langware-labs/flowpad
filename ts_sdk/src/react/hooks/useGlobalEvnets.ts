@@ -1,4 +1,5 @@
-import { authManager, config } from '@sdk';
+import { authManager } from '../../FlowSync/auth';
+import config from '../../config';
 import { useQuery } from '@tanstack/react-query';
 
 /**

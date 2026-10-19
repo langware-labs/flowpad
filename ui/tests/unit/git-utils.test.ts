@@ -68,7 +68,7 @@ describe('gitOriginKey', () => {
 // ---------- resolveLocalGitRoot ----------
 
 describe('resolveLocalGitRoot', () => {
-  it('returns the local path of the context folder whose origin matches', async () => {
+  it('returns the local path of the git dependency whose origin matches', async () => {
     mockGetById.mockImplementation((id: string) =>
       id === 'other' ? { origin: origin({ name: 'elsewhere' }) } : { origin: origin() },
     );

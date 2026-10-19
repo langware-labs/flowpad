@@ -2,7 +2,16 @@ import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-actio
 import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
+import {
+  AttachFilesButton,
+  PickedFileList,
+  useAnnotatedImagePaste,
+  usePickedFiles,
+} from '@src/components/conversation/FileAttachmentPicker';
+import { cn } from '@src/lib/utils';
 import { streamDiagnose, type DiagnoseEvent } from '@src/components/diagnose/diagnose-stream';
+import { KindValue } from '@src/components/value-viewer/KindValue';
+import type { DiagnosisSpec } from '@sdk';
 import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -27,6 +36,7 @@ interface DoneState {
   diagnosisId: string | null;
   conversationId: string | null;
   flowMessageId: string | null;
+  diagnosis: DiagnosisSpec | null;
 }
 
 export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalProps) {
@@ -42,6 +52,12 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const { navigation } = useDockNavigation();
   const { report, forward, busy: reporting, error: reportError, reset: resetReport } =
     useDiagnosisReport(done?.diagnosisId ?? null);
+  // The same attach pieces a message composer uses: picked files, drag-and-drop, image paste.
+  const { inputId, files, rejected, dragging, addFiles, removeAt, clear: clearFiles, dragProps } = usePickedFiles({
+    enabled: true,
+    disabled: started,
+  });
+  const handlePaste = useAnnotatedImagePaste(addFiles, { enabled: !started, setText: setMessage });
 
   // Reset everything whenever the modal is (re)opened.
   useEffect(() => {
@@ -52,8 +68,9 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setLines([]);
       setDone(null);
       resetReport();
+      clearFiles();
     }
-  }, [open, resetReport]);
+  }, [open, resetReport, clearFiles]);
 
   // Auto-scroll the activity log to the latest line.
   useEffect(() => {
@@ -77,6 +94,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         diagnosisId: ev.diagnosis_id,
         conversationId: ev.conversation_id,
         flowMessageId: ev.flow_message_id,
+        diagnosis: ev.diagnosis ?? null,
       });
       // The run always posts its own Home-Feed card (issue card with Report/Forward,
       // or a no-issue summary card), so the result reaches the feed regardless of
@@ -95,7 +113,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
     abortRef.current = controller;
 
     try {
-      await streamDiagnose(message, handleEvent, controller.signal);
+      await streamDiagnose(message, handleEvent, controller.signal, files);
     } catch (e) {
       if (!controller.signal.aborted) {
         const text = e instanceof Error ? e.message : String(e);
@@ -105,7 +123,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setRunning(false);
       abortRef.current = null;
     }
-  }, [message, handleEvent]);
+  }, [message, files, handleEvent]);
 
   const handleClose = useCallback(() => {
     // Closing mid-run: the diagnosis keeps going in the background, so fly the
@@ -147,7 +165,7 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className={cn('space-y-3', dragging && 'rounded-md ring-1 ring-primary')} {...dragProps}>
           <p className="text-xs text-muted-foreground">
             <Trans>
               Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full
@@ -159,10 +177,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
+            onPaste={handlePaste}
             disabled={started}
             placeholder={t`What went wrong? (leave empty for a full sweep)`}
             className="min-h-[80px] text-xs"
           />
+
+          <PickedFileList files={files} rejected={rejected} disabled={started} onRemoveAt={removeAt} />
 
           {(running || lines.length > 0 || done) && (
             <div
@@ -208,6 +229,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             </div>
           )}
 
+          {/* Not recorded: what the sweep found is still shown, in the diagnosis viewer. */}
+          {done && !done.ok && done.diagnosis && (
+            <div className="max-h-80 overflow-y-auto rounded-md border p-2" data-testid="diagnose-sweep-result">
+              <KindValue kind="diagnosis" value={done.diagnosis} />
+            </div>
+          )}
+
           {running && (
             <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-2 text-[11px] font-medium text-blue-700 dark:border-blue-400/40 dark:text-blue-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -226,7 +254,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           )}
 
           {!started && (
-            <div className="flex justify-end">
+            <div className="flex items-center justify-between">
+              <AttachFilesButton
+                inputId={inputId}
+                onFiles={addFiles}
+                title={t`Attach files or a screenshot (or paste one into the description)`}
+                testId="diagnose-attach"
+              />
               <button
                 type="button"
                 onClick={() => void runDiagnose()}

@@ -1,0 +1,653 @@
+/**
+ * The navigation bar itself.
+ *
+ * Two invariants worth pinning beyond "it renders": the runtime signal reaches
+ * the chip (it is how you know whose machine you're on), and a crumb click is
+ * URL-first — `openDock` and nothing else. The second is the rule that keeps
+ * quietly eroding, so it gets an explicit assertion.
+ */
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { FileText } from 'lucide-react';
+
+const openDock = vi.hoisted(() => vi.fn());
+const nav = vi.hoisted(() => ({
+  canGoBack: true,
+  canGoForward: false,
+  goBack: vi.fn(),
+  goForward: vi.fn(),
+  reload: vi.fn(),
+}));
+// Literal, not `RuntimeKind.SANDBOX`: vi.mock factories are hoisted above the
+// imports, so referencing the enum here is a TDZ error.
+const runtimeKind = vi.hoisted(() => ({ current: 'sandbox' as string }));
+const crumbs = vi.hoisted(() => ({ current: [] as unknown[] }));
+const setContext = vi.hoisted(() => vi.fn());
+const routerNavigate = vi.hoisted(() => vi.fn());
+
+vi.mock('@src/navigation/use-history-nav', () => ({ useHistoryNav: () => nav }));
+// The magic line asks NavigationDecision first; by default it answers like a box with no
+// decision API -- the prompt, unchanged -- so every ask below is today's ask.
+const navigationDecision = vi.hoisted(() =>
+  vi.fn(async (utterance: string) => ({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
+);
+vi.mock('@sdk/decision', () => ({ navigationDecision }));
+// The bar's Home falls back to the app root through the router.
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router')>()),
+  useNavigate: () => routerNavigate,
+}));
+/** Where the bar is — a tab by default; the home (`viewType: 'home'`) in the Home cases. */
+const dock = vi.hoisted(() => ({ current: { tabHash: 'h1' } as Record<string, unknown> }));
+const goHome = vi.hoisted(() => vi.fn());
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock, goHome }, currentDock: dock.current }),
+}));
+/** The active project, when there is one — drives the project button's presence. */
+const activeProject = vi.hoisted(() => ({
+  current: null as { id: string; displayName?: string; fs_storage_mount_path?: string } | null,
+}));
+const activeComputeNode = vi.hoisted(() => ({ current: null as { typeId: unknown } | null }));
+const copyToClipboard = vi.hoisted(() => vi.fn());
+const openFolder = vi.hoisted(() => vi.fn());
+vi.mock('@src/hooks/useContext', () => ({
+  useContext: () => ({
+    runtimeKind: runtimeKind.current,
+    project: activeProject.current,
+    computeNode: activeComputeNode.current,
+    desktopInfo: null,
+    workdir: null,
+    activeEntity: null,
+    activeEntityTypeId: null,
+  }),
+}));
+vi.mock('@src/components/top-nav-bar/use-entity-breadcrumbs', () => ({
+  useEntityBreadcrumbs: () => ({
+    crumbs: crumbs.current,
+    resolving: false,
+    targetTypeId: null,
+    targetTitle: 'Design notes',
+  }),
+}));
+vi.mock('@src/components/top-nav-bar/TopBarActions', () => ({ TopBarActions: () => null }));
+/** The ⚡'s counter reads react-query; the bar's own tests pin the counter in top-nav-automations.test.tsx. */
+vi.mock('@src/hooks/automations/useAutomations', () => ({ useStartedLastHour: () => 0 }));
+// The project switcher is a heavy surface with its own tests; here we only care
+// THAT the project crumb summons it.
+vi.mock('@src/components/open-project-component/open-project-component', () => ({
+  OpenProjectComponent: ({ open }: { open: boolean }) => (open ? <div data-testid="project-switcher" /> : null),
+}));
+/** The sign-in question smart-ask.ts puts in front of a signed-out request. */
+const askNotification = vi.hoisted(() => vi.fn());
+vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn() }, askNotification }));
+/** Signed in by default, so every ask below is today's ask; one case signs out. */
+const signedIn = vi.hoisted(() => ({ current: true }));
+/** The open project buckets behind the chip's list. Mocking the tab manager is
+ *  mandatory here: unmocked, the hook starts the real one against the unit
+ *  tier's no-backend host. */
+const buckets = vi.hoisted(() => ({ current: { buckets: [] as unknown[], globalTabCount: 0 } }));
+const dockForProjectEntry = vi.hoisted(() => vi.fn(() => Promise.resolve({ __dock: 'project' })));
+const dockForGlobalEntry = vi.hoisted(() => vi.fn(() => Promise.resolve({ __dock: 'global' })));
+const openWikiModal = vi.hoisted(() => vi.fn());
+vi.mock('@src/tabs/use-tab-manager', () => ({
+  useTabProjectBuckets: () => buckets.current,
+}));
+vi.mock('@src/tabs/project-entry', () => ({
+  dockForProjectEntry,
+  dockForGlobalEntry,
+}));
+vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal }));
+/** The app button has its own file; here it would only start a webapp query with no backend. */
+vi.mock('@src/components/top-nav-bar/AppButton', () => ({ AppButton: () => null }));
+/** The Flowpad Assistant, when the bar is mounted under its provider. */
+const assistant = vi.hoisted(() => ({ current: null as { ask: ReturnType<typeof vi.fn> } | null }));
+vi.mock('@src/components/floating-chat/floating-chat-context', () => ({
+  useOptionalFloatingChat: () => assistant.current,
+}));
+// The single writer of URL-derived context — a crumb click must never touch it.
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sdk')>();
+  return {
+    ...actual,
+    copyToClipboard,
+    fsManager: { ...actual.fsManager, open: openFolder },
+    // Built on the real prototype, not spread: `on`/`off` live on
+    // DataContext.prototype, and the SDK context hook's subscription manager
+    // calls `dataContext.on` for the first subscriber (the project dialog's
+    // `useProjects` → `useAuth`). A spread copy has no `on` and throws in commit.
+    dataContext: Object.assign(Object.create(Object.getPrototypeOf(actual.dataContext)), actual.dataContext, {
+      setContextEntityTypeId: setContext,
+    }),
+    // The real manager with only `isLoggedIn` swapped (a getter on its prototype).
+    cloudManager: Object.defineProperty(
+      Object.assign(Object.create(Object.getPrototypeOf(actual.cloudManager)), actual.cloudManager),
+      'isLoggedIn',
+      { get: () => signedIn.current },
+    ),
+  };
+});
+
+import { RuntimeKind, TypeId } from '@sdk';
+import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
+import { RUNTIME_CLASS } from '@src/components/top-nav-bar/runtime-appearance';
+import { RUNTIME_HOVER_OPEN_DELAY_MS } from '@src/components/top-nav-bar/RuntimeChip';
+import { TooltipProvider } from '@src/components/ui/tooltip';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { makeBucket } from '../utils/terminal-tab-fixtures';
+
+const PROJECT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER_PROJECT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const TWO_PROJECTS = {
+  buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+  globalTabCount: 0,
+};
+
+/** The app mounts the bar inside App.tsx's global TooltipProvider; mirror that
+ *  here so the tooltips have the context they expect. */
+function renderBar() {
+  return render(
+    <TooltipProvider>
+      <TopNavBar />
+    </TooltipProvider>,
+  );
+}
+
+const crumb = (key: string, kind: string, pointer: unknown = null) => ({
+  key,
+  label: key,
+  Icon: FileText,
+  pointer,
+  kind,
+});
+
+beforeEach(() => {
+  runtimeKind.current = RuntimeKind.SANDBOX;
+  activeProject.current = null;
+  activeComputeNode.current = null;
+  nav.canGoBack = true;
+  nav.canGoForward = false;
+  crumbs.current = [crumb('Acme', 'project'), crumb('Design notes', 'current')];
+  buckets.current = { buckets: [], globalTabCount: 0 };
+  dock.current = { tabHash: 'h1' };
+  assistant.current = null;
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
+
+/** A user whose clock is the fake one, so the hover card's rest delay can be
+ *  stepped past instead of waited out. */
+function fakeClockUser() {
+  // shouldAdvanceTime: user-event's own awaits and RTL's findBy/waitFor poll on
+  // the (now faked) timers, and vitest's clock isn't auto-advanced for them.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+}
+
+describe('the navigation bar', () => {
+  it('wears the runtime color and names the runtime', () => {
+    renderBar();
+
+    const bar = screen.getByTestId('top-nav-bar');
+    expect(bar.getAttribute('data-runtime')).toBe(RuntimeKind.SANDBOX);
+
+    const chip = screen.getByTestId('top-nav-runtime-chip');
+    expect(chip.textContent).toContain('Cloud Sandbox');
+    for (const token of RUNTIME_CLASS[RuntimeKind.SANDBOX].split(/\s+/)) {
+      expect(chip.className).toContain(token);
+    }
+  });
+
+  it('does not nest a button inside a button', () => {
+    // The bar holds many independent controls; nesting them would be invalid
+    // HTML that React warns about and screen readers mis-announce.
+    renderBar();
+    const bar = screen.getByTestId('top-nav-bar');
+
+    expect(bar.tagName).toBe('DIV');
+    expect(bar.querySelectorAll('button button')).toHaveLength(0);
+  });
+
+  it('disables each history button when there is nowhere to go', () => {
+    renderBar();
+
+    expect((screen.getByTestId('top-nav-back') as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByTestId('top-nav-forward') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('carries Home, which the rail no longer does', () => {
+    renderBar();
+
+    expect(screen.getByTestId('top-nav-home')).toBeTruthy();
+  });
+
+  describe('Home always opens the main home', () => {
+    it.each([
+      { tabHash: 'h1' },
+      { viewType: 'home', tabHash: null },
+      { viewType: 'project', pointer: PROJECT_ID },
+    ])('opens the main home from %j', async (current) => {
+      dock.current = current;
+      renderBar();
+
+      expect(screen.queryByTestId('top-nav-tabs')).toBeNull();
+      await userEvent.click(screen.getByTestId('top-nav-home'));
+      expect(goHome).toHaveBeenCalledWith();
+    });
+  });
+
+  // Inherited from the rail's project item when that icon moved up here
+  // (8d4d03dc4), and since folded into the runtime chip as its name segment.
+  // Same rule it always had: URL-first. Was tests/react/assets-sidebar-scope-open.test.tsx.
+  it('opens the project by URL alone from the chip home segment', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project'));
+
+    expect(openDock).toHaveBeenCalledTimes(1);
+    expect(openDock).toHaveBeenCalledWith(DockPointer.forProject(PROJECT_ID));
+    // URL-first: the loader is the single writer of context, never the click.
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it('shows the active project name and the open-project count on the runtime-colored chip', () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = {
+      buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+      globalTabCount: 0,
+    };
+    renderBar();
+
+    const chip = screen.getByTestId('top-nav-runtime-chip');
+    expect(chip.textContent).toContain('Acme');
+    expect(within(chip).getByTestId('project-count-badge').textContent).toBe('2');
+    expect(chip.textContent).not.toContain('Cloud Sandbox');
+    expect(chip.getAttribute('data-runtime')).toBe(RuntimeKind.SANDBOX);
+    // The color stays: the project name replaces the runtime's word, never its signal.
+    for (const token of RUNTIME_CLASS[RuntimeKind.SANDBOX].split(/\s+/)) {
+      expect(chip.className).toContain(token);
+    }
+  });
+
+  it('opens the project list from the chevron and switches project by URL alone', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = {
+      buckets: [makeBucket(PROJECT_ID, 'Acme', 2), makeBucket(OTHER_PROJECT_ID, 'Beta', 1)],
+      globalTabCount: 0,
+    };
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project-list'));
+
+    const popover = await screen.findByTestId('top-nav-project-popover');
+    // Two project rows, each with its own close-all X, plus the trailing "Open
+    // project" button. Asserted by identity rather than as a bare count, so
+    // adding a per-row control doesn't read as a regression.
+    expect(within(popover).getByRole('button', { name: 'Acme 2' })).toBeTruthy();
+    expect(within(popover).getByRole('button', { name: 'Beta 1' })).toBeTruthy();
+    expect(within(popover).getByTestId(`projects-counter-close-${PROJECT_ID}`)).toBeTruthy();
+    expect(within(popover).getByTestId(`projects-counter-close-${OTHER_PROJECT_ID}`)).toBeTruthy();
+    expect(within(popover).getByTestId('projects-counter-open-project')).toBeTruthy();
+    await user.click(within(popover).getByRole('button', { name: 'Beta 1' }));
+
+    // A project switch resumes a TOP-LEVEL tab (see use-open-project / project-list-menu).
+    await waitFor(() => expect(openDock).toHaveBeenCalledWith({ __dock: 'project' }, undefined, { topLevel: true }));
+    expect(dockForProjectEntry).toHaveBeenCalledWith(OTHER_PROJECT_ID, { tabHash: 'h1' });
+    // URL-first: the loader is the single writer of context, never the click.
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it('explains the empty list instead of hiding the chip', async () => {
+    // The strip's chip hides itself with nothing to count; this one is the
+    // runtime signal too, so it stays and its click still answers.
+    activeProject.current = null;
+    const user = userEvent.setup();
+    renderBar();
+
+    expect(screen.getByTestId('top-nav-runtime-chip')).toBeTruthy();
+    // No home segment either: it addresses a project by id, and without one
+    // the project page renders "not found". And no "0" count.
+    expect(screen.queryByTestId('top-nav-project')).toBeNull();
+    expect(screen.queryByTestId('project-count-badge')).toBeNull();
+    await user.click(screen.getByTestId('top-nav-project-list'));
+
+    const popover = await screen.findByTestId('top-nav-project-popover');
+    expect(popover.textContent).toContain('No project has open tabs yet.');
+  });
+
+  it('explains the runtime once the pointer has RESTED, and peeks the wiki page from Learn more', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2)], globalTabCount: 0 };
+    const user = fakeClockUser();
+    renderBar();
+
+    await user.hover(screen.getByTestId('top-nav-project-list'));
+
+    // A pass-through must not flash the card: nothing halfway through the rest
+    // delay (half, not delay-1: the fake clock also ticks with real time).
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS / 2));
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS / 2));
+
+    const card = await screen.findByTestId('top-nav-runtime-hover');
+    // Two header chips: the project, and the runtime as a link into its own
+    // section of the page.
+    expect(screen.getByTestId('top-nav-hover-project').textContent).toContain('Acme');
+    expect(screen.getByTestId('top-nav-hover-env').textContent).toContain('Cloud Sandbox');
+    expect(card.textContent).toContain('1 open project');
+    expect(card.textContent).toContain('2 open tabs');
+    expect(card.textContent).toContain('This UI is served by a cloud sandbox you opened.');
+
+    await user.click(within(card).getByRole('button', { name: 'Learn more' }));
+
+    // A peek, not a navigation. No space named: the modal looks a shipped page
+    // up in the assistant's wiki itself (`@local` would resolve against Acme).
+    expect(openWikiModal).toHaveBeenCalledWith('Runtime environments', undefined, undefined);
+
+    await user.click(screen.getByTestId('top-nav-hover-env'));
+    expect(openWikiModal).toHaveBeenLastCalledWith('Runtime environments', undefined, 'cloud-sandbox-blue-banner');
+    expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it('tips the home segment with its own action, not the runtime card', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.hover(screen.getByTestId('top-nav-project'));
+
+    expect(await screen.findAllByText('Open project home')).not.toHaveLength(0);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+  });
+
+  it('draws a local browser as the desktop badged with a browser, not a globe', () => {
+    runtimeKind.current = RuntimeKind.BROWSER;
+    renderBar();
+
+    const chip = screen.getByTestId('top-nav-runtime-chip');
+    expect(chip.querySelector('.lucide-monitor')).toBeTruthy();
+    expect(chip.querySelector('.lucide-globe')).toBeTruthy();
+  });
+
+  it('closes the hover card when the list opens', async () => {
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    const user = fakeClockUser();
+    renderBar();
+
+    await user.hover(screen.getByTestId('top-nav-project-list'));
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    await screen.findByTestId('top-nav-runtime-hover');
+    await user.click(screen.getByTestId('top-nav-project-list'));
+
+    await screen.findByTestId('top-nav-project-popover');
+    await waitFor(() => expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull());
+  });
+
+  it('keeps the hover card shut while the pointer roams the open list', async () => {
+    // The list hangs right under the pill, so moving into it re-crosses the
+    // hover trigger. The card must not re-open over the list and hide it.
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    buckets.current = { buckets: [makeBucket(PROJECT_ID, 'Acme', 2)], globalTabCount: 0 };
+    const user = fakeClockUser();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-project-list'));
+    const popover = await screen.findByTestId('top-nav-project-popover');
+
+    await user.hover(screen.getByTestId('top-nav-project-list'));
+    await user.hover(within(popover).getByTestId('projects-counter-open-project'));
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS * 2));
+
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    expect(screen.getByTestId('top-nav-project-popover')).toBeTruthy();
+  });
+
+  it.each([0, RUNTIME_HOVER_OPEN_DELAY_MS])('does not open help after dismissing the list at %i ms', async (delay) => {
+    const user = fakeClockUser();
+    renderBar();
+    const trigger = screen.getByTestId('top-nav-project-list');
+    await user.click(trigger);
+    act(() => void vi.advanceTimersByTime(delay));
+    // The modal blocks body pointer events, so click the document outside it.
+    await user.click(document.documentElement);
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.queryByTestId('top-nav-project-popover')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    await user.hover(trigger);
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.getByTestId('top-nav-runtime-hover')).toBeTruthy();
+  });
+
+  it('keeps keyboard focus restoration and allows help on a new keyboard visit', async () => {
+    const user = fakeClockUser();
+    renderBar();
+    const trigger = screen.getByTestId('top-nav-project-list');
+    await user.click(trigger);
+    await user.keyboard('{Escape}');
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(document.activeElement).toBe(trigger);
+    expect(screen.queryByTestId('top-nav-runtime-hover')).toBeNull();
+    await user.tab();
+    await user.tab({ shift: true });
+    act(() => void vi.advanceTimersByTime(RUNTIME_HOVER_OPEN_DELAY_MS));
+    expect(screen.getByTestId('top-nav-runtime-hover')).toBeTruthy();
+  });
+
+  it('reloads the window on click', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-reload'));
+    expect(nav.reload).toHaveBeenCalledTimes(1);
+  });
+
+  it('navigates by URL alone when a crumb is clicked', async () => {
+    const pointer = { fake: 'pointer' };
+    crumbs.current = [
+      crumb('Acme', 'project'),
+      crumb('Research', 'ancestor', pointer),
+      crumb('Design notes', 'current'),
+    ];
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByText('Research'));
+
+    expect(openDock).toHaveBeenCalledTimes(1);
+    expect(openDock).toHaveBeenCalledWith(pointer);
+    // URL-first: the loader is the single writer of context, never the click.
+    expect(setContext).not.toHaveBeenCalled();
+  });
+
+  it('opens the projects list from the project crumb', async () => {
+    // The one crumb that does not navigate: it inherited the project chip's
+    // job, which was choosing a project. Opening the project itself is the
+    // briefcase button in the nav cluster.
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme' };
+    const user = userEvent.setup();
+    renderBar();
+
+    expect(screen.queryByTestId('project-switcher')).toBeNull();
+    await user.click(within(screen.getByTestId('top-nav-address')).getByText('Acme'));
+
+    expect(screen.getByTestId('project-switcher')).toBeTruthy();
+    expect(openDock).not.toHaveBeenCalled();
+  });
+
+  it('shows and operates on the active project location from the project crumb', async () => {
+    const user = userEvent.setup();
+    const projectPath = '/Users/me/Flowpad workspace/Acme';
+    const computeNodeTypeId = new TypeId('compute_node', '@local');
+    activeProject.current = { id: PROJECT_ID, displayName: 'Acme', fs_storage_mount_path: projectPath };
+    activeComputeNode.current = { typeId: computeNodeTypeId };
+    renderBar();
+
+    await user.hover(within(screen.getByTestId('top-nav-address')).getByText('Acme'));
+    expect((await screen.findByTestId('top-nav-project-details')).textContent).toContain(projectPath);
+    await user.click(screen.getByTestId('top-nav-project-copy-path'));
+    await user.click(screen.getByTestId('top-nav-project-open-folder'));
+
+    expect(copyToClipboard).toHaveBeenCalledWith(projectPath);
+    expect(openFolder).toHaveBeenCalledWith(computeNodeTypeId, 'Users/me/Flowpad workspace/Acme');
+  });
+
+  it('leaves the current crumb unclickable', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByText('Design notes'));
+
+    expect(openDock).not.toHaveBeenCalled();
+  });
+
+  // Search is the bar's job now — the rail's magnifier is gone — and it takes
+  // over the address slot rather than opening beside it.
+  it('turns the address into a query field, and Escape gives it back', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-search-open'));
+
+    expect(document.activeElement).toBe(screen.getByTestId('top-nav-search-input'));
+    expect(screen.queryByTestId('top-nav-address')).toBeNull();
+
+    await user.keyboard('{Escape}');
+
+    expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
+  });
+
+  it('sets the OS window title from the address', () => {
+    renderBar();
+    expect(document.title).toBe('Flowpad: Acme / Design notes');
+  });
+
+  it('gives the address back when the user clicks outside search', async () => {
+    const user = userEvent.setup();
+    renderBar();
+
+    await user.click(screen.getByTestId('top-nav-search-open'));
+    await user.click(document.body);
+
+    expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
+  });
+
+  describe('ask mode', () => {
+    beforeEach(() => {
+      assistant.current = { ask: vi.fn() };
+      signedIn.current = true;
+    });
+
+    it('signed out, holds the request on the sign-in question, then asks as today on Continue', async () => {
+      signedIn.current = false;
+      let answer!: (a: { value: string; remember: boolean }) => void;
+      askNotification.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open data sources{Enter}');
+      await waitFor(() => expect(askNotification).toHaveBeenCalledTimes(1));
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+      expect(navigationDecision).not.toHaveBeenCalled();
+
+      answer({ value: 'continue', remember: false });
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('open data sources', expect.anything()));
+    });
+
+    it('turns the pill into an assistant prompt on a dead-space click, and sends it on Enter', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      const input = screen.getByTestId('top-nav-ask-input');
+      expect(input.getAttribute('placeholder')).toBe('What do you want to do?');
+      expect(document.activeElement).toBe(input);
+
+      await user.type(input, 'tidy the docs{Enter}');
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything()));
+      expect(navigationDecision).toHaveBeenCalledWith('tidy the docs');
+      expect(openDock).not.toHaveBeenCalled();
+      expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    });
+
+    it('opens a plain request without an assistant turn when the navigator is sure', async () => {
+      navigationDecision.mockResolvedValueOnce({
+        decision: { route: 'quick', target: { kind: 'view', value: 'data-sources' } },
+        candidates: [],
+        address: '/dock/data-sources',
+      } as never);
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open data sources{Enter}');
+      await waitFor(() => expect(openDock).toHaveBeenCalledTimes(1));
+      expect((openDock.mock.calls[0][0] as { viewType: string }).viewType).toBe('data-sources');
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+    });
+
+    it('asks as today when the target opens nothing here', async () => {
+      navigationDecision.mockResolvedValueOnce({
+        decision: { route: 'quick', target: { kind: 'view', value: 'no-such-screen' } },
+        candidates: [],
+      } as never);
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'open the thing{Enter}');
+      await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('open the thing', expect.anything()));
+      expect(openDock).not.toHaveBeenCalled();
+    });
+
+    it('says what the dead space does, and a click on that hint asks', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      const hint = screen.getByTestId('top-nav-ask-hint');
+      expect(hint.textContent).toBe('What do you want to do?');
+      await user.click(hint);
+      expect(screen.getByTestId('top-nav-ask-input')).toBeTruthy();
+    });
+
+    it('leaves crumbs and the search button their own clicks', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByText('Acme'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+      await user.click(screen.getByTestId('top-nav-search-open'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+      expect(screen.getByTestId('top-nav-search-input')).toBeTruthy();
+    });
+
+    it('gives the address back on Escape without asking', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'never mind{Escape}');
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+      expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    });
+
+    it('is not offered where there is no assistant', async () => {
+      assistant.current = null;
+      const user = userEvent.setup();
+      renderBar();
+
+      expect(screen.queryByTestId('top-nav-ask-hint')).toBeNull();
+      await user.click(screen.getByTestId('top-nav-address'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+    });
+  });
+});

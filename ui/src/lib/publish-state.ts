@@ -6,7 +6,8 @@
  * `lib/` (peer to scope-filter / color-palette), not in a components dir.
  */
 
-import type { PushKind } from '@sdk';
+import { t } from '@lingui/core/macro';
+import type { PullKind, PushKind } from '@sdk';
 import { ViewMode } from '@src/components/view-mode';
 
 export type PublishState = 'no-repo' | 'local-only' | 'aligned' | 'unpublished';
@@ -48,8 +49,7 @@ export function derivePublishState(input: PublishStatusInput): PublishStatus {
 // Advanced copy is for power-user tiers only. Vibe (simpler than Standard) and
 // Standard both get the plain-language copy — so test for the advanced tiers
 // explicitly rather than "!== Standard" (which would wrongly catch Vibe).
-const isAdvanced = (mode: ViewMode): boolean =>
-  mode === ViewMode.Advanced || mode === ViewMode.Dev;
+const isAdvanced = (mode: ViewMode): boolean => mode === ViewMode.Advanced || mode === ViewMode.Dev;
 
 export interface PublishLabels {
   /** Button label for the publish action. */
@@ -65,69 +65,149 @@ export function publishCopy(state: PublishState, mode: ViewMode): PublishLabels 
   const advanced = isAdvanced(mode);
   return {
     publishLabel: 'Publish',
-    publishTitle: advanced
-      ? 'Publish your changes to the remote'
-      : 'Publish your changes',
+    publishTitle: advanced ? 'Publish your changes to the remote' : 'Publish your changes',
     showCount: advanced,
   };
 }
 
-export interface PushToast {
+/** Which way a one-click sync went: Publish (push) or Pull. */
+export type GitSyncOp = 'push' | 'pull';
+
+export interface GitOutcomeToast {
   level: 'success' | 'error';
   title: string;
   message: string;
-  /** Advanced-only: offer the git conflict-resolver agent. */
+  /** Offer the conflict-resolver agent (`git.resolve-conflict`). */
   resolvable: boolean;
 }
 
+type CopyOpts = { branch?: string | null; message?: string };
+
 /**
- * Plain-language toast for a push outcome. Standard mode contains no git terms;
- * Advanced may include branch/remote detail and the Resolve-conflict action.
+ * Plain-language toast for a push or pull outcome. Standard mode contains no
+ * git terms; Advanced may include branch/remote detail.
+ *
+ * A conflict is ONE case for both directions: a push and a pull leave the same
+ * stuck tree, so they say the same thing and both offer Resolve — in every
+ * view, since switching views is no way out of a half-finished rebase.
  */
-export function pushToastCopy(
-  kind: PushKind,
+export function gitOutcomeCopy(
+  op: GitSyncOp,
+  kind: PushKind | PullKind,
   mode: ViewMode,
-  opts: { branch?: string | null; message?: string } = {},
-): PushToast {
+  opts: CopyOpts = {},
+): GitOutcomeToast {
+  if (kind === 'conflict') return conflictCopy(mode, opts);
+  return op === 'push' ? pushCopy(kind as PushKind, mode, opts) : pullCopy(kind as PullKind, mode, opts);
+}
+
+function conflictCopy(mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
+  const raw = opts.message?.trim() || '';
+  return isAdvanced(mode)
+    ? { level: 'error', title: t`Merge conflict`, message: raw || 'A rebase conflict is in progress.', resolvable: true }
+    : {
+        level: 'error',
+        title: t`Changes need merging`,
+        message: t`Someone else changed the same thing. Let the assistant merge the two versions.`,
+        resolvable: true,
+      };
+}
+
+function pushCopy(kind: PushKind, mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
   const advanced = isAdvanced(mode);
   const raw = opts.message?.trim() || '';
   switch (kind) {
     case 'pushed':
       return {
         level: 'success',
-        title: 'Published',
+        title: t`Published`,
         message: advanced && opts.branch ? `Pushed to ${opts.branch}.` : 'Your changes are now published.',
         resolvable: false,
       };
     case 'nothing':
-      return { level: 'success', title: 'Nothing to publish', message: 'Everything is already up to date.', resolvable: false };
-    case 'conflict':
-      return advanced
-        ? { level: 'error', title: 'Publish hit a conflict', message: raw || 'A rebase conflict is in progress.', resolvable: true }
-        : { level: 'error', title: "Couldn't publish", message: 'Someone else changed this too. Switch to Advanced view to merge.', resolvable: false };
+      return {
+        level: 'success',
+        title: t`Nothing to publish`,
+        message: t`Everything is already up to date.`,
+        resolvable: false,
+      };
     case 'permission':
       return {
         level: 'error',
         title: advanced ? 'Push rejected — no access' : "Can't publish here",
-        message: advanced ? (raw || 'You do not have write access to this remote.') : "You don't have access to publish to this location.",
+        message: advanced
+          ? raw || 'You do not have write access to this remote.'
+          : "You don't have access to publish to this location.",
         resolvable: false,
       };
     case 'no_remote':
       return {
         level: 'error',
         title: advanced ? 'No remote configured' : 'Nowhere to publish yet',
-        message: advanced ? (raw || 'No git remote/upstream is configured for this branch.') : "This project isn't connected to a place to publish to.",
+        message: advanced
+          ? raw || 'No git remote/upstream is configured for this branch.'
+          : "This project isn't connected to a place to publish to.",
         resolvable: false,
       };
     case 'network':
-      return { level: 'error', title: "Couldn't reach the server", message: 'Check your connection and try again.', resolvable: false };
+      return {
+        level: 'error',
+        title: t`Couldn't reach the server`,
+        message: t`Check your connection and try again.`,
+        resolvable: false,
+      };
     case 'no_repo':
-      return { level: 'error', title: 'Not set up for publishing', message: 'This file is not in a versioned project.', resolvable: false };
+      return {
+        level: 'error',
+        title: t`Not set up for publishing`,
+        message: t`This file is not in a versioned project.`,
+        resolvable: false,
+      };
     default:
       return {
         level: 'error',
         title: advanced ? 'Push failed' : "Couldn't publish",
-        message: advanced ? (raw || 'Push failed.') : 'Something went wrong. Please try again.',
+        message: advanced ? raw || 'Push failed.' : 'Something went wrong. Please try again.',
+        resolvable: false,
+      };
+  }
+}
+
+/** The inbound twin of ``pushCopy``: Standard says "updates from the cloud", Advanced says pull. */
+function pullCopy(kind: PullKind, mode: ViewMode, opts: CopyOpts): GitOutcomeToast {
+  const advanced = isAdvanced(mode);
+  const raw = opts.message?.trim() || '';
+  switch (kind) {
+    case 'pulled':
+      return {
+        level: 'success',
+        title: t`Updated`,
+        message:
+          advanced && opts.branch ? `Pulled ${opts.branch}.` : t`You now have the latest changes from the cloud.`,
+        resolvable: false,
+      };
+    case 'nothing':
+      return {
+        level: 'success',
+        title: t`Already up to date`,
+        message: t`There is nothing new in the cloud.`,
+        resolvable: false,
+      };
+    case 'network':
+      return {
+        level: 'error',
+        title: t`Couldn't reach the server`,
+        message: t`Check your connection and try again.`,
+        resolvable: false,
+      };
+    case 'permission':
+    case 'no_remote':
+    case 'no_repo':
+    default:
+      return {
+        level: 'error',
+        title: advanced ? 'Pull failed' : t`Couldn't update`,
+        message: advanced ? raw || 'Pull failed.' : t`Something went wrong. Please try again.`,
         resolvable: false,
       };
   }

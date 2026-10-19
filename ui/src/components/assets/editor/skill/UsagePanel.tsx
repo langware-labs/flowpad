@@ -44,6 +44,22 @@ const usageScanCache = new Map<string, UsageSession[]>();
 const usageScanInFlight = new Map<string, Promise<UsageSession[]>>();
 
 /**
+ * Cap on remembered scans — enough to survive remounts of the skills being
+ * worked on. A module-scope Map in a long-lived SPA otherwise grows for every
+ * skill the user scans.
+ */
+export const MAX_CACHED_SCANS = 20;
+
+/** Store as the most recent scan; a Map iterates in insertion order, so its first key is the oldest. */
+function rememberScan(skillName: string, found: UsageSession[]): void {
+  usageScanCache.delete(skillName);
+  usageScanCache.set(skillName, found);
+  while (usageScanCache.size > MAX_CACHED_SCANS) {
+    usageScanCache.delete(usageScanCache.keys().next().value as string);
+  }
+}
+
+/**
  * The asset improvement cycle for a skill: **usage → analyze → review → improve
  * → commit**. Scans past sessions that used this skill (FSIndexer + transcript
  * analyzer), then per selected session runs agent-trace (Analyze) and skillit
@@ -53,7 +69,9 @@ const usageScanInFlight = new Map<string, Promise<UsageSession[]>>();
 export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRef }) {
   const { t } = useLingui();
   const skillName = skill.name;
-  const computeNodeId = skillFile.typeId.id;
+  // A SKILL.md ref is always a compute-node ref, which is exactly what
+  // `localComputeNodeId` narrows to — no need to reach past FSRef's boundary.
+  const computeNodeId = skillFile.localComputeNodeId ?? '@local';
   const workdir = skillFile.parent.path;
   const file = skillFile.path.slice(skillFile.path.lastIndexOf('/') + 1);
   const { navigation } = useDockNavigation();
@@ -98,10 +116,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
   const { traces } = useSessionAnalyses(selected);
   const latestTrace = traces[0] ?? null;
   const { doc: traceDoc } = useAgentTraceDoc(latestTrace?.doc ?? null);
-  const findings = useMemo(
-    () => traceDoc?.annotations?.by_skill?.[skillName]?.findings ?? [],
-    [traceDoc, skillName],
-  );
+  const findings = useMemo(() => traceDoc?.annotations?.by_skill?.[skillName]?.findings ?? [], [traceDoc, skillName]);
 
   const scan = useCallback(async () => {
     // One scan per skill across all (re)mounts: reuse the in-flight promise so a
@@ -113,7 +128,7 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         a.queryParameters = { skill: skillName };
         const res = await dataManager.callAction<null, { sessions: UsageSession[] }>(a);
         const found = res?.sessions ?? [];
-        usageScanCache.set(skillName, found);
+        rememberScan(skillName, found);
         return found;
       })();
       usageScanInFlight.set(skillName, p);
@@ -205,7 +220,9 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
       {/* Scan + stage controls */}
       <div className="shrink-0 space-y-2 border-b border-border p-2">
         <div className="flex items-center justify-between">
-          <span className="font-medium"><Trans>Usage & improvement</Trans></span>
+          <span className="font-medium">
+            <Trans>Usage & improvement</Trans>
+          </span>
           <button
             type="button"
             onClick={() => void scan()}
@@ -224,15 +241,20 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
             className={cn('flex items-center gap-1.5', !cleanGit && 'opacity-50')}
             title={cleanGit ? undefined : t`Commit/clean this asset to enable Improve`}
           >
-            <Checkbox checked={doImprove} disabled={!cleanGit} onCheckedChange={(v) => setDoImprove(!!v)} /> <Trans>Improve</Trans>
+            <Checkbox checked={doImprove} disabled={!cleanGit} onCheckedChange={(v) => setDoImprove(!!v)} />{' '}
+            <Trans>Improve</Trans>
           </label>
           <button
             type="button"
             onClick={() => void run()}
             disabled={!selected || running || (!doAnalyze && !doImprove)}
-            className="ml-auto flex items-center gap-1 rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="ms-auto flex items-center gap-1 rounded bg-primary px-2 py-1 text-[11px] text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
-            {running || pendingImprove ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {running || pendingImprove ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Play className="h-3.5 w-3.5" />
+            )}
             <Trans>Run</Trans>
           </button>
         </div>
@@ -249,38 +271,46 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
         {scanning ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
-            <span><Trans>Scanning sessions for "{skillName}"…</Trans></span>
-            <span className="text-[10px]"><Trans>FSIndexer + transcript analyzer · this can take a few seconds</Trans></span>
+            <span>
+              <Trans>Scanning sessions for "{skillName}"…</Trans>
+            </span>
+            <span className="text-[10px]">
+              <Trans>FSIndexer + transcript analyzer · this can take a few seconds</Trans>
+            </span>
           </div>
         ) : sessions === null ? (
-          <p className="p-3 text-center text-muted-foreground"><Trans>Scan to find sessions that used this skill.</Trans></p>
+          <p className="p-3 text-center text-muted-foreground">
+            <Trans>Scan to find sessions that used this skill.</Trans>
+          </p>
         ) : sessions.length === 0 ? (
-          <p className="p-3 text-center text-muted-foreground"><Trans>No past sessions used "{skillName}".</Trans></p>
+          <p className="p-3 text-center text-muted-foreground">
+            <Trans>No past sessions used "{skillName}".</Trans>
+          </p>
         ) : (
           <>
             <p className="px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
               {sessions.length} session{sessions.length === 1 ? '' : 's'} used this skill
             </p>
             {sessions.map((s) => {
-            const isSel = s.sessionId === selected;
-            return (
-              <button
-                key={s.sessionId}
-                type="button"
-                onClick={() => setSelected(s.sessionId)}
-                title={s.sessionId}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted',
-                  isSel && 'bg-muted',
-                )}
-              >
-                <Activity className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-[11px]">{sessionLabel(s)}</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{s.count}×</span>
-                <span className="shrink-0 text-[10px] text-muted-foreground">{formatTimeAgo(s.lastTs) ?? ''}</span>
-              </button>
-            );
-          })}
+              const isSel = s.sessionId === selected;
+              return (
+                <button
+                  key={s.sessionId}
+                  type="button"
+                  onClick={() => setSelected(s.sessionId)}
+                  title={s.sessionId}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded px-2 py-1.5 text-start hover:bg-muted',
+                    isSel && 'bg-muted',
+                  )}
+                >
+                  <Activity className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-[11px]">{sessionLabel(s)}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{s.count}×</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{formatTimeAgo(s.lastTs) ?? ''}</span>
+                </button>
+              );
+            })}
           </>
         )}
       </div>
@@ -294,17 +324,28 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
                 Trace: <span className="font-medium text-foreground">{latestTrace.verdict ?? '—'}</span> ·{' '}
                 {findings.length} finding{findings.length === 1 ? '' : 's'}
               </span>
-              <button type="button" onClick={openTrace} className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted">
+              <button
+                type="button"
+                onClick={openTrace}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-muted"
+              >
                 <Eye className="h-3.5 w-3.5" /> <Trans>Review</Trans>
               </button>
             </div>
           ) : (
-            <p className="text-[11px] text-muted-foreground"><Trans>No analysis yet — Analyze to produce a trace.</Trans></p>
+            <p className="text-[11px] text-muted-foreground">
+              <Trans>No analysis yet — Analyze to produce a trace.</Trans>
+            </p>
           )}
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => void launchSessionAnalysis(selected, sessions?.find((x) => x.sessionId === selected)?.workerType ?? 'claude')}
+              onClick={() =>
+                void launchSessionAnalysis(
+                  selected,
+                  sessions?.find((x) => x.sessionId === selected)?.workerType ?? 'claude',
+                )
+              }
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] hover:bg-muted"
             >
               <Activity className="h-3.5 w-3.5" /> <Trans>Analyze</Trans>
@@ -313,7 +354,9 @@ export function UsagePanel({ skill, skillFile }: { skill: Skill; skillFile: FSRe
               type="button"
               onClick={() => void improve(selected)}
               disabled={!cleanGit || !findings.length}
-              title={!cleanGit ? t`Asset must be clean-git` : !findings.length ? t`No substantiated findings` : undefined}
+              title={
+                !cleanGit ? t`Asset must be clean-git` : !findings.length ? t`No substantiated findings` : undefined
+              }
               className="flex items-center gap-1 rounded px-2 py-1 text-[11px] hover:bg-muted disabled:opacity-50"
             >
               <GraduationCap className="h-3.5 w-3.5" /> <Trans>Improve</Trans>

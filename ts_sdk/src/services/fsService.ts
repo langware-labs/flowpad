@@ -1,8 +1,10 @@
 import { dataManager } from '../APIEntity';
-import { FSItem } from '../entities/fs_item';
+import { FSEntry } from '../fs/FSEntry';
 import { ActionInfo, TypeId } from '../models';
 import { DownloadOptions, UploadOptions } from '../models/FSOptions';
 import { FileUpload } from './FileUpload';
+import { ConnectionManager } from '../websocket';
+import type { AssetDocument, DocumentPatch } from '../fs/AssetDocument';
 
 /**
  * Heuristic: does a UTF-8-decoded string look like binary rather than text?
@@ -33,7 +35,7 @@ export function looksBinaryText(s: string): boolean {
  * BrowseResult - Result of a directory listing operation
  */
 export interface BrowseResult {
-  items: FSItem[];
+  items: FSEntry[];
   path: string;
   totalSize: number;
   itemCount: number;
@@ -53,7 +55,52 @@ export interface SymlinkResolveResult {
  * Provides a consistent API for browse, upload, download, and delete operations
  * All methods throw errors on failure (consistent with SDK patterns)
  */
+/** One watched file: its listeners, and whether the server has it registered. */
+interface FileWatch {
+  typeid: TypeId;
+  path: string;
+  listeners: Set<() => void>;
+  registered: boolean;
+  syncing: boolean;
+}
+
 export class FSManager {
+  async ensureDocument(typeid: TypeId, path: string, assetTypeId: TypeId, spec: Record<string, import('../fs/AssetDocument').DocumentValue>): Promise<void> {
+    const action = this.createFSAction(typeid, 'ensure_document', path, 'POST');
+    action.bodyParameters = { typeid: assetTypeId.toString(), spec };
+    await dataManager.callAction(action);
+  }
+
+  async readDocument(typeid: TypeId, path: string): Promise<AssetDocument> {
+    return dataManager.callAction<undefined, AssetDocument>(this.createFSAction(typeid, 'document', path));
+  }
+
+  async updateDocument(typeid: TypeId, path: string, patch: DocumentPatch): Promise<AssetDocument> {
+    const action = this.createFSAction(typeid, 'document', path, 'POST');
+    action.bodyParameters = { ...patch };
+    const saved = await dataManager.callAction<DocumentPatch, AssetDocument>(action);
+    this.announceWrite();
+    return saved;
+  }
+
+  // ---- write notices --------------------------------------------------------
+
+  private writeListeners = new Set<() => void>();
+
+  /**
+   * Subscribe to "a file was written through this client" (``writeFile`` /
+   * ``updateDocument`` settled). A write to an asset in a git checkout is
+   * auto-committed server-side with no event of its own, so views of git state
+   * (the footer push button) listen here to re-ask. Returns the unsubscribe.
+   */
+  onFileWritten(listener: () => void): () => void {
+    this.writeListeners.add(listener);
+    return () => { this.writeListeners.delete(listener); };
+  }
+
+  private announceWrite(): void {
+    this.writeListeners.forEach((fn) => fn());
+  }
   private static instance: FSManager;
 
   static getInstance(): FSManager {
@@ -61,6 +108,101 @@ export class FSManager {
       FSManager.instance = new FSManager();
     }
     return FSManager.instance;
+  }
+
+  // ---- file watches: fs/watch → file_changed_msg ---------------------------
+
+  private fileWatches = new Map<string, FileWatch>();
+  private fileWatchWired = false;
+  /** Bumped on every (re)connect: a watch sent before it was for the old socket. */
+  private fileWatchEpoch = 0;
+
+  /**
+   * Call `onChange` whenever the file changes on disk; returns the unwatch.
+   *
+   * The file counterpart of an entity watch: one server watch per (entity, path)
+   * however many listeners share it, dropped with the last one, and registered
+   * again on every reconnect (the server forgets a dropped socket's watches).
+   * Nothing is refetched here — the listener decides what a change means.
+   */
+  watchFile(typeid: TypeId, path: string, onChange: () => void): () => void {
+    this.wireFileWatch();
+    const clean = path.replace(/^\/+/, '');
+    const key = `${typeid.toString()}|${clean}`;
+    let watch = this.fileWatches.get(key);
+    if (!watch) {
+      watch = { typeid, path: clean, listeners: new Set(), registered: false, syncing: false };
+      this.fileWatches.set(key, watch);
+    }
+    watch.listeners.add(onChange);
+    void this.syncFileWatch(key);
+    return () => {
+      watch.listeners.delete(onChange);
+      void this.syncFileWatch(key);
+    };
+  }
+
+  /**
+   * Bring the server's watch in line with whether anyone listens — one request
+   * at a time per file. Sent concurrently, an unmount's `unwatch` and the
+   * remount's `watch` can reach the server in either order and leave it
+   * unwatched while every listener waits (seen live on a remounting view).
+   */
+  private async syncFileWatch(key: string): Promise<void> {
+    const watch = this.fileWatches.get(key);
+    if (!watch || watch.syncing) return;
+    watch.syncing = true;
+    try {
+      for (;;) {
+        const wanted = watch.listeners.size > 0;
+        if (wanted === watch.registered) break;
+        const epoch = this.fileWatchEpoch;
+        if (!(await this.postFileWatch(watch, wanted ? 'watch' : 'unwatch'))) break;
+        // Reconnected while it was in flight: it named the old socket, so it
+        // does not count — the loop sends it again for the new one.
+        watch.registered = epoch === this.fileWatchEpoch ? wanted : false;
+      }
+    } finally {
+      watch.syncing = false;
+      if (watch.listeners.size === 0 && !watch.registered) this.fileWatches.delete(key);
+    }
+  }
+
+  /** True when the server took it. Not connected → false; `on_open` re-syncs. */
+  private async postFileWatch(watch: FileWatch, action: 'watch' | 'unwatch'): Promise<boolean> {
+    const cm = ConnectionManager.getInstance();
+    if (!cm.connected) return false;
+    const info = this.createFSAction(watch.typeid, action, watch.path, 'POST');
+    info.bodyParameters = { connection_id: cm.id };
+    try {
+      await dataManager.callAction(info);
+      return true;
+    } catch {
+      // Best effort: a failed watch only means no live refresh until the next
+      // reconnect; a failed unwatch is cleared server-side when the socket goes.
+      return false;
+    }
+  }
+
+  private wireFileWatch(): void {
+    if (this.fileWatchWired) return;
+    this.fileWatchWired = true;
+    const cm = ConnectionManager.getInstance();
+    // Matched on the path: the server may name the entity by id where the
+    // client used a uname (`compute_node-@local`).
+    cm.on('on_file_changed', (message: { path?: string }) => {
+      for (const watch of this.fileWatches.values()) {
+        if (watch.path === message.path) watch.listeners.forEach((listener) => listener());
+      }
+    });
+    // A new socket has no watches server-side: register every file again.
+    cm.on('on_open', () => {
+      this.fileWatchEpoch += 1;
+      for (const [key, watch] of this.fileWatches) {
+        watch.registered = false;
+        void this.syncFileWatch(key);
+      }
+    });
   }
 
   /**
@@ -104,7 +246,7 @@ export class FSManager {
       rawItems = [];
     }
 
-    const fsItems = rawItems.map((item) => new FSItem(item as any));
+    const fsItems = rawItems.map((item) => new FSEntry(item as any));
     const totalSize = fsItems.reduce((sum, item) => sum + (item.size || 0), 0);
 
     return {
@@ -134,7 +276,7 @@ export class FSManager {
 
       // Check if file exists in parent directory
       const parentBrowse = await this.listDirectory(typeid, parentPath);
-      // FSItem.name returns full relative path, extract just the name for comparison
+      // FSEntry.name returns full relative path, extract just the name for comparison
       return parentBrowse.items.some((item) => {
         const itemName = item.name.split('/').pop() || item.name;
         return itemName === filename;
@@ -145,6 +287,34 @@ export class FSManager {
   }
 
   /**
+   * Read a file that may not exist — ONE request, and never a 404.
+   *
+   * Returns the content, or `null` when the file is not there. Use this instead of
+   * `exists()` + `download()`: that pair costs two round trips on the common
+   * (present) path, and `download()`-and-catch costs a browser-level
+   * `Failed to load resource: 404` on the absent one, which no client-side handling
+   * can suppress. Absence is a valid answer here, not an error.
+   */
+  async readIfExists(typeid: TypeId, path: string): Promise<string | null> {
+    const res = await dataManager.callAction<void, { exists?: boolean; content?: string | null }>(
+      this.createFSAction(typeid, 'read_optional', path, 'GET'),
+    );
+    return res?.exists ? (res.content ?? '') : null;
+  }
+
+  /**
+   * Extract a local `.zip` to look inside it; returns the extracted folder's
+   * machine path. The folder is a disposable temp copy (re-extracted after the
+   * OS wipes temp) — nothing is written beside the zip.
+   */
+  async extractPreview(typeid: TypeId, path: string): Promise<string> {
+    const res = await dataManager.callAction<void, { path: string }>(
+      this.createFSAction(typeid, 'extract_preview', path, 'POST'),
+    );
+    return res.path;
+  }
+
+  /**
    * Get download URL for a file
    * @param typeid - Entity TypeId
    * @param path - File path
@@ -152,6 +322,22 @@ export class FSManager {
    */
   getDownloadUrl(typeid: TypeId, path: string): string {
     return this.createFSAction(typeid, 'download', path, 'GET').fullActionUrl;
+  }
+
+  /**
+   * URL that RENDERS a file in the browser, rather than downloading it.
+   *
+   * The distinction is `Content-Disposition`, and the reason to care is that
+   * this url's tail is the file's own path. A page loaded from it resolves its
+   * relative links and assets against its own folder — which is what a page
+   * pasted into an iframe as `srcDoc` cannot do, having no url at all.
+   *
+   * @param typeid - Entity TypeId
+   * @param path - File path
+   * @returns URL the browser can render the file from
+   */
+  getServeUrl(typeid: TypeId, path: string): string {
+    return this.createFSAction(typeid, 'serve', path, 'GET').fullActionUrl;
   }
 
   /**
@@ -242,15 +428,15 @@ export class FSManager {
       const actionInfo = this.createFSAction(typeid, 'upload', destinationPath, 'POST');
       actionInfo.bodyParameters = formData;
 
-      const uploadedItems = await dataManager.callAction<FormData, FSItem[]>(actionInfo);
-      const fsItems = uploadedItems.map((item) => new FSItem(item));
+      const uploadedItems = await dataManager.callAction<FormData, FSEntry[]>(actionInfo);
+      const fsItems = uploadedItems.map((item) => new FSEntry(item));
       return this.createFileUploads(fsItems, options);
     } catch (error: any) {
       if (!this.shouldFallbackToWriteUpload(error)) {
         throw error;
       }
 
-      const uploadedViaWrite: FSItem[] = [];
+      const uploadedViaWrite: FSEntry[] = [];
       for (const file of files) {
         // Only fall back to text write for text files — binary files (images, etc.)
         // cannot be round-tripped through a UTF-8 text encoder without corruption.
@@ -274,31 +460,16 @@ export class FSManager {
     }
   }
 
-  private createFileUploads(fsItems: FSItem[], options?: UploadOptions): FileUpload[] {
-    return fsItems.map((fsItem) => {
-      const fileUpload = new FileUpload(fsItem);
-
-      // For sync uploads (common in tests/small files), mark immediately complete.
-      const initialProgress = fsItem.upload_progress;
-      if (initialProgress === undefined || initialProgress === 0 || initialProgress >= 100) {
-        fileUpload._updateProgress(100);
-        options?.onProgress?.(100, fsItem.name);
-        return fileUpload;
-      }
-
-      // Keep streaming progress behavior for async upload implementations.
-      const unsubscribe = this.watchUploadProgress(fsItem.typeId, (progress) => {
-        fileUpload._updateProgress(progress);
-        options?.onProgress?.(progress, fsItem.name);
-      });
-
-      fileUpload._setUnsubscribe(unsubscribe);
-      setTimeout(() => {
-        if (!fileUpload.completed) {
-          fileUpload._setError(new Error(`Upload timeout for ${fsItem.name}`));
-        }
-      }, 60000);
-
+  private createFileUploads(fsEntries: FSEntry[], options?: UploadOptions): FileUpload[] {
+    // The upload POST blocks until the bytes are stored, so a returned entry is
+    // already durable. FSEntry is a value with no graph row to subscribe to, and
+    // no UI renders a live percentage, so progress is a single 100% on
+    // completion. (Live streaming progress, if ever needed, belongs on a
+    // File-entity channel — see the FSItem removal notes.)
+    return fsEntries.map((fsEntry) => {
+      const fileUpload = new FileUpload(fsEntry);
+      fileUpload._updateProgress(100);
+      options?.onProgress?.(100, fsEntry.name);
       return fileUpload;
     });
   }
@@ -399,10 +570,10 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param path - Current path of the file/directory
    * @param newName - New name for the file/directory (just the name, not full path)
-   * @returns FSItem of the renamed file
+   * @returns FSEntry of the renamed file
    * @throws Error if the rename fails
    */
-  async rename(typeid: TypeId, path: string, newName: string): Promise<FSItem> {
+  async rename(typeid: TypeId, path: string, newName: string): Promise<FSEntry> {
     // Validate newName doesn't contain path separators
     if (newName.includes('/')) {
       throw new Error('New name cannot contain path separators. Use move() for moving to different directories.');
@@ -410,8 +581,8 @@ export class FSManager {
 
     const actionInfo = this.createFSAction(typeid, 'rename', path, 'POST');
     actionInfo.queryParameters = { new_name: newName };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -419,10 +590,10 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param sourcePath - Path to the source file/directory
    * @param destPath - Destination path (including filename)
-   * @returns FSItem of the copied file
+   * @returns FSEntry of the copied file
    * @throws Error if the copy fails
    */
-  async copy(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSItem> {
+  async copy(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSEntry> {
     // Validate destination path includes a filename
     if (destPath.endsWith('/')) {
       throw new Error('Destination path must include a filename');
@@ -430,8 +601,8 @@ export class FSManager {
 
     const actionInfo = this.createFSAction(typeid, 'copy', sourcePath, 'POST');
     actionInfo.queryParameters = { dest_path: destPath };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -439,27 +610,27 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param sourcePath - Path to the source file/directory
    * @param destPath - Destination path (including filename)
-   * @returns FSItem of the moved file
+   * @returns FSEntry of the moved file
    * @throws Error if the move fails
    */
-  async move(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSItem> {
+  async move(typeid: TypeId, sourcePath: string, destPath: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'move', sourcePath, 'POST');
     actionInfo.queryParameters = { dest_path: destPath };
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
    * Create a new folder
    * @param typeid - Entity TypeId
    * @param path - Path for the new folder
-   * @returns FSItem of the created folder
+   * @returns FSEntry of the created folder
    * @throws Error if the folder creation fails or folder already exists
    */
-  async mkdir(typeid: TypeId, path: string): Promise<FSItem> {
+  async mkdir(typeid: TypeId, path: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'mkdir', path, 'POST');
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -467,14 +638,15 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param path - File path to write to
    * @param content - String content to write
-   * @returns FSItem of the created/updated file
+   * @returns FSEntry of the created/updated file
    * @throws Error if the write fails
    */
-  async writeFile(typeid: TypeId, path: string, content: string): Promise<FSItem> {
+  async writeFile(typeid: TypeId, path: string, content: string): Promise<FSEntry> {
     const actionInfo = this.createFSAction(typeid, 'write', path, 'POST');
     actionInfo.bodyParameters = { content };
-    const item = await dataManager.callAction<{ content: string }, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<{ content: string }, FSEntry>(actionInfo);
+    this.announceWrite();
+    return new FSEntry(item);
   }
 
   /**
@@ -491,26 +663,12 @@ export class FSManager {
   }
 
   /**
-   * Watch upload progress for a file
-   * @param fsItemTypeid - TypeId of the FSItem being uploaded
-   * @param callback - Callback invoked with progress percentage (0-100)
-   * @returns Unsubscribe function
-   */
-  watchUploadProgress(fsItemTypeid: TypeId, callback: (progress: number) => void): () => void {
-    return dataManager.subscribe<FSItem>(fsItemTypeid, (fsItem) => {
-      if (fsItem && fsItem.upload_progress !== undefined) {
-        callback(fsItem.upload_progress);
-      }
-    });
-  }
-
-  /**
    * Get file info (metadata) without downloading content
    * @param typeid - Entity TypeId
    * @param path - File path
-   * @returns FSItem or null if not found
+   * @returns FSEntry or null if not found
    */
-  async getInfo(typeid: TypeId, path: string): Promise<FSItem | null> {
+  async getInfo(typeid: TypeId, path: string): Promise<FSEntry | null> {
     try {
       const browseResult = await this.listDirectory(typeid, path);
 
@@ -540,14 +698,14 @@ export class FSManager {
    * @param symlinkPath - Path where symlink will be created
    * @param targetPath - Path to target (VFS path or absolute)
    * @param relative - Create relative symlink (default: true)
-   * @returns FSItem of created symlink
+   * @returns FSEntry of created symlink
    */
   async createSymlink(
     typeid: TypeId,
     symlinkPath: string,
     targetPath: string,
     relative: boolean = true,
-  ): Promise<FSItem> {
+  ): Promise<FSEntry> {
     if (symlinkPath.endsWith('/')) {
       throw new Error('Symlink path must include a filename');
     }
@@ -558,8 +716,8 @@ export class FSManager {
       relative: relative.toString(),
     };
 
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 
   /**
@@ -579,9 +737,9 @@ export class FSManager {
    * @param typeid - Entity TypeId
    * @param externalPath - Absolute path to the external folder/file to import
    * @param linkName - Optional name for the symlink (defaults to basename of external path)
-   * @returns FSItem of the created symlink
+   * @returns FSEntry of the created symlink
    */
-  async importItem(typeid: TypeId, externalPath: string, linkName?: string): Promise<FSItem> {
+  async importItem(typeid: TypeId, externalPath: string, linkName?: string): Promise<FSEntry> {
     // Use empty path since symlink will be created at root
     const actionInfo = this.createFSAction(typeid, 'import_item', '', 'POST');
     actionInfo.queryParameters = {
@@ -589,8 +747,8 @@ export class FSManager {
       ...(linkName && { link_name: linkName }),
     };
 
-    const item = await dataManager.callAction<undefined, FSItem>(actionInfo);
-    return new FSItem(item);
+    const item = await dataManager.callAction<undefined, FSEntry>(actionInfo);
+    return new FSEntry(item);
   }
 }
 

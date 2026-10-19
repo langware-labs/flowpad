@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '../lazy';
 import apiClient from '../client';
 import { ScanInfo } from '../models';
 import { dataManager } from '../APIEntity';
@@ -9,10 +10,16 @@ import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
-import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
+import { projectScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
 import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
+
+/** HTTP status of a thrown apiClient (axios) error, if it carries one. */
+function httpStatusOf(err: unknown): number | undefined {
+  const e = err as { response?: { status?: number }; status?: number } | null;
+  return e?.response?.status ?? e?.status;
+}
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
 export interface IndexTypeResult {
@@ -25,14 +32,26 @@ export interface IndexTypeOptions {
   orphanAction?: 'index' | 'ignore' | 'delete';
 }
 
-/** Returned by `systemTools.discoverByPath()`. */
-export interface DiscoverByPathResult {
+/**
+ * Returned by `systemTools.resolveByPath()` — the backend's classification of
+ * one on-disk path (`GET /api/v1/assets/resolve?path=…`). The CLIENT sends a
+ * path and gets the record type back; it never derives the type from the path.
+ */
+export interface ResolvedAsset {
+  /** Record type the path classifies to (`'skill'`, `'markdown'`, …). */
   type: string;
+  /** Entity id (minted or recovered by the backend). */
   id: string;
-  asset_ref: string;
-  name?: string;
-  /** Other fields per the record's `meta_dict()` shape — caller should typecast as needed. */
-  [key: string]: unknown;
+  /** The asset root — the folder for a folder-shaped type, the file otherwise. */
+  root: string;
+  /** The main body file when the shape has one (`<root>/SKILL.md`), else null. */
+  body: string | null;
+  /** The editor that opens this type, as the registry declares it. */
+  editor: string | null;
+  /** The entity row when the backend hydrated it; null when only classified. */
+  entity: Record<string, unknown> | null;
+  /** Classified document remains readable when its Entity projection cannot parse. */
+  entity_error?: string | null;
 }
 
 export interface DatabasePaths {
@@ -92,12 +111,16 @@ export interface ScanTypeStats {
   total_bytes: number;
   avg_bytes: number;
   scan_ms: number;
+  /** The walk's own share of `scan_ms` (the rest is scope resolution + projection). */
+  walk_ms?: number;
 }
 
 export interface LastScanResult {
   types: ScanTypeStats[];
   grand_total: number;
   scan_ms: number;
+  /** The walk's own share of `scan_ms` (the rest is scope resolution + projection). */
+  walk_ms?: number;
 }
 
 /** One row of the per-type progress table. */
@@ -171,7 +194,7 @@ export class SystemToolsService extends EventEmitter {
     this.base = `/graph/${userTypeId.type}/${userTypeId.id}/${ACTION}`;
     // Restore any in-flight scan/index state across page loads (fire-and-forget).
     // Lets the footer indexing indicator and progress modal reappear after refresh.
-    void this.refreshActivityStatus().catch(() => {/* ignore — offline/boot race */});
+    // Initial hydration belongs to asyncSdkInit after primary content is ready.
     // Keep scanInfo in sync with dataManager
     dataManager.onScanInfoChange((info) => {
       this.scanInfo = info;
@@ -238,11 +261,15 @@ export class SystemToolsService extends EventEmitter {
         return;
       }
       // No events for a while; ask the backend whether the job is really done.
-      void this.refreshActivityStatus().catch(() => {/* keep going */}).then(() => {
-        // If the backend said "still running", refreshActivityStatus() will
-        // have re-seeded state (which counts as a synthetic progress arrival).
-        if (this.currentActivity != null) this._armIdleWatchdog();
-      });
+      void this.refreshActivityStatus()
+        .catch(() => {
+          /* keep going */
+        })
+        .then(() => {
+          // If the backend said "still running", refreshActivityStatus() will
+          // have re-seeded state (which counts as a synthetic progress arrival).
+          if (this.currentActivity != null) this._armIdleWatchdog();
+        });
     };
     this._idleWatchdog = setTimeout(tick, SystemToolsService._IDLE_TIMEOUT_MS);
   }
@@ -365,37 +392,31 @@ export class SystemToolsService extends EventEmitter {
    * mid-job. Backend returns the latest IndexProgressTable plus
    * ``started_at``, or null when idle.
    */
-  async refreshActivityStatus(): Promise<SystemActivity | null> {
-    // Wait until the hub-mode signal is known before deciding — this can fire
-    // from the constructor at boot, before bootstrap seeds `supported_pages`.
-    await hubModeReady();
-    // Hub mode: the hub backend has no local fs-records `/activity-status`
-    // (404). There's no local indexer here, so activity is always idle.
-    if (isHubOnly()) {
-      if (this.currentActivity !== null) this._setActivity(null);
-      return null;
-    }
+  async refreshActivityStatus(refresh = true): Promise<SystemActivity | null> {
     try {
-      const data = await apiClient.get<
-        (IndexProgressTable & { started_at: string }) | null
-      >(`${FS_RECORDS_BASE}/activity-status`);
-
-      if (!data) {
-        if (this.currentActivity !== null) this._setActivity(null);
-        return null;
-      }
-
-      // Set progressTable directly, then route the phase through _setActivity
-      // so the idle-watchdog arms. Without that arming, if the backend has
-      // advanced past data.job_name by the time we get here, the drop-late-
-      // events guard would silently swallow every incoming event with no
-      // self-heal — the indicator would stay stuck on a stale snapshot.
-      this.progressTable = data;
-      this._setActivity(data.job_name);
-      return data.job_name;
+      await (refresh ? lazyAssets.refresh(LazyAsset.IndexActivity) : lazyAssets.load(LazyAsset.IndexActivity));
+      return this.currentActivity;
     } catch {
       return null;
     }
+  }
+
+  /** Registry snapshot loader; a WS update received during HTTP hydration wins. */
+  async fetchActivityStatus(isCurrent: () => boolean): Promise<(IndexProgressTable & { started_at: string }) | null> {
+    await hubModeReady();
+    if (isHubOnly()) return null;
+    const previous = this.progressTable;
+    const data = await apiClient.get<(IndexProgressTable & { started_at: string }) | null>(
+      `${FS_RECORDS_BASE}/activity-status`,
+    );
+    if (!isCurrent()) throw new Error('SDK scope changed');
+    if (this.progressTable === previous) {
+      if (data) {
+        this.progressTable = data;
+        this._setActivity(data.job_name);
+      } else if (this.currentActivity !== null) this._setActivity(null);
+    }
+    return data;
   }
 
   // ---- scan index (fs-records) ---------------------------------------------
@@ -406,11 +427,7 @@ export class SystemToolsService extends EventEmitter {
    *  when present it's forwarded as `?user=…&projects=…` so the indexer
    *  narrows its walk to the matching roots. Omit to run a full scan.
    */
-  async indexType(
-    typeName: string,
-    scope?: ScopeFilter,
-    options?: IndexTypeOptions,
-  ): Promise<IndexTypeResult> {
+  async indexType(typeName: string, scope?: ScopeFilter, options?: IndexTypeOptions): Promise<IndexTypeResult> {
     const qs = new URLSearchParams({ type: typeName });
     if (scope) {
       qs.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
@@ -418,34 +435,32 @@ export class SystemToolsService extends EventEmitter {
     }
     if (options?.force) qs.set('force', 'true');
     if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);
-    const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
-    );
+    const res = await apiClient.post<IndexTypeResult>(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
   }
 
   /**
-   * Discover-or-recover a single record by absolute path.
+   * Classify one absolute machine path: `GET /api/v1/assets/resolve?path=…`.
    *
-   * POSTs to `/fs-records/{type}/discover?path=...`. The backend scans
-   * just this one file (not the whole type), syncs it to the entity DB
-   * if missing, and returns the entity metadata.
+   * The backend walks the path up to its asset root, names the record type,
+   * mints/recovers the id, and returns the row when it has one. This is the
+   * ONLY path→type seam the client uses: `useEntityByPath` keys the entity by
+   * the RETURNED type/id, and `AssetEditorRouter`'s vfs branch takes its record
+   * type from here instead of the editor segment.
    *
-   * Used by `useEntityByPath` to recover when the bulk list query misses
-   * (file just created, or backend hasn't auto-scanned yet).
-   *
-   * Throws if the path doesn't exist on disk or doesn't match the type's
-   * discovery rules — caller should treat that as a terminal "not found"
-   * state, not a transient error.
+   * Resolves to null when the backend answers 404 (the path is not an asset —
+   * a `.py`, a folder with no shape, a path outside every scope). Any other
+   * failure throws so the caller can treat it as transient.
    */
-  async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
-    const url =
-      `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
-      `/discover?path=${encodeURIComponent(path)}`;
-    const res = await apiClient.post<DiscoverByPathResult>(url);
-    void dataManager.refreshScanInfo();
-    return res as unknown as DiscoverByPathResult;
+  async resolveByPath(path: string): Promise<ResolvedAsset | null> {
+    try {
+      const res = await apiClient.get<ResolvedAsset>('/api/v1/assets/resolve', { params: { path } });
+      return res ?? null;
+    } catch (err: unknown) {
+      if (httpStatusOf(err) === 404) return null;
+      throw err;
+    }
   }
 
   /** Sequentially index the supplied types. Each per-type call drives its own backend progressTable snapshots. */
@@ -524,9 +539,7 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
 
       this._setActivity('scan');
-      const scanData = await apiClient.get(
-        `${FS_RECORDS_BASE}/scan?trigger=manual`,
-      );
+      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
@@ -576,6 +589,28 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Has this project ever been indexed? One cheap scoped `index-status` read.
+   *
+   * Lives here rather than at the caller so the endpoint path, the scope
+   * encoding, and — importantly — the hub-mode guard stay in one place: the
+   * hub backend has no fs-records endpoints and 404s this, which a caller
+   * rolling its own fetch would misread as "not indexed" and answer with a
+   * pointless full scan on every call.
+   *
+   * Unreadable status resolves to `true` (assume not indexed): of the two ways
+   * to be wrong, indexing unnecessarily is the recoverable one.
+   */
+  async projectNeverIndexed(projectId: string): Promise<boolean> {
+    if (isHubOnly()) return false;
+    try {
+      const res = await lazyAssets.refresh(LazyAsset.IndexStatus, { scope: projectScope(projectId) });
+      return res?.never_indexed !== false;
+    } catch {
+      return true;
     }
   }
 
@@ -642,7 +677,11 @@ export class SystemToolsService extends EventEmitter {
    */
   async resolveProjectContext(
     workdir: string | undefined,
-    entity?: { project_id?: string | null; parent_type_id?: string | null; save?: () => Promise<void> },
+    // `save` is `Promise<unknown>`, not `Promise<void>`: the real callers pass an
+    // entity whose `APIEntity.save()` resolves to the entity, and a `Promise<T>`
+    // is not assignable to a `Promise<void>` (the void-return special case does
+    // not apply through a Promise). Nothing here reads the result.
+    entity?: { project_id?: string | null; parent_type_id?: string | null; save?: () => Promise<unknown> },
   ): Promise<void> {
     const match = workdir ? await Project.getProjectByPath(workdir) : null;
     if (!match) {
@@ -691,10 +730,7 @@ export class SystemToolsService extends EventEmitter {
     const rows = await FlowpadDiagnosis.query<FlowpadDiagnosis>(
       new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
     );
-    return rows.sort(
-      (a, b) =>
-        new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
-    );
+    return rows.sort((a, b) => new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime());
   }
 
   /** Delete a diagnosis by id. */

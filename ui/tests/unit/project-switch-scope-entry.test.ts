@@ -23,11 +23,11 @@
  *   B. loadDockPointer: a project-pinned scope on a browse dock loads that
  *      project into context (delegation to `loadProject`).
  */
-import { Tab, TypeId, type TabRow } from '@sdk';
-import { projectScope } from '@src/lib/scope-filter';
+import { ContextEntitiesEnum, dataContext, Tab, tabManager, TypeId, type Project, type TabRow } from '@sdk';
+import { allScope, projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { NavigationActions } from '@src/navigation/NavigationActions';
+import { dockForGlobalEntry, dockForProjectEntry, lastKnownTab, leaveProjectScope } from '@src/tabs/project-entry';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,11 +37,15 @@ vi.mock('@src/routes/loaders/load-project', () => ({
   loadProjectRoute: vi.fn(() => Promise.resolve(undefined)),
 }));
 
-import { loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
+import { adoptScopeProject, loadDockPointer } from '@src/routes/loaders/load-dock-pointer';
+
+vi.mock('@src/routes/loaders/load-asset', () => ({ loadAssetRoute: vi.fn().mockResolvedValue(undefined) }));
 
 const PROJECT_P = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const MARKDOWN_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const PROC_ID = '22222222-2222-4222-8222-222222222222';
+/** The project the user is leaving. */
+const OTHER_PROJECT = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 function row(overrides: Partial<TabRow>): TabRow {
   return {
@@ -89,10 +93,25 @@ function unstampedTabs(): Tab[] {
   ];
 }
 
+/** A process tab in PROJECT_P that WAS activated — the one project entry resumes. */
+function stampedProcTab(): Tab {
+  return new Tab(
+    row({
+      id: '90000000-0000-4000-8000-000000000003',
+      pointer: DockPointer.forShell(`agentic_process-${PROC_ID}`).toJSON() ?? '',
+      target_type: 'agentic_process',
+      target_id: PROC_ID,
+      project_id: PROJECT_P,
+      tab_order: 20,
+      last_active_at: 1784000000000,
+    }),
+  );
+}
+
 describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    applyAllTabs([]);
+    tabManager.resetForTests();
   });
 
   it('falls back to the project landing (not the lowest-order browse tab) when no tab is stamped', async () => {
@@ -116,22 +135,83 @@ describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
     expect(dock.scopeFilter).toEqual(projectScope(PROJECT_P));
   });
 
+  it('the Global fallback carries its scope explicitly, Home included', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+
+    const dock = await dockForGlobalEntry();
+
+    // A BARE home dock is the one shape `adoptScopeProject` reads as "restore
+    // the remembered project" — leaving a project onto one would pull the user
+    // straight back into it (the stale-chip half of the close-all bug).
+    expect(dock.scopeFilter).toEqual(allScope());
+  });
+
+  it('leaveProjectScope drops the project from context, before it hands back a dock', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([]);
+    const order: string[] = [];
+    const cleared = vi.spyOn(dataContext, 'setContextEntityTypeId').mockImplementation((key) => {
+      order.push(String(key));
+      return Promise.resolve();
+    });
+
+    const dock = await leaveProjectScope();
+
+    // No loader owns this write — `adoptScopeProject` never touches the project
+    // on a globally-scoped dock, and it cannot start (the same URL shape is what
+    // a browse surface's "All" chip produces). So the caller gets the dock only
+    // after the context is already clear, and nothing races the write.
+    expect(order).toEqual([String(ContextEntitiesEnum.CurrentProjectTypeId)]);
+    expect(cleared.mock.calls[0][1]).toBeNull();
+    expect(dock.scopeFilter).toEqual(allScope());
+  });
+
   it('resumes the stamped (known last-active) tab when one exists', async () => {
-    const stamped = new Tab(
-      row({
-        id: '90000000-0000-4000-8000-000000000003',
-        pointer: DockPointer.forShell(`agentic_process-${PROC_ID}`).toJSON() ?? '',
-        target_type: 'agentic_process',
-        target_id: PROC_ID,
-        tab_order: 20,
-        last_active_at: 1784000000000,
-      }),
-    );
+    const stamped = stampedProcTab();
     vi.spyOn(Tab, 'listAll').mockResolvedValue([...unstampedTabs(), stamped]);
 
     const dock = await dockForProjectEntry(PROJECT_P);
 
     expect(dock.viewType).toBe(ViewType.SHELL);
+    expect(dock.pointer).toContain(PROC_ID);
+  });
+
+  it('a resumed tab comes back as a real DockPointer, so withOption chains on it', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([stampedProcTab()]);
+
+    const dock = await dockForProjectEntry(PROJECT_P);
+
+    expect(dock).toBeInstanceOf(DockPointer);
+    expect(dock.withOption('homePage', 'open').options?.homePage).toBe('open');
+  });
+
+  it('openDock seeds a session with ITS project scope, not the one being left', () => {
+    // The stored shell tab carries no scope. Seeded from the current project, the
+    // URL named the project being LEFT, the loader's scope reconcile redirected,
+    // and the whole loader ran a second time on every project switch.
+    tabManager.adoptGlobal([stampedProcTab()]);
+    window.history.pushState({}, '', '/');
+    vi.spyOn(dataContext, 'getContextEntity').mockImplementation((key) =>
+      key === ContextEntitiesEnum.CurrentProjectTypeId ? ({ id: OTHER_PROJECT } as Project) : null,
+    );
+    const navigate = vi.fn();
+    const navigation = new NavigationActions(navigate, null);
+
+    navigation.openDock(DockPointer.forShell(`agentic_process-${PROC_ID}`));
+
+    const url = String(navigate.mock.calls.at(-1)?.[0] ?? '');
+    expect(url).toContain(PROJECT_P);
+    expect(url).not.toContain(OTHER_PROJECT);
+    NavigationActions.resetPendingNavigationForTests();
+  });
+
+  it('resolves from the loaded tab list without a round trip', async () => {
+    const stamped = stampedProcTab();
+    tabManager.adoptGlobal([...unstampedTabs(), stamped]);
+    const listAll = vi.spyOn(Tab, 'listAll');
+
+    const dock = await dockForProjectEntry(PROJECT_P);
+
+    expect(listAll).not.toHaveBeenCalled();
     expect(dock.pointer).toContain(PROC_ID);
   });
 });
@@ -171,26 +251,88 @@ describe('loadDockPointer — a project-pinned browse dock adopts its scope proj
   });
 });
 
-describe('loadDockPointer — a project-pinned HOME dock adopts its scope project (C)', () => {
+describe('the home dock canonicalizes, and the root loader adopts (C)', () => {
+  // The stay-home switch landing — `?scope-mode=project&scope-activeProjectId=…`
+  // on the home — still writes project context URL-first, incl. on hard refresh.
+  // What changed is WHERE: the root is one location with one address (`/`), so
+  // `/dock/home` redirects there and `loadHomePage` is the home's single writer.
+  // Both halves are pinned, or the redirect could quietly drop the adoption.
   beforeEach(() => {
     loadProjectMock.mockClear();
   });
 
-  it('home dock with a project scope loads that project into context (stay-home switch)', async () => {
-    // The "open project on home stays home" landing: /dock/home?scope-mode=
-    // project&scope-activeProjectId=… — the HOME loader is the single writer
-    // of project context (URL-first), incl. on hard refresh.
+  it('a home dock redirects to the root, carrying its scope', async () => {
     const dock = DockPointer.forHome().withScopeFilter(projectScope(PROJECT_P));
 
-    await loadDockPointer(dock, { requestPath: '/dock/home' });
+    const redirected = await loadDockPointer(dock, { requestPath: '/dock/home' }).then(
+      () => null,
+      (thrown: Response) => thrown,
+    );
+
+    expect(redirected?.status).toBe(302);
+    const location = redirected?.headers.get('location') ?? '';
+    expect(location.startsWith('/?')).toBe(true);
+    expect(location).toContain(PROJECT_P);
+  });
+
+  it('adoptScopeProject loads the scoped project — the root loader’s half', async () => {
+    await adoptScopeProject(DockPointer.forHome().withScopeFilter(projectScope(PROJECT_P)));
 
     expect(loadProjectMock).toHaveBeenCalledTimes(1);
     expect((loadProjectMock.mock.calls[0][0] as TypeId).id).toBe(PROJECT_P);
   });
 
   it('a scope-less home dock adopts nothing', async () => {
-    await loadDockPointer(DockPointer.forHome(), { requestPath: '/dock/home' });
+    await adoptScopeProject(DockPointer.forHome());
 
     expect(loadProjectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('route-owned startup fallback', () => {
+  beforeEach(async () => {
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('restores browser/default context for an unscoped home', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await adoptScopeProject(DockPointer.root());
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not restore browser memory over an explicit global scope', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await adoptScopeProject(DockPointer.root().withScopeFilter(allScope()));
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('lets a concrete asset resolve its owner without fetching remembered context', async () => {
+    expect(dataContext.project).toBeNull();
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await loadDockPointer(new DockPointer(ViewType.ASSETS, `markdown/typeid/markdown-${MARKDOWN_ID}`), {
+      requestPath: '/dock/assets',
+    });
+    expect(restore).not.toHaveBeenCalled();
+  });
+
+  it('loads an explicit project URL without consulting remembered/default context', async () => {
+    const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
+    await loadDockPointer(DockPointer.forProject(PROJECT_P), { requestPath: '/dock/project' });
+    expect(restore).not.toHaveBeenCalled();
+  });
+});
+
+describe('lastKnownTab — what the bar\'s "Back to tabs" returns to', () => {
+  it('is the same rule as project entry: unstamped tabs are unknown, never a strip-order guess', () => {
+    expect(lastKnownTab(unstampedTabs(), PROJECT_P)).toBeNull();
+  });
+
+  it('picks the stamped tab of THIS project, and nothing from another', () => {
+    const proc = stampedProcTab();
+    expect(lastKnownTab([...unstampedTabs(), proc], PROJECT_P)).toBe(proc);
+    expect(lastKnownTab([...unstampedTabs(), proc], OTHER_PROJECT)).toBeNull();
   });
 });

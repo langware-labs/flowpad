@@ -1,6 +1,6 @@
 /**
  * System profile types for Claude Code environment information.
- * These types mirror the Python Pydantic models in flowpad/hub/types/system_profile.py
+ * These types mirror the Python Pydantic models in hub system_profile.py
  */
 
 import { ActionInfo } from '../../models/ActionInfo';
@@ -63,6 +63,14 @@ export interface SystemProfileItem extends IResource {
   /** Links to Entity.id if resource is promoted to entity */
   entity_id?: string | null;
 }
+
+/**
+ * What the profile's lists actually hold. Every list but `sessions` is
+ * `SystemProfileItem`-shaped; `sessions` carries claude-session records, which
+ * have no `scope` and nullable timestamps — so anything that walks all lists
+ * (see `SystemProfileUtils.getAllItems`) yields this union, not the item type.
+ */
+export type SystemProfileEntry = SystemProfileItem | ClaudeSessionRecordData;
 
 // ═══════════════════════════════════════════════════════════════
 // DERIVED INTERFACES - All extend SystemProfileItem
@@ -223,7 +231,7 @@ export interface TodoFileItem extends SystemProfileItem {
   type: ItemType.TODO_FILE | string;
   /** Session ID this todo file belongs to */
   session_id: string;
-  /** Agent ID (same as session_id for main agent, different for sub-agents) */
+  /** SubAgent ID (same as session_id for main agent, different for sub-agents) */
   agent_id: string;
   /** Whether this is a sub-agent todo file */
   is_sub_agent: boolean;
@@ -498,8 +506,9 @@ export interface SystemProfile {
   skills: SkillItem[];
   todos: TodoFileItem[];
 
-  /** Pre-computed latest N items by modified_at */
-  recentItems: SystemProfileItem[];
+  /** Pre-computed latest N items by modified_at. `SystemProfileEntry`, not
+   *  `SystemProfileItem`: the pool it is drawn from includes `sessions`. */
+  recentItems: SystemProfileEntry[];
 
   ideConnections: number;
 
@@ -521,7 +530,7 @@ export const SystemProfileUtils = {
   /**
    * Get all items as flat array.
    */
-  getAllItems(profile: SystemProfile): SystemProfileItem[] {
+  getAllItems(profile: SystemProfile): SystemProfileEntry[] {
     return [
       ...profile.directories,
       ...profile.plugins,
@@ -543,7 +552,7 @@ export const SystemProfileUtils = {
   /**
    * Get latest N items sorted by modified_at.
    */
-  getLatestItems(profile: SystemProfile, n: number = 10): SystemProfileItem[] {
+  getLatestItems(profile: SystemProfile, n: number = 10): SystemProfileEntry[] {
     const items = this.getAllItems(profile);
     return items
       .filter((i) => i.modified_at)
@@ -554,21 +563,23 @@ export const SystemProfileUtils = {
   /**
    * Find item by id for correlation with entity.id.
    */
-  findById(profile: SystemProfile, resourceId: string): SystemProfileItem | undefined {
+  findById(profile: SystemProfile, resourceId: string): SystemProfileEntry | undefined {
     return this.getAllItems(profile).find((i) => i.id === resourceId);
   },
 
   /**
    * Get items by scope.
    */
-  getItemsByScope(profile: SystemProfile, scope: Scope | string): SystemProfileItem[] {
-    return this.getAllItems(profile).filter((i) => i.scope === scope);
+  getItemsByScope(profile: SystemProfile, scope: Scope | string): SystemProfileEntry[] {
+    // `'scope' in i` guards the one list that is not SystemProfileItem-shaped
+    // (`sessions`); an entry without the field never matched a scope anyway.
+    return this.getAllItems(profile).filter((i) => 'scope' in i && i.scope === scope);
   },
 
   /**
    * Get items by type.
    */
-  getItemsByType(profile: SystemProfile, itemType: ItemType | string): SystemProfileItem[] {
+  getItemsByType(profile: SystemProfile, itemType: ItemType | string): SystemProfileEntry[] {
     return this.getAllItems(profile).filter((i) => i.type === itemType);
   },
 
@@ -753,6 +764,33 @@ export async function openExternalFromComputeNode(
   );
 }
 
+/** One harness's (or the plain shell's) interactive launch line for a folder. */
+export interface WorkerLaunchCommand {
+  /** The vendor's `worker_type` (`claude_code`, `codex`, …), or `shell`. */
+  key: string;
+  /** The shell line, `cd`-prefixed and quoted for the node's own platform. */
+  command: string;
+}
+
+/**
+ * The commands this machine would run to start each harness — and a bare shell
+ * — interactively in `cwd`.
+ *
+ * Asked of the backend rather than composed here ON PURPOSE: the lines are
+ * rendered from the vendors' real `AgentOptions`, so they cannot drift from
+ * what the spawn path actually runs. Pair with `openTerminalFromComputeNode` to
+ * run one outside the app.
+ */
+export async function workerLaunchCommandsFromComputeNode(
+  computeNodeId: string,
+  cwd: string,
+): Promise<WorkerLaunchCommand[]> {
+  const actionInfo = new ActionInfo('worker-launch-commands', 'compute_node', computeNodeId, 'POST');
+  actionInfo.bodyParameters = { cwd };
+  const data = await dataManager.callAction<{ cwd: string }, { commands?: WorkerLaunchCommand[] } | null>(actionInfo);
+  return data?.commands ?? [];
+}
+
 /**
  * Open an OS terminal and run a command via compute node.
  * Used for resuming Claude Code sessions from the UI.
@@ -806,8 +844,12 @@ export interface ProjectListItem {
   codex?: boolean;
   copilot?: boolean;
   worker_types?: string[];
-  /** True when this project entry represents an SDK-shipped system project. */
-  system?: boolean;
+  /**
+   * True when this project is app-managed — SDK-shipped, the agent mount root,
+   * or a help-desk portal checkout. The backend's `is_hidden_project`, the same
+   * answer `Project.hidden` carries on the entity. Absent on older backends.
+   */
+  hidden?: boolean;
 }
 
 /**
@@ -821,6 +863,175 @@ export interface ListProjectsResponse {
   copilot_count?: number;
   both_count?: number;
   none_count?: number;
+  /** Cleanup candidates counted during the same scan. Absent on older backends. */
+  cleanup?: CleanupSummary;
+}
+
+/**
+ * How many projects look like leftovers, from `project_cleanup.summarize`.
+ *
+ * The `threshold` travels with the counts so the backend stays the single
+ * writer of the warn-or-not policy — the frontend has no number of its own to
+ * drift from it.
+ */
+export interface CleanupSummary {
+  empty_count: number;
+  orphaned_count: number;
+  stale_count: number;
+  threshold: number;
+}
+
+/** What the classifier concluded — mirrors `CleanupVerdict` in Python. */
+export type CleanupVerdict = 'orphaned' | 'empty' | 'stale' | 'active';
+
+/** One harness's relationship to a project. */
+export interface HarnessUse {
+  harness: string;
+  session_count: number;
+  last_session_at: string | null;
+}
+
+export interface GitInfo {
+  has_repo: boolean;
+  remote: string | null;
+  dirty: boolean | null;
+  /** Whether `remote`/`dirty` were looked up. False on the bulk report, which
+   *  fills only `has_repo` — without this a reader cannot tell "no remote" from
+   *  "not asked yet", and every repo renders as clean. */
+  resolved: boolean;
+}
+
+/** One project as the cleanup screen sees it. Mirrors `ProjectCleanupSpec`. */
+export interface ProjectCleanupItem {
+  project_id: string;
+  name: string;
+  cwd: string;
+  verdict: CleanupVerdict;
+  /** Capped at 500 — see `file_count_capped`, which says the real number is higher. */
+  file_count: number;
+  file_count_capped: boolean;
+  size_bytes: number;
+  dir_modified_at: string | null;
+  modified_at: string | null;
+  last_active_at: string | null;
+  harnesses: HarnessUse[];
+  git: GitInfo | null;
+}
+
+export interface ProjectCleanupReport {
+  projects: ProjectCleanupItem[];
+  total_count: number;
+}
+
+/** Per-project outcome. A refusal on one row says nothing about the others. */
+export interface CleanupResult {
+  project_id: string;
+  ok: boolean;
+  error?: string;
+  cwd?: string;
+  removed_paths?: string[];
+  trashed?: boolean;
+  /** Child records and bundles removed alongside the project. */
+  deleted_children?: number;
+  /** `trash` (send2trash) or `trash_fallback` (a move into ~/.Trash). */
+  mechanism?: string | null;
+  codex_config_entry_removed?: boolean;
+}
+
+export interface CleanupApplyResponse {
+  results: CleanupResult[];
+  succeeded: number;
+  failed: number;
+}
+
+/**
+ * Every project with the detail the cleanup screen shows.
+ *
+ * Costs a bounded file walk per project (~0.36s over 1,250), so it belongs to a
+ * page the user opened — never to a picker or a mount effect.
+ */
+export async function getProjectCleanupReport(
+  computeNodeId: string,
+  signal?: AbortSignal,
+): Promise<ProjectCleanupReport> {
+  const actionInfo = new ActionInfo('project-cleanup-report', 'compute_node', computeNodeId, 'GET');
+  actionInfo.abortSignal = signal ?? null;
+  return (
+    (await dataManager.callAction<undefined, ProjectCleanupReport>(actionInfo)) || {
+      projects: [],
+      total_count: 0,
+    }
+  );
+}
+
+/** Git remote + dirty for ONE project. A subprocess pair, so it is per-row. */
+export async function getProjectGitDetail(
+  computeNodeId: string,
+  cwd: string,
+): Promise<GitInfo> {
+  const actionInfo = new ActionInfo('project-git-detail', 'compute_node', computeNodeId, 'GET');
+  actionInfo.queryParameters = { cwd };
+  return (
+    (await dataManager.callAction<undefined, GitInfo>(actionInfo)) || {
+      has_repo: false,
+      remote: null,
+      dirty: null,
+      resolved: true,
+    }
+  );
+}
+
+/**
+ * Delete the named projects' harness state. Folders and rows are untouched.
+ *
+ * Refused per project when there is nothing to remove, which is the case for
+ * every empty workspace folder — a harness that never opened a session there
+ * left nothing behind.
+ */
+export async function removeProjectsFromHarness(
+  computeNodeId: string,
+  projectIds: string[],
+): Promise<CleanupApplyResponse> {
+  const actionInfo = new ActionInfo(
+    'project-remove-from-harness',
+    'compute_node',
+    computeNodeId,
+    'POST',
+  );
+  actionInfo.bodyParameters = { project_ids: projectIds };
+  return (
+    (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
+      results: [],
+      succeeded: 0,
+      failed: 0,
+    }
+  );
+}
+
+/**
+ * Harness state, then the folder to the Trash, then the row.
+ *
+ * Recoverable by design: the folder lands in the desktop Trash, so the
+ * confirmation must not claim this cannot be undone.
+ */
+export async function deleteProjectsPermanently(
+  computeNodeId: string,
+  projectIds: string[],
+): Promise<CleanupApplyResponse> {
+  const actionInfo = new ActionInfo(
+    'project-delete-permanently',
+    'compute_node',
+    computeNodeId,
+    'POST',
+  );
+  actionInfo.bodyParameters = { project_ids: projectIds };
+  return (
+    (await dataManager.callAction<unknown, CleanupApplyResponse>(actionInfo)) || {
+      results: [],
+      succeeded: 0,
+      failed: 0,
+    }
+  );
 }
 
 /**
@@ -857,9 +1068,12 @@ export interface ScanProjectResponse {
 export async function listProjectsFromComputeNode(
   computeNodeId: string,
   signal?: AbortSignal,
+  workspaceId?: string,
 ): Promise<ListProjectsResponse> {
   const actionInfo = new ActionInfo('list-projects', 'compute_node', computeNodeId, 'GET');
   actionInfo.abortSignal = signal ?? null;
+  // Only that workspace's projects; absent → every project (the list before workspaces).
+  if (workspaceId) actionInfo.queryParameters = { workspace: workspaceId };
   return (
     (await dataManager.callAction<undefined, ListProjectsResponse>(actionInfo)) || {
       projects: [],

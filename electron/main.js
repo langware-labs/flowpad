@@ -1,16 +1,38 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu, powerMonitor } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { describeStartupFailure, summarizeOutput } = require('./startup-error');
+const { buildSupportZip, redact } = require('./support-bundle');
+const { uploadSupportBundle } = require('./support-upload');
+const { redactUrl, installLogRedaction } = require('./log-redact');
+const { offerMoveToApplications } = require('./app-location');
+const { showFailureDialog } = require('./failure-dialog');
+const { decideOffer, engineChangePolicy, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
+const updateTest = require('./update-test');
+const { createRestartApplier } = require('./update-restart');
+// electron-updater's own token type (its dependency); not re-exported by electron-updater.
+const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
 const log = require('electron-log');
 const crypto = require('crypto');
 const UvManager = require('./uv-manager');
-const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
+const { createShutdown, relaunchAfterStop } = require('./shutdown');
+const { createQuitGate, quitDialogOptions, QUIT_RESPONSE } = require('./quit-gate');
+const { waitForBackend: runBackendGate, createLogActivityProbe, createChangeProbe } = require('./backend-wait');
+const { createPolicyBlockProbe, detectPolicyBlockInLog, policyBlockFromInstallError, isInterpreterModule, describeRuntimeBlock, readRuntimeState, canAttemptRepair, priorAttempt } = require('./runtime-repair');
+// FLOWPAD-2231: the monitor's fatal-failure record, the desktop update as a recovery route, the startup journal.
+const fatalFailure = require('./fatal-failure');
+const updateRecovery = require('./update-recovery');
+const { createStartupJournal, recoveryRequested, createStartGuard } = require('./startup-watchdog');
+const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Exact, copy-pasteable terminal commands surfaced to the user when the backend
-// fails to come up in time — mirrors the upgrade uv-manager.js itself runs
-// (`uv tool install flowpad@latest --python 3.10 --force`). Keep these in sync
-// with uv-manager.js's upgrade()/installLatest().
-const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
+// fails to come up — `upgradeCommand()` is the same string uv-manager.js's
+// upgrade()/installLatest() run (`uv tool install flowpad@latest --python <pin>
+// --force`, the pin being the `requires-python` floor read from the bundled
+// pyproject.toml). Resolved when a panel is shown, not at load: a build missing
+// that file must still launch a healthy install (see getPythonVersion).
+// With a repaired runtime (runtime-repair.js) the command pins that interpreter, as the app does.
+const upgradeCommand = () => UvManager.upgradeCommand(uvManager && uvManager.repairedRuntimePython ? uvManager.repairedRuntimePython() : undefined);
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
 
@@ -32,6 +54,16 @@ const os = require('os');
 const FLOW_HOME = path.join(os.homedir(), '.flow');
 const LOGS_BASE = path.join(FLOW_HOME, 'logs');
 const MAIN_DESKTOP_LOG_DIR = path.join(LOGS_BASE, 'main_desktop');
+// The backend's own logs (server/, monitor/) are per instance:
+// <flow_home>/instances/<name>/logs — flow_sdk/instance_settings/base_settings.py
+// (`logs_dir`, instance "prod" unless FLOW_INSTANCE says otherwise). The startup
+// gate reads the server log there; watching the old <flow_home>/logs/server
+// would see a directory the backend never writes to.
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE || 'prod';
+const BACKEND_LOGS = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'logs');
+// The instance's own directory: server.json and, after a deterministic backend failure, the monitor's
+// server-failure.json (flow_sdk/server/launch.py → electron/fatal-failure.js).
+const INSTANCE_DIR = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE);
 
 function generateTimestampedFilename() {
   const now = new Date();
@@ -75,6 +107,8 @@ const MAIN_LOG_PATH = path.join(MAIN_DESKTOP_LOG_DIR, generateTimestampedFilenam
 log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
+// Secrets never reach the log file (it is emailed to us): see log-redact.js. Installed before the first line.
+installLogRedaction(log);
 log.info('Flowpad starting...');
 
 // ----------------------------------------------------------------------------
@@ -86,78 +120,379 @@ log.info('Flowpad starting...');
 // app quit/restart (autoInstallOnAppQuit). Reset once consumed.
 let suppressDesktopRestartPrompt = false;
 
+// "Restart now": stop the backend, then hand over to the installer; if the updater reports it
+// could not restart, undo `isQuitting` and tell the user (see update-restart.js).
+const restartApplier = createRestartApplier({
+  uvManager: { stop: () => (uvManager ? uvManager.stop() : Promise.resolve()) },
+  // (update-test.js: in the update-cycle harness the relaunch is skipped so the harness can keep the new build's output)
+  autoUpdater: { quitAndInstall: (silent, forceRun) => autoUpdater.quitAndInstall(silent, updateTest.forceRunAfter(forceRun)) },
+  setQuitting: (v) => { isQuitting = v; },
+  hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
+  showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
+  // The silent installer runs with no window of ours for ~30s, then the new desktop installs the engine: say so.
+  notifyInstalling: () => {
+    if (Notification.isSupported()) {
+      new Notification({ title: 'FlowPad is updating', body: 'Installing the update. FlowPad will reopen by itself in about a minute.', silent: true }).show();
+    }
+  },
+  onFailure: (err) => {
+    // The desktop could not be applied (for example an app running from a temporary macOS location). It stays
+    // pending: the engine changes only after the NEW desktop is installed and running, and the update is downloaded,
+    // so it still installs on the next quit (the dialog below says so).
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      type: 'warning',
+      title: 'Update could not be applied',
+      message: 'FlowPad could not restart to finish the update.',
+      detail: `The update is downloaded and will be applied the next time FlowPad is closed.\n\n${err && err.message ? err.message : err}`,
+      share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
+      log,
+    });
+  },
+  log,
+});
+
+let updaterInitialized = false;
+
 function setupElectronAutoUpdater() {
   if (!app.isPackaged) {
     log.info('[electron-updater] skipped: app is not packaged');
     return;
   }
+  // startApp() can run again (macOS `activate`); a second setup would stack handlers
+  // (two "ready" prompts) and a second periodic interval.
+  if (updaterInitialized) return;
+  updaterInitialized = true;
 
-  autoUpdater.logger = log;
-  // Manual control: we CHECK (no download) at pre-start so a desktop update can
-  // be offered together with a backend update in ONE dialog, and only download
-  // once the user opts in. Download is triggered explicitly via downloadUpdate().
-  autoUpdater.autoDownload = false;
-  // A deferred ("Later") desktop download still applies on the next quit/restart
-  // without nagging — that's exactly autoInstallOnAppQuit (default true; set
-  // explicitly so the intent is clear).
-  autoUpdater.autoInstallOnAppQuit = true;
+  if (process.windowsStore) {
+    // Microsoft Store build: the Store delivers desktop updates (and electron-updater
+    // does not support AppX). The hourly PyPI package check below still runs.
+    log.info('[electron-updater] skipped: Microsoft Store build');
+  } else {
+    autoUpdater.logger = log;
+    // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): read the update feed from an alternate app-update.yml (a local
+    // `generic` provider) instead of the one baked into resources/.
+    if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_CONFIG) {
+      autoUpdater.updateConfigPath = process.env.FLOWPAD_UPDATE_CONFIG;
+      updateTest.event('feed-config', { path: process.env.FLOWPAD_UPDATE_CONFIG });
+    }
+    // Manual control: we CHECK (no download) at pre-start so a desktop update can
+    // be offered together with a backend update in ONE dialog, and only download
+    // once the user opts in. Download is triggered explicitly via downloadUpdate().
+    autoUpdater.autoDownload = false;
+    // A deferred ("Later") desktop download still applies on the next quit/restart
+    // without nagging — that's exactly autoInstallOnAppQuit (default true; set
+    // explicitly so the intent is clear).
+    autoUpdater.autoInstallOnAppQuit = true;
 
-  autoUpdater.on('checking-for-update', () => {
-    log.info('[electron-updater] checking for update...');
-  });
-  autoUpdater.on('update-available', (info) => {
-    log.info(`[electron-updater] update available: ${info.version}`);
-  });
-  autoUpdater.on('update-not-available', (info) => {
-    log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
-  });
-  autoUpdater.on('download-progress', (p) => {
-    log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
-  });
-  autoUpdater.on('error', (err) => {
-    log.error('[electron-updater] error:', err);
-  });
+    autoUpdater.on('checking-for-update', () => {
+      log.info('[electron-updater] checking for update...');
+    });
+    autoUpdater.on('update-available', (info) => {
+      log.info(`[electron-updater] update available: ${info.version}`);
+    });
+    autoUpdater.on('update-not-available', (info) => {
+      log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
+    });
+    autoUpdater.on('download-progress', (p) => {
+      log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+    });
+    autoUpdater.on('error', (err) => {
+      log.error('[electron-updater] error:', err);
+      // If this happened while a "Restart now" was in flight, the app is not quitting after all.
+      restartApplier.failed(err);
+    });
 
-  // Fires only after an explicit downloadUpdate() completes. Restarting to
-  // apply is the one unavoidable step of a desktop self-update, so prompt for it.
-  autoUpdater.on('update-downloaded', async (info) => {
-    log.info(`[electron-updater] update downloaded: ${info.version}`);
-    if (suppressDesktopRestartPrompt) {
-      // User deferred earlier — don't nag. autoInstallOnAppQuit applies it on
-      // the next quit/restart, so the app comes back on the latest desktop.
-      suppressDesktopRestartPrompt = false;
-      log.info('[electron-updater] deferred — will install on next quit/restart');
+    // Fires only after an explicit downloadUpdate() completes. Restarting to
+    // apply is the one unavoidable step of a desktop self-update, so prompt for it.
+    autoUpdater.on('update-downloaded', async (info) => {
+      log.info(`[electron-updater] update downloaded: ${info.version}`);
+      desktopDownloadedVersion = info.version;
+      if (suppressDesktopRestartPrompt) {
+        // The user said "Later" at launch: no prompt now. The reminder offers it every 90 minutes
+        // (shown right away only if a reminder already came due while the download was running), and
+        // autoInstallOnAppQuit applies it if the app is closed first.
+        suppressDesktopRestartPrompt = false;
+        deferredDesktopVersion = info.version;
+        log.info('[electron-updater] deferred — the reminder will offer it; it also installs on the next quit');
+        readyReminder.notifyReady();
+        return;
+      }
+      await showDesktopReadyPrompt(info.version);
+    });
+
+  }
+
+  // Long-lived sessions: re-check periodically (UPDATE_CHECK_INTERVAL_MS).
+  // Desktop: if a newer build appears, download it in the background (the
+  // update-downloaded handler then prompts to restart). Package (PyPI): offer
+  // the upgrade dialog — the launch-time checks only run at launch, so without
+  // this a user who keeps the app open across a backend release never hears
+  // about it. Launch-time is handled by the pre-start flow, not here.
+  setInterval(async () => {
+    const desktopLatest = await getDesktopUpdateVersion();
+    if (desktopLatest) {
+      // A newer release than the one on screen / being downloaded: close that
+      // prompt (as "Later") or cancel that download, so the user only ever sees
+      // one prompt, for the latest version.
+      if (desktopRestartPromptOpen && desktopPromptVersion && isNewer(desktopPromptVersion, desktopLatest)) {
+        log.info(`[electron-updater] ${desktopLatest} supersedes the open prompt for ${desktopPromptVersion}`);
+        desktopPromptAbort.abort();
+        await desktopPromptClosed;
+      }
+      if (desktopDownloadInFlight && desktopDownloadVersion && isNewer(desktopDownloadVersion, desktopLatest)) {
+        log.info(`[electron-updater] ${desktopLatest} supersedes the download of ${desktopDownloadVersion}`);
+        desktopDownloadToken.cancel();
+        await desktopDownloadDone;
+      }
+      if (desktopLatest !== offeredDesktopVersion) {
+        // A release we have not offered yet: same screen as at launch (desktop only, or desktop + engine).
+        // Not while a download is running, the restart prompt is up, or another update dialog is open.
+        if (!desktopDownloadInFlight && !desktopRestartPromptOpen && !packageUpdateInFlight) {
+          await offerDesktopUpdate(desktopLatest);
+        }
+      } else if (!desktopDownloadInFlight && !desktopRestartPromptOpen && desktopLatest !== deferredDesktopVersion) {
+        // Offered already and the prompt was postponed: re-emit it from the cached download.
+        // (Skipped for a version the user deferred — the 90-minute reminder handles that one.)
+        downloadDesktopUpdateInBackground({ version: desktopLatest });
+      }
+    }
+    await checkPackageUpdateInBackground();
+  }, updateTest.checkIntervalMs() || UPDATE_CHECK_INTERVAL_MS);
+}
+
+// How often a long-running session re-checks both update channels.
+const UPDATE_CHECK_INTERVAL_MS = 20 * 60 * 1000;
+
+// True while the desktop "update ready" dialog is on screen (the package
+// check waits for it) / while a package check, its dialog or its upgrade is in
+// progress (desktop restart prompt waits for it). One update dialog at a time.
+let desktopRestartPromptOpen = false;
+let packageUpdateInFlight = false;
+let packageCheckDone = Promise.resolve(); // settles when the in-flight package check ends
+// Desktop version the user answered "Later" to (restart prompt or launch
+// dialog) — never re-offered this session; it installs on the next quit.
+let deferredDesktopVersion = null;
+// A downloadUpdate() is running: a periodic tick must not start another one
+// (electron-updater would coalesce it, but the call resets the suppress flag).
+let desktopDownloadInFlight = false;
+let desktopDownloadVersion = null;        // version being downloaded
+let desktopDownloadToken = null;          // CancellationToken of that download
+let desktopDownloadDone = Promise.resolve();
+// The restart prompt on screen: which version, how to close it, when it closed.
+let desktopPromptVersion = null;
+let desktopPromptAbort = null;
+let desktopPromptClosed = Promise.resolve();
+
+/**
+ * Package (PyPI) update check + upgrade, behind the one-dialog-at-a-time
+ * mutex. Periodic ticks compare against PyPI so a newer release is offered as
+ * soon as it exists; the post-boot launch check passes compareWithPypi=false to
+ * keep deferring to the cloud policy verdict. Skipped in dev (would reinstall
+ * under a live dev backend), while a previous check/upgrade is still running,
+ * and while the desktop restart prompt is open.
+ */
+async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic' } = {}) {
+  if (isDev) return;
+  if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
+  if (!uvManager.getInstalledFlowBin()) {
+    // Nothing is installed (the first-time setup failed): there is nothing to "update". An "Update Available"
+    // dialog here sent the user down the upgrade path instead of the first-time setup and its Retry.
+    log.info(`[uv] ${label} package check skipped: flowpad is not installed`);
+    return;
+  }
+  if (engineChangeAllowed(`${label} package check`) !== 'allow') {
+    // A newer desktop is on its way — or we could not tell whether one is. The engine is updated BY the new
+    // desktop (it may need a Python pin, or a start contract, that only the new desktop knows) — an old desktop
+    // upgrading it first is what left users stuck. So: no separate engine dialog until the desktop is current.
+    log.info(`[uv] ${label} package check skipped: the desktop is updated first`);
+    return;
+  }
+  if (packageUpdateInFlight) {
+    // A package dialog is on screen: if PyPI now has something newer than what it
+    // offers, close it (as "Later") and fall through to offer the newer version.
+    const shown = uvManager.openPackageDialogVersion();
+    const latest = shown && compareWithPypi ? await uvManager.getLatestPypiVersion() : null;
+    if (latest && isNewer(shown, latest)) {
+      log.info(`[uv] ${latest} supersedes the open package dialog for ${shown}`);
+      uvManager.supersedePackageDialog();
+      await packageCheckDone;
+    } else {
+      log.info(`[uv] ${label} package check skipped: previous check/upgrade still running`);
       return;
     }
-    if (!mainWindow || mainWindow.isDestroyed()) {
-      log.warn('[electron-updater] mainWindow missing; will install on quit');
-      return;
-    }
-    const result = await dialog.showMessageBox(mainWindow, {
+  }
+  if (desktopRestartPromptOpen) {
+    log.info(`[uv] ${label} package check skipped: desktop restart prompt is open`);
+    return;
+  }
+  packageUpdateInFlight = true;
+  let done;
+  packageCheckDone = new Promise((r) => { done = r; });
+  try {
+    log.info(`[uv] ${label} package check`);
+    await uvManager.checkForUpdatesInBackground(mainWindow, {
+      onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
+      sendStatus,
+      waitForBackend,
+      backendUrl: BACKEND_URL,
+      cloudUrl: FLOWPAD_CLOUD_URL,
+      compareWithPypi,
+    });
+  } catch (err) {
+    log.warn(`[uv] ${label} package check failed: ${err.message}`);
+  } finally {
+    packageUpdateInFlight = false;
+    done();
+  }
+}
+
+// A newer desktop build was found this session (and not yet applied): engine updates wait for it.
+let pendingDesktopVersion = null;
+// The desktop version whose update screen we already showed (the periodic check must not show it again).
+let offeredDesktopVersion = null;
+// The desktop version that finished downloading and waits for a restart.
+let desktopDownloadedVersion = null;
+// The restart prompt was held back because the backend was still starting.
+let desktopRestartPromptPostponed = false;
+function offerPostponedRestartPrompt() {
+  if (!desktopRestartPromptPostponed || !desktopDownloadedVersion) return;
+  desktopRestartPromptPostponed = false;
+  showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] restart prompt failed: ${err.message}`));
+}
+
+// The engine version offered together with a desktop update, saved for the NEW desktop to install (update-plan.js).
+function pendingEnginePath() {
+  return path.join(app.getPath('userData'), 'pending-engine.json');
+}
+const pendingEngineStore = {
+  read() { try { return JSON.parse(fs.readFileSync(pendingEnginePath(), 'utf8')); } catch { return null; } },
+  write(state) {
+    try { fs.writeFileSync(pendingEnginePath(), JSON.stringify(state), 'utf8'); } catch (err) { log.warn(`[update] could not save the pending engine version: ${err.message}`); }
+  },
+  clear() { try { fs.rmSync(pendingEnginePath(), { force: true }); } catch { /* best effort */ } },
+};
+
+// "Update ready — restart now?" offered again every 90 minutes to a user who said Later (update-plan.js).
+const readyReminder = createReadyReminder({
+  isReady: () => !!desktopDownloadedVersion && !desktopRestartPromptOpen && !packageUpdateInFlight && !restartApplier.busy
+    && !!mainWindow && !mainWindow.isDestroyed() && !(uvManager && uvManager.isInstalling()),
+  show: () => { showDesktopReadyPrompt(desktopDownloadedVersion).catch((err) => log.warn(`[electron-updater] reminder failed: ${err.message}`)); },
+});
+
+/**
+ * The "FlowPad update ready — Restart now / Later" prompt. One at a time; a newer release closes it (as "Later").
+ * "Restart now" is also the user's agreement to install the saved engine version once the new desktop is up.
+ */
+async function showDesktopReadyPrompt(version) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    log.warn('[electron-updater] mainWindow missing; will install on quit');
+    return;
+  }
+  if (desktopRestartPromptOpen || restartApplier.busy) return;
+  if (!backendReady && !startupFailed) {
+    // Still booting: "Restart now" would kill the half-started backend (an error screen) and read as an
+    // instant update. Offered once the backend is up (offerPostponedRestartPrompt).
+    desktopRestartPromptPostponed = true;
+    log.info('[electron-updater] restart prompt postponed: FlowPad is still starting');
+    return;
+  }
+  if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) {
+    // Another update dialog (or an install) is up right now: do not stack a second one. The periodic check
+    // re-emits this from the cached download; quitting meanwhile still installs it (autoInstallOnAppQuit).
+    log.info('[electron-updater] restart prompt postponed: another update is in progress');
+    return;
+  }
+  // One prompt per version, and never two at once: the prompt is abortable so a newer release found by a
+  // later tick closes this one (as "Later") and shows its own. `desktopPromptClosed` lets that tick wait.
+  desktopRestartPromptOpen = true;
+  desktopPromptVersion = version;
+  desktopPromptAbort = new AbortController();
+  let closePrompt;
+  desktopPromptClosed = new Promise((r) => { closePrompt = r; });
+  const saved = pendingEngineStore.read();
+  const engineLine = saved && saved.engineVersion
+    ? `\nThe FlowPad engine will be updated to ${saved.engineVersion} right after the restart.`
+    : '';
+  let result;
+  try {
+    const scripted = updateTest.answerFor('restart', { version, savedEngine: (saved && saved.engineVersion) || null });
+    result = scripted !== null ? { response: scripted } : await dialog.showMessageBox(mainWindow, {
       type: 'info',
       buttons: ['Restart now', 'Later'],
       defaultId: 0,
       cancelId: 1,
       title: 'FlowPad update ready',
-      message: `FlowPad ${info.version} is ready to install.`,
-      detail: 'Restart FlowPad now to apply the update.',
+      message: `FlowPad ${version} is ready to install.`,
+      detail: `Restart FlowPad now to apply the update.${engineLine}`,
+      signal: desktopPromptAbort.signal,
     });
-    if (result.response === 0) {
-      log.info('[electron-updater] user accepted, quitting to install');
-      isQuitting = true;
-      autoUpdater.quitAndInstall();
-    } else {
-      log.info('[electron-updater] user deferred install');
-    }
-  });
+  } finally {
+    desktopRestartPromptOpen = false;
+    desktopPromptVersion = null;
+    closePrompt();
+  }
+  if (result.response === 0) {
+    log.info('[electron-updater] user accepted, quitting to install');
+    readyReminder.stop();
+    markPendingEngineConsented(pendingEngineStore); // agreeing to restart = agreeing to the saved engine version
+    // Stops the backend first, then quitAndInstall(silent, relaunch): the NSIS build is not one-click
+    // (oneClick:false), so the default would open the Setup wizard and wait.
+    await restartApplier.apply();
+  } else if (desktopPromptAbort.signal.aborted) {
+    log.info(`[electron-updater] prompt for ${version} closed: superseded by a newer release`);
+  } else {
+    deferredDesktopVersion = version;
+    readyReminder.start();
+    log.info('[electron-updater] user deferred the restart; will ask again in 90 minutes and install on the next quit');
+  }
+}
 
-  // Long-lived sessions: re-check hourly and, if a newer desktop build appears,
-  // download it in the background (the update-downloaded handler then prompts to
-  // restart). Launch-time is handled by the pre-start flow, not here.
-  const HOUR_MS = 60 * 60 * 1000;
-  setInterval(async () => {
-    if (await getDesktopUpdateVersion()) downloadDesktopUpdateInBackground();
-  }, HOUR_MS);
+/**
+ * A newer desktop build was found. Desktop only: download it and ask to restart when ready. Desktop + engine:
+ * ONE screen. The engine version on offer is saved and the desktop is downloaded in the background — the engine is
+ * NOT touched now; the new desktop installs exactly that version after the restart (update-plan.js).
+ *   "Update now" → ask to restart as soon as the download is done.   "Later" → ask every 90 minutes.
+ */
+async function offerDesktopUpdate(desktopLatest) {
+  offeredDesktopVersion = desktopLatest;
+  pendingDesktopVersion = desktopLatest;
+  const engineStatus = uvManager ? await uvManager._pypiUpdateStatus() : null;
+  if (decideOffer({ desktopLatest, engineStatus }) !== 'both') {
+    downloadDesktopUpdateInBackground({ version: desktopLatest }); // desktop only: download, then the restart prompt
+    return 'desktop';
+  }
+  savePendingEngine(pendingEngineStore, { engineVersion: engineStatus.latestVersion, desktopVersion: desktopLatest });
+  uvManager.deferPackageVersion(engineStatus.latestVersion); // no separate engine dialog for this version
+  packageUpdateInFlight = true; // one update dialog at a time
+  let response;
+  try {
+    response = updateTest.answerFor('both', {
+      desktop: app.getVersion(), desktopLatest, engine: engineStatus.currentVersion || null, engineLatest: engineStatus.latestVersion,
+    });
+    if (response === null) ({ response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Updates available',
+      message: 'New versions of FlowPad are available.',
+      detail:
+        `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
+        `FlowPad engine: ${engineStatus.currentVersion || 'unknown'} → ${engineStatus.latestVersion}\n\n` +
+        'The update downloads in the background. The engine is updated right after FlowPad restarts.',
+      buttons: ['Update now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    }));
+  } finally {
+    packageUpdateInFlight = false;
+  }
+  if (response === 0) {
+    downloadDesktopUpdateInBackground({ version: desktopLatest }); // prompt to restart as soon as it is ready
+  } else {
+    downloadDesktopUpdateInBackground({ promptOnReady: false, version: desktopLatest });
+    readyReminder.start(); // first reminder in 90 minutes
+  }
+  return 'both';
 }
 
 /**
@@ -167,15 +502,43 @@ function setupElectronAutoUpdater() {
  * decide whether to fold the desktop update into the pre-start prompt.
  */
 async function getDesktopUpdateVersion() {
-  if (!app.isPackaged) return null;
+  if (!app.isPackaged || process.windowsStore) return setDesktopStatus({ state: 'unsupported' }).version;
   try {
     const result = await autoUpdater.checkForUpdates();
-    const latest = result && result.updateInfo && result.updateInfo.version;
-    if (latest && isNewer(app.getVersion(), latest)) return latest;
+    if (!result) return setDesktopStatus({ state: 'unsupported' }).version; // the updater is inactive
+    const latest = result.updateInfo && result.updateInfo.version;
+    if (!latest) return setDesktopStatus({ state: 'unknown', reason: 'the update feed returned no version' }).version;
+    return setDesktopStatus(isNewer(app.getVersion(), latest) ? { state: 'available', version: latest } : { state: 'current' }).version;
   } catch (err) {
     log.warn(`[electron-updater] desktop update check failed: ${err.message}`);
+    return setDesktopStatus({ state: 'unknown', reason: `update check failed: ${err.message}` }).version;
   }
-  return null;
+}
+
+// What the last desktop update check found — the input of engineChangePolicy (update-plan.js). 'unknown' until a
+// check answers: a check that failed or is still running is NOT "no newer desktop".
+let desktopStatus = { state: 'unknown', reason: 'not checked yet' };
+function setDesktopStatus(status) {
+  desktopStatus = { version: null, ...status };
+  updateTest.event('desktop-check', { running: app.getVersion(), ...desktopStatus });
+  return desktopStatus;
+}
+
+/**
+ * May the RUNNING desktop change the engine now? 'allow' | 'hold' | 'desktop-first' (update-plan.js). Anything that
+ * upgrades the engine asks here, and says why it was held.
+ */
+function engineChangeAllowed(context, { mustInstall = false } = {}) {
+  const desktop = pendingDesktopVersion ? { state: 'available', version: pendingDesktopVersion } : desktopStatus;
+  const policy = engineChangePolicy({ desktop, mustInstall });
+  if (policy !== 'allow') {
+    const why = desktop.state === 'available'
+      ? `desktop ${desktop.version} is pending`
+      : `desktop update status is ${desktop.state}${desktop.reason ? ` (${desktop.reason})` : ''}`;
+    log.info(`[update] engine change ${policy} (${context}): ${why}`);
+    updateTest.event('engine-change', { context, policy, reason: why });
+  }
+  return policy;
 }
 
 /**
@@ -186,11 +549,56 @@ async function getDesktopUpdateVersion() {
  * promptOnReady=false → deferred: no prompt; it applies on the next quit/restart
  *                       (autoInstallOnAppQuit), so the user isn't nagged.
  */
-function downloadDesktopUpdateInBackground({ promptOnReady = true } = {}) {
+function downloadDesktopUpdateInBackground({ promptOnReady = true, version = null } = {}) {
+  if (desktopDownloadInFlight) {
+    log.info('[electron-updater] download already in progress; not restarting it');
+    return;
+  }
+  desktopDownloadInFlight = true;
+  desktopDownloadVersion = version;
+  desktopDownloadToken = new CancellationToken();
   suppressDesktopRestartPrompt = !promptOnReady;
-  autoUpdater.downloadUpdate().catch((err) => {
-    log.error('[electron-updater] download failed:', err);
-  });
+  desktopDownloadDone = autoUpdater
+    .downloadUpdate(desktopDownloadToken)
+    .catch((err) => {
+      if (desktopDownloadToken && desktopDownloadToken.cancelled) {
+        log.info(`[electron-updater] download of ${version || 'update'} cancelled (superseded)`);
+      } else {
+        log.error('[electron-updater] download failed:', err);
+      }
+    })
+    .finally(() => {
+      desktopDownloadInFlight = false;
+      desktopDownloadVersion = null;
+      desktopDownloadToken = null;
+    });
+}
+
+/**
+ * First-time setup and repair of a broken install put the NEWEST engine on the machine, and the app is useless
+ * without one — so instead of holding the engine back (engineChangePolicy: 'desktop-first') the desktop is
+ * updated first: downloaded, then restarted into, and the NEW desktop installs the engine. Nothing is lost at
+ * those moments (no engine is running, so no prompt either). Returns true when the app is quitting into the
+ * update (the caller stops); false when the update did not download — the caller installs the engine anyway
+ * (a missing engine is worse than a version gap).
+ */
+async function updateDesktopBeforeEngineInstall(reason) {
+  const version = desktopStatus.version;
+  updateTest.event('desktop-first-install', { reason, from: app.getVersion(), to: version });
+  log.info(`[update] ${reason}: desktop ${app.getVersion()} → ${version} first, the engine is installed after the restart`);
+  sendStatus('Updating Flowpad');
+  // We restart ourselves: a download that finishes meanwhile must not open the "Restart now?" prompt.
+  downloadDesktopUpdateInBackground({ promptOnReady: false, version });
+  suppressDesktopRestartPrompt = true;
+  await desktopDownloadDone;
+  if (isQuitting) return true;
+  if (!desktopDownloadedVersion) {
+    suppressDesktopRestartPrompt = false;
+    log.warn(`[update] ${reason}: the desktop update did not download — installing the engine with this desktop`);
+    return false;
+  }
+  await restartApplier.apply(); // false only when a restart is already under way — either way we are leaving
+  return true;
 }
 
 // ----------------------------------------------------------------------------
@@ -203,6 +611,9 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true } = {}) {
 // ----------------------------------------------------------------------------
 function getDesktopVersionStatePath() {
   return path.join(app.getPath('userData'), 'desktop-version.json');
+}
+function locationPromptStatePath() {
+  return path.join(app.getPath('userData'), 'app-location-prompt.json');
 }
 function readLastDesktopVersion() {
   try {
@@ -221,8 +632,26 @@ function writeDesktopVersion(version) {
 }
 
 // Configuration
-const BACKEND_PORT = 9007;
+// A dev run is started from the repo (`npm run dev:electron`) against a backend
+// the developer already has running: it does NOT own the machine's flowpad
+// install, and must not start, stop or upgrade it.
+const isDev = process.env.MINIHUB_DEV === 'true';
+// Fixed for a packaged app; in dev it can point at a repo-run backend (e.g. the
+// `oss` instance on 9008). One const feeds the start URL, the `get-backend-url`
+// IPC and the open-externally guard, so they can never disagree.
+const BACKEND_PORT =
+  isDev && process.env.FLOWPAD_BACKEND_PORT ? Number(process.env.FLOWPAD_BACKEND_PORT) : 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
+const BACKEND_ORIGIN = new URL(BACKEND_URL).origin;
+/** True only for the backend's exact origin (scheme, host AND port) — a prefix
+ *  test on the URL string would also accept ports 90070-90079. */
+function isBackendUrl(url) {
+  try {
+    return new URL(url).origin === BACKEND_ORIGIN;
+  } catch {
+    return false;
+  }
+}
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
 const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ride
@@ -231,20 +660,159 @@ const MAX_HEALTH_CHECKS = 240; // 120 seconds — cold-start window. Sized to ri
                                // isn't misread as "failed to start". Observed cold
                                // boots reach health in ~35-40s, so 120s keeps a ~3x
                                // margin. Do NOT raise to mask a slow boot — fix the
-                               // slow path instead.
+                               // slow path instead. A boot that is provably still
+                               // in progress gets more time on EVIDENCE, not on a
+                               // bigger number: see LOG_STALL_CHECKS below.
 const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — the just-upgraded path is the
                                         // slower one (all venv files freshly written →
                                         // heaviest AV scan), so this is the riskiest
                                         // window to tighten; kept == the normal window.
+// Past the base window the gate (backend-wait.js) keeps polling only while the
+// boot reports progress: a line from `flow start` on its pipe, or growth of the
+// SERVER log (BACKEND_LOGS/server, the backend's own stdout+stderr). Both
+// processes write one `[boot] … phase=…` line per step forward and nothing
+// while standing still (flow_sdk/boot_progress.py), so a weak machine still
+// importing keeps the signal alive and a hung or dead boot goes silent.
+// LOG_STALL_CHECKS is how long the signal may stay silent before the wait ends
+// anyway — with progress asserted by the boot itself, 30s of silence means no
+// module loaded and no phase changed for 30s. MAX_EXTENDED_HEALTH_CHECKS bounds
+// the whole wait even if the signal never goes quiet (the monitor restarting an
+// unhealthy backend opens a fresh log per attempt); it runs from the gate's
+// start, i.e. from the `flow start` spawn, so it fires up to the launcher's
+// duration before the monitor's own 600s boot ceiling. The monitor log is
+// deliberately NOT the signal: it grows on every failed health check, i.e.
+// fastest when the backend is broken.
+const LOG_STALL_CHECKS = 60;             // 30 seconds of silence
+const MAX_EXTENDED_HEALTH_CHECKS = 1200; // 10 minutes, restart loops included
+
+// What the loading screen says for each boot phase the two processes report.
+// Unlisted phases keep the previous label.
+const BOOT_PHASE_LABELS = {
+  // `flow start` (the launcher)
+  import: 'Preparing Flowpad',
+  migration: 'Updating your data',
+  spawn: 'Starting server',
+  wait_health: 'Starting server',
+  // the server
+  entities: 'Loading server',
+  app: 'Loading server',
+  uvicorn: 'Starting server',
+  db: 'Opening the database',
+  startup_hooks: 'Running startup tasks',
+  done: 'Almost ready',
+};
+const BOOT_PHASE_RE = /\[boot\] .*?\bphase=(\S+)/;
+
+function bootPhaseLabel(line) {
+  const m = BOOT_PHASE_RE.exec(String(line || ''));
+  return m ? BOOT_PHASE_LABELS[m[1]] || null : null;
+}
+
+/** The last `bytes` of `file` as text (the whole file when smaller). Throws on I/O errors. */
+function readFileTail(file, bytes) {
+  const size = fs.statSync(file).size;
+  const fd = fs.openSync(file, 'r');
+  try {
+    const start = Math.max(0, size - bytes);
+    const buf = Buffer.alloc(size - start);
+    fs.readSync(fd, buf, 0, buf.length, start);
+    return buf.toString('utf8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/** The last `[boot]` line in the newest server log, read from its tail. */
+function lastBootLine(serverLogDir) {
+  try {
+    const newest = getNewestLogFile(serverLogDir);
+    if (!newest) return null;
+    const TAIL = 4096;
+    const size = fs.statSync(newest.path).size;
+    const fd = fs.openSync(newest.path, 'r');
+    try {
+      const start = Math.max(0, size - TAIL);
+      const buf = Buffer.alloc(size - start);
+      fs.readSync(fd, buf, 0, buf.length, start);
+      const lines = buf.toString('utf8').split('\n').filter((l) => l.includes('[boot]'));
+      return lines.length ? lines[lines.length - 1] : null;
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+}
 
 let mainWindow = null;
 let uvManager = null;
 let isQuitting = false;
+// The in-flight quit sequence (shutdown.js), if any. A launch that arrives
+// while it runs is absorbed by it instead of being dropped by the
+// single-instance lock.
+let shutdown = null;
+// The backend stop started by the startup-timeout path, which leaves the window
+// up instead of quitting. A reopen from that panel must not abandon it — see
+// shutdown.js.
+let pendingBackendStop = null;
 // True once the startup-timeout recovery panel is showing. In this state the
 // window is intentionally kept open (so the user can copy the recovery commands)
 // but the backend is stopped — so a "reopen" must relaunch from scratch rather
 // than refocus the dead window. See the second-instance handler.
 let startupFailed = false;
+// True once the backend answered its health check — from then on a quit is
+// "quit FlowPad", before it "stop the startup" (quit-gate.js).
+let backendReady = false;
+
+// ── FLOWPAD-2231: fatal-failure handling, recovery update, startup journal ─────────────────────
+// The journal (startup-watchdog.js) records which phase this launch reached so the next launch can
+// tell a crash from a clean end; the guard keeps two `flow start`s from ever running at once; the
+// launch-time desktop update check runs bounded and independent of the backend, and its answer is
+// what the failure panel offers (update-recovery.js). All state files live in userData / the instance dir.
+let journal = null;
+const startGuard = createStartGuard({ log });
+let launchDesktopCheck = Promise.resolve(null);
+function markPhase(phase, extra) { if (journal) journal.mark(phase, extra); }
+function recoveryStatePath() { return path.join(app.getPath('userData'), updateRecovery.RECOVERY_FILE); }
+function readRecoveryState() { return updateRecovery.readRecoveryState((p) => fs.readFileSync(p, 'utf8'), recoveryStatePath()); }
+function writeRecoveryState(state) {
+  try { updateRecovery.writeRecoveryState((p, t) => fs.writeFileSync(p, t, 'utf8'), recoveryStatePath(), state); }
+  catch (err) { log.warn(`[update-recovery] could not persist the recovery state: ${err.message}`); }
+}
+function readFailureRecord() { return fatalFailure.readFailureRecord((p) => fs.readFileSync(p, 'utf8'), INSTANCE_DIR); }
+function clearFailureRecord(why) {
+  if (fatalFailure.clearFailureRecord((p) => fs.unlinkSync(p), INSTANCE_DIR)) log.info(`[fatal-failure] record cleared: ${why}`);
+}
+/** What the monitor's fingerprint is compared with: the engine venv's interpreter and the installed engine version. */
+function currentRuntimeFingerprint() {
+  if (!uvManager) return null;
+  const venv = uvManager._toolVenvDir();
+  const python = process.platform === 'win32' ? path.join(venv, 'Scripts', 'python.exe') : path.join(venv, 'bin', 'python');
+  return { python, engine_version: uvManager.getInstalledVersionSync() || null };
+}
+/** The key a recovery-update attempt is remembered under: the monitor's fingerprint hash, else kind + runtime. */
+function failureFingerprintKey(record) {
+  const fp = (record && record.fingerprint) || currentRuntimeFingerprint() || {};
+  return fp.hash || `${(record && record.kind) || 'policy-blocked'}|${fp.python || ''}|${fp.engine_version || ''}`;
+}
+
+function quitPhase() {
+  if (uvManager && uvManager.isInstalling()) return 'installing';
+  return backendReady ? 'running' : 'starting';
+}
+
+// Every quit asks first — see quit-gate.js and the before-quit handler.
+const quitGate = createQuitGate({
+  confirm: async (phase) => {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const hasInstallMarker = !!(uvManager && uvManager.hasInstallMarker());
+    const { response } = await dialog.showMessageBox(parent, quitDialogOptions(phase, { hasInstallMarker }));
+    return response === QUIT_RESPONSE;
+  },
+  log,
+});
+// Automation that drives the packaged app (it quits it at the end of a run) has nobody to answer the dialog.
+if (process.env.FLOWPAD_SKIP_QUIT_CONFIRM === '1') quitGate.allow('FLOWPAD_SKIP_QUIT_CONFIRM=1');
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
@@ -265,7 +833,7 @@ function isStartupOnlyDeepLink(url) {
  * flowpad://task/<id>  →  http://localhost:9007/task/<id>
  */
 function handleDeepLink(url) {
-  log.info(`[deep-link] received: ${url}`);
+  log.info(`[deep-link] received: ${redactUrl(url)}`);
 
   // Ignore install/probe URLs.
   // These are only used by the browser to detect whether FlowPad
@@ -293,7 +861,7 @@ function handleDeepLink(url) {
       pendingDeepLink = localUrl;
     }
   } catch (err) {
-    log.warn(`[deep-link] failed to parse URL "${url}": ${err}`);
+    log.warn(`[deep-link] failed to parse URL "${redactUrl(url)}": ${err}`);
   }
 }
 
@@ -305,14 +873,23 @@ app.on('open-url', (event, url) => {
 
 // Windows / Linux: a second launch passes the URL as a CLI argument.
 app.on('second-instance', (_event, argv) => {
+  // A launch that lands while we are stopping the backend must not be dropped:
+  // this process still holds the single-instance lock, so the new one exits
+  // immediately. Hand it to the quit sequence, which relaunches once its stop
+  // has released the lifecycle lock.
+  if (shutdown && shutdown.requestRelaunch()) return;
   // If we're stuck on the startup-timeout panel, a second launch means the user
   // ran the recovery command and is "reopening" to pick up the fix. The backend
   // is already stopped, so relaunch from scratch (fresh startApp + upgrade path)
   // instead of just refocusing the dead window.
   if (startupFailed) {
     log.info('[second-instance] reopen while in startup-failed state — relaunching');
-    app.relaunch();
-    app.exit(0);
+    relaunchAfterStop({
+      pendingStop: pendingBackendStop,
+      log,
+      relaunch: () => app.relaunch(),
+      exit: code => app.exit(code),
+    });
     return;
   }
   const deepLinkUrl = argv.find(arg => arg.startsWith('flowpad://'));
@@ -334,7 +911,7 @@ app.on('second-instance', (_event, argv) => {
 if (!isMac) {
   const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
   if (argvDeepLink) {
-    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
+    log.info(`[deep-link] picked up from process.argv: ${redactUrl(argvDeepLink)}`);
     handleDeepLink(argvDeepLink);
   }
 }
@@ -373,12 +950,70 @@ function applyMenu() {
   if (mainWindow) mainWindow.setMenuBarVisibility(menuVisible);
 }
 
+// Electron ships Chromium's renderer without Chromium's chrome, so there is no
+// default right-click menu: the spellchecker underlines misspellings but its
+// suggestions have nowhere to appear. This installs the standard one.
+//
+// Pinned to ^3 deliberately — v4+ is ESM-only and this file is CommonJS.
+//
+// shouldShowMenu is the important option. Electron fires this event even when
+// the renderer calls preventDefault() on the DOM contextmenu, so without a gate
+// the native menu would open on top of the app's own Radix context menus
+// (BrowseableGrid, TabStrip, FavoriteStar, SimpleFileManager, terminal strip).
+// Limiting it to text contexts leaves those menus alone and still covers the
+// case this exists for.
+require('electron-context-menu')({
+  shouldShowMenu: (_event, params) => params.isEditable || !!params.selectionText || !!params.misspelledWord,
+  showSearchWithGoogle: false, // sends the selection to an external search
+});
+
 ipcMain.on('set-menu-visible', (_event, visible) => {
   const next = !!visible;
   if (next === menuVisible) return;
   menuVisible = next;
   applyMenu();
 });
+
+// --- Zoom shortcuts (menu-independent) ----------------------------------
+//
+// Cmd/Ctrl + `=`/`+` zoom in, `-` zoom out, `0` reset — in EVERY view mode and
+// on every platform. The View menu's zoom roles can't own these: that menu is
+// absent outside Advanced (stripped on Win/Linux, baseline-only on macOS), and
+// a menu accelerator only exists while its item does. Handling the keys here
+// covers every app window (main + `/win/` focus windows). preventDefault stops
+// the Advanced View menu's own accelerator from firing a second step.
+const ZOOM_STEP = 0.5; // Chromium's own zoom step
+
+function zoomDeltaFor(input) {
+  if (input.type !== 'keyDown' || input.alt) return null;
+  if (!(isMac ? input.meta : input.control)) return null;
+  if (input.key === '=' || input.key === '+') return ZOOM_STEP;
+  if (input.key === '-' || input.key === '_') return -ZOOM_STEP;
+  if (input.key === '0') return 0;
+  return null;
+}
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'window') return;
+  contents.on('before-input-event', (event, input) => {
+    const delta = zoomDeltaFor(input);
+    if (delta === null) return;
+    event.preventDefault();
+    contents.setZoomLevel(delta === 0 ? 0 : contents.getZoomLevel() + delta);
+  });
+});
+
+// THE navigation-state string for the `[nav]` trace. Module scope so `startApp`
+// can log it too, not just createWindow()'s closure — one formatter, so the
+// fields can never drift between call sites.
+function navStateFor(win) {
+  try {
+    const h = win.webContents.navigationHistory;
+    return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${redactUrl(win.webContents.getURL())}`;
+  } catch (err) {
+    return `<navState unavailable: ${err.message}>`;
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -399,6 +1034,11 @@ function createWindow() {
   // Mouse back/forward (X1/X2) buttons. Electron does not map these to history
   // navigation, so we wire them up — and the OS surfaces them differently per
   // platform, so we listen per platform (one source each, no double-navigation).
+  //
+  // This is the ONLY navigator for those buttons. The renderer deliberately
+  // binds nothing (see the NOTE in `ui/src/main.tsx`): on hardware that sends a
+  // real X1 the button reaches the web layer too, so a second handler there
+  // makes one press step history twice.
   const nav = () => mainWindow.webContents.navigationHistory;
 
   // [nav] tracing: every back/forward source and every resulting history
@@ -407,14 +1047,7 @@ function createWindow() {
   // two did-navigate lines. Pairs with the frontend toplog `navigation` tag
   // (window.history pushState/popstate from NavigationActions) — together they
   // tell us whether the main process or the renderer is double-stepping.
-  const navState = () => {
-    try {
-      const h = nav();
-      return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${mainWindow.webContents.getURL()}`;
-    } catch (err) {
-      return `<navState unavailable: ${err.message}>`;
-    }
-  };
+  const navState = () => navStateFor(mainWindow);
   const goBack = (source) => {
     const can = nav().canGoBack();
     log.info(`[nav] goBack source=${source} willNavigate=${can} ${navState()}`);
@@ -430,23 +1063,40 @@ function createWindow() {
   // who triggered them (gesture, renderer history.back, react-router). These are
   // the ground truth for "how many steps did one gesture cause".
   mainWindow.webContents.on('did-navigate', (_e, url) => {
-    log.info(`[nav] did-navigate (full load) url=${url} ${navState()}`);
+    log.info(`[nav] did-navigate (full load) url=${redactUrl(url)} ${navState()}`);
   });
   mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
     if (!isMainFrame) return;
-    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
+    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${redactUrl(url)} ${navState()}`);
   });
 
   if (isMac) {
-    // macOS surfaces the buttons two ways and never reaches the renderer:
-    //  - a raw mouse `input-event` (button 'back'/'forward'); and
-    //  - with drivers like Logitech Options / Options+ (or the trackpad), a
-    //    `swipe` GESTURE — left = back, right = forward — and ONLY a swipe, no
-    //    mouse button / app-command (confirmed by event capture). Handle both.
+    // macOS delivers the buttons two different ways, and only ONE of them needs
+    // us — proved by real-hardware capture 2026-09-03 (see the `[nav]` trace):
+    //
+    //  - A real X1/X2 button. Chromium ALREADY navigates on it, on mouseUp, all
+    //    by itself. `webContents.on('input-event')` only OBSERVES the event — it
+    //    cannot consume it — so handling mouseDown here does not replace that
+    //    navigation, it ADDS one. That was the double-back: our step on
+    //    mouseDown, Chromium's on mouseUp, ~100ms apart.
+    //  - With drivers like Logitech Options / Options+ (or the trackpad), a
+    //    `swipe` GESTURE instead — left = back, right = forward — and ONLY a
+    //    swipe: no mouse button for Chromium to act on, so this handler is the
+    //    only thing that makes those work.
+    //
+    // Hence: swipe yes, input-event no. Do NOT "restore" the input-event branch
+    // without a physical press against a built artifact — CDP-injected mouse
+    // events do NOT drive Chromium's native path, so under automation the
+    // button looks dead without our handler. That false signal is what sent the
+    // 09-02 fix down the wrong path.
+    // Observation only — Chromium performs the navigation itself. The log line
+    // keeps the button visible in the `[nav]` trace so a future double/missing
+    // step can still be attributed.
     mainWindow.webContents.on('input-event', (_e, input) => {
       if (input.type !== 'mouseDown') return;
-      if (input.button === 'back') goBack('mac:mouse-input-event');
-      else if (input.button === 'forward') goForward('mac:mouse-input-event');
+      if (input.button === 'back' || input.button === 'forward') {
+        log.info(`[nav] mouse ${input.button} button — Chromium navigates ${navState()}`);
+      }
     });
     mainWindow.on('swipe', (_e, direction) => {
       if (direction === 'left') goBack('mac:swipe');
@@ -472,7 +1122,7 @@ function createWindow() {
   // allow them so Electron opens an in-app BrowserWindow. No teardown
   // handlers on those windows: close relies on disconnect-driven PTY detach.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(BACKEND_URL)) {
+    if (isBackendUrl(url)) {
       try {
         if (new URL(url).pathname.includes('/win/')) {
           return { action: 'allow' };
@@ -487,12 +1137,40 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // A crashed or failed renderer is a blank window: say so, with a way to reach us, then reload.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`[renderer] process gone: ${details && details.reason} (exit ${details && details.exitCode})`);
+    if (isQuitting || (details && details.reason === 'clean-exit')) return;
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad window crashed',
+      message: 'The Flowpad window stopped unexpectedly.',
+      detail: `Reason: ${(details && details.reason) || 'unknown'}. Flowpad will reload the window.`,
+      share: (text) => shareDiagnostics(text, 'window crashed'),
+      log,
+    }).then(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); });
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !isBackendUrl(url)) return;
+    log.error(`[renderer] failed to load ${redactUrl(url)}: ${desc} (${code})`);
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad could not load',
+      message: 'Flowpad could not load its window.',
+      detail: `${desc} (${code})`,
+      share: (text) => shareDiagnostics(text, 'could not load its window'),
+      log,
+    });
+  });
+
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    log.info(`[nav] will-navigate url=${url}`);
+    log.info(`[nav] will-navigate url=${redactUrl(url)}`);
     // Allow navigation to the backend (same-origin), block everything else.
     // Same-origin /win/ URLs are covered by this allow — they are in-app
     // destinations, consistent with the window-open carve-out above.
-    if (!url.startsWith(BACKEND_URL)) {
+    if (!isBackendUrl(url)) {
       event.preventDefault();
       if (/^https?:\/\//.test(url)) {
         require('electron').shell.openExternal(url);
@@ -512,6 +1190,18 @@ function createWindow() {
     }
   });
 
+  // The X does not close the window by itself: it asks to quit, and before-quit
+  // asks the user (quit-gate.js). Closing first and asking after would leave
+  // nothing to cancel back to.
+  mainWindow.on('close', (event) => {
+    if (isQuitting || startupFailed || quitGate.isConfirmed()) return;
+    event.preventDefault();
+    app.quit();
+  });
+
+  // Windows is logging off or shutting down: nobody is there to answer.
+  mainWindow.on('session-end', () => quitGate.allow('the Windows session is ending'));
+
   // Handle window closed
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -520,25 +1210,116 @@ function createWindow() {
   return mainWindow;
 }
 
-async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
-  const timeoutSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
-  log.info(`Waiting for backend at ${BACKEND_URL} (up to ${timeoutSec}s)...`);
+// The startup gate over the whole chain: `flow start` (CLI import → migrations
+// → monitor spawn), then the server's own boot. One clock and one base window
+// for both, and two sources of evidence that the boot is still moving — a line
+// from `flow start` on its pipe (`launch`, the handle uvManager.start() returned)
+// or growth of the server log — either of which extends the wait past the base
+// window. A non-zero `flow start` exit ends the wait at once: the launcher
+// failed, and its output is the diagnosis. Resolves
+// `{ ready, reason, extended, elapsedSec, checks }` — see backend-wait.js;
+// `reason` is 'healthy' | 'timeout' | 'stalled' | 'hard-cap' | 'launcher-failed'.
+async function waitForBackend({
+  maxChecks = MAX_HEALTH_CHECKS,
+  launch = uvManager ? uvManager.lastLaunch() : null,
+} = {}) {
+  const baseSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
+  const serverLogDir = path.join(BACKEND_LOGS, 'server');
+  log.info(
+    `Waiting for backend at ${BACKEND_URL} (${baseSec}s, longer while flow start or ${serverLogDir} reports progress)...`,
+  );
 
-  for (let i = 0; i < maxChecks; i++) {
-    try {
-      const response = await fetch(`${BACKEND_URL}/health/status`);
-      if (response.ok) {
-        log.info('Backend is ready!');
-        return true;
-      }
-    } catch (error) {
-      // Backend not ready yet
+  const serverLogActivity = createLogActivityProbe({
+    newestLogFile: () => getNewestLogFile(serverLogDir),
+    fileSize: (file) => fs.statSync(file).size,
+  });
+  const launchActivity = createChangeProbe(() => (launch ? launch.lines : 0));
+  // A fatal error the server log already names ends the wait at once: no point in 120 s of
+  // polling when the backend died on an import that Windows application control refused
+  // (runtime-repair.js). Reads the log tail only when the file changed.
+  const policyBlock = createPolicyBlockProbe({
+    newestLogFile: () => getNewestLogFile(serverLogDir),
+    fileSize: (file) => fs.statSync(file).size,
+    fileMtimeMs: (file) => fs.statSync(file).mtimeMs,
+    readTail: (file) => readFileTail(file, 64 * 1024),
+  });
+  let policyBlockMatch = null;
+  // The monitor's own verdict (fatal-failure.js): it classifies every death of the backend it spawned and
+  // writes <instance>/server-failure.json when restarting cannot help. Read on every poll, so the wait ends
+  // on it 0.5 s after the monitor decided — not 120 s later on a timeout.
+  const failureProbe = fatalFailure.createFailureRecordProbe({ readRecord: readFailureRecord, startedAt: Date.now() });
+  let failureRecord = null;
+
+  let statusLabel = 'Waiting for server';
+  const showPhase = (line) => {
+    const label = bootPhaseLabel(line);
+    if (label && label !== statusLabel) {
+      statusLabel = label;
+      sendStatus(label);
     }
-    await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL));
-  }
+  };
 
-  log.error(`Backend failed to start within ${timeoutSec}s timeout`);
-  return false;
+  const result = await runBackendGate({
+    probeHealth: async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/health/status`);
+        return response.ok;
+      } catch {
+        return false; // Backend not ready yet
+      }
+    },
+    logActivity: () => {
+      // Both probes run on every poll so both cursors advance — no short-circuit.
+      const fromLauncher = launchActivity();
+      const fromServerLog = serverLogActivity();
+      if (fromLauncher && launch) showPhase(launch.lastLine);
+      if (fromServerLog) showPhase(lastBootLine(serverLogDir));
+      return fromLauncher || fromServerLog;
+    },
+    aborted: () => {
+      if (isQuitting) return 'quitting'; // the backend is being stopped — nothing left to wait for
+      if (launch && launch.exit && launch.exit.code !== 0) return 'launcher-failed';
+      failureRecord = failureProbe();
+      if (failureRecord) return 'fatal-failure';
+      policyBlockMatch = policyBlock();
+      return policyBlockMatch ? 'policy-blocked' : null;
+    },
+    maxChecks,
+    stallChecks: LOG_STALL_CHECKS,
+    hardCapChecks: MAX_EXTENDED_HEALTH_CHECKS,
+    intervalMs: HEALTH_CHECK_INTERVAL,
+    onExtended: (elapsedSec) => sendStatus(`${statusLabel} — still starting (${elapsedSec}s, progress is being reported)`),
+    log,
+  });
+
+  if (result.reason === 'policy-blocked') result.policyBlock = policyBlockMatch;
+  if (result.reason === 'launcher-failed' && launch) {
+    // The block can hit the LAUNCHER's imports (`flow start` → flow_sdk.cli → pydantic → _pydantic_core,
+    // seen under Smart App Control on 2026-10-10) before any server log exists: its stderr is the evidence
+    // then. Same panel, same rules.
+    const inLauncher = detectPolicyBlockInLog(`${launch.stderr || ''}\n${launch.stdout || ''}`, { launcher: true });
+    if (inLauncher) {
+      result.reason = 'policy-blocked';
+      result.policyBlock = { ...inLauncher, path: 'flow start output (the launcher)' };
+      policyBlockMatch = result.policyBlock;
+    }
+  }
+  if (result.reason === 'fatal-failure') {
+    result.failureRecord = failureRecord;
+    result.policyBlock = policyBlock(); // Electron's own reading of the log, to check the two agree
+  }
+  if (result.ready) {
+    log.info(`Backend is ready! (${result.elapsedSec}s, ${result.checks} checks${result.extended ? ', extended on reported progress' : ''})`);
+  } else if (result.reason === 'policy-blocked') {
+    log.error(`Backend blocked by Windows application control after ${result.elapsedSec}s: ${policyBlockMatch.line} (${policyBlockMatch.path})`);
+  } else if (result.reason === 'fatal-failure') {
+    log.error(`Backend stopped by its monitor after ${result.elapsedSec}s: ${failureRecord.kind} — ${failureRecord.reason} (${failureRecord.excerpt || 'no excerpt'})`);
+  } else if (result.reason === 'quitting') {
+    log.info(`[startup] stopped waiting for the backend: the app is quitting (${result.elapsedSec}s)`);
+  } else {
+    log.error(`Backend failed to start: ${result.reason} after ${result.elapsedSec}s (${result.checks} checks)`);
+  }
+  return result;
 }
 
 function sendStatus(message) {
@@ -547,15 +1328,33 @@ function sendStatus(message) {
   }
 }
 
-// Render the in-app startup-timeout panel (loading.html) instead of the bland
+// Progress ticker for a `uv tool install` shown on the loading screen: uv's own
+// per-step lines ("Downloading flowpad (34.6MiB)", "Resolved 132 packages…")
+// under a fixed label, so a long install on a slow link is visibly alive
+// instead of a frozen spinner. The install itself has no wall-clock cap.
+function installProgress(label) {
+  sendStatus(label);
+  return (line) => sendStatus(`${label} — ${line}`);
+}
+
+// Render the in-app startup error panel (loading.html) instead of the bland
 // native OS error box. Gives the user the two exact, copy-pasteable recovery
 // commands — upgrade first, then `flow diagnose` — each with a copy button.
-// Falls back to the native dialog only if the loading window is already gone.
-function showStartupTimeoutError(detail) {
+// `retryable` adds a Retry button that re-runs the install/start in-app (see
+// installAndStartBackend). Falls back to the native dialog only if the loading
+// window is already gone; returns whether the panel was rendered.
+async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false, repairable = false, extras = null } = {}) {
   const payload = {
     detail,
-    upgradeCommand: UPGRADE_COMMAND,
+    retryable,
+    policyBlocked, // hides the "upgrade / diagnose" steps: neither helps when policy blocks the launchers
+    repairable,    // shows "Repair FlowPad" (runtime-repair.js): Windows blocked the engine's Python, once per version
+    upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
+    logPath: MAIN_DESKTOP_LOG_DIR,
+    // Recovery extras (FLOWPAD-2231): retryLabel / retryWarning, updateVersion (an "Update FlowPad" button),
+    // exportable ("Export logs"), fatalKind.
+    ...(extras || {}),
   };
   startupFailed = true;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -565,19 +1364,556 @@ function showStartupTimeoutError(detail) {
     return true;
   }
   // No window to render into — degrade to the native dialog.
-  dialog.showErrorBox(
-    'Flowpad couldn’t start',
-    `${detail}\n\n` +
-      `1) Upgrade Flowpad, then relaunch:\n   ${UPGRADE_COMMAND}\n\n` +
+  // Awaited: the caller quits the app when this returns false, and quitting before the user answers would
+  // close the one dialog that explains the failure (and the "Send Report" button on it).
+  await showFailureDialog({
+    dialog,
+    title: 'Flowpad couldn’t start',
+    message: 'Flowpad couldn’t start.',
+    detail:
+      `${detail}\n\n` +
+      `1) Upgrade Flowpad, then relaunch:\n   ${upgradeCommand()}\n\n` +
       `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
-  );
+    share: (text) => shareDiagnostics(text, 'did not start'),
+    log,
+  });
   return false;
 }
 
+function waitForRetryRequest() {
+  return new Promise((resolve) => ipcMain.once('retry-startup', () => resolve()));
+}
+
+/** 'retry', 'repair' or 'update', whichever panel button the user presses first; the other listeners are dropped. */
+function waitForPanelAction() {
+  return new Promise((resolve) => {
+    const channels = { 'retry-startup': 'retry', 'repair-runtime': 'repair', 'update-desktop-recovery': 'update' };
+    const handlers = {};
+    const settle = (action) => {
+      for (const [ch, h] of Object.entries(handlers)) ipcMain.removeListener(ch, h);
+      resolve(action);
+    };
+    for (const [ch, action] of Object.entries(channels)) {
+      handlers[ch] = () => settle(action);
+      ipcMain.once(ch, handlers[ch]);
+    }
+  });
+}
+
+// A deterministic backend failure (FLOWPAD-2231). Two sources, one panel:
+//   - `record`: the monitor's verdict (<instance>/server-failure.json, fatal-failure.js) — it stopped restarting
+//     the backend and says why (policy-blocked, interpreter-blocked, native-missing, unsupported-arch, crash-loop);
+//   - `match`: Electron's own reading of the server log (runtime-repair.js detectPolicyBlockInLog), the fallback
+//     when there is no record (an older engine), and the traceback shown for policy kinds.
+// The panel names the cause with the traceback and the Code Integrity events, and offers, as applicable:
+//   Repair FlowPad (Windows, repairable kinds, once per app+engine version — runtime-repair.js),
+//   Update FlowPad to X (the desktop updater, checked without the backend, ONCE per version and failure —
+//   update-recovery.js; never claimed to fix a blocked runtime), Retry anyway (with the warning that an
+//   unchanged runtime will fail the same way), Export logs / Send Report.
+// Resolves true when the backend is healthy again; false when the app is quitting (or quitting into an update).
+// `retry`, for a block that hit the engine INSTALL (nothing to start yet): what "Retry anyway" runs instead of
+// starting the engine — it re-runs the install and resolves `{ ok, installBlock? }` like installAndStartBackend.
+// Such a block never launched a backend, so nothing is stopped: a bare `flow stop` would kill whatever holds the port.
+// `autoRepair`: the block hit the FIRST install, so there is no engine to lose: the repair (the signed PSF runtime)
+// runs at once, without the panel and the click; the panel appears only if the repair itself fails. It is tried once.
+async function handleFatalFailure({ match: firstMatch, record: firstRecord, retry = null, autoRepair = false }) {
+  let match = firstMatch;
+  let record = firstRecord;
+  let extraDetail = '';
+  let autoRepairPending = !!autoRepair;
+  const stopBackend = () => {
+    if (retry && !(uvManager && uvManager.hasLaunchedBackend())) return;
+    if (uvManager) pendingBackendStop = uvManager.stop().catch((e) => log.warn(`[fatal-failure] backend stop failed: ${e.message}`));
+  };
+  stopBackend(); // the monitor has stopped already on a record; on Electron's own match it would keep restarting
+  for (;;) {
+    const kind = record ? record.kind : 'policy-blocked';
+    const policy = fatalFailure.isPolicyKind(kind);
+    // Every time the panel is (re)shown — after a failed repair or a failed retry too — the journal's phase is
+    // terminal again: the user is looking at the panel, so a quit or a kill from here is not a crash.
+    markPhase('fatal-failure', { kind, source: record ? 'monitor' : 'electron', retried: !!extraDetail });
+    const versions = {
+      appVersion: app.getVersion(),
+      engineVersion: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
+    };
+    const state = readRuntimeState((p) => fs.readFileSync(p, 'utf8'), FLOW_HOME);
+    // Repair = a signed interpreter. It helps when the blocked module ships with the interpreter; a block on
+    // a third-party wheel's module (_pydantic_core, seen under Smart App Control two days after the
+    // pydantic-core release) is not changed by it, so it is not offered (describeRuntimeBlock says why).
+    const blockedModule = record ? record.module : (match && match.module);
+    const moduleRepairable = !blockedModule || isInterpreterModule(blockedModule);
+    const repairable = process.platform === 'win32' && !!uvManager && fatalFailure.isRepairableKind(kind) && moduleRepairable && canAttemptRepair(state, versions);
+    // The desktop update as a way out: the launch-time check already ran (bounded, no backend needed);
+    // offered once per target version and failure fingerprint, never as a downgrade.
+    const fingerprintKey = failureFingerprintKey(record);
+    const latest = await launchDesktopCheck;
+    const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
+    const updateVersion = plan.action === 'offer' ? plan.version : null;
+
+    let detail;
+    if (policy && match) {
+      // Windows Code Integrity events 3077/3089 name the exact blocked binary and the policy id —
+      // the evidence that tells Smart App Control from an organization's policy.
+      const ciEvents = uvManager ? await uvManager.codeIntegrityEvents(30) : '';
+      detail = describeRuntimeBlock(match, { repairable, priorFailure: priorAttempt(state, versions) });
+      if (record && record.restarts_stopped) {
+        const n = Number(record.attempts) || 1;
+        detail += `\n\nThe engine's supervisor stopped restarting it after ${n} attempt${n === 1 ? '' : 's'}: the same block repeats. ${fatalFailure.RETRY_WARNING}`;
+      }
+      detail +=
+        (extraDetail ? `\n\n${extraDetail}` : '') +
+        `\n\nEvidence — ${match.path}:\n${match.traceback}` +
+        `\n\nWindows Code Integrity events (3077/3089, last 30 min):\n${ciEvents || '(none readable — the policy may not log to the Operational channel, or the log is empty)'}`;
+    } else {
+      detail = fatalFailure.describeFatalFailure(record || { kind, fatal: true, reason: (match && match.line) || 'The FlowPad engine stopped.' }) +
+        (extraDetail ? `\n\n${extraDetail}` : '');
+    }
+    detail += `\n\n${updateRecovery.recoveryNote(kind, updateVersion)}`;
+    if (plan.why === 'already-attempted') {
+      detail += ` An update to ${latest} was already attempted for this failure (${plan.prior.at}, ${plan.prior.outcome}); it is not offered again.`;
+    }
+    log.error(`[fatal-failure] ${detail}`);
+    let action;
+    if (autoRepairPending && repairable) {
+      autoRepairPending = false;
+      log.info('[runtime-repair] the first install was blocked: repairing automatically (no engine to lose)');
+      action = 'repair';
+    } else {
+      autoRepairPending = false;
+      const shown = await showStartupErrorPanel(detail, {
+        retryable: true,
+        policyBlocked: policy,
+        repairable,
+        extras: { retryLabel: 'Retry anyway', retryWarning: fatalFailure.RETRY_WARNING, updateVersion, exportable: true, fatalKind: kind },
+      });
+      if (!shown) {
+        app.quit();
+        return false;
+      }
+      action = await waitForPanelAction();
+    }
+    if (isQuitting) return false;
+    startupFailed = false;
+    await pendingBackendStop;
+
+    if (action === 'update' && updateVersion) {
+      const r = await runRecoveryUpdate({ version: updateVersion, fingerprint: fingerprintKey });
+      if (r.ok) return false; // quitting into the installer
+      extraDetail = `Update to ${updateVersion} failed: ${String(r.error).split('\n')[0]}. The logs can still be exported.`;
+      continue;
+    }
+
+    // Repair or Retry: the user's explicit act. The monitor refuses to start a runtime it recorded as fatally
+    // failed (launch.py refuse_start_reason) — clearing the record is how that consent reaches it.
+    clearFailureRecord(`the user chose ${action}`);
+
+    if (action === 'repair' && repairable) {
+      log.info(`[runtime-repair] user asked for the repair (${(match && (match.module || match.line)) || kind})`);
+      sendStatus('Repairing the FlowPad runtime');
+      try {
+        const result = await uvManager.repairRuntime({
+          versions,
+          onProgress: (m) => sendStatus(`Repairing the FlowPad runtime — ${m}`),
+          startBackend: async () => { sendStatus('Starting flowpad'); markPhase('backend-start', { repair: true }); await uvManager.start(); },
+          healthCheck: async () => {
+            const w = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+            if (backendWaitAborted(w)) throw new Error('the app is quitting');
+            if (w.reason === 'policy-blocked') { match = w.policyBlock; record = null; }
+            if (w.reason === 'fatal-failure') { record = w.failureRecord; match = fatalFailure.reconcileFatalReason({ record, probeMatch: w.policyBlock }).match; }
+            return w.ready;
+          },
+        });
+        log.info(`[runtime-repair] done: ${result.reused ? 'reused' : 'installed'} ${result.python}`);
+        return true;
+      } catch (err) {
+        if (isQuitting) return false;
+        log.error(`[runtime-repair] failed at ${err.step || 'repair'}: ${err.message}`);
+        stopBackend();
+        extraDetail =
+          `Repair failed at step "${err.step || 'repair'}": ${String(err.message).split('\n')[0]}` +
+          (err.rolledBack ? '\nThe previous engine was restored.' : '') +
+          (err.policyBlocked
+            ? '\nThe policy also blocked the repair itself. If this computer is managed by an organization, IT approval may be required before FlowPad can run.'
+            : '') +
+          '\nUse “Send Report” or “Export logs” to send the logs.';
+        continue;
+      }
+    }
+
+    // Retry anyway: start the engine again and wait for it; a repeat failure shows the panel again.
+    sendStatus('Retrying');
+    markPhase('backend-start', { retry: true });
+    try {
+      if (retry) {
+        // The install is what was blocked: run it again (uv keeps what it fetched); a repeat block shows the panel again.
+        const r = await retry();
+        if (!r.ok) {
+          if (r.installBlock) { match = r.installBlock; record = null; extraDetail = ''; }
+          else extraDetail = `The install failed again: ${r.error ? describeStartupFailure(r.error) : 'see the logs'}`;
+          continue;
+        }
+      } else {
+        await uvManager.start();
+      }
+    } catch (err) {
+      extraDetail = describeStartupFailure(err);
+      continue;
+    }
+    // A retry that re-ran the install boots an engine that was just unpacked: the same wider window as after any
+    // install (PyPI fetch, bytecode warm-up, antivirus scan on Windows).
+    const w = await waitForBackend(retry ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined);
+    if (backendWaitAborted(w)) return false;
+    if (w.ready) return true;
+    stopBackend();
+    if (w.reason === 'fatal-failure') {
+      record = w.failureRecord;
+      match = fatalFailure.reconcileFatalReason({ record, probeMatch: w.policyBlock }).match;
+      extraDetail = '';
+    } else if (w.reason === 'policy-blocked') {
+      match = w.policyBlock;
+      record = null;
+      extraDetail = '';
+    } else {
+      extraDetail = `Flowpad’s backend didn’t respond within ${w.elapsedSec} seconds (${w.reason}).`;
+    }
+  }
+}
+
+/**
+ * The recovery update: download `version` through the existing updater (electron-updater verifies it
+ * against latest.yml's sha512 and, on Windows, the installer's signature), then stop the backend and
+ * quitAndInstall. The attempt is recorded BEFORE anything is downloaded (update-recovery.js), so a crash,
+ * an interrupted download or a relaunch into the same failure can never start it a second time.
+ */
+async function runRecoveryUpdate({ version, fingerprint }) {
+  writeRecoveryState(updateRecovery.recordRecoveryAttempt(readRecoveryState(), { targetVersion: version, fingerprint, fromVersion: app.getVersion() }));
+  markPhase('recovery-update', { version });
+  sendStatus(`Downloading FlowPad ${version}`);
+  try {
+    if (!app.isPackaged || process.windowsStore) throw new Error('desktop updates are not available for this build');
+    downloadDesktopUpdateInBackground({ promptOnReady: false, version });
+    await desktopDownloadDone;
+    if (desktopDownloadedVersion !== version) throw new Error('the download did not complete (see the updater lines in the log)');
+    log.info(`[update-recovery] ${version} downloaded and verified by the updater; installing and relaunching`);
+    sendStatus(`Installing FlowPad ${version}`);
+    if (!(await restartApplier.apply())) throw new Error('another install is already in progress');
+    return { ok: true };
+  } catch (err) {
+    log.error(`[update-recovery] failed: ${err.message}`);
+    writeRecoveryState(updateRecovery.markAttemptOutcome(readRecoveryState(), { targetVersion: version, fingerprint, outcome: 'failed', detail: String(err.message).slice(0, 300) }));
+    markPhase('recovery-failed', { version, error: String(err.message).slice(0, 200) });
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Recovery mode (startup-watchdog.js): the previous launches died before showing anything, or the app was
+ * started with --recovery. The panel first — Update / Export logs / Share — and the backend only on "Start".
+ * Resolves true to continue the normal start, false when quitting (or quitting into an update).
+ */
+async function showRecoveryEntry(why) {
+  let extraDetail = '';
+  for (;;) {
+    const latest = await launchDesktopCheck;
+    const fingerprintKey = `recovery|${app.getVersion()}`;
+    const plan = updateRecovery.planRecoveryUpdate({ state: readRecoveryState(), appVersion: app.getVersion(), latestVersion: latest, fingerprint: fingerprintKey, isNewer });
+    const updateVersion = plan.action === 'offer' ? plan.version : null;
+    const detail =
+      `FlowPad is starting in recovery mode: ${why}.\n\n` +
+      'Nothing has been started yet. You can export the logs, update FlowPad if a newer version is available, ' +
+      'or start FlowPad normally.' +
+      (extraDetail ? `\n\n${extraDetail}` : '') +
+      `\n\n${updateRecovery.recoveryNote('recovery', updateVersion)}`;
+    log.warn(`[recovery] ${detail}`);
+    const shown = await showStartupErrorPanel(detail, {
+      retryable: true,
+      policyBlocked: true, // no "upgrade the engine" steps: nothing is known about the engine yet
+      extras: { retryLabel: 'Start FlowPad', updateVersion, exportable: true, fatalKind: 'recovery' },
+    });
+    if (!shown) { app.quit(); return false; }
+    const action = await waitForPanelAction();
+    if (isQuitting) return false;
+    startupFailed = false;
+    if (action === 'update' && updateVersion) {
+      const r = await runRecoveryUpdate({ version: updateVersion, fingerprint: fingerprintKey });
+      if (r.ok) return false;
+      extraDetail = `Update to ${updateVersion} failed: ${String(r.error).split('\n')[0]}.`;
+      continue;
+    }
+    return true;
+  }
+}
+
+// Install (first launch) or upgrade the flowpad package and start the backend.
+// Resolves { ok: true, backendJustUpgraded } — or { ok: false } after rendering
+// the error panel with a Retry button, so startApp() can run it again. A fresh
+// UvManager per attempt: nothing from a failed attempt leaks into the retry.
+// A step of the install (uv itself, `uv tool install`, the broken-install reinstall): an error from it is tagged,
+// so the catch below can tell "the install was blocked" from "the engine's launcher was blocked" (start()'s own
+// policyBlockedError, whose text also says Device Guard, keeps its own path and its own evidence).
+async function installStep(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && typeof err === 'object') err.fromInstall = true;
+    throw err;
+  }
+}
+
+// `quiet`: the caller (the repair panel's Retry) shows its own panel for a failure — no second panel from here.
+async function installAndStartBackend({ quiet = false } = {}) {
+  let backendJustUpgraded = false;
+  let firstInstall = false;
+  // Install and start backend via uv + flow CLI
+  uvManager = new UvManager(log, { stateDir: FLOW_HOME });
+  uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
+
+  // Did the user just upgrade to a new desktop build? Logged for diagnostics.
+  // The engine version saved for this desktop (if any) is installed below.
+  const lastDesktopVersion = readLastDesktopVersion();
+  const desktopUpgraded =
+    app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
+  if (desktopUpgraded) {
+    log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
+  }
+
+  try {
+    // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
+    let flowBin = uvManager.getInstalledFlowBin();
+
+    // A previous run quit (or died) in the middle of an install: the tool venv
+    // may be half-replaced. Repair it before anything reads or starts it.
+    if (flowBin && uvManager.hadInterruptedInstall()) {
+      sendStatus('Repairing Flowpad installation');
+      try {
+        await uvManager.repairIfInterrupted({ onProgress: installProgress('Repairing Flowpad installation') });
+        backendJustUpgraded = true;
+        flowBin = uvManager.getInstalledFlowBin() || flowBin;
+      } catch (repairErr) {
+        // Offline, or uv itself is unavailable: start what is installed (it may be perfectly
+        // fine) instead of failing every launch. The marker is kept, so the repair is
+        // retried next launch; a truly broken venv still hits the broken-install path below.
+        log.warn(`[uv] repair of the interrupted install failed, starting the current install: ${repairErr.message}`);
+      }
+    }
+
+    if (flowBin) {
+      log.info(`Fast path: flow binary found at ${flowBin}`);
+
+      // FLOWPAD-2231: the last run's backend died for a reason restarting cannot change, and the runtime
+      // (interpreter + engine version) is the same: do not start it again — startApp shows the panel on
+      // the record. (The monitor would refuse too: launch.py refuse_start_reason.) A record for another
+      // runtime is stale and is cleared.
+      const prior = readFailureRecord();
+      if (prior && fatalFailure.isFatalRecord(prior)) {
+        if (fatalFailure.recordMatchesRuntime(prior, currentRuntimeFingerprint())) {
+          log.error(`[fatal-failure] the last backend stopped deterministically (${prior.kind} at ${prior.at}) and the runtime is unchanged — not starting it again`);
+          uvManager.useFlowBin(flowBin); // the panel's "Retry anyway" starts this binary
+          return { ok: false, fatalRecord: prior };
+        }
+        clearFailureRecord('the runtime changed since the recorded failure');
+      }
+
+      let activeBin = flowBin;
+
+      // ── The desktop was just updated: install the engine version that was saved for it ──
+      // When the update was offered (desktop + engine) the engine version X was saved, and the user agreed
+      // by choosing "Restart now". Install exactly X now, with THIS desktop (its Python pin, its start
+      // contract). No agreement (the app was closed after "Later")? Then the normal engine dialog below
+      // asks. See update-plan.js. A failure keeps the current engine; the normal dialog offers it again.
+      const enginePlan = planAfterDesktopUpdate({
+        state: pendingEngineStore.read(),
+        appVersion: app.getVersion(),
+        installedEngine: uvManager.getInstalledVersionSync(flowBin),
+        isNewer,
+      });
+      if (enginePlan.clear) pendingEngineStore.clear();
+      if (enginePlan.action === 'install') {
+        log.info(`[update] installing the engine version agreed before the restart: ${enginePlan.version}`);
+        updateTest.event('agreed-engine-install', { version: enginePlan.version, desktop: app.getVersion() });
+        sendStatus(`Updating the FlowPad engine to ${enginePlan.version}`);
+        try {
+          await uvManager.upgrade({ version: enginePlan.version, onProgress: installProgress('Updating the FlowPad engine') });
+          activeBin = uvManager.getInstalledFlowBin() || flowBin;
+          backendJustUpgraded = true;
+        } catch (upgradeErr) {
+          log.warn(`[uv] installing the agreed engine ${enginePlan.version} failed, starting the current engine: ${upgradeErr.message}`);
+        }
+      }
+
+      // ── Pre-start updates ───────────────────────────────────────────────
+      // Two independent channels: the desktop wrapper (electron-updater / GitHub) and the flowpad engine
+      // (PyPI). A newer desktop — alone or together with a newer engine — goes through offerDesktopUpdate:
+      // the desktop is downloaded in the background and the engine is updated by the NEW desktop after the
+      // restart. The engine is only upgraded here, by the running desktop, when it is the only update.
+      // The check was started at launch, bounded and independent of the backend (startApp); its answer is
+      // reused here rather than checked a second time.
+      const desktopLatest = await launchDesktopCheck;
+      // The user may have quit while that check ran: no update dialog over a closing app.
+      if (isQuitting) return { ok: false };
+
+      if (desktopLatest) {
+        await offerDesktopUpdate(desktopLatest);
+      } else if (engineChangeAllowed('pre-start engine prompt') === 'allow') {
+        // No desktop update (and the check did answer) → the standalone engine prompt handles the "newer on
+        // PyPI" case (and no-ops otherwise). Reads the installed version from `_version.py`, so it works even
+        // when the install is broken or the cloud is unreachable. `beforeBackendStart` makes the call return
+        // right after the upgrade — the normal start path below boots the upgraded backend, avoiding a
+        // double start.
+        const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
+          sendStatus,
+          waitForBackend,
+          backendUrl: BACKEND_URL,
+          cloudUrl: FLOWPAD_CLOUD_URL,
+          beforeBackendStart: true,
+        });
+        if (upgradedPreStart) {
+          activeBin = uvManager.getInstalledFlowBin() || activeBin;
+          backendJustUpgraded = true;
+        }
+      }
+
+      const version = uvManager.getInstalledVersionSync(activeBin);
+      const versionSuffix = version ? ` v${version}` : '';
+      sendStatus(`Starting flowpad${versionSuffix}`);
+      markPhase('backend-start', { engine: version || null });
+      try {
+        await uvManager.startWithBin(activeBin);
+      } catch (startErr) {
+        // A shim exists on disk (so we took the fast path), but its env can't
+        // import flow_sdk — a corrupt/half-finished install. Without this the
+        // app would crash on the same broken shim every launch and never
+        // self-heal (a --force reinstall only runs in the first-time branch).
+        // Repair once and retry; if it still fails, fall through to the dialog.
+        if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
+        log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
+        // The repair puts the NEWEST engine on the machine: a pending desktop update goes first, and the repair
+        // runs after the relaunch, with the new desktop.
+        if (engineChangeAllowed('repairing a broken install', { mustInstall: true }) === 'desktop-first'
+            && await updateDesktopBeforeEngineInstall('repairing a broken install')) {
+          return { ok: false };
+        }
+        sendStatus('Repairing Flowpad installation');
+        await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') }));
+        await installStep(() => uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') }));
+        backendJustUpgraded = true;
+        const repairedVersion = uvManager.getInstalledVersionSync();
+        sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
+        await uvManager.start();
+      }
+    } else {
+      // FIRST-TIME SETUP: uv tool install flowpad (latest)
+      log.info('First-time setup: flow binary not found, installing latest from PyPI');
+      sendStatus('Setting up Flowpad (first time)');
+
+      // The install puts the NEWEST engine on the machine: a pending desktop update goes first, and the engine
+      // is installed after the relaunch, with the new desktop. (The launch check ran in parallel; it is bounded.)
+      await launchDesktopCheck;
+      if (engineChangeAllowed('first-time setup', { mustInstall: true }) === 'desktop-first'
+          && await updateDesktopBeforeEngineInstall('first-time setup')) {
+        return { ok: false };
+      }
+
+      firstInstall = true;
+      sendStatus('Checking Python installation');
+      await installStep(() => uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') }));
+
+      // A few seconds to learn whether the interpreter even runs (Windows application control): a blocked one goes
+      // straight to the repair instead of failing a download-and-unpack of ~160 packages first.
+      await installStep(() => uvManager.probeManagedInterpreter());
+      await installStep(() => uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') }));
+      backendJustUpgraded = true;
+
+      const version = uvManager.getInstalledVersionSync();
+      const versionSuffix = version ? ` v${version}` : '';
+      sendStatus(`Starting flowpad${versionSuffix}`);
+      markPhase('backend-start', { engine: version || null, firstInstall: true });
+      await uvManager.start();
+    }
+  } catch (error) {
+    if (isQuitting || (error && error.quitInProgress)) {
+      // The user quit mid-startup: the aborted install, or the start refused by
+      // UvManager.close(), is why we are here. Do not show the error panel (it
+      // would re-show the window we just hid); the app is quitting.
+      log.info(`[startup] stopped by the user quitting: ${error && error.message}`);
+      return { ok: false };
+    }
+    log.error(`Failed to start Python backend: ${String(error?.message || error).split('\n')[0]}`);
+
+    // FLOWPAD-2231: Windows application control refused the interpreter DURING the install (uv builds a
+    // dependency from source, compiles bytecode): the same block, earlier than any backend. The panel that
+    // names it and offers the signed runtime (Repair), not the generic error whose Retry fails the same way.
+    // Only an error of the install steps counts: the evidence is uv's output (the text exists on Windows only;
+    // Repair itself is gated there).
+    const installBlock = error && error.fromInstall ? policyBlockFromInstallError(error) : null;
+    if (installBlock) {
+      log.error(`[fatal-failure] the engine install was blocked by Windows application control: ${installBlock.line}`);
+      // A block on the FIRST install leaves a half-built environment that is not an engine to roll back to
+      // (a block during --compile-bytecode happens after the venv is populated and readable).
+      if (firstInstall && uvManager && typeof uvManager.markFirstInstallBlocked === 'function') uvManager.markFirstInstallBlocked();
+      return { ok: false, installBlock, firstInstall };
+    }
+
+    const details = [
+      error?.message || String(error),
+      `HOME=${process.env.HOME || ''}`,
+      `cwd=${os.homedir()}`,
+      `flowBin=${uvManager?._flowBin || ''}`,
+      `PATH=${(process.env.PATH || '').slice(0, 500)}`
+    ];
+
+    // The whole of stderr, once: uv's `error:` line is usually near the TOP, far from the last 500 chars.
+    if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-8000)}`);
+    if (error?.stdout) details.push(`stdout=${error.stdout.toString().slice(-500)}`);
+
+    const detailText = details.join('\n');
+    log.error(`[startup error details]\n${detailText}`);
+
+    // In-app panel with Retry (uv keeps what it already fetched in its
+    // cache, so a retry after a slow or flaky download is usually seconds).
+    // Only if the loading window is already gone is the failure fatal.
+    if (quiet) return { ok: false, error };
+    if (!(await showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) }))) {
+      app.quit();
+    }
+    return { ok: false };
+  }
+  return { ok: true, backendJustUpgraded };
+}
+
+// The wait ended because the app is quitting. `isQuitting` also covers a restart-to-update that stopped the backend
+// under the wait (`launcher-failed`): that is not a startup failure, so it must not reach the error panel.
+function backendWaitAborted(backendWait) {
+  return backendWait.reason === 'quitting' || isQuitting;
+}
+
 async function startApp() {
+  updateTest.event('boot', { desktop: app.getVersion(), packaged: app.isPackaged });
+  // The startup journal first (startup-watchdog.js): from here on every phase is on disk, so a main
+  // process that dies before showing anything is recognised by the next launch.
+  journal = createStartupJournal({
+    readFile: (p) => fs.readFileSync(p, 'utf8'),
+    writeFile: (p, t) => fs.writeFileSync(p, t, 'utf8'),
+    filePath: path.join(app.getPath('userData'), 'startup-journal.json'),
+    appVersion: app.getVersion(),
+    pid: process.pid,
+    log,
+  });
+  journal.mark('electron-initialized');
+  // A recovery install (update-recovery.js) brought us here? Record it. The failure history is cleared
+  // only once the backend is confirmed healthy below — never by the install itself.
+  {
+    const r = updateRecovery.afterRelaunch({ state: readRecoveryState(), appVersion: app.getVersion() });
+    writeRecoveryState(r.state);
+    if (r.installed) log.info(`[update-recovery] running ${app.getVersion()} after the recovery update from ${r.installed.fromVersion} (${r.installed.at})`);
+  }
+
   // Kick off the desktop wrapper update check immediately at launch — runs in
   // parallel with backend startup and is a no-op when the app isn't packaged.
   setupElectronAutoUpdater();
+  // The check itself, started now, bounded, and independent of the backend: a backend that cannot start
+  // must not hide the way out, and the failure panel must not wait on a slow or absent network for it.
+  launchDesktopCheck = updateRecovery.boundedCheck(() => getDesktopUpdateVersion(), { log, ms: updateTest.checkBoundMs() });
 
   createWindow();
 
@@ -590,184 +1926,140 @@ async function startApp() {
   if (mainWindow.webContents.isLoading()) {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
   }
+  markPhase('renderer-loaded');
 
-  // In development mode, assume backend is running externally
-  const isDev = process.env.MINIHUB_DEV === 'true';
+  // macOS App Translocation: an app launched from Downloads / the .dmg runs from a read-only temporary copy
+  // and cannot update itself. Ask once per version to move to /Applications — BEFORE any install work, so an
+  // accepted move (which restarts the app) does not interrupt one. See app-location.js.
+  if (process.platform === 'darwin' && !isDev) {
+    await offerMoveToApplications({
+      platform: process.platform,
+      // The move quits the app to relaunch it from /Applications — the user already said yes to that.
+      app: {
+        getVersion: () => app.getVersion(),
+        isPackaged: app.isPackaged,
+        isInApplicationsFolder: () => app.isInApplicationsFolder(),
+        moveToApplicationsFolder: (opts) => {
+          quitGate.allow('moving to Applications');
+          let moved = false;
+          try {
+            moved = app.moveToApplicationsFolder(opts);
+            return moved;
+          } finally {
+            if (!moved) quitGate.revoke('the move to Applications did not happen');
+          }
+        },
+      },
+      dialog,
+      execPath: process.execPath,
+      readState: () => { try { return JSON.parse(fs.readFileSync(locationPromptStatePath(), 'utf8')); } catch { return null; } },
+      writeState: (state) => fs.writeFileSync(locationPromptStatePath(), JSON.stringify(state), 'utf8'),
+      share: (text) => shareDiagnostics(text, 'could not move itself to Applications'),
+      scriptedAnswer: () => updateTest.answerFor('move', { execPath: process.execPath }),
+      log,
+    }).catch((err) => log.warn(`[location] move offer failed: ${err.message}`));
+  }
 
   let backendJustUpgraded = false;
+
+  // Recovery mode: the previous launches died before reaching a terminal phase, or --recovery was passed.
+  // The panel (Update / Export logs / Share / Start) before any backend work.
+  if (!isDev && (recoveryRequested(process.argv) || journal.recoveryMode())) {
+    const why = recoveryRequested(process.argv)
+      ? 'started with --recovery'
+      : `the previous ${journal.consecutiveAbnormalRuns()} launches ended before FlowPad was up`;
+    log.warn(`[startup] recovery mode: ${why}`);
+    if (!(await showRecoveryEntry(why))) return;
+  }
 
   if (isDev) {
     log.info('Development mode: expecting backend to be running externally');
   } else {
-    // Install and start backend via uv + flow CLI
-    uvManager = new UvManager(log);
-
-    // Did the user just upgrade to a new desktop build? Logged for diagnostics
-    // only — the pre-start update prompt below decides (and asks) whether to
-    // bring the flowpad backend up to match; we don't silently auto-upgrade.
-    const lastDesktopVersion = readLastDesktopVersion();
-    const desktopUpgraded =
-      app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
-    if (desktopUpgraded) {
-      log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
-    }
-
-    try {
-      // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
-      const flowBin = uvManager.getInstalledFlowBin();
-
-      if (flowBin) {
-        log.info(`Fast path: flow binary found at ${flowBin}`);
-
-        // ── Pre-start updates: desktop + backend, asked ONCE ───────────────
-        // Two independent channels: the desktop wrapper (electron-updater /
-        // GitHub) and the flowpad backend (PyPI). We check the desktop FIRST,
-        // without downloading, so that when BOTH have a newer version we show a
-        // single consolidated dialog instead of two. The backend is applied
-        // immediately (fast, local); the desktop downloads in the background and
-        // prompts to restart when ready. We never silently auto-upgrade — the
-        // dialog is the one decision point, so the user stays in control.
-        let activeBin = flowBin;
-        const desktopLatest = await getDesktopUpdateVersion();
-
-        if (desktopLatest) {
-          // Only consolidate when the backend ALSO has an update; otherwise keep
-          // the desktop channel's own background-download + restart-prompt flow.
-          const backendStatus = await uvManager._pypiUpdateStatus();
-          if (backendStatus) {
-            const { response } = await dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: 'Updates available',
-              message: 'New versions of FlowPad are available.',
-              detail:
-                `Desktop app: ${app.getVersion()} → ${desktopLatest}\n` +
-                `FlowPad engine: ${backendStatus.currentVersion || 'unknown'} → ${backendStatus.latestVersion}`,
-              buttons: ['Update', 'Later'],
-              defaultId: 0,
-              cancelId: 1,
-            });
-            if (response === 0) {
-              // Backend first (quick) so the about-to-restart desktop boots
-              // paired with the new engine; the desktop downloads in the
-              // background and prompts to restart once ready.
-              const loadingPath = path.join(__dirname, 'loading.html');
-              await mainWindow.loadFile(loadingPath);
-              sendStatus('Upgrading Flowpad');
-              await uvManager.upgrade();
-              activeBin = uvManager.getInstalledFlowBin() || flowBin;
-              backendJustUpgraded = true;
-              downloadDesktopUpdateInBackground();
-            } else {
-              // Later: still pre-download the desktop in the background so the
-              // next restart comes back on the latest — but don't nag (it
-              // auto-installs on quit). The backend stays as-is (deferred).
-              downloadDesktopUpdateInBackground({ promptOnReady: false });
-            }
-          } else {
-            // Desktop only → background download + restart prompt (unchanged UX).
-            downloadDesktopUpdateInBackground();
-          }
-        } else {
-          // No desktop update → the standalone backend prompt handles the
-          // "newer on PyPI" case (and no-ops otherwise). Reads the installed
-          // version from `_version.py`, so it works even when the install is
-          // broken or the cloud is unreachable. `beforeBackendStart` makes the
-          // call return right after the upgrade — the normal start path below
-          // boots the upgraded backend, avoiding a double start + early UI load.
-          const upgradedPreStart = await uvManager.checkForUpdatesInBackground(mainWindow, {
-            sendStatus,
-            waitForBackend,
-            backendUrl: BACKEND_URL,
-            cloudUrl: FLOWPAD_CLOUD_URL,
-            beforeBackendStart: true,
-          });
-          if (upgradedPreStart) {
-            activeBin = uvManager.getInstalledFlowBin() || activeBin;
-            backendJustUpgraded = true;
-          }
-        }
-
-        const version = uvManager.getInstalledVersionSync(activeBin);
-        const versionSuffix = version ? ` v${version}` : '';
-        sendStatus(`Starting flowpad${versionSuffix}`);
-        try {
-          await uvManager.startWithBin(activeBin);
-        } catch (startErr) {
-          // A shim exists on disk (so we took the fast path), but its env can't
-          // import flow_sdk — a corrupt/half-finished install. Without this the
-          // app would crash on the same broken shim every launch and never
-          // self-heal (a --force reinstall only runs in the first-time branch).
-          // Repair once and retry; if it still fails, fall through to the dialog.
-          if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
-          log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
-          sendStatus('Repairing Flowpad installation');
-          await uvManager.ensureUv();
-          await uvManager.reinstall();
-          backendJustUpgraded = true;
-          const repairedVersion = uvManager.getInstalledVersionSync();
-          sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
-          await uvManager.start();
-        }
-      } else {
-        // FIRST-TIME SETUP: uv tool install flowpad (latest)
-        log.info('First-time setup: flow binary not found, installing latest from PyPI');
-        sendStatus('Setting up Flowpad (first time)');
-
-        sendStatus('Checking Python installation');
-        await uvManager.ensureUv();
-
-        sendStatus('Installing Flowpad');
-        await uvManager.installLatest();
-        backendJustUpgraded = true;
-
-        const version = uvManager.getInstalledVersionSync();
-        const versionSuffix = version ? ` v${version}` : '';
-        sendStatus(`Starting flowpad${versionSuffix}`);
-        await uvManager.start();
+    // Install/upgrade + start, retryable from the in-app error panel. A failed
+    // `uv tool install` is usually transient (slow link, flaky mirror) and uv
+    // keeps everything it already fetched, so the retry typically finishes in
+    // seconds — no relaunch, no terminal. One start at a time (startGuard).
+    const guardedInstallAndStart = async () => {
+      const r = await startGuard.run('startup', installAndStartBackend);
+      return r.skipped ? { ok: false, skipped: true } : r.result;
+    };
+    let result = await guardedInstallAndStart();
+    while (!result.ok) {
+      if (isQuitting) return;
+      if (result.installBlock) {
+        // The install itself was blocked: the repair panel; Retry re-runs the install.
+        const recovered = await handleFatalFailure({
+          match: result.installBlock,
+          record: null,
+          autoRepair: !!result.firstInstall,
+          retry: async () => {
+            const g = await startGuard.run('startup', () => installAndStartBackend({ quiet: true }));
+            return g.skipped ? { ok: false } : g.result;
+          },
+        });
+        if (!recovered) return;
+        backendReady = true;
+        break;
       }
-    } catch (error) {
-      log.error('Failed to start Python backend:', error);
-
-      const details = [
-        error?.message || String(error),
-        `HOME=${process.env.HOME || ''}`,
-        `cwd=${os.homedir()}`,
-        `flowBin=${uvManager?._flowBin || ''}`,
-        `PATH=${(process.env.PATH || '').slice(0, 500)}`
-      ];
-
-      if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-500)}`);
-      if (error?.stdout) details.push(`stdout=${error.stdout.toString().slice(-500)}`);
-
-      const detailText = details.join('\n');
-      log.error(`[startup error details]\n${detailText}`);
-
-      dialog.showErrorBox(
-        'Startup Error',
-        `Failed to start the Python backend:\n\n${detailText}`
-      );
-      app.quit();
-      return;
+      if (result.fatalRecord) {
+        // The panel on the monitor's record, without starting the backend (installAndStartBackend).
+        const rec = fatalFailure.reconcileFatalReason({ record: result.fatalRecord, probeMatch: null });
+        const recovered = await handleFatalFailure({ match: rec.match, record: result.fatalRecord });
+        if (!recovered) return;
+        backendReady = true;
+        break;
+      }
+      await waitForRetryRequest();
+      log.info('[startup] retry requested from the error panel');
+      startupFailed = false;
+      // Only when a previous attempt actually launched the backend: a first-install failure
+      // never did, and `stop()` would run a bare `flow stop` and kill whatever holds the port.
+      if (uvManager && uvManager.hasLaunchedBackend()) {
+        await uvManager.stop().catch((e) => log.warn(`[startup] pre-retry stop failed: ${e.message}`));
+      }
+      result = await guardedInstallAndStart();
     }
+    backendJustUpgraded = !!result.backendJustUpgraded;
   }
 
   // Wait for backend to be ready. After an install/upgrade the freshly
   // unpacked Python env takes substantially longer to import on first boot
   // (PyPI fetch + bytecode warm-up + AV scan on Windows), so widen the
   // window when we know we just ran uv install/upgrade.
-  sendStatus('Waiting for server');
-  const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
-  const backendReady = await waitForBackend(waitOpts);
+  // (Skipped when the fatal-record path above already brought the backend up.)
+  const backendWait = backendReady ? { ready: true, reason: 'healthy', elapsedSec: 0 } : await (async () => {
+    sendStatus('Waiting for server');
+    const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
+    return waitForBackend(waitOpts);
+  })();
+  if (backendWaitAborted(backendWait)) return;
+  backendReady = backendWait.ready;
+  if (backendWait.ready) {
+    updateTest.event('engine-ready', { desktop: app.getVersion(), engine: (uvManager && uvManager.getInstalledVersionSync()) || null });
+  }
 
-  if (!backendReady) {
+  if (!backendWait.ready && (backendWait.reason === 'policy-blocked' || backendWait.reason === 'fatal-failure')) {
+    // The cause is known — the monitor's record (fatal-failure), or Windows application control in the
+    // server log (policy-blocked) — so no generic timeout text: the panel names it and offers the way out.
+    const rec = backendWait.reason === 'fatal-failure'
+      ? fatalFailure.reconcileFatalReason({ record: backendWait.failureRecord, probeMatch: backendWait.policyBlock })
+      : { match: backendWait.policyBlock, record: null, agree: true, source: 'electron' };
+    if (rec.source === 'both' && !rec.agree) {
+      log.warn(`[fatal-failure] the monitor (${rec.record.module}) and the log probe (${backendWait.policyBlock.module}) name different modules; showing the monitor's`);
+    }
+    const repaired = await handleFatalFailure({ match: rec.match, record: rec.record });
+    if (!repaired) return;
+    backendReady = true;
+  } else if (!backendWait.ready) {
     // Try to gather diagnostics for the error dialog
-    const timeoutSec = Math.round(
-      ((backendJustUpgraded ? POST_UPGRADE_HEALTH_CHECKS : MAX_HEALTH_CHECKS) *
-        HEALTH_CHECK_INTERVAL) / 1000,
-    );
-    let detail = `Backend server failed to respond within ${timeoutSec} seconds.`;
+    const timeoutSec = backendWait.elapsedSec;
+    let detail = `Backend server failed to respond within ${timeoutSec} seconds (${backendWait.reason}).`;
+    const launch = uvManager ? uvManager.lastLaunch() : null;
+    if (backendWait.reason === 'launcher-failed' && launch) {
+      detail += `\n\nflow start exited with code ${launch.exit.code}:\n${launch.tail()}`;
+    }
     try {
-      const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+      const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'monitor'));
       if (newest) {
         const logContent = fs.readFileSync(newest.path, 'utf8');
         const lastLines = logContent.split('\n').slice(-15).join('\n');
@@ -787,16 +2079,26 @@ async function startApp() {
     // we just keep the window open (instead of quitting) so the user can read
     // and copy the recovery commands. Fire-and-forget: the panel shows now.
     if (uvManager) {
-      uvManager
+      pendingBackendStop = uvManager
         .stop()
         .catch((e) => log.warn(`[startup-timeout] backend stop failed: ${e.message}`));
     }
     // Surface the in-app recovery panel with copy-pasteable commands instead of
     // the native OS error box. The user quits from the panel's Quit button; the
     // next launch re-runs startApp() (including the upgrade path) from scratch.
-    showStartupTimeoutError(
-      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ` +
-        'This usually means the installed Flowpad package is out of date or broken.',
+    const why = {
+      stalled: 'It was starting but stopped reporting progress, so it has most likely hung. ',
+      'hard-cap': 'It kept reporting progress but never became healthy within 10 minutes. ',
+      'launcher-failed': 'Its launcher (flow start) exited with an error. ',
+    }[backendWait.reason] || '';
+    const launcherOutput = backendWait.reason === 'launcher-failed' && launch
+      ? `\n\nflow start exited with code ${launch.exit.code}:\n${summarizeOutput(launch.tail())}`
+      : '';
+    markPhase('startup-failed', { reason: backendWait.reason, elapsedSec: backendWait.elapsedSec });
+    await showStartupErrorPanel(
+      `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
+        'This usually means the installed Flowpad package is out of date or broken.' +
+        launcherOutput,
     );
     return;
   }
@@ -806,11 +2108,29 @@ async function startApp() {
   if (app.isPackaged) {
     writeDesktopVersion(app.getVersion());
   }
+  // A confirmed healthy startup: the journal's terminal phase, the recovery-update history spent, and any
+  // fatal record (the monitor clears its own; this covers a record the monitor did not get to) gone.
+  markPhase('backend-healthy');
+  writeRecoveryState(updateRecovery.markStartupHealthy());
+  clearFailureRecord('the backend is healthy');
 
   // Load the main UI (or a pending deep-link target if one arrived during startup).
   const startUrl = pendingDeepLink || BACKEND_URL;
   pendingDeepLink = null;
-  log.info(`Loading UI from ${startUrl}`);
+  log.info(`Loading UI from ${redactUrl(startUrl)}`);
+  // The splash (`loading.html`) is a real document load, so without this it
+  // stays in the navigation history as entry 0 — and Back from the app's home
+  // screen lands the user on the loading screen. Drop it once the UI commits,
+  // so the app's first screen is the first history entry.
+  mainWindow.webContents.once('did-finish-load', () => {
+    try {
+      mainWindow.webContents.navigationHistory.clear();
+      log.info(`[nav] cleared startup history (splash dropped) ${navStateFor(mainWindow)}`);
+    } catch (err) {
+      log.info(`[nav] could not clear startup history: ${err.message}`);
+    }
+  });
+  mainWindow.webContents.once('did-finish-load', () => offerPostponedRestartPrompt()); // the app is on screen: a held-back "Restart now" can show
   mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
@@ -818,24 +2138,45 @@ async function startApp() {
     mainWindow.webContents.openDevTools();
   }
 
-  // Background update check (non-blocking, after UI is loaded)
-  if (!uvManager) {
-    uvManager = new UvManager(log);
-    try {
-      uvManager._flowBin = await uvManager._resolveFlowBin();
-    } catch {
-      uvManager._flowBin = 'flow';
-    }
+  // Background update check (non-blocking, after UI is loaded). Skipped in dev
+  // for the same reason the startup block is: it would stop the developer's
+  // live backend and reinstall the PyPI package underneath a running app.
+  if (isDev) {
+    log.info('Development mode: skipping background update check');
+    return;
   }
-  uvManager.checkForUpdatesInBackground(mainWindow, {
-    sendStatus,
-    waitForBackend,
-    backendUrl: BACKEND_URL,
-    cloudUrl: FLOWPAD_CLOUD_URL,
-  });
+  // Through the same mutex as the periodic check, so this dialog cannot stack
+  // with a desktop "update ready" prompt (a desktop download may already be
+  // running from the pre-start flow).
+  checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
+// Anything that escapes to the top level must reach the user with "Send Report" — an unhandled rejection in
+// startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
+let crashReported = false;
+async function reportStartupCrash(err, where) {
+  const text = redact(String((err && (err.stack || err.message)) || err)).slice(0, 4000);
+  log.error(`[crash] ${where}: ${text}`);
+  if (crashReported) return;
+  crashReported = true;
+  try {
+    // A window to render into → the in-app panel (Share, Copy, Open logs, Quit); otherwise the native dialog.
+    await showStartupErrorPanel(`Flowpad hit an unexpected error (${where}).\n\n${text}`, { retryable: false });
+  } catch (e) {
+    log.error(`[crash] could not show the error: ${e && e.message}`);
+  }
+}
+process.on('uncaughtException', (err) => { reportStartupCrash(err, 'uncaught exception'); });
+process.on('unhandledRejection', (reason) => {
+  // Logged only: most are benign (a cancelled request), and a dialog per rejection would be noise.
+  log.error(`[unhandled rejection] ${redact(String((reason && (reason.stack || reason.message)) || reason)).slice(0, 2000)}`);
+});
+
 // App lifecycle events
-app.whenReady().then(startApp);
+app.whenReady().then(() => {
+  // macOS / Linux shutting down or logging out: nobody is there to answer.
+  powerMonitor.on('shutdown', () => quitGate.allow('the system is shutting down'));
+  return startApp();
+}).catch((err) => reportStartupCrash(err, 'startApp'));
 
 app.on('window-all-closed', () => {
   log.info('All windows closed');
@@ -848,19 +2189,43 @@ app.on('activate', () => {
   // (the dead window is still open, so the 0-windows path below won't fire).
   if (startupFailed) {
     log.info('[activate] reopen while in startup-failed state — relaunching');
-    app.relaunch();
-    app.exit(0);
+    relaunchAfterStop({
+      pendingStop: pendingBackendStop,
+      log,
+      relaunch: () => app.relaunch(),
+      exit: code => app.exit(code),
+    });
     return;
   }
   // On macOS, recreate window when dock icon is clicked
   if (BrowserWindow.getAllWindows().length === 0) {
-    startApp();
+    if (uvManager && uvManager.isInstalling()) {
+      createWindow(); // the running startup owns the install; only the window is missing
+    } else {
+      startApp();
+    }
   }
 });
 
+// Every quit — the window's X (it routes here, see createWindow), Cmd+Q,
+// Alt+F4, the dock — asks first (quit-gate.js). Only on "Quit" does the
+// shutdown run. Quitting while `uv tool install` is replacing the venv aborts
+// it and the next launch repairs it (UvManager.hadInterruptedInstall).
+// Nothing to ask when there is no window to ask over (the single-instance
+// exit) or when the startup already failed (the backend is stopped; the panel
+// has its own Quit button).
 app.on('before-quit', (event) => {
   if (isQuitting) return;
+  const askFirst = !quitGate.isConfirmed() && !startupFailed && mainWindow && !mainWindow.isDestroyed();
+  if (askFirst) {
+    event.preventDefault();
+    quitGate.request(quitPhase()).then((yes) => {
+      if (yes) app.quit();
+    });
+    return;
+  }
   isQuitting = true;
+  markPhase('clean-exit');
 
   log.info('Quitting — stopping backend...');
 
@@ -872,16 +2237,21 @@ app.on('before-quit', (event) => {
   if (uvManager) {
     event.preventDefault();
 
-    const forceQuitTimer = setTimeout(() => {
-      log.warn('Force quitting after timeout');
-      app.exit(0);
-    }, 1000);
+    // First refuse anything new: the startup chain is still running and would
+    // otherwise launch `flow start` after the stop below — a detached backend
+    // outliving the app. Also aborts a running install.
+    uvManager.close();
 
-    // Graceful shutdown: flow stop, then kill any remaining processes on port
-    uvManager.stop().finally(() => {
-      clearTimeout(forceQuitTimer);
-      app.exit(0);
+    // Graceful shutdown: flow stop, then kill any remaining processes on port.
+    // We exit only once that has finished — see shutdown.js for why exiting
+    // on a timer stranded the next launch with "service_busy".
+    shutdown = createShutdown({
+      uvManager,
+      log,
+      exit: code => app.exit(code),
+      relaunch: () => app.relaunch(),
     });
+    shutdown.run();
   }
 });
 
@@ -924,6 +2294,50 @@ ipcMain.handle('capture-region', async (event, rawRegion) => {
 });
 
 // Quit from the startup-timeout recovery panel's "Quit" button.
+ipcMain.handle('open-logs-folder', async () => {
+  const err = await require('electron').shell.openPath(MAIN_DESKTOP_LOG_DIR);
+  if (err) log.warn(`[logs] could not open ${MAIN_DESKTOP_LOG_DIR}: ${err}`);
+  return !err;
+});
+
+// "Send Report" on the startup error panel. Builds a zip of the newest desktop log and the
+// newest backend-server log (tails, obvious secrets masked) and uploads it to the hub's
+// anonymous support-bundle intake (support-upload.js), which stores it in GCS and notifies
+// the team — nothing for the user to attach or mail (FLOWPAD-2251). `email` is the user's
+// optional reply address; empty means anonymous.
+
+/**
+ * Build the support bundle and upload it. On success the submissionId is the reference the
+ * user can quote to support; on failure zipPath still points at the built zip, so the
+ * caller can offer "Export logs" as the offline fallback.
+ * `headline` says which failure this is ("window crashed", "did not start") in the bundle's info.txt.
+ * Used by the error panel (IPC) and by every native failure dialog (failure-dialog.js).
+ */
+async function shareDiagnostics(detail, headline = 'did not start', email = '') {
+  try {
+    const shownError = redact(String(detail || '')).slice(0, 4000);
+    const info = { ...supportInfo(), context: headline };
+    const bundle = buildSupportZip({
+      sources: supportSources(),
+      info,
+      detail: shownError + supportFailureRecordText(),
+    });
+    log.info(`[share-logs] built ${bundle.zipPath} (${bundle.bytes} bytes; included: ${bundle.included.join(', ') || 'none'})`);
+    const upload = await uploadSupportBundle({ cloudUrl: FLOWPAD_CLOUD_URL, zipPath: bundle.zipPath, email, info });
+    if (!upload.ok) {
+      log.warn(`[share-logs] upload failed: ${upload.error}`);
+      return { ok: false, error: upload.error, zipPath: bundle.zipPath };
+    }
+    log.info(`[share-logs] uploaded ${bundle.zipPath} as ${upload.submissionId}`);
+    return { ok: true, submissionId: upload.submissionId, zipPath: bundle.zipPath, bytes: bundle.bytes, included: bundle.included, missing: bundle.missing };
+  } catch (err) {
+    log.warn(`[share-logs] failed: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
+
+ipcMain.handle('share-logs', (_event, detail, email) => shareDiagnostics(detail, 'did not start', email));
+
 ipcMain.on('quit-app', () => {
   app.quit();
 });
@@ -1015,7 +2429,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Monitor log (newest in monitor/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+    const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'monitor'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Monitor', path: newest.path, content });
@@ -1024,7 +2438,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Server log (newest in server/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'server'));
+    const newest = getNewestLogFile(path.join(BACKEND_LOGS, 'server'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Server', path: newest.path, content });
@@ -1045,13 +2459,13 @@ function _getLogFiles() {
 
   // Re-discover newest file in each subdirectory on every tick
   const subdirs = [
-    { name: 'Electron', dir: 'main_desktop' },
-    { name: 'Monitor', dir: 'monitor' },
-    { name: 'Server', dir: 'server' },
+    { name: 'Electron', dir: path.join(LOGS_BASE, 'main_desktop') },
+    { name: 'Monitor', dir: path.join(BACKEND_LOGS, 'monitor') },
+    { name: 'Server', dir: path.join(BACKEND_LOGS, 'server') },
   ];
 
   for (const { name, dir } of subdirs) {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, dir));
+    const newest = getNewestLogFile(dir);
     if (newest) {
       files.push({ name, path: newest.path });
     }
@@ -1135,15 +2549,87 @@ ipcMain.on('unwatch-startup-logs', () => {
 });
 
 ipcMain.handle('restart-backend', async () => {
-  if (uvManager) {
+  if (!uvManager) return false;
+  // One backend start at a time: a restart asked for while startup (or another restart) is still
+  // starting the backend is refused, never run under it.
+  const r = await startGuard.run('restart-backend', async () => {
     await uvManager.restart();
-    return waitForBackend();
-  }
-  return false;
+    return (await waitForBackend()).ready;
+  });
+  return r.skipped ? false : r.result;
 });
+
+// The failure panel's "Update FlowPad": handled by waitForPanelAction's listener while the panel is up;
+// a stray message outside that window is ignored (no listener → nothing happens).
+ipcMain.on('update-desktop-recovery', () => {});
+
+/**
+ * "Export logs" on the failure panel: the same zip "Send Report" builds (support-bundle.js) saved where
+ * the user chooses — the manual way to get the logs to the team when the upload cannot reach the
+ * service (offline, blocked egress, or the intake itself failing).
+ */
+async function exportDiagnostics(detail) {
+  try {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const { canceled, filePath } = await dialog.showSaveDialog(parent, {
+      title: 'Export FlowPad logs',
+      defaultPath: path.join(app.getPath('desktop'), `flowpad-support-${stamp}.zip`),
+      filters: [{ name: 'Zip archive', extensions: ['zip'] }],
+    });
+    if (canceled || !filePath) return { ok: false, canceled: true };
+    const bundle = buildSupportZip({
+      sources: supportSources(),
+      info: supportInfo(),
+      detail: redact(String(detail || '')).slice(0, 4000) + supportFailureRecordText(),
+      outDir: path.dirname(filePath),
+    });
+    if (bundle.zipPath !== filePath) fs.renameSync(bundle.zipPath, filePath);
+    log.info(`[export-logs] saved ${filePath} (${bundle.bytes} bytes; included: ${bundle.included.join(', ') || 'none'})`);
+    return { ok: true, zipPath: filePath, included: bundle.included, missing: bundle.missing };
+  } catch (err) {
+    log.warn(`[export-logs] failed: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
+ipcMain.handle('export-logs', (_event, detail) => exportDiagnostics(detail));
+
+/** The log directories a support bundle takes the newest file of. */
+function supportSources() {
+  return [
+    { label: 'desktop', dir: path.join(LOGS_BASE, 'main_desktop') },
+    { label: 'server', dir: path.join(BACKEND_LOGS, 'server') },
+    { label: 'monitor', dir: path.join(BACKEND_LOGS, 'monitor') },
+  ];
+}
+function supportInfo() {
+  return {
+    app: app.getVersion(),
+    engine: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
+    runtime: (uvManager && uvManager.repairedRuntimePython && uvManager.repairedRuntimePython()) || 'uv-managed',
+    instance: FLOW_INSTANCE,
+    platform: `${process.platform} ${process.arch} ${os.release()}`,
+    electron: process.versions.electron,
+    packaged: app.isPackaged,
+    startupPhase: journal ? journal.phase() : null,
+  };
+}
+/** The monitor's fatal-failure record, verbatim, when there is one. */
+function supportFailureRecordText() {
+  try { return `\n\nserver-failure.json:\n${fs.readFileSync(fatalFailure.failureRecordPath(INSTANCE_DIR), 'utf8')}`; } catch { return ''; }
+}
 
 ipcMain.handle('upgrade-flowpad', async () => {
   if (!uvManager) return { success: false, error: 'No uv manager' };
+  // Desktop first: refuse before touching the running server or the window.
+  if (engineChangeAllowed('upgrade-flowpad IPC') !== 'allow') {
+    return { success: false, desktopUpdatePending: true, error: 'A newer FlowPad desktop must be installed first; the engine is updated after it.' };
+  }
+  const guarded = await startGuard.run('upgrade-flowpad', () => upgradeFlowpadAndRestart());
+  return guarded.skipped ? { success: false, error: 'the backend is already being started' } : guarded.result;
+});
+
+async function upgradeFlowpadAndRestart() {
   try {
     // Show loading screen
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1157,14 +2643,13 @@ ipcMain.handle('upgrade-flowpad', async () => {
     uvManager.isShuttingDown = false;
     uvManager._backendProcess = null;
 
-    sendStatus('Upgrading Flowpad');
-    await uvManager.upgrade();
+    await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
 
     sendStatus('Starting server');
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const ready = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
+    const { ready } = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);
@@ -1174,7 +2659,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
-});
+}
 
 /**
  * Provision the per-instance Fernet sod-key in the OS keychain via the
@@ -1230,12 +2715,13 @@ ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
 
 ipcMain.handle('open-external', async (_, url) => {
   const { shell } = require('electron');
-  log.info(`[open-external] requested: ${url}`);
+  log.info(`[open-external] requested: ${redactUrl(url)}`);
   // Only allow http/https URLs for security
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     await shell.openExternal(url);
     return true;
   }
-  log.warn(`[open-external] blocked non-http URL: ${url}`);
+  log.warn(`[open-external] blocked non-http URL: ${redactUrl(url)}`);
   return false;
 });
+

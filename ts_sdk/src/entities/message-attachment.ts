@@ -1,5 +1,5 @@
 import { APIEntity, dataManager, registerEntity, type ReceiveShowTarget } from '../APIEntity';
-import { IEntity } from '../IEntity';
+import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 
@@ -15,15 +15,13 @@ export interface StagedFileInfo {
 export interface StagedFilesResponse {
   files: StagedFileInfo[];
   main_file: string | null;
+  /** The asset inside the staged copy, located by its type's shape (a folder
+   *  type's folder, a file type's file), relative to `abs_root`; null when the
+   *  copy does not hold that shape. Review opens it here. */
+  asset_root: string | null;
   root: string;
   /** Absolute staged dir on the local machine (Test-it references it by path). */
   abs_root: string;
-}
-
-export interface StagedFileContent {
-  path: string;
-  content: string;
-  truncated: boolean;
 }
 
 // The DisplayTarget shape returned by install()/setup() lives on APIEntity (it is
@@ -52,12 +50,18 @@ export interface IMessageAttachment extends IEntity {
    *  stamped backend-side at stage time (single source of the policy). */
   user_scope_allowed?: boolean;
   transfer_mode?: 'copy' | 'git';
-  git_origin?: Record<string, unknown> | null;
+  origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
   installed_root?: string | null;
   installed_at?: string | null;
 }
+
+// `implements IMessageAttachment` only checks the class; it contributes no members, so every
+// field declared solely on IMessageAttachment read as "does not exist". deepAssign populates
+// them from the wire — this merge makes them part of the class type.
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+export interface MessageAttachment extends EntityMerge<IMessageAttachment> {}
 
 @registerEntity
 export class MessageAttachment extends APIEntity<MessageAttachment> implements IMessageAttachment {
@@ -72,7 +76,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   unpacked_path?: string;
   user_scope_allowed?: boolean;
   transfer_mode?: 'copy' | 'git';
-  git_origin?: Record<string, unknown> | null;
+  origin?: Record<string, unknown> | null;
   scope?: MessageAttachmentScope;
   project_id?: string | null;
   installed_root?: string | null;
@@ -89,7 +93,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     this.unpacked_path = entity.unpacked_path;
     this.user_scope_allowed = entity.user_scope_allowed ?? true;
     this.transfer_mode = entity.transfer_mode ?? 'copy';
-    this.git_origin = entity.git_origin ?? null;
+    this.origin = entity.origin ?? null;
     // '' is the backend's CLEARED form (exclude-none saves can't null a field)
     // — normalize to null so every consumer sees one "staged" value.
     this.scope = entity.scope || null;
@@ -122,11 +126,15 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    * clone/pull the origin and index — setup does NOT run (call {@link runSetup}
    * explicitly). Returns the DisplayTarget to navigate to (the received entity,
    * or — copy mode only — a spawned Vibe setup session), or null.
+   *
+   * `name` installs a received project under the receiver's own name — the
+   * answer to the 409 `project_name_conflict` the backend sends when the
+   * sender's name is already taken here.
    */
   async install(
     scope: 'user' | 'project',
     projectId?: string,
-    opts: { overwrite?: boolean } = {},
+    opts: { overwrite?: boolean; name?: string } = {},
   ): Promise<ReceiveShowTarget | null> {
     if (!this.id) throw new Error('install requires this.id');
     const action = new ActionInfo('install', MessageAttachment.type, this.id, 'POST');
@@ -134,6 +142,7 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       scope,
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
+      ...(opts.name ? { name: opts.name } : {}),
     };
     const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
     return res?.show ?? null;
@@ -148,31 +157,20 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
    */
   async runSetup(): Promise<ReceiveShowTarget | null> {
     if (!this.id) throw new Error('runSetup requires this.id');
-    const action = new ActionInfo('setup', MessageAttachment.type, this.id, 'POST');
-    const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
+    const res = await this.post<{ entity?: unknown; show?: ReceiveShowTarget | null }>('setup');
     return res?.show ?? null;
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */
   async uninstall(): Promise<this> {
     if (!this.id) throw new Error('uninstall requires this.id');
-    const action = new ActionInfo('uninstall', MessageAttachment.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    await this.post<unknown>('uninstall');
     return this;
   }
 
   /** List the staged files for the review modal. */
   async listStagedFiles(): Promise<StagedFilesResponse> {
     if (!this.id) throw new Error('listStagedFiles requires this.id');
-    const action = new ActionInfo('staged-files', MessageAttachment.type, this.id, 'GET');
-    return await dataManager.callAction<unknown, StagedFilesResponse>(action);
-  }
-
-  /** Read one staged file's text content (rel path from listStagedFiles). */
-  async readStagedFile(relPath: string): Promise<StagedFileContent> {
-    if (!this.id) throw new Error('readStagedFile requires this.id');
-    const action = new ActionInfo('staged-file-content', MessageAttachment.type, this.id, 'GET');
-    action.queryParameters = { path: relPath };
-    return await dataManager.callAction<unknown, StagedFileContent>(action);
+    return await this.get<StagedFilesResponse>('staged-files');
   }
 }

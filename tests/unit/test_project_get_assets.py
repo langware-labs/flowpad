@@ -1,8 +1,8 @@
 """Unit tests for ``Project.get_assets_action`` (project/{id}/get-assets).
 
 The pre-process (staging) counterpart of the AgenticProcess asset view:
-path-scan attribution over user-home / project-mount dirs plus a bounded
-scoped list for ``spec`` (not file-backed). Fixture style mirrors
+filesystem enumeration and attribution over user-home / project-mount dirs,
+including folder-backed specs. Fixture style mirrors
 ``tests/unit/test_agentic_process_get_assets.py``.
 """
 
@@ -10,17 +10,18 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agent import Agent
-from flow_sdk.builtin.agentic_process.agentic_process import AssetSource
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.assets.catalog import AssetSource
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.spec import Spec
+from flow_sdk.builtin.subagent import SubAgent
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-
 
 # ── Fixture ───────────────────────────────────────────────────────────────────
 
@@ -43,15 +44,17 @@ async def staging(tmp_path: Path, monkeypatch):
         "doc_note": user_home / "docs" / "note.md",
         "other_agent": user_home / "other_project" / ".claude" / "agents" / "o.md",
         "p_skill": project_root / ".claude" / "skills" / "p_skill",
+        "spec_project": project_root / "agentic-assets" / "spec" / "project-spec",
+        "spec_user": user_home / "agentic-assets" / "spec" / "user-spec",
     }
     for p in paths.values():
         if p.suffix == ".md":
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text("# stub\n")
         else:
             p.mkdir(parents=True, exist_ok=True)
 
     from flow_sdk.instance_settings import reset_instance_settings
+
     monkeypatch.setenv("FLOW_INSTANCE", "test")
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(user_home))
     reset_instance_settings()
@@ -62,44 +65,67 @@ async def staging(tmp_path: Path, monkeypatch):
         await e.save()
         return e
 
-    project = await _save(Project(
-        id=str(uuid.uuid4()), name=f"staging_project_{suffix}",
-        fs_storage_mount_path=str(project_root),
-    ))
-    other_project_id = str(uuid.uuid4())
+    project = await _save(
+        Project(
+            id=mint_uuid(),
+            name=f"staging_project_{suffix}",
+            fs_storage_mount_path=str(project_root),
+        )
+    )
+    other_project_id = mint_uuid()
 
     ents = {
-        "u_skill": await _save(Skill(
-            id=str(uuid.uuid4()), name=f"u_skill_{suffix}",
-            asset_ref=canonical_posix_path(paths["u_skill"]),
-        )),
-        "doc_note": await _save(Docs(
-            id=str(uuid.uuid4()), name=f"doc_note_{suffix}",
-            asset_ref=canonical_posix_path(paths["doc_note"]),
-        )),
+        "u_skill": await _save(
+            Skill(
+                id=mint_uuid(),
+                name=f"u_skill_{suffix}",
+                asset_ref=canonical_posix_path(paths["u_skill"]),
+            )
+        ),
+        "doc_note": await _save(
+            Docs(
+                id=mint_uuid(),
+                name=f"doc_note_{suffix}",
+                asset_ref=canonical_posix_path(paths["doc_note"]),
+            )
+        ),
         # Project-scoped entity of ANOTHER project under the home catchall —
         # must be excluded by the _source_match_for_asset ownership rule.
-        "other_agent": await _save(Agent(
-            id=str(uuid.uuid4()), name=f"other_agent_{suffix}",
-            asset_ref=canonical_posix_path(paths["other_agent"]),
-            scope="project", project_id=other_project_id,
-        )),
-        "p_skill": await _save(Skill(
-            id=str(uuid.uuid4()), name=f"p_skill_{suffix}",
-            asset_ref=canonical_posix_path(paths["p_skill"]),
-            project_id=str(project.id),
-        )),
-        "spec_project": await _save(Spec(
-            id=str(uuid.uuid4()), title=f"spec_project_{suffix}",
-            project_id=str(project.id),
-        )),
-        "spec_user": await _save(Spec(
-            id=str(uuid.uuid4()), title=f"spec_user_{suffix}",
-        )),
+        "other_agent": await _save(
+            SubAgent(
+                id=mint_uuid(),
+                name=f"other_agent_{suffix}",
+                asset_ref=canonical_posix_path(paths["other_agent"]),
+                scope="project",
+                project_id=other_project_id,
+            )
+        ),
+        "p_skill": await _save(
+            Skill(
+                id=mint_uuid(),
+                name=f"p_skill_{suffix}",
+                asset_ref=canonical_posix_path(paths["p_skill"]),
+                project_id=str(project.id),
+            )
+        ),
+        "spec_project": await _save(
+            Spec(
+                id=mint_uuid(),
+                title=f"spec_project_{suffix}",
+                asset_ref=str(paths["spec_project"]),
+                project_id=str(project.id),
+            )
+        ),
+        "spec_user": await _save(
+            Spec(
+                id=mint_uuid(),
+                title=f"spec_user_{suffix}",
+                asset_ref=str(paths["spec_user"]),
+            )
+        ),
     }
 
-    yield {"project": project, "ents": ents, "user_home": user_home,
-           "project_root": project_root}
+    yield {"project": project, "ents": ents, "paths": paths, "user_home": user_home, "project_root": project_root}
 
     for e in [project, *ents.values()]:
         try:
@@ -147,13 +173,16 @@ async def test_spec_rows(staging):
 
     spec_project = _row_for(resp, staging["ents"]["spec_project"])
     assert spec_project is not None
-    assert spec_project["posix_path"] is None
+    assert spec_project["posix_path"] == str(staging["paths"]["spec_project"])
+    assert (Path(spec_project["posix_path"]) / "spec.md").is_file()
     assert spec_project["source"] == AssetSource.PROJECT_DIR.value
     assert spec_project["project_id"] == str(staging["project"].id)
 
     spec_user = _row_for(resp, staging["ents"]["spec_user"])
     assert spec_user is not None
     assert spec_user["source"] == AssetSource.USER_DIR.value
+    assert spec_user["posix_path"] == str(staging["paths"]["spec_user"])
+    assert (Path(spec_user["posix_path"]) / "spec.md").is_file()
     assert spec_user["project_id"] is None
 
 
@@ -185,6 +214,97 @@ async def test_response_row_shape_matches_process_action(staging):
     # Process action keys + additive project_id; usage always present.
     for row in rows:
         assert set(row.keys()) == {
-            "typeid", "source", "posix_path", "source_dir", "project_id", "usage",
+            "typeid",
+            "source",
+            "posix_path",
+            "source_dir",
+            "project_id",
+            "remote",
+            "name",
+            "usage",
+            "invocation_name",
+            "attached",
+            "available",
+            "present",
+            "parent_type_id",
+            "attachable",
         }
         assert row["usage"] == []
+
+
+@pytest.mark.asyncio
+async def test_ref_only_remote_hydration_batches_once_per_type(staging):
+    from flow_sdk.assets.catalog import AssetCatalog, AssetDescriptor
+
+    skill = staging["ents"]["u_skill"]
+    agent = staging["ents"]["other_agent"]
+    skill.remote = True
+    await skill.save()
+    descriptors = [
+        AssetDescriptor(
+            typeid=f"skill-{skill.id}",
+            source=AssetSource.USER_DIR,
+            posix_path=None,
+        ),
+        AssetDescriptor(
+            typeid=f"subagent-{agent.id}",
+            source=AssetSource.USER_DIR,
+            posix_path=None,
+        ),
+    ]
+
+    with (
+        patch(
+            "flow_sdk.assets.catalog.scan_path_asset_descriptors",
+            new=AsyncMock(return_value=AssetCatalog(assets=descriptors)),
+        ),
+        patch.object(Skill, "get_all", new=AsyncMock(wraps=Skill.get_all)) as skill_get_all,
+        patch.object(SubAgent, "get_all", new=AsyncMock(wraps=SubAgent.get_all)) as agent_get_all,
+        patch.object(
+            Skill,
+            "get_one",
+            new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+        ),
+        patch.object(
+            SubAgent,
+            "get_one",
+            new=AsyncMock(side_effect=AssertionError("get_one is not allowed")),
+        ),
+    ):
+        response = await staging["project"].get_assets_action(types="skill,subagent")
+
+    assert skill_get_all.await_count == 1
+    assert agent_get_all.await_count == 1
+    by_typeid = {row["typeid"]: row for row in response.data["assets"]}
+    assert by_typeid[f"skill-{skill.id}"]["remote"] is True
+    assert by_typeid[f"subagent-{agent.id}"]["remote"] is False
+
+
+@pytest.mark.asyncio
+async def test_unindexed_spec_is_enumerated_from_its_real_folder(staging):
+    identity = mint_uuid()
+    path = staging["project_root"] / "agentic-assets/spec/unindexed"
+    path.mkdir(parents=True)
+    (path / "spec.md").write_text(f"---\nid: {identity}\ntitle: Unindexed specification\nspec_type: plan\n---\n# Plan\n")
+    assert await Spec.get_one({"id": identity}) is None
+
+    response = await staging["project"].get_assets_action(types="spec")
+
+    row = next(row for row in _rows(response) if row["typeid"] == f"spec-{identity}")
+    assert row["posix_path"] == str(path)
+    assert row["source"] == AssetSource.PROJECT_DIR.value
+    assert row["project_id"] == str(staging["project"].id)
+    assert await Spec.get_one({"id": identity}) is None
+
+
+@pytest.mark.asyncio
+async def test_indexed_spec_outside_scope_is_not_catalog_membership(staging, tmp_path):
+    path = tmp_path / "outside/agentic-assets/spec/private"
+    path.mkdir(parents=True)
+    spec = await Spec(id=mint_uuid(), title="Outside scope", asset_ref=str(path)).save()
+    try:
+        assert (path / "spec.md").is_file()
+        response = await staging["project"].get_assets_action(types="spec")
+        assert _row_for(response, spec) is None
+    finally:
+        await spec.delete()

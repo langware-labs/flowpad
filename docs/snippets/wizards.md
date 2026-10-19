@@ -1,0 +1,324 @@
+---
+id: 0a52d5f6-1145-46fd-b1c5-3cc08ed932d5
+---
+# Wizards — a sequence of calls, and what travels between them
+
+A Wizard SEQUENCES calls. Each step names one thing — a ComputeOp or another
+wizard — and reads one answer back. Everything about HOW work is done lives in
+the op ([compute-ops](compute-ops.md)); what is left here is what only a
+sequence owns: order, `on_fail`, the values steps pass each other, and the one
+answer the run gives back ([FlowCall](call-returns.md) §8).
+
+For direct typed chaining, `chain` builds this same sequence. A step's
+`input_from` selects `$input` or a prior step ID; `input_value` is a separate
+literal, including explicit null. The two cannot be combined. `output_from`
+selects one step's final value; without it, legacy collected outputs remain.
+Required-value edges reject skips and absent outputs before the next step runs.
+Whole lists pass unchanged; per-item work uses explicit `map_calls`. The
+[FlowCall block recipe](flowcall-blocks.md) executes this path without a server.
+
+Every `python` fence on this page runs as written, by
+`tests/unit/test_wizards_snippets.py` — each `# expected` comment is an
+assertion, so a fence cannot claim a value the code does not return. Commands
+are spelled for `darwin` and the platform key is pinned, so the same fence runs
+on a Linux box.
+
+---
+
+Every fence below runs in one session, after this one — the names they use and a folder to work in:
+
+```python
+# setup
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.wizard.plan import plan_wizard
+from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
+from flow_sdk.schema.data_spec.compute_op_spec import AskOp, CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, WizardResult
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+
+tmp = Path(tempfile.mkdtemp())       # the folder the steps below work in
+```
+
+## 1. Order, and a step that had nothing to do
+
+```python
+marker = ComputeOpSpec(name="marker", subkind="cli",
+                       exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+                       completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}))
+
+async def resolve(name):
+    return Resolved(marker, trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="setup", steps=[
+        WizardStepSpec(id="make", ref="marker"),
+        WizardStepSpec(id="again", ref="marker"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                          # True
+result.steps["make"].ran           # True — the goal did not hold, so it ran
+result.steps["again"].ran          # False — by then it did
+result.ran                         # True — the RUN did work, whatever its last step did
+```
+
+`ran` is the run's own, not its last step's: a wizard that installed something
+and then found everything else in place did NOT do nothing.
+
+## 2. A value from one step reaches the next as ENVIRONMENT
+
+```python
+port = ComputeOpSpec(name="port", subkind="cli", output_spec_kind="int",
+                     exe_data=CliOp(commands={"darwin": "echo 8080", "linux": "echo 8080"}))
+record = ComputeOpSpec(name="record", subkind="cli",
+                       exe_data=CliOp(commands={"darwin": 'echo "$FLOWPAD_WIZARD_INPUT_PORT" > port.txt', "linux": 'echo "$FLOWPAD_WIZARD_INPUT_PORT" > port.txt'}),
+                       completion_check=CliOp(commands={"darwin": "test -s port.txt", "linux": "test -s port.txt"}))
+ops = {"port": port, "record": record}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="wire", steps=[
+        WizardStepSpec(id="read", ref="port", bind="PORT"),
+        WizardStepSpec(id="write", ref="record"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                              # True
+result.value["read"]                   # 8080 — every step's value, by step id
+(tmp / "port.txt").read_text()         # '8080\n'
+```
+
+What a command prints is read as JSON when it parses as JSON, so `echo 8080`
+is the `int` 8080 — declare the kind the output IS, not the text it looks like.
+`bind` names the value; the callee reads it as `FLOWPAD_WIZARD_INPUT_<NAME>`.
+Never interpolation — a value of `; rm -rf /` substituted into a command line
+would be executable, straight through the gate that decides whether this wizard
+may run shell at all. As environment it can change what a command sees and
+never which command runs.
+
+## 3. A fallback is two steps with the same check
+
+```python
+attempt = ComputeOpSpec(name="attempt", subkind="cli",
+                        exe_data=CliOp(commands={"darwin": "false", "linux": "false"}),
+                        completion_check=CliOp(commands={"darwin": "test -f tool", "linux": "test -f tool"}))
+fallback = ComputeOpSpec(name="fallback", subkind="cli",
+                         exe_data=CliOp(commands={"darwin": "touch tool", "linux": "touch tool"}),
+                         completion_check=CliOp(commands={"darwin": "test -f tool", "linux": "test -f tool"}))
+ops = {"attempt": attempt, "fallback": fallback}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="toolchain", steps=[
+        WizardStepSpec(id="cheap", ref="attempt", on_fail="continue"),
+        WizardStepSpec(id="thorough", ref="fallback"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.steps["cheap"].exit_code    # ExitCode.NOT_YET — it ran and did not get there
+result.steps["thorough"].ok        # True — the second rung reached the goal
+(tmp / "tool").exists()            # True
+result.ok                          # True — the GOAL holds; the rung that missed is on the step
+```
+
+`on_fail: "continue"` is what makes the pair a fallback rather than an abort,
+and the shipped `dev-toolchain` wizard is four steps of exactly this shape — a
+`cli` rung and an `agent` rung per tool, sharing a check. When the cheap rung
+reaches the goal the expensive one costs one check and answers `ran=False`.
+
+**A wizard answers for GOALS, not attempts.** Two rungs of a fallback are one
+goal and say so by carrying the same completion check, so a rung that failed and
+was covered by a later step reaching that same goal does not make the run a
+failure — the miss stays visible on its own step. A step with a goal of its own
+that nobody reached still does: had `thorough` checked something else, the run
+would be `NOT_YET` and name it.
+
+## 4. A declared output binds
+
+```python
+stamp = ComputeOpSpec(name="stamp", subkind="cli", output_spec_kind="string",
+                      exe_data=CliOp(commands={"darwin": "echo ok", "linux": "echo ok"}))
+
+async def resolve(name):
+    return Resolved(stamp, trusted=True)
+
+promised = WizardSpec(name="promises", output={"port": "int"},
+                      steps=[WizardStepSpec(id="stamp", ref="stamp", bind="stamp")])
+result = await run_wizard(promised, trusted=True, workdir=tmp,
+                          resolve_op=resolve, platform="darwin")
+result.exit_code                      # ExitCode.NOT_YET
+result.steps["stamp"].ok              # True — the STEP was fine
+"not the declared output" in result.detail     # True
+```
+
+A wizard that declares an `output` is held to it, exactly as an op is held to
+its `output_spec_kind`, and through the same seam. Promising a shape and
+returning something else is a failure here rather than a surprise in whatever
+binds the value later; the steps stay on the answer, so what WAS produced is
+still readable.
+
+## 5. A step runs only while a value matches
+
+```python
+letter = ComputeOpSpec(name="letter", subkind="cli", output_spec_kind="string",
+                       exe_data=CliOp(commands={"darwin": "echo a", "linux": "echo a"}))
+touch = ComputeOpSpec(name="touch", subkind="cli",
+                      exe_data=CliOp(commands={"darwin": "touch matched.txt", "linux": "touch matched.txt"}))
+ops = {"letter": letter, "touch": touch}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="branch", steps=[
+        WizardStepSpec(id="read", ref="letter", bind="LETTER"),
+        WizardStepSpec(id="if-a", ref="touch", when={"LETTER": "a"}),
+        WizardStepSpec(id="if-b", ref="touch", when={"LETTER": "b"}),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                              # True
+result.steps["if-a"].ran               # True
+result.steps["if-b"].ran               # False — passed as not applicable, the run goes on
+result.steps["if-b"].detail            # "step 'if-b': LETTER is 'a', not 'b'"
+```
+
+`when` is an equality on values already in scope, like `args`: a mapping, never a template
+or an expression. A name not in scope does not match, and says so.
+
+## 6. Stop quietly
+
+```python
+no = ComputeOpSpec(name="no", subkind="cli", exe_data=CliOp(commands={"darwin": "false", "linux": "false"}))
+touch = ComputeOpSpec(name="touch", subkind="cli",
+                      exe_data=CliOp(commands={"darwin": "touch never.txt", "linux": "touch never.txt"}))
+ops = {"no": no, "touch": touch}
+
+async def resolve(name):
+    return Resolved(ops[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="gate", steps=[
+        WizardStepSpec(id="gate", ref="no", on_fail="stop"),
+        WizardStepSpec(id="never", ref="touch"),
+    ]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                              # True — a "no" was the answer, not a problem
+result.stopped_at                      # 'gate'
+"never" in result.steps                # False
+```
+
+The third `on_fail`, for a step whose failing IS the sequence's answer: nothing after it
+runs, the run is `OK`, and `stopped_at` says which step decided. A `decision` op is the
+step this exists for ([decisions](decisions.md) §9).
+
+## 7. A wizard that calls itself answers, and never recurses
+
+```python
+loop = WizardSpec(name="loop", steps=[WizardStepSpec(id="again", kind="wizard", ref="loop")])
+
+async def resolve_wizard(name):
+    return Resolved(loop, trusted=True)
+
+result = await run_wizard(loop, trusted=True, workdir=tmp,
+                          resolve_wizard=resolve_wizard, platform="darwin")
+result.exit_code                                          # ExitCode.NOT_YET
+"already on this run's stack" in result.steps["again"].detail    # True
+result.ran                                                # False — nothing was done
+```
+
+A cycle is caught by NAME, because that is what the hazard is; `MAX_WIZARD_DEPTH`
+is the backstop for the other runaway, a chain that never repeats but never
+ends. Neither is a crash: unbounded nesting would end in one, and a crash is not
+an answer.
+
+---
+
+## 8. Everything a run needs is asked once, before it starts
+
+A step that needs a person calls an `ask` op. Left alone, each would be raised
+when the run reaches it — five questions, minutes apart. So before the first
+step the run is PLANNED: every `ask` whose goal does not hold yet is one *need*,
+and they are put to the person as ONE question — a list, each row saying what it
+is and what it is for. The run then takes each ask's answer from that list.
+
+```python
+ask_git = ComputeOpSpec(name="ask-git", subkind="ask", output_spec_kind="confirm",
+                        exe_data=AskOp(prompt="Install Git?", detail="Git is missing."),
+                        completion_check=CliOp(commands={"darwin": "test -f git.txt", "linux": "test -f git.txt"}))
+
+async def resolve(name):
+    return Resolved(ask_git, trusted=True)
+
+plan = await plan_wizard(
+    WizardSpec(name="tools", steps=[WizardStepSpec(id="git", ref="ask-git", required=False)]),
+    workdir=tmp, platform="darwin", resolve_op=resolve,
+)
+[need.path for need in plan.needs]   # ['git']
+plan.needs[0].prompt                 # 'Install Git?'
+plan.needs[0].required               # False
+```
+
+A plan is a look, not a run: it checks goals and does nothing else. A question
+is left where it is — asked in place, as before — when its answer only means
+something at its moment: a gate (`recheck` / `auto_continue`), one that shows a
+value an earlier step produces (`{{connect.link}}`), a typed answer nobody keeps
+(no `bind`, no wizard `output`), or one the list cannot draw whole (several
+fields, a file, a choice of ways, an AI Assist).
+
+`required` (default `true`) says what a "no" means. Declining a required
+question leaves the run unfinished: the step fails and `on_fail` decides what
+follows. With `required: false` a decline is an answer — that wizard stops there
+quietly, as `on_fail: stop` would, and its caller carries on.
+
+## 9. `exit_error` — one op, called when the run ends in error
+
+```python
+broken = ComputeOpSpec(name="broken", subkind="cli", exe_data=CliOp(commands={"darwin": "false", "linux": "false"}))
+note = ComputeOpSpec(name="note", subkind="cli", exe_data=CliOp(commands={
+    "darwin": 'echo "$FLOWPAD_WIZARD_INPUT_ERROR_STEP" > failed.txt',
+    "linux": 'echo "$FLOWPAD_WIZARD_INPUT_ERROR_STEP" > failed.txt'}))
+
+async def resolve(name):
+    return Resolved({"broken": broken, "note": note}[name], trusted=True)
+
+result = await run_wizard(
+    WizardSpec(name="risky", exit_error="note", steps=[WizardStepSpec(id="try", ref="broken")]),
+    trusted=True, workdir=tmp, resolve_op=resolve, platform="darwin",
+)
+result.ok                                   # False — the op reports the error; it does not repair it
+result.steps["exit_error"].ok               # True
+(tmp / "failed.txt").read_text().strip()    # 'try'
+```
+
+The op is told what went wrong — `error_step` and `error_detail`, as environment
+like any other value — and answers under the reserved step id `exit_error`. A
+person declining a required question is an error like any other. It never runs
+for a run that passed, or for one that only checked.
+
+## What a step's `on_fail` decides
+
+| `on_fail` | a step that fails | later steps |
+| --- | --- | --- |
+| `abort` (the default) | stops the run | absent from `steps` — never reached |
+| `continue` | is recorded and passed | run in order |
+| `stop` | ends the run QUIETLY: `ok=True`, `stopped_at` names the step | absent — the step's "no" was the answer |
+
+A REFUSAL is not covered by either: it stops the run whatever `on_fail` says,
+because continuing past an untrusted callee is exactly what the trust gate
+exists to prevent. The run then answers `REFUSED`, naming what it could not
+call — and `ran` still reports whether earlier steps did real work.
+
+## Which shell the steps run in
+
+A run has one shell, opened where the run starts and shared by every step, nested wizards
+included; on Windows that is one PowerShell host for the whole run instead of one per check. A
+wizard (or op) that sets `"isolated_shell": true` gets a shell of its own, which its steps
+share, closed when it ends.

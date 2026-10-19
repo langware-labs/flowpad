@@ -9,10 +9,92 @@ documents live in `docs/agent-management/`.
 
 ## Current Model
 
-Flowpad represents an agent run as an `AgenticProcess` entity. The entity is the
-durable control plane: it stores the workdir, instruction/context, CLI
-configuration, `session_id`, lifecycle `status`, visibility, and the linked
-`shell_id` when a terminal is open.
+Flowpad separates the persistent agent from each execution:
+
+- An `Agent` is a named, launchable identity and authoring bundle. Project
+  members create one with **New → Agent**, or create a personal Agent by
+  choosing the User scope.
+- A `Deployment` whose parent is the Agent records where it is placed (`element_type == "agent"`; no stored kind).
+- An `AgenticProcess` records one run. It stores the workdir,
+  instruction/context, CLI configuration, `session_id`, lifecycle `status`,
+  visibility, and linked `shell_id` when a terminal is open.
+
+Creating an Agent authors the definition only. Cloud deployment and sandbox
+identity provisioning are separate deployment phases.
+
+## Agent authoring bundle
+
+A project-scoped Agent is stored under the selected Project, using a
+backend-derived lowercase filesystem slug. For example, an Agent whose name is
+`Q` has this portable bundle:
+
+```text
+agentic-assets/agent/q/
+├── agent.json
+├── system_prompt.md
+└── avatar.png
+```
+
+The Agent is an **entity document** (`AgentSpec.manifest_layout="entity"`, see
+[data-spec.md](data-management/data-spec.md#entity-document--typejson)): every field lives in
+`agent.json` — `type`, `id`, `name`, `version`, then the `AgentSpec` fields — and the system
+prompt is the plain file `system_prompt.md` beside it. A folder still holding the retired
+`agent.md` is reported by the scan and not indexed until
+`uv run -m flow_sdk.migrations.migration_2026_09_entity_json_mains --apply` converts it (the
+0.2.169 upgrade runs it).
+
+`name` is the addressable identity (`Q`) and supplies the filesystem slug
+(`q`). `title` is the human role shown in the profile (`QA manager`); it does
+not rename the Agent. Both values round-trip through `agent.json`.
+
+An uploaded image is kept beside `agent.json`, which stores only the
+portable bundle-relative reference `avatar: ./avatar.png`. Absolute paths,
+parent traversal such as `../avatar.png`, and generated download URLs are not
+portable identity data and are rejected by the authoring UI. Emoji and registry
+icon values remain supported for Agents that do not use an image.
+
+Creating another Agent whose normalized name resolves to an occupied bundle
+returns a conflict and never overwrites the existing Agent or its files.
+
+### Intro and project auto-launch
+
+These keys are **declaration only**: they round-trip through
+`agent.json`, show in the profile editor, and never enter `to_agent_options`, so
+setting them does not flip `restart_required` on a running process.
+
+| Key | Meaning |
+|-----|---------|
+| `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "500000000"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `050-000-0000` are accepted; `digits` / `e164` give `972500000000` / `+972500000000`. |
+| `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
+| `auto_launch` | Select this agent to launch once in this project, on opening it or after pulling an update that selects a new agent. |
+| `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |
+
+Auto-launch is **once per agent in each project's device state**. Authored saves
+and editor selections turn off the other agents in that project's direct scope;
+enabling a second agent replaces the first selection. Imported legacy documents
+are not rewritten. The dock loaders run a load-redirect
+resolver (`ui/src/agents/agent-auto-launch-redirect.ts`, registered after the
+journey one) that calls `POST /api/v1/agents/auto-launch {project_id}`.
+`Agent.auto_launch_for` scopes candidates to agents rooted in the project or
+one of its dependencies (`flow.json`), `enabled` with `auto_launch` on, and not yet
+in the project's device state (`<instance_dir>/projects/<project_id>/device_state.json`,
+key `agent_auto_launched`, via `flow_sdk/project_device_state.py` — backend-owned so no
+UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). If legacy sources contain multiple selections, the **oldest** wins — first
+indexed (`created_date`), then alphabetical by folder — and every candidate,
+winner and cancelled alike, is recorded after the session opens successfully.
+A cancelled agent never fires on a later open; a failed launch remains retryable. The UI
+warns which launches were cancelled. The session is opened with `use()`, the
+prompt is enqueued server-side, and the UI embeds the vibe persona before it
+kicks the queue with `drain-queue`. Never set `auto_launch` on a system agent:
+the system project is a context root of every project. An agent can also be what a
+project's **Home** opens, resuming its last chat (`docs/navigation/project-home-page.md`).
+
+A successful local Git Pull refreshes the project's asset index before returning
+its project ID. The footer then makes the same backend auto-launch check and
+navigates to the new session through normal dock navigation, preserving existing
+tabs. A no-change or failed pull does not launch anything. Hub repository fetch,
+pull and push use the current hub login for that repository URL without storing
+credentials in the checkout.
 
 The same entity supports two execution modes:
 

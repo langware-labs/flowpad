@@ -64,7 +64,7 @@ async def test_purge_removes_staging_and_ma_rows(tmp_path):
 async def test_purge_keeps_installed_copy(tmp_path, monkeypatch):
     fm_id, ma, leaf = await _stage_skill(tmp_path)
     user_root = tmp_path / "home"
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     res = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res, ApiSuccessResponse)
     installed = user_root / ".claude" / "skills" / leaf / "SKILL.md"

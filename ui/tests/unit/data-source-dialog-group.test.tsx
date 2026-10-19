@@ -1,0 +1,161 @@
+/**
+ * A driver group is ONE choice for a person ("WhatsApp") with several ways to it. The picker shows one
+ * tile for the group; its setup phase shows a card per member, each its live `profile()` (never
+ * hardcoded here) — a member not available on this hub cannot be picked — and the chosen way is
+ * connected with one button named for the group.
+ */
+import '@testing-library/jest-dom/vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Agent, DataDriver, DataSource, FieldType, TypeId } from '@sdk';
+
+const hoisted = vi.hoisted(() => ({ specs: [] as unknown[] }));
+vi.mock('@src/components/data-sources/use-source-specs', async (original) => ({
+  ...(await original<typeof import('@src/components/data-sources/use-source-specs')>()),
+  useSourceSpecs: () => ({
+    specs: hoisted.specs,
+    specFor: (name: string) => (hoisted.specs as { name: string }[]).find((s) => s.name === name),
+  }),
+}));
+vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
+vi.mock('@src/notifications', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() },
+}));
+vi.mock('@src/components/quick-create/QuickCreatePanel', () => ({
+  TILE_TIP_DELAY: 0,
+  TileSection: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DesktopTile: ({ label, onClick, ...rest }: { label: string; onClick: () => void }) => (
+    <button type="button" onClick={onClick} {...rest}>
+      {label}
+    </button>
+  ),
+}));
+
+import { DataSourceDialog } from '@src/components/data-sources/DataSourceDialog';
+import { TooltipProvider } from '@src/components/ui/tooltip';
+
+const AGENT_ID = '33333333-3333-4333-8333-333333333333';
+const WIZARD = [{ stage: 'connect', label: 'Connect', wizard: 'x-connect' }];
+
+function spec(fields: Partial<DataDriver> & { name: string }) {
+  return new DataDriver({ title: fields.name, sends: true, ...fields } as never);
+}
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+function open() {
+  render(
+    <TooltipProvider>
+      <DataSourceDialog open onOpenChange={vi.fn()} owner={new TypeId(Agent.type, AGENT_ID)} />
+    </TooltipProvider>,
+  );
+}
+
+describe('a driver group', () => {
+  const ours = spec({
+    name: 'ours',
+    title: 'Ours — no setup',
+    group: 'Chat',
+    group_order: 0,
+    group_icon_name: 'WhatsApp',
+    icon_name: 'Flowpad',
+    default_name: 'Our chat agent',
+    setup_wizards: WIZARD,
+  } as never);
+  const own = spec({
+    name: 'own',
+    title: 'Your own bot',
+    group: 'Chat',
+    group_order: 1,
+    group_icon_name: 'WhatsApp',
+    icon_name: 'WhatsApp',
+    setup_wizards: WIZARD,
+  } as never);
+  hoisted.specs = [own, ours, spec({ name: 'slack', title: 'Slack' })];
+
+  it('is one tile whose phase shows each way as its live card, connected with one button', async () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(function (this: DataDriver) {
+      return Promise.resolve(this.name === 'ours' ? { available: true, name: 'Flow', number: '+1 555 0100' } : {});
+    });
+    open();
+
+    expect(screen.getByTestId('provider-group-Chat')).toBeInTheDocument();
+    expect(screen.queryByTestId('provider-ours')).toBeNull();
+    expect(screen.queryByTestId('provider-own')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+    const cards = screen.getAllByTestId(/^group-member-(ours|own)$/);
+    expect(cards.map((c) => c.dataset.testid)).toEqual(['group-member-ours', 'group-member-own']);
+    await waitFor(() => expect(screen.getByTestId('group-member-number-ours')).toHaveTextContent('Flow · +1 555 0100'));
+
+    // The way OURS is the group's glyph badged with its own; your own bot's is the plain group glyph.
+    expect(screen.getByTestId('group-member-icon-ours')).toBeInTheDocument();
+    expect(screen.queryByTestId('group-member-icon-own')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('group-member-ours'));
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Our chat agent');
+    expect(screen.getByRole('button', { name: 'Connect Chat' })).toBeInTheDocument();
+  });
+
+  it('walks in steps: each step replaces the last, and an earlier crumb goes back to it', () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockResolvedValue({});
+    open();
+    const crumbs = () => screen.getByTestId('step-crumbs').textContent;
+    expect(crumbs()).toBe('Data sources');
+
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+    expect(crumbs()).toBe('Data sources' + 'Chat');
+    expect(screen.queryByTestId('provider-group-Chat')).toBeNull(); // the grid gave way, not scrolled under
+
+    fireEvent.click(screen.getByTestId('group-member-own'));
+    expect(crumbs()).toBe('Data sources' + 'Chat' + 'Your own bot');
+    expect(screen.queryByTestId('group-choice')).toBeNull();
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Your own bot'); // no default_name: its title
+
+    fireEvent.click(screen.getByTestId('step-crumb-1')); // back to the ways to connect
+    expect(screen.getByTestId('group-choice')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('step-crumb-0')); // back to the grid
+    expect(screen.getByTestId('provider-group-Chat')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('provider-slack')); // an ungrouped provider goes straight to its form
+    expect(crumbs()).toBe('Data sources' + 'Slack');
+    expect(screen.getByLabelText(/Data source name/)).toHaveValue('Slack');
+  });
+
+  it('cannot pick a way the hub does not offer, and says why', async () => {
+    vi.spyOn(DataDriver.prototype, 'profile').mockImplementation(function (this: DataDriver) {
+      return Promise.resolve(this.name === 'ours' ? { available: false, detail: 'Not on your hub yet.' } : {});
+    });
+    open();
+    fireEvent.click(screen.getByTestId('provider-group-Chat'));
+
+    await waitFor(() => expect(screen.getByTestId('group-member-ours')).toBeDisabled());
+    expect(screen.getByTestId('group-member-ours')).toHaveTextContent('Not on your hub yet.');
+    expect(screen.getByTestId('group-member-own')).toBeEnabled();
+  });
+});
+
+
+it('edits public access while preserving the restricted sender list', async () => {
+  hoisted.specs = [spec({ name: 'chat-policy', config: {
+    allowed_senders: { type: FieldType.LINES, label: 'Allowed senders' },
+  } } as never)];
+  const source = new DataSource({ name: 'Chat', provider: 'chat-policy', allowed_senders: ['15550001111'], open_to_all: true });
+  const save = vi.spyOn(source, 'save').mockResolvedValue(undefined as never);
+  vi.spyOn(source, 'markEdit').mockImplementation(() => undefined);
+  render(<TooltipProvider><DataSourceDialog open editing={source} onOpenChange={vi.fn()} /></TooltipProvider>);
+  const senders = screen.getByLabelText('Allowed senders');
+  expect(senders).toBeDisabled();
+  expect(senders).toHaveValue('15550001111');
+  fireEvent.click(screen.getByLabelText('Open to all'));
+  expect(senders).toBeEnabled();
+  expect(senders).toHaveValue('15550001111');
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(source.open_to_all).toBe(false);
+  expect(source.allowed_senders).toEqual(['15550001111']);
+  expect(source.config).not.toHaveProperty('open_to_all');
+});
