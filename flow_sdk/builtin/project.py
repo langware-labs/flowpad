@@ -2489,7 +2489,9 @@ class Project(SetupSkippable, Entity):
         return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod
-    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+    async def restore_reference(
+        cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None, project_root=None, project_id=None
+    ) -> bool:
         """Install a received project: its row through the hub membership mirror
         when this desktop has none (an existing row is the mirror's — the bundle
         is a snapshot from when the message was sent and must not roll it back),
