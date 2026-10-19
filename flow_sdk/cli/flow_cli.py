@@ -32,6 +32,7 @@ cli_init()
 #: alone was 10.7s, so a setup step that ran `flow status --check` blew its 30s budget.
 _EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
 LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
+    "compat": ("flow_sdk.cli.commands.compat_cmd", "compat_check", None),
     "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
     "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
     "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
@@ -242,6 +243,12 @@ def upgrade(
         return
     if self_update.is_editable_install():
         typer.echo(f"flowpad {__version__} is an editable (source) install; update the checkout instead.", err=True)
+        raise typer.Exit(1)
+    # Desktop-managed backends carry the desktop's compatibility floor in the env
+    # (FLOWPAD_DESKTOP_MIN_BACKEND_VERSION); a headless install has no constraint.
+    compat_block = self_update.desktop_compat_block(latest)
+    if compat_block:
+        typer.echo(compat_block, err=True)
         raise typer.Exit(1)
 
     # An explicit flowpad==<latest> -- never `uv tool upgrade`: the desktop app and the version

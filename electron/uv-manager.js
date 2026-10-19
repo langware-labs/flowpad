@@ -6,6 +6,7 @@ const { promisify } = require('util');
 const https = require('https');
 const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
+const engineCompat = require('./engine-compat');
 const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
@@ -478,11 +479,18 @@ class QuitInProgressError extends Error {
 }
 
 class UvManager {
-  constructor(log, { stateDir = null } = {}) {
+  constructor(log, { stateDir = null, appVersion = null } = {}) {
     this.log = log;
     // Where the "install in progress" marker lives. null → marker disabled
     // (unit tests, tools that must not touch the user's home).
     this._stateDir = stateDir;
+    // The desktop app's own version (app.getVersion(), passed by main.js) — one side of the
+    // desktop <-> engine compatibility contract (engine-compat.js). null in unit tests and
+    // tools, which disables the contract the way a legacy pair would be.
+    this._appVersion = appVersion;
+    // Per-session cache of engine releases' min_desktop_version (version → {minDesktopVersion}
+    // or 'invalid'); indeterminate reads are NOT cached so a transient failure can heal.
+    this._minDesktopCache = new Map();
     // Lets native failure dialogs offer "Send Report" (set by main.js; null in tests → "OK" only).
     this._failureSharer = null;
     this._installing = false;
@@ -1102,62 +1110,221 @@ class UvManager {
    * Returns version string (e.g., "0.1.32") or null.
    */
   getInstalledVersionSync(flowBin) {
-    const _readVersion = (dir) => {
-      const versionFile = path.join(dir, 'flow_sdk', '_version.py');
-      if (!fs.existsSync(versionFile)) return null;
-      const content = fs.readFileSync(versionFile, 'utf8');
-      const match = content.match(/__version__\s*=\s*["']([^"']+)["']/);
-      return match ? match[1] : null;
+    const version = this._readSitePackagesFileSync(flowBin, path.join('flow_sdk', '_version.py'));
+    if (!version) return null;
+    const match = version.match(/__version__\s*=\s*["']([^"']+)["']/);
+    return match ? match[1] : null;
+  }
+
+  /**
+   * Read `relPath` out of the installed engine's site-packages, as text. The same discovery
+   * getInstalledVersionSync always used: follow the flow binary's realpath into its venv, then
+   * fall back to uv's canonical tool venv. Returns null when not found (or unreadable) — no
+   * Python is ever run.
+   */
+  _readSitePackagesFileSync(flowBin, relPath) {
+    const _read = (dir) => {
+      const file = path.join(dir, relPath);
+      try { return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null; } catch { return null; }
+    };
+    const _readVenv = (venvRoot) => {
+      // Windows: Lib/site-packages/ (no python3.X subdirectory)
+      const winText = _read(path.join(venvRoot, 'Lib', 'site-packages'));
+      if (winText !== null) return winText;
+      // Unix: lib/python3.X/site-packages/
+      const libDir = path.join(venvRoot, 'lib');
+      if (fs.existsSync(libDir)) {
+        for (const entry of fs.readdirSync(libDir)) {
+          if (entry.startsWith('python')) {
+            const text = _read(path.join(libDir, entry, 'site-packages'));
+            if (text !== null) return text;
+          }
+        }
+      }
+      return null;
     };
 
     try {
-      // Strategy 1: follow the flow binary symlink to find site-packages
+      // Strategy 1: follow the flow binary symlink to find its venv
       const bin = flowBin || this._flowBin;
       if (bin) {
         let binDir = path.dirname(bin);
         // Resolve symlinks (e.g., ~/.local/bin/flow -> ~/.local/share/uv/tools/flowpad/bin/flow)
         try { binDir = path.dirname(fs.realpathSync(bin)); } catch { /* use original */ }
-        // bin/ -> lib/python3.X/site-packages/
-        const venvRoot = path.dirname(binDir);
-        const libDir = path.join(venvRoot, 'lib');
-        if (fs.existsSync(libDir)) {
-          for (const entry of fs.readdirSync(libDir)) {
-            if (entry.startsWith('python')) {
-              const ver = _readVersion(path.join(libDir, entry, 'site-packages'));
-              if (ver) return ver;
-            }
-          }
-        }
-        // Windows: Lib/site-packages/ (no python3.X subdirectory)
-        const winSitePackages = path.join(venvRoot, 'Lib', 'site-packages');
-        const ver = _readVersion(winSitePackages);
-        if (ver) return ver;
+        const text = _readVenv(path.dirname(binDir));
+        if (text !== null) return text;
       }
-
-      // Strategy 2: fallback to known uv tool venv paths
-      const home = os.homedir();
-      const uvToolDir = IS_WIN
-        ? path.join(home, 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
-        : path.join(home, '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
-      const venvCandidates = [uvToolDir];
-
-      for (const venv of venvCandidates) {
-        // Windows: Lib/site-packages/
-        const winVer = _readVersion(path.join(venv, 'Lib', 'site-packages'));
-        if (winVer) return winVer;
-        // Unix: lib/python3.X/site-packages/
-        const libDir = path.join(venv, 'lib');
-        if (fs.existsSync(libDir)) {
-          for (const entry of fs.readdirSync(libDir)) {
-            if (entry.startsWith('python')) {
-              const ver = _readVersion(path.join(libDir, entry, 'site-packages'));
-              if (ver) return ver;
-            }
-          }
-        }
-      }
+      // Strategy 2: fallback to the canonical uv tool venv
+      return _readVenv(this._toolVenvDir());
     } catch { /* ignore */ }
     return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Desktop <-> engine version compatibility (engine-compat.js is the pure logic;
+  // flow_sdk/utils/compat.py is the Python twin)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The INSTALLED engine's own desktop floor, read as plain data from its site-packages.
+   * @returns {{minDesktopVersion: string|null}|'invalid'} — a missing compat.json is the
+   *   legacy policy (a release older than the contract: no constraint), unparseable
+   *   metadata is 'invalid'.
+   */
+  getInstalledMinDesktopSync(flowBin) {
+    const text = this._readSitePackagesFileSync(flowBin, path.join('flow_sdk', 'compat.json'));
+    if (text === null) return { minDesktopVersion: null };
+    try {
+      return engineCompat.parseEngineCompat(text);
+    } catch (err) {
+      this.log.warn(`[compat] the installed engine's compat.json is invalid: ${err.message}`);
+      return 'invalid';
+    }
+  }
+
+  /**
+   * Is the INSTALLED (desktop, engine) pair compatible in both directions?
+   * @returns {null | {message: string, reasons: string[], engineVersion: string|null, minDesktopVersion: string|null}}
+   *   null when compatible, unknowable (no app version / no engine), or legacy.
+   */
+  installedPairIssue(flowBin) {
+    if (!this._appVersion) return null;
+    const engineVersion = this.getInstalledVersionSync(flowBin);
+    if (!engineVersion) return null; // no engine (or unreadable) — the install/repair paths own that
+    const compat = this.getInstalledMinDesktopSync(flowBin);
+    // Invalid metadata in an ALREADY-INSTALLED engine must not brick startup — reject upgrades
+    // elsewhere, but here warn and treat as legacy.
+    const minDesktopVersion = compat === 'invalid' ? null : compat.minDesktopVersion;
+    const verdict = engineCompat.checkPair({
+      desktopVersion: this._appVersion,
+      engineVersion,
+      minDesktopVersion,
+      minBackendVersion: engineCompat.desktopMinBackendVersion(),
+    });
+    if (verdict.compatible) return null;
+    return {
+      message: engineCompat.incompatibleMessage({
+        desktopVersion: this._appVersion, engineVersion, minDesktopVersion,
+      }),
+      reasons: verdict.reasons,
+      engineVersion,
+      minDesktopVersion,
+    };
+  }
+
+  /**
+   * A CANDIDATE release's desktop floor, before anything touches the working install: unpack
+   * just the flowpad wheel (`uv pip install --no-deps --target <tmp>` — wheels carry no code
+   * that runs at install time) and read flow_sdk/compat.json from it. The wheel lands in uv's
+   * cache, so the real `uv tool install flowpad==X` that follows does not download it again.
+   *
+   * @returns {Promise<{minDesktopVersion: string|null}|'invalid'|null>} null = indeterminate
+   *   (offline, uv failure) — the caller treats that as legacy and the post-install
+   *   verification (installedPairIssue + rollback) stays the authoritative gate.
+   */
+  async _readCandidateMinDesktop(version) {
+    if (this._minDesktopCache.has(version)) return this._minDesktopCache.get(version);
+    const pin = tryPythonVersion();
+    if (!pin) return null;
+    const target = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-compat-'));
+    let result = null;
+    try {
+      await this._runStreaming('uv', [
+        'pip', 'install', '--no-deps', '--target', target, '--python', pin,
+        `${PYPI_PACKAGE}==${version}`,
+      ], {});
+      const file = path.join(target, 'flow_sdk', 'compat.json');
+      if (!fs.existsSync(file)) {
+        result = { minDesktopVersion: null }; // a release older than the contract: no constraint
+      } else {
+        try {
+          result = engineCompat.parseEngineCompat(fs.readFileSync(file, 'utf8'));
+        } catch (err) {
+          this.log.warn(`[compat] ${PYPI_PACKAGE} ${version} ships invalid compat.json: ${err.message}`);
+          result = 'invalid';
+        }
+      }
+      this._minDesktopCache.set(version, result);
+    } catch (err) {
+      this.log.warn(`[compat] could not read ${PYPI_PACKAGE} ${version} metadata: ${String(err.message).split('\n')[0]}`);
+    } finally {
+      try { fs.rmSync(target, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+    return result;
+  }
+
+  /**
+   * The newest PyPI release compatible with THIS desktop in both directions, or null when it
+   * cannot be decided (no app version, PyPI unreachable). Throws a user-readable error when
+   * PyPI answered and NO release is compatible — installing anything would be wrong.
+   * @returns {Promise<{version: string, minDesktopVersion: string|null}|null>}
+   */
+  async resolveCompatibleEngineVersion() {
+    if (!this._appVersion) return null;
+    // Update-cycle harness: a forced engine spec wins over resolution (engineSpec()), so don't
+    // spend staged metadata reads on a scenario that has already decided what to install.
+    if (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) return null;
+    const data = await this._getPypiData();
+    if (!data || !data.releases) return null;
+    const releases = Object.entries(data.releases).map(([version, files]) => ({
+      version,
+      yanked: Array.isArray(files) && files.length > 0 && files.every((f) => f && f.yanked === true),
+    }));
+    const minBackendVersion = engineCompat.desktopMinBackendVersion();
+    const picked = await engineCompat.selectCompatibleRelease({
+      releases,
+      desktopVersion: this._appVersion,
+      minBackendVersion,
+      readEngineCompat: (v) => this._readCandidateMinDesktop(v),
+      log: (msg) => this.log.info(`[uv] ${msg}`),
+    });
+    if (!picked) {
+      throw installFailure(
+        `No compatible FlowPad engine release found for Desktop ${this._appVersion} ` +
+        `(the desktop requires engine ${minBackendVersion || 'any'} or newer). ` +
+        'Update the desktop app, then try again. Your existing installation has been preserved.'
+      );
+    }
+    const latest = data.info && data.info.version;
+    if (latest && picked.version !== latest) {
+      this.log.warn(`[compat] latest ${PYPI_PACKAGE} ${latest} is not compatible with Desktop ${this._appVersion} — using ${picked.version}`);
+    }
+    return picked;
+  }
+
+  /**
+   * The spec install/upgrade/repair should ask uv for: `flowpad==<newest compatible>` when the
+   * contract can be evaluated, else `fallbackSpec` (the pre-contract behaviour — no app version
+   * to hold against, or PyPI unreachable, where the install itself decides/fails).
+   * Throws when PyPI answered and no compatible release exists.
+   */
+  async _compatibleEngineSpec(fallbackSpec) {
+    const picked = await this.resolveCompatibleEngineVersion();
+    if (!picked) return fallbackSpec;
+    return `${PYPI_PACKAGE}==${picked.version}`;
+  }
+
+  /**
+   * After an install/upgrade wrote a new engine: the pair must hold. When it does not (the
+   * selection ran on indeterminate metadata, or a pinned version was forced), put
+   * `previousVersion` back and throw the user-readable incompatibility — an incompatible pair
+   * must never be started.
+   */
+  async _verifyInstalledPairOrRollback(previousVersion, { onProgress } = {}) {
+    const issue = this.installedPairIssue();
+    if (!issue) return;
+    this.log.error(`[compat] installed pair is incompatible: ${issue.reasons.join('; ')}`);
+    if (previousVersion && previousVersion !== issue.engineVersion) {
+      this.log.warn(`[compat] rolling the engine back to ${previousVersion}`);
+      if (onProgress) onProgress(`Restoring FlowPad engine ${previousVersion}`);
+      const pin = await this._pythonPinForUpgrade();
+      await this._uvToolInstallForce(
+        ['tool', 'install', `${PYPI_PACKAGE}==${previousVersion}`, '--python', pin, '--force'],
+        { onProgress },
+      );
+      this._flowBin = await this._resolveFlowBin();
+    }
+    throw installFailure(issue.message);
   }
 
   /**
@@ -1767,14 +1934,20 @@ class UvManager {
 
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
-    const pin = await this._pythonPinForUpgrade();
+    // The newest release compatible with this desktop in BOTH directions — "latest" is never
+    // assumed compatible. null → the contract cannot be evaluated (no app version, PyPI down):
+    // install unpinned as before, and the post-install verification below has the last word.
+    const picked = await this.resolveCompatibleEngineVersion();
+    const spec = picked ? `${PYPI_PACKAGE}==${picked.version}` : PYPI_PACKAGE;
+    const pin = await this._pythonPinForUpgrade(picked ? await this._getPypiVersionInfo(picked.version) : undefined);
     await this._uvToolInstallForce(
-      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--force'],
+      ['tool', 'install', engineSpec(spec), '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
+    await this._verifyInstalledPairOrRollback(null, { onProgress });
     this.log.info(`[uv] ${PYPI_PACKAGE} installed, binary at ${this._flowBin}`);
   }
 
@@ -1916,6 +2089,12 @@ class UvManager {
         // consumes the variable; nothing it spawns inherits it.
         FLOWPAD_BOOT_PROGRESS: '1',
       };
+      // The desktop side of the compatibility contract (flow_sdk/utils/compat.py reads these):
+      // the backend's own self-update (`flow upgrade`, POST /version/install) refuses targets
+      // below the desktop's floor and rolls back a release that demands a newer desktop.
+      if (this._appVersion) env.FLOWPAD_DESKTOP_VERSION = this._appVersion;
+      const minBackend = engineCompat.desktopMinBackendVersion();
+      if (minBackend) env.FLOWPAD_DESKTOP_MIN_BACKEND_VERSION = minBackend;
       cleanPythonEnv(env, this.log);
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
@@ -2231,6 +2410,12 @@ class UvManager {
 
   /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
   async _getLatestPypiInfo() {
+    const data = await this._getPypiData();
+    return (data && data.info) || null;
+  }
+
+  /** The whole PyPI JSON document for flowpad (`info` + `releases` map), or null on any failure. */
+  async _getPypiData() {
     try {
       // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
       const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
@@ -2242,8 +2427,7 @@ class UvManager {
         this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
         return null;
       }
-      const data = await res.json();
-      return (data && data.info) || null;
+      return (await res.json()) || null;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
       return null;
@@ -2403,11 +2587,32 @@ class UvManager {
     const currentVersion = this.getInstalledVersionSync() || null;
     const required = !currentVersion || isNewer(currentVersion, latestVersion);
     if (!required) return null;
+    // The newest release may require a newer desktop than this one: offer the newest release
+    // compatible in BOTH directions, so the dialog names the version the upgrade will install.
+    let offered = latestVersion;
+    if (this._appVersion) {
+      let picked;
+      try {
+        picked = await this.resolveCompatibleEngineVersion();
+      } catch (err) {
+        // PyPI answered and NO release is compatible: there is nothing installable to offer.
+        this.log.warn(`[compat] not offering an engine update: ${String(err.message).split('\n')[0]}`);
+        return null;
+      }
+      if (picked) {
+        offered = picked.version;
+        // The best compatible release is what is already installed (or older): nothing to offer.
+        if (currentVersion && !isNewer(currentVersion, offered)) {
+          this.log.info(`[compat] latest ${latestVersion} is incompatible with Desktop ${this._appVersion}; best compatible is ${offered} (installed: ${currentVersion}) — no update offered`);
+          return null;
+        }
+      }
+    }
     this.log.info(
       `[uv] Pre-start update check: installed=${currentVersion || 'unknown'}, ` +
-      `latest=${latestVersion} → offering upgrade`
+      `latest=${latestVersion}${offered !== latestVersion ? `, newest compatible=${offered}` : ''} → offering upgrade`
     );
-    return { currentVersion, latestVersion, required: true };
+    return { currentVersion, latestVersion: offered, required: true };
   }
 
   /**
@@ -2619,16 +2824,28 @@ class UvManager {
    */
   async upgrade({ onProgress, version } = {}) {
     // `version`: the exact release the user agreed to (update offered earlier) instead of "whatever is latest now".
+    const previousVersion = this.getInstalledVersionSync() || null;
     let spec = engineSpec(`${PYPI_PACKAGE}@latest`);
     let pin;
     if (version) {
       const target = await this._resolveEngineTarget(version);
+      // The agreed release must still satisfy the contract — a desktop downgraded since the
+      // offer, or a floor it never met, is caught here with the working engine untouched.
+      await this._assertCandidateCompatible(target.version);
       spec = `${PYPI_PACKAGE}==${target.version}`;
       pin = await this._pythonPinForUpgrade(target.info); // that release's own requires_python
       this.log.info(`[uv] Upgrading flowpad to ${target.version}${target.version !== version ? ` (${version} was withdrawn)` : ''}...`);
     } else {
-      pin = await this._pythonPinForUpgrade();
-      this.log.info('[uv] Upgrading flowpad...');
+      // Newest release compatible in BOTH directions; null → contract not evaluable, keep @latest.
+      const picked = await this.resolveCompatibleEngineVersion();
+      if (picked) {
+        spec = engineSpec(`${PYPI_PACKAGE}==${picked.version}`);
+        pin = await this._pythonPinForUpgrade(await this._getPypiVersionInfo(picked.version));
+        this.log.info(`[uv] Upgrading flowpad to ${picked.version}...`);
+      } else {
+        pin = await this._pythonPinForUpgrade();
+        this.log.info('[uv] Upgrading flowpad...');
+      }
     }
     await this._uvToolInstallForce(
       ['tool', 'install', spec, '--python', pin, '--force'],
@@ -2636,8 +2853,37 @@ class UvManager {
     );
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
+    await this._verifyInstalledPairOrRollback(previousVersion, { onProgress });
     this.log.info('[uv] Upgrade complete');
     updateTest.event('engine-upgraded', { engine: this.getInstalledVersionSync() || null, spec });
+  }
+
+  /**
+   * Both directions of the contract for a SPECIFIC release the caller wants, before anything
+   * touches the working install. Throws a user-readable error when it fails; a no-op when the
+   * contract cannot be evaluated (no app version, or the candidate's metadata is unreadable —
+   * then the post-install verification decides).
+   */
+  async _assertCandidateCompatible(version) {
+    if (!this._appVersion) return;
+    const compat = await this._readCandidateMinDesktop(version);
+    if (compat === 'invalid') {
+      throw installFailure(
+        `FlowPad engine ${version} ships invalid compatibility metadata — not installing it. ` +
+        'Your existing installation has been preserved.'
+      );
+    }
+    const minDesktopVersion = compat ? compat.minDesktopVersion : null;
+    const verdict = engineCompat.checkPair({
+      desktopVersion: this._appVersion,
+      engineVersion: version,
+      minDesktopVersion,
+      minBackendVersion: engineCompat.desktopMinBackendVersion(),
+    });
+    if (!verdict.compatible) {
+      this.log.warn(`[compat] refusing engine ${version}: ${verdict.reasons.join('; ')}`);
+      throw installFailure(`${verdict.reasons.join('\n')}\n\nYour existing installation has been preserved.`);
+    }
   }
 
   /**
@@ -2649,9 +2895,12 @@ class UvManager {
    */
   async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    // A repair must not quietly jump to an incompatible "latest": resolve the newest release
+    // compatible with this desktop (unpinned only when the contract cannot be evaluated).
+    const spec = await this._compatibleEngineSpec(PYPI_PACKAGE);
     const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--reinstall', '--force'],
+      ['tool', 'install', engineSpec(spec), '--python', pin, '--reinstall', '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();

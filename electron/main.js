@@ -1665,7 +1665,7 @@ async function installAndStartBackend({ quiet = false } = {}) {
   let backendJustUpgraded = false;
   let firstInstall = false;
   // Install and start backend via uv + flow CLI
-  uvManager = new UvManager(log, { stateDir: FLOW_HOME });
+  uvManager = new UvManager(log, { stateDir: FLOW_HOME, appVersion: app.getVersion() });
   uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
 
   // Did the user just upgrade to a new desktop build? Logged for diagnostics.
@@ -1770,6 +1770,30 @@ async function installAndStartBackend({ quiet = false } = {}) {
         if (upgradedPreStart) {
           activeBin = uvManager.getInstalledFlowBin() || activeBin;
           backendJustUpgraded = true;
+        }
+      }
+
+      // ── Installed-pair compatibility (engine-compat.js) ────────────────
+      // A desktop downgrade, or an engine moved by hand (`uv tool install flowpad==X`), can leave
+      // a pair the contract forbids. Repair by installing the newest compatible release, under the
+      // same gate every other engine change obeys. When the repair is unavailable (held for a
+      // pending desktop update, offline), start what is installed and warn — a running old pair
+      // beats a bricked app, and the next launch retries.
+      const pairIssue = uvManager.installedPairIssue(activeBin);
+      if (pairIssue) {
+        log.warn(`[compat] installed desktop/engine pair is incompatible: ${pairIssue.reasons.join('; ')}`);
+        if (engineChangeAllowed('repairing an incompatible engine') === 'allow') {
+          try {
+            sendStatus('Installing a compatible FlowPad engine');
+            const picked = await uvManager.resolveCompatibleEngineVersion();
+            if (picked) {
+              await uvManager.upgrade({ version: picked.version, onProgress: installProgress('Installing a compatible FlowPad engine') });
+              activeBin = uvManager.getInstalledFlowBin() || activeBin;
+              backendJustUpgraded = true;
+            }
+          } catch (compatErr) {
+            log.warn(`[compat] could not repair the incompatible pair, starting the installed engine: ${compatErr.message}`);
+          }
         }
       }
 

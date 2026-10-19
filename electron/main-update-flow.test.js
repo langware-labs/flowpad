@@ -82,6 +82,8 @@ function load(opts = {}) {
     getInstalledFlowBin() { return opts.installed === false ? null : '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
+    installedPairIssue() { return opts.pairIssue || null; }
+    async resolveCompatibleEngineVersion() { return opts.compatibleRelease || null; }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
     deferPackageVersion(v) { uv.deferred.push(v); }
     async upgrade(o) { uv.upgrades.push(o); if (opts.upgradeThrows) throw new Error(opts.upgradeThrows); }

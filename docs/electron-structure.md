@@ -39,6 +39,7 @@ Electron (main.js)
 | Module | Role |
 | --- | --- |
 | `semver.js` | Version comparison. |
+| `engine-compat.js` | Desktop <-> engine compatibility: the floors (`engine-compat.json` / the wheel's `flow_sdk/compat.json`), `checkPair`, `selectCompatibleRelease`. See `docs/version-compatibility.md`. |
 | `shutdown.js` | Graceful backend stop. |
 | `backend-wait.js` | Waiting for the server to come up. |
 | `flow-rs-keychain.js` | Reading keys from the keychain. |

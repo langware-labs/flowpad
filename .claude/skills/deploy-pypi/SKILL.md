@@ -177,6 +177,12 @@ gh workflow run build-desktop.yml --repo langware-labs/flowpad-desktop \
 > gh run list --repo langware-labs/flowpad-desktop --workflow build-desktop.yml --limit 5
 > gh run watch <run-id> --repo langware-labs/flowpad-desktop
 > ```
+>
+> The workflow's `check-compatibility` job gates `create-release`: it proves the
+> desktop version being released can resolve a compatible flowpad backend on PyPI
+> (`scripts/check_version_compat.py --resolve`). If THAT job fails, the floors in
+> `electron/engine-compat.json` / `flow_sdk/compat.json` are wrong for this pair —
+> fix them (docs/version-compatibility.md), don't rerun blindly.
 
 ---
 
@@ -254,6 +260,11 @@ git worktree add "$WT" "origin/$RELEASE_BRANCH"
 ln -s "$(pwd)/ui/node_modules" "$WT/ui/node_modules"   # reuse deps so build_ui.py is fast
 cd "$WT"
 echo "__version__ = \"$NEW\"" > flow_sdk/_version.py
+# Desktop <-> backend compatibility gate (docs/version-compatibility.md): the two
+# declarations must parse and $NEW must satisfy the desktop floor it bundles.
+# A failure means the floors are wrong — STOP, do not publish (same gate
+# deploy_to_github.sh runs before tagging).
+python3 scripts/check_version_compat.py
 git add flow_sdk/_version.py
 git commit -m "chore: bump version to $NEW for PyPI release"
 git push origin "HEAD:$RELEASE_BRANCH"
