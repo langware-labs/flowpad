@@ -5,14 +5,15 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { buildConversationStatusPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
+import { OpenSessionButton, WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 
 /**
  * Conversation-header affordance for the conversation's owning worker session.
- * Always renders exactly one of two states (never neither):
+ * Renders:
  *
- *   - a conversationProcess exists → a single **Open** button → its live shell;
- *   - none exists → a **launch toolbar** (claude_code / codex / copilot).
+ *   - a **launch toolbar** (claude_code / codex / copilot) — always, so a new
+ *     session can start even when one already exists;
+ *   - plus, when a conversationProcess exists, an **Open** chip → the latest one.
  *
  * Self-contained: it owns its own project-mapping gate + picker dialog, so it
  * can be dropped into the route header (which has no gate of its own). Launch
@@ -52,15 +53,17 @@ export function ConversationHeaderSession({
 
   return (
     <>
-      <WorkerToolbar
-        hasProcess={!launchOnly && !!conversationProcess}
-        starting={starting}
-        onOpen={open}
-        onLaunch={launch}
-        openTitle="Open the conversation session"
-        sessionName={conversationProcess ? resolveProcessDisplayName(conversationProcess) : undefined}
-        testIdPrefix={testIdPrefix}
-      />
+      <div className="inline-flex items-center gap-1">
+        {!launchOnly && conversationProcess && (
+          <OpenSessionButton
+            onOpen={open}
+            title="Open the conversation session"
+            name={resolveProcessDisplayName(conversationProcess)}
+            testIdPrefix={testIdPrefix}
+          />
+        )}
+        <WorkerToolbar starting={starting} onLaunch={launch} testIdPrefix={testIdPrefix} />
+      </div>
       <OpenProjectComponent {...dialogProps} />
     </>
   );
