@@ -95,10 +95,10 @@ def test_an_older_install_keeps_its_standing_when_it_runs_the_wizard_again():
 def test_only_a_green_finish_stamps_it():
     begin_first_run(_wizard())
 
-    finish_first_run(_wizard(), WizardResult.not_yet("declined"))
+    assert finish_first_run(_wizard(), WizardResult.not_yet("declined")) is False
     assert first_run_gate_open(WIZARD_ID) is False
 
-    finish_first_run(_wizard(), WizardResult.satisfied("done"))
+    assert finish_first_run(_wizard(), WizardResult.satisfied("done")) is True, "stamped: the caller tells the watchers"
     assert first_run_gate_open(WIZARD_ID) is True
 
 

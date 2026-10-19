@@ -85,7 +85,7 @@ export interface IWizard extends IEntity {
   shipped?: boolean;
   run_state?: WizardRunState;
   /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
-   *  is done (all green, or the person chose to go on without it) and never again false. A computed field. */
+   *  has run fully (stamped for good), or the person chose to go on without it (this backend session only). */
   first_run_gate_open?: boolean;
   /** Why this wizard has no steps, or `''`. The reader deliberately swallows a
    *  malformed `wizard.json` (one bad document must not wedge an indexer
@@ -135,7 +135,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   shipped?: boolean;
   run_state?: WizardRunState;
   /** Whether project setup may begin. True for every wizard but the first-run one; for that one, true once it
-   *  is done (all green, or the person chose to go on without it) and never again false. A computed field. */
+   *  has run fully (stamped for good), or the person chose to go on without it (this backend session only). */
   first_run_gate_open?: boolean;
   document_error?: string;
   activity_path?: string;
@@ -249,7 +249,7 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   }
 
   /**
-   * Go on without finishing this wizard: opens the first-run gate for good, so a project can be set up
+   * Go on without finishing this wizard: opens the first-run gate for this backend session (a restart closes it again), so a project can be set up
    * though an install was declined or blocked. Only the first-run wizard gates anything (400 for another).
    */
   async continueWithoutSetup(): Promise<{ first_run_gate_open: boolean }> {

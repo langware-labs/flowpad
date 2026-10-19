@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { useContext, useEntity } from '@sdk/react/hooks';
 import { apiClient, type Wizard } from '@sdk';
 import { Loader2 } from 'lucide-react';
@@ -51,6 +51,7 @@ export interface FirstRunGate {
  */
 export function useFirstRunGate(): FirstRunGate {
   const { isDesktop } = useContext();
+  const { t } = useLingui();
   // null: the backend has not answered yet.
   const [asked, setAsked] = useState<'open' | 'closed' | null>(null);
   useEffect(() => {
@@ -100,18 +101,20 @@ export function useFirstRunGate(): FirstRunGate {
     try {
       if (!(await openSetupWizard())) throw new Error('The setup wizard is not installed.');
     } catch (err) {
-      notify.error({ title: errorMessage(err, 'Could not open setup'), forceToast: true });
+      notify.error({ title: errorMessage(err, t`Could not open setup`), forceToast: true });
     }
-  }, []);
+  }, [t]);
   const continueAnyway = useCallback(async () => {
     try {
-      await wizard?.continueWithoutSetup();
+      // No wizard to waive: the backend has not taken it, so say so rather than end the flow as if it had.
+      if (!wizard) throw new Error('The setup wizard is not available.');
+      await wizard.continueWithoutSetup();
       return true;
     } catch (err) {
-      notify.error({ title: errorMessage(err, 'Could not continue'), forceToast: true });
+      notify.error({ title: errorMessage(err, t`Could not continue`), forceToast: true });
       return false;
     }
-  }, [wizard]);
+  }, [wizard, t]);
 
   return { state, finish, continueAnyway };
 }

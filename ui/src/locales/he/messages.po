@@ -6714,6 +6714,10 @@ msgstr "לא ניתן היה לבצע commit ו-push"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
+#: src/components/project-setup/first-run-gate.tsx
+msgid "Could not continue"
+msgstr ""
+
 #: src/components/assets/editor/chart/ChartAssetEditor.tsx
 msgid "Could not convert the chart"
 msgstr "לא ניתן היה להמיר את התרשים"
@@ -6988,6 +6992,7 @@ msgid "Could not open link"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
+#: src/components/project-setup/first-run-gate.tsx
 #: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Could not open setup"
 msgstr "לא ניתן לפתוח את ההגדרה"

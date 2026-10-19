@@ -657,7 +657,7 @@ each connection.
   emits it. A subscriber that must run on every load subscribes here without
   `fire_once`; one that wants it only the first time ever says so with a
   `fire_once` trigger — the `llm-setup` wizard does: the first tab after install
-  runs it, because its chooser and its questions need someone looking.
+  starts the first-run flow in the UI (the trigger itself only logs when a tab is watching), because its chooser and its questions need someone looking.
 * **It waits for the same thing `app.ready` waits for.** The emit awaits
   `bootstrap.system_content_ready`, set right after `reconcile_wizard_triggers()`
   in `_app_ready_signal`. Emitted earlier, an unarmed trigger would never hear it

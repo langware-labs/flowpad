@@ -1920,9 +1920,9 @@ async def remove_debug_tools() -> dict:
     await run_discovery()
 
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
-    from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
+    from flow_sdk.core.wizard.first_run import FIRST_RUN_WIZARD  # noqa: PLC0415
 
-    wizard = await Wizard.by_name(LLM_SETUP_WIZARD)
+    wizard = await Wizard.by_name(FIRST_RUN_WIZARD)
     wizard_result = None
     if wizard is not None:
         result = await wizard.run(check_only=True)

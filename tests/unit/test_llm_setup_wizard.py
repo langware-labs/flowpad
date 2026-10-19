@@ -24,6 +24,7 @@ import pytest
 
 from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.core.compute_op import ask, ask_window
+from flow_sdk.core.wizard import first_run
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, PromptResult
@@ -356,11 +357,11 @@ async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
     monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
     trigger = SimpleNamespace(uname="llm-setup-on-tab-ready")
 
-    monkeypatch.setenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV, "true")
+    monkeypatch.setenv(first_run.SKIP_FIRST_RUN_SETUP_ENV, "true")
     await builtin_triggers._run_llm_setup_trigger(trigger, [])
     assert resolved == [], "switched off: the wizard is never even looked up"
 
-    monkeypatch.delenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV)
+    monkeypatch.delenv(first_run.SKIP_FIRST_RUN_SETUP_ENV)
     await builtin_triggers._run_llm_setup_trigger(trigger, [])
     assert resolved == [trigger], "unset: the trigger runs as it does on a real install"
 

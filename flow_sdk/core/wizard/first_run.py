@@ -194,11 +194,14 @@ def begin_first_run(wizard: "Wizard") -> None:
     mark_first_run_tracked(wid)
 
 
-def finish_first_run(wizard: "Wizard", result: "WizardResult") -> None:
+def finish_first_run(wizard: "Wizard", result: "WizardResult") -> bool:
     """Called when a start of the first-run wizard has run to its end, after every step AND the
     sign-in that follows the installs. All green opens the gate for good -- also when the person closed the
-    window meanwhile and the installs finished in the background; anything else leaves it as it was."""
+    window meanwhile and the installs finished in the background; anything else leaves it as it was.
+
+    Returns whether it stamped, so the caller can tell the watchers the gate changed."""
     if wizard.name != FIRST_RUN_WIZARD or not result.ok:
-        return
+        return False
     mark_first_run_done(str(wizard.id))
     _log.info("first-run gate: opened -- the first-run wizard finished")
+    return True
