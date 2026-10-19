@@ -40,4 +40,5 @@ class IndexProgressTable:
     done: int                                  # sum(row.done)
     total: int                                 # sum(row.total); 0 = unknown
     text: str | None = None                    # PROGRESS_TEXT_COMPLETE on terminal event
+    roots: tuple[str, ...] = ()                # paths of the folders this job walks
     ts: str = ""                               # ISO-8601 UTC at emit time

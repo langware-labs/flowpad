@@ -424,25 +424,32 @@ async def _install_webapp_artifact_copy(
     overwrite: bool,
     someone_typeid,
 ) -> ApiResponse:
-    """Install a copy-mode folder webapp ARTIFACT: mirror its staged folder bytes
-    into the target project and materialize the row pointing ``path`` at the served
-    folder (no clone). A webapp always installs into a project (its served root
-    can't live under ``~/.claude``)."""
+    """Install a copy-mode ARTIFACT: mirror its staged bytes and materialize the
+    row pointing at them (no clone). A webapp always installs into a project (its
+    served root can't live under ``~/.claude``); a shared file may also go to the
+    recipient's own folder, like any received file."""
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
         _notify_received_assets,
         _restore_webapp_artifact_entry,
     )
 
-    if scope != AttachmentScope.PROJECT.value or not project_id:
-        return ApiFailResponse(message="a webapp artifact installs into a project", status_code=400)
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    single_file = bool((ma.git_transfer or {}).get("single_file"))
+    if scope == AttachmentScope.PROJECT.value and project_id:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-    project = await Project.get_one({"id": project_id})
-    mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
-    if not mount:
-        return ApiFailResponse(message=f"Project not found or unmounted: {project_id}", status_code=404)
-    root = Path(mount)
+        project = await Project.get_one({"id": project_id})
+        mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+        if not mount:
+            return ApiFailResponse(message=f"Project not found or unmounted: {project_id}", status_code=404)
+        root = Path(mount)
+    elif single_file:
+        from flow_sdk.assets.placement import untyped_fallback_class  # noqa: PLC0415
+
+        project_id = None
+        root = _user_scope_root(untyped_fallback_class(ma.name or ""))
+    else:
+        return ApiFailResponse(message="a webapp artifact installs into a project", status_code=400)
 
     entry_dir = _entry_dir_for(ma)
     if entry_dir is None or not entry_dir.exists():

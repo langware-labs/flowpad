@@ -154,3 +154,34 @@ def test_a_mirror_failure_never_breaks_the_producer_and_is_not_silent(caplog):
 
     assert Activity.get("index").state is not ActivityState.FAILED
     assert any("mirror failed" in r.message for r in caplog.records)
+
+
+def test_the_folders_being_walked_are_said_while_it_runs():
+    act = Activity.get("index")
+
+    mirror_table(act, table(roots=("/Users/me/dev/flowpad-oss",)))
+
+    spec = act.spec()
+    assert spec.label == "Indexing", "the label stays a word the UI can translate"
+    assert spec.message == "/Users/me/dev/flowpad-oss"
+
+
+def test_a_type_that_reached_its_total_is_finished_while_others_run():
+    """So the parent's "n/m" counts it, instead of reading 0/10 with 8 rows at 100%."""
+    act = Activity.get("index")
+
+    mirror_table(
+        act,
+        table(
+            rows=(
+                TypeProgressRow(type_name="skill", done=76, total=76),
+                TypeProgressRow(type_name="markdown", done=10, total=247),
+            ),
+            done=86,
+            total=323,
+        ),
+    )
+
+    states = {c.name: c.state for c in act.spec().children}
+    assert states["skill"] == ActivityState.COMPLETED
+    assert states["markdown"] != ActivityState.COMPLETED

@@ -11,12 +11,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Sequence
 from uuid import uuid4
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.assets.directory import AssetDir
+from flow_sdk.assets.frontmatter_check import WRITE_TOOLS as FRONTMATTER_WRITE_TOOLS
 from flow_sdk.builtin.agent_hook import HookEventType
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeAgentOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
@@ -113,6 +115,25 @@ _RESPONSE_EVENTS = frozenset({HookEventType.USER_PROMPT_SUBMIT, HookEventType.SE
 #: question is waiting (``AgenticProcess.on_hook``).
 _PROCESS_EVENTS = PROCESS_EVENTS | {HookEventType.PRE_TOOL_USE}
 _PRE_TOOL_USE_MATCHER = "|".join(sorted(USER_INPUT_TOOLS))
+
+#: Hooks added to every process-hook plugin, beside its configured events. Local
+#: commands — no backend round trip. The frontmatter check hands a YAML error
+#: in a skill/agent/command header the agent just wrote back to the model.
+_BUILTIN_HOOKS: tuple[tuple[HookEventType, dict[str, Any]], ...] = (
+    (
+        HookEventType.POST_TOOL_USE,
+        {
+            "matcher": "|".join(FRONTMATTER_WRITE_TOOLS),
+            "hooks": [
+                {
+                    "args": ["-m", "flow_sdk.assets.frontmatter_check"],
+                    "command": sys.executable,
+                    "type": "command",
+                }
+            ],
+        },
+    ),
+)
 
 _HOOK_CAPABILITIES: "HookCapabilities" = {
     **settings_file_scopes(),
@@ -283,6 +304,8 @@ class ClaudeDriver:
                 for event in normalized
             },
         }
+        for event, entry in _BUILTIN_HOOKS:
+            hooks["hooks"].setdefault(event.value, []).append(entry)
         manifest = {
             "author": {"name": "Flowpad"},
             "description": "Flowpad process-scoped hooks",

@@ -5,7 +5,8 @@
  * survives a remount. A host that cannot switch the filter gets no toggle.
  */
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fsStore, instancePreferences, PrefKey, TypeId } from '@sdk';
 
@@ -29,6 +30,7 @@ vi.mock('@src/hooks/useFS', () => ({
 }));
 
 import { ExplorerView } from '@src/components/explorer-view/explorer-view';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { SimpleFileManager } from '@src/components/simple-file-manager/SimpleFileManager';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager/filters';
 
@@ -45,6 +47,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+
+/** The app mounts one TooltipProvider at its root; a row's tooltip needs it here too. */
+const render = (ui: ReactElement) => rtlRender(<TooltipProvider>{ui}</TooltipProvider>);
 describe('Files hidden-files toggle', () => {
   it('hides dotfiles by default', () => {
     render(<ExplorerView onFileSelect={vi.fn()} />);

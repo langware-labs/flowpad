@@ -26,6 +26,7 @@ export * from './bookmark';
 export * from './graph_context';
 export * from './capability';
 export * from './data-source';
+export * from './inbound-webhook';
 export * from './data-driver';
 export * from './asset-setup';
 export * from './compute-op';

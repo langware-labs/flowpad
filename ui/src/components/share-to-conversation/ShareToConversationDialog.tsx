@@ -8,10 +8,12 @@ import {
   type GitignoredReference,
   hasRemoteParticipant,
   hasSomethingToSend,
+  mintInviteLink,
   normalizeEmail,
   oauthService,
   OAUTH_PROVIDERS,
   OAuthStatus,
+  TypeId,
   type Project,
   type ConversationParticipant,
   type ConversationSendPayload,
@@ -47,6 +49,7 @@ import { deriveConversationTitle } from '@src/components/conversation/conversati
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { CopyButton } from '@src/components/ui/copy-button';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -173,6 +176,10 @@ export function ShareToConversationDialog({
   associateProjectOnRemote,
 }: ShareToConversationDialogProps) {
   const { t } = useLingui();
+  // A thing share (the source says so): always a new conversation titled
+  // "<Name> has shared <thing>", copy vs git decided by project membership, and
+  // a link at the end. A custom commit (a forward) keeps its own behavior.
+  const thingShare = !!source.shareAsThing && !commit;
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { cloudUser } = useAuth();
@@ -230,7 +237,10 @@ export function ShareToConversationDialog({
     setSkipMembership(false);
   }, [membershipRecipients, owningProject?.id]);
   const selectedRoles = Object.fromEntries(
-    membership.nonMembers.map((r) => [r, roleChoices[r] ?? (membership.roles.includes('guest') ? 'guest' : NO_PROJECT_ROLE)]),
+    membership.nonMembers.map((r) => [
+      r,
+      roleChoices[r] ?? (!thingShare && membership.roles.includes('guest') ? 'guest' : NO_PROJECT_ROLE),
+    ]),
   );
   const [titleInput, setTitleInput] = useState('');
   const [note, setNote] = useState('');
@@ -253,6 +263,10 @@ export function ShareToConversationDialog({
   // Click selects; double-click or the Share button commits.
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
   const [sharedConversationId, setSharedConversationId] = useState<string | null>(null);
+  // The invite link to the new conversation, shown once on the success screen.
+  // The hub keeps only a hash of it, so it can't be shown again later.
+  const [shareLink, setShareLink] = useState<string | null>(null);
+  const [shareLinkError, setShareLinkError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   // Attachments that would arrive EMPTY (a session whose transcript is gone). Found before anything is
   // created or anyone is invited; the notice offers to send without them. `canSendWithout` is false when
@@ -279,8 +293,8 @@ export function ShareToConversationDialog({
   // returns the same list doesn't clobber the user's current selection.
   const latestConvId = conversations[0]?.id ?? null;
   useEffect(() => {
-    setSelected(latestConvId ?? NEW_CONVERSATION);
-  }, [latestConvId]);
+    setSelected(thingShare ? NEW_CONVERSATION : (latestConvId ?? NEW_CONVERSATION));
+  }, [latestConvId, thingShare]);
   const newConvTitle = useAutoTitle(open, participants);
 
   // Seed values are read once at open (via refs) so a caller passing a fresh
@@ -318,6 +332,8 @@ export function ShareToConversationDialog({
     setCreateBookmark(false);
     setGitSharing(false);
     setSharedConversationId(null);
+    setShareLink(null);
+    setShareLinkError(null);
     setLocalError(null);
     setUnshippable(null);
     setGitignored(null);
@@ -360,7 +376,13 @@ export function ShareToConversationDialog({
   // The title is always editable. When the user hasn't typed one, fall back to
   // the source default / auto-generated title (shown as the input's placeholder).
   // `requiresTitle` sources have no fallback — the user must type one.
-  const defaultTitle = source.requiresTitle ? '' : (source.defaultTitle ?? newConvTitle);
+  const senderName = localUser?.name || cloudUser?.name || cloudUser?.email || t`Someone`;
+  const sharedThing = source.label;
+  const defaultTitle = source.requiresTitle
+    ? ''
+    : thingShare
+      ? t`${senderName} has shared ${sharedThing}`
+      : (source.defaultTitle ?? newConvTitle);
   const effectiveTitle = (titleInput.trim() || defaultTitle).trim();
   const titleOk = !source.requiresTitle || titleInput.trim().length > 0;
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
@@ -392,15 +414,25 @@ export function ShareToConversationDialog({
   const gitEligibleRef = useRef(false);
   gitEligibleRef.current = preflight.available || !!preflight.fix;
   useEffect(() => {
-    if (!gitCapable) return;
+    if (!gitCapable || thingShare) return;
     const conv = conversationsRef.current.find((c) => c.id === selected);
     setGitSharing(gitEligibleRef.current || (conv?.git_sharing_enabled ?? false));
-  }, [selected, gitCapable, preflight.answered]);
+  }, [selected, gitCapable, preflight.answered, thingShare]);
+  // A thing share picks git only when every recipient can already read the
+  // project's files (a member with a real role) and the asset can travel by
+  // git. Anyone else in the share means everyone gets a copy.
+  const everyoneInProject =
+    owningProject?.remote === true &&
+    participants.length > 0 &&
+    membership.status === 'ready' &&
+    membership.outsiders.length === 0;
+  // What this share actually does: the rule for a thing share, the sender's toggle otherwise.
+  const shareByGit = thingShare ? everyoneInProject && preflight.available : gitSharing;
 
   // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
   // toggle stops the share entirely — we never silently downgrade to a copy.
-  const gitMode = gitCapable && gitSharing && preflight.available;
-  const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
+  const gitMode = gitCapable && shareByGit && preflight.available;
+  const gitBlocked = gitCapable && shareByGit && (preflight.loading || !preflight.available);
   // The one-click fix for a blocked Git share: commit + push only this asset, or
   // push what is already committed. A conflict is reported, never forced.
   const [fixBusy, setFixBusy] = useState(false);
@@ -606,9 +638,9 @@ export function ShareToConversationDialog({
           // succeeded; a failed preference write must not surface as a share error.
           if (gitCapable) {
             const conv = conversations.find((c) => c.id === convId) ?? new Conversation({ id: convId });
-            if ((conv.git_sharing_enabled ?? false) !== gitSharing) {
+            if ((conv.git_sharing_enabled ?? false) !== shareByGit) {
               try {
-                await conv.setGitSharingEnabled(gitSharing);
+                await conv.setGitSharingEnabled(shareByGit);
               } catch (prefErr) {
                 console.warn('[share] failed to persist git_sharing_enabled', prefErr);
               }
@@ -617,6 +649,14 @@ export function ShareToConversationDialog({
           if (participants.length) rememberLastParticipants(participants);
           setSharedConversationId(convId);
           onShared?.(convId);
+          if (thingShare && isRemote) {
+            try {
+              const link = await mintInviteLink(new TypeId('conversation', convId));
+              setShareLink(link.url);
+            } catch (linkErr) {
+              setShareLinkError(errorMessage(linkErr, t`The share was sent, but a link could not be created.`));
+            }
+          }
         }
       } catch (err: unknown) {
         setLocalError(err instanceof Error ? err.message : 'Failed to share');
@@ -729,6 +769,28 @@ export function ShareToConversationDialog({
             <p className="font-medium text-foreground">
               <Trans>Shared</Trans>
             </p>
+            {shareLink && (
+              <div className="flex w-full flex-col gap-1.5" data-testid="share-link">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  <Trans>Link</Trans>
+                </label>
+                <div className="flex gap-2">
+                  <Input readOnly value={shareLink} onFocus={(e) => e.target.select()} data-testid="share-link-url" />
+                  <CopyButton
+                    value={shareLink}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-md border px-3 text-sm"
+                    iconClassName="h-4 w-4"
+                    label={t`Copy`}
+                    copiedLabel={t`Copied`}
+                    testId="share-link-copy"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  <Trans>Send this link to anyone you want to give access. It is shown only once.</Trans>
+                </p>
+              </div>
+            )}
+            {shareLinkError && <p className="text-xs text-destructive">{shareLinkError}</p>}
             <div className="flex gap-2">
               <Button variant="outline" onClick={onClose}>
                 <Trans>Close</Trans>
@@ -899,6 +961,19 @@ export function ShareToConversationDialog({
                   )}
                 </div>
               ))}
+            {thingShare && gitCapable && participants.length > 0 && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="share-transfer-mode"
+                data-mode={shareByGit ? 'git' : 'copy'}
+              >
+                {shareByGit ? (
+                  <Trans>Recipients are project members — they get a live link to the file in git.</Trans>
+                ) : (
+                  <Trans>Recipients get a copy.</Trans>
+                )}
+              </p>
+            )}
             <details className="text-xs" data-testid="share-options">
               <summary className="cursor-pointer text-muted-foreground">
                 <Trans>Sharing options</Trans>
@@ -949,7 +1024,7 @@ export function ShareToConversationDialog({
                   </label>
                 )}
 
-                {gitCapable && (
+                {gitCapable && !thingShare && (
                   <div className="flex flex-col gap-1.5">
                     <WikiTip wikiword="Git sharing" buttonLabel={t`What is Git sharing?`}>
                       <button

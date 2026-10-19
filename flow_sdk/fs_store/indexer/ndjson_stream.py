@@ -82,6 +82,7 @@ def table_from_json(d: dict) -> IndexProgressTable:
         done=int(d.get("done", 0)),
         total=int(d.get("total", 0)),
         text=d.get("text"),
+        roots=tuple(str(r) for r in d.get("roots", ())),
         ts=str(d.get("ts", "")),
     )
 
