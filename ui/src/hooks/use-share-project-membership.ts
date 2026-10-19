@@ -7,11 +7,27 @@ export function projectNonMembers(recipients: string[], roster: Membership[]): s
   const known = new Set(roster.flatMap((member) => [member.user_id, member.user_email].filter(Boolean).map(identity)));
   return recipients.filter((recipient) => !known.has(identity(recipient)));
 }
+/** Roles that don't give access to the project's files: a guest only sees what
+ *  is shared with them, and a pending invitation grants nothing yet. */
+const NO_FILE_ACCESS_ROLES = new Set(['guest', 'anonymous_viewer']);
+
+/** Recipients who can't read the project's files themselves — they need a copy,
+ *  not a git reference. */
+export function projectOutsiders(recipients: string[], roster: Membership[]): string[] {
+  const insiders = new Set(
+    roster
+      .filter((member) => member.status !== 'pending' && !NO_FILE_ACCESS_ROLES.has(member.role))
+      .flatMap((member) => [member.user_id, member.user_email].filter(Boolean).map(identity)),
+  );
+  return recipients.filter((recipient) => !insiders.has(identity(recipient)));
+}
 type State = {
   key: string;
   status: 'idle' | 'loading' | 'ready' | 'error';
   error: string | null;
   nonMembers: string[];
+  /** Recipients without access to the project's files (includes guests and pending invites). */
+  outsiders: string[];
   roles: string[];
 };
 /** Suggest membership only after an authoritative roster read. */
@@ -30,11 +46,18 @@ export function useShareProjectMembership(project: Project | null, recipients: s
       invited.current = new Set();
     };
   }, [enabled, project?.id]);
-  const [state, setState] = useState<State>({ key: '', status: 'idle', error: null, nonMembers: [], roles: [] });
+  const [state, setState] = useState<State>({
+    key: '',
+    status: 'idle',
+    error: null,
+    nonMembers: [],
+    outsiders: [],
+    roles: [],
+  });
   const refresh = useCallback(async () => {
     const request = ++revision.current;
     if (!key || !project) return;
-    setState({ key, status: 'loading', error: null, nonMembers: [], roles: [] });
+    setState({ key, status: 'loading', error: null, nonMembers: [], outsiders: [], roles: [] });
     try {
       const [roster, roles] = await Promise.all([
         membershipService.fetchMembershipsStrict(project.typeId),
@@ -43,10 +66,12 @@ export function useShareProjectMembership(project: Project | null, recipients: s
       if (!roles.length) throw new Error('Could not load project roles.');
       if (request !== revision.current || key !== currentKey.current) return;
       const successful = invited.current;
-      const nonMembers = projectNonMembers(JSON.parse(recipientsKey), roster).filter(
+      const recipients: string[] = JSON.parse(recipientsKey);
+      const nonMembers = projectNonMembers(recipients, roster).filter(
         (recipient) => !successful.has(identity(recipient)),
       );
-      setState({ key, status: 'ready', error: null, nonMembers, roles });
+      const outsiders = projectOutsiders(recipients, roster);
+      setState({ key, status: 'ready', error: null, nonMembers, outsiders, roles });
     } catch (error) {
       if (request !== revision.current || key !== currentKey.current) return;
       setState({
@@ -54,6 +79,7 @@ export function useShareProjectMembership(project: Project | null, recipients: s
         status: 'error',
         error: error instanceof Error ? error.message : 'Could not load project members.',
         nonMembers: [],
+        outsiders: [],
         roles: [],
       });
     }
@@ -90,6 +116,12 @@ export function useShareProjectMembership(project: Project | null, recipients: s
   const visible: Omit<State, 'key'> =
     state.key === key && key
       ? state
-      : { status: key ? ('loading' as const) : ('idle' as const), error: null, nonMembers: [], roles: [] };
+      : {
+          status: key ? ('loading' as const) : ('idle' as const),
+          error: null,
+          nonMembers: [],
+          outsiders: [],
+          roles: [],
+        };
   return { ...visible, refresh, invite };
 }
