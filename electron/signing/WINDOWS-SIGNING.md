@@ -122,7 +122,7 @@ job summary. Upload happens after verification.
 
 Environment: UTM VM, Windows 11 Pro 10.0.26200 **ARM64**, PowerShell 7.5.4, Node 24.12,
 electron-builder 26.8.1, Rust 1.93 with the `x86_64-pc-windows-msvc` target, real
-`langware-signing` / `langware-public` credentials from 1Password. `flow-rs.exe` was built
+the signing account credentials from the team's secret store. `flow-rs.exe` was built
 for x64 and staged where `extraResources` expects it (the `build:flow-rs` script builds for
 the host, which on this VM would be arm64); electron-builder was then run directly with
 `FLOWPAD_SIGNING=required`. Two VM-only preconditions: the x64 .NET 8 runtime (the x64
