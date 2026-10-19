@@ -285,8 +285,11 @@ class ServiceEndpoint(Entity):
             # A box the hub placed asks the hub, which holds this row at the same id and knows the
             # provider's address for it now (a published door, or its own relaying host). A placement
             # the hub never made (one this box made for itself) has no row there: addressed here.
-            url = await self._direct_url_from_hub(route) if get_assigned_compute_node() else None
-            if (url := url or local_direct_url(self, route)) is None:
+
+            is_compute_node = get_assigned_compute_node() is not None
+            url = await self._direct_url_from_hub(route) if is_compute_node else None
+            url = url or local_direct_url(self, route)
+            if url is None:
                 return ApiFailResponse(
                     message="a static route has no address of its own on this machine", status_code=409
                 )
