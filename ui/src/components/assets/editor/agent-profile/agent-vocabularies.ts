@@ -76,7 +76,7 @@ export const AGENT_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object
 const MACHINE_SIZE_MONTHLY: Record<ComputeNodeSize, string> = {
   [ComputeNodeSize.SMALL]: '2 CPU · 2 GB · $21/mo',
   [ComputeNodeSize.MEDIUM]: '2 CPU · 4 GB · $42/mo',
-  [ComputeNodeSize.LARGE]: '4 CPU · 8 GB · $144/mo',
+  [ComputeNodeSize.LARGE]: '8 CPU · 32 GB · $336/mo',
 };
 
 export const AGENT_MONTHLY_MACHINE_SIZE_LABELS: Record<ComputeNodeSize, string> = Object.fromEntries(
