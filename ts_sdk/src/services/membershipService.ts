@@ -143,14 +143,34 @@ class MembershipService {
     }
 
     try {
-      const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'GET');
-      actionInfo.hubReflect = true; // roster is hub-owned — reflect to the hub
-      const fetchedMemberships = await dataManager.callAction<undefined, Membership[]>(actionInfo);
-      return fetchedMemberships ?? [];
+      return await this.readMemberships(entity_typeId, false);
     } catch (error) {
       console.error('Failed to fetch memberships', error);
       return [];
     }
+  }
+
+  /** A failed roster is unknown membership, never proof that nobody belongs. */
+  async fetchMembershipsStrict(entityTypeId: TypeId): Promise<Membership[]> {
+    return this.readMemberships(entityTypeId, true);
+  }
+
+  private async readMemberships(entityTypeId: TypeId, requireAuthoritative: boolean): Promise<Membership[]> {
+    const actionInfo = new ActionInfo('members', entityTypeId.type, entityTypeId.id, 'GET');
+    actionInfo.hubReflect = true;
+    if (requireAuthoritative) actionInfo.queryParameters = { require_authoritative: true };
+    const roster = await dataManager.callAction<undefined, Membership[]>(actionInfo);
+    if (!Array.isArray(roster)) throw new Error('The server did not return project members.');
+    // Desktop reflection normalizes hub user_email/user_name into email/name.
+    // Restore the membership service's public shape for all roster consumers.
+    return roster.map((member) => {
+      const reflected = member as Membership & { email?: string; name?: string };
+      return {
+        ...member,
+        user_email: member.user_email ?? reflected.email ?? '',
+        user_name: member.user_name ?? reflected.name,
+      };
+    });
   }
 
   /** The roles a share invite may grant — the backend's global list

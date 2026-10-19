@@ -675,9 +675,9 @@ class Deployment(Entity):
         we have of what the box cost. Hard deletion is a separate, explicit act.
 
         A REMOTE placement is paused by the hub — the box is its resource and we
-        cannot reach the provider from here. The row then comes back down the
-        bridge like any other hub update, so this doesn't write the status
-        locally in that case; doing both would race the push.
+        cannot reach the provider from here. Adopt the hub's returned row so
+        the action answers with its observed state rather than waiting for
+        the bridge's asynchronous copy.
         """
         if self._runs_here():
             return await self._set_serving(False)
@@ -725,7 +725,10 @@ class Deployment(Entity):
         from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
         if self.remote:
-            await self._hub_action(verb)
+            adopted = await type(self).adopt_from_hub(await self._hub_action(verb))
+            if adopted is None:
+                raise DeploymentActionError(f"the hub returned no deployment for {verb}", status_code=502)
+            self.status = adopted.status
             return True
         node_id = self.compute_node_id
         if node_id is None:

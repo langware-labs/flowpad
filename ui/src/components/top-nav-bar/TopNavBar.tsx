@@ -1,9 +1,6 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ArrowLeft, ArrowRight, FolderOpen, Home, PanelsTopLeft, RefreshCw } from 'lucide-react';
-import { isHomeSurface } from '@src/navigation/dock-layout';
-import { tabDock } from '@src/tabs/project-entry';
-import { useLastKnownTab } from '@src/tabs/use-tab-manager';
+import { ArrowLeft, ArrowRight, FolderOpen, Home, RefreshCw } from 'lucide-react';
 import { useContext } from '@src/hooks/useContext';
 import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -50,12 +47,6 @@ export function TopNavBar() {
   const { contains } = useActiveWorkspace();
   const project = contextProject && contains(contextProject.fs_storage_mount_path) ? contextProject : null;
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
-  // Home and Tabs are one button that flips: on the (tabless) home it goes BACK to
-  // the last active tab; on any tab it goes home. With no tab open, home is all
-  // there is, so it stays Home (disabled on the home itself).
-  const atHome = isHomeSurface(currentDock ?? null);
-  const lastTabDock = tabDock(useLastKnownTab(atHome));
-
   // Resolved ONCE per navigation and shared: the address and the actions both
   // need the dock's target, and resolving it twice would double the work on
   // every click.
@@ -90,23 +81,12 @@ export function TopNavBar() {
       {/* A full window reload, the same as the browser's own — no modifier
           gesture and no soft variant. Anything less does not reload. */}
       <NavIconButton icon={RefreshCw} label={t`Reload`} onClick={reload} testId="top-nav-reload" />
-      {lastTabDock ? (
-        <NavIconButton
-          icon={PanelsTopLeft}
-          label={t`Back to tabs`}
-          onClick={() => navigation.openDock(lastTabDock, undefined, { topLevel: true })}
-          testId="top-nav-tabs"
-          tag="TopNavTabs"
-        />
-      ) : (
-        <NavIconButton
-          icon={Home}
-          label={t`Home`}
-          onClick={() => navigation.goHome({ homePage: true })}
-          disabled={atHome}
-          testId="top-nav-home"
-        />
-      )}
+      <NavIconButton
+        icon={Home}
+        label={t`Home`}
+        onClick={() => navigation.goHome()}
+        testId="top-nav-home"
+      />
       {/* Files sat on the rail; same destination, same one-liner, just beside
           the other place-buttons instead of below them. */}
       <NavIconButton

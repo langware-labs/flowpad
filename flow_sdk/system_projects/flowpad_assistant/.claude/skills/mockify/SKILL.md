@@ -4,7 +4,7 @@ name: mockify
 description: 'Turns a product idea into a clickable HTML mock of the user journey
   that the user can walk and comment on — every screen in order, with a journey bar
   and a per-screen feedback box (text + image) whose comments are saved as typed rows and
-  sent back to this session in one Submit. The mock and its feedback are typed data
+  sent back to this session in one Execute. The mock and its feedback are typed data
   (kinds mockify.mock / mockify.feedback). Two
   modes: real, the default (built from a running app''s own captured DOM and CSS,
   checked side by side so it looks exactly like the app), and fast (HTML in the
@@ -23,7 +23,7 @@ and submits them back to you. It is not the product: no backend of its own, no r
 
 **A mock never lives in the repo.** Every mock, its kinds, its datasets and its feedback live in the
 **mock project** — `$TMPDIR/mockify/<repo folder name>/`, a Flowpad project of its own outside the repo.
-Nothing is written into the repo until the person presses **💾 Save** in the journey bar (or asks for it in
+Nothing is written into the repo until the person presses **💾 Save to repo** (the journey bar's popup toolbar) (or asks for it in
 words) — then §8 copies that one mock in. Never `install_data.py`, `DM ds-put` or a mock folder into the repo.
 
 **A mock is data.** Its journey is a `mockify.mock` row in the mock project's `mocks` dataset; every comment
@@ -72,7 +72,7 @@ DM ds-put <mock project>/agentic-assets/dataset/mocks <slug> '{"input": {"title"
 - Decisions get ids unique across the mock (D1, D2…) in the step that asks them.
 - `session` is YOUR agentic process id (`flow context`) — where Send delivers the feedback.
 - `folder` is the mock's web app folder in the mock project (absolute) — the review panel's Open folder shows it.
-- `repo` is the repo root (absolute) — where **💾 Save** puts the mock (§8).
+- `repo` is the repo root (absolute) — where **💾 Save to repo** puts the mock (§8).
 - `DM check` the value against `mockify.mock` before the put; a refused put writes nothing.
 
 ## 2. Pick the mode — real is the default
@@ -99,7 +99,7 @@ look like our app", it was built fast: rebuild it real — do not restyle by han
 
 Paste `assets/journey-bar.js` inline as the last script (build_mock.py does it in real mode) and set
 `MOCKIFY.key = '<slug>'` and `MOCKIFY.project` (build_mock.py `--project <project_id>`). It reads the mock row and gives the reviewer Restart, Back / Next, where they
-are, the screens list, per-screen feedback and Submit — contract and controls: `assets/journey-bar.md`.
+are, the screens list, per-screen feedback and ▶ Execute — contract and controls: `assets/journey-bar.md`.
 Its 🎯 picker (where the MOCK label was) lets the reviewer point at one element and comment on it, like
 DevTools' element picker; the comment keeps where it is and a numbered bubble marks it on the screen.
 Every control on a screen that moves the journey says where it leads with **`data-next="<step id>"`** — a
@@ -141,8 +141,8 @@ Never report a mock you have not looked at.
 ## 6. Present
 
 `flow show webapp` with the served app, then reply with: the step list (one line each), what is real vs
-invented, the open decisions (D1…), and one line: "Walk it, press 💬 on any screen to leave a comment or
-an image, then **Review & send**: you see exactly what I will receive, and Send delivers it." Mention anything the real app did along the
+invented, the open decisions (D1…), and one line: "Walk it, use 🎯 or ☰ → 💬 Feedback to leave a comment or
+an image, then **▶ Execute** sends me what you have so far (☰ → Review shows exactly what I receive)." Mention anything the real app did along the
 way that looked wrong.
 
 ## 7. Reading feedback (when a Send prompt arrives)
@@ -169,7 +169,7 @@ Each row: `step`, `text`, `decision` (a D-id it answers), `screenshot` (an image
 
 ## 8. Save to repo (only when the person asks)
 
-The journey bar's **💾 Save** shows where the mock will go and, on confirm, sends you one line:
+The popup toolbar's **💾 Save to repo** shows where the mock will go and, on confirm, sends you one line:
 `Save mock "<slug>" to the repo: … mock_project.py save <repo> <slug>`. Run exactly that:
 
 ```bash

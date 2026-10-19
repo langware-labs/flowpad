@@ -2265,6 +2265,10 @@ msgstr "Add Machine"
 msgid "Add New Hook"
 msgstr "Add New Hook"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add note"
+msgstr "Add note"
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Add people"
 msgstr "Add people"
@@ -3357,11 +3361,15 @@ msgstr "Approved for this session"
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 
-#: src/components/top-nav-bar/AppButton.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/i18n/type-labels.ts
 msgid "Apps"
 msgstr "Apps"
+
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+#: src/components/top-nav-bar/AppButton.tsx
+msgid "Apps and agents"
+msgstr "Apps and agents"
 
 #: src/components/asset-counters/app-counters.tsx
 msgid "Apps in {projectName} with a deployment"
@@ -3486,6 +3494,7 @@ msgid "Ask anything — I can search the guides and walk you through them."
 msgstr "Ask anything — I can search the guides and walk you through them."
 
 #: src/i18n/pref-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Ask every time"
 msgstr "Ask every time"
 
@@ -3537,6 +3546,10 @@ msgstr "Ask them for permission"
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
 msgstr "Ask this index…"
+
+#: src/i18n/pref-labels.ts
+msgid "Ask to link an unlinked project to cloud before sharing its assets."
+msgstr "Ask to link an unlinked project to cloud before sharing its assets."
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Ask whoever shared it to start it, or to send a new link."
@@ -4041,8 +4054,8 @@ msgid "Back to stream inbox"
 msgstr "Back to stream inbox"
 
 #: src/components/top-nav-bar/TopNavBar.tsx
-msgid "Back to tabs"
-msgstr "Back to tabs"
+#~ msgid "Back to tabs"
+#~ msgstr "Back to tabs"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -4982,6 +4995,11 @@ msgstr "Checking once it finishes…"
 msgid "Checking out the projects and opening the session."
 msgstr "Checking out the projects and opening the session."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Checking project membership…"
+msgstr "Checking project membership…"
+
 #: src/components/webapp-display/WebappDisplay.tsx
 msgid "Checking the app…"
 msgstr "Checking the app…"
@@ -5649,6 +5667,10 @@ msgstr "Cloud hub"
 #: src/notifications/ingest.ts
 msgid "Cloud is not available"
 msgstr "Cloud is not available"
+
+#: src/i18n/pref-labels.ts
+msgid "Cloud link prompt when sharing"
+msgstr "Cloud link prompt when sharing"
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "Cloud machine"
@@ -6921,9 +6943,12 @@ msgid "Could not link asset to cloud"
 msgstr "Could not link asset to cloud"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "Could not link project to cloud"
 msgstr "Could not link project to cloud"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Could not link this project."
+msgstr "Could not link this project."
 
 #: src/components/assets/editor/diagnosis-request/DiagnosisRequestCreateDialog.tsx
 msgid "Could not list budgets: {loadError}"
@@ -9312,12 +9337,17 @@ msgid "Domains accessible from sandbox"
 msgstr "Domains accessible from sandbox"
 
 #: src/i18n/pref-labels.ts
+#: src/i18n/pref-labels.ts
 msgid "Don't ask"
 msgstr "Don't ask"
 
 #: src/navigation/smart-ask.ts
 msgid "Don't ask again"
 msgstr "Don't ask again"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Don’t ask again"
+msgstr "Don’t ask again"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Don't ask me again"
@@ -12264,6 +12294,10 @@ msgstr "Group task created with issues"
 msgid "Guest"
 msgstr "Guest"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Guest does not grant access to the project."
+msgstr "Guest does not grant access to the project."
+
 #: src/components/git/GitRemoteField.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
@@ -13518,8 +13552,8 @@ msgid "Issue diagnoses recorded by the assistant. Click a row to view the full d
 msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
-msgid "It cannot be removed from the project"
-msgstr "It cannot be removed from the project"
+#~ msgid "It cannot be removed from the project"
+#~ msgstr "It cannot be removed from the project"
 
 #: src/components/automations/MessageRulePage.tsx
 #: src/components/automations/MessageRulePage.tsx
@@ -14051,6 +14085,7 @@ msgstr "Learn about duplicates"
 msgid "Learn about your data"
 msgstr "Learn about your data"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/wiki-tip/WikiTip.tsx
 msgid "Learn more"
@@ -14212,6 +14247,10 @@ msgstr "line fallback"
 msgid "Lines"
 msgstr "Lines"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link"
+msgstr "Link"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/links/link-handlers.ts
 msgid "Link copied"
@@ -14220,6 +14259,10 @@ msgstr "Link copied"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "Link copied to clipboard"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Link project to cloud to securely and privately manage your shared assets."
+msgstr "Link project to cloud to securely and privately manage your shared assets."
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Link the project to the cloud first: its members are the cloud project's members."
@@ -17387,6 +17430,7 @@ msgstr "none"
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -17530,6 +17574,10 @@ msgstr "Not installed"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
 msgstr "Not launched yet in this project"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Not linked to cloud"
+msgstr "Not linked to cloud"
 
 #: src/components/assets/ProjectDependencyDialog.tsx
 msgid "Not listed? Paste a hub project id or link"
@@ -18093,6 +18141,7 @@ msgid "On the schedule {expr}"
 msgstr "On the schedule {expr}"
 
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "On this machine only — undo any time"
 msgstr "On this machine only — undo any time"
 
@@ -18276,7 +18325,6 @@ msgid "open {name}"
 msgstr "open {name}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/top-nav-bar/AppButton.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
@@ -18668,6 +18716,7 @@ msgstr "Open Plan"
 msgid "Open process"
 msgstr "Open process"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -20280,6 +20329,10 @@ msgstr "Project Required"
 msgid "Project requirements"
 msgstr "Project requirements"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Project role"
+msgstr "Project role"
+
 #: src/components/machine-overview/node-secrets.tsx
 msgid "Project secrets on this machine"
 msgstr "Project secrets on this machine"
@@ -20933,6 +20986,10 @@ msgid "Received pointer: {0}"
 msgstr "Received pointer: {0}"
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received project"
+msgstr "Received project"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Received project — review before installing."
 msgstr "Received project — review before installing."
 
@@ -21230,10 +21287,11 @@ msgstr "Remote Worker Session"
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: asset.label
 #. placeholder {0}: c.label
 #. placeholder {0}: source.name
-#. placeholder {0}: source.name || source.provider
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -22008,6 +22066,7 @@ msgstr "Resumed — it polls on the next tick."
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
@@ -22099,6 +22158,10 @@ msgstr "Reveal the message this task was derived from"
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Review"
 msgstr "Review"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review and open the shared project."
+msgstr "Review and open the shared project."
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
@@ -23839,7 +23902,6 @@ msgstr "Set public"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-setup/ProjectLoadDialog.tsx
 #: src/components/project-setup/ProjectLoadGate.tsx
-#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/task-receive/use-shared-project-warnings.ts
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -24161,6 +24223,10 @@ msgstr "Share using Git origin"
 msgid "Share with team"
 msgstr "Share with team"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share without project membership"
+msgstr "Share without project membership"
+
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
@@ -24210,6 +24276,10 @@ msgstr "Shared with {0}"
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Sharing failed."
 msgstr "Sharing failed."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Sharing options"
+msgstr "Sharing options"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
@@ -24479,8 +24549,8 @@ msgid "Show value"
 msgstr "Show value"
 
 #: src/components/top-nav-bar/AppButton.tsx
-msgid "Showing {name}"
-msgstr "Showing {name}"
+#~ msgid "Showing {name}"
+#~ msgstr "Showing {name}"
 
 #. placeholder {0}: entries.length
 #: src/pages/live-status/LiveStatus.tsx
@@ -24860,6 +24930,7 @@ msgstr "Skills, agents, servers and documents published by projects you can read
 #: src/components/assets/editor/wizard/wizard-texts.ts
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/project-setup/ProjectSetupDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "Skip"
@@ -24886,6 +24957,10 @@ msgstr "Skip initial permission check on startup"
 #: src/components/project-setup/ProjectSetupDialog.tsx
 msgid "Skip it…"
 msgstr "Skip it…"
+
+#: src/components/project-setup/ProjectSetupDialog.tsx
+#~ msgid "Skip on this machine only — undo any time"
+#~ msgstr "Skip on this machine only — undo any time"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Skip Permissions Warmup"
@@ -26818,6 +26893,7 @@ msgid "There are no projects on this machine yet. Open one, then use the link ag
 msgstr "There are no projects on this machine yet. Open one, then use the link again."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "There is nothing left to send — add a message first."
 msgstr "There is nothing left to send — add a message first."
 
@@ -28012,6 +28088,10 @@ msgstr "Traceback ({0} lines)"
 msgid "Track {0}"
 msgstr "Track {0}"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Track your shared assets"
+msgstr "Track your shared assets"
+
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 #: src/navigation/record-type-nav.ts
 #: src/navigation/record-type-nav.ts
@@ -28411,6 +28491,10 @@ msgstr "Untitled session"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
 msgstr "Untitled task"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Untracked sharing"
+msgstr "Untracked sharing"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "up to date"
