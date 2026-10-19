@@ -1,6 +1,6 @@
 import { cloudManager, type Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useLinkProjectToCloud } from '@src/hooks/use-link-project-to-cloud';
 import { errorMessage } from '@src/lib/error-message';
 import { hubPageUrl } from '@src/lib/hub-page-url';
 import { openExternal } from '@src/lib/open-external';
@@ -30,7 +30,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
   const { t } = useLingui();
   const hubMode = isHubOnly();
   const published = project.remote === true;
-  const requireCloudLogin = useCloudLoginGate();
+  const { linkProject: linkToCloud } = useLinkProjectToCloud();
   const [publishing, setPublishing] = useState(false);
   const publishInFlight = useRef(false);
 
@@ -39,15 +39,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
     publishInFlight.current = true;
     setPublishing(true);
     try {
-      const login = await requireCloudLogin();
-      if (!login.ok) {
-        notify.error({ title: t`Could not link project to cloud`, message: login.error });
-        return;
-      }
-      const canonical = await project.share();
-      if (canonical.remote !== true) {
-        throw new Error('The server did not confirm the cloud link.');
-      }
+      await linkToCloud(project);
       notify.success({ title: t`Project linked to cloud`, message: t`This project is now available in the cloud.` });
     } catch (error) {
       notify.error({ title: t`Could not link project to cloud`, message: errorMessage(error, t`Linking failed.`) });
@@ -55,7 +47,7 @@ export function ProjectCloudLinkButton({ project }: ProjectCloudLinkButtonProps)
       publishInFlight.current = false;
       setPublishing(false);
     }
-  }, [project, requireCloudLogin, t]);
+  }, [project, linkToCloud, t]);
 
   const sendFiles = useCallback(async () => {
     if (publishInFlight.current) return;

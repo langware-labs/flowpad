@@ -16,8 +16,9 @@ import { dataManager } from '@sdk';
  * it degrades gracefully if the registry isn't initialized yet (e.g. an
  * isolated unit test).
  */
-export function iconForType(type: string): LucideIcon {
-  const name = dataManager?.iconForType?.(type);
+export function iconForType(type: string | null | undefined): LucideIcon {
+  // A row whose type is not loaded yet draws the generic glyph, like a type with no icon.
+  const name = type ? dataManager?.iconForType?.(type) : undefined;
   // `lucideByName` always answers a component — one that draws nothing for a
   // name the icon packs cannot resolve — so the generic glyph has to be chosen
   // here, by asking whether the name resolves, not by a falsy check.

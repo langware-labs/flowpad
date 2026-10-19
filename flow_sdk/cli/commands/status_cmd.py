@@ -61,7 +61,7 @@ def _table(rows: list[list[str]]) -> str:
 
 def _render(status: dict) -> str:
     hub = status["hub"]
-    hub_line = f"FlowPad: {hub['login'].replace('_', ' ')}"
+    hub_line = f"Flowpad hub: {hub['login'].replace('_', ' ')}"
     if hub.get("email"):
         hub_line += f" ({hub['email']})"
     if hub.get("error"):

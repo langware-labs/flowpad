@@ -1090,3 +1090,10 @@ where they execute. What is left here is this cycle's own evidence:
 - Legacy fixtures need canonical physical paths and dedicated process groups (detached:true); app Stop terminates the service's process group. /tmp alias made Next serve404; a shared test process group killed the runner. Both were fixture errors, not green app verdicts.
 - Existing Google ADC read-only check passed with output suppressed. Initial fixture omitted credential definitions; local-emulator Admin UI was proven, normal Google setup gate was not. Restoring schema alone without indexing does not prove gate coverage.
 - CDP attributed CORS noise to app-display-viewer reloadIfAppChanged; app iframe nevertheless worked. Original fixed4400 remains held by another user checkout, never stopped. Evidence: ui/tests/manual_regression/_results/spora-20261015/report.html.
+
+### 2026-10-18 — WAHA GitRepo dependency on E2B
+
+- Test instance wahadep-7 uses its own dotenv-resolved backend/frontend, local hub8093 through ngrok, external paired WAHA service, Chrome extension langware.ai. Only the authorized agent number receives test messages. Gmail remains read-only.
+- Verify agent WebSocket identity through authenticated current-user projection, never the role-scoped User collection. Deployment bridge materialization must preserve the hub credential-store binding through adopt_from_hub.
+- WhatsApp emoji text is IMG alt, and list wrappers add visual line breaks: capture complete DOM bodies plus correlated transcripts. Source list names are complete; only body is previewed. Full-record reads must discover the current instance instead of using legacy config host. Raw tool results prove body completeness when transcript previews cap output.
+- Provider-state lists do not connect/resume a sandbox. Pair pause with immediate provider observation, then explicitly resume; distinguish pause/resume from cold replacement. Preserve unsuccessful attempts and explicit case correction markers. Evidence: ui/tests/manual_regression/_results/waha-e2b-20261018-r2/.

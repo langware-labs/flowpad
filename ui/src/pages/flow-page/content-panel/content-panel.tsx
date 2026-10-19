@@ -599,13 +599,15 @@ function ContentPanelBody({
 
   const providerProject = currentDock?.options?.[PROVIDER_PROJECT_PARAM];
   const display = currentDock?.isActiveDisplay ? (currentDock.hostProcessId ?? '') : '';
-  const loadProject = providerProject || (display ? project?.id : undefined);
+  const isAppBody = bodyViewType === ViewType.APP;
+  // Only an app needs its project running; a file or entity in the display opens as it is.
+  const loadProject = providerProject || (display && isAppBody ? project?.id : undefined);
   const homeAgent = currentDock?.options?.[HOME_AGENT_PARAM];
   const consumerProject = currentDock?.options?.[CONSUMER_PROJECT_PARAM] || currentDock?.scopeProjectId;
   const renderedBody = homeAgent && consumerProject
     ? <AgentHomeAfterLoad asset={homeAgent} projectId={consumerProject} />
     : renderBody(bodyViewType);
-  const appAddress = bodyViewType === ViewType.APP && !homeAgent ? appDockAddress(currentDock) : null;
+  const appAddress = isAppBody && !homeAgent ? appDockAddress(currentDock) : null;
   const body = loadProject ? (
     <OwnerLoadGate
       urlProject={loadProject}
