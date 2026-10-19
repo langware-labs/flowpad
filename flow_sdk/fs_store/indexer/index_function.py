@@ -63,8 +63,9 @@ class _ProgressEmitter:
     ``total_fn`` the table-level total for them.
     """
 
-    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn) -> None:
+    def __init__(self, on_progress, *, job_name: str, rows_fn, total_fn, roots=()) -> None:
         self._on_progress = on_progress
+        self._roots = tuple(r.path for r in roots)
         self._job_name = job_name
         self._rows_fn = rows_fn
         self._total_fn = total_fn
@@ -81,6 +82,7 @@ class _ProgressEmitter:
             done=sum(r.done for r in rows),
             total=self._total_fn(rows),
             text=text,
+            roots=self._roots,
             ts=datetime.now(timezone.utc).isoformat(),
         )
 
@@ -763,6 +765,9 @@ class FSIndexer:
                 "errors": 0,
                 "duration_ms": 0.0,
                 "skipped": 0,
+                # Files parsed this run. ``indexed`` counts RECORDS, and one file can
+                # yield several, so progress counts files to stay on the files total.
+                "parsed_refs": 0,
                 "orphans_found": 0,
                 "orphans_db_removed": 0,
                 "orphans_disk_removed": 0,
@@ -787,7 +792,7 @@ class FSIndexer:
                 rows.append(
                     TypeProgressRow(
                         type_name=str(rt),
-                        done=int(acc["indexed"]) + int(acc["skipped"]),
+                        done=int(acc["parsed_refs"]) + int(acc["skipped"]),
                         total=total,
                         errors=int(acc["errors"]),
                         skipped=int(acc["skipped"]),
@@ -800,6 +805,7 @@ class FSIndexer:
             on_progress,
             job_name="index",
             rows_fn=index_rows,
+            roots=opts.roots if opts.roots is not None else self._roots,
             total_fn=lambda rows: sum(r.total for r in rows),
         )
 
@@ -1155,6 +1161,7 @@ class FSIndexer:
                             object.__setattr__(rec, "project_id", cwd_pid)
                         await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                     acc["indexed"] += len(records)
+                    acc["parsed_refs"] += 1
                     # Same-path reconciliation: a successful parse enumerates
                     # the file's COMPLETE record set (all landed in seen_ids
                     # just above), so any other pre-existing id anchored to
@@ -1643,6 +1650,7 @@ class FSIndexer:
             on_progress,
             job_name="scan",
             rows_fn=scan_rows,
+            roots=roots_for_walk,
             total_fn=lambda _rows: 0,  # 0 = unknown for scan; UI hides percentage
         )
 
