@@ -18,8 +18,11 @@ import {
   shellQuote,
   toplog,
   type AgenticProcess,
+  Artifact,
+  TypeId,
 } from '@sdk';
 import type { DisplayEntry } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { historyEntryDock } from '@src/pages/flow-page/display-stack';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -585,9 +588,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the markdown-docs chip, which inferred "the run produced something" from an
   // authored `.md` instead of the run saying so.
   const { data: artifacts } = useProcessArtifacts(process);
-  // The click opens the REFERENCED ASSET, never the artifact row — via the
-  // shared file dispatch, the chokepoint every "open this file" surface uses.
-  const handleOpenArtifact = useCallback((assetRef: string) => navigation.openFile(assetRef), [navigation]);
+  // Opens the referenced asset via the shared file dispatch; an artifact with no
+  // `asset_ref` (a webapp, say) opens as an app tab addressed by the artifact.
+  const handleOpenArtifact = useCallback(
+    (artifact: Artifact) => {
+      if (artifact.asset_ref) navigation.openFile(artifact.asset_ref);
+      else navigation.openDock(DockPointer.forAppEntity(new TypeId(`${Artifact.type}-${artifact.id}`)));
+    },
+    [navigation],
+  );
 
   // Shown chip: every `flow show` this run made (`context_data.display_stack`).
   // A row opens the target as its own tab, rebased onto the process's project
