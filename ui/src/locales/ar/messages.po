@@ -14335,7 +14335,7 @@ msgstr ""
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Link"
-msgstr ""
+msgstr "رابط"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/links/link-handlers.ts
@@ -25234,7 +25234,7 @@ msgstr ""
 #: src/components/conversation/ConversationView.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Someone"
-msgstr ""
+msgstr "شخص ما"
 
 #: src/lib/publish-state.ts
 msgid "Someone else changed the same thing. Let the assistant merge the two versions."
