@@ -1429,3 +1429,32 @@ async def test_projectless_tab_is_never_reaped_as_missing_project() -> None:
 
     assert await delete_tabs_for_missing_project(None) == 0
     assert await Tab.get_one({"id": tab.id}) is not None
+
+
+@pytest.mark.asyncio
+async def test_reopen_with_no_hint_leaves_a_closed_parents_group() -> None:
+    """A link opened from a top-level tab (no parent hint) reuses the file's row.
+    If that row is still a child of a CLOSED workspace tab, the top bar hides it
+    as a child and has no parent chip to show instead — the link opens with no tab.
+    Reopening with no hint must make it top-level again."""
+    import json as _j
+
+    # The exact pointer shape of the stranded prod row (a project-scoped html editor).
+    p = _j.dumps(
+        {
+            "viewType": "project",
+            "pointer": f"{uuid.uuid4()}/editor/html/vfs/compute_node-@local/tmp/nudge_backoffice_mock.html",
+        }
+    )
+    parent = await ensure_tab(_jptr("vibe", f"agentic_process-{uuid.uuid4()}"))
+    child = await ensure_tab(p, parent_tab_id=parent.id)
+    assert child.parent_tab_id == parent.id
+
+    await parent.close()  # the user closes the workspace; the child row stays
+
+    reopened = await ensure_tab(p)  # the terminal link click: no parent hint
+    assert reopened.id == child.id
+    assert reopened.visible
+    assert reopened.parent_tab_id is None, (
+        "reopened tab is still grouped under a closed parent, so no tab chip can show it"
+    )
