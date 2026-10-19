@@ -1188,13 +1188,25 @@ class UvManager {
    * @returns {null | {message: string, reasons: string[], engineVersion: string|null, minDesktopVersion: string|null, desktopTooOld: boolean}}
    *   null when compatible, unknowable (no app version / no engine), or legacy.
    */
-  installedPairIssue(flowBin) {
+  installedPairIssue(flowBin, { strict = false } = {}) {
     if (!this._appVersion) return null;
     const engineVersion = this.getInstalledVersionSync(flowBin);
     if (!engineVersion) return null; // no engine (or unreadable) — the install/repair paths own that
     const compat = this.getInstalledMinDesktopSync(flowBin);
-    // Invalid metadata in an ALREADY-INSTALLED engine must not brick startup — reject upgrades
-    // elsewhere, but here warn and treat as legacy.
+    if (compat === 'invalid' && strict) {
+      // Verifying an engine we JUST installed: a candidate with invalid metadata is refused before the
+      // install (_assertCandidateCompatible), so one that arrives anyway is refused after it too.
+      const reasons = [`FlowPad Backend ${engineVersion} ships invalid compatibility metadata (flow_sdk/compat.json)`];
+      return {
+        message: engineCompat.incompatibleMessage({ desktopVersion: this._appVersion, engineVersion, reasons }),
+        reasons,
+        engineVersion,
+        minDesktopVersion: null,
+        desktopTooOld: false,
+      };
+    }
+    // Invalid metadata in an ALREADY-INSTALLED engine must not brick startup — it was refused (or never
+    // seen) at install time, but here we warn and treat it as legacy.
     const minDesktopVersion = compat === 'invalid' ? null : compat.minDesktopVersion;
     const verdict = engineCompat.checkPair({
       desktopVersion: this._appVersion,
@@ -1337,17 +1349,20 @@ class UvManager {
       yanked: Array.isArray(files) && files.every((f) => f && f.yanked === true),
     }));
     const minBackendVersion = engineCompat.desktopMinBackendVersion();
+    const stats = {};
     const picked = await engineCompat.selectCompatibleRelease({
       releases,
       desktopVersion: this._appVersion,
       minBackendVersion,
       readEngineCompat: (v) => this._readCandidateMinDesktop(v),
       log: (msg) => this.log.info(`[uv] ${msg}`),
+      stats,
     });
     if (!picked) {
       throw installFailure(
         `No compatible FlowPad engine release found for Desktop ${this._appVersion} ` +
-        `(the desktop requires engine ${minBackendVersion || 'any'} or newer). ` +
+        `(the desktop requires engine ${minBackendVersion || 'any'} or newer; ` +
+        `${stats.checked ? `checked the newest ${stats.checked}${stats.stoppedAtLimit ? ', older ones were not looked at' : ''}` : 'none was eligible'}). ` +
         'Update the desktop app, then try again. Your existing installation has been preserved.'
       );
     }
@@ -1377,7 +1392,7 @@ class UvManager {
    * must never be started.
    */
   async _verifyInstalledPairOrRollback(previousVersion, { onProgress } = {}) {
-    const issue = this.installedPairIssue();
+    const issue = this.installedPairIssue(undefined, { strict: true });
     if (!issue) return;
     this.log.error(`[compat] installed pair is incompatible: ${issue.reasons.join('; ')}`);
     if (previousVersion && previousVersion !== issue.engineVersion && engineCompat.isInstallableVersion(previousVersion)) {

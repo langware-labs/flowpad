@@ -157,6 +157,22 @@ for (const bad of ['', 'garbage', '1.2', 'v1.2.3', '1.2.3 --index-url http://evi
     eq(asked, ['0.2.5'], 'the others were never interrogated');
   }
   {
+    // `stats` reports what the walk really did, so an error can say "checked the newest N", not "none exists".
+    const stats = {};
+    await selectCompatibleRelease({
+      releases: Array.from({ length: 30 }, (_, i) => ({ version: `0.2.${30 - i}` })),
+      desktopVersion: '0.1.0', minBackendVersion: null,
+      readEngineCompat: async () => ({ minDesktopVersion: '9.9.9' }), limit: 4, stats,
+    });
+    eq(stats, { checked: 4, stoppedAtLimit: true }, 'stopped by the limit after 4');
+    const all = {};
+    await selectCompatibleRelease({
+      releases: [{ version: '0.2.2' }, { version: '0.2.1' }], desktopVersion: '0.1.0', minBackendVersion: null,
+      readEngineCompat: async () => ({ minDesktopVersion: '9.9.9' }), stats: all,
+    });
+    eq(all, { checked: 2, stoppedAtLimit: false }, 'every eligible candidate was looked at');
+  }
+  {
     // Nothing passes the desktop's own floor → null without reading any metadata.
     const picked = await selectCompatibleRelease({
       releases: [{ version: '0.2.1' }],

@@ -28,6 +28,16 @@ including its deliberate "an extra tag sorts newer" rule, so both sides always a
 are plain JSON objects; **unknown keys are ignored**, so the format can grow explicit ranges,
 maximums, or per-version exceptions without breaking older readers.
 
+**Pre-release and local tags satisfy a floor of the same `X.Y.Z`.** Under the project-wide rule
+(a tag after the patch number sorts *newer* than the bare version) `0.2.50-rc1` and
+`0.2.50+local1` both meet a floor of `0.2.50`, and `0.2.49-rc1` still does not meet it. This is
+accepted on purpose: a floor names the first release that supports a contract, and the
+release candidates and locally stamped builds of that release carry the contract too. The flip
+side: a candidate cut *before* the breaking change that motivated the floor also passes, so set a
+floor to the first version that actually contains the change. Changing the rule would change
+`semver.js` and `flow_sdk/utils/semver.py` together and every version decision in the project,
+not just these floors.
+
 **Legacy policy:** a missing file or missing key means *no constraint* — releases that predate
 the contract never declared one. An **unparseable** version against a *declared* floor is
 rejected, with one deliberate exception: invalid metadata found in an already-installed engine
