@@ -13,6 +13,10 @@ Two floors, one per side, each owned by the side that declares it:
   ``FLOWPAD_DESKTOP_VERSION``). A backend that was not spawned by the desktop
   sees neither and is never constrained — CLI/headless installs stay free.
 
+Deliberately NOT a ``DataSpec`` schema (an exception approved by the repository owner, 2026-10-19):
+the declaration must stay readable as plain JSON without importing ``flow_sdk`` -- by the desktop
+before any Python runs and by ``scripts/check_version_compat.py`` in CI. This module validates it.
+
 A pair is compatible only when BOTH hold (a newer version is never assumed
 compatible):
 
