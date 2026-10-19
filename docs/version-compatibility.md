@@ -47,10 +47,14 @@ Logic lives in `electron/engine-compat.js` and `flow_sdk/utils/compat.py` (twins
 failure wording). Both floors currently sit at `0.2.0`, so nothing changes until release
 engineering raises one.
 
-`compat.json` is deliberately **not** a `DataSpec` schema: it travels inside a wheel and must be
-readable as plain data by the desktop (JavaScript, before any Python runs) and by a stdlib-only CI
-script, without importing `flow_sdk`. That is the constraint behind the exception to the "every shape
-that travels is a `DataSpec`" rule; the contract above is the whole schema.
+`compat.json` is deliberately **not** a `DataSpec` schema, and that exception to the "every shape that
+travels is a `DataSpec`" rule was **approved by the repository owner on 2026-10-19**. The reason is the
+constraint, not convenience: the file travels inside a wheel and must be readable as plain data by the
+desktop (JavaScript, before any Python runs) and by a stdlib-only CI script, without importing
+`flow_sdk` or its schema registry. The contract above is the whole schema; `flow_sdk/utils/compat.py`
+validates it (`CompatError`). The same holds for `electron/engine-compat.json`. Do not extend the
+exception to other shapes -- the small verdict types (`CompatVerdict`, `PairRollback`) stay in-process
+and are not part of it.
 
 ## How each flow enforces it
 
