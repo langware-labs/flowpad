@@ -84,6 +84,7 @@ add a retry to get a gate green (CLAUDE.md).
 | **CLAUDE.md rules with no test** | **this skill** | `references/rules.md` |
 | **Cross-repo — does the other repo (flowpad ↔ flowpad-hub) need to change too?** | **this skill** | `.claude/pr-cross-repo.md` in the `flowpad-hub` checkout (private — the guide stays there). Find the checkout: the repo you're in, `../flowpad-hub`, `~/Developer/flowpad-hub`, or this session's `--add-dir` folders. Not found → skip and say so |
 | **Test integrity — did an edited test stop guarding its behavior?** | **this skill** | `references/test-integrity.md` — only when the diff modifies or deletes an existing test |
+| **Windows & Unix compatibility** | **this skill** | `references/cross-platform.md` — paths, OS-only APIs, lines typed into a shell |
 
 Delegate each lens to a subagent when the diff is large; give it the scope from
 step 1 and the lens's own output contract. Skip a lens the diff can't touch

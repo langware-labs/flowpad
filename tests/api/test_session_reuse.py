@@ -129,7 +129,7 @@ async def test_a_session_ended_while_its_turn_runs_stays_ended(bootstrapped_clie
     fm = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
     await fm.save(notify=False)
 
-    async def ended_mid_turn(ap):
+    async def ended_mid_turn(ap, on_line=None):
         row = await RemoteWorkerSession.get_one({"id": rws.id})
         row.mark_activity(S.ENDED.value)  # the other side pressed Disconnect
         await row.save()
