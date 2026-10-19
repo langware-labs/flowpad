@@ -20,7 +20,15 @@ const NO_FILE_ACCESS_ROLES = new Set<string>([Role.GUEST, Role.ANONYMOUS_VIEWER]
 /** Recipients who can't read the project's files themselves — they need a copy,
  *  not a git reference. */
 export function projectOutsiders(recipients: string[], roster: Membership[]): string[] {
-  return recipientsNotIn(recipients, roster, (m) => m.status !== 'pending' && !NO_FILE_ACCESS_ROLES.has(m.role));
+  return recipientsNotIn(recipients, roster, (m) => m.status !== 'pending' && grantsFileAccess(m.role));
+}
+/** Whether a project role lets its holder read the project's files. */
+const grantsFileAccess = (role: string | undefined) =>
+  !!role && role !== NO_PROJECT_ROLE && !NO_FILE_ACCESS_ROLES.has(role);
+/** The outsiders still left once `choices` are invited: a role with file access
+ *  takes a recipient out; None, Guest and anonymous viewer leave them in. */
+export function outsidersAfter(outsiders: string[], choices: Record<string, string>): string[] {
+  return outsiders.filter((recipient) => !grantsFileAccess(choices[recipient]));
 }
 const EMPTY = { error: null, nonMembers: [] as string[], outsiders: [] as string[], roles: [] as string[] };
 type State = {
@@ -107,8 +115,6 @@ export function useShareProjectMembership(project: Project | null, recipients: s
     [key, project, state, refresh],
   );
   const visible: Omit<State, 'key'> =
-    state.key === key && key
-      ? state
-      : { status: key ? ('loading' as const) : ('idle' as const), ...EMPTY };
+    state.key === key && key ? state : { status: key ? ('loading' as const) : ('idle' as const), ...EMPTY };
   return { ...visible, refresh, invite };
 }

@@ -206,7 +206,7 @@ describe("SessionCard — the session's one line in the conversation", () => {
   });
 });
 
-describe('SessionCard — the 2-hour length cap', () => {
+describe('SessionCard — the 4-hour length cap', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
@@ -216,7 +216,7 @@ describe('SessionCard — the 2-hour length cap', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-10-07T11:59:00Z'));
     renderCard({
-      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T10:00:00Z' }),
+      session: session(RemoteWorkerSessionStatus.IDLE, { approved_at: '2026-10-07T08:00:00Z' }),
       onDisconnect: async () => {},
     });
     expect(screen.getByTestId('session-card').dataset.status).toBe('active');

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@sdk';
-import { projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { outsidersAfter, projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 const mocks = vi.hoisted(() => ({ roster: vi.fn(), roles: vi.fn(), invite: vi.fn() }));
 vi.mock('@sdk', () => ({
   membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles },
@@ -107,5 +107,16 @@ describe('sharing project membership', () => {
     expect(hook.current.nonMembers).toEqual(['b@example.com']);
     await act(() => hook.current.invite({ 'a@example.com': 'guest', 'b@example.com': 'member' }));
     expect(mocks.invite.mock.calls[1][0]).toEqual([{ idOrEmail: 'b@example.com', role: 'member' }]);
+  });
+});
+
+describe('outsidersAfter', () => {
+  it('takes out recipients given a role with file access; None and Guest stay outside', () => {
+    const outsiders = ['a@x.com', 'b@x.com', 'c@x.com', 'd@x.com'];
+    expect(outsidersAfter(outsiders, { 'a@x.com': 'member', 'b@x.com': 'guest', 'c@x.com': 'none' })).toEqual([
+      'b@x.com',
+      'c@x.com',
+      'd@x.com',
+    ]);
   });
 });

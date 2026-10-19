@@ -14,6 +14,7 @@ A placement answers a browser on AT MOST two endpoints — its ``app`` proxy (en
 from __future__ import annotations
 
 import asyncio
+import shlex
 import socket
 import sys
 import textwrap
@@ -198,7 +199,7 @@ async def test_a_declared_dev_server_is_started_and_a_service_is_an_endpoint_of_
             {
                 "name": "api",
                 "protocol": {"spec_kind": "api.rest"},
-                "serving": {"type": "proxy", "start_cmd": f"{sys.executable} {server} {{port}}"},
+                "serving": {"type": "proxy", "start_cmd": f"{shlex.quote(sys.executable)} {shlex.quote(str(server))} {{port}}"},
             }
         ],
     )

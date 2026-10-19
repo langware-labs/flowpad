@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { markdownToPlain } from '@src/components/conversation/message-markdown';
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import {
   Archive,
@@ -377,9 +378,7 @@ export function ConversationListRow({
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const snippetMessage = isInvitationRow ? firstMessage : latestMessage;
   // A message with no text is named by what it carries.
-  const snippet = String(snippetMessage?.text || attachmentSummary(snippetMessage) || '')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const snippet = markdownToPlain(String(snippetMessage?.text || attachmentSummary(snippetMessage) || ''));
   // Column filters match what the row shows, so they run on the rendered text.
   if (!isHidden && columnFilter) {
     isHidden = !matchesColumnFilter(columnFilter, {

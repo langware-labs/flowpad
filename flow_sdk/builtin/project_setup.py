@@ -831,6 +831,24 @@ async def skip_requirement(project: "Project", typeid: str, *, scope: str = SKIP
     _skip_live(project, req, skip_detail(mark))
 
 
+async def skip_asking(run: str, step: str, *, by: str = "") -> bool:
+    """A setup question's own Skip: skip, on this machine, the ``step`` of setup run ``run`` that asked — the same
+    local skip its row offers (undone from the setup list), so the run goes on without it. ``False`` when no
+    setup run of that address is going."""
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415
+
+    pid = next((pid for pid, root in _CONTROLS if setup_run_address(pid, root) == run), None)
+    if pid is None:
+        return False
+    project = await Project.get_one({"id": pid})
+    req = next((r for r in await collect_requirements(project) if requirement_node_id(r) == step), None)
+    if req is None:
+        raise SkipRefused("the step asking is not one this project's setup lists")
+    await skip_requirement(project, req.typeid, name=req.name, by=by)
+    return True
+
+
 def _skip_live(project: "Project", req: SetupRequirementSpec, detail: str) -> None:
     """A run going for this project reads the skip now: its node settles SKIPPED, even the one it is on."""
     from flow_sdk.core.setup.derive import requirement_node_id  # noqa: PLC0415

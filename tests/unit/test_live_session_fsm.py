@@ -327,8 +327,8 @@ def test_cap_counts_from_approval_else_start():
 
 
 def test_live_session_expires_at_the_cap_terminal_never_does():
-    before = datetime(2026, 10, 7, 11, 59, 59, tzinfo=timezone.utc)
-    at_cap = datetime(2026, 10, 7, 12, 0, 0, tzinfo=timezone.utc)
+    before = datetime(2026, 10, 7, 13, 59, 59, tzinfo=timezone.utc)
+    at_cap = datetime(2026, 10, 7, 14, 0, 0, tzinfo=timezone.utc)
     for status in (S.PENDING, S.IDLE, S.RUNNING, S.ERROR):
         row = _capped(status)
         assert not row.is_expired(before), status
