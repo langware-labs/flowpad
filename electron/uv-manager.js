@@ -6,6 +6,7 @@ const { promisify } = require('util');
 const https = require('https');
 const crypto = require('crypto');
 const { SEMVER_RE, isNewer } = require('./semver');
+const updateTest = require('./update-test');
 const { createProgressWatchdog } = require('./progress-watchdog');
 const { showFailureDialog } = require('./failure-dialog');
 const runtimeRepair = require('./runtime-repair');
@@ -331,6 +332,13 @@ function parseNetstatPids(stdout, port) {
 
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
+
+// Update-cycle harness (FLOWPAD_UPDATE_TEST=1, update-test.js): what install/upgrade/repair resolve instead of
+// the unpinned default (`flowpad`, `flowpad@latest`), e.g. "flowpad==0.2.213", so a scenario controls which
+// engine lands. Normal runs keep the given default.
+function engineSpec(defaultSpec) {
+  return (updateTest.isEnabled() && process.env.FLOWPAD_UPDATE_TEST_ENGINE_SPEC) || defaultSpec;
+}
 
 // Python interpreter flowpad's tool venv must run on: the `>=` floor of
 // `requires-python` in the repo's pyproject.toml (">=3.11" → "3.11"). It is
@@ -1761,7 +1769,7 @@ class UvManager {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--force'],
+      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -2224,7 +2232,10 @@ class UvManager {
   /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
   async _getLatestPypiInfo() {
     try {
-      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
+      // Update-cycle harness (FLOWPAD_UPDATE_TEST=1): "latest" comes from a local stub, so a scenario controls the verdict.
+      const url = (updateTest.isEnabled() && process.env.FLOWPAD_PYPI_JSON_URL)
+        || `https://pypi.org/pypi/${PYPI_PACKAGE}/json`;
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
       });
       if (!res.ok) {
@@ -2463,7 +2474,8 @@ class UvManager {
       this._packageDialog = { version: latest, abort: new AbortController() };
       let response;
       try {
-        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+        response = updateTest.answerFor('engine', { engine: status.currentVersion || null, engineLatest: latest });
+        if (response === null) ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: 'Update Available',
           message: `A new version of FlowPad is available (${latest}).`,
@@ -2607,7 +2619,7 @@ class UvManager {
    */
   async upgrade({ onProgress, version } = {}) {
     // `version`: the exact release the user agreed to (update offered earlier) instead of "whatever is latest now".
-    let spec = `${PYPI_PACKAGE}@latest`;
+    let spec = engineSpec(`${PYPI_PACKAGE}@latest`);
     let pin;
     if (version) {
       const target = await this._resolveEngineTarget(version);
@@ -2625,6 +2637,7 @@ class UvManager {
     await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+    updateTest.event('engine-upgraded', { engine: this.getInstalledVersionSync() || null, spec });
   }
 
   /**
@@ -2638,7 +2651,7 @@ class UvManager {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
     const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--reinstall', '--force'],
+      ['tool', 'install', engineSpec(PYPI_PACKAGE), '--python', pin, '--reinstall', '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
