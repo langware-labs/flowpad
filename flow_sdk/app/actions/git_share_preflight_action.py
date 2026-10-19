@@ -296,9 +296,8 @@ async def _shared_file_body() -> "SharedFileRequest | ApiFailResponse":
 
 @action.post(action_name="shared-file-artifact", types=None)
 async def shared_file_artifact_action() -> ApiResponse:
-    """The artifact that stands for one file being shared, when its kind of file
-    travels as one (an .html page) — so the Share dialog can offer, and
-    preflight, sharing it by git. ``type_id: null``: share the file itself."""
+    """The artifact that stands for one file being shared — so the Share dialog
+    can preflight sharing it by git, and send it as a copy when it can't."""
     from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
 
     body = await _shared_file_body()
@@ -308,9 +307,6 @@ async def shared_file_artifact_action() -> ApiResponse:
         artifact = await Artifact.for_shared_file(body.path)
     except FileNotFoundError as e:
         return ApiFailResponse(message=str(e), status_code=404)
-    except ValueError:
-        # Not a page that travels as an artifact: the caller shares the file itself.
-        return ApiSuccessResponse(data={"type_id": None, "name": None})
     return ApiSuccessResponse(data={"type_id": f"{artifact.type}-{artifact.id}", "name": artifact.name})
 
 

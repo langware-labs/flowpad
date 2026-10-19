@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '@sdk';
-import { projectNonMembers, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
+import { projectNonMembers, projectOutsiders, useShareProjectMembership } from '@src/hooks/use-share-project-membership';
 const mocks = vi.hoisted(() => ({ roster: vi.fn(), roles: vi.fn(), invite: vi.fn() }));
 vi.mock('@sdk', () => ({ membershipService: { fetchMembershipsStrict: mocks.roster, fetchShareRoles: mocks.roles } }));
 const project = {
@@ -26,6 +26,19 @@ describe('sharing project membership', () => {
         [{ user_id: 'id', user_email: 'alice@example.com', role: 'guest', status: 'pending' }],
       ),
     ).toEqual(['new@example.com']);
+  });
+  it('counts only approved members with a real role as inside the project', () => {
+    // A guest or a pending invite can't read the project's files: they get a copy, not a git link.
+    expect(
+      projectOutsiders(
+        ['editor@example.com', 'guest@example.com', 'pending@example.com', 'new@example.com'],
+        [
+          { user_id: 'e', user_email: 'Editor@example.com', role: 'editor', status: 'approved' },
+          { user_id: 'g', user_email: 'guest@example.com', role: 'guest', status: 'approved' },
+          { user_id: 'p', user_email: 'pending@example.com', role: 'editor', status: 'pending' },
+        ],
+      ),
+    ).toEqual(['guest@example.com', 'pending@example.com', 'new@example.com']);
   });
   it('keeps failed roster unknown and refuses invitation', async () => {
     mocks.roster.mockRejectedValue(new Error('Forbidden'));

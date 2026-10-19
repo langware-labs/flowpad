@@ -30343,3 +30343,23 @@ msgstr "Zoom in"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{senderName} has shared {sharedThing}"
+msgstr "{senderName} has shared {sharedThing}"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The share was sent, but a link could not be created."
+msgstr "The share was sent, but a link could not be created."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send this link to anyone you want to give access. It is shown only once."
+msgstr "Send this link to anyone you want to give access. It is shown only once."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients are project members — they get a live link to the file in git."
+msgstr "Recipients are project members — they get a live link to the file in git."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients get a copy."
+msgstr "Recipients get a copy."

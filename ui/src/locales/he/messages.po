@@ -30069,3 +30069,23 @@ msgstr "הגדל"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "{senderName} has shared {sharedThing}"
+msgstr "{senderName} שיתף/ה את {sharedThing}"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The share was sent, but a link could not be created."
+msgstr "השיתוף נשלח, אבל לא ניתן היה ליצור קישור."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send this link to anyone you want to give access. It is shown only once."
+msgstr "שלחו את הקישור הזה למי שתרצו לתת לו גישה. הוא מוצג פעם אחת בלבד."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients are project members — they get a live link to the file in git."
+msgstr "הנמענים חברים בפרויקט — הם יקבלו קישור חי לקובץ ב-git."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Recipients get a copy."
+msgstr "הנמענים יקבלו עותק."
