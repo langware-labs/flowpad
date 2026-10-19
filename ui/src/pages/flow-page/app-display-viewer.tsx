@@ -19,6 +19,8 @@ import { Trans } from '@lingui/react/macro';
 import { isTypeId, TypeId, WebApp } from '@sdk';
 import { externalUrl, OPEN_EXTERNAL_MESSAGE } from '@sdk/apps/host';
 import { openExternal } from '@src/lib/open-external';
+import { isHubRelayed } from '@src/lib/hub-relayed';
+import { Button } from '@src/components/ui/button';
 
 /**
  * An app, rendered from its ADDRESS, through the endpoints that serve it.
@@ -73,6 +75,9 @@ function reloadOnNewEpoch(src: string, epoch: number | undefined, reload: () => 
   shownAtEpoch.set(src, epoch);
   if (seen !== undefined && seen !== epoch) reload();
 }
+
+/** The hub-relayed apps already handed to a tab of their own, by `src`: a dock shown again opens no other. */
+const openedInTab = new Set<string>();
 
 /** The served folder's version the frame was loaded at, by `src` (see `content_version` on the server). */
 const loadedVersion = new Map<string, string>();
@@ -152,6 +157,15 @@ export function AppDisplayViewer({
   useEffect(() => {
     void reloadIfAppChanged(appDisplay.src, () => frameRef.current?.refresh());
   }, [appDisplay.src]);
+
+  // An app the hub relays cannot run in this frame (`hub-relayed.ts`): the click that opened it opens
+  // it in a tab of its own instead — once, so showing this dock again does not open another.
+  const relayed = isHubRelayed(appDisplay.src);
+  useEffect(() => {
+    if (!relayed || openedInTab.has(appDisplay.src)) return;
+    openedInTab.add(appDisplay.src);
+    openExternal(appDisplay.src);
+  }, [relayed, appDisplay.src]);
 
   // The theme is baked into the guest URL for its first paint, so a later change
   // is PUSHED rather than re-addressed: re-addressing would swap `src`, which is
@@ -243,6 +257,17 @@ export function AppDisplayViewer({
       {definition?.project_id && definition.name ? (
         <AppStatusLine projectId={definition.project_id} app={definition.name} />
       ) : null}
+      {relayed ? (
+        <div
+          data-testid="app-opens-in-tab"
+          className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground"
+        >
+          <Trans>View in new tab</Trans>
+          <Button onClick={() => openExternal(appDisplay.src)}>
+            <Trans>Open in new tab</Trans>
+          </Button>
+        </div>
+      ) : (
       <div className="min-h-0 flex-1">
         <WebappDisplay
           // Keyed by src so a runtime switch REMOUNTS the wrapper. Changing src in
@@ -258,6 +283,7 @@ export function AppDisplayViewer({
           targetTypeId={microAppId ? `micro_app-${microAppId}` : null}
         />
       </div>
+      )}
     </div>
   );
   // Direct app opens have no dependency URL. Their endpoint, not ambient consumer context, owns Load.
