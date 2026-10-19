@@ -1,5 +1,7 @@
 import { Plural, Trans, useLingui } from '@lingui/react/macro';
-import { FSEntry, fsManager, fsStore, TypeId } from '@sdk';
+import { FSEntry, FSRef, fsManager, fsStore, TypeId } from '@sdk';
+import { errorMessage } from '@src/lib/error-message';
+import { notify } from '@src/notifications';
 import { BreadcrumbChevron } from '@src/components/ui/breadcrumb';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -28,6 +30,7 @@ import {
   FilePlus,
   FileText,
   Folder,
+  FolderOpen,
   FolderPlus,
   RefreshCw,
   Scissors,
@@ -658,6 +661,17 @@ export function SimpleFileManager({
     [navigation, buildVfsPath],
   );
 
+  // Reveal in Finder / Explorer — only a compute node's paths are real OS paths.
+  const canReveal = typeidObj.type === 'compute_node';
+  const handleRevealInFinder = useCallback(
+    (item: FileItem) => {
+      void new FSRef(item.path, typeidObj).open({ select: item.type === 'file' }).catch((error) =>
+        notify.error({ title: t`Could not open in Finder`, message: errorMessage(error, item.path) }),
+      );
+    },
+    [typeidObj, t],
+  );
+
   // Breadcrumb
   const breadcrumbs = useMemo(() => {
     const parts = currentPath.split('/').filter(Boolean);
@@ -1054,6 +1068,27 @@ export function SimpleFileManager({
                                     </TooltipTrigger>
                                     <TooltipContent>
                                       <Trans>Open in Editor</Trans>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                                {canReveal && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        data-testid="file-row-reveal"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleRevealInFinder(item);
+                                        }}
+                                      >
+                                        <FolderOpen className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <Trans>Open in Finder</Trans>
                                     </TooltipContent>
                                   </Tooltip>
                                 )}
